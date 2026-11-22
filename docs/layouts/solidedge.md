@@ -242,18 +242,78 @@ Unstated regions:
 
 ## `dimension`
 
-Spec §6.1 · layout: byte offsets · size: 210 B
+Spec §7.1 · layout: byte offsets · size: 210 B
 
 Parsed by:
-- `crates/cadmpeg-codec-solidedge/src/extents.rs`
+- `crates/cadmpeg-codec-solidedge/src/dimension.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 202 | 8 | `value` | `f64` | little | spec | `f64` at object offset 202. |
+| 144 | 4 | `marker` | `u32` | little | spec | A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of · value `1` |
+| 148 | 4 | `target` | `u32` | little | spec | the object it dimensions at offset `p`, then a `u32` type code. The `u32` at |
+| 198 | 4 | `target_repeat` | `u32` | little | spec | `p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in |
+| 202 | 8 | `value` | `f64` | little | spec | `p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in |
 
 Unstated regions:
 
-- `0..202` (202 B): §6.1 states no field before the value.
+- `0..144` (144 B): §7.1 states no field before the marker.
+- `152..198` (46 B): §7.1 states a type code at this offset and no value between the target and its repeat; the type code is not read.
+
+## `dimension_compact`
+
+Spec §7.1 · layout: byte offsets · size: 206 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/dimension.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 140 | 4 | `marker` | `u32` | little | spec | A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of · value `1` |
+| 144 | 4 | `target` | `u32` | little | spec | the object it dimensions at offset `p`, then a `u32` type code. The `u32` at |
+| 194 | 4 | `target_repeat` | `u32` | little | spec | `p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in |
+| 198 | 8 | `value` | `f64` | little | spec | `p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in |
+
+Unstated regions:
+
+- `0..140` (140 B): §7.1 states no field before the marker.
+- `148..194` (46 B): §7.1 states a type code at this offset and no value between the target and its repeat; the type code is not read.
+
+## `hole_prop_data`
+
+Spec §7.2 · layout: byte offsets · size: 80 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/dressup.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `hole_type` | `u32` | little | spec | \| 8 \| `u32` hole type: `0` simple, `1` countersink, `2` counterbore, `3` tapped \| |
+| 12 | 8 | `diameter` | `f64` | little | spec | \| 12 \| `f64` hole diameter; the tap drill diameter of a tapped hole \| |
+| 20 | 8 | `head_diameter` | `f64` | little | spec | \| 20 \| `f64` counterbore or countersink diameter \| |
+| 28 | 8 | `head_depth` | `f64` | little | spec | \| 28 \| `f64` counterbore depth \| |
+| 36 | 8 | `sink_angle` | `f64` | little | spec | \| 36 \| `f64` countersink angle, in degrees \| |
+| 72 | 8 | `depth` | `f64` | little | spec | \| 72 \| `f64` hole depth \| |
+
+Unstated regions:
+
+- `0..8` (8 B): §7.2 states no field before the hole type.
+- `44..72` (28 B): §7.2 states no field between the countersink angle and the hole depth.
+
+## `hole_2d`
+
+Spec §7.2 · layout: byte offsets · size: 24 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/dressup.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 8 | `x` | `f64` | little | spec | values at object offsets 8 and 16 are the position x and y in the profile |
+| 16 | 8 | `y` | `f64` | little | spec | values at object offsets 8 and 16 are the position x and y in the profile |
+
+Unstated regions:
+
+- `0..8` (8 B): §7.2 states no field before the position x.
 
 ## `ref_axis`
 

@@ -584,22 +584,183 @@ anchor = "as the `f64` at object offset 8."
 [[record]]
 name = "dimension"
 kind = "byte"
-parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
-section = "6.1"
-anchor = "A `CLSID_JDim` stores its value as the"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/dimension.rs"
+section = "7.1"
+anchor = "A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of"
 size = 210
 
 [[record.gap]]
 offset = 0
-size = 202
-note = "§6.1 states no field before the value."
+size = 144
+note = "§7.1 states no field before the marker."
+
+[[record.field]]
+name = "marker"
+offset = 144
+type = "u32"
+value = 1
+source = "spec"
+anchor = "A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of"
+
+[[record.field]]
+name = "target"
+offset = 148
+type = "u32"
+source = "spec"
+anchor = "the object it dimensions at offset `p`, then a `u32` type code. The `u32` at"
+
+[[record.gap]]
+offset = 152
+size = 46
+note = "§7.1 states a type code at this offset and no value between the target and its repeat; the type code is not read."
+
+[[record.field]]
+name = "target_repeat"
+offset = 198
+type = "u32"
+source = "spec"
+anchor = "`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in"
 
 [[record.field]]
 name = "value"
 offset = 202
 type = "f64"
 source = "spec"
-anchor = "`f64` at object offset 202."
+anchor = "`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in"
+
+[[record]]
+name = "dimension_compact"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/dimension.rs"
+section = "7.1"
+anchor = "the 459-byte and 466-byte layouts and 144 in the 455-byte layout."
+size = 206
+
+[[record.gap]]
+offset = 0
+size = 140
+note = "§7.1 states no field before the marker."
+
+[[record.field]]
+name = "marker"
+offset = 140
+type = "u32"
+value = 1
+source = "spec"
+anchor = "A `CLSID_JDim` object stores the `u32` value `1`, then the identifier `T` of"
+
+[[record.field]]
+name = "target"
+offset = 144
+type = "u32"
+source = "spec"
+anchor = "the object it dimensions at offset `p`, then a `u32` type code. The `u32` at"
+
+[[record.gap]]
+offset = 148
+size = 46
+note = "§7.1 states a type code at this offset and no value between the target and its repeat; the type code is not read."
+
+[[record.field]]
+name = "target_repeat"
+offset = 194
+type = "u32"
+source = "spec"
+anchor = "`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in"
+
+[[record.field]]
+name = "value"
+offset = 198
+type = "f64"
+source = "spec"
+anchor = "`p` + 50 is `T` again, and the `f64` at `p` + 54 is the value. `p` is 148 in"
+
+[[record]]
+name = "hole_prop_data"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/dressup.rs"
+section = "7.2"
+anchor = "A `CLSID_JMHolePropData` object stores:"
+size = 80
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§7.2 states no field before the hole type."
+
+[[record.field]]
+name = "hole_type"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` hole type: `0` simple, `1` countersink, `2` counterbore, `3` tapped |"
+
+[[record.field]]
+name = "diameter"
+offset = 12
+type = "f64"
+source = "spec"
+anchor = "| 12 | `f64` hole diameter; the tap drill diameter of a tapped hole |"
+
+[[record.field]]
+name = "head_diameter"
+offset = 20
+type = "f64"
+source = "spec"
+anchor = "| 20 | `f64` counterbore or countersink diameter |"
+
+[[record.field]]
+name = "head_depth"
+offset = 28
+type = "f64"
+source = "spec"
+anchor = "| 28 | `f64` counterbore depth |"
+
+[[record.field]]
+name = "sink_angle"
+offset = 36
+type = "f64"
+source = "spec"
+anchor = "| 36 | `f64` countersink angle, in degrees |"
+
+[[record.gap]]
+offset = 44
+size = 28
+note = "§7.2 states no field between the countersink angle and the hole depth."
+
+[[record.field]]
+name = "depth"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "| 72 | `f64` hole depth |"
+
+[[record]]
+name = "hole_2d"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/dressup.rs"
+section = "7.2"
+anchor = "Each `CLSID_JHole2d` member of the profile is one hole position."
+size = 24
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§7.2 states no field before the position x."
+
+[[record.field]]
+name = "x"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "values at object offsets 8 and 16 are the position x and y in the profile"
+
+[[record.field]]
+name = "y"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "values at object offsets 8 and 16 are the position x and y in the profile"
 
 [[record]]
 name = "ref_axis"

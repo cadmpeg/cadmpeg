@@ -29,36 +29,39 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::units::UnitVector3;
 
 use crate::features::{feature_id, function_span, Kind, Listed};
-use crate::layout::{dimension, double_value, ref_axis};
+use crate::layout::{double_value, ref_axis};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
 
 /// The class of a feature stored as a part function.
-const PART_CLASS: &str = "CLSID_JMPart";
+pub(crate) const PART_CLASS: &str = "CLSID_JMPart";
 /// The class of a stored number.
-const DOUBLE_CLASS: &str = "Double Value Object";
+pub(crate) const DOUBLE_CLASS: &str = "Double Value Object";
 /// The class of a stored dimension.
-const DIMENSION_CLASS: &str = "CLSID_JDim";
+pub(crate) const DIMENSION_CLASS: &str = "CLSID_JDim";
 /// The class of a stored revolve axis.
 const AXIS_CLASS: &str = "CLSID_JMRefAxis";
 
 /// Bytes from the end of a function name to each parameter slot (§6.1).
-const KIND_AFTER_NAME: usize = 100;
-const SIDE_AFTER_NAME: usize = 128;
+pub(crate) const KIND_AFTER_NAME: usize = 100;
+pub(crate) const SIDE_AFTER_NAME: usize = 128;
+/// The extent kind and side of a hole (§7.2).
+pub(crate) const KIND_AFTER_NAME_HOLE: usize = 208;
+pub(crate) const SIDE_AFTER_NAME_HOLE: usize = 236;
 const DEPTH_AFTER_NAME: usize = 184;
 const AXIS_AFTER_NAME: usize = 184;
 const ANGLE_AFTER_NAME: usize = 212;
 
 /// The extent-kind values (§6.2).
-const KIND_FINITE: f64 = 13.0;
-const KIND_THROUGH_ALL: f64 = 16.0;
+pub(crate) const KIND_FINITE: f64 = 13.0;
+pub(crate) const KIND_THROUGH_ALL: f64 = 16.0;
 /// The side values (§6.2).
-const SIDE_AGAINST: f64 = 1.0;
-const SIDE_ALONG: f64 = 2.0;
+pub(crate) const SIDE_AGAINST: f64 = 1.0;
+pub(crate) const SIDE_ALONG: f64 = 2.0;
 const SIDE_BOTH: f64 = 3.0;
 
 /// A stored enumeration value equals its code within this distance.
-const EPS_CODE: f64 = 1e-9;
+pub(crate) const EPS_CODE: f64 = 1e-9;
 /// A stored axis direction has unit length within this distance.
 const EPS_AXIS_UNIT: f64 = 1e-6;
 /// A profile point lies on the axis when its sense value is within this
@@ -67,7 +70,7 @@ const EPS_ON_AXIS: f64 = 1e-9;
 /// A sweep angle exceeds a full turn by no more than this, in radians.
 const EPS_FULL_TURN: f64 = 1e-9;
 /// Millimetres per metre.
-const MM_PER_M: f64 = 1000.0;
+pub(crate) const MM_PER_M: f64 = 1000.0;
 /// Bytes of one `f64`.
 const REAL: usize = 8;
 
@@ -97,20 +100,20 @@ struct Profile {
     points: Vec<Vector3>,
 }
 
-fn is(value: f64, code: f64) -> bool {
+pub(crate) fn is(value: f64, code: f64) -> bool {
     (value - code).abs() <= EPS_CODE
 }
 
 /// The `u32` identifier stored `after` bytes past the function name ending at
 /// `end`.
-fn slot(object: &Object<'_>, end: usize, after: usize) -> Result<u32, String> {
+pub(crate) fn slot(object: &Object<'_>, end: usize, after: usize) -> Result<u32, String> {
     end.checked_add(after)
         .and_then(|at| View::u32_le_at(object.bytes, at))
         .ok_or_else(|| format!("the feature block has no slot {after} bytes after its name"))
 }
 
 /// The object `id` names and its class.
-fn named<'a>(
+pub(crate) fn named<'a>(
     cluster: &Cluster<'a>,
     types: &'a TypeTable,
     id: u32,
@@ -128,14 +131,20 @@ fn named<'a>(
     Ok((object, class))
 }
 
-fn real_at(object: &Object<'_>, at: usize, what: &str) -> Result<f64, String> {
+pub(crate) fn real_at(object: &Object<'_>, at: usize, what: &str) -> Result<f64, String> {
     View::f64_le_at(object.bytes, at)
         .filter(|value| value.is_finite())
         .ok_or_else(|| format!("the {what} object does not hold a finite value"))
 }
 
+/// The value of a `CLSID_JDim` (§7.1).
+pub(crate) fn dimension_value(object: &Object<'_>, what: &str) -> Result<f64, String> {
+    crate::dimension::value(object.bytes)
+        .ok_or_else(|| format!("the {what} object is not a readable dimension"))
+}
+
 /// The value of a `Double Value Object`.
-fn double_slot(
+pub(crate) fn double_slot(
     cluster: &Cluster<'_>,
     types: &TypeTable,
     object: &Object<'_>,
@@ -152,7 +161,7 @@ fn double_slot(
 }
 
 /// The value of a `CLSID_JDim` or a `Double Value Object`.
-fn measure_slot(
+pub(crate) fn measure_slot(
     cluster: &Cluster<'_>,
     types: &TypeTable,
     object: &Object<'_>,
@@ -164,7 +173,7 @@ fn measure_slot(
     let (found, class) = named(cluster, types, id, what)?;
     match class {
         DOUBLE_CLASS => real_at(&found, double_value::VALUE, what),
-        DIMENSION_CLASS => real_at(&found, dimension::VALUE, what),
+        DIMENSION_CLASS => dimension_value(&found, what),
         other => Err(format!("the {what} object is of class {other}")),
     }
 }
@@ -395,7 +404,7 @@ fn revolve(
 }
 
 /// The model-space point of profile coordinates (`u`, `v`), in millimetres.
-fn model_point(frame: &FrameValue, u: f64, v: f64) -> Vector3 {
+pub(crate) fn model_point(frame: &FrameValue, u: f64, v: f64) -> Vector3 {
     let origin = frame.origin.get();
     let x = Vector3::from(frame.x_axis);
     let y = Vector3::from(frame.y_axis);

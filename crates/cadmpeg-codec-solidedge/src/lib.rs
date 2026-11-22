@@ -8,6 +8,8 @@
 mod container;
 mod decode;
 mod dialect;
+mod dimension;
+mod dressup;
 mod extents;
 mod features;
 mod layout;

@@ -44,7 +44,7 @@ const KEYPOINT_CLASS: &str = "CLSID_JKeyPoint2d";
 /// functions that consume a profile of a sketch (§5.3).
 const PROFILE_AFTER_NAME: usize = 72;
 /// The same offset for a hole, a flange and a fast pattern.
-const PROFILE_AFTER_NAME_SHORT: usize = 68;
+pub(crate) const PROFILE_AFTER_NAME_SHORT: usize = 68;
 
 /// Millimetres per metre.
 const MM_PER_M: f64 = 1000.0;
@@ -250,6 +250,24 @@ fn member_ids(list: &Object<'_>) -> Option<Vec<u32>> {
         ids.push(View::u32_le_at(bytes, at)?);
     }
     Some(ids)
+}
+
+/// The member identifiers of profile `id`, in stored order. `None` where the
+/// profile or its member list does not read.
+pub(crate) fn profile_members(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    id: u32,
+) -> Option<Vec<u32>> {
+    let object = cluster.object(id)?;
+    if types.class_name(object.form, object.flags) != Some(PROFILE_CLASS) {
+        return None;
+    }
+    let members_id = View::u32_le_at(object.bytes, profile::PROFILE_2D)?;
+    let list = cluster
+        .object(members_id)
+        .filter(|list| types.class_name(list.form, list.flags) == Some(PROFILE_2D_CLASS))?;
+    member_ids(&list)
 }
 
 /// The profile identifier a feature object stores. `None` where the object's
