@@ -190,6 +190,8 @@ pub enum MutationOutcome {
         edited: Box<CadIr>,
         /// The bytes the writer produced.
         bytes: Vec<u8>,
+        /// The export report the plan stated for those bytes.
+        report: Box<ExportReport>,
     },
     /// The encoder refused the edit.
     Refused {
@@ -284,24 +286,26 @@ where
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
-            plan.write_to(&mut bytes)
+            let report = plan
+                .write_to(&mut bytes)
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
-            Ok((path, bytes))
+            Ok((report, bytes))
         }
         Err(error) => Err(error),
     };
     let outcome = match written {
-        Ok((path, bytes)) => {
+        Ok((report, bytes)) => {
+            let path = report.write_path();
             assert!(
-                expected_path.describes(&path),
+                expected_path.describes(path),
                 "{label}: the document was edited, so the encoder was expected to write by the \
                  {expected_path} path, but it took the {path} path"
             );
             MutationOutcome::Written {
                 edited: Box::new(edited),
                 bytes,
+                report: Box::new(report),
             }
         }
         Err(error) => MutationOutcome::Refused { error },

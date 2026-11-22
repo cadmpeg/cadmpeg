@@ -2050,14 +2050,18 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
-    let (top_level, tessellations) = ir
+    let (top_level, tessellations, mut identity) = ir
         .model
         .product_definitions
         .iter()
         .position(|row| row.id == crate::tree::file_root_id())
         .map(|position| {
             let root = ir.model.product_definitions.remove(position);
-            (root.occurrences, root.tessellations)
+            let document = match root.storage {
+                Storage::File { document, .. } => document,
+                _ => ExternalDocument::default(),
+            };
+            (root.occurrences, root.tessellations, document)
         })
         .unwrap_or_default();
     let owned = ir
@@ -2086,9 +2090,10 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
+    identity.path = cadmpeg_core::text::NonBlankString::new(document);
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
-            document: ExternalDocument::path(document.to_owned()),
+            document: identity,
             source: Some(source),
         },
         None => Storage::Embedded,
