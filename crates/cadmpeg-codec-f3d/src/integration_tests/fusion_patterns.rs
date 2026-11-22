@@ -474,7 +474,7 @@ fn an_unproved_body_seed_keeps_its_native_record_and_final_geometry() {
     else {
         panic!("body seeds");
     };
-    assert_eq!(*join, Some(false));
+    assert_eq!(*join, None);
     let cadmpeg_ir::design::selection::Picks::Named(picks) = &bodies.picks else {
         panic!("native body seed");
     };

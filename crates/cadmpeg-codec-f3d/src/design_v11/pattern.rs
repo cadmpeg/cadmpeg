@@ -232,7 +232,7 @@ fn project_seeds(
     Some((
         PatternSeeds::Bodies {
             bodies: native_seeds(source)?,
-            join: Some(false),
+            join: None,
         },
         true,
     ))

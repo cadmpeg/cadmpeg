@@ -311,7 +311,7 @@ fn face_and_body_seed_groups_keep_their_native_selections_beside_the_typed_layou
         let selection = match &pattern.seeds {
             PatternSeeds::Faces(faces) => faces,
             PatternSeeds::Bodies { bodies, join } => {
-                assert_eq!(*join, Some(false));
+                assert_eq!(*join, None);
                 bodies
             }
             PatternSeeds::Features { .. } => panic!("geometric seeds"),
