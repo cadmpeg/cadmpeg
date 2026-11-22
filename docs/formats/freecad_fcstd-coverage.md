@@ -25,7 +25,7 @@ The checked-in [`freecad_fcstd-profile.json`](freecad_fcstd-profile.json) is gen
 manifested corpus rather than edited by hand. Regenerate it from the repository root with:
 
 ```sh
-cargo run -p cadmpeg-codec-freecad --bin fcstd-profile -- \
+cargo run -p cadmpeg-codec-freecad --example fcstd-profile -- \
   corpus/freecad_fcstd/fixtures corpus/manifest.toml \
   docs/formats/freecad_fcstd-profile.json
 ```

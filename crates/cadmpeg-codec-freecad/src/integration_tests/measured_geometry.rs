@@ -144,54 +144,75 @@ fn patched_corpus_documents_keep_measured_geometry() {
         })
         .collect();
     paths.sort();
-    let mut measured = Vec::new();
-    for path in paths {
-        let label = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .expect("fixture name")
-            .to_owned();
-        let bytes = std::fs::read(&path).expect("fixture bytes");
-        let decoded = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap_or_else(|_| panic!("{label}: the fixture does not decode"));
-        let Some(report) = measures_decide(&label, decoded.ir()).expect("the fixture is measured")
-        else {
-            continue;
-        };
-        let mut edited = decoded.ir().clone();
-        FcstdCodec
-            .set_property_value_attribute(
-                &mut edited,
-                crate::FcstdPropertyOwner::Document,
-                "Label",
-                0,
-                "value",
-                EDITED_LABEL,
-            )
-            .unwrap_or_else(|_| panic!("{label}: the document label is not editable"));
-        let mut encoded = Vec::new();
-        let plan = FcstdCodec
-            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
-            .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
-        assert!(
-            matches!(plan.report().write_path(), WritePath::Patched { .. }),
-            "{label}: the label edit does not take the patch path"
-        );
-        plan.write_to(&mut encoded)
-            .unwrap_or_else(|_| panic!("{label}: the patch write fails"));
-        let round_trip = FcstdCodec
-            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-            .unwrap_or_else(|_| panic!("{label}: the patched archive does not decode"));
-        assert_eq!(
-            round_trip.ir().geometry.bodies.len(),
-            decoded.ir().geometry.bodies.len(),
-            "{label}: the body count changes"
-        );
-        measures_agree_with(&label, decoded.ir(), report, round_trip.ir())
-            .expect("the round trip keeps its measured geometry");
-        measured.push(label);
-    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let measured = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut measured = Vec::new();
+                    while let Some(path) =
+                        paths.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+                    {
+                        let label = path
+                            .file_stem()
+                            .and_then(|stem| stem.to_str())
+                            .expect("fixture name")
+                            .to_owned();
+                        let bytes = std::fs::read(path).expect("fixture bytes");
+                        let decoded = FcstdCodec
+                            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                            .unwrap_or_else(|_| panic!("{label}: the fixture does not decode"));
+                        let Some(report) =
+                            measures_decide(&label, decoded.ir()).expect("the fixture is measured")
+                        else {
+                            continue;
+                        };
+                        let mut edited = decoded.ir().clone();
+                        FcstdCodec
+                            .set_property_value_attribute(
+                                &mut edited,
+                                crate::FcstdPropertyOwner::Document,
+                                "Label",
+                                0,
+                                "value",
+                                EDITED_LABEL,
+                            )
+                            .unwrap_or_else(|_| {
+                                panic!("{label}: the document label is not editable")
+                            });
+                        let mut encoded = Vec::new();
+                        let plan = FcstdCodec
+                            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+                            .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
+                        assert!(
+                            matches!(plan.report().write_path(), WritePath::Patched { .. }),
+                            "{label}: the label edit does not take the patch path"
+                        );
+                        plan.write_to(&mut encoded)
+                            .unwrap_or_else(|_| panic!("{label}: the patch write fails"));
+                        let round_trip = FcstdCodec
+                            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+                            .unwrap_or_else(|_| {
+                                panic!("{label}: the patched archive does not decode")
+                            });
+                        assert_eq!(
+                            round_trip.ir().geometry.bodies.len(),
+                            decoded.ir().geometry.bodies.len(),
+                            "{label}: the body count changes"
+                        );
+                        measures_agree_with(&label, decoded.ir(), report, round_trip.ir())
+                            .expect("the round trip keeps its measured geometry");
+                        measured.push(label);
+                    }
+                    measured
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>()
+    });
     assert!(
         measured.len() >= MEASURED_FIXTURE_FLOOR,
         "fewer corpus documents than the floor measure a comparable body through the patch writer"
