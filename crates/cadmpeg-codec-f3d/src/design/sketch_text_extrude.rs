@@ -54,7 +54,7 @@ pub(crate) fn bind_sketch_text_extrude_profiles(
         else {
             if candidate.picks.len() > 1 {
                 losses.push(
-                    crate::design::decode::operands::unresolved_profile_group_loss(
+                    crate::design::decode::operands::sketch_profiles::unresolved_profile_group_loss(
                         candidate.picks.len(),
                     ),
                 );

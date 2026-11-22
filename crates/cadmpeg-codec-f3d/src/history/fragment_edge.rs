@@ -271,11 +271,12 @@ mod tests {
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0,
             -1, 0, 0, -1,
         ];
-        operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            &program,
-        )
-        .unwrap();
+        operand.recipe_structure =
+            crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &program,
+            )
+            .unwrap();
         operand.recipe_references = [(0, 0, 10), (0, 40, 20), (80, 80, 40)]
             .into_iter()
             .map(
@@ -332,7 +333,7 @@ mod tests {
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0,
             -1, 0, 0, -1,
         ];
-        let structure = crate::design::decode::operands::edge_recipe_structure(
+        let structure = crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &program,
         )

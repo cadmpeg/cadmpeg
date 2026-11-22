@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve projection and revolve axis binding.
 
-use crate::design::decode::operands::entity_selection_matches_curve;
+use crate::design::decode::operands::entity_selections::entity_selection_matches_curve;
 use crate::design::feature_project::sweep_loft::fixed_boolean_operation;
 use crate::design::feature_project::unique_feature_match;
 use crate::ids;

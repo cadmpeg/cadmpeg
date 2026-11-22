@@ -100,7 +100,7 @@ pub(super) fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
-    design::decode::operands::bind_body_recipe_operand_candidates(
+    design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,

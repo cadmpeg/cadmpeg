@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::operands::parse_construction_operand_dual_transform;
-use crate::design::decode::operands::parse_construction_operand_flag;
-use crate::design::decode::operands::parse_construction_operand_path;
-use crate::design::decode::operands::parse_construction_operand_transform;
-use crate::design::decode::operands::parse_construction_tracking_path;
-use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_dual_transform;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_flag;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_path;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_transform;
+use crate::design::decode::operands::construction_groups::parse_construction_tracking_path;
+use crate::design::decode::operands::loft_carriers::parse_loft_legacy_body_carrier;
 
 use crate::records::decal::DesignRecordHeader;
 use crate::test_support::indexed_header;
@@ -595,8 +595,10 @@ fn tracking_path_headers_are_named_by_the_path_after_unrelated_wrappers() {
         })
         .unwrap();
     assert_eq!(
-        crate::design::decode::operands::tracking_path_record_indices(&[identity])
-            .collect::<Vec<_>>(),
+        crate::design::decode::operands::entity_selections::tracking_path_record_indices(&[
+            identity
+        ])
+        .collect::<Vec<_>>(),
         vec![
             ("f3d:Design/BulkStream.dat", 2947),
             ("f3d:Design/BulkStream.dat", 2948),
