@@ -38,6 +38,7 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }
