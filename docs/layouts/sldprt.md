@@ -1,6 +1,6 @@
 <!-- Generated from docs/layouts/sldprt.toml by
-     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;
-     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->
+     crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs. Do not edit by hand;
+     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`. -->
 
 # `sldprt` record layouts
 
@@ -63,6 +63,21 @@ Parsed by:
 | 2 | 2 | `marker_address` | `u16` | little | spec | u16 marker address at +2 |
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
+
+## `feature_input_scalar_class_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `relation_class_token` | `u16` | little | spec | the relation class token at prefix +0 |
+| 2 | 4 | `zero` | `u32` | little | spec | a zero u32 at prefix +2 |
+| 6 | 2 | `parameter_class_token` | `u16` | little | spec | the parameter class token at prefix +6 |
 
 ## `outer_header`
 
@@ -3325,6 +3340,40 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
+## `length_user_units_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 48 B
+
+The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `precision` | `u32` | little | spec | The first u32 of a `moLengthUserUnits_c` base is the number of decimal places |
+| 44 | 4 | `last_word` | `u32` | little | spec | four u32, the last `1`, 48 bytes · value `1` |
+
+Unstated regions:
+
+- `4..44` (40 B): A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them.
+
+## `length_user_units_block_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 62 B
+
+The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 48 | `base` | `bytes[48]` | little | spec | In its four-word base form |
+| 48 | 8 | `block_real` | `f64` | little | spec | an f64, a u32 and a u16 follow |
+| 56 | 4 | `block_word` | `u32` | little | spec | an f64, a u32 and a u16 follow |
+| 60 | 2 | `block_short` | `u16` | little | spec | an f64, a u32 and a u16 follow |
+
 ## `sketch_record_head`
 
 Spec §Sketch objects · layout: byte offsets · size: 64 B
@@ -4051,6 +4100,110 @@ Parsed by:
 | 0 | 4 | `mark` | `u32` | little | spec | the mark, a little-endian u32 at +0 |
 | 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
 | 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
+
+## `sweep_wire_contact`
+
+Spec §2 · layout: byte offsets · size: 62 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `first_vector` | `f64[3]` | little | spec | Its first vector |
+| 24 | 4 | `zero` | `u32` | little | spec | a zero u32 · value `0` |
+| 28 | 4 | `one` | `u32` | little | spec | a unit u32 · value `1` |
+| 32 | 4 | `sentinel` | `i32` | little | spec | a signed sentinel i32 `-1` · value `-1` |
+| 36 | 2 | `dimension` | `u16` | little | spec | a dimension u16 `2` · value `2` |
+| 38 | 24 | `second_vector` | `f64[3]` | little | spec | second vector have finite components |
+
+## `sweep_component_tail`
+
+Spec §2 · layout: byte offsets · size: 33 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `leading_zeros` | `bytes[12]` | little | spec | a leading zero block of twelve bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 12 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | a reference sentinel of four `ff` bytes · value `[255, 255, 255, 255]` |
+| 16 | 8 | `second_zeros` | `bytes[8]` | little | spec | a second zero block of eight bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 24 | 8 | `unit` | `f64` | little | spec | a unit f64 `1` |
+| 32 | 1 | `body_flag` | `u8` | little | spec | a body flag byte |
+
+## `sweep_component_suffix`
+
+Spec §2 · layout: byte offsets · size: 14 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `sentinel` | `bytes[8]` | little | spec | an eight-byte `ff` block · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
+| 8 | 6 | `zeros` | `bytes[6]` | little | spec | a six-byte zero block · value `[0, 0, 0, 0, 0, 0]` |
+
+## `sweep_reference_blob_prefix`
+
+Spec §2 · layout: byte offsets · size: 10 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_zero` | `u8` | little | spec | a first zero byte · value `0` |
+| 1 | 4 | `outer_length` | `u32` | little | spec | an outer length u32 |
+| 5 | 1 | `second_zero` | `u8` | little | spec | a second zero byte · value `0` |
+| 6 | 4 | `inner_length` | `u32` | little | spec | an inner length u32 equal to the outer length minus five |
+
+## `sweep_options`
+
+Spec §2 · layout: byte offsets · size: 105 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 86 | 2 | `circular_section` | `u16` | little | spec | Their circular-section selector u16 |
+| 88 | 2 | `section_word` | `u16` | little | spec | A zero section word follows the selector · value `0` |
+| 90 | 8 | `diameter` | `f64` | little | spec | The section diameter f64 is in metres |
+
+Unstated regions:
+
+- `0..86` (86 B): Sweep options before the section fields.
+- `98..105` (7 B): Sweep options after the section diameter.
+
+## `sweep_reference_blob_trailer`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `opaque` | `bytes[8]` | n/a | spec | eight trailer bytes |
+
+## `sweep_component_profile_extended_prefix`
+
+Spec §2 · layout: byte offsets · size: 85 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 10 | `child_prefix` | `bytes[10]` | little | spec | its ten-byte child prefix |
+| 45 | 16 | `reference_sentinel` | `bytes[16]` | little | spec | a sixteen-byte `ff` sentinel block · value `[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]` |
+| 81 | 4 | `header_word` | `u32` | little | spec | a u32 header word before the complete component source record |
+
+Unstated regions:
+
+- `10..45` (35 B): Child data before the sentinel.
+- `61..81` (20 B): Child data before the header word.
 
 ## Not tabulated
 

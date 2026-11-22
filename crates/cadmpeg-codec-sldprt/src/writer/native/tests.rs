@@ -46,7 +46,7 @@ fn object_streams_walk_to_their_end_with_a_reconciled_class_map() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(config, &arena, &DecodePolicy::desktop())
             .expect("context");
-        let count = crate::archive::resolved_features_count(resolved).expect("map count");
+        let count = crate::archive::resolved_count(resolved).expect("map count");
         let map = crate::archive::class_index_map(config, count, &ctx)
             .expect("class map")
             .expect("the Config-0 map reaches the ResolvedFeatures count");
@@ -151,7 +151,7 @@ fn class_map(streams: &[(String, Vec<u8>)]) -> std::collections::BTreeMap<u32, S
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(config, &arena, &DecodePolicy::desktop()).expect("context");
-    let count = crate::archive::resolved_features_count(resolved).expect("map count");
+    let count = crate::archive::resolved_count(resolved).expect("map count");
     crate::archive::class_index_map(config, count, &ctx)
         .expect("class map")
         .expect("the Config-0 map reaches the ResolvedFeatures count")

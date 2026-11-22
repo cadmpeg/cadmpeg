@@ -1,6 +1,6 @@
 <!-- Generated from docs/layouts/f3d.toml by
-     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;
-     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->
+     crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs. Do not edit by hand;
+     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`. -->
 
 # `f3d` record layouts
 
@@ -415,22 +415,22 @@ Parsed by:
 | 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
 | 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
 
-## `design_parameter_wide_discriminated_prefix`
+## `design_parameter_discriminated_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 35 B
+Spec §3.1 · layout: byte offsets · size: 31 B
 
-Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+Offsets are relative to the indexed header of a discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length. The wide discriminated form stores every field from the zero run on four bytes later.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The wide discriminated form stores fifteen zero bytes there instead of eleven |
-| 11 | 15 | `zero_run_15` | `bytes[15]` | little | spec | The wide discriminated form stores fifteen zero bytes there instead of eleven |
-| 26 | 4 | `family_discriminator` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
-| 30 | 1 | `reserved_30` | `u8` | little | spec | In the wide form, the nine bytes from offset 26 are · value `0` |
-| 31 | 4 | `comment_length` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The discriminated form extends the indexed header with eleven zero bytes |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The discriminated form extends the indexed header with eleven zero bytes |
+| 22 | 4 | `family_discriminator` | `u32` | little | spec | eleven zero bytes, a u32 family discriminator, a zero byte |
+| 26 | 1 | `reserved_26` | `u8` | little | spec | eleven zero bytes, a u32 family discriminator, a zero byte · value `0` |
+| 27 | 4 | `comment_length` | `u32` | little | spec | the u32 code-unit count of the LP-UTF16 parameter comment at offset 27 |
 
 ## `design_parameter_comment_discriminated_prefix`
 
@@ -8800,6 +8800,23 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `compact_reference_sketchless_profile_chain_record`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | A compact sketchless chain record stores fourteen zero bytes |
+| 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | A compact sketchless chain record stores fourteen zero bytes |
+| 31 | 11 | `selection_reference` | `bytes[11]` | little | spec | A compact sketchless chain record stores fourteen zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `compact_reference_profile_identity_record`
 
 Spec §3.1 · layout: byte offsets · size: 36 B
@@ -9108,6 +9125,42 @@ Parsed by:
 | 252 | 51 | `wrapper_reference` | `bytes[51]` | little | spec | The matrix form is 309 bytes |
 | 303 | 4 | `discriminator` | `u32` | little | spec | The matrix form is 309 bytes |
 | 307 | 2 | `zero_tail` | `bytes[2]` | little | spec | The matrix form is 309 bytes |
+
+## `circular_pattern_axis_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 220 B
+
+Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After the indexed header and ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After the indexed header and ten zero bytes |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | selection kind `8` at offset 21 · value `8` |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | a three-component origin in centimetres at offset 25 |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | a three-component displacement in centimetres at offset 49 |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | Sixteen zero bytes follow the displacement. |
+| 89 | 4 | `control` | `u32` | little | spec | u32 control `7` at offset 89 · value `7` |
+| 93 | 24 | `negative_ones` | `f64[3]` | little | spec | offsets 93, 101, and 109 store f64 `-1.0` |
+| 117 | 4 | `selection_count` | `u32` | little | spec | Offset 117 stores u32 `1` |
+| 121 | 11 | `selection_reference` | `bytes[11]` | little | spec | the marked selection-operand reference starts at offset 121, followed by two zero bytes |
+| 132 | 2 | `zero_run_2` | `bytes[2]` | little | spec | the marked selection-operand reference starts at offset 121, followed by two zero bytes |
+| 134 | 4 | `auxiliary_count` | `u32` | little | spec | Offset 134 stores u32 `1` |
+| 138 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | a marked reference starts at offset 138 |
+| 149 | 8 | `role` | `u64` | little | spec | Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes. |
+| 157 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes. |
+| 167 | 4 | `opaque_index` | `u32` | little | spec | Offset 167 stores a nonzero u32 |
+| 171 | 8 | `opaque_scalar` | `f64` | little | spec | offset 171 a finite f64 |
+| 179 | 4 | `opaque_index_repeat` | `u32` | little | spec | offset 179 the same u32 |
+| 183 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | Marked references to the direction record's index plus two and plus one start at offsets 183 and 197 |
+| 194 | 1 | `separator_flag` | `u8` | little | spec | `u8 1` and two zero bytes separate them |
+| 195 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | `u8 1` and two zero bytes separate them |
+| 197 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | Marked references to the direction record's index plus two and plus one start at offsets 183 and 197 |
+| 208 | 1 | `scope_separator` | `u8` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
+| 209 | 11 | `scope_reference` | `bytes[11]` | little | spec | One zero byte and the marked scope reference at offset 209 close the frame. |
 
 ## `rectangular_pattern_direction_record`
 

@@ -3193,6 +3193,24 @@ enum SessionPath {
     },
 }
 
+/// Store a bodyless design's records and attach its owners. The body history
+/// tails collected for the design are reported here, as the geometry path
+/// reports them through the consumed-history fill.
+fn store_bodyless_design(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    mut design: design_intent::DesignNative,
+    native: &mut F3dNative,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let consumers = std::mem::take(&mut design.history_body_consumers);
+    design.store(native);
+    crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
+    crate::design::owners::attach(scan, native, ir, losses)?;
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+}
+
 /// Phase-2 outcome as product projection and finalization see it.
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
@@ -3745,6 +3763,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
+                self.report.losses.extend(materials.losses);
                 self.report.losses.extend(face_losses);
                 self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -4015,17 +4034,11 @@ impl<'a> F3dDecodeSession<'a> {
                             design.configuration_roots_unbound,
                             &self.ir,
                         );
-                        design.store(&mut self.native);
-                        crate::design::decode::sketch_owners::attach(
+                        store_bodyless_design(
                             ctx,
                             scan,
-                            &self.native,
-                            &mut self.ir.model,
-                            &mut self.report.losses,
-                        )?;
-                        crate::design::owners::attach(
-                            scan,
-                            &self.native,
+                            *design,
+                            &mut self.native,
                             &mut self.ir,
                             &mut self.report.losses,
                         )?;
@@ -4224,7 +4237,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            crate::design_v11::project(
+                ctx,
+                &mut decoded.ir,
+                decoded.body.transfer.depth(),
+                &mut decoded.body.losses,
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,

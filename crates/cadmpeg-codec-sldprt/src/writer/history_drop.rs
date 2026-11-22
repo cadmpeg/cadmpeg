@@ -10,12 +10,13 @@ use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{parameters::ParameterValue, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::history::literals::{format_parameter_value, parse_parameter_literal};
+use crate::history::parameters::equivalent_parameter_values;
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
@@ -215,6 +216,278 @@ impl DisplayedValues {
              does not write: {}",
                 written.len(),
                 written.join(", ")
+            ))
+        })
+    }
+}
+
+/// Rewrite each feature of another format into what its Keywords record
+/// holds (§3.4):
+/// - a fillet's tangency weight, for which the record has no field, is not
+///   written;
+/// - each owned parameter that holds a construction value the record reads
+///   from a named dimension (`sldprt.md`, Keywords history) is written under
+///   that name, when each such value of the feature has its own single owned
+///   holder and no owned parameter has one of the names the record reads the
+///   values from.
+///
+/// Runs after [`equations_as_displayed_values`], so no expression names a
+/// renamed parameter. The renames come back as [`Renamed`], named once the
+/// write knows which parameters it keeps.
+pub(super) fn foreign_records_as_keywords(ir: &mut CadIr) -> Renamed {
+    let mut roles = Vec::new();
+    for feature in &mut ir.model.features {
+        let id = feature.id.clone();
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition {
+                for group in groups.iter_mut() {
+                    group.tangency_weight = None;
+                }
+            }
+            let dimensions = construction_dimensions(definition);
+            if !dimensions.is_empty() {
+                roles.push((id, dimensions));
+            }
+        });
+    }
+    let mut renamed = Renamed::default();
+    for (feature, dimensions) in roles {
+        let mut owned = ir
+            .model
+            .parameters
+            .iter_mut()
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature))
+            .collect::<Vec<_>>();
+        if owned.iter().any(|parameter| {
+            dimensions
+                .iter()
+                .any(|dimension| dimension.read_from(parameter.name.as_str()))
+        }) {
+            continue;
+        }
+        let holders = dimensions
+            .iter()
+            .map(|dimension| {
+                let mut holders = owned.iter().enumerate().filter(|(_, parameter)| {
+                    parameter
+                        .value
+                        .as_ref()
+                        .is_some_and(|value| equivalent_parameter_values(value, &dimension.value))
+                });
+                match (holders.next(), holders.next()) {
+                    (Some((index, _)), None) => Some(index),
+                    _ => None,
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(holders) = holders else {
+            continue;
+        };
+        if holders.iter().collect::<HashSet<_>>().len() != holders.len() {
+            continue;
+        }
+        for (index, dimension) in holders.into_iter().zip(&dimensions) {
+            let parameter = &mut *owned[index];
+            renamed.0.push((
+                parameter.id.as_str().to_owned(),
+                format!(
+                    "{} ({} as {})",
+                    parameter.id.as_str(),
+                    parameter.name,
+                    dimension.name
+                ),
+            ));
+            parameter.name = dimension.name.into();
+        }
+    }
+    renamed
+}
+
+/// A construction value of a feature and the Keywords dimension its record
+/// reads it from: `name` first, then the other `aliases`.
+struct ConstructionDimension {
+    name: &'static str,
+    aliases: &'static [&'static str],
+    value: ParameterValue,
+}
+
+impl ConstructionDimension {
+    fn read_from(&self, name: &str) -> bool {
+        self.name == name || self.aliases.contains(&name)
+    }
+}
+
+/// The construction values a Keywords record of `definition` reads from a
+/// named dimension, with the name a native record holds where the decoder
+/// reads it (`D1`, `D2`, `D3`, `D4`). The decoder reads an extrude taper as
+/// `Draft`, a circular pattern as `Angle` and `Count`, and a face rotation as
+/// `Angle`, where native records hold `D3`, `D2` and `D1`, and `D1`. A
+/// chamfer reads its values in dimension order and keeps its names.
+fn construction_dimensions(definition: &FeatureDefinition) -> Vec<ConstructionDimension> {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::{
+        direct_edit::FaceMotion,
+        extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
+    };
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    fn length(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: Length,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Length(value),
+        }
+    }
+    fn angle(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: Angle,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Angle(value),
+        }
+    }
+    fn count(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        value: u32,
+    ) -> ConstructionDimension {
+        ConstructionDimension {
+            name,
+            aliases,
+            value: ParameterValue::Integer(i64::from(value)),
+        }
+    }
+    fn blind_depth(side: &ExtrudeSide) -> Option<Length> {
+        match side.termination {
+            LinearTermination::Blind { length } => Some(length.into()),
+            _ => None,
+        }
+    }
+
+    let FeatureDefinition::Operation(operation) = definition else {
+        return Vec::new();
+    };
+    match operation {
+        FeatureOperation::Fillet { groups } => match &**groups {
+            [group] => match group.radius {
+                RadiusSpec::Constant { radius } => vec![length("D1", &["Radius"], radius.into())],
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        },
+        FeatureOperation::Shell {
+            thickness: Some(thickness),
+            ..
+        } => vec![length("D1", &["Thickness"], (*thickness).into())],
+        FeatureOperation::Extrude { extent, .. } => {
+            let (depths, draft) = match extent {
+                ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
+                    (blind_depth(side).map(|depth| vec![depth]), side.draft)
+                }
+                ExtrudeExtent::TwoSided { first, second } => (
+                    blind_depth(first)
+                        .zip(blind_depth(second))
+                        .map(|(first, second)| vec![first, second]),
+                    first.draft,
+                ),
+            };
+            let names: [(&'static str, &'static [&'static str]); 2] =
+                [("D1", &["Depth"]), ("D2", &["Depth2"])];
+            let mut dimensions = depths
+                .unwrap_or_default()
+                .into_iter()
+                .zip(names)
+                .map(|(depth, (name, aliases))| length(name, aliases, depth))
+                .collect::<Vec<_>>();
+            if let Some(draft) = draft {
+                dimensions.push(angle("Draft", &[], draft.into()));
+            }
+            dimensions
+        }
+        FeatureOperation::Draft {
+            angle: Some(value), ..
+        } => vec![angle("D1", &["Angle"], (*value).into())],
+        FeatureOperation::MoveFace { motion, .. } => match motion {
+            FaceMotion::Offset { distance } | FaceMotion::Translate { distance, .. } => {
+                vec![length("D1", &["Distance"], *distance)]
+            }
+            FaceMotion::Rotate { angle: value, .. } => vec![angle("Angle", &[], *value)],
+            FaceMotion::Transform { .. } => Vec::new(),
+        },
+        FeatureOperation::Pattern { pattern, .. } => match pattern.definition() {
+            PatternTransform::Circular {
+                angle: value,
+                count: instances,
+                ..
+            } => vec![
+                angle("Angle", &[], (*value).into()),
+                count("Count", &[], *instances),
+            ],
+            PatternTransform::Linear {
+                spacing,
+                count: instances,
+                second,
+                ..
+            } => {
+                let mut dimensions = vec![
+                    count("D1", &["Count"], *instances),
+                    length("D3", &["Spacing"], (*spacing).into()),
+                ];
+                if let Some(second) = second {
+                    dimensions.push(count("D2", &[], second.count));
+                    dimensions.push(length("D4", &[], second.spacing.into()));
+                }
+                dimensions
+            }
+            PatternTransform::CurveDriven {
+                spacing,
+                count: instances,
+                ..
+            } => vec![
+                count("D1", &["Count"], *instances),
+                length("D3", &["Spacing"], (*spacing).into()),
+            ],
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// The parameters [`foreign_records_as_keywords`] renamed: each id with the
+/// text that names it.
+#[derive(Default)]
+pub(super) struct Renamed(Vec<(String, String)>);
+
+impl Renamed {
+    /// The note naming the renamed parameters that `ir` still holds. A
+    /// parameter a later drop removed is named by that drop.
+    pub(super) fn note(self, ir: &CadIr) -> Option<LossNote> {
+        let kept: BTreeSet<&str> = ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str())
+            .collect();
+        let renamed = self
+            .0
+            .into_iter()
+            .filter(|(id, _)| kept.contains(id.as_str()))
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>();
+        (!renamed.is_empty()).then(|| {
+            SldprtLossCode::WriterParametersRenamed.note(format!(
+                "the SLDPRT history writer writes {} parameter(s) under the dimension name \
+                 from which its feature's SLDPRT record reads a construction value: {}",
+                renamed.len(),
+                renamed.join(", ")
             ))
         })
     }
