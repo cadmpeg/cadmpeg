@@ -30,7 +30,7 @@ pub(super) fn resolve(
             && selection.compact_references()
     });
     let Some((sketch, curves)) =
-        profile_curve_selection_candidates(group, stream, resolution, compact)
+        profile_curve_selection_candidates(group, stream, resolution, compact, false)
     else {
         return Ok(None);
     };
@@ -41,7 +41,197 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    certified_regions_bounded_by(source, &curves, scoped, states, sweep)
+    let candidate = certified_regions_bounded_by(source, &curves, scoped, states, sweep)?;
+    if candidate.is_some() {
+        return Ok(candidate);
+    }
+    let mut selections = resolution.profile_curves.iter().filter(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+    });
+    let Some(selection) = selections.next() else {
+        return Ok(None);
+    };
+    if selections.next().is_some() {
+        return Ok(None);
+    }
+    let [stored] = selection.groups.as_slice() else {
+        return Ok(None);
+    };
+    let [ring] = stored.region.as_slice() else {
+        return Ok(None);
+    };
+    if !ring.outer
+        || !stored.further.is_empty()
+        || ring.entries.iter().any(|entry| {
+            let [flag, ordinal, count] = entry.entry_fields;
+            flag > 1 || ordinal == 0 || ordinal > count
+        })
+    {
+        return Ok(None);
+    }
+    let named: Vec<SketchEntityId> = curves.iter().flatten().cloned().collect();
+    Ok(
+        cap_regions::joined::candidate(source, scoped, states, sweep, &named)?
+            .map(|profile| (profile, Vec::new())),
+    )
+}
+
+pub(super) fn resolve_stale(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+    states: (i64, i64),
+    sweep: cap_regions::compact::Sweep<'_>,
+) -> Result<Option<(PlanarProfileRef, Vec<F3dLossCode>)>, CodecError> {
+    let Some(stream) = native_stream(&group.id) else {
+        return Ok(None);
+    };
+    let [member] = group.members() else {
+        return Ok(None);
+    };
+    let mut selections = resolution.profile_curves.iter().filter(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+    });
+    let Some(selection) = selections.next() else {
+        return Ok(None);
+    };
+    if selections.next().is_some()
+        || selection.record_index != member.value
+        || selection.compact_references()
+    {
+        return Ok(None);
+    }
+    let [stored] = selection.groups.as_slice() else {
+        return Ok(None);
+    };
+    if !stored.further.is_empty() {
+        return Ok(None);
+    }
+    let Some((sketch, entries)) =
+        super::profile_curve_selection_candidates(group, stream, resolution, false, true)
+    else {
+        return Ok(None);
+    };
+    if !entries.iter().any(Vec::is_empty) || entries.iter().any(|ids| ids.len() > 1) {
+        return Ok(None);
+    }
+    let Some(sketch) = resolution
+        .sketches
+        .iter()
+        .find(|source| source.id == sketch)
+    else {
+        return Ok(None);
+    };
+    let mut rings = Vec::new();
+    let mut entries = entries.into_iter();
+    let mut named = Vec::new();
+    for ring in &stored.region {
+        let mut members = Vec::new();
+        for entry in &ring.entries {
+            let [direction @ (0 | 1), _, _] = entry.entry_fields else {
+                return Ok(None);
+            };
+            let Some(ids) = entries.next() else {
+                return Ok(None);
+            };
+            if let Some(entity) = ids.into_iter().next() {
+                if named.contains(&entity) {
+                    return Ok(None);
+                }
+                named.push(entity.clone());
+                members.push(cadmpeg_ir::sketches::SketchEntityUse {
+                    entity,
+                    reversed: direction == 1,
+                });
+            }
+        }
+        if members.is_empty() {
+            return Ok(None);
+        }
+        rings.push(members);
+    }
+    if entries.next().is_some() {
+        return Ok(None);
+    }
+    let entities = resolution
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && named.contains(entity.id()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let work = crate::design::geometry::ProfileGeometryWork::new();
+    let Some(initial) = crate::design::geometry::arrangement_regions_matching_member_rings(
+        sketch,
+        &entities,
+        &rings,
+        &std::collections::HashSet::new(),
+        scoped.linear_tolerance,
+        &work,
+        scoped.ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    if initial.regions.len() != 1
+        || !initial.identity_unique
+        || initial.coincident
+        || initial.island_absence
+        || work.assumed_flags().into_iter().any(|assumed| assumed)
+    {
+        return Ok(None);
+    }
+    let SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    } = &initial.regions[0]
+    else {
+        return Ok(None);
+    };
+    for (ring, members) in stored.region.iter().zip(&rings) {
+        let boundaries = if ring.outer {
+            std::slice::from_ref(outer_boundary)
+        } else {
+            hole_boundaries.as_slice()
+        };
+        if boundaries
+            .iter()
+            .filter(|boundary| {
+                boundary.len() == members.len()
+                    && members.iter().all(|member| {
+                        boundary
+                            .iter()
+                            .filter(|use_| use_.entity == member.entity)
+                            .count()
+                            == 1
+                    })
+            })
+            .count()
+            != 1
+        {
+            return Ok(None);
+        }
+    }
+    let curves = named
+        .into_iter()
+        .map(|entity| vec![entity])
+        .collect::<Vec<_>>();
+    let Some((candidate, mut losses)) =
+        certified_regions_bounded_by(sketch, &curves, scoped, states, sweep)?
+    else {
+        return Ok(None);
+    };
+    let PlanarProfileRef::SketchRegions { regions, .. } = &candidate else {
+        return Ok(None);
+    };
+    if !super::compact_members::boundaries_agree(&initial.regions, regions) {
+        return Ok(None);
+    }
+    losses.push(F3dLossCode::FeatureProfileRegionIdentitiesStale);
+    Ok(Some((candidate, losses)))
 }
 
 /// The exact reading requires every curve to bound a selected region.

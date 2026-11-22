@@ -255,7 +255,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    let losses = crate::history::bind_feature_body_selections(
+    let losses = crate::history::tests::bind_feature_body_selections(
         std::slice::from_mut(&mut feature),
         &scale_inputs,
     );
@@ -318,7 +318,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     move_feature.native_ref = Some(move_scope.id.clone());
-    let losses = crate::history::bind_feature_body_selections(
+    let losses = crate::history::tests::bind_feature_body_selections(
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
     );
@@ -412,7 +412,10 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::selections::Bo
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
     };
-    crate::history::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    crate::history::tests::bind_feature_body_selections(
+        std::slice::from_mut(&mut feature),
+        &inputs,
+    );
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => bodies.clone(),
         definition => panic!("removal definition: {definition:?}"),
@@ -620,7 +623,10 @@ fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body
             ),
             native_ref: Some(scope.id.clone()),
         };
-        crate::history::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+        crate::history::tests::bind_feature_body_selections(
+            std::slice::from_mut(&mut feature),
+            &inputs,
+        );
         let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
             feature.evaluation.definition()
         else {
