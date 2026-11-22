@@ -498,3 +498,49 @@ stores:
 The mirror plane is a `ReferencePlaneObject`, the plane about which the seed
 is mirrored. Its object stores three `f64` at offset 13, a point on the plane,
 and three `f64` at offset 37, the unit plane normal. The point is in metres.
+
+## 9. Assembly occurrences
+
+### 9.1 Occurrence list
+
+The cluster-0 object of class `References Collection Object` lists the
+occurrences of an assembly document. The `u32` at object offset 16 is the
+occurrence count `n`. `ceil(n / 8)` bytes follow it, then `n` `u32`
+identifiers of `CLSID_JAsmReference` objects, one per occurrence.
+
+### 9.2 Occurrence object
+
+A `CLSID_JAsmReference` object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |
+| 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |
+| 125 | nine `f64`: the rotation `R`, row-major |
+| 197 | three `f64`: the translation `t`, in metres |
+| 221 | `f64` `1` |
+
+Row `i` of `R` is the direction of the referenced document's axis `i` in the
+assembly. A point `p` of the referenced document, as a row vector, is at
+`p` `R` + `t` in the assembly. The state word is `2` for an occurrence that
+is not suppressed. Occurrences of one document name one `CLSID_JSite`
+object.
+
+### 9.3 Referenced document
+
+A `CLSID_JSite` object with identifier `N` has its link data in the stream
+`JSite<N>/\x01Ole`, where `<N>` is `N` in decimal. The stream has a 12-byte
+header, then a file moniker at offset 12:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` |
+| 16 | `u16` up-level count, `0` |
+| 18 | `u32` byte count `n` |
+| 22 | `n` bytes of ASCII drive-absolute path, ending with one zero byte |
+| 22 + `n` | `u16` `0xFFFF` |
+| 24 + `n` | `u16` `0xDEAD` |
+
+A second file moniker of the same layout follows in the stream. Its up-level
+count is `1` and its path is relative to the folder of the assembly
+document.
