@@ -57,21 +57,27 @@ impl StatedParameter {
 }
 
 /// The `Config-N` class map a `ResolvedFeatures` lane's class tokens continue
-/// (`docs/formats/sldprt.md` §2.2): the lane's own declarations take the
-/// indices from `end` on, and a token below `end` names the class `Config-N`
-/// holds at that index.
+/// (`docs/formats/sldprt.md` §2.2). The lane's own declarations take the
+/// indices from the end of that map on, and a token below it names the class
+/// `Config-N` holds at that index.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConfigurationMap {
-    end: u32,
-    /// The parameter class at each index of the `Config-N` map that holds
-    /// one; `None` when no walk of `Config-N` reconciles with `end`.
-    parameters: Option<BTreeMap<u16, ArchiveParameterClass>>,
+pub(crate) enum ConfigurationMap {
+    /// A stream that states the map count `end`. `parameters` holds the
+    /// parameter class at each index of the `Config-N` map that holds one,
+    /// when a walk of `Config-N` reconciles with `end`.
+    Counted {
+        end: u32,
+        parameters: Option<BTreeMap<u16, ArchiveParameterClass>>,
+    },
+    /// A compound-file stream, which states no count: the indices at which
+    /// a walk of `Config-N` places a class.
+    Unstated { classes: BTreeSet<u32> },
 }
 
 impl ConfigurationMap {
-    /// The map that ends at `end`, with the `Config-N` class at each index
-    /// below it from `classes`, a walk that reconciles with `end`.
-    pub(crate) fn new(end: u32, classes: Option<&BTreeMap<u32, String>>) -> Self {
+    /// The map of a stream that states the count `end`, with the `Config-N`
+    /// class at each index from `classes`, a walk that reconciles with `end`.
+    pub(crate) fn counted(end: u32, classes: Option<&BTreeMap<u32, String>>) -> Self {
         let parameters = classes.map(|classes| {
             classes
                 .iter()
@@ -84,7 +90,25 @@ impl ConfigurationMap {
                 })
                 .collect()
         });
-        Self { end, parameters }
+        Self::Counted { end, parameters }
+    }
+
+    /// Whether `index` names a class `Config-N` holds rather than one the
+    /// lane declares.
+    fn holds(&self, index: u16) -> bool {
+        match self {
+            Self::Counted { end, .. } => u32::from(index) < *end,
+            Self::Unstated { classes } => classes.contains(&u32::from(index)),
+        }
+    }
+
+    /// The parameter class at each index of the `Config-N` map, when a walk
+    /// reconciles with the stated count.
+    fn parameters(&self) -> Option<&BTreeMap<u16, ArchiveParameterClass>> {
+        match self {
+            Self::Counted { parameters, .. } => parameters.as_ref(),
+            Self::Unstated { .. } => None,
+        }
     }
 }
 
@@ -209,10 +233,11 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
 }
 
 /// The parameter class each class-token index of the lane's parameter slots
-/// names. A token below the end of the `Config-N` map the lane continues
-/// (`configuration`, else the stream's opening map count `stated`) names the
-/// class `Config-N` holds at that index, read from `configuration` when its
-/// walk reconciles; the lane's declarations name the other tokens (see
+/// names. A token of a class `Config-N` holds (see [`ConfigurationMap`];
+/// without one, a token below the stream's opening map count `stated`)
+/// names the parameter class `Config-N` holds at that index, read from
+/// `configuration` when its walk reconciles with the stated count; the
+/// lane's declarations name the other tokens (see
 /// [`declared_token_classes`]).
 fn token_classes(
     configuration: Option<&ConfigurationMap>,
@@ -220,20 +245,17 @@ fn token_classes(
     classes: &[FeatureInputClass],
     slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
 ) -> HashMap<u16, ArchiveParameterClass> {
-    let end = configuration
-        .map(|configuration| configuration.end)
-        .or(stated);
+    let held = |index: u16| match configuration {
+        Some(configuration) => configuration.holds(index),
+        None => stated.is_some_and(|count| u32::from(index) < count),
+    };
     let own = slots
         .iter()
         .copied()
-        .filter(|&(_, _, slot)| {
-            matches!(slot, Slot::Token(index) if end.is_none_or(|end| u32::from(index) >= end))
-        })
+        .filter(|&(_, _, slot)| matches!(slot, Slot::Token(index) if !held(index)))
         .collect::<Vec<_>>();
     let mut named = declared_token_classes(classes, &own);
-    if let Some(parameters) =
-        configuration.and_then(|configuration| configuration.parameters.as_ref())
-    {
+    if let Some(parameters) = configuration.and_then(ConfigurationMap::parameters) {
         named.extend(parameters.iter().map(|(&index, &class)| (index, class)));
     }
     named

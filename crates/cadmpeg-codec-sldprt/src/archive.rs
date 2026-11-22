@@ -249,18 +249,24 @@ pub(crate) fn class_index_map(
     ))
 }
 
-/// The map count one configuration object stream ends at, from a walk no
-/// stated count bounds: `None` when the walk's map is inconsistent. No
-/// count reconciles the walk, so the count can be wrong.
-pub(crate) fn unstated_map_count(
+/// The indices at which a walk of one configuration object stream that no
+/// stated count bounds places a class: `None` when the walk's map is
+/// inconsistent. No count reconciles the walk, so an index can be wrong.
+pub(crate) fn unreconciled_class_indices(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
-) -> Result<Option<u32>, CodecError> {
+) -> Result<Option<std::collections::BTreeSet<u32>>, CodecError> {
     let walker = walked(payload, None, ctx)?;
     if !walker.consistent()? {
         return Ok(None);
     }
-    Ok(u32::try_from(walker.next).ok())
+    Ok(Some(
+        walker
+            .known
+            .keys()
+            .filter_map(|&index| u32::try_from(index).ok())
+            .collect(),
+    ))
 }
 
 /// Walks `payload` from its first map index. When the name tags do not give

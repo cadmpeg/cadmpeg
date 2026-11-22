@@ -491,3 +491,27 @@ fn a_compound_lane_takes_no_class_from_its_declarations_for_a_config_n_token() {
         ]
     );
 }
+
+#[test]
+fn a_compound_lane_token_at_no_config_n_class_takes_the_lane_class() {
+    // The walk of `Config-0` places classes at 2, 4 and 7 only. Token 8
+    // lies below the walk's end, 9, and names the lane's length class.
+    let mut stream = Stream::compound();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .token(6)
+        .zero_word()
+        .token(8)
+        .scalar("D2", &metres(0.02), 0, 8);
+    let (lane, configuration) = continued_lane(&config_object_stream(), &stream);
+    assert_eq!(
+        stated_in(&lane, configuration.as_ref()),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.01))),
+            ("D2".into(), Some(StatedParameter::Length(0.02))),
+        ]
+    );
+}

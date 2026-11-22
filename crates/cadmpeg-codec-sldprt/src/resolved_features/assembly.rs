@@ -89,7 +89,7 @@ pub(crate) fn lanes(
 /// `moPMarkRecord_c` records with the features that hold them, and the
 /// `Config-N` class map the lane continues: the map that reconciles with the
 /// stream's map count, else the count alone, or, for a stream that states
-/// none, the count a walk of `Config-N` ends at.
+/// none, the class indices of a walk of `Config-N`.
 fn type_scalars_from_archive(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -119,13 +119,13 @@ fn type_scalars_from_archive(
     let (map, configuration) = match crate::archive::resolved_count(resolved) {
         Some(count) => {
             let map = crate::archive::class_index_map(config, count, ctx)?;
-            let configuration = ConfigurationMap::new(count, map.as_ref());
+            let configuration = ConfigurationMap::counted(count, map.as_ref());
             (map, Some(configuration))
         }
         None if crate::archive::continues_unstated_count(resolved) => (
             None,
-            crate::archive::unstated_map_count(config, ctx)?
-                .map(|end| ConfigurationMap::new(end, None)),
+            crate::archive::unreconciled_class_indices(config, ctx)?
+                .map(|classes| ConfigurationMap::Unstated { classes }),
         ),
         None => (None, None),
     };
