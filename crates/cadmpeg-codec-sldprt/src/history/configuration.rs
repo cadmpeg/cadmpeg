@@ -887,6 +887,17 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::resolved_features::sweeps::bind(
+                &mut features,
+                histories,
+                scoped_lanes,
+                crate::resolved_features::sweeps::Geometry {
+                    sketches: &ir.model.sketches,
+                    entities: &mut ir.model.sketch_entities,
+                    spatial_entities: &mut ir.model.spatial_sketch_entities,
+                },
+                &mut losses,
+            );
             crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]

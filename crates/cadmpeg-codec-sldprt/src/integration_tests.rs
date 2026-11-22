@@ -6,6 +6,7 @@ mod mesh_bodies;
 mod profile_data;
 mod root_definition;
 mod scalar_relation_values;
+mod sweep_path_section;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

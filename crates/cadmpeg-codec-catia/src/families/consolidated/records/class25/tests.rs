@@ -204,7 +204,7 @@ fn class25_declines_wrong_count_bounds_fit_and_affine_equations() {
 #[test]
 fn class25_named_sampled_witness_retains_two_arrays() {
     let frame = crate::test_support::test_class25::sampled_stream();
-    let map = parse(&frame[5..]).expect("hand-parsed clothes-basket map");
+    let map = parse(&frame[5..]).expect("hand-parsed sampled map");
     let Class25SourceRelation::Sampled { samples, .. } = map.source else {
         panic!("sampled map")
     };
