@@ -144,6 +144,46 @@ pub fn findings(
         .map_err(CodecError::ResourceLimit)
 }
 
+/// Both orientation findings ([`findings`]) and declared-measure findings
+/// ([`crate::declared_findings`]) in a single measurement pass over `ir`.
+///
+/// Bodies referenced by `ir.model.declared_measures` are measured once with
+/// full body-row quantities and reused for orientation checks instead of
+/// running two separate passes.
+pub fn check_findings(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    options: MeasureOptions,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    if ir.model.declared_measures.is_empty() {
+        return findings(ctx, ir, options);
+    }
+    let resolved = crate::declared::resolve_declared(ir);
+    let input = MeasureInput {
+        ir,
+        fidelity: None,
+        geometry_transferred: true,
+    };
+    let measurer = Measurer::new(input, options);
+    if resolved.scope.is_empty() {
+        let mut all = measurer
+            .orientation_findings(ctx)
+            .map_err(CodecError::ResourceLimit)?;
+        let empty = std::collections::BTreeMap::new();
+        all.extend(crate::declared::findings_from_rows(ir, resolved, &empty));
+        return Ok(all);
+    }
+    let (mut all, body_rows) = measurer
+        .combined_findings_and_rows(ctx, &resolved.scope)
+        .map_err(CodecError::ResourceLimit)?;
+    let rows: std::collections::BTreeMap<&str, &BodyMeasures> = body_rows
+        .iter()
+        .map(|row| (row.body().as_str(), row))
+        .collect();
+    all.extend(crate::declared::findings_from_rows(ir, resolved, &rows));
+    Ok(all)
+}
+
 /// The box of each body of `ir`, in body arena order, in millimetres with
 /// the body transform applied.
 ///
@@ -388,7 +428,11 @@ impl<'ir> Measurer<'ir> {
                 work: &slice,
             };
             let input = FaceInput {
-                work: Work::Row,
+                work: if face_rows.contains(face_id) {
+                    Work::Row
+                } else {
+                    Work::Body
+                },
                 owners: &self.owners,
                 edges: &edges,
                 fidelity: self.input.fidelity,

@@ -580,10 +580,12 @@ mod tests {
     use cadmpeg_ir::features::operation_settings::FuzzyTolerance;
     use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-        SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1278,7 +1280,7 @@ mod tests {
                     None,
                     Vector3::new(0.0, 0.0, 1.0),
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .expect("valid extrusion fixture"),
             ),
@@ -1316,7 +1318,7 @@ mod tests {
                         None,
                         Vector3::new(0.0, 0.0, 1.0),
                         None,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .expect("valid extrusion fixture"),
                 ),

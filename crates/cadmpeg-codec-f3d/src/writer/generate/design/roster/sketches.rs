@@ -12,7 +12,9 @@ use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
 use super::super::frames::DesignRecords;
-use super::super::sketch::{CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind};
+use super::super::sketch::{
+    CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, Support,
+};
 use super::super::types;
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
@@ -33,11 +35,11 @@ pub(super) const OWNER_COLLECTION: u32 = 199;
 /// circular holes" and "Sketch links of the start cap").
 pub(in crate::writer::generate::design) const CURVE_SECONDARY_IDENTITY: u64 = 0;
 /// The first origin plane record, `XY`; `XZ` and `YZ` follow.
-const ORIGIN_PLANES: u32 = 29;
+pub(super) const ORIGIN_PLANES: u32 = 29;
 /// The family name of a `Sketch` scope.
 const FAMILY: &str = "Sketch";
-/// The zero GUID of a `Sketch` scope frame.
-const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
+/// The zero GUID of a scope frame.
+pub(super) const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 /// The `EntityGenesis` value of a container, a point and a line.
 const GENESIS: u64 = 2;
 /// The `EntityGenesis` value of a circular curve.
@@ -47,7 +49,7 @@ const SKETCH_WORD: u32 = 7;
 /// The flags and state of the origin point.
 const ORIGIN_FLAGS: [u8; 8] = [0, 0, 0, 1, 1, 1, 0, 0];
 /// The flag bytes of the placement tracking flag.
-const TRACKING_FLAGS: [u8; 3] = [1, 1, 0];
+pub(super) const TRACKING_FLAGS: [u8; 3] = [1, 1, 0];
 /// The relation masks of f3d.md §3.1, "Sketch relations".
 const COINCIDENT: u64 = 0x1;
 const COLLINEAR: u64 = 0x2;
@@ -91,6 +93,8 @@ pub(in crate::writer::generate::design) struct SketchRecords {
     second_identity: u32,
     /// Each dimension's frame, parameter, owner and companion.
     dimensions: Vec<[u32; 4]>,
+    /// The scope of the `WorkPlane` item whose plane the sketch lies on.
+    pub(in crate::writer::generate::design) plane_scope: Option<u32>,
 }
 
 impl SketchRecords {
@@ -117,12 +121,14 @@ pub(in crate::writer::generate::design) struct SketchRoster {
 }
 
 impl SketchRoster {
-    /// The records of `planned` from record `next` in creation order, with
-    /// their type rows pushed to `rows`, after the items allocated before.
-    /// Returns the next free index.
+    /// The records of `planned`, which lies on the plane of the `WorkPlane`
+    /// scope `plane_scope` or on an origin plane, from record `next` in
+    /// creation order, with their type rows pushed to `rows`, after the items
+    /// allocated before. Returns the next free index.
     pub(super) fn allocate(
         &mut self,
         planned: &PlannedSketch<'_>,
+        plane_scope: Option<u32>,
         mut next: u32,
         rows: &mut Vec<(u32, TypeRow)>,
     ) -> Result<u32, CodecError> {
@@ -193,6 +199,7 @@ impl SketchRoster {
             target: take(types::TRANSFORM_TARGET)?,
             second_identity: take(types::TRACKED_IDENTITY)?,
             dimensions: Vec::new(),
+            plane_scope,
         };
         for dimension in &planned.dimensions {
             records.dimensions.push([
@@ -315,28 +322,28 @@ const fn relation_row(kind: RelationKind) -> TypeRow {
 }
 
 /// The class tags of the records of a `Sketch` item.
-struct Classes {
-    object: crate::records::references::DesignClassTag,
+pub(super) struct Classes {
+    pub(super) object: crate::records::references::DesignClassTag,
     scope: crate::records::references::DesignClassTag,
     container: crate::records::references::DesignClassTag,
     member: crate::records::references::DesignClassTag,
     frame: crate::records::references::DesignClassTag,
     point: crate::records::references::DesignClassTag,
     companion: crate::records::references::DesignClassTag,
-    stamps: crate::records::references::DesignClassTag,
-    item_companion: crate::records::references::DesignClassTag,
+    pub(super) stamps: crate::records::references::DesignClassTag,
+    pub(super) item_companion: crate::records::references::DesignClassTag,
     tracked: crate::records::references::DesignClassTag,
     path: crate::records::references::DesignClassTag,
     identity: crate::records::references::DesignClassTag,
-    placement: crate::records::references::DesignClassTag,
-    tracking_flag: crate::records::references::DesignClassTag,
+    pub(super) placement: crate::records::references::DesignClassTag,
+    pub(super) tracking_flag: crate::records::references::DesignClassTag,
     transform: crate::records::references::DesignClassTag,
     target: crate::records::references::DesignClassTag,
     root: crate::records::references::DesignClassTag,
 }
 
 impl Classes {
-    fn of(ctx: &Context<'_>) -> Result<Self, CodecError> {
+    pub(super) fn of(ctx: &Context<'_>) -> Result<Self, CodecError> {
         let class = |row: TypeRow| ctx.class(row.guid);
         Ok(Self {
             object: class(types::DATA_MODEL_OBJECT)?,
@@ -376,7 +383,7 @@ impl Item<'_> {
     /// Returns the next free identity.
     fn write(&self, out: &mut DesignRecords, mut identity: u64) -> Result<u64, CodecError> {
         self.container(out)?;
-        self.frame(out);
+        self.frame(out)?;
         let mut next = || {
             let value = identity;
             identity += 1;
@@ -504,10 +511,10 @@ impl Item<'_> {
 
     /// The sketch frame record: the identity marker on `XY`, else the
     /// placement's matrix.
-    fn frame(&self, out: &mut DesignRecords) {
+    fn frame(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         out.record(&self.classes.frame, self.records.frame)
             .zeros(10);
-        match matrix(self.planned.plane) {
+        match self.matrix()? {
             None => {
                 out.byte(1).byte(0);
             }
@@ -520,6 +527,55 @@ impl Item<'_> {
             }
         }
         out.reference(AGGREGATE);
+        Ok(())
+    }
+
+    /// The construction plane the sketch lies on.
+    fn plane(
+        &self,
+        index: usize,
+    ) -> Result<
+        (
+            &super::super::sketch::PlannedPlane<'_>,
+            &super::planes::PlaneRecords,
+        ),
+        CodecError,
+    > {
+        self.ctx
+            .planes
+            .get(index)
+            .zip(self.ctx.roster.planes.get(index))
+            .ok_or_else(|| CodecError::malformed(format_args!("construction plane {index}")))
+    }
+
+    /// The row-major matrix the placement and the frame record store: the
+    /// fixed matrix of an origin plane, `None` for the identity of `XY`, or
+    /// the frame of a construction plane.
+    fn matrix(&self) -> Result<Option<[f64; 16]>, CodecError> {
+        Ok(match self.planned.support {
+            Support::Origin(plane) => matrix(plane),
+            Support::Construction(index) => Some(self.plane(index)?.0.matrix()),
+        })
+    }
+
+    /// The Design entity ID of the plane the sketch lies on.
+    fn entity(&self) -> Result<u64, CodecError> {
+        Ok(match self.planned.support {
+            Support::Origin(plane) => u64::from(ORIGIN_PLANES + plane.ordinal()),
+            Support::Construction(index) => u64::from(self.plane(index)?.1.entity),
+        })
+    }
+
+    /// The origin and the two axes the placement transform stores.
+    fn transform(&self) -> Result<[f64; 9], CodecError> {
+        Ok(match self.planned.support {
+            Support::Origin(plane) => transform(plane),
+            Support::Construction(index) => {
+                let plane = self.plane(index)?.0;
+                let ([u, v, _], o) = (plane.axes(), plane.origin());
+                [o[0], o[1], o[2], u[0], u[1], u[2], v[0], v[1], v[2]]
+            }
+        })
     }
 
     /// A point in the `EntityGenesis` form with its companion, which lists
@@ -689,28 +745,18 @@ impl Item<'_> {
         for owner in &owners {
             out.reference(*owner);
         }
-        out.u32(u32::MAX)
-            .lp_utf16(FAMILY)?
-            .u32(self.ordinal)
-            .u32(0)
-            .u32(0)
-            .u32(0)
-            .zeros(3)
-            .reference(records.tracked)
-            .byte(0)
-            .u32(u32::MAX)
-            .u32(EPOCH)
-            .f64(DURATION)
-            .u32(EPOCH)
-            .reference(records.scope_companion)
-            .byte(1)
-            .byte(0)
-            .byte(0)
-            .reference(records.scope_stamps)
-            .zeros(2)
-            .header(&classes.object, records.scope)
-            .zeros(8)
-            .reference(OWNER_COLLECTION);
+        out.u32(u32::MAX).lp_utf16(FAMILY)?;
+        item_tail(
+            out,
+            classes,
+            &ItemTail {
+                scope: records.scope,
+                ordinal: self.ordinal,
+                tracked: records.tracked,
+                companion: records.scope_companion,
+                stamps: records.scope_stamps,
+            },
+        );
         let mut entries = vec![
             (COMPONENT, self.ctx.values.stamps.component),
             (records.scope, stamp),
@@ -726,63 +772,36 @@ impl Item<'_> {
             (records.scope, stamp),
         )?;
         item_companion(out, &classes.item_companion, records.scope_companion);
-        out.record(&classes.tracked, records.tracked)
-            .zeros(10)
-            .u32(0)
-            .u64(1)
-            .header(&classes.object, records.tracked)
-            .zeros(9);
+        tracked_results(out, classes, records.tracked);
         Ok(())
+    }
+
+    /// The placement path and its records.
+    fn path_records(&self) -> PathRecords {
+        let records = self.records;
+        PathRecords {
+            word: SKETCH_PATH_WORD,
+            scope: records.scope,
+            path: records.path,
+            stamps: records.path_stamps,
+            companion: records.path_companion,
+            first_identity: records.first_identity,
+            transform: records.transform,
+            target: records.target,
+            second_identity: records.second_identity,
+        }
     }
 
     /// The placement path, its record-timestamp table and item-tail
-    /// companion, and the first tracked identity of the origin plane.
+    /// companion, and the first tracked identity of the sketch's plane.
     fn placement_path(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
-        let (records, classes) = (self.records, self.classes);
-        let stamp = self.ctx.values.stamps.scope;
-        out.record(&classes.path, records.path)
-            .zeros(10)
-            .reference(records.first_identity)
-            .u32(1)
-            .lp_utf16(crate::manifest::GENERATED_ASSET_FOLDER_GUID)?
-            .lp_utf16(&self.ctx.values.lower_guid("component-a"))?
-            .u32(2)
-            .u32(0)
-            .u32(1)
-            .reference(records.transform)
-            .u32(0)
-            .u32(0x21)
-            .u32(4)
-            .zeros(6)
-            .u32(EPOCH)
-            .f64(DURATION)
-            .u32(EPOCH)
-            .reference(records.path_companion)
-            .raw(&[1, 0, 0])
-            .reference(records.path_stamps)
-            .byte(0)
-            .reference(records.scope)
-            .header(&classes.object, records.path)
-            .zeros(8)
-            .reference(OWNER_COLLECTION);
-        timestamp_table(
+        placement_path(
+            self.ctx,
+            self.classes,
             out,
-            &classes.stamps,
-            records.path_stamps,
-            true,
-            &[(records.path, stamp)],
-            (records.path, stamp),
-        )?;
-        item_companion(out, &classes.item_companion, records.path_companion);
-        self.identity(out, records.first_identity);
-        Ok(())
-    }
-
-    /// A tracked entity identity naming the sketch's origin plane record.
-    fn identity(&self, out: &mut DesignRecords, record: u32) {
-        out.record(&self.classes.identity, record)
-            .zeros(10)
-            .u64(u64::from(ORIGIN_PLANES + self.planned.plane.ordinal()));
+            &self.path_records(),
+            self.entity()?,
+        )
     }
 
     /// The placement on the origin plane, its record-timestamp table,
@@ -802,7 +821,7 @@ impl Item<'_> {
             .byte(1)
             .zeros(6)
             .zeros(3);
-        match matrix(self.planned.plane) {
+        match self.matrix()? {
             None => {
                 out.byte(1);
             }
@@ -823,26 +842,19 @@ impl Item<'_> {
             .byte(0)
             .u32(2)
             .byte(0)
-            .u32(0)
-            .u32(1)
-            .reference(records.path)
-            .zeros(2)
-            .u32(1)
-            .reference(records.tracking_flag)
-            .u32(0)
-            .u32(4)
-            .zeros(10)
-            .u32(EPOCH)
-            .f64(DURATION)
-            .u32(EPOCH)
-            .reference(records.placement_companion)
-            .raw(&[1, 0, 0])
-            .reference(records.placement_stamps)
-            .byte(0)
-            .reference(records.scope)
-            .header(&classes.object, records.placement)
-            .zeros(8)
-            .reference(OWNER_COLLECTION);
+            .u32(0);
+        placement_base(
+            out,
+            classes,
+            &PlacementBase {
+                placement: records.placement,
+                path: records.path,
+                tracking_flag: records.tracking_flag,
+                companion: records.placement_companion,
+                stamps: records.placement_stamps,
+                scope: records.scope,
+            },
+        );
         timestamp_table(
             out,
             &classes.stamps,
@@ -855,20 +867,189 @@ impl Item<'_> {
         out.record(&classes.tracking_flag, records.tracking_flag)
             .zeros(10)
             .raw(&TRACKING_FLAGS);
-        out.record(&classes.transform, records.transform)
-            .zeros(10)
-            .byte(0);
-        for value in transform(self.planned.plane) {
-            out.f64(value);
-        }
-        out.byte(1).reference(records.target);
-        out.record(&classes.target, records.target)
-            .zeros(10)
-            .reference(records.second_identity)
-            .byte(0);
-        self.identity(out, records.second_identity);
+        placement_transform(
+            classes,
+            out,
+            &self.path_records(),
+            self.transform()?,
+            self.entity()?,
+        );
         Ok(())
     }
+}
+
+/// The u32 at offset 219 of a `Sketch` item's placement path.
+const SKETCH_PATH_WORD: u32 = 4;
+
+/// The records of a placement path: the path, its record-timestamp table and
+/// item-tail companion, the two tracked entity identities, the placement
+/// transform and its target, and the scope of the item that owns them.
+pub(super) struct PathRecords {
+    /// The u32 at offset 219 of the path.
+    pub(super) word: u32,
+    pub(super) scope: u32,
+    pub(super) path: u32,
+    pub(super) stamps: u32,
+    pub(super) companion: u32,
+    pub(super) first_identity: u32,
+    pub(super) transform: u32,
+    pub(super) target: u32,
+    pub(super) second_identity: u32,
+}
+
+/// The placement path of `records`, its record-timestamp table and
+/// item-tail companion, and its first tracked identity naming `entity`.
+pub(super) fn placement_path(
+    ctx: &Context<'_>,
+    classes: &Classes,
+    out: &mut DesignRecords,
+    records: &PathRecords,
+    entity: u64,
+) -> Result<(), CodecError> {
+    let stamp = ctx.values.stamps.scope;
+    out.record(&classes.path, records.path)
+        .zeros(10)
+        .reference(records.first_identity)
+        .u32(1)
+        .lp_utf16(crate::manifest::GENERATED_ASSET_FOLDER_GUID)?
+        .lp_utf16(&ctx.values.lower_guid("component-a"))?
+        .u32(2)
+        .u32(0)
+        .u32(1)
+        .reference(records.transform)
+        .u32(0)
+        .u32(0x21)
+        .u32(records.word)
+        .zeros(6)
+        .u32(EPOCH)
+        .f64(DURATION)
+        .u32(EPOCH)
+        .reference(records.companion)
+        .raw(&[1, 0, 0])
+        .reference(records.stamps)
+        .byte(0)
+        .reference(records.scope)
+        .header(&classes.object, records.path)
+        .zeros(8)
+        .reference(OWNER_COLLECTION);
+    timestamp_table(
+        out,
+        &classes.stamps,
+        records.stamps,
+        true,
+        &[(records.path, stamp)],
+        (records.path, stamp),
+    )?;
+    item_companion(out, &classes.item_companion, records.companion);
+    identity(classes, out, records.first_identity, entity);
+    Ok(())
+}
+
+/// The placement transform of `records` with the origin and two axes
+/// `triples`, its target, and the second tracked identity naming `entity`.
+pub(super) fn placement_transform(
+    classes: &Classes,
+    out: &mut DesignRecords,
+    records: &PathRecords,
+    triples: [f64; 9],
+    entity: u64,
+) {
+    out.record(&classes.transform, records.transform)
+        .zeros(10)
+        .byte(0);
+    for value in triples {
+        out.f64(value);
+    }
+    out.byte(1).reference(records.target);
+    out.record(&classes.target, records.target)
+        .zeros(10)
+        .reference(records.second_identity)
+        .byte(0);
+    identity(classes, out, records.second_identity, entity);
+}
+
+/// A tracked entity identity naming the Design entity `entity`.
+fn identity(classes: &Classes, out: &mut DesignRecords, record: u32, entity: u64) {
+    out.record(&classes.identity, record).zeros(10).u64(entity);
+}
+
+/// The records a placement's base level names.
+pub(super) struct PlacementBase {
+    pub(super) placement: u32,
+    pub(super) path: u32,
+    pub(super) tracking_flag: u32,
+    pub(super) companion: u32,
+    pub(super) stamps: u32,
+    pub(super) scope: u32,
+}
+
+/// The base level of a placement after its `values` list, its paired
+/// header and the owner collection reference.
+pub(super) fn placement_base(out: &mut DesignRecords, classes: &Classes, base: &PlacementBase) {
+    out.u32(1)
+        .reference(base.path)
+        .zeros(2)
+        .u32(1)
+        .reference(base.tracking_flag)
+        .u32(0)
+        .u32(4)
+        .zeros(10)
+        .u32(EPOCH)
+        .f64(DURATION)
+        .u32(EPOCH)
+        .reference(base.companion)
+        .raw(&[1, 0, 0])
+        .reference(base.stamps)
+        .byte(0)
+        .reference(base.scope)
+        .header(&classes.object, base.placement)
+        .zeros(8)
+        .reference(OWNER_COLLECTION);
+}
+
+/// The records a scope's 78-byte feature item tail names.
+pub(super) struct ItemTail {
+    pub(super) scope: u32,
+    /// The family ordinal of the item, from `1`.
+    pub(super) ordinal: u32,
+    pub(super) tracked: u32,
+    pub(super) companion: u32,
+    pub(super) stamps: u32,
+}
+
+/// The 78-byte feature item tail of an unsuppressed item with no label,
+/// the paired header and the owner collection reference.
+pub(super) fn item_tail(out: &mut DesignRecords, classes: &Classes, tail: &ItemTail) {
+    out.u32(tail.ordinal)
+        .u32(0)
+        .u32(0)
+        .u32(0)
+        .zeros(3)
+        .reference(tail.tracked)
+        .byte(0)
+        .u32(u32::MAX)
+        .u32(EPOCH)
+        .f64(DURATION)
+        .u32(EPOCH)
+        .reference(tail.companion)
+        .byte(1)
+        .byte(0)
+        .byte(0)
+        .reference(tail.stamps)
+        .zeros(2)
+        .header(&classes.object, tail.scope)
+        .zeros(8)
+        .reference(OWNER_COLLECTION);
+}
+
+/// The 53-byte tracked-results table with no entry and next key `1`.
+pub(super) fn tracked_results(out: &mut DesignRecords, classes: &Classes, record: u32) {
+    out.record(&classes.tracked, record)
+        .zeros(10)
+        .u32(0)
+        .u64(1)
+        .header(&classes.object, record)
+        .zeros(9);
 }
 
 /// The 96-byte analytic payload of a line or circular curve in cm on the
@@ -943,7 +1124,7 @@ pub(super) fn item_companion(
 }
 
 /// The `EntityGenesis` property of type `IntrinsicMetaTypeuint64`.
-fn genesis(out: &mut DesignRecords, value: u64) -> Result<(), CodecError> {
+pub(super) fn genesis(out: &mut DesignRecords, value: u64) -> Result<(), CodecError> {
     property(out, "EntityGenesis", value)
 }
 
@@ -989,10 +1170,7 @@ fn matrix(plane: OriginPlane) -> Option<[f64; 16]> {
 }
 
 /// The origin and the two axes the placement transform of `plane` stores.
-fn transform(plane: OriginPlane) -> [f64; 9] {
-    match plane {
-        OriginPlane::Xy => [0.0, 0.0, 0.0, 1.0, 0.0, -0.0, -0.0, 1.0, 0.0],
-        OriginPlane::Xz => [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-        OriginPlane::Yz => [0.0, 0.0, 0.0, -0.0, 1.0, 0.0, 0.0, -0.0, 1.0],
-    }
+pub(super) fn transform(plane: OriginPlane) -> [f64; 9] {
+    let [o, u, v] = plane.entity_frame();
+    [o[0], o[1], o[2], u[0], u[1], u[2], v[0], v[1], v[2]]
 }

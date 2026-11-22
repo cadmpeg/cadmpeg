@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::mesh_quotient::{
+use super::mesh_quotient::endpoint_relations::{
     raw_endpoint_relation_state_signature, MeshEndpointRelationChoice,
     MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
 };

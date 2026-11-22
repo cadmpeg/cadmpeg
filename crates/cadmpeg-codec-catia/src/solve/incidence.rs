@@ -11,13 +11,19 @@ use crate::families::standard::topology::{
     incidence_cycles, incidence_cycles_by, reconstruct_incidence,
     solve_boundary_orientation_constraints, EdgeRow, StandardTopologyDraft,
 };
+use crate::solve::mesh_quotient::endpoint_configurations::mesh_face_endpoint_configurations;
+use crate::solve::mesh_quotient::endpoint_cycles::{
+    mesh_assignment_endpoint_cycle_support_by, mesh_assignment_endpoint_cycles_viable_by,
+    mesh_assignment_endpoint_cycles_viable_where,
+};
+use crate::solve::mesh_quotient::quotient::{initial_mesh_quotient, MeshQuotient};
+use crate::solve::mesh_quotient::root_domains::{
+    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshImplicitEdgeCandidates,
+    MeshIncidenceBoundary,
+};
 use crate::solve::mesh_quotient::{
-    initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
-    mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
-    MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
-    MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
-    MeshIncidenceBoundary, MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
+    AssignmentOrder, MeshCandidateFailure, MeshEndpointPair, MeshEndpointSolutionFilter,
+    MeshFaceEndpointConfigurations, MeshPartialEndpointConstraint, MeshQuotientGaugeState,
     MeshSolve, MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{

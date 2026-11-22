@@ -105,7 +105,8 @@ pub(crate) fn validate_native(
                             None
                         }
                     }
-                    crate::records::HistoryContent::Text(_) => None,
+                    crate::records::HistoryContent::Text(_)
+                    | crate::records::HistoryContent::Element(_) => None,
                 };
                 if let Some((message, related)) = error {
                     findings.push(Finding {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{CompoundLoftDirection, RevisionCompoundLoftTail};
+use crate::geometry::lofts::CompoundLoftDirection;
+use crate::geometry::revision_forms::RevisionCompoundLoftTail;
 use crate::ids::CurveId;
 use crate::math::Vector3;
 use serde::{Deserialize, Serialize};

@@ -45,6 +45,9 @@ pub(super) struct ExtrudePlan<'a> {
     pub(super) sketch: usize,
     /// The number of `Sketch` items before it in the timeline.
     pub(super) after: usize,
+    /// The number of timeline items before it: the `Sketch` items and the
+    /// `WorkPlane` items that precede them.
+    pub(super) preceding: usize,
     /// The loops of the profile region in stored order: the exterior loop
     /// in ring order from the curve of side token `3`, then the holes.
     pub(super) profile: Vec<ProfileLoop>,
@@ -195,6 +198,9 @@ impl<'a> Input<'a, '_> {
         self.current(&body.id)?;
         let (sketch, after) = self.sketch()?;
         let planned = &self.sketches.items[sketch];
+        if planned.origin_plane().is_none() {
+            return Err("its sketch lies on a construction plane");
+        }
         let linear = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
         let loops = profile(planned, linear / MM_PER_CM)?;
         if planned.mirrored {
@@ -247,6 +253,13 @@ impl<'a> Input<'a, '_> {
             feature: self.feature,
             sketch,
             after,
+            preceding: after
+                + self
+                    .sketches
+                    .planes
+                    .iter()
+                    .filter(|plane| plane.first < after)
+                    .count(),
             profile: loops,
             along,
             taper,
@@ -539,7 +552,7 @@ impl<'a> Faces<'a> {
         profile: &[ProfileLoop],
         distance: f64,
     ) -> Option<Matched<'a>> {
-        let [u_axis, v_axis, normal] = sketch.plane.axes();
+        let [u_axis, v_axis, normal] = sketch.origin_plane()?.axes();
         let model = |index: usize| {
             let [u, v] = *sketch.points.get(index)?;
             Some(add(
@@ -755,7 +768,7 @@ pub(super) fn stamp(
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
-    let identity = super::roster::extrude::persistent_id(plan.after)?;
+    let identity = super::roster::extrude::persistent_id(plan.preceding)?;
     let reference =
         i64::try_from(identity).map_err(|_| CodecError::Malformed("Extrude identity".into()))?;
     native.persistent_design_links.push(PersistentDesignLink {
