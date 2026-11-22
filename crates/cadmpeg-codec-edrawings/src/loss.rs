@@ -58,7 +58,8 @@ pub(crate) enum EdrawingsLossCode {
     /// transferred.
     AppearanceOverrideDropped,
     /// An occurrence takes its visibility from `defaultvisibility=off` or from
-    /// a listed ancestor: a reading that the format does not settle.
+    /// a listed ancestor, or keeps its own listing against a listed ancestor
+    /// with the other value: a reading that the format does not settle.
     StructureVisibilityInferred,
     /// 2D annotation and image side objects were parsed and not transferred.
     AnnotationNotTransferred,

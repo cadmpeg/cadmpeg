@@ -21,7 +21,7 @@ A package is a ZIP archive with the framing in [`zip.md`](zip.md). The first loc
 | `materials.xml` | assembly | XML material table. |
 | `FileProperties.xml` | assembly | XML document properties. |
 
-The member order is `eModel`, `preview.jpg`, `OLE`, `materials.xml` (assembly only), `scene.xml`, `FileProperties.xml` (assembly only). The codec compares member names byte for byte and requires only `eModel`.
+The codec compares member names byte for byte and requires only `eModel`. The order of the members has no meaning to the codec.
 
 ## 2. The `eModel` member
 
@@ -244,7 +244,7 @@ The dialect `edrawings:hsf-19-00` holds the streams that declare version `19.00`
 | Line styles | An `h` record with the version byte precedes the `J` entries. The bare run of §3.11 is also accepted. |
 | Trailer `[` | The 24 bytes are `09 00 00 00 be 2d`, 15 zero bytes, and `]z`. |
 
-The tree is flat: every `assempart` is a leaf, and no `subassem` occurs. The include paths have the form `/include library/shared/bodyN`. Each `part` holds an absolute matrix. The tree, the colours, and the visibility follow §3.11 and §4. The hole marker segments of §3.9.1 occur in the 2D branch.
+The tree, the colours, and the visibility follow §3.11 and §4. The hole marker segments of §3.9.1 occur in the 2D branch.
 
 The tree has these nodes below `includes`:
 
@@ -264,7 +264,7 @@ The matrix of a part is its absolute placement.
 
 The materials give colours at three levels: the last item of a library body, the last item of a sub-segment, and a direct item of a part. A part-level material comes with the option `defaultcolor=<r> <g> <b>,defaulttransmission=<t>`. A sub-segment is a group of faces with its own material. The material of the body is the default colour of the body.
 
-The visibility of a part comes from the display state that the `default=` field of `displaystates` names, because no `current=` field occurs. A state that lists the part decides its visibility with that listing. The visibility of a part that no state lists is open item EDR-14.
+The visibility of a part comes from the display state that the `current=` field of `displaystates` names, or from the state that its `default=` field names when no current state is named. How a listing, `defaultvisibility=off`, and the listing of an ancestor combine is open item EDR-14.
 
 ## 4. Mapping to CADIR
 
@@ -303,7 +303,7 @@ Detection reads the byte prefix only. A prefix that starts with the ZIP local he
 | `edrawings/structure.placement-invalid` | An instance matrix has a value that is not finite. The identity replaced it. |
 | `edrawings/appearance.face-colour-reduced` | The materials of sub-segments differ from the material of their body. The body colour replaced them (`edrawings:hsf-18-00`, `edrawings:hsf-19-00`). |
 | `edrawings/appearance.override-dropped` | Part-level colour overrides and the colour or transparency overrides of display states were not transferred (`edrawings:hsf-18-00`, `edrawings:hsf-19-00`). |
-| `edrawings/structure.visibility-inferred` | Occurrences take their visibility from `defaultvisibility=off` or from a listed ancestor (EDR-14). |
+| `edrawings/structure.visibility-inferred` | Occurrences take their visibility from `defaultvisibility=off` or from a listed ancestor, or keep their own listing against a listed ancestor with the other value (EDR-14). |
 | `edrawings/annotation.not-transferred` | Geometry and image side objects (§3.9, §3.9.1) were read and not transferred. The message counts them. |
 | `edrawings/structure.subassembly-placement-assumed` | A sub-assembly holds a matrix, and the decoder took it as the transform of the sub-assembly occurrence (§3.8, EDR-09). |
 | `edrawings/structure.display-states-dropped` | Display states other than the current state were not applied (§3.9, EDR-09). |

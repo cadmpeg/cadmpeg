@@ -90,7 +90,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ### EDR-10. Writer and version
 **Question.** Does a stream that SolidWorks wrote with version `19.10`, or a stream that the eDrawings viewer wrote with version `18.00`, follow the rules of `19.10` or those of `18.00`?
 
-**Known.** `edrawings.md` §3.11 and §3.12 give the rules of the files with versions `18.00` and `19.00`. SolidWorks wrote these files. The codec selects the rules from the declared version.
+**Known.** `edrawings.md` §3.11 and §3.12 give the rules of the files with versions `18.00` and `19.00`. SolidWorks wrote these files. The codec selects the rules from the declared version. In the `18.00` file, every `assempart` of the tree is a leaf, no `subassem` occurs, each `part` holds an absolute matrix, and the include paths have the form `/include library/shared/bodyN`.
 
 **Need.** We must know whether the version or the writer selects the rules. A file in the other combination can be refused with `edrawings/model.malformed` or read with wrong rules.
 
@@ -118,7 +118,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ### EDR-14. Visibility inheritance
 **Question.** Does a part below a sub-assembly with `vis=off` stay hidden when a state lists the part with `vis=on`? Does a sub-assembly with `vis=on` show a part with `defaultvisibility=off` that no state lists?
 
-**Known.** The decoder reads the visibility of a part in `edrawings:hsf-18-00` and `edrawings:hsf-19-00` in this order: the listing of the part in the state that `default=` names decides; if the state does not list the part, `defaultvisibility=off` hides it; otherwise the nearest listed ancestor decides, and a state that lists a sub-assembly with `vis=off` hides its unlisted parts; a part below no listed ancestor and without the option is not hidden. A sub-assembly shows only its own listing. The decoder reports a value from `defaultvisibility` or from an ancestor as `edrawings/structure.visibility-inferred`. The observed file has no case that separates the readings.
+**Known.** The decoder reads the visibility of a part in `edrawings:hsf-18-00` and `edrawings:hsf-19-00` in this order: the listing of the part in the applied state (the `current=` state, else the `default=` state) decides; if the state does not list the part, `defaultvisibility=off` hides it; otherwise the nearest listed ancestor decides, and a state that lists a sub-assembly with `vis=off` hides its unlisted parts; a part below no listed ancestor and without the option is not hidden. A sub-assembly shows only its own listing. The decoder reports a value from `defaultvisibility` or from an ancestor, and a listing that a listed ancestor with the other value contests, as `edrawings/structure.visibility-inferred`. The observed file has no case that separates the readings.
 
 **Need.** We must show the visibility of every part as the source application shows it.
 

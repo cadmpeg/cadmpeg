@@ -726,6 +726,24 @@ fn the_default_display_state_decides_visibility() {
 }
 
 #[test]
+fn a_listing_against_a_hidden_ancestor_is_kept_and_charged() {
+    let mut model = solidworks_assembly();
+    model.states[0].components.push((
+        format!("{SW_HIDDEN_SUB_SEGMENT}/{SW_INHERITING_SEGMENT}"),
+        true,
+    ));
+    let result = decode_solidworks(&model);
+    let ir = result.ir();
+    // Cube-3 keeps its own `vis=on` listing under `vis=off` Group C (EDR-14).
+    assert_eq!(occurrence_named(ir, "Group C").visible, Some(false));
+    assert_eq!(occurrence_named(ir, "Cube-3").visible, Some(true));
+    let note = note_of(&result, EdrawingsLossCode::StructureVisibilityInferred);
+    assert!(note.message.contains("Cube-3"), "{}", note.message);
+    // Cube-4 agrees with its listed ancestor and is not charged.
+    assert!(!note.message.contains("Cube-4"), "{}", note.message);
+}
+
+#[test]
 fn another_default_state_hides_a_whole_sub_assembly() {
     let mut model = solidworks_assembly();
     model.default_state = Some("disp1".into());

@@ -7,10 +7,10 @@
 //! sub-assembly is a plain part: one part definition holds the bodies, and the
 //! instance matrix moves the points. Any other file is an assembly: one part
 //! definition per distinct body set, one group definition for the assembly and
-//! one per sub-assembly, and one occurrence per tree node. The stream stores
-//! absolute placements on the instances and none on sub-assemblies, so a
-//! sub-assembly occurrence places itself at the identity and a leaf occurrence
-//! carries its world matrix.
+//! one per sub-assembly, and one occurrence per tree node. A leaf occurrence
+//! carries its world matrix. A sub-assembly occurrence takes its own matrix
+//! when it has one, with `structure.subassembly-placement-assumed`, and the
+//! identity otherwise.
 
 use std::collections::BTreeMap;
 
@@ -155,7 +155,8 @@ fn visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool) {
 /// Visibility under the rules of `SolidWorks` streams. A leaf follows its own
 /// listing, then its own `defaultvisibility=off`, then the nearest listed
 /// ancestor. A sub-assembly shows only its own listing. The second element is
-/// true when the value comes from `defaultvisibility` or from an ancestor.
+/// true when the value comes from `defaultvisibility` or from an ancestor, or
+/// when a listed ancestor holds the other value than the node's own listing.
 /// This order is one reading of the two that the observed files allow
 /// (EDR-14).
 fn inherited_visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool) {
@@ -163,7 +164,11 @@ fn inherited_visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool)
         return (None, false);
     };
     if let Some(component) = listing(scene, index) {
-        return (Some(component.visible), false);
+        // A listed ancestor with the other value contests the node's own listing; the
+        // listing wins, and the choice is an inference (EDR-14).
+        let contested = ancestor_listing(scene, node.parent)
+            .is_some_and(|ancestor| ancestor.visible != component.visible);
+        return (Some(component.visible), contested);
     }
     if !node.is_instance {
         return (None, false);
@@ -171,14 +176,21 @@ fn inherited_visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool)
     if node.hidden_by_default {
         return (Some(false), true);
     }
-    let mut cursor = node.parent;
+    match ancestor_listing(scene, node.parent) {
+        Some(component) => (Some(component.visible), true),
+        None => (None, false),
+    }
+}
+
+/// The listing of the nearest listed node from `cursor` up to the root.
+fn ancestor_listing<'s>(scene: &'s Scene<'_>, mut cursor: Option<usize>) -> Option<&'s Component> {
     while let Some(current) = cursor {
         if let Some(component) = listing(scene, current) {
-            return (Some(component.visible), true);
+            return Some(component);
         }
         cursor = scene.nodes.get(current).and_then(|n| n.parent);
     }
-    (None, false)
+    None
 }
 
 /// The occurrence transform of a stream matrix: the column-vector form, in
@@ -551,6 +563,7 @@ pub(super) fn emit(
         part_definition.insert(set_index, index);
     }
     if single {
+        display_states_dropped(scene, losses);
         return finish(ctx, ir, &mut admitted);
     }
 
@@ -666,7 +679,21 @@ pub(super) fn emit(
             )),
         );
     }
-    // EDR-09: only the current display state is applied.
+    display_states_dropped(scene, losses);
+    if !inferred_visibility.is_empty() {
+        losses.push(EdrawingsLossCode::StructureVisibilityInferred.note(format!(
+            "{} occurrences take their visibility from defaultvisibility=off or from a listed \
+             ancestor, or keep their own listing against a listed ancestor with the other value, \
+             a reading that the format does not settle: {}",
+            inferred_visibility.len(),
+            lead(&inferred_visibility)
+        )));
+    }
+    finish(ctx, ir, &mut admitted)
+}
+
+/// Charges the display states other than the applied one (EDR-09).
+fn display_states_dropped(scene: &Scene<'_>, losses: &mut Vec<LossNote>) {
     let unapplied: Vec<String> = scene
         .states
         .iter()
@@ -682,15 +709,6 @@ pub(super) fn emit(
             )),
         );
     }
-    if !inferred_visibility.is_empty() {
-        losses.push(EdrawingsLossCode::StructureVisibilityInferred.note(format!(
-            "{} occurrences take their visibility from defaultvisibility=off or from a listed \
-             ancestor, a reading that the format does not settle: {}",
-            inferred_visibility.len(),
-            lead(&inferred_visibility)
-        )));
-    }
-    finish(ctx, ir, &mut admitted)
 }
 
 fn finish(ctx: &DecodeContext<'_>, ir: &mut CadIr, admitted: &mut u64) -> Result<bool, CodecError> {

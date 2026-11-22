@@ -3728,7 +3728,7 @@
             "namespace": "edrawings"
           }
         },
-        "message": "2 occurrences take their visibility from defaultvisibility=off or from a listed ancestor, a reading that the format does not settle: Pair-2, Cube-3",
+        "message": "2 occurrences take their visibility from defaultvisibility=off or from a listed ancestor, or keep their own listing against a listed ancestor with the other value, a reading that the format does not settle: Pair-2, Cube-3",
         "severity": "warning"
       }
     ],
