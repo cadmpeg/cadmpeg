@@ -3718,8 +3718,8 @@ fn trim_line_line_intersection(
         second_end[1] - second_start[1],
         0.0,
     );
-    let first_unit = cadmpeg_ir::features::FiniteVector3::new(first)?.unit_nonzero()?;
-    let second_unit = cadmpeg_ir::features::FiniteVector3::new(second)?.unit_nonzero()?;
+    let first_unit = cadmpeg_ir::features::geometry::FiniteVector3::new(first)?.unit_nonzero()?;
+    let second_unit = cadmpeg_ir::features::geometry::FiniteVector3::new(second)?.unit_nonzero()?;
     if first_unit.cross(second_unit).z.abs() <= TRIM_INTERSECTION_EPS {
         return None;
     }

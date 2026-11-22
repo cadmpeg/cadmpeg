@@ -17,14 +17,17 @@ use cadmpeg_ir::eval::model_surface_partials_by_id;
 use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::solve::least_squares_step;
@@ -4321,7 +4324,7 @@ fn model_curve_point_with_index_and_budget(
                 cadmpeg_ir::eval::decode::curve_point(admission, &carrier.geometry, parameter)
             }),
     )
-    .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+    .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
 }
 
 fn model_curve_tangent_with_index_and_budget(
@@ -4339,7 +4342,7 @@ fn model_curve_tangent_with_index_and_budget(
                 cadmpeg_ir::eval::decode::curve_tangent(admission, &carrier.geometry, parameter)
             }),
     )
-    .map(|tangent| tangent.and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero))
+    .map(|tangent| tangent.and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero))
 }
 
 #[cfg(test)]

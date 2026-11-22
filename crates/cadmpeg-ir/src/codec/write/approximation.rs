@@ -10,12 +10,13 @@ use crate::eval::{
     model_surface_point_by_id, nurbs_curve_parameter_domain, procedural_surface_breaks,
     spine_rolling_ball_domain, EvaluationFailure,
 };
-use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
-    pcurve::PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+use crate::geometry::nurbs::{
+    NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
 };
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::ids::{CurveId, SurfaceId};
 use crate::index::{ModelIndex, StandardIndex};
 use crate::math::{Point2, Point3};
@@ -202,7 +203,7 @@ impl<'a> Approximator<'a> {
                     model_surface_point_by_id(admission, index, owner, u, v)
                 }),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         if !trims_meet_vertices(
             ir,
@@ -339,7 +340,7 @@ impl<'a> Approximator<'a> {
                     },
                 ),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         let Grid {
             rows,
@@ -417,7 +418,7 @@ impl<'a> Approximator<'a> {
                     model_curve_point_by_id(admission, index, owner, u)
                 }),
             )
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
         };
         // A uniform fit cannot converge across a corner that falls between its samples, so
         // supply known corner parameters as axis breaks.
@@ -457,7 +458,7 @@ fn spline_through_plane(
 ) -> Option<NurbsCurve> {
     let ProceduralCurveDefinition::SurfaceCurve {
         family:
-            crate::geometry::SurfaceCurveFamily::Parametric {
+            crate::geometry::surface_curves::SurfaceCurveFamily::Parametric {
                 context,
                 tail: None,
             },
@@ -491,7 +492,7 @@ fn spline_through_plane(
                 model_surface_point_by_id(admission, index, surface, u, v)
             }),
         )
-        .map(crate::features::FinitePoint3::get)
+        .map(crate::features::geometry::FinitePoint3::get)
     };
     let origin = on_plane(0.0, 0.0)?;
     let along_u = on_plane(1.0, 0.0)?;
@@ -522,7 +523,7 @@ fn spline_through_plane(
 /// position continuity: its interior knots repeated as often as its degree.
 fn curve_corner_parameters(definition: &ProceduralCurveDefinition, range: [f64; 2]) -> Vec<f64> {
     let ProceduralCurveDefinition::SurfaceCurve {
-        family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+        family: crate::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. },
     } = definition
     else {
         return Vec::new();
@@ -554,7 +555,7 @@ fn isocurve_of_spline_surface(
 ) -> Option<NurbsCurve> {
     let ProceduralCurveDefinition::SurfaceCurve {
         family:
-            crate::geometry::SurfaceCurveFamily::Parametric {
+            crate::geometry::surface_curves::SurfaceCurveFamily::Parametric {
                 context,
                 tail: None,
             },
@@ -655,7 +656,7 @@ fn isocurve_of_linear_sweep(
 ) -> Option<NurbsCurve> {
     let ProceduralCurveDefinition::SurfaceCurve {
         family:
-            crate::geometry::SurfaceCurveFamily::Parametric {
+            crate::geometry::surface_curves::SurfaceCurveFamily::Parametric {
                 context,
                 tail: None,
             },
@@ -934,7 +935,7 @@ impl ExactCarrier<'_> {
 
 fn exact_carrier<'ir>(
     index: &ModelIndex<'ir>,
-    context: &crate::geometry::IntcurveSupportContext,
+    context: &crate::geometry::intersection_curves::IntcurveSupportContext,
 ) -> Option<ExactCarrier<'ir>> {
     let [first, second] = context.sides();
     let solved = |surface: &SurfaceId| {
@@ -957,7 +958,8 @@ fn exact_carrier<'ir>(
     else {
         return None;
     };
-    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
+    let crate::geometry::blends::BlendRadiusLaw::Constant { signed_radius } = payload.radius()
+    else {
         return None;
     };
     let [support_a, support_b] = payload.supports();
@@ -994,7 +996,7 @@ fn chart_ending_on_edge_vertices(
     index: &ModelIndex<'_>,
     curve: &CurveId,
     chart: &NurbsCurve,
-    cache: Option<&crate::geometry::LegacyCache>,
+    cache: Option<&crate::geometry::legacy_cache::LegacyCache>,
 ) -> Option<NurbsCurve> {
     let Some(tolerance) = cache.map(|cache| cache.fit_tolerance.get()) else {
         return Some(chart.clone());
@@ -1154,7 +1156,7 @@ fn curve_domain(ir: &CadIr, index: &ModelIndex<'_>, curve: &CurveId) -> Option<[
             .map(crate::topology::IncreasingParameterInterval::endpoints);
     }
     if let Some(ProceduralCurveDefinition::SurfaceCurve {
-        family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+        family: crate::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. },
     }) = index
         .procedural_curves_for_curve(curve.as_str(), StandardIndex)
         .and_then(|curves| curves.first())

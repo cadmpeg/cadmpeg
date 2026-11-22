@@ -2,7 +2,9 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -127,8 +129,10 @@ fn an_empty_timeline_holds_its_current_state_at_its_start() {
 fn a_model_with_no_feature_list_states_no_design_records() {
     let (mut ir, definition) = part(Vec::new(), &["1", "2"]);
     let scan = crate::test_support::empty_container_scan();
-    crate::decode::with_service_context(|ctx| project(ctx, &scan, &mut ir, &definition))
-        .expect("projection");
+    crate::decode::with_service_context(|ctx| {
+        project(ctx, &scan, &mut ir, &definition, &mut Vec::new())
+    })
+    .expect("projection");
     assert_eq!(ir.design, CadIr::empty().design);
 }
 
@@ -179,7 +183,7 @@ fn operations_keep_their_family_or_their_native_kind() {
     assert_eq!(
         operation(
             &LegacyOperation::KnitSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
                 merge_entities: Some(true),
                 create_solid: Some(false),
                 gap_tolerance: None,

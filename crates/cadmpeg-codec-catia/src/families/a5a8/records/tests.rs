@@ -28,6 +28,7 @@ use crate::test_support::test_a5a8::{
 use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 
 mod spline_headers;
+mod surface_suffix;
 mod weight_program;
 
 #[test]
@@ -1280,7 +1281,9 @@ fn rolling_ball_radius_reports_only_actual_rail_movement() {
         .definition_at_radius(radius)
         .expect("nearby radius");
     assert_eq!(moved, radius - 1.0);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(stations) = definition
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(
+        stations,
+    ) = definition
     else {
         panic!("rolling-ball definition");
     };
@@ -1515,7 +1518,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[0]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[0])
         );
         assert_eq!(
@@ -1524,7 +1527,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[1]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[1])
         );
     }
@@ -1585,4 +1588,21 @@ fn a8_surface_header_reads_the_frame_object_id() {
     )
     .expect("complete surface header");
     assert_eq!(header.object_id, object_id);
+}
+
+#[test]
+fn owned_surface_tail_rejects_descending_u_until_chart_transfer() {
+    use crate::layout::surface_terminal_span_tail as layout;
+
+    let mut tail = a5_surface_tail();
+    tail.truncate(layout::SUFFIX);
+    tail.extend([0x01, 0, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    tail[layout::CONTROLS + 1] = 0x0d;
+    let u_start = layout::PARAMETERS;
+    tail[u_start..u_start + 8].copy_from_slice(&3.0_f64.to_le_bytes());
+    tail[u_start + 8..u_start + 16].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), false), None);
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
+    tail[layout::CONTROLS + 1] = 0x05;
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
 }

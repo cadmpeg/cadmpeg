@@ -30,7 +30,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
             1.0,
             3.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());

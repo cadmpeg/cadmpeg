@@ -6,7 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbsPoles};
-use cadmpeg_ir::geometry::{DirectedParameterRange, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
@@ -119,7 +120,7 @@ fn directed_range(
         lifted[at] = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
             cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.get().u, uv.get().v),
         )?)?
-        .map(cadmpeg_ir::features::FinitePoint3::get);
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
     }
     let [Some(first), Some(second)] = lifted else {
         return Ok(None);

@@ -78,12 +78,12 @@ fn one_dimension_transfer() -> (crate::container::ContainerScan<'static>, CadIr)
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                 kind: "test".into(),
                 parameters: BTreeMap::new(),
@@ -254,12 +254,12 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
             ordinal,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: "test".into(),
                     parameters: BTreeMap::new(),
@@ -337,7 +337,7 @@ fn diameter_parameter_doubles_the_native_radius() {
     assert_eq!(ir.model.parameters[0].expression, "14");
     assert_eq!(
         ir.model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(14.0).expect("diameter")
         ))
     );

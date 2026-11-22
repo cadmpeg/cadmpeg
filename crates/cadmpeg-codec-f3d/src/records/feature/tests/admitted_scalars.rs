@@ -149,6 +149,7 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
         &DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
             symmetric: None,
+            suppressed: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index: 11,
             count_offset: 40,
@@ -209,13 +210,15 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
             .contains("plane_normal must be a unit vector"));
     }
     value["plane_origin"] = serde_json::to_value(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-            .unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 0.0,
+        ))
+        .unwrap(),
     )
     .unwrap();
-    value["plane_normal"] = serde_json::to_value(cadmpeg_ir::features::FiniteVector3::from(
-        cadmpeg_ir::units::UnitVector3::Z_AXIS,
-    ))
+    value["plane_normal"] = serde_json::to_value(
+        cadmpeg_ir::features::geometry::FiniteVector3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS),
+    )
     .unwrap();
     let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(plane).unwrap(), value);

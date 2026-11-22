@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, FeatureDefinition, FeatureOperation, FeatureResultMembers,
-    FeatureResultTopology,
-};
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use serde_json::{json, Value};
 
 use super::*;

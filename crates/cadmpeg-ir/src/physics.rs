@@ -11,7 +11,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{
     ArticulationId, BodyId, ColliderId, MassPropertiesId, OccurrenceId, PhysicalMaterialId,
     PhysicsSceneId, ProductDefinitionId, RigidBodyId,

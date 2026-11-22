@@ -15,7 +15,8 @@ use cadmpeg_ir::design::container::Folder;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition};
 use cadmpeg_ir::design::refs::Member;
-use cadmpeg_ir::features::{FeatureId, FeatureTreeNodeRole};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::FeatureId;
 
 use crate::history::classify::{feature_tree_node_role, HistoryMetadata};
 use crate::history::project::neutral_feature_id;

@@ -86,7 +86,7 @@ fn display_tessellation_vertices_are_retained_bytes() {
         assert_eq!(
             available - ctx.retained_bytes_available(),
             cadmpeg_core::decode::u64_from_index(
-                3 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+                3 * std::mem::size_of::<cadmpeg_ir::features::geometry::FinitePoint3>()
             )
         );
     });
@@ -477,9 +477,9 @@ fn reference_line_origin_is_in_millimeters_at_ir_admission() {
     scan.references.lines.push(
         crate::reference::ReferenceLine::try_new(
             crate::reference::ReferenceLineKind::Line,
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("finite source point"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite source point"),
             0,
         )
@@ -521,9 +521,9 @@ fn reference_line_scaled_origin_overflow_refuses_before_ir_admission() {
     scan.references.lines.push(
         crate::reference::ReferenceLine::try_new(
             crate::reference::ReferenceLineKind::Line,
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
                 .expect("finite source point"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 1.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(f64::MAX, 1.0, 0.0))
                 .expect("finite source point"),
             0,
         )
@@ -552,15 +552,15 @@ fn reference_circle_radius_is_in_millimeters_at_ir_admission() {
         crate::reference::ReferenceCircle::try_new(
             7,
             crate::reference::ReferenceCircleCenter::Stored(
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("finite center"),
             ),
             cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
             cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
             [
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(3.0, 0.0, 0.0))
                     .expect("finite start"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
                     .expect("on-circle end"),
             ],
             0,
@@ -599,7 +599,7 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
     scan.references.ellipses.push(
         crate::reference::ReferenceEllipse::try_new(
             8,
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("finite center"),
             cadmpeg_ir::units::UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
             cadmpeg_ir::units::UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),

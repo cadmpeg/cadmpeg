@@ -27,6 +27,9 @@ pub(super) fn check_appearance_attributes(
     findings: &mut Vec<Finding>,
 ) {
     check_native_refs(ir, ids, findings);
+    if ir.model.appearance_bindings.is_empty() && ir.model.attributes.is_empty() {
+        return;
+    }
     let records = DesignRecords::of(ir);
     let model = ModelRecords::of(ir);
     let kinds: BTreeMap<&str, &ValueKind> = ir

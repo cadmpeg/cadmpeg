@@ -1239,7 +1239,7 @@ fn generated_projected_brep_c2_curve(
                     let mut point = point.get();
                     let uv = plane_uv(point, origin, u_axis, v_axis);
                     point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )
@@ -1447,7 +1447,7 @@ fn validate_nurbs_trim(
         .max(
             pcurve
                 .fit_tolerance()
-                .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+                .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         );
     for span in breaks.windows(2) {
         for step in 0..=16 {

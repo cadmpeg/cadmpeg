@@ -4,8 +4,8 @@
 //! must reproduce bit for bit.
 
 use super::super::{
-    bit_field, bit_is_set, finite_significand, ScaledExponent, ScaledValue, EXACT_PRODUCT_EXPONENT,
-    EXACT_SUM_WORDS, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
+    bit_field, bit_is_set, finite_significand, ScaledExponent, ScaledValue, Words,
+    EXACT_PRODUCT_EXPONENT, EXACT_SUM_WORDS, MIN_SIGNIFICAND_EXPONENT, SUBNORMAL_UNIT_BIT,
 };
 use crate::scalar::{FiniteReal, NonZeroReal};
 
@@ -197,15 +197,16 @@ impl FullScanSum {
         if highest_bit >= SUBNORMAL_UNIT_BIT + 52 {
             return self.finish()?.finite().ok();
         }
+        let words = Words::full(&magnitude);
         let mut units = 0_u64;
         if highest_bit >= SUBNORMAL_UNIT_BIT {
             units = bit_field(
-                &magnitude,
+                words,
                 SUBNORMAL_UNIT_BIT,
                 highest_bit + 1 - SUBNORMAL_UNIT_BIT,
             );
         }
-        let guard = bit_is_set(&magnitude, SUBNORMAL_UNIT_BIT - 1);
+        let guard = bit_is_set(words, SUBNORMAL_UNIT_BIT - 1);
         let sticky = any_bit_below(&magnitude, SUBNORMAL_UNIT_BIT - 1);
         if guard && (sticky || units & 1 != 0) {
             units += 1;
@@ -252,16 +253,17 @@ fn rounded_magnitude(
     magnitude: &[u64; EXACT_SUM_WORDS],
     highest_bit: u16,
 ) -> Option<ScaledValue> {
+    let words = Words::full(magnitude);
     let keep = (highest_bit + 1).min(53);
     let mut significand = bit_field(
-        magnitude,
+        words,
         usize::from(highest_bit + 1 - keep),
         usize::from(keep),
     );
     if keep == 53 {
         let guard_bit = highest_bit
             .checked_sub(keep)
-            .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
+            .is_some_and(|bit| bit_is_set(words, usize::from(bit)));
         let sticky = highest_bit
             .checked_sub(keep)
             .is_some_and(|bit| any_bit_below(magnitude, usize::from(bit)));

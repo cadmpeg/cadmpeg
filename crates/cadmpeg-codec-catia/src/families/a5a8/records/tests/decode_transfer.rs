@@ -128,7 +128,7 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
     let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::{Transform, Transform2, TransformError};
 

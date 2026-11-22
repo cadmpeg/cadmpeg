@@ -149,12 +149,12 @@ fn shell_projects_thickness_native_faces_and_result_without_direction_defaults()
         if faces.is_empty() {
             assert_eq!(
                 *removed_faces,
-                cadmpeg_ir::features::FaceSelection::Faces(Vec::new())
+                cadmpeg_ir::features::selections::FaceSelection::Faces(Vec::new())
             );
         } else {
             assert_eq!(
                 *removed_faces,
-                cadmpeg_ir::features::FaceSelection::Native(format!(
+                cadmpeg_ir::features::selections::FaceSelection::Native(format!(
                     "inventor:pmdc:feature-property#{}-1",
                     segment()
                 ))
