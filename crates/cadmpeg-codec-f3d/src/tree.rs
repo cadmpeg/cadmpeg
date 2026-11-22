@@ -54,18 +54,15 @@ pub(crate) fn state_root_definition(
         ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
     {
         if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
-            for (kind, kept, other) in [
-                ("lineage", &document.document_id, &identity.document_id),
-                ("version", &document.version, &identity.version),
-            ] {
-                if let (Some(kept), Some(other)) = (kept, other) {
-                    if kept != other {
-                        losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
-                            "file root {kind} {:?} (manifest terminal) disagrees with design ordinal 0 {kind} {:?}; the manifest terminal supplies the root identity",
-                            kept.as_str(),
-                            other.as_str()
-                        )));
-                    }
+            // The manifest terminal supplies only the lineage; the version
+            // always comes from design ordinal zero.
+            if let (Some(kept), Some(other)) = (&document.document_id, &identity.document_id) {
+                if kept != other {
+                    losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                        "file root lineage {:?} (manifest terminal) disagrees with design ordinal 0 lineage {:?}; the manifest terminal supplies the root lineage",
+                        kept.as_str(),
+                        other.as_str()
+                    )));
                 }
             }
             document.document_id = document.document_id.take().or(identity.document_id);
