@@ -49,7 +49,12 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
     construction_record, listed_entity, off_chord_arc, unchecked_record_conflict, ChordConflict,
-    FramedCurve, SketchRecordLists,
+    FramedCurve, ListedEntity, SketchRecordLists,
+};
+use super::sketch_projection::is_profile_stream_sketch;
+use super::stream_readings::{
+    is_revolve_profile, marker_reading, EntityIndex, MarkerReading, SolidEdges,
+    UnboundMarkerReading,
 };
 use super::transforms::{record_component_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -445,7 +450,9 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(keep);
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters, |sketch| {
+        annotations.provenance.contains_key(sketch.id.as_str())
+    });
 }
 
 #[derive(Debug)]
@@ -721,19 +728,24 @@ pub(crate) fn project_compact_sketch_profiles(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#compact:{lane_key}:{}",
-                native_feature.ordinal
-            )) else {
+            let Some(sketch_id) = compact_sketch_id(lane_key, native_feature.ordinal) else {
                 continue;
             };
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            // A configuration pass after the main pass meets the sketch that
+            // pass read, from the feature's marker records where they replaced
+            // this reading, and binds it instead of reading the records again.
+            if let Some(read) = [
+                marker_sketch_id(lane_key, native_feature.ordinal),
+                Some(sketch_id.clone()),
+            ]
+            .into_iter()
+            .flatten()
+            .find(|id| sketches.iter().any(|sketch| sketch.id == *id))
+            {
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                sketch_id,
-                            )),
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(read)),
                         },
                     ),
                 );
@@ -1108,12 +1120,13 @@ const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
 pub(crate) struct HeldMarkerGeometry {
     /// Arc handles whose inline points define no minor arc.
     handles: Vec<SketchEntity>,
-    /// The geometry the `sgSketch` record of a marker gives by point-record
+    /// The entity the `sgSketch` record of a marker gives by point-record
     /// position when the marker reading leaves the marker unread, with the
-    /// losses the marker charges when it takes that geometry, by sketch and
-    /// marker reference: the record indexes point records of another feature
-    /// object, or its arc ends off its endpoint point records.
-    listed: HashMap<(SketchId, String), (SketchGeometry, Vec<cadmpeg_ir::report::loss::LossNote>)>,
+    /// losses the marker charges when it takes that entity, by sketch and
+    /// marker reference: a point record the record indexes is no marker of the
+    /// marker's feature object, or the record's arc ends off its endpoint
+    /// point records.
+    listed: HashMap<(SketchId, String), (ListedEntity, Vec<cadmpeg_ir::report::loss::LossNote>)>,
     /// Why the `sgSketch` curve record of a line's marker gives no entity
     /// although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
@@ -1125,6 +1138,14 @@ pub(crate) struct HeldMarkerGeometry {
     /// The sketches that take the retained Front fallback frame; the
     /// finalize pass charges each one that remains.
     assumed_planes: Vec<(SketchId, PlaneAssumedCause)>,
+    /// Each marker that the marker layouts skip and only its `sgSketch`
+    /// record admits, whose record then gives no entity in its sketch, by
+    /// sketch and marker reference, with the record's conflict where it
+    /// states one.
+    unread_admitted: Vec<((SketchId, String), Option<ChordConflict>)>,
+    /// Each feature's marker sketch that stays unbound beside the stream
+    /// circle bound to the feature.
+    unbound_readings: Vec<UnboundMarkerReading>,
     /// The `sketch.point-record-index-basis-assumed` loss of each entity
     /// that takes the geometry of a curve record on locus `05 00 01 00`,
     /// with that geometry: the entity charges it when it keeps the geometry.
@@ -1160,16 +1181,18 @@ impl HeldMarkerGeometry {
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
-/// pass resolved its held `sgSketch` record geometry where it has one, and
-/// otherwise the marker role as its native kind with one loss per entity,
-/// and charges one loss for each line whose curve record states another
-/// form.
+/// pass resolved its held `sgSketch` record geometry and construction mark
+/// where it has them, and otherwise the marker role as its native kind with
+/// one loss per entity, charges one loss for each line whose curve record
+/// states another form, and one for each marker that only its record admits
+/// and whose record gives no entity. Returns the unbound marker readings,
+/// which the model pass notes once every binding is made.
 pub(crate) fn finalize_unread_marker_entities(
     sketches: &[Sketch],
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Vec<UnboundMarkerReading> {
     use crate::loss::SldprtLossCode;
     let HeldMarkerGeometry {
         handles,
@@ -1178,6 +1201,8 @@ pub(crate) fn finalize_unread_marker_entities(
         unchecked,
         finalized,
         assumed_planes,
+        unread_admitted,
+        unbound_readings,
         mut index_basis_assumptions,
     } = held;
     let mut causes = HashMap::<&SketchId, PlaneAssumedCause>::new();
@@ -1200,12 +1225,13 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
-        if let Some((geometry, charges)) = entity
+        if let Some((read, charges)) = entity
             .native_ref
             .clone()
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
-            entity.geometry = geometry;
+            entity.geometry = read.geometry;
+            entity.construction = read.construction;
             losses.extend(charges);
             continue;
         }
@@ -1264,6 +1290,39 @@ pub(crate) fn finalize_unread_marker_entities(
             entity.id(),
         )));
     }
+    for ((sketch, marker), conflict) in unread_admitted {
+        let reason = match conflict {
+            Some(conflict) => format!("its sgSketch curve record {conflict}"),
+            None => {
+                "its sgSketch record gives no point or curve in the sketch's coordinates".to_owned()
+            }
+        };
+        losses.push(SldprtLossCode::SketchMarkerRecordUnread.note(format!(
+            "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
+        )));
+    }
+    unbound_readings
+}
+
+/// Whether every one of a marker sketch's `entities`, held arc handles
+/// among them, has planar geometry once [`finalize_unread_marker_entities`]
+/// runs: geometry now, or a placeholder whose marker has `sgSketch` record
+/// geometry that `listed` holds.
+fn finalizes_planar<'a>(
+    entities: impl IntoIterator<Item = &'a SketchEntity>,
+    listed: impl Fn(&str) -> bool,
+) -> bool {
+    entities
+        .into_iter()
+        .all(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Native { native_kind } => {
+                native_kind
+                    .as_str()
+                    .starts_with(MARKER_GEOMETRY_PLACEHOLDER)
+                    && entity.native_ref.as_deref().is_some_and(&listed)
+            }
+            _ => true,
+        })
 }
 
 /// The loss of a sketch that takes the retained Front fallback frame, with
@@ -1437,13 +1496,22 @@ pub(crate) struct MarkerSketchEntities<'a> {
     pub(crate) held: &'a mut HeldMarkerGeometry,
 }
 
+/// The records and the solid that [`project_marker_backed_sketches`] reads.
+#[derive(Clone, Copy)]
+pub(crate) struct MarkerSources<'a> {
+    pub(crate) histories: &'a [crate::records::FeatureHistory],
+    pub(crate) lanes: &'a [FeatureInputLane],
+    /// The decoded solid's edges, the witness between a feature's marker
+    /// sketch and the stream circle bound to it.
+    pub(crate) solid: &'a SolidEdges,
+}
+
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     entities: MarkerSketchEntities<'_>,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    sources: MarkerSources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -1452,6 +1520,11 @@ pub(crate) fn project_marker_backed_sketches(
         projected: sketch_entities,
         held: held_geometry,
     } = entities;
+    let MarkerSources {
+        histories,
+        lanes,
+        solid,
+    } = sources;
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -1613,11 +1686,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_text = format!(
-                "sldprt:model:sketch#markers:{lane_key}:{}",
-                native_feature.ordinal
-            );
-            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
+            let Some(sketch_id) = marker_sketch_id(lane_key, native_feature.ordinal) else {
                 continue;
             };
             let mut markers = Vec::new();
@@ -1698,7 +1767,34 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 continue;
             }
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
+            if let Some(read) = sketches.iter().find(|sketch| sketch.id == sketch_id) {
+                // A later pass over configuration states meets the marker
+                // sketch the first pass read, and takes it in place of a
+                // stream circle only where the first pass did.
+                let stream = stream_reading
+                    .as_ref()
+                    .and_then(|stream| sketches.iter().find(|sketch| sketch.id == *stream));
+                if let Some(stream) = stream {
+                    let entities =
+                        EntityIndex::new(sketch_entities.iter().filter(|entity| {
+                            entity.sketch == sketch_id || entity.sketch == stream.id
+                        }));
+                    let planar = finalizes_planar(
+                        sketch_entities
+                            .iter()
+                            .filter(|entity| entity.sketch == sketch_id),
+                        |_| false,
+                    );
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], &stream.id);
+                    if !matches!(
+                        marker_reading(read, stream, &entities, planar, revolve_profile, solid),
+                        MarkerReading::Binds(_)
+                    ) {
+                        continue;
+                    }
+                }
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -1718,9 +1814,10 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            if bound_sketch
-                .as_ref()
-                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
+            if stream_reading.is_none()
+                && bound_sketch
+                    .as_ref()
+                    .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
             {
                 continue;
             }
@@ -1761,6 +1858,8 @@ pub(crate) fn project_marker_backed_sketches(
             let mut listed_elsewhere = Vec::new();
             let mut index_basis_assumptions = Vec::new();
             let mut listed_entities = HashMap::new();
+            let mut outside_profile = HashSet::new();
+            let mut unread_admitted = Vec::new();
             let project_coordinates = |[u, v]: [f64; 2]| {
                 let point = transform.apply(quantize(
                     Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
@@ -1800,6 +1899,7 @@ pub(crate) fn project_marker_backed_sketches(
                         None => (None, None),
                     };
                 if listed.is_none() && admitted_by_record.contains(marker.id()) {
+                    unread_admitted.push((marker.id().to_owned(), record_conflict));
                     continue;
                 }
                 let entity = (|| -> Result<_, MarkerGeometryFailure> {
@@ -2465,7 +2565,7 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchGeometryDefinition::Native { .. }
                     ) && (record_conflict.is_none() || off_chord)
                     {
-                        if let Some((offset, read)) =
+                        if let Some((offset, mut read)) =
                             index_from_u64(marker.offset()).and_then(|offset| {
                                 let read = if off_chord {
                                     off_chord_arc(
@@ -2487,7 +2587,15 @@ pub(crate) fn project_marker_backed_sketches(
                                 Some((offset, read?))
                             })
                         {
-                            let mut charges = Vec::from_iter(read.index_basis_loss);
+                            read.construction = marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &read.geometry,
+                                Some(read.construction),
+                            )
+                            .0;
+                            let mut charges = Vec::from_iter(read.index_basis_loss.clone());
                             if off_chord {
                                 charges.push(
                                     crate::loss::SldprtLossCode::SketchArcRecordOffChord.note(format!(
@@ -2497,7 +2605,7 @@ pub(crate) fn project_marker_backed_sketches(
                                     )),
                                 );
                             }
-                            listed_elsewhere.push((marker.id().to_owned(), read.geometry, charges));
+                            listed_elsewhere.push((marker.id().to_owned(), read, charges));
                         }
                     }
                     let construction =
@@ -2574,7 +2682,10 @@ pub(crate) fn project_marker_backed_sketches(
                         index_basis_assumptions
                             .push((entity.id().clone(), (entity.geometry.clone(), loss)));
                     }
-                    if listed.is_some() {
+                    if let Some(listed) = &listed {
+                        if listed.outside_profile {
+                            outside_profile.insert(entity.id().clone());
+                        }
                         listed_entities.insert(
                             entity.id().clone(),
                             (entity.geometry.clone(), entity.endpoint_refs.clone()),
@@ -2633,6 +2744,9 @@ pub(crate) fn project_marker_backed_sketches(
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_construction(construction)
                     .with_endpoint_refs(endpoint_refs);
+                if listed.outside_profile {
+                    outside_profile.insert(entity.id().clone());
+                }
                 if let Some(loss) = listed.index_basis_loss {
                     index_basis_assumptions
                         .push((entity.id().clone(), (entity.geometry.clone(), loss)));
@@ -2834,17 +2948,11 @@ pub(crate) fn project_marker_backed_sketches(
                     entity.endpoint_refs = endpoint_refs.clone();
                 }
             }
-            let mut closed = closed_marker_profiles(&projected);
-            if listed_curves {
-                let read = projected
-                    .iter()
-                    .filter(|entity| listed_entities.contains_key(entity.id()))
-                    .collect::<Vec<_>>();
-                let read = closed_marker_profiles(&read);
-                if read.len() > closed.len() {
-                    closed = read;
-                }
-            }
+            let closed = marker_sketch_profiles(
+                &projected,
+                |id| listed_entities.contains_key(id),
+                &outside_profile,
+            );
             let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed) else {
                 continue;
             };
@@ -2852,21 +2960,54 @@ pub(crate) fn project_marker_backed_sketches(
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
             }
-            if let Some(bound_sketch) = &bound_sketch {
+            let mut unbound = None;
+            if let Some(stream) = &stream_reading {
+                if let Some(stream_sketch) = sketches.iter().find(|bound| bound.id == *stream) {
+                    let entities = EntityIndex::new(
+                        projected.iter().chain(
+                            sketch_entities
+                                .iter()
+                                .filter(|entity| entity.sketch == *stream),
+                        ),
+                    );
+                    let planar = finalizes_planar(projected.iter().chain(&held), |marker| {
+                        listed_elsewhere
+                            .iter()
+                            .any(|(listed, _, _)| listed == marker)
+                    });
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], stream);
+                    match marker_reading(
+                        &sketch,
+                        stream_sketch,
+                        &entities,
+                        planar,
+                        revolve_profile,
+                        solid,
+                    ) {
+                        MarkerReading::Binds(placement) => sketch.placement = placement,
+                        MarkerReading::Unbound(reason) => {
+                            unbound = Some(UnboundMarkerReading {
+                                marker: sketch_id.clone(),
+                                stream: stream.clone(),
+                                feature: features[feature_index].id.clone(),
+                                reason,
+                            });
+                        }
+                        MarkerReading::Stays => continue,
+                    }
+                }
+            } else if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
             sketch_entities.extend(projected);
             held_geometry.handles.extend(held);
-            held_geometry
-                .listed
-                .extend(
-                    listed_elsewhere
-                        .into_iter()
-                        .map(|(marker, geometry, charges)| {
-                            ((sketch_id.clone(), marker), (geometry, charges))
-                        }),
-                );
+            held_geometry.listed.extend(
+                listed_elsewhere
+                    .into_iter()
+                    .map(|(marker, read, charges)| ((sketch_id.clone(), marker), (read, charges))),
+            );
             held_geometry
                 .index_basis_assumptions
                 .extend(index_basis_assumptions);
@@ -2875,11 +3016,20 @@ pub(crate) fn project_marker_backed_sketches(
                     .into_iter()
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
+            held_geometry.unread_admitted.extend(
+                unread_admitted
+                    .into_iter()
+                    .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
+            );
             sketches.push(sketch);
             if let Some(cause) = assumed {
                 held_geometry
                     .assumed_planes
                     .push((sketch_id.clone(), cause));
+            }
+            if let Some(unbound) = unbound {
+                held_geometry.unbound_readings.push(unbound);
+                continue;
             }
             record_component_marker_coordinates(&mut features[feature_index], component_frame);
             features[feature_index]
@@ -2902,6 +3052,46 @@ pub(crate) fn project_marker_backed_sketches(
         }
     }
     Ok(())
+}
+
+/// The id of the sketch read from the compact records of feature `ordinal`
+/// in the lane keyed `lane_key`.
+fn compact_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
+    SketchId::mint(format!("sldprt:model:sketch#compact:{lane_key}:{ordinal}")).ok()
+}
+
+/// The id of the sketch read from the marker records of feature `ordinal`
+/// in the lane keyed `lane_key`.
+fn marker_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
+    SketchId::mint(format!("sldprt:model:sketch#markers:{lane_key}:{ordinal}")).ok()
+}
+
+/// The closed profiles of a marker sketch's `projected` entities. A curve in
+/// `outside_profile`, read from a curve record of state `0`, joins no
+/// profile. When the curves that `record_read` names close more profiles
+/// alone than together with the curves of the other marker readings, the
+/// profiles are theirs.
+fn marker_sketch_profiles(
+    projected: &[SketchEntity],
+    record_read: impl Fn(&SketchEntityId) -> bool,
+    outside_profile: &HashSet<SketchEntityId>,
+) -> Vec<Vec<SketchEntityUse>> {
+    let curves = projected
+        .iter()
+        .filter(|entity| !outside_profile.contains(entity.id()))
+        .collect::<Vec<_>>();
+    let closed = closed_marker_profiles(&curves);
+    let read = curves
+        .iter()
+        .copied()
+        .filter(|entity| record_read(entity.id()))
+        .collect::<Vec<_>>();
+    let read = closed_marker_profiles(&read);
+    if read.len() > closed.len() {
+        read
+    } else {
+        closed
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -4841,8 +5031,11 @@ mod detached_legacy_sketch_tests {
                 projected: &mut sketch_entities,
                 held: &mut HeldMarkerGeometry::default(),
             },
-            &[history],
-            &[lane],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
@@ -4945,8 +5138,11 @@ mod detached_legacy_sketch_tests {
                 projected: &mut sketch_entities,
                 held: &mut HeldMarkerGeometry::default(),
             },
-            &[history],
-            &[lane],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
@@ -5044,8 +5240,11 @@ mod detached_legacy_sketch_tests {
                     projected: &mut sketch_entities,
                     held: &mut HeldMarkerGeometry::default(),
                 },
-                std::slice::from_ref(&history),
-                std::slice::from_ref(&lane),
+                crate::resolved_features::profiles::MarkerSources {
+                    histories: std::slice::from_ref(&history),
+                    lanes: std::slice::from_ref(&lane),
+                    solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+                },
                 &mut Vec::new(),
             )
             .expect("marker profile projection fits service policy");
@@ -5223,8 +5422,11 @@ mod detached_legacy_sketch_tests {
                 projected: &mut Vec::new(),
                 held: &mut HeldMarkerGeometry::default(),
             },
-            &[history],
-            &[],
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
         )
         .unwrap();
@@ -5463,6 +5665,15 @@ mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod configuration_binding_tests;
+
+#[cfg(test)]
+mod record_profile_tests;
+
+#[cfg(test)]
+mod stream_reading_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;

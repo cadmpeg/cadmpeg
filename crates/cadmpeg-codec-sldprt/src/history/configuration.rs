@@ -623,6 +623,12 @@ pub(crate) fn project_configuration_sketch_states(
     annotations: &mut cadmpeg_ir::Annotations,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
+    let solid = crate::resolved_features::stream_readings::SolidEdges::new(
+        &ir.geometry.edges,
+        &ir.geometry.vertices,
+        &ir.geometry.points,
+        &ir.geometry.curves,
+    );
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -739,8 +745,11 @@ pub(crate) fn project_configuration_sketch_states(
                     projected: &mut ir.model.sketch_entities,
                     held: &mut held_handles,
                 },
-                histories,
-                scoped_lanes,
+                crate::resolved_features::profiles::MarkerSources {
+                    histories,
+                    lanes: scoped_lanes,
+                    solid: &solid,
+                },
                 &mut losses,
             )?;
             crate::resolved_features::profiles::project_sketch_block_profiles(

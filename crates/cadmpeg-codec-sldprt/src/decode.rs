@@ -2376,6 +2376,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         let instances = lane
             .relation_instances
             .iter()
@@ -2405,6 +2406,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .feature_ref
                 .as_deref()
                 .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                && !curve_markers.contains(marker.id())
                 && crate::resolved_features::typed_relations::marker_owns_constraint(
                     marker,
                     &markers_by_id,
@@ -2443,11 +2445,14 @@ fn multiply_projected_sketch_relation_records(
         for relation in &lane.relation_instances {
             native_relation_ids.insert(relation.id.as_str());
         }
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         for marker in &lane.sketch_entities {
-            if crate::resolved_features::typed_relations::marker_owns_constraint(
-                marker,
-                &markers_by_id,
-            ) {
+            if !curve_markers.contains(marker.id())
+                && crate::resolved_features::typed_relations::marker_owns_constraint(
+                    marker,
+                    &markers_by_id,
+                )
+            {
                 native_relation_ids.insert(marker.id());
             }
         }
@@ -3585,8 +3590,16 @@ fn build_geometry_ir(
             projected: &mut sketch_entities,
             held: &mut held_handles,
         },
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                &brep.edges,
+                &brep.vertices,
+                &brep.points,
+                &brep.curves,
+            ),
+        },
         &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
@@ -3657,7 +3670,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &sketches,
         &mut sketch_entities,
         held_handles,
@@ -3891,6 +3904,11 @@ fn build_geometry_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -4927,8 +4945,11 @@ fn build_metadata_ir(
             projected: &mut ir.model.sketch_entities,
             held: &mut held_handles,
         },
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
@@ -5084,7 +5105,7 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &ir.model.sketches,
         &mut ir.model.sketch_entities,
         held_handles,
@@ -5135,6 +5156,11 @@ fn build_metadata_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
