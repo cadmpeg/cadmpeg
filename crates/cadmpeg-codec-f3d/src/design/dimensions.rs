@@ -37,6 +37,9 @@ const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
 /// The text-frame style byte of a driven dimension.
 const DRIVEN_TEXT_STYLE: u8 = 1;
 
+/// Millimetres per Fusion length unit (cm).
+const MM_PER_CM: f64 = 10.0;
+
 /// Native property that holds a dimension's instance name.
 const DIMENSION_INSTANCE_NAME: &str = "instance_name";
 
@@ -248,7 +251,10 @@ pub(crate) fn project_dimension_constraints_with_presentations(
 /// States the property `driven` on each parameter of `neutral` whose record
 /// is the parameter of a driven dimension: its expression trailer states the
 /// driven flag, or its dimension frame stores the text-frame style byte of a
-/// driven dimension (f3d.md §3.1, "Sketch dimensions").
+/// driven dimension (f3d.md §3.1, "Sketch dimensions"). Where a frame of the
+/// dimension stores its measured value, the property `measured_value` states
+/// it in canonical units: the owner of a driven dimension stores the value of
+/// its parameter's literal, which can differ from the measured value.
 pub(crate) fn mark_driven_parameters(
     neutral: &mut [cadmpeg_ir::features::parameters::DesignParameter],
     inputs: &DimensionConstraintInputs<'_>,
@@ -260,7 +266,7 @@ pub(crate) fn mark_driven_parameters(
             by_record.insert((scope, parameter.record_index), parameter);
         }
     }
-    let frame_driven = frame_driven_parameters(
+    let readings = frame_readings(
         presentation_frames,
         inputs.annotation_frames,
         inputs.owners,
@@ -269,20 +275,31 @@ pub(crate) fn mark_driven_parameters(
     let driven = inputs
         .parameters
         .iter()
-        .filter(|parameter| {
-            parameter.driving() == Some(false)
-                || native_stream(&parameter.id)
-                    .is_some_and(|scope| frame_driven.contains(&(scope, parameter.record_index)))
+        .filter_map(|parameter| {
+            let reading = native_stream(&parameter.id)
+                .and_then(|scope| readings.get(&(scope, parameter.record_index)));
+            (parameter.driving() == Some(false) || reading.is_some_and(|reading| reading.driven))
+                .then(|| {
+                    (
+                        crate::ids::neutral_parameter_id(parameter),
+                        reading.and_then(|reading| reading.measured),
+                    )
+                })
         })
-        .map(crate::ids::neutral_parameter_id)
-        .collect::<HashSet<_>>();
-    for parameter in neutral
-        .iter_mut()
-        .filter(|parameter| driven.contains(&parameter.id))
-    {
+        .collect::<HashMap<_, _>>();
+    for parameter in neutral.iter_mut() {
+        let Some(measured) = driven.get(&parameter.id) else {
+            continue;
+        };
         parameter
             .properties
             .insert(cadmpeg_core::nonblank_literal!("driven"), "true".to_owned());
+        if let Some(measured) = measured {
+            parameter.properties.insert(
+                cadmpeg_core::nonblank_literal!("measured_value"),
+                measured.to_string(),
+            );
+        }
     }
 }
 
@@ -360,12 +377,12 @@ fn project_all_dimension_constraints(
         }
     }
     let parameters = parameters_by_record;
-    let frame_driven =
-        frame_driven_parameters(presentation_frames, annotation_frames, owners, &parameters);
+    let readings = frame_readings(presentation_frames, annotation_frames, owners, &parameters);
     let driving = |parameter: &DesignParameter| {
         parameter.driving().or_else(|| {
             native_stream(&parameter.id)
-                .is_some_and(|scope| frame_driven.contains(&(scope, parameter.record_index)))
+                .and_then(|scope| readings.get(&(scope, parameter.record_index)))
+                .is_some_and(|reading| reading.driven)
                 .then_some(false)
         })
     };
@@ -1487,15 +1504,25 @@ fn project_all_dimension_constraints(
     constraints
 }
 
-/// The parameters whose dimension frame stores the text-frame style byte of
-/// a driven dimension (f3d.md §3.1, "Sketch dimensions"), by stream and
-/// record index.
-fn frame_driven_parameters<'a>(
+/// What the frames of one parameter's dimension store (f3d.md §3.1, "Sketch
+/// dimensions").
+#[derive(Default)]
+struct FrameReading {
+    /// Whether a frame stores the text-frame style byte of a driven
+    /// dimension.
+    driven: bool,
+    /// The measured value the first frame stores, in canonical units.
+    measured: Option<f64>,
+}
+
+/// What the dimension frames of each parameter store, by stream and record
+/// index.
+fn frame_readings<'a>(
     presentation_frames: &'a [crate::records::dimensions::DesignDimensionPresentationFrame],
     annotation_frames: &'a [DesignDimensionAnnotationFrame],
     owners: &[DesignParameterOwner],
     parameters: &HashMap<(&'a str, u32), &DesignParameter>,
-) -> HashSet<(&'a str, u32)> {
+) -> HashMap<(&'a str, u32), FrameReading> {
     let mut owned = HashMap::new();
     for owner in owners {
         if let Some(scope) = native_stream(owner.id()) {
@@ -1520,16 +1547,37 @@ fn frame_driven_parameters<'a>(
             frame.annotation_bytes(),
         ))
     });
-    let mut driven = HashSet::new();
+    let mut readings = HashMap::<_, FrameReading>::new();
     for (scope, record_index, bytes) in presentations.chain(annotations) {
-        if parameters
-            .get(&(scope, record_index))
-            .is_some_and(|parameter| text_style(bytes, parameter) == Some(DRIVEN_TEXT_STYLE))
-        {
-            driven.insert((scope, record_index));
-        }
+        let Some(parameter) = parameters.get(&(scope, record_index)) else {
+            continue;
+        };
+        let Some(style) = text_style(bytes, parameter) else {
+            continue;
+        };
+        let reading = readings.entry((scope, record_index)).or_default();
+        reading.driven |= style == DRIVEN_TEXT_STYLE;
+        reading.measured = reading
+            .measured
+            .or_else(|| measured_value(bytes, parameter));
     }
-    driven
+    readings
+}
+
+/// The measured value of a dimension frame, where `bytes` start with the
+/// measurement of the kind of `parameter`'s dimension, in canonical units.
+/// A diameter frame stores the radius, and its owner the diameter.
+fn measured_value(bytes: &[u8], parameter: &DesignParameter) -> Option<f64> {
+    let (at, scale) = match parameter.dimension_kind().as_str() {
+        "Linear Dimension" => (linear_measurement::VALUE, MM_PER_CM),
+        "Angular Dimension" => (angular_measurement::ANGLE, 1.0),
+        "Radial Dimension" => (radial_measurement::RADIUS, MM_PER_CM),
+        "Diameter Dimension" => (radial_measurement::RADIUS, 2.0 * MM_PER_CM),
+        _ => return None,
+    };
+    View::f64_le_at(bytes, at)
+        .filter(|value| value.is_finite())
+        .map(|value| value * scale)
 }
 
 /// The bytes after the property block that starts `bytes`.

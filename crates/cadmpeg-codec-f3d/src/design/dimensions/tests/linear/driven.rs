@@ -10,7 +10,13 @@ use cadmpeg_core::decode::u64_from_index;
 /// The 129-byte linear measurement, then the text frame's style byte, four
 /// style values, its byte and its zero byte.
 fn styled(style: u8) -> Vec<u8> {
+    measured(style, 0.0)
+}
+
+/// [`styled`], with the measured value `cm` in the linear measurement.
+fn measured(style: u8, cm: f64) -> Vec<u8> {
     let mut bytes = vec![0; 129];
+    bytes[97..105].copy_from_slice(&cm.to_le_bytes());
     bytes.push(style);
     bytes.extend([0; 16]);
     bytes.extend([1, 0]);
@@ -19,7 +25,12 @@ fn styled(style: u8) -> Vec<u8> {
 
 /// The annotation frame of the fixture's dimension, with text style `style`.
 fn annotation(stream: &str, style: u8) -> DesignDimensionAnnotationFrame {
-    let annotation_bytes = styled(style);
+    annotation_of(stream, styled(style))
+}
+
+/// The annotation frame of the fixture's dimension, whose measurement and
+/// text frame are `annotation_bytes`.
+fn annotation_of(stream: &str, annotation_bytes: Vec<u8>) -> DesignDimensionAnnotationFrame {
     let owner_reference_at = 74 + u64_from_index(annotation_bytes.len()) + 1;
     let operand =
         |index: u32, at: u64| crate::records::dimensions::DesignDimensionAnnotationOperand {
@@ -68,8 +79,14 @@ fn annotation(stream: &str, style: u8) -> DesignDimensionAnnotationFrame {
 /// The presentation frame of the fixture's dimension, with text style
 /// `style` after an empty property block.
 fn presentation(stream: &str, style: u8) -> DesignDimensionPresentationFrame {
+    presentation_of(stream, styled(style))
+}
+
+/// The presentation frame of the fixture's dimension, whose measurement and
+/// text frame `bytes` follow an empty property block.
+fn presentation_of(stream: &str, bytes: Vec<u8>) -> DesignDimensionPresentationFrame {
     let mut presentation_bytes = vec![0];
-    presentation_bytes.extend(styled(style));
+    presentation_bytes.extend(bytes);
     DesignDimensionPresentationFrame {
         id: format!("{stream}:design-dimension-presentation-frame#60"),
         byte_offset: 0,
@@ -258,13 +275,67 @@ fn the_parameter_of_a_driven_dimension_states_it_is_driven() {
             presentation_frames,
         );
         let [neutral] = neutral;
-        neutral.properties.get("driven").cloned()
+        neutral.properties
     };
+    let state =
+        |properties: std::collections::BTreeMap<_, String>| properties.get("driven").cloned();
     let driven = Some("true".to_owned());
-    assert_eq!(mark(&flagged, &[], &[]), driven);
-    assert_eq!(mark(&parameter, &[annotation(stream, 1)], &[]), driven);
-    assert_eq!(mark(&parameter, &[], &[presentation(stream, 1)]), driven);
-    assert_eq!(mark(&parameter, &[], &[]), None);
-    assert_eq!(mark(&parameter, &[annotation(stream, 0)], &[]), None);
-    assert_eq!(mark(&parameter, &[], &[presentation(stream, 0)]), None);
+    assert_eq!(state(mark(&flagged, &[], &[])), driven);
+    assert_eq!(
+        state(mark(&parameter, &[annotation(stream, 1)], &[])),
+        driven
+    );
+    assert_eq!(
+        state(mark(&parameter, &[], &[presentation(stream, 1)])),
+        driven
+    );
+    assert_eq!(state(mark(&parameter, &[], &[])), None);
+    assert_eq!(state(mark(&parameter, &[annotation(stream, 0)], &[])), None);
+    assert_eq!(
+        state(mark(&parameter, &[], &[presentation(stream, 0)])),
+        None
+    );
+
+    // The record's literal is 2 mm; the frames measure 2.5 mm. The measured
+    // value is the frame's, in mm, whichever frame or flag states the state.
+    let measured_value = |properties: std::collections::BTreeMap<_, String>| {
+        properties.get("measured_value").cloned()
+    };
+    assert_eq!(parameter.expression(), "2 mm");
+    let measurement = Some("2.5".to_owned());
+    assert_eq!(
+        measured_value(mark(
+            &parameter,
+            &[annotation_of(stream, measured(1, 0.25))],
+            &[]
+        )),
+        measurement
+    );
+    assert_eq!(
+        measured_value(mark(
+            &parameter,
+            &[],
+            &[presentation_of(stream, measured(1, 0.25))]
+        )),
+        measurement
+    );
+    assert_eq!(
+        measured_value(mark(
+            &flagged,
+            &[annotation_of(stream, measured(0, 0.25))],
+            &[]
+        )),
+        measurement
+    );
+    // A driven parameter with no frame states no measured value, and a
+    // driving one states none.
+    assert_eq!(measured_value(mark(&flagged, &[], &[])), None);
+    assert_eq!(
+        measured_value(mark(
+            &parameter,
+            &[annotation_of(stream, measured(0, 0.25))],
+            &[]
+        )),
+        None
+    );
 }

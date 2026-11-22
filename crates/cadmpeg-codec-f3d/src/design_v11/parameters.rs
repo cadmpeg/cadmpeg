@@ -12,10 +12,12 @@
 //! the unit the text states, and a name of one parameter alone is a `Neutral`
 //! reference. Any other text is a `Source` expression in the
 //! `Fusion` dialect whose names of the parameters it reads are reference
-//! tokens. The parameter of a driven dimension is `Driven`, and its value is
-//! the measurement the decoder read.
-//! The role Fusion stores on a model parameter is the source setting
-//! `f3d:role`.
+//! tokens. The parameter of a driven dimension is `Driven`. Its value is the
+//! measured value its dimension frame stores, and it has none where no frame
+//! states one; its record stores the value of its literal, which can differ
+//! (f3d.md §3.1, "Sketch dimensions"), and the native option `f3d:literal`
+//! keeps that literal. The role Fusion stores on a model parameter is the
+//! source setting `f3d:role`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroI8;
@@ -52,6 +54,11 @@ const UNIT: &str = "unit";
 const UNRESOLVED_OWNER: &str = "owner_record_index";
 /// The v10 property that marks the parameter of a driven dimension.
 const DRIVEN: &str = "driven";
+/// The v10 property that holds the measured value of a driven dimension.
+const MEASURED: &str = "measured_value";
+/// The native option that holds the literal the record of a driven
+/// dimension's parameter stores.
+pub(crate) const LITERAL: &str = "f3d:literal";
 
 /// The parameters of the scopes keyed by document prefix in `scopes`.
 /// `features` holds the ids of the scopes' features. A parameter owned by a
@@ -186,15 +193,27 @@ fn record(
         },
         cache,
     );
-    let definition = if property(DRIVEN) == Some("true") {
-        ParameterDefinition::Driven
+    let mut native_options = NativeOptions::new();
+    let (definition, value) = if property(DRIVEN) == Some("true") {
+        if let Some(literal) = NonBlankString::new(parameter.expression.clone()) {
+            native_options.insert(
+                cadmpeg_core::nonblank_literal!("f3d:literal"),
+                NativeOption::Text(Dimension::Literal(literal)),
+            );
+        }
+        let measured = property(MEASURED)
+            .and_then(|text| text.parse::<f64>().ok())
+            .and_then(FiniteReal::new)
+            .map(ParameterValue::Number);
+        (ParameterDefinition::Driven, measured)
     } else {
         let vocabulary = parameter
             .dependencies
             .iter()
             .filter_map(|id| Some((*names.get(id)?, id)))
             .collect::<HashMap<_, _>>();
-        ParameterDefinition::Expression(expression(&parameter.expression, &kind, &vocabulary))
+        let expression = expression(&parameter.expression, &kind, &vocabulary);
+        (ParameterDefinition::Expression(expression), value)
     };
     let mut source_settings = NativeOptions::new();
     if let Some(role) = property(ROLE).and_then(|role| NonBlankString::new(role.to_owned())) {
@@ -216,7 +235,7 @@ fn record(
         tolerance: None,
         decimals: None,
         comment: property(COMMENT).map(str::to_owned),
-        native_options: NativeOptions::new(),
+        native_options,
         source_settings,
         native_ref: parameter.native_ref.clone(),
     }
@@ -272,7 +291,7 @@ pub(super) fn expression(
 
 /// The literal `text` states, where it is one number with a unit of the
 /// parameter's quantity, or a bare number of a dimensionless parameter.
-fn literal(text: &str, kind: &ValueKind) -> Option<Node<ParameterRef>> {
+pub(crate) fn literal(text: &str, kind: &ValueKind) -> Option<Node<ParameterRef>> {
     let text = text.trim();
     let split = text
         .find(|character: char| character.is_ascii_alphabetic())

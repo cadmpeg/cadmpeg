@@ -237,7 +237,8 @@ pub(in crate::writer::generate::design) struct Tolerances {
 
 impl Candidate<'_> {
     /// The written dimension with source ordinal `ordinal`: a driven
-    /// parameter it binds, owned with a literal of its value; the parameter
+    /// parameter it binds, owned with the literal its source record stores,
+    /// else a literal of its value; the parameter
     /// it binds when the dimension can own it, else a new `d<ordinal>`
     /// naming it; or the reason it is not written.
     pub(in crate::writer::generate::design) fn plan(
@@ -294,16 +295,23 @@ impl Candidate<'_> {
         let value = value.unwrap_or(measured);
         let is_driven = driven.is_some();
         let parameter = match (binding, driven) {
-            (_, Some(driven)) => {
-                let canonical = if kind == DimensionKind::Angle {
-                    value
-                } else {
-                    value * MM_PER_CM
-                };
-                let expression = expression::quantity_literal(canonical, Some(driven.unit))
-                    .ok_or("its value has no Fusion literal")?;
-                parameters.take_driven(&driven, expression, value, ordinal)
-            }
+            // The record keeps the literal its source record stores, which
+            // can differ from the measured value.
+            (_, Some(driven)) => match driven.literal.clone() {
+                Some(literal) => {
+                    parameters.take_driven(&driven, literal.text, literal.value, ordinal)
+                }
+                None => {
+                    let canonical = if kind == DimensionKind::Angle {
+                        value
+                    } else {
+                        value * MM_PER_CM
+                    };
+                    let expression = expression::quantity_literal(canonical, Some(driven.unit))
+                        .ok_or("its value has no Fusion literal")?;
+                    parameters.take_driven(&driven, expression, value, ordinal)
+                }
+            },
             (Binding::Parameter(id), None) => match parameters.claim(id, quantity, ordinal) {
                 Some(claimed) => claimed,
                 None => {

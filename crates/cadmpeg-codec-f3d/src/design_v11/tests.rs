@@ -645,11 +645,15 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     );
 }
 
-/// The parameter of a driven (reference) dimension is `Driven`, with the
-/// decoder's cache as its value (§5.12, D11); a driving dimension's
+/// The parameter of a driven (reference) dimension is `Driven` (§5.12, D11).
+/// Its value is the measured value its frame stores, not the value of the
+/// literal its record stores, and the native option `f3d:literal` keeps that
+/// literal; with no measured value it has no value. A driving dimension's
 /// parameter keeps its literal expression.
 #[test]
 fn the_parameter_of_a_driven_dimension_is_driven() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::options::NativeOption;
     use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
     use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::{FiniteReal, Length};
@@ -661,7 +665,19 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
             "12.5 mm",
             Some(V10::Length(Length::new(12.5).unwrap())),
             &[],
-            &[("source_kind", "Linear Dimension-2"), ("driven", "true")],
+            &[
+                ("source_kind", "Linear Dimension-2"),
+                ("driven", "true"),
+                ("measured_value", "12.25"),
+            ],
+        ),
+        parameter(
+            "unmeasured",
+            Some(OWNER),
+            "3 mm",
+            Some(V10::Length(Length::new(3.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-4"), ("driven", "true")],
         ),
         parameter(
             "driving",
@@ -682,19 +698,45 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
         &mut losses,
     );
     assert!(losses.is_empty(), "{losses:?}");
-    let [reference, driving] = projected.as_slice() else {
-        panic!("two parameters: {projected:?}")
+    let [reference, unmeasured, driving] = projected.as_slice() else {
+        panic!("three parameters: {projected:?}")
+    };
+    let literal = |text: &str| {
+        Some(NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(text.to_owned()).unwrap(),
+        )))
     };
     assert!(matches!(reference.definition, ParameterDefinition::Driven));
     assert_eq!(
         reference.value,
-        Some(ParameterValue::Number(FiniteReal::new(12.5).unwrap()))
+        Some(ParameterValue::Number(FiniteReal::new(12.25).unwrap()))
+    );
+    assert_eq!(
+        reference
+            .native_options
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("12.5 mm")
+    );
+    assert!(matches!(unmeasured.definition, ParameterDefinition::Driven));
+    assert_eq!(unmeasured.value, None);
+    assert_eq!(
+        unmeasured
+            .native_options
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("3 mm")
     );
     assert!(matches!(
         &driving.definition,
         ParameterDefinition::Expression(expression)
             if expression == &number(4.0, Some(UnitSymbol::Mm))
     ));
+    assert_eq!(
+        driving.value,
+        Some(ParameterValue::Number(FiniteReal::new(4.0).unwrap()))
+    );
+    assert!(driving.native_options.is_empty());
 }
 
 #[test]

@@ -3,7 +3,7 @@ use super::{
     parameter_record, parse_design_parameter_record, Point2, SketchConstraintDefinitionInput,
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
-use crate::design::dimensions::{frame_driven_parameters, governing_presentation_definition};
+use crate::design::dimensions::{frame_readings, governing_presentation_definition};
 use crate::records::dimensions::{
     DesignDimensionPresentationFrame, DesignDimensionPresentationOperand,
 };
@@ -129,8 +129,9 @@ fn presentation_frame_with_the_driven_text_style_states_its_parameter_driven() {
         presented.id = format!("{stream}:presentation#driven");
         presented.governing_parameter_record_index = governing;
         presented.presentation_bytes = bytes.into();
-        frame_driven_parameters(&[presented], &[], &[], &parameters)
-            .contains(&(stream, parameter.record_index))
+        frame_readings(&[presented], &[], &[], &parameters)
+            .get(&(stream, parameter.record_index))
+            .is_some_and(|reading| reading.driven)
     };
     let index = parameter.record_index;
     let mut genesis = vec![1, 1, 0, 0, 0];

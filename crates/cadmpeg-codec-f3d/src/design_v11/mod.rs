@@ -23,7 +23,7 @@
 
 mod configurations;
 mod operation;
-mod parameters;
+pub(crate) mod parameters;
 #[cfg(test)]
 mod tests;
 mod timeline;
