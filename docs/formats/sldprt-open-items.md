@@ -1126,13 +1126,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### SF-01. Remaining Top reference forms and profile coordinates
 
-**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
+**Question.** Which placement and coordinate convention applies to lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
 
-**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
+**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. A declared Top reference takes the Top frame of `sldprt.md` §2. The retained Front lane fallback uses N=-Y and U=-Z, and the decoder reads marker pairs on it as model-coordinate components. On the fast tier the local reading of that frame and the model-component reading each place about as many of these sketches on B-rep vertices. Nested profile streams carry their own coordinate records.
 
 **Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
-
-**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
 
 ### SF-02. Right component ownership and profile coordinates
 
@@ -1189,7 +1187,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** Which reference gives the plane of a profile sketch whose curves lie on faces of the solid only when the sketch is placed on a principal plane other than the plane read for it?
 
-**Known.** For 50 extrusion profile sketches in 38 parts and 36 designs, no curve that is not construction geometry lies on a face of the solid in the plane read for the sketch, and the curves lie on faces in another principal plane through the origin. The plane read is most often the `XY` plane through the origin (21 sketches) or the plane with normal `-Y` through the origin (15).
+**Known.** For 50 extrusion profile sketches in 38 parts and 36 designs, no curve that is not construction geometry lies on a face of the solid in the plane read for the sketch, and the curves lie on faces in another principal plane through the origin. Counted by B-rep vertices at the sketch points instead, shifted along the normal by the lengths of the features that consume the sketch, on the fast tier: of the marker sketches read on the `XY` plane through the origin, 225 in 130 parts lie on more vertices on the Top plane and 86 in 71 parts on the Right plane, most of them on none in the `XY` plane. Of the marker sketches read on the Front lane fallback plane (normal `-Y` through the origin, SF-01), 80 in 55 parts lie on more vertices on the Right plane. Five marker sketches in five parts read on the Top plane lie on more vertices on the `XY` plane.
 
 **Need.** The plane reference at the end of these `sgSketch` objects (`sldprt.md` §2.3, the pointer to the `moCompRefPlane_c` that names the sketch plane), compared with the faces of the solid.
 
@@ -1209,18 +1207,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** A complete object walk of these streams, or the field of the profile-family object that points to its `sgSketch` object, compared with the faces each consuming feature produces.
 
-### DI-80. Feature-input marker coordinates on computed sketch frames and on turned `u` axes
+### DI-80. Feature-input marker coordinates on computed sketch frames
 
-**Question.** Which coordinates do the two feature-input marker fields hold on a sketch whose frame the decoder computes from other geometry, and on a support plane whose normal is parallel to a model axis and whose `u` axis is turned in the plane?
+**Question.** Which coordinates do the two feature-input marker fields hold on a sketch whose frame the decoder computes from other geometry?
 
-**Known.** On the stored frame of a support plane with an oblique normal, the fields are local sketch coordinates (`sldprt.md` §2 "When profile anchors do not determine the transform"). A sketch projected from a B-rep face takes its frame from the Parasolid plane: its origin and reference direction. On such a frame with an oblique normal, the decoder reads the fields as the model-coordinate components of the axis-parallel rule. Two such sketches have relation points that the two readings place differently, and no projected B-rep vertex lies at those points under either reading. On an axis-parallel normal with a turned `u` axis, the decoder reads the fields as model-coordinate components. 14 marker sketches have such frames, and no placed marker of them lies on a projected B-rep vertex. For 12 of them, none does under any of the 8 signed axis permutations in the sketch frame.
+**Known.** On the frame of a support plane, the fields are local sketch coordinates on every normal (`sldprt.md` §2 "When profile anchors do not determine the transform"). A sketch projected from a B-rep face takes its frame from the Parasolid plane: its origin and reference direction. On such a frame with an oblique normal, the decoder reads the fields as the model-coordinate components along the two model axes other than the normal's dominant one. Two such sketches have relation points that the two readings place differently, and no projected B-rep vertex lies at those points under either reading.
 
-**Need.** Sketches of either kind whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component and the local-coordinate readings.
+**Need.** Computed-frame sketches whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component and the local-coordinate readings.
 
-### DI-81. The stored frame of an offset reference plane
+### DI-81. The side of an offset reference plane that stores no frame of its own
 
-**Question.** What do the normal and origin of the complete plane frame an offset reference-plane object stores state, relative to its source plane and its signed `D1`?
+**Question.** Where does an offset reference-plane object that stores no frame of the offset plane record on which side of its source plane the plane lies?
 
-**Known.** An offset reference-plane object that carries a complete frame stores the offset plane's own u-axis there (`sldprt.md` §2). The stored u-axis is perpendicular to the stored normal. In an offset of the Top plane, directly or through other offset planes, the stored normal is `+Y`, the Top normal of §2. A few frames store a normal perpendicular to the normal of the source plane their object identifies. Where the stored normal is parallel to the source plane normal, the stored origin agrees in the plane with the source origin translated by `D1`. Along the normal it lies at that translated position, at the mirror image of that position across the source plane, or in the source plane itself. Sketches on such planes have B-rep vertices that lie in the stored plane and off the plane the translation gives.
+**Known.** `D1` is a magnitude, and a frame of the offset plane at `D1` from the source plane states the side (`sldprt.md` §2). On the fast tier, every dual-frame object stores such a frame: 179 lie along the source normal, 74 against it, and 47 have a zero `D1`. Of the objects with a single frame, 42 store the offset plane's frame (17 of them against the source normal) and 69 in 32 parts store the source plane's frame. 13 objects store no frame. 3 store a single frame whose normal is perpendicular to the normal of the source plane their object identifies, and 2 a frame parallel to the source plane at neither zero nor `D1` from it.
 
-**Need.** For offset planes whose stored origin and translated source origin differ, the B-rep vertices of the features sketched on them, compared with both planes. For the frames whose normal is perpendicular to their source normal, the source identifier of the object compared with the planes of the part.
+**Need.** A field that separates the dual-frame objects whose frame lies against the source normal from those along it, read in the objects without a frame of the offset plane and checked against the B-rep vertices of the features sketched on those planes. For the perpendicular frames, the source identifier of the object compared with the planes of the part.
