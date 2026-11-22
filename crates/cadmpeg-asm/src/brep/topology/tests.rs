@@ -7,7 +7,7 @@ use crate::kernel_header::RefWidth;
 use crate::nurbs;
 use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::geometry::RevisionCacheForm;
+use cadmpeg_ir::geometry::revision_forms::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::HashSet;
 
@@ -536,7 +536,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             assert_eq!(
                 form.cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                 Some(tolerance * 10.0)
             );
             assert_eq!(decoded.cache_fit_tolerance(), Some(tolerance * 10.0));
@@ -722,7 +722,7 @@ fn history_reaches_cacheless_helix_constructions_from_face_and_wire_edges() {
         };
         assert!(matches!(
             definition.as_ref(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_)
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(_)
         ));
     }
 }

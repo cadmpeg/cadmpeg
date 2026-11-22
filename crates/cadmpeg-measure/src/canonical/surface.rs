@@ -385,6 +385,18 @@ impl<'ir> NurbsChart<'ir> {
 
     fn partials(&self, eval: &Eval<'_, '_>, u: f64, v: f64) -> Measure<Partials> {
         let [u, v] = self.in_domain([u, v]);
+        if self.evaluation.is_none() {
+            if let Some(fast) = super::column::nurbs_surface_partials_fast(
+                eval,
+                self.surface,
+                u,
+                v,
+                self.domain,
+                self.placement,
+            )? {
+                return Ok(fast);
+            }
+        }
         let local = eval
             .work
             .evaluate(eval.ctx, |admission| match self.evaluation {
@@ -401,16 +413,109 @@ impl<'ir> NurbsChart<'ir> {
         })
     }
 
+    /// Fast damped Gauss-Newton inversion from a close `seed` using `self.partials`.
+    /// Returns `Some((uv, partials))` only when it converges to both parameter
+    /// resolution and model-space `tolerance`.
+    fn refine_from_seed(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: [f64; 2],
+        tolerance: f64,
+    ) -> Measure<Option<([f64; 2], Partials)>> {
+        let mut uv = [0, 1].map(|axis| {
+            let [low, high] = self.domain[axis];
+            if let Some(period) = self.periods[axis] {
+                if seed[axis] < low || seed[axis] > high {
+                    low + (seed[axis] - low).rem_euclid(period)
+                } else {
+                    seed[axis]
+                }
+            } else {
+                seed[axis].clamp(low, high)
+            }
+        });
+        let resolution = [0, 1].map(|axis| {
+            INVERSION_PARAMETER_RESOLUTION * (self.domain[axis][1] - self.domain[axis][0])
+        });
+        let mut partials = self.partials(eval, uv[0], uv[1])?;
+        let mut current_dist = partials.point.distance(point);
+        if !current_dist.is_finite() {
+            return Ok(None);
+        }
+        for _ in 0..MAX_INVERSION_REFINEMENT_STEPS {
+            let (Some(du), Some(dv)) = (
+                FiniteVector3::new(partials.du),
+                FiniteVector3::new(partials.dv),
+            ) else {
+                break;
+            };
+            let Some((step_u, step_v)) = cadmpeg_ir::math::solve::least_squares_step(
+                du,
+                dv,
+                point.vector_from(partials.point),
+            ) else {
+                break;
+            };
+            let step = [step_u.get(), step_v.get()];
+            let mut scale = 1.0_f64;
+            let mut accepted = None;
+            for _ in 0..8 {
+                let mut next_uv = [0.0; 2];
+                let mut moved = [0.0; 2];
+                for axis in 0..2 {
+                    let mut next = uv[axis] + scale * step[axis];
+                    if self.periods[axis].is_none() {
+                        next = next.clamp(self.domain[axis][0], self.domain[axis][1]);
+                    }
+                    moved[axis] = next - uv[axis];
+                    next_uv[axis] = next;
+                }
+                let next_partials = self.partials(eval, next_uv[0], next_uv[1])?;
+                let next_dist = next_partials.point.distance(point);
+                if next_dist.is_finite()
+                    && (next_dist <= current_dist
+                        || (moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1]))
+                {
+                    accepted = Some((next_uv, moved, next_partials, next_dist));
+                    break;
+                }
+                scale *= 0.5;
+            }
+            let Some((next_uv, moved, next_partials, next_dist)) = accepted else {
+                break;
+            };
+            uv = next_uv;
+            partials = next_partials;
+            current_dist = next_dist;
+            if moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1] {
+                break;
+            }
+        }
+        if current_dist.is_finite() && current_dist <= tolerance {
+            Ok(Some((uv, partials)))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// The parameters of a model point within `tolerance`, seeded at
     /// `seed`, refined by Gauss–Newton steps until a step moves it less
-    /// than the parameter resolution.
-    fn invert(
+    /// than the parameter resolution, together with its partials.
+    fn invert_with_partials(
         &self,
         eval: &Eval<'_, '_>,
         point: Point3,
         seed: Option<[f64; 2]>,
         tolerance: f64,
-    ) -> Measure<Option<[f64; 2]>> {
+    ) -> Measure<Option<([f64; 2], Partials)>> {
+        if let Some(seed) = seed {
+            if self.evaluation.is_none() {
+                if let Some(fast) = self.refine_from_seed(eval, point, seed, tolerance)? {
+                    return Ok(Some(fast));
+                }
+            }
+        }
         let Some(local) = self.placement.inverse_point(point) else {
             return Ok(None);
         };
@@ -433,8 +538,8 @@ impl<'ir> NurbsChart<'ir> {
         let resolution = [0, 1].map(|axis| {
             INVERSION_PARAMETER_RESOLUTION * (self.domain[axis][1] - self.domain[axis][0])
         });
+        let mut partials = self.partials(eval, uv[0], uv[1])?;
         for _ in 0..MAX_INVERSION_REFINEMENT_STEPS {
-            let partials = self.partials(eval, uv[0], uv[1])?;
             let (Some(du), Some(dv)) = (
                 FiniteVector3::new(partials.du),
                 FiniteVector3::new(partials.dv),
@@ -458,11 +563,24 @@ impl<'ir> NurbsChart<'ir> {
                 moved[axis] = next - uv[axis];
                 uv[axis] = next;
             }
+            partials = self.partials(eval, uv[0], uv[1])?;
             if moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1] {
                 break;
             }
         }
-        Ok(Some(uv))
+        Ok(Some((uv, partials)))
+    }
+
+    fn invert(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: Option<[f64; 2]>,
+        tolerance: f64,
+    ) -> Measure<Option<[f64; 2]>> {
+        Ok(self
+            .invert_with_partials(eval, point, seed, tolerance)?
+            .map(|(uv, _)| uv))
     }
 }
 
@@ -598,6 +716,26 @@ impl Chart<'_> {
             Self::Nurbs(nurbs) => nurbs.invert(eval, point, seed, tolerance),
             Self::Extrusion(extrusion) => extrusion.invert(eval, point, seed, tolerance),
             analytic => Ok(analytic.closed_invert(point)),
+        }
+    }
+
+    /// Invert `point` onto the chart and return the partials at the inverted
+    /// parameters when already computed (avoiding a second surface evaluation).
+    pub(crate) fn invert_with_partials(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: Option<[f64; 2]>,
+        tolerance: f64,
+    ) -> Measure<Option<([f64; 2], Option<Partials>)>> {
+        match self {
+            Self::Nurbs(nurbs) => Ok(nurbs
+                .invert_with_partials(eval, point, seed, tolerance)?
+                .map(|(uv, partials)| (uv, Some(partials)))),
+            Self::Extrusion(extrusion) => Ok(extrusion
+                .invert(eval, point, seed, tolerance)?
+                .map(|uv| (uv, None))),
+            analytic => Ok(analytic.closed_invert(point).map(|uv| (uv, None))),
         }
     }
 

@@ -5,11 +5,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SupportPcurve, SurfaceCurveFamily,
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
 };
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Edge;
@@ -450,7 +452,9 @@ pub(super) fn emit_edges(
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
                 definition
-                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(tolerance))
+                    .set_legacy_cache(cadmpeg_ir::geometry::legacy_cache::LegacyCache::new(
+                        tolerance,
+                    ))
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);

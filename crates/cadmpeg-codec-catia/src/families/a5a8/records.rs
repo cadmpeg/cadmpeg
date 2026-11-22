@@ -11,11 +11,10 @@ use crate::wire::records::{
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -552,17 +551,19 @@ impl A5FreeformCurve {
         let stations = self
             .sites
             .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: Self::DEGREE + 1,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            })
+            .map(
+                |sample| cadmpeg_ir::geometry::blends::RollingBallJetStation {
+                    knot: sample.knot,
+                    multiplicity: Self::DEGREE + 1,
+                    site: rolling_ball_jet_site(
+                        &sample.site,
+                        sample.first_derivatives,
+                        sample.second_derivatives,
+                    ),
+                },
+            )
             .collect();
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(Self::DEGREE, stations)
             .ok()
             .map(ProceduralSurfaceDefinition::RollingBallJet)
     }
@@ -1024,22 +1025,23 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     }
     let mut stations = Vec::new();
 
-    stations.extend(
-        jet.sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: sample.multiplicity,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            }),
-    );
-    cadmpeg_ir::geometry::RollingBallJetStations::from_parts(A8FreeformCurve::DEGREE, stations)
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet)
+    stations.extend(jet.sites.iter().map(|sample| {
+        cadmpeg_ir::geometry::blends::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: rolling_ball_jet_site(
+                &sample.site,
+                sample.first_derivatives,
+                sample.second_derivatives,
+            ),
+        }
+    }));
+    cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+    )
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1782,7 +1784,7 @@ fn a5_surface(
     let Some(u_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, u_degree, u_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1796,7 +1798,7 @@ fn a5_surface(
     let Some(v_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, v_degree, v_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -2227,9 +2229,16 @@ fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize>
     Some(count)
 }
 
-fn a5_array_marker(bytes: &[u8], at: usize, owned: bool) -> Option<usize> {
+fn a5_array_marker(
+    bytes: &[u8],
+    at: usize,
+    owned: bool,
+    degree: u32,
+    distinct_count: usize,
+) -> Option<usize> {
     match bytes.get(at..at + 2) {
         Some([0x0c, ..]) => Some(at + 1),
+        Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
         Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,

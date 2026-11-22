@@ -454,6 +454,9 @@ pub(crate) enum F3dLossCode {
     FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
     FeatureCircularPatternPlacementNotTransferred,
+    /// A circular pattern projects with its suppressed instances because their
+    /// instance order is unread.
+    FeatureCircularPatternSuppressionNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
     /// A rectangular-pattern payload's seed kind or body references disagree
@@ -638,6 +641,12 @@ pub(crate) enum F3dLossCode {
     ConfigurationPropertyUnprojected,
     /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
     HistoryRollbackUnread,
+    /// A coordinate frame retains its source construction references and expressions.
+    CoordinateSystemConstructionNative,
+    /// A coordinate frame transfers without its source construction references and expressions.
+    CoordinateSystemConstructionDropped,
+    /// A coordinate-system scope has an unresolved solved frame.
+    CoordinateSystemFrameUnresolved,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -1608,6 +1617,7 @@ impl F3dLossCode {
         Self::FeaturePatternFeatureSeedSubstituted,
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
+        Self::FeatureCircularPatternSuppressionNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
@@ -1720,6 +1730,9 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::CoordinateSystemConstructionNative,
+        Self::CoordinateSystemConstructionDropped,
+        Self::CoordinateSystemFrameUnresolved,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -2407,6 +2420,9 @@ impl F3dLossCode {
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
             }
+            Self::FeatureCircularPatternSuppressionNotTransferred => {
+                "feature.circular-pattern-suppression-not-transferred"
+            }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
             }
@@ -2712,6 +2728,13 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::CoordinateSystemConstructionNative => {
+                "feature.coordinate-system-construction-native"
+            }
+            Self::CoordinateSystemConstructionDropped => {
+                "feature.coordinate-system-construction-dropped"
+            }
+            Self::CoordinateSystemFrameUnresolved => "feature.coordinate-system-frame-unresolved",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -3542,6 +3565,7 @@ impl F3dLossCode {
             | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
@@ -3728,6 +3752,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4267,6 +4294,7 @@ impl F3dLossCode {
             | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
@@ -4461,6 +4489,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -5192,6 +5223,7 @@ mod tests {
                 "feature.pattern-feature-seed-substituted",
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
+                "feature.circular-pattern-suppression-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
@@ -5304,6 +5336,9 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "feature.coordinate-system-construction-native",
+                "feature.coordinate-system-construction-dropped",
+                "feature.coordinate-system-frame-unresolved",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",

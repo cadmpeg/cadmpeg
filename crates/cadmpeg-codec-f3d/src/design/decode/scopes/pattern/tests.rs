@@ -377,6 +377,7 @@ fn run_pattern_constructions_fixture() {
         Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
             symmetric: None,
+            suppressed: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),
@@ -1560,6 +1561,7 @@ mod direction_records;
 mod distance_type_ten;
 mod inactive_direction_one;
 mod rectangular_instance_caps;
+mod suppressed_instances;
 mod symmetric_two;
 
 fn spacing_payload() -> Vec<u8> {

@@ -102,10 +102,9 @@ fn cycle_admission_finds_cycles_among_many_unrelated_points() {
 
 #[test]
 fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
-    use crate::geometry::{
-        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-        ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use crate::geometry::{CurveGeometry, ProceduralCurve, ProceduralSurface, SurfaceGeometry};
     use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
     let (mut ir, curve, surface) = cyclic_model();
     // Duplicate construction IDs select the first construction row.

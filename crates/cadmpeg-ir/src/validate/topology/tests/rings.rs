@@ -253,9 +253,9 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
 
 #[test]
 fn spring_support_reference_findings_name_the_construction() {
-    use crate::geometry::{
-        ProceduralCurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve, SpringSupport,
-    };
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::surface_curves::{SpringLayout, SpringPcurve, SpringSupport};
+    use crate::geometry::ProceduralCurve;
     use crate::ids::{ProceduralCurveId, SurfaceId};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");

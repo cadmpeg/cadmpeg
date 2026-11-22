@@ -99,7 +99,7 @@ fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
                     .iter()
                     .any(|curve| matches!(
                         curve.definition(),
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+                        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection { .. }
                     )));
                 assert_eq!(
                     decoded

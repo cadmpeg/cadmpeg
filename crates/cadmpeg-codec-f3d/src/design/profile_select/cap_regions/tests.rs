@@ -3,7 +3,7 @@
 use std::f64::consts::TAU;
 
 use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{

@@ -161,7 +161,7 @@ fn resolved_item(
     losses: &mut Vec<LossNote>,
 ) -> Feature {
     let operation = feature.evaluation.definition().operation();
-    let typed_pattern = || {
+    let typed_pattern = |losses: &mut Vec<LossNote>| {
         let scope = scopes.get(feature.native_ref.as_deref()?)?;
         scope.rectangular_pattern_construction()?;
         let projected = super::pattern::project(operation, scope, losses);
@@ -172,8 +172,9 @@ fn resolved_item(
         }
         projected
     };
-    let operation = stored(operation, bodies)
-        .or_else(typed_pattern)
+    let operation = super::datum::project(feature, losses)
+        .or_else(|| stored(operation, bodies))
+        .or_else(|| typed_pattern(losses))
         .unwrap_or_else(|| match family(operation) {
             Family::Typed(family) => FeatureOperation::Unresolved { family },
             Family::Native(kind) => native(&kind),

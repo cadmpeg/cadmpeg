@@ -365,8 +365,13 @@ fn clean_multi_loop_face_splits_per_loop() {
     );
     assert_eq!(unit.context, Slots::from([10, 11, 12, 30, 60]));
     assert!(!unit.parts[&30].contains(&10));
-    let neighbours = binder.units.neighbours(&super::Parts::from([(10, 30)]));
-    assert_eq!(neighbours, super::Parts::from([(10, 30), (50, 50)]));
+    let neighbours = binder
+        .units
+        .neighbours(&[(10, 30)].into_iter().collect::<super::Parts>());
+    assert_eq!(
+        neighbours,
+        [(10, 30), (50, 50)].into_iter().collect::<super::Parts>()
+    );
 }
 
 #[test]
@@ -648,12 +653,23 @@ fn orphan_container_falls_back() {
 }
 
 #[test]
-fn existing_saved_container_falls_back_for_container_edit() {
+fn existing_saved_container_stays_incremental_for_unrelated_container_edit() {
     let mut a = fixture();
     a.insert(30, refs(30, "edge", &[(3, 15), (5, 15), (8, 17)]));
     let mut b = a.clone();
     set_ref(&mut b, 3, 5, 20);
     let stats = compare_step(&a, &b, &Slots::from([3]), Some(40));
+    assert!(stats.fallbacks.is_empty(), "{:?}", stats.fallbacks);
+}
+
+#[test]
+fn touched_saved_container_falls_back() {
+    let mut a = fixture();
+    a.insert(30, refs(30, "edge", &[(3, 15), (5, 15), (8, 17)]));
+    let mut b = a.clone();
+    // Editing the saved free edge itself requires a full re-decode.
+    set_ref(&mut b, 30, 5, 25);
+    let stats = compare_step(&a, &b, &Slots::from([30]), Some(40));
     assert_eq!(stats.fallbacks.get("saved-free-containers"), Some(&1));
 }
 

@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Coedge, LoopBoundaryRole, Sense};
 use cadmpeg_ir::CadIr;
@@ -114,7 +114,7 @@ fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
                 .unwrap();
             let [start, end] = pcurve_use.parameter_range.map_or_else(
                 || pcurve.parameter_range().unwrap().get(),
-                cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
             );
             for step in 0..=SAMPLES_PER_COEDGE {
                 let t = start + (end - start) * f64::from(step) / f64::from(SAMPLES_PER_COEDGE);

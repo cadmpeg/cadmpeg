@@ -63,7 +63,8 @@ fn scope(
                     "compute_option": { "value": 2, "offset": 146 },
                     "seed_kind": { "value": 1, "offset": 150 },
                     "body_references": { "value": 0, "offset": 134 },
-                    "untyped_body_references": 0
+                    "untyped_body_references": 0,
+                    "suppressed": { "value": [], "offset": 162 }
                 }))
                 .unwrap(),
             ),
