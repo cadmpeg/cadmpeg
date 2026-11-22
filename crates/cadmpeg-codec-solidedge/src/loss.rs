@@ -15,6 +15,11 @@ pub(crate) enum SolidEdgeLossCode {
     UnitsUnread,
     UnitCodeUnknown,
     UnitNotNeutral,
+    FeatureStorageUnread,
+    FeatureNavigatorAbsent,
+    FeatureOperandsPending,
+    FeatureKindUnknown,
+    FeatureRollbackUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -28,6 +33,20 @@ impl SolidEdgeLossCode {
             Self::UnitsUnread => ("units.unread", LossTaxonomy::MetadataNotTransferred),
             Self::UnitCodeUnknown => ("units.code-unknown", LossTaxonomy::MetadataNotTransferred),
             Self::UnitNotNeutral => ("units.not-neutral", LossTaxonomy::MetadataNotTransferred),
+            Self::FeatureStorageUnread => {
+                ("feature.storage-unread", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureNavigatorAbsent => {
+                ("feature.navigator-absent", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::FeatureOperandsPending => {
+                ("feature.operands-pending", LossTaxonomy::RecordNotTyped)
+            }
+            Self::FeatureKindUnknown => ("feature.kind-unknown", LossTaxonomy::RecordNotTyped),
+            Self::FeatureRollbackUnread => (
+                "feature.rollback-unread",
+                LossTaxonomy::FeatureHistoryRetained,
+            ),
         };
         LossNote::new(LossKind::namespaced(NAMESPACE, code, taxonomy), message)
     }

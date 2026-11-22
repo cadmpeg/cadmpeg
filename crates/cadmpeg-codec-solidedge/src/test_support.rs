@@ -130,3 +130,449 @@ pub(crate) fn property_set_of_form(
     }
     out
 }
+
+const SECTOR: usize = 512;
+const MINI_SECTOR: usize = 64;
+const MINI_CUTOFF: usize = 4096;
+const FAT_ENTRIES: usize = SECTOR / 4;
+const END_OF_CHAIN: u32 = 0xffff_fffe;
+const FAT_SECTOR: u32 = 0xffff_fffd;
+const FREE: u32 = 0xffff_ffff;
+
+/// A compound document node of [`document`].
+struct Node {
+    name: String,
+    stream: Option<Vec<u8>>,
+    parent: usize,
+}
+
+/// The sort key of a compound directory name: length, then upper case.
+fn name_key(name: &str) -> (usize, String) {
+    (name.encode_utf16().count(), name.to_uppercase())
+}
+
+fn chunks(len: usize, size: usize) -> usize {
+    len.div_ceil(size)
+}
+
+/// A compound document with a Solid Edge directory signature and the streams
+/// `streams`, each named by its path (`PSMspacemap/0x00000000` puts a stream
+/// in a storage). A stream under 4096 bytes lives in the mini stream, so its
+/// length is exact.
+pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut nodes = vec![Node {
+        name: "Root Entry".into(),
+        stream: None,
+        parent: 0,
+    }];
+    for name in ["JGlobal", "JSitesList"] {
+        nodes.push(Node {
+            name: name.into(),
+            stream: Some(Vec::new()),
+            parent: 0,
+        });
+    }
+    for (path, data) in streams {
+        let mut parent = 0;
+        let mut parts = path.split('/').peekable();
+        while let Some(part) = parts.next() {
+            if parts.peek().is_some() {
+                parent = match nodes.iter().position(|node| {
+                    node.parent == parent && node.name == part && node.stream.is_none()
+                }) {
+                    Some(found) => found,
+                    None => {
+                        nodes.push(Node {
+                            name: part.into(),
+                            stream: None,
+                            parent,
+                        });
+                        nodes.len() - 1
+                    }
+                };
+            } else {
+                nodes.push(Node {
+                    name: part.into(),
+                    stream: Some(data.clone()),
+                    parent,
+                });
+            }
+        }
+    }
+
+    // Sector plan: directory, mini FAT, mini stream, regular streams, FAT.
+    let directory_sectors = chunks(nodes.len(), 4);
+    let mut mini = Vec::new();
+    let mut mini_start = vec![END_OF_CHAIN; nodes.len()];
+    let mut regular_start = vec![END_OF_CHAIN; nodes.len()];
+    let mut regular = Vec::new();
+    for (index, node) in nodes.iter().enumerate() {
+        let Some(data) = &node.stream else { continue };
+        if data.is_empty() {
+            continue;
+        }
+        if data.len() < MINI_CUTOFF {
+            mini_start[index] = u32::try_from(mini.len() / MINI_SECTOR).unwrap();
+            mini.extend_from_slice(data);
+            mini.resize(chunks(mini.len(), MINI_SECTOR) * MINI_SECTOR, 0);
+        } else {
+            regular_start[index] = u32::try_from(regular.len() / SECTOR).unwrap();
+            regular.extend_from_slice(data);
+            regular.resize(chunks(regular.len(), SECTOR) * SECTOR, 0);
+        }
+    }
+    let mini_sectors = mini.len() / MINI_SECTOR;
+    let mini_fat_sectors = chunks(mini_sectors * 4, SECTOR);
+    let mini_stream_sectors = chunks(mini.len(), SECTOR);
+    let regular_sectors = regular.len() / SECTOR;
+    let base = directory_sectors + mini_fat_sectors + mini_stream_sectors + regular_sectors;
+    let mut fat_sectors = 1;
+    while base + fat_sectors > fat_sectors * FAT_ENTRIES {
+        fat_sectors += 1;
+    }
+    assert!(fat_sectors <= 109);
+    let total = base + fat_sectors;
+    let mini_fat_at = directory_sectors;
+    let mini_stream_at = mini_fat_at + mini_fat_sectors;
+    let regular_at = mini_stream_at + mini_stream_sectors;
+    let fat_at = regular_at + regular_sectors;
+
+    let mut fat = vec![FREE; fat_sectors * FAT_ENTRIES];
+    let chain = |table: &mut [u32], first: usize, count: usize| {
+        for (offset, entry) in table[first..first + count].iter_mut().enumerate() {
+            *entry = if offset + 1 == count {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(first + offset + 1).unwrap()
+            };
+        }
+    };
+    chain(&mut fat, 0, directory_sectors);
+    chain(&mut fat, mini_fat_at, mini_fat_sectors);
+    chain(&mut fat, mini_stream_at, mini_stream_sectors);
+    for (index, node) in nodes.iter().enumerate() {
+        if let Some(data) = node
+            .stream
+            .as_ref()
+            .filter(|data| data.len() >= MINI_CUTOFF)
+        {
+            chain(
+                &mut fat,
+                regular_at + usize::try_from(regular_start[index]).unwrap(),
+                chunks(data.len(), SECTOR),
+            );
+        }
+    }
+    fat[fat_at..total].fill(FAT_SECTOR);
+    let mut mini_fat = vec![FREE; mini_fat_sectors * FAT_ENTRIES];
+    for (index, node) in nodes.iter().enumerate() {
+        if let Some(data) = node
+            .stream
+            .as_ref()
+            .filter(|data| (1..MINI_CUTOFF).contains(&data.len()))
+        {
+            let first = usize::try_from(mini_start[index]).unwrap();
+            let count = chunks(data.len(), MINI_SECTOR);
+            chain(&mut mini_fat, first, count);
+        }
+    }
+
+    // Directory entries; every sibling run is a sorted right-linked chain of
+    // black nodes.
+    let mut directory = vec![0_u8; directory_sectors * SECTOR];
+    for entry in directory.chunks_exact_mut(128) {
+        entry[68..80].fill(0xff);
+    }
+    for (index, node) in nodes.iter().enumerate() {
+        let entry = &mut directory[index * 128..(index + 1) * 128];
+        for (unit_at, unit) in node.name.encode_utf16().enumerate() {
+            put_u16(entry, unit_at * 2, unit);
+        }
+        put_u16(
+            entry,
+            64,
+            u16::try_from((node.name.encode_utf16().count() + 1) * 2).unwrap(),
+        );
+        entry[67] = 1;
+        let mut siblings: Vec<usize> = (1..nodes.len())
+            .filter(|&other| nodes[other].parent == index && other != index)
+            .collect();
+        siblings.sort_by_key(|&other| name_key(&nodes[other].name));
+        if index == 0 {
+            entry[66] = 5;
+            put_u32(
+                entry,
+                116,
+                if mini.is_empty() {
+                    END_OF_CHAIN
+                } else {
+                    u32::try_from(mini_stream_at).unwrap()
+                },
+            );
+            entry[120..128].copy_from_slice(&u64::try_from(mini.len()).unwrap().to_le_bytes());
+        } else if let Some(data) = &node.stream {
+            entry[66] = 2;
+            let start = if data.is_empty() {
+                END_OF_CHAIN
+            } else if data.len() < MINI_CUTOFF {
+                mini_start[index]
+            } else {
+                u32::try_from(regular_at).unwrap() + regular_start[index]
+            };
+            put_u32(entry, 116, start);
+            entry[120..128].copy_from_slice(&u64::try_from(data.len()).unwrap().to_le_bytes());
+        } else {
+            entry[66] = 1;
+        }
+        if let Some(&first) = siblings.first() {
+            put_u32(entry, 76, u32::try_from(first).unwrap());
+        }
+    }
+    for index in 0..nodes.len() {
+        let mut siblings: Vec<usize> = (1..nodes.len())
+            .filter(|&other| nodes[other].parent == index && other != index)
+            .collect();
+        siblings.sort_by_key(|&other| name_key(&nodes[other].name));
+        for pair in siblings.windows(2) {
+            put_u32(
+                &mut directory,
+                pair[0] * 128 + 72,
+                u32::try_from(pair[1]).unwrap(),
+            );
+        }
+    }
+
+    let mut file = vec![0_u8; SECTOR];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 44, u32::try_from(fat_sectors).unwrap());
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, u32::try_from(MINI_CUTOFF).unwrap());
+    put_u32(
+        &mut file,
+        60,
+        if mini_fat_sectors == 0 {
+            END_OF_CHAIN
+        } else {
+            u32::try_from(mini_fat_at).unwrap()
+        },
+    );
+    put_u32(&mut file, 64, u32::try_from(mini_fat_sectors).unwrap());
+    put_u32(&mut file, 68, END_OF_CHAIN);
+    for index in 0..109 {
+        let value = if index < fat_sectors {
+            u32::try_from(fat_at + index).unwrap()
+        } else {
+            FREE
+        };
+        put_u32(&mut file, 76 + index * 4, value);
+    }
+    file.extend_from_slice(&directory);
+    for entry in &mini_fat {
+        file.extend_from_slice(&entry.to_le_bytes());
+    }
+    let mut padded = mini.clone();
+    padded.resize(mini_stream_sectors * SECTOR, 0);
+    file.extend_from_slice(&padded);
+    file.extend_from_slice(&regular);
+    for entry in &fat {
+        file.extend_from_slice(&entry.to_le_bytes());
+    }
+    assert_eq!(file.len(), (total + 1) * SECTOR);
+    file
+}
+
+/// One object of a synthetic PSM cluster.
+pub(crate) struct Object {
+    pub(crate) id: u32,
+    pub(crate) form: u16,
+    pub(crate) flags: u16,
+    /// The bytes after the 8-byte frame.
+    pub(crate) body: Vec<u8>,
+}
+
+/// The cluster stream and the space-map stream of `objects`, in order.
+pub(crate) fn cluster_and_map(objects: &[Object]) -> (Vec<u8>, Vec<u8>) {
+    let count = u32::try_from(objects.len()).unwrap();
+    let mut cluster = Vec::new();
+    cluster.extend_from_slice(&0x6C90_F544_u32.to_le_bytes());
+    cluster.extend_from_slice(&count.to_le_bytes());
+    let mut map = b"sseg".to_vec();
+    map.extend_from_slice(&u16::try_from(objects.len()).unwrap().to_le_bytes());
+    map.extend_from_slice(&0_u16.to_le_bytes());
+    map.extend_from_slice(&u16::try_from(objects.len() + 1).unwrap().to_le_bytes());
+    map.extend_from_slice(&0_u16.to_le_bytes());
+    for object in objects {
+        let offset = u32::try_from(cluster.len()).unwrap();
+        cluster.extend_from_slice(&0x5151_u16.to_le_bytes());
+        cluster.extend_from_slice(&object.form.to_le_bytes());
+        cluster.extend_from_slice(&object.id.to_le_bytes());
+        cluster.extend_from_slice(&object.body);
+        map.extend_from_slice(&16_u16.to_le_bytes());
+        map.extend_from_slice(&offset.to_le_bytes());
+        map.extend_from_slice(&object.id.to_le_bytes());
+        map.extend_from_slice(&(object.form << 6).to_le_bytes());
+        map.extend_from_slice(&0_u16.to_le_bytes());
+        map.extend_from_slice(&0_u16.to_le_bytes());
+        map.extend_from_slice(&object.flags.to_le_bytes());
+    }
+    (cluster, map)
+}
+
+fn section_header(count: usize) -> Vec<u8> {
+    let count = u16::try_from(count).unwrap();
+    let mut header = b"ePyT".to_vec();
+    header.resize(20, 0);
+    header[10..12].copy_from_slice(&count.to_le_bytes());
+    header[14..16].copy_from_slice(&count.to_le_bytes());
+    header
+}
+
+/// A type table whose named declarations are `names` in order and whose
+/// compact records carry the values `links`.
+pub(crate) fn type_table(names: &[&str], links: &[u16]) -> Vec<u8> {
+    let mut table = section_header(names.len());
+    for (index, name) in names.iter().enumerate() {
+        table.extend_from_slice(&[u8::try_from(index).unwrap() ^ 0xa5; 16]);
+        table.extend_from_slice(&u32::try_from(index).unwrap().to_le_bytes());
+        table.extend_from_slice(&1_u16.to_le_bytes());
+        table.extend_from_slice(&0xffff_u16.to_le_bytes());
+        table.extend_from_slice(&7_u32.to_le_bytes());
+        table.extend_from_slice(&u16::try_from(name.len() + 1).unwrap().to_le_bytes());
+        table.extend_from_slice(name.as_bytes());
+        table.push(0);
+        table.extend_from_slice(&2_u16.to_le_bytes());
+        table.extend_from_slice(b"x\0");
+    }
+    table.extend_from_slice(&section_header(links.len()));
+    for link in links {
+        let mut record = [0_u8; 26];
+        record[18..20].copy_from_slice(&link.to_le_bytes());
+        table.extend_from_slice(&record);
+    }
+    table
+}
+
+/// The navigator GUID in stored byte order.
+pub(crate) const NAVIGATOR_GUID: [u8; 16] = [
+    0x50, 0x6D, 0xF6, 0x44, 0xD1, 0x4D, 0xCE, 0x11, 0xBF, 0x4E, 0x08, 0x00, 0x36, 0x01, 0xC7, 0x2A,
+];
+
+/// The bytes after the frame of a navigator object that lists the three base
+/// planes `planes` and then `features`.
+pub(crate) fn navigator_body(planes: [u32; 3], features: &[u32]) -> Vec<u8> {
+    let mut body = 0_u32.to_le_bytes().to_vec();
+    body.extend_from_slice(&NAVIGATOR_GUID);
+    let word = |body: &mut Vec<u8>, value: u32| body.extend_from_slice(&value.to_le_bytes());
+    word(&mut body, 2);
+    word(&mut body, 100);
+    word(&mut body, 101);
+    word(&mut body, 1);
+    word(&mut body, 102);
+    body.extend_from_slice(&[0; 147]);
+    word(&mut body, 31);
+    body.extend_from_slice(b"JMFeatureNavigatorPartModified\0");
+    body.extend_from_slice(&[0; 68]);
+    for value in [0, 0, 1, 1] {
+        word(&mut body, value);
+    }
+    word(&mut body, 7);
+    word(&mut body, features.last().copied().unwrap_or(0));
+    word(
+        &mut body,
+        u32::try_from(planes.len() + features.len()).unwrap(),
+    );
+    for id in planes.iter().chain(features) {
+        word(&mut body, 0);
+        word(&mut body, *id);
+    }
+    word(&mut body, 0);
+    body
+}
+
+/// The bytes after the frame of a `CLSID_JMPart` object with function name
+/// `function`.
+pub(crate) fn part_body(function: &str) -> Vec<u8> {
+    // The frame is 8 bytes; the counted block starts at object offset 132.
+    let mut body = vec![0_u8; 132 - 8];
+    body.extend_from_slice(&6_u32.to_le_bytes());
+    body.extend_from_slice(&[0xee; 6]);
+    body.extend_from_slice(&u32::try_from(function.len() + 1).unwrap().to_le_bytes());
+    body.extend_from_slice(function.as_bytes());
+    body.push(0);
+    body
+}
+
+/// One feature of [`feature_document`].
+pub(crate) enum Feature<'a> {
+    /// A `CLSID_JMPart` with this function name.
+    Part(&'a str),
+    /// A `CLSID_JMGroup`.
+    Group,
+    /// An object of this other class.
+    Other(&'a str),
+}
+
+/// A document whose cluster 0 holds the three base planes, the given
+/// features and a navigator that lists them in order. Every object's form is
+/// its declaration index, since the compact table is empty.
+pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
+    let mut classes = vec![
+        "ReferencePlaneObject",
+        "CLSID_JMPart",
+        "CLSID_JMGroup",
+        "CLSID_JMPartOwner",
+        "FeatureNavigatorObject",
+    ];
+    let mut objects = Vec::new();
+    for id in 1..=3 {
+        objects.push(Object {
+            id,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        });
+    }
+    let mut listed = Vec::new();
+    for (index, feature) in features.iter().enumerate() {
+        let id = 10 + u32::try_from(index).unwrap();
+        listed.push(id);
+        let (form, body) = match feature {
+            Feature::Part(function) => (1, part_body(function)),
+            Feature::Group => (2, vec![0; 8]),
+            Feature::Other(class) => {
+                classes.push(class);
+                (u16::try_from(classes.len() - 1).unwrap(), vec![0; 8])
+            }
+        };
+        objects.push(Object {
+            id,
+            form,
+            flags: 0,
+            body,
+        });
+    }
+    objects.push(Object {
+        id: 7,
+        form: 3,
+        flags: 0,
+        body: vec![0; 8],
+    });
+    objects.push(Object {
+        id: 5000,
+        form: 4,
+        flags: 0,
+        body: navigator_body([1, 2, 3], &listed),
+    });
+    objects.sort_by_key(|object| object.id);
+    let (cluster, map) = cluster_and_map(&objects);
+    document(&[
+        ("PSMcluster0", cluster),
+        ("PSMspacemap/0x00000000", map),
+        ("PSMtypetable", type_table(&classes, &[])),
+    ])
+}
