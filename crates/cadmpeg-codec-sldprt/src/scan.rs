@@ -147,6 +147,10 @@ fn native(
         }
         found |= wrapped(&expanded, budget, scan)?;
     }
+    let tail = &source.window()[reader.position() - source.start()..];
+    if !tail.is_empty() && block::MARKER_VALUE.starts_with(tail) {
+        return Err(StopReason::Truncated("SolidWorks block header".into()));
+    }
     Ok(found)
 }
 
