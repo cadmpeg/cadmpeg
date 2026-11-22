@@ -1122,43 +1122,51 @@ fn scale_refusal(refusal: ScaleRefusal, carrier: &str, scale: PositiveReal) -> C
 
 /// Refusal of a scaled revolution-axis origin that is not finite. The text is
 /// the one both revolution constructions give for an axis they do not admit.
-const SCALED_REVOLUTION_AXIS_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
-    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+const SCALED_REVOLUTION_AXIS_REFUSAL: cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError =
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
         "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
     );
 
 /// Refusal of a scaled extrusion direction that is not finite. The text is
 /// the one the extrusion construction gives for a direction it does not
 /// admit.
-const SCALED_EXTRUSION_DIRECTION_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
-    cadmpeg_ir::geometry::ProceduralGeometryError::Payload("Extrusion.direction is not finite");
+const SCALED_EXTRUSION_DIRECTION_REFUSAL:
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError =
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+        "Extrusion.direction is not finite",
+    );
 
 /// Refusal of a scaled extrusion native position that is not finite. The
 /// text is the one the extrusion construction gives for a position it does
 /// not admit.
-const SCALED_EXTRUSION_POSITION_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
-    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+const SCALED_EXTRUSION_POSITION_REFUSAL:
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError =
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
         "Extrusion.native_position is not finite",
     );
 
 /// Refusal of a scaled sum basepoint that is not finite. The text is the one
 /// the sum construction gives for a basepoint it does not admit.
-const SCALED_SUM_BASEPOINT_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
-    cadmpeg_ir::geometry::ProceduralGeometryError::Payload("sum basepoint must be finite");
+const SCALED_SUM_BASEPOINT_REFUSAL: cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError =
+    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+        "sum basepoint must be finite",
+    );
 
 trait ScaleProceduralLengths {
     fn scale_lengths(
         &mut self,
         scale: PositiveReal,
-    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError>;
+    ) -> Result<(), cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError>;
 }
 
-impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+impl ScaleProceduralLengths
+    for cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition
+{
     fn scale_lengths(
         &mut self,
         scale: PositiveReal,
-    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
-        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    ) -> Result<(), cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError> {
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
         match self {
             ProceduralSurfaceDefinition::Extrusion(payload) => {
@@ -1179,7 +1187,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 let mut direction = payload.direction().get();
                 scale_vector3(&mut direction, scale);
                 let direction = cadmpeg_ir::units::DirectionAboveEpsilon::new(direction).ok_or(
-                    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                         "invalid linear-sweep direction",
                     ),
                 )?;
@@ -1213,15 +1221,15 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
     }
 }
 
-impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition {
+impl ScaleProceduralLengths for cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition {
     fn scale_lengths(
         &mut self,
         scale: PositiveReal,
-    ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
+    ) -> Result<(), cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError> {
         if let Self::Helix(helix) = self {
             helix
                 .try_scale_lengths(scale.get())
-                .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
+                .map_err(cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload)?;
         }
         Ok(())
     }
@@ -1762,20 +1770,21 @@ mod tests {
             )
         })
         .expect("surface admission");
-        let mut surface_definition = cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
-            cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
-                    .expect("identity grammar"),
-                Some([1.0, 2.0]),
-                Vector3::new(1.0, 2.0, 3.0),
-                Some(Point3::new(4.0, 5.0, 6.0)),
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
-            )
-            .unwrap(),
-        );
+        let mut surface_definition =
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                    cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
+                        .expect("identity grammar"),
+                    Some([1.0, 2.0]),
+                    Vector3::new(1.0, 2.0, 3.0),
+                    Some(Point3::new(4.0, 5.0, 6.0)),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
+                )
+                .unwrap(),
+            );
         surface_definition
             .set_legacy_cache(Some(
-                cadmpeg_ir::geometry::LegacyCache::try_new(7.0).unwrap(),
+                cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(7.0).unwrap(),
             ))
             .unwrap();
         let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
@@ -1808,23 +1817,26 @@ mod tests {
             )
         })
         .expect("curve admission");
-        let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
-                    center: Point3::new(1.0, 2.0, 3.0),
-                    major: Vector3::new(4.0, 5.0, 6.0),
-                    minor: Vector3::new(-5.0, 4.0, 6.0),
-                    pitch: Vector3::new(10.0, 11.0, 12.0),
-                    axis: Vector3::new(0.0, 0.0, 1.0),
-                },
-                0.25,
-                None,
-            )
-            .unwrap(),
-        );
+        let mut curve_definition =
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
+                    [0.0, 1.0],
+                    cadmpeg_ir::geometry::helix::HelixFrame {
+                        center: Point3::new(1.0, 2.0, 3.0),
+                        major: Vector3::new(4.0, 5.0, 6.0),
+                        minor: Vector3::new(-5.0, 4.0, 6.0),
+                        pitch: Vector3::new(10.0, 11.0, 12.0),
+                        axis: Vector3::new(0.0, 0.0, 1.0),
+                    },
+                    0.25,
+                    None,
+                )
+                .unwrap(),
+            );
         curve_definition
-            .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::try_new(13.0).unwrap())
+            .set_legacy_cache(
+                cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(13.0).unwrap(),
+            )
             .unwrap();
         let curve = cadmpeg_ir::geometry::ProceduralCurve::new(
             cadmpeg_ir::ids::ProceduralCurveId::mint("test:model:entity#curve-construction")
@@ -1836,8 +1848,9 @@ mod tests {
             .expect("curve construction admission");
 
         let surface = &ir.geometry.procedural_surfaces[0];
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-            surface.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload,
+        ) = surface.definition()
         else {
             panic!("test surface construction changed family");
         };
@@ -1871,8 +1884,9 @@ mod tests {
         );
 
         let curve = &ir.geometry.procedural_curves[0];
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
-            curve.definition()
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
+            helix_payload,
+        ) = curve.definition()
         else {
             panic!("test curve construction changed family");
         };
@@ -1909,38 +1923,38 @@ mod tests {
             .expect("identity grammar");
         let payloads = [
             (
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                         directrix.clone(),
                         None,
                         Vector3::new(f64::MAX, 0.0, 0.0),
                         None,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
                 "Extrusion.direction is not finite",
             ),
             (
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                         directrix.clone(),
                         None,
                         Vector3::new(1.0, 0.0, 0.0),
                         Some(Point3::new(0.0, f64::MAX, 0.0)),
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
                 "Extrusion.native_position is not finite",
             ),
             (
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Sum(
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Sum(
                     cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
                         directrix.clone(),
                         directrix,
                         Vector3::new(0.0, 0.0, -f64::MAX),
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
@@ -2088,7 +2102,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 radii.map(positive_length),
-                cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0])
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([0.0, 1.0])
                     .expect("a nonzero interval"),
             )
             .expect("an ordered arc fixture"),

@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::geometry::curve_offsets::{
+    CurveOffsetDistanceLaw, CurveOffsetLawBasis, CurveOffsetRange, OffsetSide,
+};
 use crate::geometry::curve_payloads::{
     OffsetCurveConstruction, ProjectionCurvePayload, SpringCurvePayload,
 };
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::legacy_cache::{CacheContract, ProceduralGeometryError};
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+use crate::geometry::procedural_curves::{
+    CompoundComponent, DirectedParameterRange, SupportPcurve,
+};
+use crate::geometry::procedural_surfaces::{ExactSpline, TaperSurfaceKind};
+use crate::geometry::surface_curves::{
+    ProjectionRole, ProjectionTail, SpringLayout, SpringPcurve, SpringSupport,
+};
 use crate::geometry::surface_payloads::{
     CompoundSurfacePayload, ExactSurfacePayload, TaperSurfaceConstruction,
-};
-use crate::geometry::{
-    CacheContract, CompoundComponent, CurveOffsetDistanceLaw, CurveOffsetLawBasis,
-    CurveOffsetRange, DirectedParameterRange, ExactSpline, IntcurveSupportContext,
-    IntcurveSupportSide, OffsetSide, ProceduralGeometryError, ProjectionRole, ProjectionTail,
-    SpringLayout, SpringPcurve, SpringSupport, SupportPcurve, TaperSurfaceKind,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point2, Vector3};
@@ -137,7 +143,7 @@ fn procedural_curve_stores_hold_their_admitted_construction_records() {
         parameter_range: crate::topology::IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
         distance_law: CurveOffsetDistanceLaw::Coordinate {
             function: curve(),
-            coordinate: crate::geometry::CurveOffsetCoordinate::try_new(1).unwrap(),
+            coordinate: crate::geometry::curve_offsets::CurveOffsetCoordinate::try_new(1).unwrap(),
             basis: CurveOffsetLawBasis::Parameter,
             function_parameter_offset: 0.0,
             function_parameter_scale: 0.5,
@@ -177,7 +183,10 @@ fn procedural_curve_stores_hold_their_admitted_construction_records() {
                     parameter_range: *parameter_range,
                     distance_law: CurveOffsetDistanceLaw::Coordinate {
                         function: curve(),
-                        coordinate: crate::geometry::CurveOffsetCoordinate::try_new(1).unwrap(),
+                        coordinate: crate::geometry::curve_offsets::CurveOffsetCoordinate::try_new(
+                            1
+                        )
+                        .unwrap(),
                         basis: CurveOffsetLawBasis::Parameter,
                         function_parameter_offset: 0.0,
                         function_parameter_scale: scale,
@@ -185,7 +194,7 @@ fn procedural_curve_stores_hold_their_admitted_construction_records() {
                 }),
             )
             .unwrap_err(),
-            refusal(crate::geometry::INVALID_CURVE_OFFSET)
+            refusal(crate::geometry::curve_offsets::INVALID_CURVE_OFFSET)
         );
     }
 
