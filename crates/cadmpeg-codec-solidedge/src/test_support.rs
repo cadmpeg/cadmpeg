@@ -983,3 +983,6 @@ pub(crate) fn dressup_document(
     }
     feature_with_groups(body, extra, &DRESSUP_CLASSES)
 }
+
+mod patterns;
+pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};

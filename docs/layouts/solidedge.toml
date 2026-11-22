@@ -796,3 +796,101 @@ offset = 37
 type = "f64[3]"
 source = "spec"
 anchor = "axis in model space, and the three `f64` at offset 37 are the unit axis"
+
+[[record]]
+name = "pattern_group"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/patterns.rs"
+section = "8.1"
+anchor = "A pattern is a `CLSID_JMGroup` entry of the navigator (§4.1). The group"
+size = 341
+
+[[record.gap]]
+offset = 0
+size = 106
+note = "§8.1 states no field before the fast-pattern part identifier."
+
+[[record.field]]
+name = "fast_pattern_part"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "| 106 | `u32` identifier of the `CLSID_JMPart` object with function `JMFastPatternFunction` |"
+
+[[record.gap]]
+offset = 110
+size = 227
+note = "§8.1 states no field between the fast-pattern part identifier and the seed."
+
+[[record.field]]
+name = "seed"
+offset = 337
+type = "u32"
+source = "spec"
+anchor = "| 337 | `u32` identifier of the seed feature |"
+
+[[record]]
+name = "mirror_group"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/patterns.rs"
+section = "8.2"
+anchor = "A mirror is a `CLSID_JMGroup` entry of the navigator whose group object"
+size = 333
+
+[[record.gap]]
+offset = 0
+size = 92
+note = "§8.2 states no field before the seed count."
+
+[[record.field]]
+name = "seed_count"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "| 92 | `u32` seed count `c` |"
+
+[[record.field]]
+name = "first_seed"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "| 96 | `c` `u32` seed feature identifiers |"
+
+[[record.gap]]
+offset = 100
+size = 229
+note = "§8.2 states no field between the seed list's first word and the mirror plane."
+
+[[record.field]]
+name = "plane"
+offset = 329
+type = "u32"
+source = "spec"
+anchor = "| 329 | for `c` = 1, `u32` identifier of the mirror plane |"
+
+[[record]]
+name = "reference_plane"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/patterns.rs"
+section = "8.2"
+anchor = "The mirror plane is a `ReferencePlaneObject`, the plane about which the seed"
+size = 61
+
+[[record.gap]]
+offset = 0
+size = 13
+note = "§8.2 states no field before the plane point."
+
+[[record.field]]
+name = "point"
+offset = 13
+type = "f64[3]"
+source = "spec"
+anchor = "is mirrored. Its object stores three `f64` at offset 13, a point on the plane,"
+
+[[record.field]]
+name = "normal"
+offset = 37
+type = "f64[3]"
+source = "spec"
+anchor = "and three `f64` at offset 37, the unit plane normal."

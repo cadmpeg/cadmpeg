@@ -331,3 +331,54 @@ Parsed by:
 Unstated regions:
 
 - `0..12` (12 B): §6.4 states no field before the axis marker.
+
+## `pattern_group`
+
+Spec §8.1 · layout: byte offsets · size: 341 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/patterns.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 106 | 4 | `fast_pattern_part` | `u32` | little | spec | \| 106 \| `u32` identifier of the `CLSID_JMPart` object with function `JMFastPatternFunction` \| |
+| 337 | 4 | `seed` | `u32` | little | spec | \| 337 \| `u32` identifier of the seed feature \| |
+
+Unstated regions:
+
+- `0..106` (106 B): §8.1 states no field before the fast-pattern part identifier.
+- `110..337` (227 B): §8.1 states no field between the fast-pattern part identifier and the seed.
+
+## `mirror_group`
+
+Spec §8.2 · layout: byte offsets · size: 333 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/patterns.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 92 | 4 | `seed_count` | `u32` | little | spec | \| 92 \| `u32` seed count `c` \| |
+| 96 | 4 | `first_seed` | `u32` | little | spec | \| 96 \| `c` `u32` seed feature identifiers \| |
+| 329 | 4 | `plane` | `u32` | little | spec | \| 329 \| for `c` = 1, `u32` identifier of the mirror plane \| |
+
+Unstated regions:
+
+- `0..92` (92 B): §8.2 states no field before the seed count.
+- `100..329` (229 B): §8.2 states no field between the seed list's first word and the mirror plane.
+
+## `reference_plane`
+
+Spec §8.2 · layout: byte offsets · size: 61 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/patterns.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 13 | 24 | `point` | `f64[3]` | little | spec | is mirrored. Its object stores three `f64` at offset 13, a point on the plane, |
+| 37 | 24 | `normal` | `f64[3]` | little | spec | and three `f64` at offset 37, the unit plane normal. |
+
+Unstated regions:
+
+- `0..13` (13 B): §8.2 states no field before the plane point.
