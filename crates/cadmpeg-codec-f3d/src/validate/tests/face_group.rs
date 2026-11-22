@@ -120,7 +120,7 @@ fn entity_selection_valid_slot_has_no_finding() {
         let native = operand_native(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_entity_selection_operands(&ctx, &mut findings);
+        super::super::extrude_selections::validate_entity_selection_operands(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
