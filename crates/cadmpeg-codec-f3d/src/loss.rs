@@ -466,6 +466,8 @@ pub(crate) enum F3dLossCode {
     FeatureCircularPatternSuppressionNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
+    /// A circular pattern assumes equal spacing because its spacing control is unread.
+    FeatureCircularPatternControlsAssumed,
     /// A rectangular-pattern payload's seed kind or body references disagree
     /// with its seed group, whose seeds are kept.
     FeaturePatternPayloadSeedUnconfirmed,
@@ -1625,6 +1627,7 @@ impl F3dLossCode {
         Self::FeatureCircularPatternPlacementNotTransferred,
         Self::FeatureCircularPatternSuppressionNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
+        Self::FeatureCircularPatternControlsAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
@@ -2433,6 +2436,9 @@ impl F3dLossCode {
             }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
+            }
+            Self::FeatureCircularPatternControlsAssumed => {
+                "feature.circular-pattern-controls-assumed"
             }
             Self::FeaturePatternPayloadSeedUnconfirmed => {
                 "feature.pattern-payload-seed-unconfirmed"
@@ -3570,6 +3576,7 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -4301,6 +4308,7 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -5234,6 +5242,7 @@ mod tests {
                 "feature.circular-pattern-placement-not-transferred",
                 "feature.circular-pattern-suppression-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
+                "feature.circular-pattern-controls-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
                 "feature.rectangular-pattern-inactive-symmetric-dropped",
