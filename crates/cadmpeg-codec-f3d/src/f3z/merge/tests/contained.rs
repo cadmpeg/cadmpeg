@@ -1371,3 +1371,94 @@ fn component_path_chain_requires_the_nested_target_in_a_mixed_reference() {
     assert!((ir.model.occurrences[6].transform.unwrap().rows()[0][3] + 30.0).abs() < 1e-9);
     assert!(losses.contains(&F3dLossCode::XrefContainedPoseNative.kind()));
 }
+
+/// Four placements of one external document below one local owner share the
+/// member definition. Each placement's contained occurrences sit in the
+/// member instance scope the placement names, so each placement takes its own
+/// pose.
+#[test]
+fn placements_of_one_shared_member_each_take_their_own_contained_pose() {
+    const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
+    let definition = |id: &str| {
+        ProductDefinition::new(
+            cadmpeg_ir::ids::ProductDefinitionId::mint(id).unwrap(),
+            Storage::Embedded,
+        )
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut root = definition("f3d:model:component#root");
+    root.occurrences = vec![OccurrenceId::mint("f3d:model:occurrence#owner").unwrap()];
+    let mut owner_definition = definition("f3d:model:component#owner");
+    let mut member = definition("f3d:xref/member/model:component#root");
+    ir.model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#owner", Some(OWNER), 5.0));
+    ir.model.occurrences[0].prototype = owner_definition.id.clone();
+    let mut references = Vec::new();
+    let mut carriers = vec![local_carrier(OWNER, 9222)];
+    let mut scopes = crate::f3z::merge::InstanceScopes::new();
+    let mut parts = Vec::new();
+    for placement in 0..4_u32 {
+        let id = format!("f3d:model:occurrence#owner:xref-0-{placement}");
+        let native = format!("f3d:xref:reference#0-occurrence-{placement}");
+        let mut xref = occurrence(&id, Some(&native), 10.0);
+        xref.prototype = member.id.clone();
+        owner_definition
+            .occurrences
+            .push(OccurrenceId::mint(id.as_str()).unwrap());
+        scopes.insert(xref.id.clone(), format!("f3d:xref/instance-{placement}"));
+        ir.model.occurrences.push(xref);
+        let part = format!("f3d:xref/instance-{placement}/model:occurrence#part");
+        let part_native =
+            format!("f3d:xref/instance-{placement}/Design:design-component-occurrence#496");
+        let mut leaf = occurrence(&part, Some(&part_native), 30.0);
+        leaf.prototype =
+            cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{part}/definition")).unwrap();
+        member.occurrences.push(leaf.id.clone());
+        carriers.push(local_carrier(&part_native, 496));
+        parts.push(leaf);
+        let mut reference = reference(vec![retained(
+            11 + u64::from(placement),
+            496,
+            &[9222],
+            translation(23.0 + f64::from(placement), 4.0, 0.0),
+        )]);
+        reference.id = native;
+        reference.occurrence_ordinal = placement;
+        references.push(reference);
+    }
+    ir.model.occurrences.extend(parts);
+    ir.model.product_definitions = vec![root, owner_definition, member];
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        native.design_component_occurrences = carriers;
+        native.xref_references = references.clone();
+    });
+    let table = crate::xref::XrefTable {
+        references,
+        ..Default::default()
+    };
+    let mut losses = Vec::new();
+    super::super::place_contained_poses_in_members(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut ir,
+        &table,
+        &mut losses,
+        &mut std::collections::BTreeSet::new(),
+        super::super::PoseScope {
+            pass: super::super::ContainedPass::Ordered,
+            boundary: None,
+            instance_scopes: &scopes,
+        },
+    )
+    .unwrap();
+    // The part sits 30 mm inside the member and the owner at 5 mm, so a part
+    // pose of x cm gives the placement 10 x - 30 - 5 mm below the owner.
+    for placement in 0..4_usize {
+        let x = ir.model.occurrences[1 + placement]
+            .transform
+            .unwrap()
+            .rows()[0][3];
+        let expected = 10.0 * (23.0 + f64::from(u32::try_from(placement).unwrap())) - 35.0;
+        assert!((x - expected).abs() < 1e-9, "placement {placement}: {x}");
+    }
+}
