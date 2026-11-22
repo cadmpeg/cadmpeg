@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{merge_operand_list_bindings, tool_replacement_loss, unbound_refusals};
-use crate::history::CombineOperandSide;
+use crate::history::{CombineOperandRefusal, CombineOperandSide};
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
 use cadmpeg_ir::features::FeatureId;
@@ -126,22 +126,23 @@ fn a_recipe_binding_that_overlaps_the_other_operand_is_refused() {
 
 #[test]
 fn only_operands_that_stay_native_keep_their_slot_refusals() {
+    let refusal = |side, operand| CombineOperandRefusal {
+        feature: FeatureId::mint("test:model:feature#combine").unwrap(),
+        side,
+        operand,
+        record: format!("f3d:test:selection#{operand}"),
+        reason: "its creating scope is not decoded",
+    };
     let refusals = || {
         vec![
-            (
-                CombineOperandSide::Target,
-                F3dLossCode::FeatureCombineOperandBodyUnbound.note("target"),
-            ),
-            (
-                CombineOperandSide::Tools,
-                F3dLossCode::FeatureCombineOperandBodyUnbound.note("tools"),
-            ),
+            refusal(CombineOperandSide::Target, "target"),
+            refusal(CombineOperandSide::Tools, "tools"),
         ]
     };
     let messages = |target: BodySelection, tools: BodySelection| {
         unbound_refusals((&target, &tools), refusals())
             .into_iter()
-            .map(|loss| loss.message)
+            .map(|refusal| refusal.operand)
             .collect::<Vec<_>>()
     };
     assert_eq!(messages(bodies("target"), native("tools")), ["tools"]);
