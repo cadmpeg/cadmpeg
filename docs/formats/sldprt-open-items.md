@@ -1132,6 +1132,16 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
 
+### EV-33. The four identifiers below an extrusion
+
+**Question.** Which objects hold the four identifiers between an extrusion's depth parameter and the extrusion?
+
+**Known.** `sldprt.md` §2.3 gives the identifier order of a sketch and its extrusion: the sketch, its dimension parameters, the extrusion's depth parameter, four identifiers and the extrusion. No `KeyWords` record, named-object header or parameter trailer that the decoder reads holds the four identifiers. The extrusion's objects after its end specification include its dimension display objects, a body chooser and a `moFromEndSpec_c` (EV-17).
+
+**Need.** The class of each object that holds one of the four identifiers, and the field that holds it, so that a writer that creates an extrusion numbers its objects as native parts do and a feature added to a part takes none of the four.
+
+**Conflict.** The writer numbers a generated part's user features first, from `23`, and their dimension parameters after them, the extrusion's depth parameter last. It writes the extrusion one above its sketch and nothing at the four identifiers. A feature added to a part takes an identifier past the largest that the decoder reads in the part, so it takes none of the four.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
