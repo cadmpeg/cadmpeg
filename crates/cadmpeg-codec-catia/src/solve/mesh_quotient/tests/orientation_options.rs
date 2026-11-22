@@ -5,7 +5,7 @@ use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
 
 use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
 
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
 use cadmpeg_core::decode::WorkBudget;
 
 #[test]

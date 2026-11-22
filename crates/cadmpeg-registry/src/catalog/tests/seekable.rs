@@ -166,6 +166,7 @@ fn iges_start_card() -> [u8; 80] {
     card
 }
 
+#[cfg(feature = "iges")]
 #[test]
 fn a_whole_source_of_one_start_card_gets_a_second_look() {
     let mut bytes = iges_start_card().to_vec();

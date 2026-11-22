@@ -3,25 +3,45 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::common_propagation::common_supported_corner_equations;
+use super::endpoint_relations::{canonical_mesh_boundary_directions, MeshFixedDirectionOption};
+use super::quotient::{initial_mesh_quotient, MeshQuotient};
+use super::selection_state::{changed_quotient_edges, MeshSelectionSearch};
 use super::{
-    canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
-    distinct_domain_matching_with_budget, initial_mesh_quotient, mesh_candidates_equivalent,
-    orient_face_cycles, reconstruct_mesh_selection, same_unordered_pair, Arc, BoundaryDraft,
-    CodecError, CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
-    MeshBoundaryEdgeCandidate, MeshCandidateFailure, MeshCandidateGauge, MeshEndpointResolve,
-    MeshFaceBoundaryAssignment, MeshFaceSelection, MeshFixedDirectionOption, MeshQuotient,
-    MeshQuotientSignature, MeshSelectionSearch, MeshSelectionStateSignature, MeshSolve,
-    SearchOutcome, StandardTopologyDraft, VecDeque, WorkBudget, MAX_FACE_EQUATION_CACHE_ENTRIES,
+    MeshCandidateFailure, MeshEndpointResolve, MeshFaceSelection, MeshQuotientSignature,
+    MeshSelectionStateSignature, MeshSolve, SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES,
     MAX_SELECTION_STATE_MEMO_ENTRIES,
 };
+use crate::families::standard::topology::{
+    orient_face_cycles, reconstruct_mesh_selection, BoundaryDraft, CoedgeUse, EdgeRow,
+    FaceTopologyDraft, StandardTopologyDraft,
+};
+use crate::solve::matching::distinct_domain_matching_with_budget;
+use crate::solve::mesh_gauge::{mesh_candidates_equivalent, MeshCandidateGauge};
+use crate::solve::missing_edge::{
+    same_unordered_pair, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
+};
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 #[cfg(test)]
-use super::{
-    deduplicate_mesh_quotient_assignments, domains_have_distinct_matching, largest_fbb_run,
-    parse_edge_tables, parse_vertex_table, required_component_roots,
-    resolve_standard_mesh_endpoint_candidates, standard_mesh_boundary_assignments, NonZeroUsize,
-    UnionFind, MAX_MESH_CONSTRAINT_OPERATIONS,
-};
+use super::endpoint_resolution::resolve_standard_mesh_endpoint_candidates;
+#[cfg(test)]
+use super::selection_state::deduplicate_mesh_quotient_assignments;
+#[cfg(test)]
+use super::{required_component_roots, MAX_MESH_CONSTRAINT_OPERATIONS};
+#[cfg(test)]
+use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
+#[cfg(test)]
+use crate::solve::matching::domains_have_distinct_matching;
+#[cfg(test)]
+use crate::solve::missing_edge::standard_mesh_boundary_assignments;
+#[cfg(test)]
+use crate::solve::union_find::UnionFind;
+#[cfg(test)]
+use std::num::NonZeroUsize;
 
 impl MeshSelectionSearch<'_, '_> {
     pub(super) fn should_stop(&self) -> bool {
@@ -1425,7 +1445,7 @@ pub(in crate::solve) fn parse_standard_mesh_endpoint_candidates(
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     resolve_standard_mesh_endpoint_candidates(
         ctx,
-        crate::solve::mesh_quotient::ResolveStandardMeshEndpointCandidatesInputs {
+        crate::solve::mesh_quotient::endpoint_resolution::ResolveStandardMeshEndpointCandidatesInputs {
             edge_rows: &edge_rows,
             vertex_points: &vertex_points,
             edge_candidates,

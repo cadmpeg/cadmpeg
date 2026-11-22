@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::sketches::SketchEntityId;
 use std::f64::consts::PI;
 

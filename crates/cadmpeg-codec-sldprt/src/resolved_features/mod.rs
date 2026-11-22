@@ -136,6 +136,8 @@ mod sketch_write;
 
 pub(crate) mod terminations;
 
+pub(crate) mod sweeps;
+
 mod grid;
 mod transforms;
 

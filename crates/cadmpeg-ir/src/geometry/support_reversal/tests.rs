@@ -2,10 +2,9 @@
 
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::decode::pcurve_uv;
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
-use crate::geometry::{
-    DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, SupportPcurve,
-};
+use crate::geometry::procedural_curves::{DirectedParameterRange, SupportPcurve};
 use crate::math::Point2;
 use crate::units::FinitePoint2;
 
