@@ -130,7 +130,7 @@ class ScopeTests(unittest.TestCase):
     def test_codec_features_use_registry_feature_names(self):
         result = command(['check'], ['cadmpeg', 'cadmpeg-registry'], codecs=['freecad', 'inventor'])
         self.assertIn('--no-default-features', result)
-        self.assertIn('cadmpeg/fcstd,cadmpeg/inventor', result)
+        self.assertIn('cadmpeg/fcstd,cadmpeg-registry/fcstd,cadmpeg/inventor,cadmpeg-registry/inventor', result)
 
     def test_documentation_source_scan_requires_only_prose(self):
         self.assertTrue(select(ROOT, ['docs/formats/f3d.md'])['prose_only'])
@@ -141,7 +141,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-inventor/src/lib.rs'])['codec_scope'], ['inventor'])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-core/src/lib.rs'])['codec_scope'], [])
         self.assertEqual(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['codec_scope'],
-                         ['f3d', 'freecad', 'step'])
+                         ['f3d', 'freecad', 'onshape', 'step'])
 
     def test_codec_scope_widens_for_noncodec_fuzz_dependents(self):
         with tempfile.TemporaryDirectory() as folder:

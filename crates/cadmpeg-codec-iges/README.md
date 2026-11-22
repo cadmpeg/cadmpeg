@@ -113,7 +113,7 @@ closure against the decoded model. Coverage for each envelope lives in the
 Regenerate the deterministic stress corpus into a directory of your choice:
 
 ```sh
-cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
+cargo run -p cadmpeg-codec-iges --example iges_stress -- OUTPUT_DIRECTORY
 ```
 
 Six files, 3–8 MB each, cover composite chains, trimmed surfaces, counted

@@ -181,9 +181,11 @@ CATIA `MAX_PAIR_SOLUTIONS` (`solve/incidence.rs`) and `MAX_ORIENTED_OPTIONS`
 (`solve/mesh_quotient/quotient.rs`) are in test functions, F3D `MAX_INDEX_FLOAT`
 (`writer/generate/native_geometry.rs`) is in a test module, and
 `MAX_MUTATION_BYTES` is in a fuzz target outside `src`.
-`python3 scripts/check-resource-caps.py` checks the table, the totals, and
-the production constants against each other. Where a constant is
-ambiguous, the kind follows the code at exhaustion and the note says so.
+`python3 scripts/check-resource-caps.py` checks that each production
+constant has exactly one row and each row names a production constant, and
+prints the overall, per-kind, and per-crate counts. No `MAX_*` constant is
+kind 3. Where a constant is ambiguous, the kind follows the code at
+exhaustion and the note says so.
 "No loss at this site" means the code that detects exhaustion does not
 report a loss; a caller may report a general failure for the same item.
 
@@ -345,6 +347,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d` | `src/design/profile_select/cap_regions/joined.rs` | `MAX_JOIN_ENVELOPE_COMPARISONS` | `50_000_000` | 4 | Quadratic comparison allowance for one buried-end Join profile certificate. Excess retains the native selection and reports `feature.profile-join-envelope-capped`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODIES` | `64` | 4 | History bodies per document, across all of its components. `MAX_HISTORY_BODY_WORK` bounds their total materialization. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
+| `cadmpeg-codec-f3d` | `src/history/body_history_tail.rs` | `MAX_HISTORY_TAIL_WORK` | `1 << 21` | 4 | State and topology slots examined in one body's tail after its last linked feature. Exhaustion retains a native body-history operation with `feature.body-history-incomplete`. |
 | `cadmpeg-codec-f3d` | `src/design/decode/scopes/hole.rs` | `MAX_SELECTION_CHAIN` | `16` | 4 | Records after a Hole's direct persistent selection scanned for the records that belong to it. A chain longer than the window leaves the Hole's plane reference unread. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
@@ -574,30 +577,6 @@ are the slice mechanisms themselves.
 | `cadmpeg-codec-catia`  | `src/solve/mesh_quotient/coordinate_assignment.rs`               | `component_limit`                      | derived from `MAX_COORDINATE_CLOSURE_STATES` | Per-component closure budget: support and traversal work times the state limit, as a charging slice of the caller's budget when it has one. |
 | `cadmpeg-ir`           | `src/eval.rs` (two sites)                                        | `DEFAULT_NURBS_SURFACE_INVERSION_WORK` | `1_000_000`                                  | Surface inversion entry points without a caller budget. The callers own skip and loss.                                                       |
 | `cadmpeg-ir`           | `src/eval/admission.rs`                                          | `parent.remaining()`                   | parent remainder                             | `within_work_slice` child; `consume_child` charges the parent and an exhausted child exhausts the parent.                                    |
-
-## Totals
-
-Production `MAX_*` constants: 355.
-
-| Kind | Meaning                    | Count |
-| ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 79    |
-| 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 179   |
-| N    | Not a decode bound         | 55    |
-|      | Total                      | 355   |
-
-The six `ResourceLimits` fields are the session ceilings and are not
-`MAX_*` constants. No `MAX_*` constant is kind 3.
-
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 23, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
-`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 31,
-`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 40,
-`cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
-`cadmpeg-tessellate` 4.
 
 ## Routing
 

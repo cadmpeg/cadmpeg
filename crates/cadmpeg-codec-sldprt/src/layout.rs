@@ -48,6 +48,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const ZERO_TRAILER: usize = 8;
 }
 
+/// Byte offsets for the `feature_input_scalar_class_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// ```
+pub(crate) mod feature_input_scalar_class_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
+}
+
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §1.1. Record length 8 B.
@@ -2908,6 +2922,36 @@ pub(crate) mod identity_reference_header {
 pub(crate) mod named_object_header {
     /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
     pub(crate) const OBJECT_ID: usize = 8;
+}
+
+/// Byte offsets for the `length_user_units_base` record.
+///
+/// Spec §Configuration objects. Record length 48 B.
+///
+/// ```text
+/// The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+/// ```
+pub(crate) mod length_user_units_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `precision` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const PRECISION: usize = 0;
+    /// Offset of `last_word` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const LAST_WORD: usize = 44;
+    /// Stated value of `last_word` (`u32`). Spec §Configuration objects.
+    pub(crate) const LAST_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `length_user_units_block_base` record.
+///
+/// Spec §Configuration objects. Record length 62 B.
+///
+/// ```text
+/// The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+/// ```
+pub(crate) mod length_user_units_block_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 62;
 }
 
 /// Byte offsets for the `sketch_record_head` record.

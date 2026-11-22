@@ -107,6 +107,37 @@ type = "bytes[4]"
 source = "spec"
 anchor = "four zero bytes at +8"
 
+[[record]]
+name = "feature_input_scalar_class_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs"
+kind = "byte"
+section = "2"
+anchor = "In the token form this is an 8-byte prefix"
+size = 8
+endianness = "little"
+note = "The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form."
+
+[[record.field]]
+name = "relation_class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "the relation class token at prefix +0"
+
+[[record.field]]
+name = "zero"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "a zero u32 at prefix +2"
+
+[[record.field]]
+name = "parameter_class_token"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the parameter class token at prefix +6"
+
 
 # --- Container envelopes ---------------------------------------------------
 
@@ -12586,6 +12617,74 @@ offset = 32
 type = "u32"
 source = "spec"
 anchor = "| +32 | little-endian u32 |"
+
+[[record]]
+name = "length_user_units_base"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
+kind = "byte"
+section = "Configuration objects"
+anchor = "In its four-word base form"
+size = 48
+endianness = "little"
+note = "The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read."
+
+[[record.field]]
+name = "precision"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The first u32 of a `moLengthUserUnits_c` base is the number of decimal places"
+
+[[record.gap]]
+offset = 4
+size = 40
+note = "A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them."
+
+[[record.field]]
+name = "last_word"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "four u32, the last `1`, 48 bytes"
+value = 1
+
+[[record]]
+name = "length_user_units_block_base"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
+kind = "byte"
+section = "Configuration objects"
+anchor = "in a block-container document an f64, a u32 and a u16 follow, 62 bytes"
+size = 62
+endianness = "little"
+note = "The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62."
+
+[[record.field]]
+name = "base"
+offset = 0
+type = "bytes[48]"
+source = "spec"
+anchor = "In its four-word base form"
+
+[[record.field]]
+name = "block_real"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
+
+[[record.field]]
+name = "block_word"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
+
+[[record.field]]
+name = "block_short"
+offset = 60
+type = "u16"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
 
 [[record]]
 name = "sketch_record_head"
