@@ -311,9 +311,11 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the generated feature history as a cadmpeg summary stream; the native
     /// feature tree holds none of the source's features.
     WriterNativeHistorySummary,
-    /// Export writes the native skeleton's byte runs `sldprt.md` gives as lengths only as
-    /// zero bytes.
+    /// Export writes as zero bytes the native skeleton's byte runs whose fields `sldprt.md`
+    /// does not lay out.
     WriterNativeSkeletonUnlaidRuns,
+    /// Export writes a generated part without the native skeleton.
+    WriterNativeSkeletonOmitted,
     /// Export leaves out the named native streams of the generated part.
     WriterNativeStreamsOmitted,
     /// Export writes generated sketch marker records with no owning native object.
@@ -521,6 +523,7 @@ impl SldprtLossCode {
         Self::WriterUnitsMemberGenerated,
         Self::WriterNativeHistorySummary,
         Self::WriterNativeSkeletonUnlaidRuns,
+        Self::WriterNativeSkeletonOmitted,
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
         Self::WriterConfigurationIdentityAssigned,
@@ -686,6 +689,7 @@ impl SldprtLossCode {
             Self::WriterUnitsMemberGenerated => "writer.units-member-generated",
             Self::WriterNativeHistorySummary => "writer.native-history-summary",
             Self::WriterNativeSkeletonUnlaidRuns => "writer.native-skeleton-unlaid-runs",
+            Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
@@ -749,6 +753,7 @@ impl SldprtLossCode {
             Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterNativeHistorySummary => Severity::Warning,
             Self::WriterNativeSkeletonUnlaidRuns => Severity::Warning,
+            Self::WriterNativeSkeletonOmitted => Severity::Warning,
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
@@ -911,6 +916,7 @@ impl SldprtLossCode {
             Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeHistorySummary => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeSkeletonUnlaidRuns => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
@@ -1362,6 +1368,7 @@ mod tests {
                 "writer.units-member-generated",
                 "writer.native-history-summary",
                 "writer.native-skeleton-unlaid-runs",
+                "writer.native-skeleton-omitted",
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
                 "writer.configuration-identity-assigned",

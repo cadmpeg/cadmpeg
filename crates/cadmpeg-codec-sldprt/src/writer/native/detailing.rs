@@ -1,23 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The detailing settings a `moRelMgr_c` writes after its relation count and
 //! u16, in a part of `swVersion` 14000 (`docs/formats/sldprt.md` §2.3 and
-//! open item EV-19): byte runs, `CString` values and `moLengthUserUnits_c`
-//! objects, in stream order.
+//! open item EV-19): byte runs, `CString` values, the unit names and
+//! `moLengthUserUnits_c` objects, in stream order.
 
 /// One element of the detailing settings.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Detail {
-    /// A byte run whose fields `sldprt.md` does not lay out; written as zero
-    /// bytes.
+    /// A byte run whose fields `sldprt.md` does not lay out (EV-19); written
+    /// as zero bytes. Native parts hold values in most of these runs.
     Run(usize),
     /// A `CString`.
     Text(&'static str),
-    /// A `moLengthUserUnits_c` object written by its class tag; its body is
-    /// the run that follows.
+    /// The unit names: a u32 count and that many `CString` values.
+    UnitNames(&'static [&'static str]),
+    /// A `moLengthUserUnits_c` object with a null dual unit, followed in
+    /// place by a unit's base form and a u16.
     LengthUnit,
 }
 
-use Detail::{LengthUnit, Run, Text};
+use Detail::{LengthUnit, Run, Text, UnitNames};
+
+/// The unit names of the detailing settings.
+const UNIT_NAMES: [&str; 10] = ["m", "mm", "cm", "km", "um", "μm", "nm", "s", "Hz", "Pa"];
+
+/// The count and the total length of the template's non-empty byte runs.
+pub(super) fn zero_runs() -> (usize, usize) {
+    DETAILING_14000
+        .iter()
+        .filter_map(|detail| match *detail {
+            Run(length) if length > 0 => Some(length),
+            _ => None,
+        })
+        .fold((0, 0), |(count, bytes), length| (count + 1, bytes + length))
+}
 
 /// The settings of a part of `swVersion` 14000.
 pub(super) const DETAILING_14000: &[Detail] = &[
@@ -29,26 +45,8 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(4),
     Text(""),
-    Run(56),
-    Text("m"),
-    Run(0),
-    Text("mm"),
-    Run(0),
-    Text("cm"),
-    Run(0),
-    Text("km"),
-    Run(0),
-    Text("um"),
-    Run(0),
-    Text("μm"),
-    Run(0),
-    Text("nm"),
-    Run(0),
-    Text("s"),
-    Run(0),
-    Text("Hz"),
-    Run(0),
-    Text("Pa"),
+    Run(52),
+    UnitNames(&UNIT_NAMES),
     Run(112),
     Text("Century Gothic"),
     Run(312),
@@ -57,7 +55,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -79,7 +76,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -91,7 +87,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -103,7 +98,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -115,7 +109,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -127,7 +120,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -139,7 +131,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -161,7 +152,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Text(""),
     Run(126),
     LengthUnit,
-    Run(130),
     Text("Century Gothic"),
     Run(64),
     Text("CONTINUOUS"),
@@ -510,6 +500,6 @@ pub(super) const DETAILING_14000: &[Detail] = &[
     Run(0),
     Text(""),
     Run(0),
-    Text("%Opis%, %MATERIAL%"),
+    Text(""),
     Run(2),
 ];

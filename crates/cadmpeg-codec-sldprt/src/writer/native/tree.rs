@@ -169,7 +169,8 @@ pub(super) struct PartRefs {
     pub(super) environment: u32,
     /// The map index of the `moAtom_c` object.
     pub(super) atom: u32,
-    /// The map index of each body's `moCompSolidBody_c` object.
+    /// The map index of each body's `moCompSolidBody_c` or
+    /// `moCompSurfaceBody_c` object.
     pub(super) bodies: Vec<u32>,
 }
 
@@ -308,6 +309,8 @@ impl Plane {
         }
     }
 
+    /// The plane's normal: Front is the XY plane, Top the XZ plane and Right
+    /// the YZ plane.
     fn normal(self) -> [f64; 3] {
         self.axes()[2]
     }
@@ -486,9 +489,10 @@ pub(super) fn unit_component(archive: &mut Archive, body: u32) {
 }
 
 /// `moBaseBody_c`: the feature, a body head whose input is the body's
-/// `moCompSolidBody_c` and whose identifier list holds the body identifier,
+/// record in `Config-0` and whose identifier list holds the body identifier,
 /// a `moPMarkRecord_c` naming the body by identifier and GUID, an empty
-/// `CString`, u32 `1`, the feature name, and u32 `0`.
+/// `CString`, u32 `1` and the feature name. The next object follows the name
+/// directly (§2.3).
 fn base_body(archive: &mut Archive, body: &Body, component: u32) {
     archive.object("moBaseBody_c");
     named(
@@ -515,5 +519,4 @@ fn base_body(archive: &mut Archive, body: &Body, component: u32) {
     archive.cstring("");
     archive.u32(1);
     archive.cstring(&body.name);
-    archive.u32(0);
 }

@@ -6,8 +6,16 @@ use super::{skeleton, Body, Facts};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn streams(bodies: usize) -> Vec<(String, Vec<u8>)> {
-    let bodies = (0..bodies)
-        .map(|index| Body::numbered("Bracket", 0, index))
+    streams_of_kinds(&vec![false; bodies])
+}
+
+/// The skeleton of a part with one body per entry, a sheet body where the
+/// entry is `true`.
+fn streams_of_kinds(sheets: &[bool]) -> Vec<(String, Vec<u8>)> {
+    let bodies = sheets
+        .iter()
+        .enumerate()
+        .map(|(index, &sheet)| Body::numbered("Bracket", 0, index, sheet))
         .collect::<Result<Vec<_>, _>>()
         .expect("bodies number");
     skeleton(&Facts {
@@ -115,7 +123,7 @@ fn keywords_group_records_by_tag_and_order_them_by_identifier_text() {
 
 #[test]
 fn tree_identifiers_follow_the_identifier_base() {
-    let bodies = [Body::numbered("Bracket", 40, 0).expect("body numbers")];
+    let bodies = [Body::numbered("Bracket", 40, 0, false).expect("body numbers")];
     let streams = skeleton(&Facts {
         id_base: 40,
         name: "Bracket",
@@ -198,7 +206,7 @@ fn top_sketch() -> super::sketch::Sketch {
 #[test]
 fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
     let features = [super::Feature::Sketch(top_sketch())];
-    let bodies = [Body::numbered("Bracket", 7, 0).expect("body numbers")];
+    let bodies = [Body::numbered("Bracket", 7, 0, false).expect("body numbers")];
     let streams = skeleton(&Facts {
         id_base: 7,
         name: "Bracket",
@@ -231,4 +239,120 @@ fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
     );
     let marks = walk.marks.iter().filter_map(|mark| mark.owner.as_deref());
     assert_eq!(marks.collect::<Vec<_>>(), ["Imported1"]);
+}
+
+/// The class map of the written `Config-0`, read with the decoder.
+fn class_map(streams: &[(String, Vec<u8>)]) -> std::collections::BTreeMap<u32, String> {
+    let config = stream(streams, "Contents/Config-0");
+    let resolved = stream(streams, "Contents/Config-0-ResolvedFeatures");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(config, &arena, &DecodePolicy::desktop()).expect("context");
+    let count = crate::archive::resolved_features_count(resolved).expect("map count");
+    crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count")
+}
+
+#[test]
+fn a_sheet_body_takes_the_surface_body_class() {
+    let streams = streams_of_kinds(&[false, true]);
+    let classes = class_map(&streams);
+    for class in ["moCompSolidBody_c", "moCompSurfaceBody_c"] {
+        assert!(classes.values().any(|name| name == class), "{class}");
+    }
+    let config = stream(&streams, "Contents/Config-0");
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(config, &arena, &DecodePolicy::desktop()).expect("context");
+    let version = crate::carchive::walk_version(None, config);
+    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, version)
+        .expect("walk")
+        .expect("the walk runs");
+    assert_eq!(walk.status, crate::carchive::Status::End);
+}
+
+/// The `CString` holding `text`.
+fn cstring(text: &str) -> Vec<u8> {
+    let mut needle = vec![0xff, 0xfe, 0xff, u8::try_from(text.len()).expect("short")];
+    needle.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    needle
+}
+
+/// The offset of the first `CString` holding `text` in `bytes`.
+fn cstring_at(bytes: &[u8], text: &str) -> usize {
+    let needle = cstring(text);
+    bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .unwrap_or_else(|| panic!("{text} is written"))
+}
+
+/// The end of the last `CString` holding `text` in `bytes`.
+fn last_cstring_end(bytes: &[u8], text: &str) -> usize {
+    let needle = cstring(text);
+    bytes
+        .windows(needle.len())
+        .rposition(|window| window == needle)
+        .map_or_else(|| panic!("{text} is written"), |at| at + needle.len())
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().expect("four bytes"))
+}
+
+#[test]
+fn the_unit_names_follow_their_count() {
+    let streams = streams(0);
+    let config = stream(&streams, "Contents/Config-0");
+    let first = cstring_at(config, "m");
+    assert_eq!(u32_at(config, first - 4), 10);
+}
+
+#[test]
+fn the_sketch_block_manager_lists_the_notes_area_view() {
+    let streams = streams(0);
+    let config = stream(&streams, "Contents/Config-0");
+    // The annotation views take 200 and 201; the notes-area view 202.
+    let notes = cstring_at(config, "Notes Area");
+    let list = (0..notes)
+        .rev()
+        .find(|&at| {
+            u32_at(config, at) == 202
+                && u32_at(config, at + 4) == 199
+                && u32_at(config, at + 8) == 1
+                && u32_at(config, at + 12) == 202
+        })
+        .expect("the notes-area view index, u32 199, one identifier and the index");
+    assert!(list < notes);
+    // The notes-area view's 50 bytes follow its 115 view bytes.
+    let tail = notes + 4 + 2 * "Notes Area".len() + 1 + 115;
+    assert_eq!(config[tail + 10], 4);
+}
+
+#[test]
+fn thread_data_precedes_the_exploded_view_manager() {
+    let streams = streams(0);
+    let config = stream(&streams, "Contents/Config-0");
+    let class = b"moPrtExplViewManager_c";
+    let declaration = config
+        .windows(class.len())
+        .position(|window| window == class)
+        .expect("the manager is declared")
+        - 6;
+    let thread = &config[declaration - 25..declaration];
+    assert!(thread[..13].iter().all(|&byte| byte == 0));
+    assert_eq!(u32_at(thread, 13), 1);
+    assert_eq!(u32_at(thread, 17), 0);
+}
+
+#[test]
+fn a_stored_body_ends_with_its_name() {
+    let streams = streams(2);
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures");
+    let name = last_cstring_end(resolved, "Imported1");
+    let tag = u16::from_le_bytes([resolved[name], resolved[name + 1]]);
+    assert_eq!(tag & 0x8000, 0x8000, "a class tag follows the name");
+    assert_eq!(last_cstring_end(resolved, "Imported2"), resolved.len());
 }
