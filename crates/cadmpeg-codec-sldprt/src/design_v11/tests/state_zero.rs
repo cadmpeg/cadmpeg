@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The profile an extrude picks: the regions of its sketch's profile loops,
-//! and the curves of state `0` that bound none (§6.1, "Flags" and "Profiles
-//! and regions").
+//! The profile an extrude picks: its whole sketch, whose curves of state
+//! `0` are construction and bound no region (§6 "Sources"; §6.1 "Flags" and
+//! "Profiles and regions").
 
 use std::collections::HashSet;
 
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::swept::Extrude;
-use cadmpeg_ir::design::selection::{BoundaryUse, PickTarget, Picks, SketchRegion};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::sketches::SketchEntityId;
@@ -93,19 +93,11 @@ fn targets(extrude: &Extrude) -> Vec<PickTarget> {
         .collect()
 }
 
-fn ring(keys: &[&str]) -> Vec<BoundaryUse> {
-    keys.iter()
-        .map(|key| BoundaryUse {
-            entity: entity(key),
-            fragment: None,
-        })
-        .collect()
-}
-
-/// The fixture's rectangle runs counterclockwise from `a` at the origin, and
-/// its circle lies inside it: one region, the circle its hole.
+/// The fixture's rectangle and the circle inside it: the decoder resolved
+/// both loops, and the extrude still picks the whole sketch, which keeps its
+/// meaning when an edit adds a loop.
 #[test]
-fn an_extrude_picks_the_region_of_its_sketch_profile_loops() {
+fn an_extrude_picks_its_whole_sketch() {
     let (mut ir, _) = sketch_and_extrude();
     set_profiles(
         &mut ir,
@@ -116,70 +108,18 @@ fn an_extrude_picks_the_region_of_its_sketch_profile_loops() {
     );
     let (extrude, typed) = project(&mut ir, &HashSet::new());
     let sketch = ir.model.sketches[0].id.clone();
-    assert_eq!(
-        targets(&extrude),
-        vec![PickTarget::SketchRegion {
-            sketch,
-            region: SketchRegion {
-                outer: ring(&["l0", "l1", "l2", "l3"]),
-                holes: vec![ring(&["hole"])],
-            },
-        }]
+    assert_eq!(targets(&extrude), vec![PickTarget::Sketch(sketch)]);
+    assert!(
+        typed.state_construction.is_none(),
+        "{:?}",
+        typed.state_construction
     );
-    assert!(typed.whole_sketch.is_none(), "{:?}", typed.whole_sketch);
     assert_no_design_findings(&ir);
 }
 
-/// A loop stored clockwise is an outer ring in reverse order.
-#[test]
-fn an_outer_ring_runs_counterclockwise() {
-    let (mut ir, _) = sketch_and_extrude();
-    set_profiles(
-        &mut ir,
-        &[&[("l3", true), ("l2", true), ("l1", true), ("l0", true)]],
-    );
-    let (extrude, _) = project(&mut ir, &HashSet::new());
-    let picked = targets(&extrude);
-    let [PickTarget::SketchRegion { region, .. }] = picked.as_slice() else {
-        panic!("one region");
-    };
-    assert_eq!(region.outer, ring(&["l0", "l1", "l2", "l3"]));
-    assert!(region.holes.is_empty());
-}
-
-/// An extrude of a sketch whose profile loops the decoder did not resolve
-/// picks the whole sketch and says so.
-#[test]
-fn an_extrude_of_a_sketch_without_profile_loops_picks_the_sketch() {
-    let (mut ir, _) = sketch_and_extrude();
-    let (extrude, typed) = project(&mut ir, &HashSet::new());
-    let sketch = ir.model.sketches[0].id.clone();
-    assert_eq!(targets(&extrude), vec![PickTarget::Sketch(sketch)]);
-    let note = typed
-        .whole_sketch
-        .expect("the whole-sketch pick is reported");
-    assert_eq!(
-        note.code,
-        crate::loss::SldprtLossCode::DesignExtrudeSketchPicked.kind()
-    );
-    let boss = ir
-        .design
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Boss"))
-        .unwrap();
-    assert!(
-        note.message.contains(&format!(
-            "{} (the decoder resolved no profile loop of its sketch)",
-            boss.id.as_str()
-        )),
-        "{}",
-        note.message
-    );
-}
-
-/// A diagonal read from a curve record of state `0` is construction, bounds
-/// no region, and is reported; the rectangle and the circle state no flag.
+/// A diagonal read from a curve record of state `0` is construction, so it
+/// bounds no region of the whole-sketch pick, and is reported; the rectangle
+/// and the circle state no flag.
 #[test]
 fn a_curve_of_state_zero_is_construction() {
     let (mut ir, _) = sketch_and_extrude();
@@ -208,7 +148,10 @@ fn a_curve_of_state_zero_is_construction() {
     assert_eq!(construction("diagonal"), Some(true));
     assert_eq!(construction("l0"), None);
     assert_eq!(construction("hole"), None);
-    assert_eq!(targets(&extrude).len(), 1);
+    assert_eq!(
+        targets(&extrude),
+        vec![PickTarget::Sketch(ir.model.sketches[0].id.clone())]
+    );
     let note = typed
         .state_construction
         .expect("the construction reading is reported");

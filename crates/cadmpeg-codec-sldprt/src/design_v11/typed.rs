@@ -7,7 +7,6 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::design::construction::InputReference;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation};
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::ops::sketch::EntityDefinition;
 use cadmpeg_ir::design::parameter::DimensionDisplay;
 use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::design::units::Quantity;
@@ -39,8 +38,6 @@ pub(super) struct Typed {
     /// The note of the sketch curves stated construction for the state of
     /// their curve record.
     pub(super) state_construction: Option<LossNote>,
-    /// The note of the typed extrudes that pick their whole sketch.
-    pub(super) whole_sketch: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -76,15 +73,6 @@ pub(super) fn project(
         .iter()
         .map(|sketch| sketch.id.clone())
         .collect::<HashSet<_>>();
-    let curves = sketches
-        .entities
-        .iter()
-        .filter(|entity| entity.construction != Some(true))
-        .filter_map(|entity| match &entity.definition {
-            EntityDefinition::Free(curve) => Some((&entity.id, curve)),
-            EntityDefinition::Defined { .. } => None,
-        })
-        .collect::<HashMap<_, _>>();
     let extrudes = extrude::project(
         &mut timeline.features,
         &extrude::Context {
@@ -92,7 +80,6 @@ pub(super) fn project(
             histories,
             entries,
             sketches: &stated,
-            curves: &curves,
         },
     );
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
@@ -109,7 +96,6 @@ pub(super) fn project(
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
-    let whole_sketch = whole_sketch(&extrudes.whole_sketch);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -123,7 +109,6 @@ pub(super) fn project(
         loss,
         assumed,
         state_construction,
-        whole_sketch,
     }
 }
 
@@ -161,23 +146,6 @@ fn state_construction(entities: &[SketchEntityId]) -> Option<LossNote> {
             listed(entities.iter().map(|entity| entity.as_str().to_owned())),
         )),
     )
-}
-
-/// One note naming each typed extrude that picks every closed region of its
-/// sketch, with the reason it picks no region the decoder resolved.
-fn whole_sketch(extrudes: &[(FeatureId, &'static str)]) -> Option<LossNote> {
-    if extrudes.is_empty() {
-        return None;
-    }
-    Some(SldprtLossCode::DesignExtrudeSketchPicked.note(format!(
-        "{} extrudes pick every closed region of their sketch: {}",
-        extrudes.len(),
-        listed(
-            extrudes
-                .iter()
-                .map(|(feature, reason)| format!("{} ({reason})", feature.as_str()))
-        ),
-    )))
 }
 
 /// One note naming each typed extrude whose blind depth is bound to its

@@ -1866,5 +1866,5 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
-mod profile_region;
 mod rollback;
+mod state_zero;

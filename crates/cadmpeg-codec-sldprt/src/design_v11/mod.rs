@@ -18,7 +18,6 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
-mod region;
 mod sketch;
 mod states;
 #[cfg(test)]
@@ -114,7 +113,6 @@ pub(crate) fn project(
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);
-    losses.extend(typed.whole_sketch);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
