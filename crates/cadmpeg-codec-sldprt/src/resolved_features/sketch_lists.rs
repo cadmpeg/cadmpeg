@@ -546,8 +546,6 @@ pub(super) enum ChordConflict {
     OtherEndpoints,
     /// The record's endpoints and centre define no arc.
     NoArc,
-    /// The record's arc does not pass through both endpoints of the chord.
-    MissesChord,
     /// The record has sense `1` or `-1` and selector bit 0 set (open item
     /// EV-27).
     OpenSelector,
@@ -572,9 +570,6 @@ impl std::fmt::Display for ChordConflict {
             }
             Self::OtherEndpoints => f.write_str("states an arc between point records at other positions"),
             Self::NoArc => f.write_str("states an arc whose endpoints and centre define no arc"),
-            Self::MissesChord => f.write_str(
-                "states an arc between the line's endpoint point records, but the arc misses the line's endpoints",
-            ),
             Self::OpenSelector => f.write_str(
                 "states an arc sense with selector bit 0 set, whose indices are open item EV-27",
             ),
@@ -595,8 +590,7 @@ impl std::fmt::Display for ChordConflict {
 /// The reading of the listed curve record at `offset` when a marker reading
 /// gave it the straight chord `chord`: for an arc record, the record's arc
 /// when its two endpoint point records project onto the chord's endpoints in
-/// either order and the arc itself ends at both chord endpoints, each within
-/// the linear resolution, and the conflict otherwise; for a record whose form
+/// either order within the linear resolution, and the conflict otherwise; for a record whose form
 /// [`curve_form`] does not read, the conflict its sense and selector give.
 /// `None` when the offset starts no listed curve record or the record states
 /// a line.
@@ -647,30 +641,12 @@ pub(super) fn chord_record(
     } else {
         ArcSweep::Clockwise
     };
-    let Some(arc) = arc_geometry(center_m, start_m, end_m, sweep, project) else {
-        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
-    };
-    let SketchGeometryDefinition::Arc {
-        center,
-        radius,
-        start_angle,
-        end_angle,
-    } = *arc.definition()
-    else {
-        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
-    };
-    let (center, radius) = (center.get(), radius.get());
-    let at = |angle: f64| {
-        Point2::new(
-            center.u + radius * angle.cos(),
-            center.v + radius * angle.sin(),
-        )
-    };
-    Some(if joins_chord(at(start_angle.get()), at(end_angle.get())) {
-        ChordRecord::Arc(arc)
-    } else {
-        ChordRecord::Conflict(ChordConflict::MissesChord)
-    })
+    Some(
+        arc_geometry(center_m, start_m, end_m, sweep, project).map_or(
+            ChordRecord::Conflict(ChordConflict::NoArc),
+            ChordRecord::Arc,
+        ),
+    )
 }
 
 /// The conflict of the listed curve record at `offset` with a line that a
