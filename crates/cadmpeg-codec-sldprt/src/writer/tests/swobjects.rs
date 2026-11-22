@@ -151,7 +151,12 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .iter()
         .find(|block| block.section.name() == Some("Contents/Keywords-0"))
         .unwrap();
-    assert_eq!(keywords.payload, b"<Keywords></Keywords>");
+    // A member with no source member is written after the lead byte and
+    // declaration most stored members carry.
+    assert_eq!(
+        keywords.payload,
+        b"\x86<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<Keywords></Keywords>"
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

@@ -26,7 +26,7 @@ fn cube() -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .unwrap()
@@ -35,7 +35,7 @@ fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote
         .clone()
 }
 
-fn loss<'a>(
+pub(super) fn loss<'a>(
     losses: &'a [cadmpeg_ir::report::loss::LossNote],
     code: &str,
 ) -> Option<&'a cadmpeg_ir::report::loss::LossNote> {
@@ -317,7 +317,7 @@ fn a_procedural_surface_without_a_cache_leaves_its_body_out() {
 
 /// The cube with a triangle sketch and an extrude of it, as another format
 /// states them: each feature carries that format's own native reference.
-fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
+pub(super) fn cube_with_foreign_history() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
         extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
         operation_settings::BooleanOp,
@@ -445,6 +445,486 @@ fn history_with_another_formats_native_references_is_written() {
     );
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.model.sketches.len(), 1);
+}
+
+/// Push a feature of another format named `name`, with the input topology
+/// `other:history-input:state#{key}` holding one face and one edge, and
+/// return its id. `definition` builds the operation from that state, face and
+/// edge.
+pub(super) fn push_foreign_feature(
+    ir: &mut cadmpeg_ir::CadIr,
+    key: &str,
+    name: &str,
+    definition: impl FnOnce(
+        cadmpeg_ir::ids::FeatureInputTopologyId,
+        cadmpeg_ir::ids::HistoricalFaceId,
+        cadmpeg_ir::ids::HistoricalEdgeId,
+    ) -> cadmpeg_ir::features::FeatureDefinition,
+) -> cadmpeg_ir::features::FeatureId {
+    use cadmpeg_ir::features::{
+        evaluation::FeatureInputTopology, selections::DistinctMembers, Feature, FeatureId,
+    };
+    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
+
+    let id = FeatureId::mint(format!("other:model:feature#{key}")).unwrap();
+    let state = FeatureInputTopologyId::mint(format!("other:history-input:state#{key}")).unwrap();
+    let face = HistoricalFaceId::mint(format!("other:history-input:face#{key}:1")).unwrap();
+    let edge = HistoricalEdgeId::mint(format!("other:history-input:edge#{key}:1")).unwrap();
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            id: state.clone(),
+            input_of: id.clone(),
+            bodies: DistinctMembers::default(),
+            faces: DistinctMembers::try_from(vec![face.clone()]).unwrap(),
+            edges: DistinctMembers::try_from(vec![edge.clone()]).unwrap(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    let ordinal = u64::try_from(ir.model.features.len()).unwrap();
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: id.clone(),
+        ordinal,
+        name: Some(name.into()),
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition(state, face, edge),
+        ),
+        native_ref: None,
+    });
+    id
+}
+
+/// Push a length parameter `name` = `value` mm owned by `owner`.
+pub(super) fn push_length_parameter(
+    ir: &mut cadmpeg_ir::CadIr,
+    owner: &cadmpeg_ir::features::FeatureId,
+    name: &str,
+    value: f64,
+) {
+    push_parameter(
+        ir,
+        owner,
+        name,
+        format!("{value} mm"),
+        cadmpeg_ir::features::parameters::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(value).unwrap(),
+        ),
+    );
+}
+
+/// Push a parameter `name` = `expression` of `value` owned by `owner`.
+pub(super) fn push_parameter(
+    ir: &mut cadmpeg_ir::CadIr,
+    owner: &cadmpeg_ir::features::FeatureId,
+    name: &str,
+    expression: String,
+    value: cadmpeg_ir::features::parameters::ParameterValue,
+) {
+    use cadmpeg_ir::features::{
+        parameters::DesignParameter, selections::DistinctMembers, ParameterId,
+    };
+
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(format!("other:model:parameter#{name}")).unwrap(),
+        owner: Some(owner.clone()),
+        ordinal: u32::try_from(
+            ir.model
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.owner.as_ref() == Some(owner))
+                .count(),
+        )
+        .unwrap(),
+        name: name.into(),
+        expression,
+        display: None,
+        value: Some(value),
+        dependencies: DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+}
+
+/// `cube_with_foreign_history` plus a fillet of the boss whose edges are stated
+/// in its input topology, with a tangency weight, a source property whose name
+/// has a namespace prefix, and an owned radius parameter `d7`.
+pub(super) fn cube_with_foreign_fillet() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        selections::{EdgeSelection, NonEmptyMembers},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "round", "Round", |state, _, edge| {
+        FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: NonEmptyMembers::one(FilletGroup {
+                edges: EdgeSelection::historical(
+                    state,
+                    vec![edge],
+                    "other:design:edge-operand#round".into(),
+                )
+                .unwrap(),
+                radius: RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                },
+                tangency_weight: cadmpeg_ir::scalar::FiniteReal::new(1.0),
+            }),
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d7", 2.0);
+    let boss = cadmpeg_ir::features::FeatureId::mint("other:model:feature#boss").unwrap();
+    let fillet = ir.model.features.last_mut().unwrap();
+    fillet.dependencies =
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![boss]).unwrap();
+    fillet
+        .source_properties
+        .insert(cadmpeg_core::nonblank_literal!("other:sets"), "{}".into());
+    ir
+}
+
+#[test]
+fn a_fillet_on_input_topology_edges_is_written_with_its_radius_and_named() {
+    let ir = cube_with_foreign_fillet();
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    for (code, named) in [
+        (
+            "writer.selection-identities-omitted",
+            "other:model:feature#round",
+        ),
+        ("writer.feature-fields-omitted", "other:model:feature#round"),
+        (
+            "writer.parameters-renamed",
+            "other:model:parameter#d7 (d7 as D1)",
+        ),
+    ] {
+        let note = loss(&losses, code).unwrap_or_else(|| panic!("{code}: {losses:#?}"));
+        assert!(note.message.contains(named), "{}", note.message);
+    }
+    assert!(
+        losses.iter().any(|note| note
+            .message
+            .contains("other:model:feature#round (other:sets)")),
+        "{losses:#?}"
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let fillet = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round"))
+        .expect("the fillet decodes back");
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+    ) = fillet.evaluation.definition()
+    else {
+        panic!("{:?}", fillet.evaluation.definition());
+    };
+    let [group] = &**groups else {
+        panic!("{groups:?}");
+    };
+    let boss = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("the boss decodes back");
+    assert!(
+        fillet.dependencies.contains(&boss.id),
+        "{:?}",
+        fillet.dependencies
+    );
+    assert_eq!(
+        group.edges,
+        cadmpeg_ir::features::selections::EdgeSelection::Native(
+            "other:design:edge-operand#round".into()
+        )
+    );
+    assert!(
+        matches!(
+            group.radius,
+            cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius }
+                if radius.get() == 2.0
+        ),
+        "{:?}",
+        group.radius
+    );
+    let radius = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&fillet.id))
+        .expect("the radius parameter decodes back");
+    assert_eq!(radius.name, "D1");
+    assert_eq!(
+        radius.value,
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(2.0).unwrap()
+        ))
+    );
+}
+
+#[test]
+fn a_fillet_the_history_drop_removes_is_named_by_that_drop_alone() {
+    let mut ir = cube_with_foreign_fillet();
+    let fillet = ir.model.features.last_mut().unwrap();
+    fillet.evaluation.edit(|definition, _| {
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Fillet { groups },
+        ) = definition
+        else {
+            panic!("fillet");
+        };
+        let group = groups[0].clone();
+        *groups =
+            cadmpeg_ir::features::selections::NonEmptyMembers::try_from(vec![group.clone(), group])
+                .unwrap();
+    });
+    let losses = plan_losses(&ir);
+    let dropped = loss(&losses, "writer.features-omitted").expect("named drop");
+    assert!(
+        dropped.message.contains("other:model:feature#round")
+            && dropped.message.contains("other:model:parameter#d7"),
+        "{}",
+        dropped.message
+    );
+    for code in [
+        "writer.selection-identities-omitted",
+        "writer.feature-fields-omitted",
+        "writer.parameters-renamed",
+    ] {
+        assert!(loss(&losses, code).is_none(), "{code}: {losses:#?}");
+    }
+}
+
+#[test]
+fn a_blind_extrude_of_another_format_decodes_back_with_its_depth_parameter() {
+    use cadmpeg_ir::features::{
+        extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let boss = ir.model.features[1].id.clone();
+    push_length_parameter(&mut ir, &boss, "d1", 12.0);
+    push_length_parameter(&mut ir, &boss, "d2", 5.0);
+    let losses = plan_losses(&ir);
+    let note = loss(&losses, "writer.parameters-renamed").expect("named rename");
+    assert!(
+        note.message.contains("other:model:parameter#d1 (d1 as D1)"),
+        "{}",
+        note.message
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let boss = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("the extrude decodes back");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
+        boss.evaluation.definition()
+    else {
+        panic!("{:?}", boss.evaluation.definition());
+    };
+    assert_eq!(
+        extent,
+        &ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+                },
+                draft: None,
+            },
+        }
+    );
+    let mut names = decoded
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&boss.id))
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["D1", "d2"]);
+}
+
+#[test]
+fn a_distance_angle_chamfer_of_another_format_decodes_back_with_its_parameter_names() {
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
+    use cadmpeg_ir::features::{
+        parameters::ParameterValue,
+        selections::{EdgeSelection, NonEmptyMembers},
+        FeatureDefinition, FeatureOperation,
+    };
+
+    let mut ir = cube_with_foreign_history();
+    let angle = std::f64::consts::FRAC_PI_4;
+    let id = push_foreign_feature(&mut ir, "bevel", "Bevel", |state, _, edge| {
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            groups: NonEmptyMembers::one(ChamferGroup {
+                edges: EdgeSelection::historical(
+                    state,
+                    vec![edge],
+                    "other:design:edge-operand#bevel".into(),
+                )
+                .unwrap(),
+                spec: ChamferSpec::DistanceAngle {
+                    distance: cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap(),
+                    angle: cadmpeg_ir::scalar::InteriorAngle::new(angle).unwrap(),
+                },
+            }),
+            flip_direction: false,
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d3", 1.5);
+    push_parameter(
+        &mut ir,
+        &id,
+        "d4",
+        "45 deg".into(),
+        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(angle).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let bevel = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Bevel"))
+        .expect("the chamfer decodes back");
+    let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+        bevel.evaluation.definition()
+    else {
+        panic!("{:?}", bevel.evaluation.definition());
+    };
+    assert!(
+        matches!(
+            &**groups,
+            [ChamferGroup {
+                spec: ChamferSpec::DistanceAngle { distance, angle },
+                ..
+            }] if distance.get() == 1.5 && angle.get().to_degrees().round() == 45.0
+        ),
+        "{groups:?}"
+    );
+    let mut names = decoded
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&bevel.id))
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["d3", "d4"]);
+}
+
+#[test]
+fn a_shell_of_another_format_decodes_back_with_its_thickness() {
+    use cadmpeg_ir::features::{selections::FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "hollow", "Hollow", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::Shell {
+            bodies: None,
+            removed_faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#hollow".into(),
+            )
+            .unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+            outward: Some(false),
+            mode: None,
+            join: None,
+            resolve_intersections: None,
+            allow_self_intersections: None,
+        })
+    });
+    push_length_parameter(&mut ir, &id, "d5", 2.0);
+    push_length_parameter(&mut ir, &id, "d6", 7.0);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let hollow = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Hollow"))
+        .expect("the shell decodes back");
+    assert!(
+        matches!(
+            hollow.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Shell {
+                removed_faces: FaceSelection::Native(faces),
+                thickness: Some(thickness),
+                outward: Some(false),
+                ..
+            }) if faces == "other:design:face-operand#hollow" && thickness.get() == 2.0
+        ),
+        "{:?}",
+        hollow.evaluation.definition()
+    );
+}
+
+#[test]
+fn a_delete_face_on_input_topology_faces_decodes_back_and_is_named() {
+    use cadmpeg_ir::features::{selections::FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "remove", "Remove", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#remove".into(),
+            )
+            .unwrap(),
+            heal: true,
+        })
+    });
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let note = loss(&losses, "writer.selection-identities-omitted").expect("named selection");
+    assert!(note.message.contains(id.as_str()), "{}", note.message);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let delete = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Remove"))
+        .expect("the delete-face feature decodes back");
+    assert_eq!(
+        delete.evaluation.definition(),
+        &FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native("other:design:face-operand#remove".into()),
+            heal: true,
+        })
+    );
 }
 
 #[test]
