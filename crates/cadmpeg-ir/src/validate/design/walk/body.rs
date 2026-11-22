@@ -128,7 +128,16 @@ impl Walk for Graft {
 impl Walk for InstanceChange {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::Varied { parameters } => parameters.walk(into),
+            Self::Varied { parameters } => {
+                for (parameter, expression) in parameters {
+                    into.push_expression(
+                        super::ExpressionPlace::Seed(parameter.as_str()),
+                        expression,
+                    );
+                    expression.walk(into)?;
+                }
+                Ok(())
+            }
             Self::Skipped => Ok(()),
         }
     }
