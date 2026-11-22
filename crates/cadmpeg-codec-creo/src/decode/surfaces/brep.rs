@@ -1161,8 +1161,8 @@ fn scalar_values_agree(first: f64, second: f64) -> bool {
 }
 
 fn points_are_geometrically_coincident(
-    first: cadmpeg_ir::features::FinitePoint3,
-    second: cadmpeg_ir::features::FinitePoint3,
+    first: cadmpeg_ir::features::geometry::FinitePoint3,
+    second: cadmpeg_ir::features::geometry::FinitePoint3,
 ) -> bool {
     let (first, second) = (first.get(), second.get());
     let scale = [first.x, first.y, first.z, second.x, second.y, second.z]
@@ -1179,7 +1179,7 @@ fn vectors_are_parallel(first: Vector3, second: Vector3) -> bool {
 
 #[derive(Clone, Copy)]
 struct NativeCircleLoop {
-    center: cadmpeg_ir::features::FinitePoint3,
+    center: cadmpeg_ir::features::geometry::FinitePoint3,
     axis: Vector3,
     radius: f64,
 }
@@ -3005,7 +3005,7 @@ pub(in super::super) fn transfer_native_brep(
             layer: None,
             instance_path: Vec::new(),
         };
-        let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
+        let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(*position))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         let point_position = ir.geometry.points.len();

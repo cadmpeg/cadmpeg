@@ -173,8 +173,10 @@ fn extrusion(
     left_out: &[String],
 ) -> Result<Option<(u64, Feature)>, String> {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FeatureDefinition,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+        extents::{ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination},
+        operation_settings::BooleanOp,
+        profiles::{PlanarProfileRef, ProfileRef},
+        FeatureDefinition, FeatureOperation,
     };
     let mut extrusions =
         ir.model
@@ -599,7 +601,9 @@ fn constraints(
             .iter()
             .find(|candidate| candidate.id == *parameter)
             .ok_or_else(|| format!("dimension parameter {} is missing", parameter.as_str()))?;
-        let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+        let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+            &parameter.value
+        else {
             return Err(format!(
                 "dimension parameter {} has no length value",
                 parameter.id.as_str()

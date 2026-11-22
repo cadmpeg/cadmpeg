@@ -138,12 +138,12 @@ fn cube_with_sketches() -> cadmpeg_ir::CadIr {
             ordinal,
             name: Some(key.into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
                 }),
@@ -376,7 +376,8 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
 /// dimensioned 4.
 fn cube_with_constrained_sketches() -> cadmpeg_ir::CadIr {
     use cadmpeg_ir::features::{
-        DesignParameter, DimensionDisplay, FeatureId, ParameterId, ParameterValue,
+        parameters::{DesignParameter, DimensionDisplay, ParameterValue},
+        FeatureId, ParameterId,
     };
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
@@ -407,7 +408,7 @@ fn cube_with_constrained_sketches() -> cadmpeg_ir::CadIr {
             value: Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(value).expect("length"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -507,7 +508,9 @@ fn native_sketch_relations_and_dimensions_decode_back() {
         .parameters
         .iter()
         .filter_map(|parameter| match parameter.value {
-            Some(cadmpeg_ir::features::ParameterValue::Length(length)) => Some(length.get()),
+            Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) => {
+                Some(length.get())
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -555,8 +558,8 @@ fn cube_with_extrusion() -> cadmpeg_ir::CadIr {
         &mut ir,
         "Boss",
         "Rectangle",
-        cadmpeg_ir::features::BooleanOp::NewBody,
-        cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
+        cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         10.0,
     );
     ir
@@ -567,13 +570,14 @@ fn push_extrusion(
     ir: &mut cadmpeg_ir::CadIr,
     key: &str,
     sketch: &str,
-    op: cadmpeg_ir::features::BooleanOp,
-    direction: cadmpeg_ir::features::ExtrudeDirection,
+    op: cadmpeg_ir::features::operation_settings::BooleanOp,
+    direction: cadmpeg_ir::features::extents::ExtrudeDirection,
     depth: f64,
 ) {
     use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, FeatureId, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        extents::{ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination},
+        profiles::{PlanarProfileRef, ProfileRef},
+        Feature, FeatureId,
     };
     let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
     ir.model.features.push(Feature {
@@ -582,12 +586,12 @@ fn push_extrusion(
         ordinal,
         name: Some(key.into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
                     cadmpeg_ir::sketches::SketchId::mint(format!("synthetic:test:sketch#{sketch}"))
@@ -680,7 +684,10 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
                 ..
             }) => {
                 // The source's operation survives the family word 0x0140.
-                assert_eq!(*op, cadmpeg_ir::features::BooleanOp::NewBody);
+                assert_eq!(
+                    *op,
+                    cadmpeg_ir::features::operation_settings::BooleanOp::NewBody
+                );
                 Some((extent.clone(), profile.clone()))
             }
             _ => None,
@@ -690,14 +697,14 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
         matches!(
             &extrude,
             (
-                cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Blind { length },
+                cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::extents::ExtrudeSide {
+                        termination: cadmpeg_ir::features::extents::LinearTermination::Blind { length },
                         ..
                     }
                 },
-                cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Sketch(_)
+                cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(_)
                 ),
             ) if (length.get() - 10.0).abs() < 1.0e-9
         ),
@@ -717,12 +724,12 @@ fn a_part_whose_write_leaves_out_a_feature_keeps_its_stored_body() {
         ordinal,
         name: Some("Insert".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Component Insert".into(),
                 parameters: std::collections::BTreeMap::new(),
@@ -751,7 +758,7 @@ fn a_part_whose_write_leaves_out_a_feature_keeps_its_stored_body() {
 
 #[test]
 fn a_second_extrusion_keeps_the_stored_body() {
-    use cadmpeg_ir::features::{BooleanOp, ExtrudeDirection};
+    use cadmpeg_ir::features::{extents::ExtrudeDirection, operation_settings::BooleanOp};
     for op in [BooleanOp::Join, BooleanOp::Cut] {
         let mut ir = cube_with_extrusion();
         push_extrusion(
@@ -809,8 +816,8 @@ fn an_extrusion_against_its_plane_normal_writes_the_reversed_direction_flag() {
         &mut ir,
         "Boss",
         "Rectangle",
-        cadmpeg_ir::features::BooleanOp::NewBody,
-        cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
+        cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         5.0,
     );
     let (bytes, losses) = write_with_losses(&ir);
@@ -862,12 +869,12 @@ fn a_part_whose_only_sketch_is_spatial_keeps_the_generated_lane() {
         ordinal: 0,
         name: Some("Path".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch),
             }),

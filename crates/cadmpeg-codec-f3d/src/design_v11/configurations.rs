@@ -24,9 +24,8 @@ use cadmpeg_ir::design::configuration::{
     DesignConfiguration, FeatureStateOverride, Overrides, ParameterOverride, PartNumber,
 };
 use cadmpeg_ir::design::parameter::DesignParameter;
-use cadmpeg_ir::features::{
-    ConfigurationId, DesignConfiguration as LegacyConfiguration, ParameterId,
-};
+use cadmpeg_ir::features::parameters::DesignConfiguration as LegacyConfiguration;
+use cadmpeg_ir::features::{ConfigurationId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 
 use cadmpeg_ir::report::loss::LossNote;

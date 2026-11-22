@@ -19,7 +19,7 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let mut right = left.clone();
     let moved = right.geometry.points[0].position().get();
     right.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 0.5,
             moved.y,
             moved.z,

@@ -76,7 +76,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
         "Basiselement",
     ] {
         use crate::layout::base_feature_wide_zero_body as prefix;
-        use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+        use cadmpeg_ir::features::selections::BodySelection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_base_feature_bulkstream();
         let start = usize::try_from(records.last().unwrap().1).unwrap();
@@ -141,7 +142,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
 
 #[test]
 fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedComponents};
+    use cadmpeg_ir::features::selections::InsertedComponents;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for source_kind in ["DerivedInstance", "LocalizedScope!"] {
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();

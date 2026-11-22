@@ -2,9 +2,11 @@
 //! Compact hole and circular-sweep geometry.
 
 use crate::vecmath::normalize;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
 use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
-    FeatureOperation as IrFeatureOperation, LinearTermination, ProfileRef,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -374,15 +376,17 @@ pub(in crate::decode) fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         profile,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(sweep.direction))
-            .map_or(
-                cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector,
-                    source: None,
-                },
-            ),
-        start: cadmpeg_ir::features::ExtrudeStart::default(),
+        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::from(
+            sweep.direction,
+        ))
+        .map_or(
+            cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+            |vector| cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector,
+                source: None,
+            },
+        ),
+        start: cadmpeg_ir::features::extents::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,
         solid,

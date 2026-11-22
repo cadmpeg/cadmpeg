@@ -17,6 +17,11 @@ pub(super) const ROOT_STATE: u32 = 2;
 pub(super) const HEAD_STATE: u32 = 3;
 /// The preamble's history entry count of a two-state history.
 const HISTORY_ENTRY_COUNT: i64 = 1;
+/// The flags word of a snapshot stream: no history partition, save-format
+/// revision 1.
+const SNAPSHOT_FLAGS: u64 = 2;
+/// The `scale` word of a snapshot stream.
+const SNAPSHOT_SCALE: f64 = 10.0;
 
 /// `smbh`, written with no history, with the insertion history in place of
 /// its empty history tail.
@@ -26,14 +31,7 @@ pub(in crate::writer::generate) fn with_insertion_history(
     let slots = cadmpeg_asm::edit::AsmEditSet::frame(smbh)?.records().len();
     let slots = i64::try_from(slots)
         .map_err(|_| CodecError::NotImplemented("ASM record count exceeds i64".into()))?;
-    let mut empty_tail = Vec::new();
-    native_ident(&mut empty_tail, "delta_state")?;
-    let Some(model) = smbh.strip_suffix(empty_tail.as_slice()) else {
-        return Err(CodecError::Malformed(
-            "the generated B-rep stream does not end with an empty history tail".into(),
-        ));
-    };
-    let mut bytes = model.to_vec();
+    let mut bytes = model_part(smbh)?.to_vec();
     let (head, root) = (i64::from(HEAD_STATE), i64::from(ROOT_STATE));
     for part in ["Begin", "of", "ASM", "History"] {
         native_subident(&mut bytes, part)?;
@@ -74,6 +72,31 @@ pub(in crate::writer::generate) fn with_insertion_history(
     Ok(bytes)
 }
 
+/// The snapshot stream of a Base Feature design from `stream`, a B-rep
+/// stream written with no history whose body carries no name: its records,
+/// the flags word `2`, `scale` `10.0`, and `End-of-ASM-data` (f3d.md §3.1,
+/// "Archive members of a Base Feature design").
+pub(in crate::writer::generate) fn snapshot(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let mut bytes = model_part(stream)?.to_vec();
+    for part in ["End", "of", "ASM"] {
+        native_subident(&mut bytes, part)?;
+    }
+    native_ident(&mut bytes, "data")?;
+    with_header(&bytes, SNAPSHOT_FLAGS, SNAPSHOT_SCALE)
+}
+
+/// The solved-model records of `stream`, a B-rep stream written with no
+/// history: the stream without its empty history tail.
+fn model_part(stream: &[u8]) -> Result<&[u8], CodecError> {
+    let mut empty_tail = Vec::new();
+    native_ident(&mut empty_tail, "delta_state")?;
+    stream.strip_suffix(empty_tail.as_slice()).ok_or_else(|| {
+        CodecError::Malformed(
+            "the generated B-rep stream does not end with an empty history tail".into(),
+        )
+    })
+}
+
 /// A `delta_state` header: its identity, the constants `1` and `0`, the
 /// previous, next and node references, `-1`, `0`, and the false sentinel.
 fn delta_state(bytes: &mut Vec<u8>, state: i64, links: [i64; 3]) -> Result<(), CodecError> {
@@ -93,4 +116,37 @@ fn end_state(bytes: &mut Vec<u8>) {
     native_i64(bytes, 0);
     native_i64(bytes, 0);
     bytes.push(0x11);
+}
+
+/// `stream`, a binary ASM stream, with its header flags word and its
+/// `scale` replaced (asm.md §1): the flags word at offset 39, and the f64
+/// after the product, version and date strings.
+pub(in crate::writer::generate) fn with_header(
+    stream: &[u8],
+    flags: u64,
+    scale: f64,
+) -> Result<Vec<u8>, CodecError> {
+    const MAGIC: &[u8] = b"ASM BinaryFile8";
+    const FLAGS: usize = 39;
+    const STRING: u8 = 0x07;
+    const DOUBLE: u8 = 0x06;
+    let malformed = || CodecError::Malformed("the generated B-rep stream header".into());
+    if !stream.starts_with(MAGIC) {
+        return Err(malformed());
+    }
+    let mut at = FLAGS + 8;
+    for _ in 0..3 {
+        if stream.get(at) != Some(&STRING) {
+            return Err(malformed());
+        }
+        let length = usize::from(*stream.get(at + 1).ok_or_else(malformed)?);
+        at += 2 + length;
+    }
+    if stream.get(at) != Some(&DOUBLE) || stream.len() < at + 9 {
+        return Err(malformed());
+    }
+    let mut out = stream.to_vec();
+    out[FLAGS..FLAGS + 8].copy_from_slice(&flags.to_le_bytes());
+    out[at + 1..at + 9].copy_from_slice(&scale.to_le_bytes());
+    Ok(out)
 }

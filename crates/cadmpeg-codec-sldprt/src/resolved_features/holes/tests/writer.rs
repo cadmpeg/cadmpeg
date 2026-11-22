@@ -14,9 +14,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -78,9 +78,9 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -203,9 +203,10 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{
-        holes::HolePlacement, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HolePlacement;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -236,11 +237,13 @@ fn semantic_writer_round_trips_hole_placement() {
             placements.as_deref(),
             Some(
                 &[HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, -1.0
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        1.0, 2.0, 3.0
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, -1.0)
+                    )
                     .unwrap(),
                 }][..]
             )
@@ -248,9 +251,12 @@ fn semantic_writer_round_trips_hole_placement() {
 
         *face = Some(FaceSelection::Native("face:13".into()));
         *placements = Some(vec![HolePlacement::Directed {
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .unwrap(),
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                0.0, 1.0, 0.0,
+            ))
+            .unwrap(),
         }]);
         *extent = Some(LinearTermination::ThroughAll {});
         updated_ir_evaluation.set_definition(updated_ir_definition);
@@ -281,17 +287,17 @@ fn semantic_writer_round_trips_hole_placement() {
             ..
         }) if face == "face:13"
             && placements.as_deref() == Some(&[HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
             }][..])
     ));
 }
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{
-        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::holes::HoleKind;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

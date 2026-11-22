@@ -4,13 +4,11 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::{decode::unique_index, text::NonBlankString, CodecError};
-use cadmpeg_ir::{
-    features::{
-        EdgeSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-        SheetMetalCornerEffect,
-    },
-    scalar::Length,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::scalar::Length;
 
 use super::{operands, projection, SheetMetalProperty};
 use crate::{

@@ -113,6 +113,7 @@ impl CadIr {
         configuration: &ConfigurationId,
     ) -> Result<(), EditError> {
         let record = self
+            .design
             .design_scope(scope)
             .ok_or_else(|| EditError::UnknownScope(scope.clone()))?;
         if !self

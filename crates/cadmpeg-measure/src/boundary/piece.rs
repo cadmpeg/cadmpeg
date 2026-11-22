@@ -5,7 +5,7 @@
 use std::cell::OnceCell;
 use std::rc::Rc;
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Coedge;

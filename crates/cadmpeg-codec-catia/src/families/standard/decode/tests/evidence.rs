@@ -645,8 +645,12 @@ fn circle_pair_selection_bound_rejects_the_solution_with_a_loss() {
     for (index, angle) in [0.0_f64, 1.0, 0.5, 3.0].into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                angle.cos(),
+                angle.sin(),
+                0.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
     }
@@ -717,7 +721,7 @@ fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
         .map(|(index, x)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             )
@@ -938,7 +942,7 @@ fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
         .map(|(index, x)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             )
@@ -1029,7 +1033,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -1121,7 +1125,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             )
@@ -1233,7 +1237,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
 
     points.push(Point::new(
         PointId::mint("catia:test:point#ambiguous-start".to_string()).expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -1303,7 +1307,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -1429,7 +1433,7 @@ fn limit_curve_point_search_bound_skips_the_curve_with_a_loss() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    cadmpeg_ir::features::FinitePoint3::new(position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -1522,7 +1526,7 @@ fn standard_line_edge_uses_distance_parameterization() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -1566,7 +1570,7 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
     {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));
@@ -1754,7 +1758,7 @@ fn native_support_matches_endpoints_and_reverses_pcurves() {
         .map(|(index, x)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                     .expect("finite point"),
                 None,
             )
@@ -1812,7 +1816,7 @@ fn bspline_edge_takes_its_limit_curve_geometry() {
     for (index, x) in [0.0, 1.0].into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                 .expect("finite point"),
             None,
         ));
