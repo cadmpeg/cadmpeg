@@ -85,3 +85,8 @@ with a licensed Solid Edge install (Community Edition counts) can build it from
 a blank default template and attach it under CC0-1.0, following
 [corpus/README.md](../../corpus/README.md). The standard recipe set comes from
 the public [Solid Edge Fixture Builder](https://fixtures.dutchmancad.xyz/builders/solidedge/).
+For issues #1863 and #1865 through #1874, the
+[Solid Edge repro generator](https://fixtures.dutchmancad.xyz/builders/solidedge/repro/)
+builds the issue's before/after pair: `build_repro.ps1 -Issue <n>` writes a new
+folder per run, removes identity data, scans the output and reports PASS or
+FAIL. Attach only files from a run that reports PASS.
