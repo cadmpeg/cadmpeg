@@ -60,7 +60,7 @@ pub(super) fn resolved_features(
         comments,
     );
     favorites(&mut archive);
-    history(&mut archive);
+    history(&mut archive, facts.features);
     selection_sets(&mut archive);
     plain_folder(
         &mut archive,
@@ -200,8 +200,8 @@ fn favorites(archive: &mut Archive) {
     archive.u32(1);
 }
 
-/// `moHistoryFolder_c` with no items.
-fn history(archive: &mut Archive) {
+/// `moHistoryFolder_c` with an item per user feature.
+fn history(archive: &mut Archive, features: &[Feature]) {
     plain_folder(
         archive,
         "moHistoryFolder_c",
@@ -209,7 +209,7 @@ fn history(archive: &mut Archive) {
         Oid::Tree(ids::HISTORY),
         TAIL,
     );
-    archive.u16(0);
+    super::history::items(archive, features);
 }
 
 /// `moSelectionSetFolder_c`: the folder, u16 `0` and u32 `1`.

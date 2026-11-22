@@ -542,6 +542,11 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
         .map(|object| &*object.class)
         .collect::<Vec<_>>();
     assert!(classes.contains(&"moExtrusion_c"));
+    let items = classes
+        .iter()
+        .filter(|class| **class == "moHistoryFeatItemData_c")
+        .count();
+    assert_eq!(items, 3, "two sketches and the extrusion");
     assert!(!classes.contains(&"moBaseBody_c"));
     let depths = walk
         .parameters
