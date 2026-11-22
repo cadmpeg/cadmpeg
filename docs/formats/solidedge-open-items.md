@@ -69,7 +69,15 @@
 
 **Question.** At which offset does a tapped hole's `CLSID_JMHolePropData` object store its thread diameters and designation?
 
-**Known.** A tapped hole's property data holds two `f64` diameters in millimetres, then a `u32` character count and the UTF-16LE thread designation. The block's offset varies with the object length.
+**Known.** A tapped hole's property data holds two `f64` diameters in millimetres, then a `u32` character count and the UTF-16LE thread designation. The block's offset varies with the object length. A tapped M6 hole with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm, and its solid removes about 200 mm³ more than a 5 mm bore with that counterbore.
 
 **Need.** Tapped holes of two thread sizes, with and without a counterbore.
+
+### DR-1025. Round set kinds
+
+**Question.** What does round set kind `2` state, and where does such a set store its size?
+
+**Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
+
+**Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
 
