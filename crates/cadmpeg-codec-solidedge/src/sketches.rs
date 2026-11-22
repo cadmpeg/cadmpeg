@@ -33,6 +33,8 @@ use crate::psm::{Cluster, Object, TypeTable};
 const PART_CLASS: &str = "CLSID_JMPart";
 /// The class of a sketch profile.
 const PROFILE_CLASS: &str = "CLSID_JProfile";
+/// The class of the profile of a pattern (§5.3).
+const PATTERN_PROFILE_CLASS: &str = "CLSID_JPatternProfile";
 /// The class of the member list of a profile.
 const PROFILE_2D_CLASS: &str = "CLSID_JProfile2d";
 /// The member classes that are curves, and the class that joins curves.
@@ -261,7 +263,10 @@ pub(crate) fn profile_members(
     id: u32,
 ) -> Option<Vec<u32>> {
     let object = cluster.object(id)?;
-    if types.class_name(object.form, object.flags) != Some(PROFILE_CLASS) {
+    if !matches!(
+        types.class_name(object.form, object.flags),
+        Some(PROFILE_CLASS | PATTERN_PROFILE_CLASS)
+    ) {
         return None;
     }
     let members_id = View::u32_le_at(object.bytes, profile::PROFILE_2D)?;
@@ -269,6 +274,22 @@ pub(crate) fn profile_members(
         .object(members_id)
         .filter(|list| types.class_name(list.form, list.flags) == Some(PROFILE_2D_CLASS))?;
     member_ids(&list)
+}
+
+/// The frame of profile `id`, which is a profile or a pattern profile.
+pub(crate) fn profile_frame(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    id: u32,
+) -> Option<FrameValue> {
+    let object = cluster.object(id)?;
+    if !matches!(
+        types.class_name(object.form, object.flags),
+        Some(PROFILE_CLASS | PATTERN_PROFILE_CLASS)
+    ) {
+        return None;
+    }
+    frame(object.bytes)
 }
 
 /// The profile identifier a feature object stores. `None` where the object's

@@ -15,6 +15,7 @@ mod extents;
 mod features;
 mod layout;
 mod loss;
+mod patterns;
 mod psm;
 mod settings;
 mod sketches;

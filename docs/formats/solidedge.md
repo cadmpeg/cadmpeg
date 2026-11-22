@@ -465,11 +465,16 @@ Type `42` has a setback and an angle.
 
 ### 8.1 Pattern features
 
-A pattern is a `CLSID_JMGroup` entry of the navigator (§4.1). The `u32` at
-object offset 106 of the group object is the identifier of a `CLSID_JMPart`
-object with function `JMFastPatternFunction`. The `u32` at object offset
-337 is the identifier of the seed feature. The profile of the
-`JMFastPatternFunction` object (§5.3) has one `CLSID_JPattern2d` member.
+A pattern is a `CLSID_JMGroup` entry of the navigator (§4.1). The group
+object stores:
+
+| Offset | Field |
+| ---: | --- |
+| 106 | `u32` identifier of the `CLSID_JMPart` object with function `JMFastPatternFunction` |
+| 337 | `u32` identifier of the seed feature |
+
+The profile of the `JMFastPatternFunction` object (§5.3) has one
+`CLSID_JPattern2d` member.
 
 A `CLSID_JPattern2d` object holds the pattern parameters after the last
 occurrence of the GUID `{0145EEC0-1602-11CE-B7EE-08003601E53B}` in it. With
@@ -500,8 +505,15 @@ All values are in profile coordinates, metres and radians.
 
 ### 8.2 Mirror features
 
-A mirror is a `CLSID_JMGroup` entry of the navigator whose `u32` at object
-offset 92 is the seed count `c`. `c` seed feature identifiers follow from
-offset 96. For `c` = 1, the `u32` at object offset 329 is the identifier of
-the `ReferencePlaneObject` about which the seed is mirrored.
+A mirror is a `CLSID_JMGroup` entry of the navigator whose group object
+stores:
 
+| Offset | Field |
+| ---: | --- |
+| 92 | `u32` seed count `c` |
+| 96 | `c` `u32` seed feature identifiers |
+| 329 | for `c` = 1, `u32` identifier of the mirror plane |
+
+The mirror plane is a `ReferencePlaneObject`, the plane about which the seed
+is mirrored. Its object stores three `f64` at offset 13, a point on the plane,
+and three `f64` at offset 37, the unit plane normal. The point is in metres.

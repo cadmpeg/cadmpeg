@@ -27,6 +27,8 @@ pub(crate) enum SolidEdgeLossCode {
     FeatureDressupUnread,
     FeatureThreadUnread,
     FeatureSelectionUnread,
+    FeaturePatternUnread,
+    FeaturePatternSenseUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -63,6 +65,10 @@ impl SolidEdgeLossCode {
             Self::FeatureThreadUnread => ("feature.thread-unread", LossTaxonomy::RecordNotTyped),
             Self::FeatureSelectionUnread => {
                 ("feature.selection-unread", LossTaxonomy::RecordNotTyped)
+            }
+            Self::FeaturePatternUnread => ("feature.pattern-unread", LossTaxonomy::RecordNotTyped),
+            Self::FeaturePatternSenseUnread => {
+                ("feature.pattern-sense-unread", LossTaxonomy::RecordNotTyped)
             }
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
