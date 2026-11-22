@@ -316,7 +316,7 @@ pub(super) fn validate_zero_entity_support_runs(
 fn validate_zero_entity_model_curve_construction(
     carrier_tag: Option<[u8; 2]>,
     model_curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
-    construction: Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    construction: Option<&cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>,
 ) -> bool {
     let nonzero_vector =
         |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z) > 0.0;
@@ -328,7 +328,9 @@ fn validate_zero_entity_model_curve_construction(
         (
             Some([0x29, 0xb8]),
             None,
-            Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload)),
+            Some(cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
+                helix_payload,
+            )),
         ) => {
             let angle_range = helix_payload.angle_range();
             let major = helix_payload.major();

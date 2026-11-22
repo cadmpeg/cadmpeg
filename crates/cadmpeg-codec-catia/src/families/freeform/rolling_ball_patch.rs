@@ -10,7 +10,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::Point3;
 

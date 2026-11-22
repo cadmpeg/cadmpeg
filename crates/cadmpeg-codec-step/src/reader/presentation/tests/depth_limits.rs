@@ -79,7 +79,14 @@ fn presentation_style_inheritance_walk_refuses_depth_limit() {
     style_graph_refuses(
         "step_presentation_style_inheritance_walk",
         |exchange, ctx| {
-            super::super::style_inherits_from(1, 3, exchange, &mut BTreeSet::new(), ctx).map(|_| ())
+            super::super::collect_style_ancestors(
+                1,
+                1,
+                exchange,
+                &mut Vec::new(),
+                &mut std::collections::HashMap::new(),
+                ctx,
+            )
         },
     );
 }

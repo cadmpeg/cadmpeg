@@ -9,11 +9,11 @@ use cadmpeg_core::decode::{DecodeContext, View};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -1901,9 +1901,9 @@ fn zero_entity_model_curve_construction(
         zero_angle_radius * transverse.z,
     );
     Some(ProceduralCurveDefinition::Helix(
-        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+        cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
             [start.u, end.u],
-            cadmpeg_ir::geometry::HelixFrame {
+            cadmpeg_ir::geometry::helix::HelixFrame {
                 center: Point3::new(
                     origin.x + zero_angle_v * half_angle.cos() * axis.x,
                     origin.y + zero_angle_v * half_angle.cos() * axis.y,
@@ -2394,8 +2394,8 @@ mod tests {
     use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;

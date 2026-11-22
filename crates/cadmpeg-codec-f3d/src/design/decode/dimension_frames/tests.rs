@@ -748,6 +748,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let frame = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -785,6 +786,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let leading = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         None,
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
