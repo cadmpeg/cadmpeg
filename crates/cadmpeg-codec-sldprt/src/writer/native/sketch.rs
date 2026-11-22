@@ -4,9 +4,10 @@
 //! reference plane.
 //!
 //! The sketch writes its point records, then its lines and its arcs and
-//! circles as curve records, no dimension, relation, display or region
-//! objects, the settings block, and the tail with the profile body and the
-//! plane. Byte runs `sldprt.md` gives as lengths only are zero.
+//! circles as curve records, its dimensions and relations, no display or
+//! region objects, the settings block, a `moSketchChain_c` per profile chain,
+//! and the tail with the profile body and the plane. Byte runs `sldprt.md`
+//! gives as lengths only are zero.
 
 use std::io::Write as _;
 
@@ -83,6 +84,13 @@ const PROFILE_MARKER: u32 = 3;
 /// The u32 a sketch tail opens its group list with when it has no groups.
 const NO_CONTOUR_GROUPS: u32 = 100_000;
 
+/// The zero bytes between a sketch's empty region list and its chain list.
+const CHAIN_LIST_ZEROS: usize = 30;
+
+/// The six u32 every native `moSketchChain_c` of `swVersion` 14000 holds
+/// after its chain index.
+const CHAIN_WORDS: [u32; 6] = [6, u32::MAX, 0, 0, 5, 5];
+
 /// The u16 a sketch's `moCompRefPlane_c` writes after the plane's feature
 /// number (as the origin sketch's does).
 const PLANE_WORD: u16 = 3;
@@ -104,6 +112,9 @@ pub(in crate::writer) struct Sketch {
     pub(in crate::writer) relations: Vec<Relation>,
     /// The dimensions.
     pub(in crate::writer) dimensions: Vec<Dimension>,
+    /// The profile chains: each the positions in `curves` of one closed
+    /// chain's curves, in traversal order.
+    pub(in crate::writer) chains: Vec<Vec<usize>>,
     /// The nested Parasolid stream of the profile body.
     pub(in crate::writer) body: Vec<u8>,
 }
@@ -227,7 +238,8 @@ pub(super) fn profile_feature(
     settings(archive);
     archive.object("suObList");
     archive.u16(0);
-    archive.zeros(38);
+    archive.zeros(CHAIN_LIST_ZEROS);
+    chain_list(archive, &sketch.chains);
     archive.u32(PROFILE_MARKER);
     profile_body(archive, &sketch.body)?;
     archive.u32(0);
@@ -475,6 +487,33 @@ fn lines(sketch: &Sketch) -> usize {
         .iter()
         .take_while(|curve| matches!(curve, Curve::Line { .. }))
         .count()
+}
+
+/// The chain list: the chain count twice, then per chain a
+/// `moSketchChain_c`: a u16 count and the identifiers of its curves (their
+/// positions plus one), u16 `1` and the chain's position, [`CHAIN_WORDS`], an
+/// empty `CString`, u16 `0` (no handles), i32 `-1` and twenty zero bytes.
+fn chain_list(archive: &mut Archive, chains: &[Vec<usize>]) {
+    let count = archive.count32(chains.len(), "chain count");
+    archive.u32(count);
+    archive.u32(count);
+    for (position, chain) in chains.iter().enumerate() {
+        archive.object("moSketchChain_c");
+        let curves = archive.count16(chain.len(), "chain curve count");
+        archive.u16(curves);
+        for &curve in chain {
+            let id = archive.count32(curve + 1, "curve identifier");
+            archive.u32(id);
+        }
+        archive.u16(1);
+        let position = archive.count32(position, "chain position");
+        archive.u32(position);
+        archive.u32s(&CHAIN_WORDS);
+        archive.cstring("");
+        archive.u16(0);
+        archive.i32(-1);
+        archive.zeros(20);
+    }
 }
 
 /// The settings block: 76 bytes, an empty `CString`, 42 bytes, u32 `4`,

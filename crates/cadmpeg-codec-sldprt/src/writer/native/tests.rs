@@ -199,6 +199,7 @@ fn top_sketch() -> super::sketch::Sketch {
                 operands: vec![Operand::Point(0), Operand::Point(1)],
             },
         ],
+        chains: vec![vec![0, 1], vec![2]],
         body: b"PS\0\0 profile body".repeat(8),
     }
 }
@@ -230,6 +231,12 @@ fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
         .filter(|object| &*object.class == "moProfileFeature_c")
         .count();
     assert_eq!(profiles, 1);
+    let chains = walk
+        .trace
+        .iter()
+        .filter(|object| &*object.class == "moSketchChain_c")
+        .count();
+    assert_eq!(chains, 2, "one chain per profile chain");
     assert_eq!(walk.sketch_profiles.len(), 1);
     let profile = walk.sketch_profiles[0];
     let wrapped = &resolved[profile.stream + 4..];

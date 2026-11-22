@@ -93,9 +93,12 @@ pub(in crate::writer) fn features(
         let geometry =
             geometry(ir, sketch).and_then(|(plane, points, curves, handles, flipped)| {
                 let (relations, dimensions) = constraints(ir, sketch, &handles)?;
-                Ok((plane, points, curves, relations, dimensions, flipped))
+                let chains = chains(sketch, &handles, &curves);
+                Ok((
+                    plane, points, curves, relations, dimensions, chains, flipped,
+                ))
             });
-        let (plane, points, curves, relations, dimensions, flipped) = match geometry {
+        let (plane, points, curves, relations, dimensions, chains, flipped) = match geometry {
             Ok(geometry) => geometry,
             Err(reason) => {
                 return Ok(Features::Lane(format!(
@@ -116,6 +119,7 @@ pub(in crate::writer) fn features(
                 curves,
                 relations,
                 dimensions,
+                chains,
                 body: generated_profile_stream(ir, sketch)?,
             }),
         ));
@@ -422,6 +426,32 @@ fn geometry(ir: &cadmpeg_ir::CadIr, sketch: &IrSketch) -> Result<Geometry, Strin
     }
     lines.extend(arcs);
     Ok((plane, points, lines, handles, flipped))
+}
+
+/// The curve positions of each profile chain of `sketch`, or no chains when
+/// a chain names an entity the sketch writes as no curve: the chain list is
+/// then empty, as a native sketch's can be.
+fn chains(sketch: &IrSketch, handles: &Handles, curves: &[Curve]) -> Vec<Vec<usize>> {
+    let lines = curves
+        .iter()
+        .take_while(|curve| matches!(curve, Curve::Line { .. }))
+        .count();
+    sketch
+        .profiles
+        .as_slice()
+        .iter()
+        .map(|chain| {
+            chain
+                .iter()
+                .map(|usage| match handles.entity(&usage.entity) {
+                    Ok(Operand::Line(position)) => Some(position),
+                    Ok(Operand::Arc(position)) => Some(lines + position),
+                    Ok(Operand::Point(_)) | Err(_) => None,
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 /// The sketch's relations and dimensions as native relation-table rows and

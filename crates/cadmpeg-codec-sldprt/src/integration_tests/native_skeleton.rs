@@ -276,6 +276,18 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
         .expect("the class map reconciles");
     assert_eq!(walk.status, crate::carchive::Status::End);
     assert_eq!(walk.sketch_profiles.len(), 2);
+    let chains = walk
+        .trace
+        .iter()
+        .filter(|object| &*object.class == "moSketchChain_c")
+        .count();
+    let profiles = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| sketch.profiles.as_slice().len())
+        .sum::<usize>();
+    assert_eq!(chains, profiles, "one moSketchChain_c per profile chain");
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the part decodes");
