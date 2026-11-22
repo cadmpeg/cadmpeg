@@ -226,7 +226,7 @@ pub(crate) fn project_configurations_with_losses(
     native: &[DesignConfiguration],
     targets: &ConfigurationTargets<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
     Ok(super::decode::record::recover(
         project_configurations(native, targets),
         losses,
