@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Choose the stored direction of edges on written compact analytic curves.
+//! Choose the stored direction of written edges.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId};
 use cadmpeg_ir::topology::Sense;
 
-/// Edges whose stored direction runs against their compact curve, and the
-/// curves that carry them.
-pub(super) struct ReversedCompactEdges {
+/// Edges stored against their direction, and the compact curves that carry
+/// them.
+pub(super) struct ReversedEdges {
     pub(super) curves: HashSet<CurveId>,
     pub(super) edges: HashSet<EdgeId>,
 }
 
-impl ReversedCompactEdges {
+impl ReversedEdges {
     pub(super) fn stored_sense(&self, edge: &EdgeId, sense: Sense) -> Sense {
         match (self.edges.contains(edge), sense) {
             (true, Sense::Forward) => Sense::Reversed,
@@ -26,20 +26,17 @@ impl ReversedCompactEdges {
     }
 }
 
-/// A stored edge runs along its forward coedge. An edge on a compact analytic
-/// curve whose coedges all run against it is stored reversed, and its curve
-/// carries the marker that runs against edges.
-pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges, CodecError> {
-    let compact_curves = ir
+/// A stored edge runs along its canonical forward coedge (`sldprt.md` §4), so
+/// an edge whose coedges all run against it is stored reversed. On a compact
+/// analytic curve the curve carries the marker that runs against edges. On a
+/// NURBS curve the reader orders the edge by its vertex parameters (§7.2),
+/// which a closed edge does not order: that edge cannot be written.
+pub(super) fn reversed_edges(ir: &CadIr) -> Result<ReversedEdges, CodecError> {
+    let nurbs_curves = ir
         .geometry
         .curves
         .iter()
-        .filter(|curve| {
-            !matches!(
-                curve.geometry,
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
-            )
-        })
+        .filter(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_))))
         .map(|curve| &curve.id)
         .collect::<HashSet<_>>();
     let mut forward_coedges = HashMap::<&EdgeId, bool>::new();
@@ -49,13 +46,26 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
     let mut curve_directions = HashMap::<&CurveId, bool>::new();
     let mut edges = HashSet::new();
     for edge in &ir.geometry.edges {
-        let Some(curve) = edge.curve().filter(|curve| compact_curves.contains(curve)) else {
+        let Some(curve) = edge.curve() else {
             continue;
         };
         let Some(&has_forward) = forward_coedges.get(&edge.id) else {
             continue;
         };
         let reversed = !has_forward;
+        if nurbs_curves.contains(curve) {
+            if reversed {
+                if edge.ends.as_ref().is_none_or(|ends| ends.start == ends.end) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT closed NURBS edge {} has only coedges that run against it, \
+                         and its stored direction cannot state that",
+                        edge.id
+                    )));
+                }
+                edges.insert(edge.id.clone());
+            }
+            continue;
+        }
         if *curve_directions.entry(curve).or_insert(reversed) != reversed {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT curve {curve} carries edges stored in both directions"
@@ -70,7 +80,7 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
         .filter(|(_, reversed)| *reversed)
         .map(|(curve, _)| curve.clone())
         .collect();
-    Ok(ReversedCompactEdges { curves, edges })
+    Ok(ReversedEdges { curves, edges })
 }
 
 #[cfg(test)]

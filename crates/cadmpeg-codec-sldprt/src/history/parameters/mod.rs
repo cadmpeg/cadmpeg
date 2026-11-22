@@ -770,7 +770,7 @@ fn parameter_value_states(
     Ok(states)
 }
 
-fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
+pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
     let close = |left: f64, right: f64| {
         (left - right).abs()
             <= EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9 * (1.0 + left.abs().max(right.abs()))

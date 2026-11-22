@@ -8,12 +8,17 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily
 
 use crate::history::classify::extrude_op;
 
-pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
-    if let Some(tag) = feature
+/// The source element name of a `SolidWorks` feature. Another format's tag
+/// is a value only its own writer reads (§3.4).
+pub(super) fn solidworks_source_tag(feature: &cadmpeg_ir::features::Feature) -> Option<&String> {
+    feature
         .source_tag
         .as_ref()
-        .filter(|tag| valid_xml_name(tag))
-    {
+        .filter(|tag| feature.id.as_str().starts_with("sldprt:") && valid_xml_name(tag))
+}
+
+pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
+    if let Some(tag) = solidworks_source_tag(feature) {
         return tag.clone();
     }
     let tag = match feature.evaluation.definition() {
@@ -214,4 +219,45 @@ pub(crate) fn xml_char(character: char) -> bool {
         character,
         '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::features::{
+        evaluation::FeatureEvaluation, selections::DistinctMembers, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+    };
+
+    fn datum_plane(id: &str) -> Feature {
+        Feature {
+            product_definition: None,
+            id: FeatureId::mint(id).expect("feature identity"),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("WorkPlane".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                },
+            )),
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn only_a_solidworks_feature_keeps_its_source_tag() {
+        assert_eq!(
+            super::feature_xml_tag(&datum_plane("f3d:model:feature#plane")),
+            "ReferencePlane"
+        );
+        assert_eq!(
+            super::feature_xml_tag(&datum_plane("sldprt:model:feature#plane")),
+            "WorkPlane"
+        );
+    }
 }

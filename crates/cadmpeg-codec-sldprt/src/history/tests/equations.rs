@@ -900,9 +900,12 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         crate::test_support::plan_inherited_write(&edited, &unavailable_fidelity, &mut Vec::new())
             .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("validated retained local, central and EOCD signature tokens"));
+    assert!(
+        error
+            .to_string()
+            .contains("SLDPRT writer cannot regenerate B-rep after"),
+        "{error}"
+    );
 
     assert!(unavailable_fidelity
         .retained_record(crate::SOURCE_IMAGE_ID)

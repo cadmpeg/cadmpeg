@@ -3,9 +3,12 @@
 
 mod anonymous_metadata;
 mod brep_agreement;
+mod capacity;
 pub(crate) mod configuration_carriers;
 mod digests;
 mod flex_history;
+mod foreign_carriers;
+mod foreign_constructions;
 mod helix_surfaces;
 mod history_names;
 mod homogeneous_poles;
@@ -14,6 +17,7 @@ mod normalization;
 mod parameters_extrude;
 mod patterns_history;
 mod record_losses;
+mod reductions;
 mod reemitted_lanes;
 mod replace_face;
 mod round_trip;

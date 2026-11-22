@@ -229,11 +229,19 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
 
+### CM-16. Signature tokens, member time/date words and `internal_attrs`
+
+**Question.** Which rule gives a file's local, central and end-of-directory signature tokens, from its `file_id` or from other content? Which rule gives a member's packed time/date word? Which rule gives bit 0 of a member's `internal_attrs`?
+
+**Known.** `sldprt.md` §1.1 states one local token per file, one central token per file and a third token in the end-of-directory root. The three tokens are nonzero and pairwise distinct, `file_id` is nonzero, and files with the same `file_id` carry the same three tokens. The time/date word is a raw ZIP modification time/date, the local and central headers of one member carry the same word, and several members of one file can carry the same word. Many words are not valid MS-DOS dates or times, and the word of one member name changes between files. §1.3 states that bit 0 of `internal_attrs` is the ZIP text hint. Members of one name carry 0 in some files and 1 in others, and the zlib text test on the payload disagrees with the bit.
+
+**Need.** A writer with no source envelope must write these fields. The rules let it write the values SolidWorks writes. Until then, the SLDPRT writer writes values of its own and charges `export:record.residual-unavailable` for each field.
+
 ### CM-17. Keywords lead byte
 
 **Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
 
-**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`. cadmpeg regenerates an edited member after the lead byte and declaration of its source member, and writes a member with no source member after lead byte `86`, the most frequent form (`sldprt.md` §2).
 
 **Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
 

@@ -132,7 +132,6 @@ pub(crate) fn apply_feature_name_changes(
 pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<features::FeatureInputRename>, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -167,13 +166,7 @@ pub(crate) fn prepare_features_for_write(
         validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
         validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
         validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-        return sync_neutral_features(
-            ir,
-            &ir.model.parameters,
-            &ir.geometry.bodies,
-            native,
-            losses,
-        );
+        return sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native);
     }
     match (neutral_changed, native_changed) {
         (false, _) => Ok(Vec::new()),
@@ -199,13 +192,7 @@ pub(crate) fn prepare_features_for_write(
             validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
             validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
             validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
-            sync_neutral_features(
-                ir,
-                &ir.model.parameters,
-                &ir.geometry.bodies,
-                native,
-                losses,
-            )
+            sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native)
         }
     }
 }
@@ -333,7 +320,7 @@ fn validate_surface_sweep_profile_edits(
     Ok(())
 }
 
-fn project_features_with_native_inputs(
+pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     Ok(project_feature_model_with_native_inputs(native)?.features)

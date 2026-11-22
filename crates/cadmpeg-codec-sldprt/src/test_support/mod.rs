@@ -21,6 +21,68 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// The messages of a write's unwritten-attribute losses, by code.
+#[derive(Debug, Default)]
+pub(crate) struct UnwrittenLosses {
+    /// `export:edit.dropped`: records kept as the source stored them.
+    pub(crate) dropped: Vec<String>,
+    /// `WriterAttributesOmitted`: attributes with no record.
+    pub(crate) omitted: Vec<String>,
+}
+
+impl UnwrittenLosses {
+    pub(crate) fn of(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Self {
+        let mut found = Self::default();
+        for loss in losses {
+            if loss.code.namespace() == "export" && loss.code.local_code() == "edit.dropped" {
+                found.dropped.push(loss.message.clone());
+            } else if loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind() {
+                found.omitted.push(loss.message.clone());
+            }
+        }
+        found
+    }
+
+    /// One message of the code `held` selects states `reason` and names `id`
+    /// as a whole token, and no message of the other code names it.
+    pub(crate) fn assert_charged(&self, held: crate::writer::Held, reason: &str, id: &str) {
+        let (charged, other) = match held {
+            crate::writer::Held::Source => (&self.dropped, &self.omitted),
+            crate::writer::Held::Nothing => (&self.omitted, &self.dropped),
+        };
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            charged
+                .iter()
+                .any(|message| message.contains(reason) && names(message)),
+            "{held:?} {reason} {id}: {self:?}"
+        );
+        assert!(!other.iter().any(names), "{held:?} {id}: {self:?}");
+    }
+
+    /// No message of either code names `id`.
+    pub(crate) fn assert_uncharged(&self, id: &str) {
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            !self.dropped.iter().chain(&self.omitted).any(names),
+            "{id}: {self:?}"
+        );
+    }
+}
+
+/// Plans and writes an inherited write. Returns its bytes and its
+/// unwritten-attribute losses.
+pub(crate) fn write_with_unwritten_attributes(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> Result<(Vec<u8>, UnwrittenLosses), CodecError> {
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let losses = UnwrittenLosses::of(&plan.report().losses);
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)?;
+    Ok((bytes, losses))
+}
+
 /// Supply an authored native envelope for semantic fixture assertions.
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
@@ -156,12 +218,18 @@ pub(crate) fn write_in_native_envelope(
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
+    make_retained_record_unavailable(fidelity, crate::SOURCE_IMAGE_ID);
+}
+
+/// Replace retained record `id` by its digest: the fidelity names the record
+/// and holds none of its bytes.
+pub(crate) fn make_retained_record_unavailable(fidelity: &mut SourceFidelity, id: &str) {
     let unavailable = {
         let record = fidelity
-            .retained_record(crate::SOURCE_IMAGE_ID)
-            .expect("decode retains the source image");
+            .retained_record(id)
+            .expect("decode retains the record");
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
-            .expect("decoded source image digest");
+            .expect("decoded record digest");
         cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
@@ -170,20 +238,17 @@ pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
                 sha256: digest,
             },
         )
-        .expect("source image extent")
+        .expect("record extent")
     };
     fidelity
-        .remove_retained_record(crate::SOURCE_IMAGE_ID)
-        .expect("decode retains the source image");
+        .remove_retained_record(id)
+        .expect("decode retains the record");
     fidelity
         .insert_retained_record(
-            crate::SOURCE_IMAGE_ID
-                .to_owned()
-                .try_into()
-                .expect("source image identity"),
+            id.to_owned().try_into().expect("record identity"),
             unavailable,
         )
-        .expect("source image identity is unique");
+        .expect("record identity is unique");
 }
 
 pub(crate) mod allocation;

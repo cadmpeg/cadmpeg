@@ -225,7 +225,7 @@ fn application_element_is_kept_to_the_level_bound_and_the_cut_is_named() {
         cut.message.contains(r#"Application element "Simulation" nests 17 element levels"#)
             && cut
                 .message
-                .contains("1 element below level 16 is not kept, the first a Group element inside the level-16 Group element"),
+                .contains("1 element below level 16 is not kept (the first: element Group inside the level-16 element Group)"),
         "{}",
         cut.message
     );
@@ -349,7 +349,7 @@ fn a_branching_cut_counts_every_element_below_the_bound_and_keeps_the_text_runs(
                 .contains("4 elements below level 16 are not kept")
             && cut
                 .message
-                .contains("A element inside the level-16 Group element"),
+                .contains("(the first: element A inside the level-16 element Group)"),
         "{}",
         cut.message
     );
@@ -373,6 +373,22 @@ fn forms_the_history_drops_are_counted_once_per_member() {
     assert_eq!(
         notes[0].message,
         "Keywords member swXmlContents/KeyWords: the native history drops 1 comment(s), 1 processing instruction(s), the edge whitespace of 2 text value(s), the namespace of 2 name(s); a SolidWorks write that regenerates the history writes the text without them"
+    );
+
+    let separated = decode(
+        "swXmlContents/KeyWords",
+        br#"<Keywords Name="Part"><Feature id="1" Name="Boss">lead<!---->text<!-- x -->more<!----><a/><!----></Feature></Keywords>"#,
+    );
+    let notes = separated
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::HistoryXmlNormalised.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert!(
+        notes[0].message.contains("drops 3 comment(s);"),
+        "{}",
+        notes[0].message
     );
 
     let plain = decode(

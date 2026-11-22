@@ -256,15 +256,25 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
 }
 
 #[test]
-fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
+fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
     let mut ir = cube();
     ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let error = SldprtCodec
+    let curve = ir.geometry.curves[0].id.as_str().to_owned();
+    let edge = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
+        .unwrap()
+        .id
+        .as_str()
+        .to_owned();
+    let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .err()
         .unwrap();
-    assert!(error
-        .to_string()
-        .contains("without a retained native partition"));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.bodies-omitted"
+            && loss.message.contains(&format!("edge {edge}"))
+    }));
 }
