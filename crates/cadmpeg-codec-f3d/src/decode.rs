@@ -3763,6 +3763,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
+                self.report.losses.extend(materials.losses);
                 self.report.losses.extend(face_losses);
                 self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;

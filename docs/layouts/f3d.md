@@ -1,6 +1,6 @@
 <!-- Generated from docs/layouts/f3d.toml by
-     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;
-     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->
+     crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs. Do not edit by hand;
+     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`. -->
 
 # `f3d` record layouts
 

@@ -340,6 +340,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_MESH_FACE_SOURCE_IDS`                | `1 << 24`                                               | 2    | Face-source correspondence count. Excess fails the userdata.                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_BUFFER_OUTPUT`                       | `256 * 1024 * 1024`                                     | 2    | Declared size of one mesh buffer, before the copy or `inflate`. Excess fails the mesh; the decode continues. Inflation also charges the session decompression ceilings.                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
+| `cadmpeg-codec-f3d` | `src/design/profile_select/cap_regions/joined.rs` | `MAX_JOIN_ENVELOPE_COMPARISONS` | `50_000_000` | 4 | Quadratic comparison allowance for one buried-end Join profile certificate. Excess retains the native selection and reports `feature.profile-join-envelope-capped`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODIES` | `64` | 4 | History bodies per document, across all of its components. `MAX_HISTORY_BODY_WORK` bounds their total materialization. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/body_history_tail.rs` | `MAX_HISTORY_TAIL_WORK` | `1 << 21` | 4 | State and topology slots examined in one body's tail after its last linked feature. Exhaustion retains a native body-history operation with `feature.body-history-incomplete`. |
@@ -427,6 +428,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
 | `cadmpeg-codec-sldprt` | `src/resolved_features/sketch_lists.rs` | `MAX_SKETCH_POINTS` | `4096` | 2 | Largest point count read as an `sgSketch` header. A larger count frames no sketch list, and its markers keep native geometry. |
+| `cadmpeg-codec-sldprt` | `src/resolved_features/sweeps/paths.rs` | `MAX_SWEEP_PATH_CURVES` | `1024` | 4 | Curve count of one sweep path. A larger path keeps its native reference with `feature.sweep-path-retained`. |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
@@ -574,16 +576,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 352.
+Production `MAX_*` constants: 354.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 79    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 176   |
+| 4    | Local work cap             | 178   |
 | N    | Not a decode bound         | 55    |
-|      | Total                      | 351   |
+|      | Total                      | 353   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -591,8 +593,8 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 31,
-`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 39,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 32,
+`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 40,
 `cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
