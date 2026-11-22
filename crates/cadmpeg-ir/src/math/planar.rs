@@ -220,6 +220,31 @@ pub fn line_circle_intersections(
         return None;
     }
     let length = direction.u.portable_hypot(direction.v);
+    // Fast binary64 rejection when the infinite line clearly misses the circle.
+    // Every error term is bounded conservatively before skipping the exact path.
+    if direction_scale.is_normal() && length.is_normal() {
+        let du = end.u - start.u;
+        let dv = end.v - start.v;
+        let cu = center.u - start.u;
+        let cv = center.v - start.v;
+        let cross = du * cv - dv * cu;
+        let cross_bound = du.abs() * cv.abs() + dv.abs() * cu.abs();
+        let seg_len = length * direction_scale;
+        if du.is_finite()
+            && dv.is_finite()
+            && cu.is_finite()
+            && cv.is_finite()
+            && cross.is_finite()
+            && cross_bound.is_finite()
+            && seg_len.is_normal()
+        {
+            let err_margin = 16.0 * f64::EPSILON * cross_bound;
+            let rhs = radius * seg_len * (1.0 + 16.0 * f64::EPSILON) + err_margin;
+            if rhs.is_finite() && cross.abs() > rhs {
+                return None;
+            }
+        }
+    }
     // `(end - start) . (end - start) / direction_scale`, the divisor that turns a
     // projection on `direction` into a parameter on `end - start`. It is formed
     // exactly, so a tangent, whose half chord contributes nothing, keeps every bit
