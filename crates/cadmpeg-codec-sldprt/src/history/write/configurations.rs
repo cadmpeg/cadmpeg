@@ -294,11 +294,15 @@ fn sync_configuration_design_state(
             };
             let current = current.parameter_values.get(parameter_id);
             if current != Some(desired) {
-                edits.parameter_unwritten(format!(
-                    "The value of display-only relation parameter {} in configuration {} is not written; the stored relation keeps its solved value.",
-                    parameter.id.as_str(),
-                    configuration.name.as_deref().unwrap_or(configuration.id.as_str())
-                ));
+                edits.configuration_value_unwritten(
+                    configuration.id.as_str(),
+                    &parameter.id,
+                    format!(
+                        "The value of display-only relation parameter {} in configuration {} is not written; the stored relation keeps its solved value.",
+                        parameter.id.as_str(),
+                        configuration.name.as_deref().unwrap_or(configuration.id.as_str())
+                    ),
+                );
             }
         }
     }

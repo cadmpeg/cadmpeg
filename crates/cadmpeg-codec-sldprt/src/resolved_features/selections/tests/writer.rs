@@ -14,7 +14,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn semantic_writer_rejects_compact_edge_selection_edits() {
+fn semantic_writer_keeps_stored_compact_edge_selections_and_names_the_edit() {
     use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -38,7 +38,12 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
@@ -108,7 +113,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 }
 
 #[test]
-fn semantic_writer_rejects_compact_surface_selection_edits() {
+fn semantic_writer_keeps_stored_compact_surface_selections_and_names_the_edit() {
     use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     use cadmpeg_ir::features::selections::FaceSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -125,7 +130,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         &resolved_feature_classes_with_ids(&[("moExtrusion_c", "UpTo", 31)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {

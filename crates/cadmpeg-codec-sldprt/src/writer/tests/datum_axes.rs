@@ -6,7 +6,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
 #[test]
-fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry() {
+fn semantic_writer_keeps_stored_partial_or_controlled_axes_and_names_the_edit() {
     use cadmpeg_ir::design::dimension::Dimension;
     use cadmpeg_ir::design::options::NativeOption;
     use cadmpeg_ir::features::{datums::DatumAxisDraft, FeatureDefinition, FeatureOperation};

@@ -343,6 +343,11 @@ impl ContainerScan<'_> {
 }
 
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
+/// Whether `image` is a compound-file part rather than a block container.
+pub(crate) fn is_compound_file(image: &[u8]) -> bool {
+    image.starts_with(&COMPOUND_FILE_MAGIC)
+}
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
 pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {

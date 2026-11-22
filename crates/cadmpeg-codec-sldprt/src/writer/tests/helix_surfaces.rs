@@ -492,7 +492,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
 }
 
 #[test]
-fn semantic_writer_rejects_embedded_helix_geometry_edits() {
+fn semantic_writer_keeps_stored_embedded_helix_geometry_and_names_the_edit() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -506,7 +506,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -550,14 +555,22 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         });
     }
 
-    let unwritten =
-        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+    // The construction curve added to the lane is written; the radius edit
+    // keeps the radius that curve states.
+    let (unwritten, written) =
+        crate::test_support::write_unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
             .iter()
             .any(|message| message.contains("changes embedded helix geometry")),
         "{unwritten:?}"
     );
+    let FeatureDefinition::Operation(FeatureOperation::Helix { radius, .. }) =
+        written.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("embedded helix geometry");
+    };
+    assert!((radius.get() - 3500.0).abs() <= 1.0e-6, "{radius:?}");
 }
 
 #[test]
@@ -1180,12 +1193,17 @@ fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
 }
 
 #[test]
-fn semantic_writer_refuses_filled_surface_weight_loss() {
+fn semantic_writer_keeps_stored_filled_surface_weights_and_names_the_edit() {
     use cadmpeg_ir::features::selections::NonEmptyMembers;
     use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
     let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let edge = base.ir().geometry.edges[0].id.as_str();
     let face = base.ir().geometry.faces[0].id.as_str();
@@ -1194,7 +1212,12 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
     );
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -1224,10 +1247,15 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
 }
 
 #[test]
-fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_normal() {
+fn semantic_writer_keeps_stored_filled_surface_constraints_and_names_the_edit() {
     let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let edge = base.ir().geometry.edges[0].id.as_str();
     let face = base.ir().geometry.faces[0].id.as_str();
@@ -1236,7 +1264,12 @@ fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_norm
     );
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     for interior in [true, false] {
         let mut edited = EditableDecodeResult::from(decoded.clone());

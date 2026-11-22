@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn semantic_writer_refuses_omitted_linear_pattern_instances() {
+fn semantic_writer_keeps_stored_linear_pattern_instances_and_names_omissions() {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternTransform},
         FeatureDefinition, FeatureOperation,
@@ -14,7 +14,12 @@ fn semantic_writer_refuses_omitted_linear_pattern_instances() {
         <Pattern Name="Rows" Type="LinearPattern" id="18" Seeds="7" Direction="1,0,0"><Dimension Name="Count">3</Dimension><Dimension Name="Spacing">10mm</Dimension></Pattern>
     </Keywords>"#));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.features[1]

@@ -72,9 +72,9 @@ pub(crate) struct SemanticOutput {
     pub(crate) omitted_envelope_bytes: usize,
     /// The edits the native records cannot carry, kept as stored.
     pub(crate) unwritten: Vec<cadmpeg_ir::report::loss::LossNote>,
-    /// Features written with their stored definition record: their
-    /// definition edits are among `unwritten`, not in the written history.
-    pub(crate) kept_definitions: std::collections::HashSet<cadmpeg_ir::features::FeatureId>,
+    /// Which edits `unwritten` names: the stale-solid check reads no edit of
+    /// these as written.
+    pub(crate) written: crate::history::write::edits::UnwrittenEdits,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -131,7 +131,8 @@ pub(crate) fn write_semantic_with_records(
         ));
     }
     // The envelope is regenerated from the source's block container; a
-    // compound-file source has none.
+    // compound-file source has none. An inherited write of an edited
+    // compound-file part writes the stored part instead.
     if source_scan
         .as_ref()
         .is_some_and(|scan| scan.blocks.is_empty() && !scan.compound_streams.is_empty())
@@ -202,7 +203,7 @@ pub(crate) fn write_semantic_with_records(
                 .transpose()
         },
     )?;
-    let (unwritten, kept_definitions, edited_parameters) = edits.into_parts();
+    let (mut unwritten, written, edited_parameters) = edits.into_parts();
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     if !validation.is_ok() {
@@ -413,7 +414,7 @@ pub(crate) fn write_semantic_with_records(
         .iter()
         .map(|(name, _)| name.clone())
         .collect::<HashSet<_>>();
-    let opaque = opaque_blocks(
+    let (opaque, kept_pmi) = opaque_blocks(
         ir,
         retained_records,
         annotations,
@@ -425,6 +426,7 @@ pub(crate) fn write_semantic_with_records(
             edited_parameters: &edited_parameters,
         },
     )?;
+    unwritten.extend(kept_pmi);
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -464,7 +466,7 @@ pub(crate) fn write_semantic_with_records(
         coverage,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
         unwritten,
-        kept_definitions,
+        written,
     })
 }
 
@@ -546,6 +548,68 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         declared_measures: Omitted,
         design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
         process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
+    }
+}
+
+/// What a stored part written for an edited document carries: it may
+/// represent a record of any arena, and the write charges a loss for the
+/// edits it does not carry.
+pub(crate) fn stored_part_coverage() -> ArenaDispositions {
+    use ArenaDisposition::Reported;
+    ArenaDispositions {
+        bodies: Reported,
+        regions: Reported,
+        shells: Reported,
+        faces: Reported,
+        loops: Reported,
+        coedges: Reported,
+        edges: Reported,
+        vertices: Reported,
+        points: Reported,
+        surfaces: Reported,
+        curves: Reported,
+        subds: Reported,
+        pcurves: Reported,
+        procedural_surfaces: Reported,
+        procedural_curves: Reported,
+        assets: Reported,
+        features: Reported,
+        feature_input_topologies: Reported,
+        feature_result_topologies: Reported,
+        configurations: Reported,
+        parameters: Reported,
+        sketches: Reported,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
+        spatial_sketches: Reported,
+        spatial_sketch_entities: Reported,
+        spatial_sketch_constraints: Reported,
+        spreadsheets: Reported,
+        product_definitions: Reported,
+        occurrences: Reported,
+        assembly_joints: Reported,
+        drawings: Reported,
+        semantic_annotations: Reported,
+        presentation_documents: Reported,
+        view_presentations: Reported,
+        tessellations: Reported,
+        point_clouds: Reported,
+        history_bodies: Reported,
+        appearances: Reported,
+        appearance_bindings: Reported,
+        attributes: Reported,
+        pmi: Reported,
+        presentation_layers: Reported,
+        physical_materials: Reported,
+        mass_properties: Reported,
+        rigid_bodies: Reported,
+        colliders: Reported,
+        articulations: Reported,
+        physics_scenes: Reported,
+        solver_settings: Reported,
+        declared_measures: Reported,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Reported),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Reported),
     }
 }
 
@@ -1180,6 +1244,13 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
+/// The retained blocks a write emits, and the losses of the edited PMI
+/// records that keep their stored bytes.
+type OpaqueBlocks = (
+    Vec<(String, Vec<u8>)>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
+
 /// What the writer patches into the retained blocks it writes.
 #[derive(Clone, Copy)]
 struct RetainedBlockPatches<'a> {
@@ -1197,7 +1268,7 @@ fn opaque_blocks(
     emitted_sections: &HashSet<String>,
     retain_native_brep: bool,
     patches: RetainedBlockPatches<'_>,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<OpaqueBlocks, CodecError> {
     let native = ir
         .native
         .namespace("sldprt")
@@ -1205,7 +1276,8 @@ fn opaque_blocks(
         .transpose()
         .map_err(CodecError::from)?;
     let mut seen = HashSet::new();
-    records
+    let mut kept_pmi = Vec::new();
+    let blocks = records
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
@@ -1247,12 +1319,11 @@ fn opaque_blocks(
             }
             let mut payload = record.data?.to_vec();
             if lower.contains("pmisemanticdatadb") {
-                if let Err(error) =
-                    crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload, &|id| {
-                        patches.edited_parameters.contains(id)
-                    })
-                {
-                    return Some(Err(error));
+                match crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload, &|id| {
+                    patches.edited_parameters.contains(id)
+                }) {
+                    Ok(kept) => kept_pmi.extend(kept),
+                    Err(error) => return Some(Err(error)),
                 }
             }
             if let Some(active) = ir
@@ -1279,7 +1350,8 @@ fn opaque_blocks(
             }
             Some(Ok((section.to_string(), payload)))
         })
-        .collect()
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    Ok((blocks, kept_pmi))
 }
 
 fn retained_swobjects_sections(

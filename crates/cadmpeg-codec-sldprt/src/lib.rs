@@ -185,6 +185,11 @@ impl SldprtCodec {
     /// conservative branch, which reproduces the document from the IR instead of
     /// replaying bytes that may no longer describe it.
     ///
+    /// The semantic writer has no compound-file serializer. An edited
+    /// compound-file part is written as its stored part, and a
+    /// `writer.compound-file-edit-unwritten` loss states that no edit is
+    /// written.
+    ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
     /// reproduce the input byte for byte when nothing it rewrites has moved, so
@@ -195,41 +200,44 @@ impl SldprtCodec {
         records: &[SourceRecord<'_>],
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        let image = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data);
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
-        let Some(expected) = expected else {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::BaselineMissing),
-                writer,
-            );
+        let skipped = match expected {
+            None => Some(ReplaySkipped::BaselineMissing),
+            Some(expected) if decode::document_local_sha256(ir)? != *expected => {
+                Some(ReplaySkipped::DigestMismatch)
+            }
+            Some(_) => None,
         };
-        if decode::document_local_sha256(ir)? != *expected {
+        if let Some(reason) = skipped {
+            if let Some(image) = image.filter(|image| container::is_compound_file(image)) {
+                writer.write_all(image)?;
+                return Ok(Written::StoredCompoundFile {
+                    loss: loss::SldprtLossCode::WriterCompoundFileEditUnwritten.note(match reason {
+                        ReplaySkipped::BaselineMissing => {
+                            "The document has no decode baseline, so whether it is edited since decode is not known; SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries no edit of the document."
+                        }
+                        _ => {
+                            "The document is edited since decode; SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries none of the edits."
+                        }
+                    }),
+                });
+            }
             return Self::write_semantic(
                 ir,
                 annotations,
                 records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
+                SemanticFidelity::ReplaySkipped(reason),
                 writer,
             );
         }
-        let Some(record) = records
-            .iter()
-            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
-        else {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
-                writer,
-            );
-        };
-        let Some(data) = record.data.as_ref() else {
+        let Some(data) = image else {
             return Self::write_semantic(
                 ir,
                 annotations,
@@ -257,7 +265,7 @@ impl SldprtCodec {
             coverage,
             omitted_envelope_bytes,
             unwritten,
-            kept_definitions,
+            written,
         } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
@@ -277,7 +285,7 @@ impl SldprtCodec {
             ir,
             native.as_ref(),
             source_image,
-            &kept_definitions,
+            &written,
         )?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
@@ -361,6 +369,11 @@ enum Written {
     /// The retained source image, byte for byte. The dialect is the source's
     /// own, which this write neither chooses nor needs to name.
     Replayed,
+    /// The retained compound-file source image, byte for byte, written for a
+    /// document that may be edited: `loss` states that no edit is written.
+    StoredCompoundFile {
+        loss: cadmpeg_ir::report::loss::LossNote,
+    },
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
     /// declares.
     Semantic {
@@ -383,7 +396,7 @@ impl Written {
     /// byte, so the output cannot say and only this value can.
     fn path(&self) -> WritePath {
         match self {
-            Self::Replayed => WritePath::VerbatimReplay,
+            Self::Replayed | Self::StoredCompoundFile { .. } => WritePath::VerbatimReplay,
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -393,6 +406,11 @@ impl Written {
     fn coverage(&self) -> ArenaCoverage {
         match self {
             Self::Replayed => ArenaCoverage::Complete,
+            // The stored part may represent a record of any arena; the loss
+            // names the edits it does not carry.
+            Self::StoredCompoundFile { .. } => {
+                ArenaCoverage::Declared(writer::stored_part_coverage())
+            }
             Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
     }

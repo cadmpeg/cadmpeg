@@ -200,7 +200,12 @@ fn an_edited_display_only_relation_parameter_is_named_and_kept_as_solved() {
     let unwritten = messages(&report, SldprtLossCode::WriterParameterEditUnwritten);
     assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
     assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
+    assert_eq!(stale(&report), Vec::<&str>::new());
     let written = decode(output);
+    assert_eq!(
+        crate::test_support::readback::differences(source(&decoded).ir(), written.ir(), &[]),
+        Vec::<String>::new()
+    );
     let parameter = named_parameter(written.ir(), &owner, &name);
     assert!(
         (length(parameter) - stored).abs() <= 1.0e-9,
@@ -228,11 +233,114 @@ fn a_bare_number_dimension_bound_to_a_scalar_is_written() {
     assert!((length(parameter) - value).abs() <= 1.0e-9, "{parameter:?}");
 }
 
-/// Renames the first feature that `selected` accepts and writes; the
-/// feature is written with the new name, and nothing is reported unwritten.
-fn rename_first(source: &DecodeResult, selected: fn(&Feature) -> bool) {
-    let mut decoded = EditableDecodeResult::from(source.clone());
-    let name = {
+/// The hole encoder cannot restate every field the decoder states for these
+/// holes; an unedited definition keeps its stored record.
+#[test]
+fn a_hole_the_encoder_cannot_restate_is_renamed() {
+    a_rename_keeps_every_other_record(ftc_06(), is_hole);
+}
+
+/// The first extrusion's lane object name is a repeated-class record, away
+/// from its class declaration; it is the one lane name that carries it.
+#[test]
+fn an_extrusion_named_by_a_repeated_class_record_is_renamed() {
+    a_rename_keeps_every_other_record(ftc_06(), is_extrusion);
+}
+
+/// The fillets' compact edge selections resolve further than the lane form
+/// the writer rebuilds; an unedited selection is not an edit, and the
+/// fillets read back as stored.
+#[test]
+fn a_rename_beside_decoder_resolved_fillet_edges_is_written() {
+    a_rename_keeps_every_other_record(ftc_08(), is_hole);
+}
+
+/// The writer has no compound-file serializer. An edited compound-file part
+/// is written as its stored part, and the write states that no edit is
+/// written.
+#[test]
+fn an_edited_compound_file_part_is_written_as_stored_and_named() {
+    let source = cadmpeg_test_support::compound::compound_fixture();
+    let mut decoded = EditableDecodeResult::from(decode(source.clone()));
+    decoded.ir_mut().model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#edited-parameter").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "Edited".into(),
+        expression: "1".into(),
+        display: None,
+        value: Some(ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+
+    let (report, output) = write(&decoded);
+
+    assert_eq!(output, source);
+    let losses = messages(&report, SldprtLossCode::WriterCompoundFileEditUnwritten);
+    assert_eq!(losses.len(), 1, "{:?}", report.losses);
+    assert!(losses[0].contains("compound-file writer"), "{}", losses[0]);
+}
+
+/// The source document decoded from the retained source image.
+fn source(decoded: &EditableDecodeResult) -> DecodeResult {
+    decode(
+        decoded
+            .source_fidelity()
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .and_then(|record| record.data())
+            .unwrap()
+            .to_vec(),
+    )
+}
+
+fn stale(report: &ExportReport) -> Vec<&str> {
+    messages(report, SldprtLossCode::WriterSolidStaleAfterEdit)
+}
+
+/// One parameter edit changes no other feature or parameter of the part.
+fn a_parameter_edit_keeps_every_other_record(source_part: &DecodeResult) {
+    let mut decoded = EditableDecodeResult::from(source_part.clone());
+    let (owner, name, value) = edit_extrusion_length(&mut decoded);
+
+    let (report, output) = write(&decoded);
+
+    assert_eq!(unwritten(&report), Vec::<&str>::new());
+    let written = decode(output);
+    assert!((length(named_parameter(written.ir(), &owner, &name)) - value).abs() <= 1.0e-9);
+    let edited_feature = format!("F:{owner}");
+    let edited_parameter = format!("P:F:{owner}.{name}");
+    assert_eq!(
+        crate::test_support::readback::differences(
+            source(&decoded).ir(),
+            written.ir(),
+            &[&edited_feature, &edited_parameter],
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_parameter_edit_of_ftc_06_keeps_every_other_record() {
+    a_parameter_edit_keeps_every_other_record(ftc_06());
+}
+
+#[test]
+fn a_parameter_edit_of_ftc_08_keeps_every_other_record() {
+    a_parameter_edit_keeps_every_other_record(ftc_08());
+}
+
+/// Renames the first feature that `selected` accepts: the rename changes the
+/// feature's name and the references that name it, and no other feature or
+/// parameter.
+fn a_rename_keeps_every_other_record(source_part: &DecodeResult, selected: fn(&Feature) -> bool) {
+    let mut decoded = EditableDecodeResult::from(source_part.clone());
+    let (old, new) = {
         let mut ir = decoded.ir_mut();
         let feature = ir
             .model
@@ -240,62 +348,208 @@ fn rename_first(source: &DecodeResult, selected: fn(&Feature) -> bool) {
             .iter_mut()
             .find(|feature| selected(feature))
             .unwrap();
-        let name = format!("{} renamed", feature.name.as_deref().unwrap());
-        feature.name = Some(name.clone());
-        name
+        let old = feature.name.clone().unwrap();
+        let new = format!("{old}_r");
+        feature.name = Some(new.clone());
+        (old, new)
     };
 
     let (report, output) = write(&decoded);
 
     assert_eq!(unwritten(&report), Vec::<&str>::new());
+    assert_eq!(stale(&report), Vec::<&str>::new());
     let written = decode(output);
-    assert!(written
-        .ir()
-        .model
-        .features
-        .iter()
-        .any(|feature| selected(feature) && feature.name.as_deref() == Some(name.as_str())));
-}
-
-/// The hole encoder cannot restate every field the decoder states for these
-/// holes; an unedited definition keeps its stored record.
-#[test]
-fn a_hole_the_encoder_cannot_restate_is_renamed() {
-    rename_first(ftc_06(), is_hole);
-}
-
-/// The first extrusion's lane object name is a repeated-class record, away
-/// from its class declaration; it is the one lane name that carries it.
-#[test]
-fn an_extrusion_named_by_a_repeated_class_record_is_renamed() {
-    rename_first(ftc_06(), is_extrusion);
-}
-
-/// The fillets' compact edge selections resolve further than the lane form
-/// the writer rebuilds; an unedited selection is not an edit.
-#[test]
-fn a_rename_beside_decoder_resolved_fillet_edges_is_written() {
-    rename_first(ftc_08(), is_hole);
-}
-
-/// The envelope is regenerated from the source's block container, and a
-/// compound-file source has none: no output can be produced.
-#[test]
-fn a_semantic_write_of_a_compound_file_part_is_refused_by_name() {
-    let decoded = decode(cadmpeg_test_support::compound::compound_fixture());
-    let (ir, _, fidelity) = decoded.into_parts();
-    let records = crate::source_records(&ir, &fidelity).unwrap();
-    let mut output = Vec::new();
-    let result = crate::writer::write_semantic_with_records(
-        &ir,
-        &fidelity.annotations,
-        &records,
-        &mut output,
+    // A reference `name@feature` names the feature by name.
+    let mut expected = decoded.ir().clone();
+    let (from, to) = (format!("@{old}"), format!("@{new}"));
+    for parameter in &mut expected.model.parameters {
+        parameter.expression = parameter.expression.replace(&from, &to);
+        for value in parameter.properties.values_mut() {
+            *value = value.replace(&from, &to);
+        }
+    }
+    assert_eq!(
+        crate::test_support::readback::differences(&expected, written.ir(), &[]),
+        Vec::<String>::new()
     );
+}
+
+/// An edit of a fillet's compact edge selection keeps the stored lane; the
+/// write names it and calls nothing written.
+#[test]
+fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
+    use cadmpeg_ir::features::selections::EdgeSelection;
+
+    let mut decoded = EditableDecodeResult::from(ftc_08().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let feature = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+                )
+            })
+            .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { mut groups }) =
+            feature.evaluation.definition().clone()
+        else {
+            unreachable!("a fillet");
+        };
+        groups[0].edges = EdgeSelection::Native("sldprt:test:edited-edges".into());
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups,
+            }));
+    }
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     assert!(
-        matches!(&result, Err(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("compound-file writer")),
-        "{:?}",
-        result.err()
+        unwritten[0].contains("compact edge selection"),
+        "{}",
+        unwritten[0]
     );
-    assert!(output.is_empty());
+}
+
+/// An integer value bound to a feature-input scalar is written to the scalar
+/// exactly.
+#[test]
+fn an_integer_value_bound_to_a_scalar_is_written_exactly() {
+    use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
+    use crate::test_support::history::resolved_features_payload;
+    use crate::test_support::native::sldprt_native;
+    use crate::test_support::parasolid::triangle_body;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    let mut decoded = EditableDecodeResult::from(decode(native_envelope_fixture(&source)));
+    let native_ref = {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "D1" && parameter.native_ref.is_some())
+            .unwrap();
+        parameter.expression = "3".into();
+        parameter.value = Some(ParameterValue::Integer(3));
+        parameter.native_ref.clone().unwrap()
+    };
+
+    let mut output = Vec::new();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
+
+    let written = decode(output);
+    let scalar = sldprt_native(written.ir())
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .map(|scalar| scalar.value.get())
+        .unwrap();
+    assert_eq!(scalar.to_bits(), 3.0_f64.to_bits());
+}
+
+/// The record states an unbound parameter's value through its expression: a
+/// value edit that the expression does not state is named, and the part reads
+/// back as stored.
+#[test]
+fn a_value_the_expression_does_not_state_is_named_and_not_called_written() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let id = {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| {
+                parameter.native_ref.is_none()
+                    && parameter.pmi.is_none()
+                    && matches!(parameter.value, Some(ParameterValue::Length(_)))
+                    && plain_length(&parameter.expression).is_some()
+                    && !is_reference(parameter)
+            })
+            .unwrap();
+        let stored = length(parameter);
+        parameter.value = Some(ParameterValue::Length(Length::new(stored + 1.0).unwrap()));
+        parameter.id.clone()
+    };
+
+    let (report, output) = write(&decoded);
+
+    let unwritten = messages(&report, SldprtLossCode::WriterParameterEditUnwritten);
+    assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
+    assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
+    assert_eq!(stale(&report), Vec::<&str>::new());
+    assert_eq!(
+        crate::test_support::readback::differences(source(&decoded).ir(), decode(output).ir(), &[],),
+        Vec::<String>::new()
+    );
+}
+
+/// A principal plane's role is its place in the default plane triplet, which
+/// its record does not state: a role edit keeps the stored plane, and the
+/// write names it.
+#[test]
+fn a_principal_plane_role_edit_keeps_the_stored_plane_and_is_named() {
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
+    use crate::test_support::history::resolved_feature_classes_with_ids;
+    use crate::test_support::parasolid::triangle_body;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Vorne" Type="Ebene" id="2"/><Feature Name="Oben" Type="Ebene" id="3"/><Feature Name="Rechts" Type="Ebene" id="4"/><Feature Name="Plane2" Type="Plane" id="39"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moRefPlane_c", "Vorne", 2),
+            ("moRefPlane_c", "Oben", 3),
+            ("moRefPlane_c", "Rechts", 4),
+        ]),
+    ));
+    let mut decoded = EditableDecodeResult::from(decode(native_envelope_fixture(&source)));
+    decoded.ir_mut().model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::DatumPrincipalPlane {
+                plane: PrincipalPlane::Right,
+            },
+        ));
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("principal-plane role"),
+        "{}",
+        unwritten[0]
+    );
 }

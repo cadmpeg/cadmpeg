@@ -126,22 +126,92 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Writes through the public encoder with an authored native envelope and
-/// returns the messages of the feature edits the output keeps as stored.
-pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
+fn decode_bytes(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+/// Writes through the public encoder with an authored native envelope a
+/// document whose feature edits the output keeps as stored, and checks that
+/// no stale-solid loss calls an edit written. Returns the messages of the
+/// unwritten feature edits and the written part read back.
+pub(crate) fn write_unwritten_feature_edits(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+    let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
         TargetRequest::Inherit,
     )
     .unwrap()
-    .write_to(&mut Vec::new())
+    .write_to(&mut output)
     .unwrap();
-    report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterFeatureEditUnwritten.kind())
-        .map(|loss| loss.message.clone())
-        .collect()
+    let messages = |code: crate::loss::SldprtLossCode| {
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == code.kind())
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages(crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit),
+        Vec::<String>::new()
+    );
+    (
+        messages(crate::loss::SldprtLossCode::WriterFeatureEditUnwritten),
+        decode_bytes(output),
+    )
+}
+
+/// Writes through the public encoder with an authored native envelope and
+/// returns the messages of the feature edits the output keeps as stored. The
+/// write carries no other edit than a rename, so the output reads back as the
+/// source document under the edited names, and no stale-solid loss calls the
+/// edit written.
+pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
+    let (unwritten, written) = write_unwritten_feature_edits(ir, fidelity);
+    let source = fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .and_then(|record| record.data())
+        .unwrap()
+        .to_vec();
+    let mut expected = decode_bytes(source).ir().clone();
+    for feature in &mut expected.model.features {
+        let Some(name) = ir
+            .model
+            .features
+            .iter()
+            .find(|edited| edited.id == feature.id)
+            .and_then(|edited| edited.name.clone())
+        else {
+            continue;
+        };
+        let Some(old) = feature
+            .name
+            .replace(name.clone())
+            .filter(|old| *old != name)
+        else {
+            continue;
+        };
+        // A reference `name@feature` names the feature by name.
+        let (from, to) = (format!("@{old}"), format!("@{name}"));
+        for parameter in &mut expected.model.parameters {
+            parameter.expression = parameter.expression.replace(&from, &to);
+            for value in parameter.properties.values_mut() {
+                *value = value.replace(&from, &to);
+            }
+        }
+    }
+    assert_eq!(
+        readback::differences(&expected, written.ir(), &[]),
+        Vec::<String>::new()
+    );
+    unwritten
 }
 
 /// Write an edit that shapes the solid through the public encoder, and check
@@ -210,6 +280,7 @@ pub(crate) mod native;
 pub(crate) mod nist;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
+pub(crate) mod readback;
 pub(crate) mod surfaces;
 pub(crate) mod swift;
 pub(crate) mod tessellation;

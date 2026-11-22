@@ -1110,7 +1110,7 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
 }
 
 #[test]
-fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
+fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
     let payload = crate::test_support::pmi::pmi_semantic_payload_record(
         "D1@Sketch1",
         "01234567-89ab-cdef-0123-456789abcdef",
@@ -1136,9 +1136,19 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
         parameter.value = Some(ParameterValue::Integer((1_i64 << 53) + 1));
         parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
     }
-    let mut patched = payload;
-    let error = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let mut patched = payload.clone();
+    let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
+    assert_eq!(patched, payload);
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(
+        kept[0].code,
+        crate::loss::SldprtLossCode::WriterParameterEditUnwritten.kind()
+    );
+    assert!(
+        kept[0].message.contains("beyond exact float range"),
+        "{}",
+        kept[0].message
+    );
 }
 
 #[test]

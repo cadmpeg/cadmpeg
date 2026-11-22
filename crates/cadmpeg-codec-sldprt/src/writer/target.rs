@@ -143,10 +143,16 @@ fn finish(
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
     }
+    if let Written::StoredCompoundFile { loss } = written {
+        losses.push(loss.clone());
+    }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
     let path_note = match &write_path {
+        WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
+            "preserved compound-file source replayed verbatim without the document's edits"
+        }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
         WritePath::Synthesized { .. } => "source container regenerated from IR",

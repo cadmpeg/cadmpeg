@@ -11,7 +11,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
+fn replace_face_writer_keeps_stored_tangent_chain_settings_it_cannot_encode() {
     for tangent_chain in [None, Some(false), Some(true)] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
@@ -20,7 +20,12 @@ fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
             br#"<Keywords><ReplaceFace Name="Patch" Type="ReplaceFace" id="21" Faces="face:4,face:5" ReplacementFaces="face:8"/></Keywords>"#,
         ));
         let decoded = SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &source,
+                )),
+                &DecodeOptions::default(),
+            )
             .unwrap();
         let mut decoded = EditableDecodeResult::from(decoded);
         decoded.ir_mut().model.features[0]

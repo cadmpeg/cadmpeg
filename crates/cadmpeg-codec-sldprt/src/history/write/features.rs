@@ -371,6 +371,13 @@ pub(in crate::history) fn sync_neutral_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let source_contradicted_travel = edits
+        .source()
+        .map(crate::history::extrude_direction::contradicted_features)
+        .unwrap_or_default();
+    // Features whose stored content items are kept: the caller did not edit
+    // their source content.
+    let mut content_kept = HashSet::new();
     for feature in features {
         if feature
             .source_tag
@@ -387,6 +394,20 @@ pub(in crate::history) fn sync_neutral_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
+        // The source feature of an existing record: each field the caller did
+        // not edit keeps its stored state.
+        let original = existing
+            .as_deref()
+            .and_then(|_| edits.source_feature(&feature.id));
+        if let (Some(record), Some(original)) = (existing.as_deref_mut(), original) {
+            if edits.feature_unedited(ir, feature) {
+                if feature.name != original.name {
+                    record.name = feature.name.clone().unwrap_or_default();
+                }
+                content_kept.insert(feature.id.clone());
+                continue;
+            }
+        }
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
@@ -396,8 +417,8 @@ pub(in crate::history) fn sync_neutral_features(
                     feature.id
                 ))
             })?;
-        let encoded = NeutralFeatureEncoder {
-            contradicted_travel: contradicted_travel.contains(&feature.id),
+        let encoder = |feature, contradicted_travel: bool| NeutralFeatureEncoder {
+            contradicted_travel,
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,
@@ -407,10 +428,16 @@ pub(in crate::history) fn sync_neutral_features(
             sketch_sources: &sketch_sources,
             parent_sources: &parent_sources,
             resolved_parameter_names: &resolved_parameter_names,
-        }
-        .encode();
+        };
+        let encoded = encoder(feature, contradicted_travel.contains(&feature.id)).encode();
+        // The source feature encoded the same way: a record field whose
+        // encoding the edit does not move keeps its stored state.
+        let baseline = original.map(|original| {
+            encoder(original, source_contradicted_travel.contains(&original.id)).encode()
+        });
         // A stored record the encoder cannot restate from the neutral
         // definition is written as stored.
+        let mut kept = false;
         let NeutralFeatureEncoding {
             kind,
             mut parameters,
@@ -418,12 +445,12 @@ pub(in crate::history) fn sync_neutral_features(
         } = match (encoded, existing.as_deref()) {
             (Ok(encoding), _) => encoding,
             (Err(CodecError::NotImplemented(reason)), Some(record)) if edits.has_source() => {
-                if edits.source_feature(&feature.id).is_none_or(|original| {
+                if original.is_none_or(|original| {
                     original.evaluation.definition() != feature.evaluation.definition()
                 }) {
                     edits.feature_unwritten(&feature.id, reason)?;
                 }
-                edits.keep_stored_definition(&feature.id);
+                kept = true;
                 NeutralFeatureEncoding {
                     kind: record.kind.clone(),
                     parameters: record.parameters.clone(),
@@ -440,24 +467,71 @@ pub(in crate::history) fn sync_neutral_features(
                 &mut parameters,
             );
         }
-        if feature.evaluation.outputs().is_empty() {
-            if existing.is_none() {
-                properties.remove("Scope");
+        // With a source baseline, each record field the edit does not move
+        // keeps its stored state.
+        let mut kind = kind;
+        let field_baseline = original;
+        // A feature with an edit the output does not carry keeps its stored
+        // definition record whole: the unwritten-edit loss states that.
+        if let (false, Some(record)) = (kept, existing.as_deref()) {
+            if edits.feature_edit_unwritten(&feature.id) {
+                kept = true;
+                kind.clone_from(&record.kind);
+                parameters.clone_from(&record.parameters);
+                properties.clone_from(&record.properties);
             }
-        } else {
-            let scope = feature
-                .evaluation
-                .outputs()
-                .iter()
-                .map(|body| body_sources.get(body).cloned())
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "SLDPRT feature {} references a missing output body",
-                        feature.id
-                    ))
-                })?;
-            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
+        }
+        if let (false, Some(record), Some(Ok(mut baseline))) = (kept, existing.as_deref(), baseline)
+        {
+            restore_equivalent_parameter_expressions(
+                record,
+                &original_parameters,
+                &evaluated_parameters,
+                &mut baseline.parameters,
+            );
+            if kind == baseline.kind {
+                kind.clone_from(&record.kind);
+            }
+            parameters = stored_unless_moved(&record.parameters, parameters, &baseline.parameters);
+            properties = stored_unless_moved(&record.properties, properties, &baseline.properties);
+        }
+        if kept {
+            edits.keep_stored_definition(feature)?;
+        }
+        // Without a source feature every field is written.
+        let moved = |unchanged: fn(
+            &cadmpeg_ir::features::Feature,
+            &cadmpeg_ir::features::Feature,
+        ) -> bool| {
+            field_baseline.is_none_or(|original| !unchanged(original, feature))
+        };
+        if moved(|original, feature| original.evaluation.outputs() == feature.evaluation.outputs())
+        {
+            if feature.evaluation.outputs().is_empty() {
+                if existing.is_none() {
+                    properties.remove("Scope");
+                }
+            } else {
+                let scope = feature
+                    .evaluation
+                    .outputs()
+                    .iter()
+                    .map(|body| body_sources.get(body).cloned())
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "SLDPRT feature {} references a missing output body",
+                            feature.id
+                        ))
+                    })?;
+                properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
+            }
+        } else if let Some(scope) = existing
+            .as_deref()
+            .and_then(|record| record.properties.get("Scope"))
+        {
+            // Unedited output bodies keep the stored scope.
+            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.clone());
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
@@ -471,30 +545,43 @@ pub(in crate::history) fn sync_neutral_features(
                 None => source_id.map(crate::records::TreeParent::Source),
             }
         });
+        let parent_moved = field_baseline.is_none() || edits.feature_parent_moved(ir, &feature.id);
         if let Some(existing) = existing.as_mut() {
             if let Some(tag) = &feature.source_tag {
-                existing.xml_tag.clone_from(tag);
+                if moved(|original, feature| original.source_tag == feature.source_tag) {
+                    existing.xml_tag.clone_from(tag);
+                }
             }
-            existing.ordinal = ordinal;
-            existing.name = feature.name.clone().unwrap_or_default();
+            if moved(|original, feature| original.ordinal == feature.ordinal) {
+                existing.ordinal = ordinal;
+            }
+            if moved(|original, feature| original.name == feature.name) {
+                existing.name = feature.name.clone().unwrap_or_default();
+            }
             existing.kind = kind;
-            existing.suppressed = suppressed;
-            existing.tree_parent = tree_parent;
+            if moved(|original, feature| original.suppressed == feature.suppressed) {
+                existing.suppressed = suppressed;
+            }
+            if parent_moved {
+                existing.tree_parent = tree_parent;
+            }
             existing.parameters = parameters;
             existing.properties = properties;
-            if existing
-                .content
-                .iter()
-                .all(|item| matches!(item, FeatureContent::Text(_)))
-            {
-                existing.content = feature
-                    .source_text
+            if moved(|original, feature| original.source_text == feature.source_text) {
+                if existing
+                    .content
                     .iter()
-                    .cloned()
-                    .map(FeatureContent::Text)
-                    .collect();
+                    .all(|item| matches!(item, FeatureContent::Text(_)))
+                {
+                    existing.content = feature
+                        .source_text
+                        .iter()
+                        .cloned()
+                        .map(FeatureContent::Text)
+                        .collect();
+                }
+                existing.text.clone_from(&feature.source_text);
             }
-            existing.text.clone_from(&feature.source_text);
         } else {
             let history = &mut native.feature_histories[0];
             history.features.push(Feature {
@@ -520,8 +607,12 @@ pub(in crate::history) fn sync_neutral_features(
                     .collect(),
             });
         }
+        if field_baseline.is_some_and(|original| original.source_content == feature.source_content)
+        {
+            content_kept.insert(feature.id.clone());
+        }
     }
-    synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
+    synchronize_neutral_feature_content(features, parameters, &record_ids, &content_kept, native)?;
     let changed_parameters = native
         .feature_histories
         .iter()
@@ -583,10 +674,31 @@ pub(in crate::history) fn sync_neutral_features(
     Ok(renames)
 }
 
+/// The stored entries of a record field, with each entry whose encoding
+/// `written` moves from the source feature's encoding `baseline` written as
+/// `written` states it.
+fn stored_unless_moved<V: Clone + PartialEq>(
+    stored: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    written: BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
+    let mut merged = stored.clone();
+    for key in baseline.keys().filter(|key| !written.contains_key(*key)) {
+        merged.remove(key);
+    }
+    for (key, value) in written {
+        if baseline.get(&key) != Some(&value) {
+            merged.insert(key, value);
+        }
+    }
+    merged
+}
+
 fn synchronize_neutral_feature_content(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[DesignParameter],
     record_ids: &HashMap<FeatureId, String>,
+    content_kept: &HashSet<FeatureId>,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
     let parameters = parameters
@@ -594,7 +706,7 @@ fn synchronize_neutral_feature_content(
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        if feature.source_content.is_empty() {
+        if feature.source_content.is_empty() || content_kept.contains(&feature.id) {
             continue;
         }
         let content = feature

@@ -130,8 +130,12 @@ records cannot carry keeps the stored record or value: an edit of a
 display-only relation parameter or a parameter value that the written
 expression does not state gets a `writer.parameter-edit-unwritten` loss, and
 an edited compact selection or a feature definition that the encoder cannot
-restate gets a `writer.feature-edit-unwritten` loss. Semantic writes of
-compound-file parts are refused: the writer has no compound-file serializer.
+restate gets a `writer.feature-edit-unwritten` loss. A record field that no
+edit moves keeps its stored state: an unedited feature or parameter is written
+as stored, and a rename changes only the name and the references that name it.
+The writer has no compound-file serializer: an edited compound-file part is
+written as its stored part, and a `writer.compound-file-edit-unwritten` loss
+(severity error) states that no edit is written.
 
 With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
