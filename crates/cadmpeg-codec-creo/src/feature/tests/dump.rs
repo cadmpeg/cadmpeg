@@ -217,7 +217,7 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
             construction,
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
         }) if construction.profile().is_none()
             && construction.axis().is_none()
             && construction.extent().is_none()
@@ -243,17 +243,17 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)
                 ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::extents::ExtrudeSide {
+                        termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                         ..
                     }
                 },
-                op: cadmpeg_ir::features::BooleanOp::Cut,
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
                 ..
             }
         )
@@ -280,17 +280,17 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)
                 ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::extents::ExtrudeSide {
+                        termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                         ..
                     }
                 },
-                op: cadmpeg_ir::features::BooleanOp::Cut,
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
                 ..
             }
         )
@@ -467,7 +467,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(parameter.expression, "1");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(1.0).unwrap()
         ))
     );
@@ -475,7 +475,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(relation.properties["external_dependencies"], "d42");
     assert_eq!(
         relation.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
@@ -489,14 +489,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert!(matches!(
         model_feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(profile)),
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+            profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(profile)),
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                     ..
                 }
             },
-            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved,
             ..
         }) if profile == "creo:featdefs:sketch#917"
     ));
@@ -830,7 +830,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
     );
     assert!(result.ir().model.parameters.iter().all(|parameter| {
         parameter.value
-            == Some(cadmpeg_ir::features::ParameterValue::Length(
+            == Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ))
     }));

@@ -4,9 +4,9 @@ use crate::decode::feature_completeness::shell_definition_is_incomplete;
 
 #[test]
 fn nx_shell_completeness_requires_each_construction_field() {
-    use cadmpeg_ir::features::{
-        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, ShellJoin, ShellMode,
-    };
+    use cadmpeg_ir::features::operation_settings::{ShellJoin, ShellMode};
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::{BodyId, FaceId};
 
     let incomplete = FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -23,7 +23,7 @@ fn nx_shell_completeness_requires_each_construction_field() {
 
     let complete = FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: Some(BodySelection::Bodies(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "test:model:body#shell",
             )
             .expect("identity grammar")])

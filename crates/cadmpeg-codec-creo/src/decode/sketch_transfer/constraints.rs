@@ -2515,7 +2515,7 @@ mod tests {
         document
             .model
             .parameters
-            .push(cadmpeg_ir::features::DesignParameter {
+            .push(cadmpeg_ir::features::parameters::DesignParameter {
                 product_definition: None,
                 id: id.clone(),
                 owner: None,
@@ -2524,7 +2524,7 @@ mod tests {
                 expression: "x".into(),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 properties: std::collections::BTreeMap::new(),
                 pmi: None,
                 native_ref: None,

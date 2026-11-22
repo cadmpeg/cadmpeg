@@ -10,7 +10,8 @@ use crate::records::topology::{
     construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
     face::DesignFaceOperand,
 };
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 const IDENTITY_COUNT_OFFSETS: [usize; 3] = [

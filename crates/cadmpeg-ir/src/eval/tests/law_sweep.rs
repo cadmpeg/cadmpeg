@@ -7,8 +7,8 @@ use crate::eval::sweep_law::scalar_sweep_law_differential;
 use crate::eval::sweep_profile_differential;
 use crate::eval::sweep_profile_reversed;
 use crate::eval::tests::bilinear_surface;
-use crate::features::FinitePoint3;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FinitePoint3;
+use crate::features::geometry::FiniteVector3;
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
@@ -406,7 +406,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
             0.25,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(
@@ -509,7 +509,8 @@ fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
 #[test]
 fn numerical_seventh_normalized_derivative_keeps_finite_results() {
     use crate::eval::unit_vector_with_derivative;
-    let vector = |x, y, z| crate::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
+    let vector =
+        |x, y, z| crate::features::geometry::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
     for magnitude in [1.0, 1.0e200, f64::MAX] {
         let (_, derivative) = unit_vector_with_derivative(
             vector(1.0, 1.0, 1.0),

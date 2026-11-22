@@ -202,7 +202,7 @@ fn owned_sheet_reports_actual_rolling_ball_rail_movement() {
     use crate::families::freeform::owned_patch::{fit, Boundary, Member, Side};
     use crate::test_support::test_a5a8::a5_freeform_curve_stream;
     use crate::wire::records::consolidated_records;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::ProceduralSurfaceId;
 

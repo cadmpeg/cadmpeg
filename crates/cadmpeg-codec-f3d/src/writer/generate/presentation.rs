@@ -127,18 +127,6 @@ pub(in crate::writer::generate) struct GeneratedBodyMap {
 pub(in crate::writer::generate) struct GeneratedBrowserNodes {
     pub(super) nodes: Vec<GeneratedBrowserNode>,
     pub(super) class_tag: crate::records::references::DesignClassTag,
-    /// The members a Base Feature's result bodies have after the reference
-    /// to their design body-reference record.
-    pub(super) tail: Option<BrowserNodeTail>,
-}
-
-/// The rest of the 151-byte browser-node member of a Base Feature result body
-/// (f3d.md §3.1, "Records of a Base Feature design"): the scope, the paired
-/// header and the timeline context.
-pub(in crate::writer::generate) struct BrowserNodeTail {
-    pub(super) scope: u32,
-    pub(super) paired_class: crate::records::references::DesignClassTag,
-    pub(super) context: u32,
 }
 
 /// Which bodies the body map and the browser nodes list.
@@ -308,7 +296,6 @@ impl GeneratedDesignRegistry {
                 Ok::<_, CodecError>(GeneratedBrowserNodes {
                     nodes: browser_nodes,
                     class_tag: dynamic_class_tag(type_index)?,
-                    tail: None,
                 })
             })
             .transpose()?;

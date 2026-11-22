@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 
 use super::admission::{EvaluationAdmission, EvaluationDepthGuard, EvaluationRefusal};
 use super::{CurveDerivative, EvaluationFailure};
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};

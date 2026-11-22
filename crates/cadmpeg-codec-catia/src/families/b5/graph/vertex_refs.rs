@@ -2,7 +2,7 @@
 
 use super::super::vecmath::coordinates;
 use super::B5LogicalVertex;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use std::collections::BTreeMap;
 
 /// An endpoint in the raw or logical vertex table.

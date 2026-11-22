@@ -348,6 +348,10 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
         ),
     ];
     for (index, template, unstated, binds) in records {
+        // A design with `Sketch` items writes the sketch collection with them.
+        if *index == super::SKETCHES && !ctx.roster.sketches.is_empty() {
+            continue;
+        }
         ctx.templated(out, *index, template, unstated, binds)?;
     }
     for index in [12, 37] {

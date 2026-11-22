@@ -94,9 +94,10 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
 
 pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     use crate::feature::sheet_metal::{contour, flange::FlangeKind, fold, operands, projection};
-    use cadmpeg_ir::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue, PlanarProfileRef,
-    };
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let properties =
         cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|p| {
             (

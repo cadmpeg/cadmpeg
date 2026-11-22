@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::features::{
-    BodySelection, BodyTrimSide, FeatureDefinition, FeatureId, FeatureOperation,
-};
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
 use crate::{
     feature::{

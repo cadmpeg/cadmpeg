@@ -120,7 +120,7 @@ impl Sampler<'_, '_> {
                 model_curve_point_by_id(admission, self.index, curve, t)
             }),
         )
-        .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)
     }
 

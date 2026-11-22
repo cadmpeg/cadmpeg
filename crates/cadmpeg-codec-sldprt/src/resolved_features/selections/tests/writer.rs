@@ -15,7 +15,8 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_rejects_compact_edge_selection_edits() {
-    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
     let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -112,9 +113,9 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
 
 #[test]
 fn semantic_writer_rejects_compact_surface_selection_edits() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

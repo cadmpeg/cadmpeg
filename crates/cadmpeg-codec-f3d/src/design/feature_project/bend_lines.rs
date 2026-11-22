@@ -3,14 +3,12 @@ use super::{
 };
 use crate::records::{feature::scope::DesignParameterScope, parameters::DesignParameter};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        sheet_metal::SheetMetalBendLinesConstruction, sheet_metal::SheetMetalLineBend,
-        FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-    },
-    report::loss::LossNote,
-    scalar::Angle,
-};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::sheet_metal::{SheetMetalBendLinesConstruction, SheetMetalLineBend};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::Angle;
 
 pub(super) fn project(
     scope: &DesignParameterScope,
@@ -368,7 +366,7 @@ mod tests {
         assert_eq!(construction.bends[0].angle.unwrap().get(), -0.75);
         assert_eq!(
             construction.bends[0].line,
-            Some(cadmpeg_ir::features::PathRef::Native(group.id))
+            Some(cadmpeg_ir::features::profiles::PathRef::Native(group.id))
         );
         assert!(losses
             .iter()
@@ -395,7 +393,7 @@ mod tests {
         assert_eq!(construction.bends[0].angle.unwrap().get(), -0.75);
         assert_eq!(
             construction.bends[0].line,
-            Some(cadmpeg_ir::features::PathRef::Native(group.id))
+            Some(cadmpeg_ir::features::profiles::PathRef::Native(group.id))
         );
         assert!(losses.iter().any(
             |loss| loss.code == crate::loss::F3dLossCode::BendAngleOwnerBacklinkAssumed.kind()

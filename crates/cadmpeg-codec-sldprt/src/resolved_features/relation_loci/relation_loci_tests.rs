@@ -11,14 +11,13 @@ use crate::records::{
     SketchRelationKind,
 };
 use crate::resolved_features::transforms::ProfileAxis;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus,
-};
-use cadmpeg_ir::{
-    features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue},
-    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;
@@ -87,7 +86,7 @@ fn length_parameter(value: f64) -> DesignParameter {
         expression: value.to_string(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -125,7 +124,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -247,7 +246,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

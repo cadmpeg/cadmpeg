@@ -11,10 +11,12 @@ use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::extrude_selection::{
     DesignExtrudeFaceEncoding, DesignExtrudeFaceRole,
 };
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
-    FeatureSupportPlaneFrame, LinearTermination, PlaneTargetSource,
+use cadmpeg_ir::features::extents::{
+    ExtrudeExtent, ExtrudeStart, LinearTermination, PlaneTargetSource,
 };
+use cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// The class-330/258 to-face frame, which omits its zero termination offset.
