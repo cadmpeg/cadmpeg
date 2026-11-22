@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::geometry::RollingBallSide;
+use crate::geometry::blends::RollingBallSide;
 use serde_json::{json, Value};
 
 fn empty_side_wire() -> Value {

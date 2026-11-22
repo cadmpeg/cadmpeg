@@ -457,7 +457,7 @@ def other_changes(context) -> list[str]:
 
 def stale_fixtures(context, old: int) -> list[str]:
     """Files that pinned the old version at the merge base and still pin it."""
-    pattern = rf'"ir_version"\s*:\s*"{old}"'
+    pattern = rf'"ir_version"[[:space:]]*:[[:space:]]*"{old}"'
     pinned = context.git("grep", "-l", "-E", pattern, context.base, "--").stdout.splitlines()
     pinned = {line.split(":", 1)[1] for line in pinned if ":" in line}
     arguments = ["grep", "-l", "-E", pattern]

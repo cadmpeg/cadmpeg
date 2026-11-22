@@ -3,10 +3,15 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart};
+use cadmpeg_ir::features::holes::HoleKind;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
 use cadmpeg_ir::features::{
-    edge_treatments::RadiusSpec, holes::HoleKind, BooleanOp, EdgeSelection, ExtrudeExtent,
-    ExtrudeStart, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureOperation as IrFeatureOperation, PlanarProfileRef, ProfileRef, RevolveExtent,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
     UnresolvedFamily,
 };
 
@@ -345,15 +350,17 @@ pub(super) fn collect_feature_coverage(
                 );
                 let native_faces = matches!(faces, FaceSelection::Native(_));
                 let unresolved_neutral_plane = match anchor {
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => matches!(
+                    cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                        plane, ..
+                    } => matches!(
                         plane,
                         FaceSelection::Unresolved | FaceSelection::HistoricalPartial { .. }
                     ),
-                    cadmpeg_ir::features::DraftAnchor::PartingLine { .. } => true,
+                    cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { .. } => true,
                 };
                 let native_neutral_plane = matches!(
                     anchor,
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                         plane: FaceSelection::Native(_),
                         ..
                     }
@@ -472,8 +479,8 @@ pub(super) fn collect_feature_coverage(
                         cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
                             matches!(
                                 bodies,
-                                cadmpeg_ir::features::BodySelection::Unresolved
-                                    | cadmpeg_ir::features::BodySelection::Native(_)
+                                cadmpeg_ir::features::selections::BodySelection::Unresolved
+                                    | cadmpeg_ir::features::selections::BodySelection::Native(_)
                             )
                         }
                         cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {

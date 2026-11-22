@@ -64,7 +64,7 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
 pub(super) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::selections::FaceSelection>, CodecError> {
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
@@ -103,10 +103,9 @@ pub(super) fn resolved_face_group(
         return Ok(None);
     }
     let native = group.id.clone();
-    Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
-        faces,
-        native,
-    }))
+    Ok(Some(
+        cadmpeg_ir::features::selections::FaceSelection::Resolved { faces, native },
+    ))
 }
 
 /// Resolve a bounded-face group whose active lane is fully named by its own
@@ -120,7 +119,7 @@ pub(super) fn resolved_face_group(
 pub(super) fn resolved_explicit_bounded_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::selections::FaceSelection>, CodecError> {
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
@@ -158,10 +157,9 @@ pub(super) fn resolved_explicit_bounded_face_group(
         return Ok(None);
     }
     let native = group.id.clone();
-    Ok(Some(cadmpeg_ir::features::FaceSelection::Resolved {
-        faces,
-        native,
-    }))
+    Ok(Some(
+        cadmpeg_ir::features::selections::FaceSelection::Resolved { faces, native },
+    ))
 }
 
 /// Resolve a direct scope face selection when every direct operand proves the
@@ -169,8 +167,8 @@ pub(super) fn resolved_explicit_bounded_face_group(
 pub(super) fn resolved_direct_face_selection(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
-    use cadmpeg_ir::features::FaceSelection;
+) -> Result<Option<cadmpeg_ir::features::selections::FaceSelection>, CodecError> {
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
@@ -229,7 +227,7 @@ pub(super) fn resolved_direct_face_selection(
 pub(super) fn resolved_historical_face_operand(
     scope: &DesignParameterScope,
     operand: &DesignFaceOperand,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let previous_state_id = scope.previous_history_state_id()?;
     let face_slot = resolve_face_operand_history_candidates(operand)?;
     let native = operand.id.clone();
@@ -243,7 +241,7 @@ pub(super) fn resolved_body_recipe_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     if group.scope_record_index != scope.record_index
         || group.extrude_role().is_some()
         || group.members().is_empty()
@@ -304,7 +302,7 @@ pub(super) fn resolved_body_recipe_shape(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     if crate::design::design_feature_family(&scope.kind())
         != Some(crate::design::DesignFeatureFamily::Extrude)
         || group.role() != DesignOperandRole::ROLE_0X5
@@ -318,15 +316,15 @@ pub(super) fn resolved_profile_face_group(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
-    use cadmpeg_ir::features::ProfileRef;
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     let Some(selection) =
         resolved_historical_face_group(scope, scope.previous_history_state_id(), group, operands)
     else {
         return Ok(None);
     };
-    let cadmpeg_ir::features::FaceSelection::Historical {
+    let cadmpeg_ir::features::selections::FaceSelection::Historical {
         state,
         faces,
         native,
@@ -336,7 +334,7 @@ pub(super) fn resolved_profile_face_group(
     };
     let native_copy = native.as_str().to_owned();
     Ok(Some(ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+        cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
             native: vec![native_copy]
@@ -629,15 +627,15 @@ pub(crate) fn resolved_extrude_profile_face_group(
     root: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
-    use cadmpeg_ir::features::ProfileRef;
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     let Some(indices) = extrude_profile_group_operand_indices(ctx, root, groups, operands)? else {
         return Ok(None);
     };
     if let Some(faces) = resolved_extrude_profile_active_faces(&indices, operands) {
         return Ok(Some(ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::Faces(faces),
+            cadmpeg_ir::features::profiles::PlanarProfileRef::Faces(faces),
         )));
     }
     let mut faces = Vec::new();
@@ -658,7 +656,7 @@ pub(crate) fn resolved_extrude_profile_face_group(
     let Some(selection) = historical_face_selection(scope, root, faces) else {
         return Ok(None);
     };
-    let cadmpeg_ir::features::FaceSelection::Historical {
+    let cadmpeg_ir::features::selections::FaceSelection::Historical {
         state,
         faces,
         native,
@@ -666,8 +664,8 @@ pub(crate) fn resolved_extrude_profile_face_group(
     else {
         return Ok(None);
     };
-    Ok(Some(cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+    Ok(Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
             native: vec![native.as_str().to_owned()]
@@ -725,7 +723,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
     face_boundaries: &[AsmFaceBoundary],
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Loft
         || !matches!(
             group.role(),
@@ -802,7 +800,7 @@ pub(super) fn resolved_loft_edge_profile_group(
     let Some(selection) = historical_face_selection(scope, group, vec![face_slot]) else {
         return Ok(None);
     };
-    let cadmpeg_ir::features::FaceSelection::Historical {
+    let cadmpeg_ir::features::selections::FaceSelection::Historical {
         state,
         faces,
         native,
@@ -810,8 +808,8 @@ pub(super) fn resolved_loft_edge_profile_group(
     else {
         return Ok(None);
     };
-    Ok(Some(cadmpeg_ir::features::ProfileRef::Planar(
-        cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+    Ok(Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
             native: vec![native.as_str().to_owned()]
@@ -980,7 +978,7 @@ pub(crate) fn resolved_historical_face_group(
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let faces = historical_face_group_slots(group, operands, FaceGroupMembers::Resolved)?;
     let previous_state_id = previous_state_id?;
     historical_face_selection_in_state(scope, group, previous_state_id, faces)
@@ -990,7 +988,7 @@ fn historical_face_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     faces: Vec<i64>,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let previous_state_id = scope.previous_history_state_id()?;
     historical_face_selection_in_state(scope, group, previous_state_id, faces)
 }
@@ -1000,7 +998,7 @@ fn historical_face_selection_in_state(
     group: &DesignConstructionOperandGroup,
     previous_state_id: i64,
     faces: Vec<i64>,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let native = group.id.clone();
     historical_face_selection_with_native(scope, previous_state_id, faces, native)
 }
@@ -1010,8 +1008,8 @@ pub(crate) fn historical_face_selection_with_native(
     previous_state_id: i64,
     faces: Vec<i64>,
     native: String,
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    use cadmpeg_ir::features::FaceSelection;
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     if faces.is_empty() {
         return None;
@@ -1025,7 +1023,7 @@ pub(crate) fn historical_face_selection_with_native(
     }
     let fallback_native = native.clone();
     Some(
-        cadmpeg_ir::features::FaceSelection::historical(
+        cadmpeg_ir::features::selections::FaceSelection::historical(
             crate::ids::feature_input_topology_id(&feature, previous_state_id),
             historical_faces,
             native,
@@ -1045,7 +1043,7 @@ pub(super) fn resolved_historical_split_face_target_group(
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
@@ -1071,7 +1069,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
+) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SplitFace
         || group.role() != DesignOperandRole::ROLE_0X10
     {
@@ -1096,12 +1094,14 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     let native = group.id.clone();
     let fallback_native = native.clone();
     Some(
-        cadmpeg_ir::features::FaceSelection::historical(
+        cadmpeg_ir::features::selections::FaceSelection::historical(
             crate::ids::feature_input_topology_id(&feature, previous_state_id),
             historical_faces,
             native,
         )
-        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(fallback_native)),
+        .unwrap_or(cadmpeg_ir::features::selections::FaceSelection::Native(
+            fallback_native,
+        )),
     )
 }
 
@@ -2054,25 +2054,25 @@ fn extrude_start_plane_geometry_candidates(
 }
 
 pub(crate) fn extrude_profile_sketch_id(
-    profile: &cadmpeg_ir::features::ProfileRef,
+    profile: &cadmpeg_ir::features::profiles::ProfileRef,
 ) -> Option<&cadmpeg_ir::sketches::SketchId> {
-    use cadmpeg_ir::features::ProfileRef;
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     match profile {
         ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch)
-            | cadmpeg_ir::features::PlanarProfileRef::SketchProfiles { sketch, .. }
-            | cadmpeg_ir::features::PlanarProfileRef::SketchRegions { sketch, .. }
-            | cadmpeg_ir::features::PlanarProfileRef::SketchEntities { sketch, .. }
-            | cadmpeg_ir::features::PlanarProfileRef::SketchSelection { sketch, .. },
+            cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch)
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles { sketch, .. }
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { sketch, .. }
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchEntities { sketch, .. }
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchSelection { sketch, .. },
         ) => Some(sketch),
         ProfileRef::Planar(
-            cadmpeg_ir::features::PlanarProfileRef::Native(_)
-            | cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-            | cadmpeg_ir::features::PlanarProfileRef::Feature(_)
-            | cadmpeg_ir::features::PlanarProfileRef::Generated { .. }
-            | cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces { .. }
-            | cadmpeg_ir::features::PlanarProfileRef::Faces(_),
+            cadmpeg_ir::features::profiles::PlanarProfileRef::Native(_)
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(_)
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(_)
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::Generated { .. }
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces { .. }
+            | cadmpeg_ir::features::profiles::PlanarProfileRef::Faces(_),
         )
         | ProfileRef::SpatialSketchProfiles { .. }
         | ProfileRef::SpatialSketchSelection { .. } => None,
@@ -2094,7 +2094,9 @@ pub(crate) fn bind_extrude_start_planes(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::extents::ExtrudeStart;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -2199,9 +2201,8 @@ pub(crate) fn bind_extrude_target_faces(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -2261,12 +2262,13 @@ pub(crate) fn bind_extrude_target_faces(
 }
 
 fn bind_extrude_target_face(
-    termination: &mut cadmpeg_ir::features::LinearTermination,
+    termination: &mut cadmpeg_ir::features::extents::LinearTermination,
     sketch_origin: Point3,
     sweep_direction: Vector3,
     resolution: &mut ExtrudeFaceResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FaceSelection, LinearTermination};
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let LinearTermination::ToFace {
         face: FaceSelection::Native(native),
@@ -2772,7 +2774,7 @@ mod tests {
             &[10, 20, 30],
         )
         .expect("updated target transition proof");
-        let cadmpeg_ir::features::FaceSelection::Historical {
+        let cadmpeg_ir::features::selections::FaceSelection::Historical {
             state,
             faces,
             native,
@@ -3345,7 +3347,7 @@ mod tests {
         .unwrap();
         assert!(matches!(
             selection,
-            cadmpeg_ir::features::FaceSelection::Historical { .. }
+            cadmpeg_ir::features::selections::FaceSelection::Historical { .. }
         ));
     }
 
@@ -3430,7 +3432,7 @@ mod tests {
         let face_boundaries = loft_face_boundaries(&operands.iter().collect::<Vec<_>>());
         assert!(matches!(
             super::resolved_loft_edge_profile_group(&scope, &group, &operands, &face_boundaries).unwrap(),
-            Some(cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+            Some(cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces {
                 state,
                 faces,
                 native,

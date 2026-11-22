@@ -18,12 +18,12 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, nurbs_surface_closest_parameter_with_budget,
     nurbs_surface_partials,
 };
-use cadmpeg_ir::features::FiniteVector3;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsPoleGrid, NurbsSurface},
-    pcurve::PcurveGeometry,
-    IntcurveSupportSide, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide;
+use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2558,7 +2558,7 @@ mod tests {
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::ids::SurfaceId;
@@ -2813,7 +2813,7 @@ mod tests {
                     if index == 4 {
                         pole.z += 1.0;
                     }
-                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )
@@ -3039,7 +3039,7 @@ mod tests {
                 .try_map_control_points(|_, point| {
                     let mut point = point.get();
                     point.z = -1.0;
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )

@@ -19,10 +19,9 @@ use cadmpeg_ir::eval::model_surface_point_by_id;
 use cadmpeg_ir::eval::nurbs_curve_parameter_domain;
 use cadmpeg_ir::eval::nurbs_pcurve_parameter_domain;
 use cadmpeg_ir::eval::pcurve_tangent;
-use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityKeyTail, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -1245,7 +1244,7 @@ fn build_wire_set(
     if wire_edges.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "CONNECTED_EDGE_SET #{set_id}: {}",
-            cadmpeg_ir::features::BodySelectionError::Empty
+            cadmpeg_ir::features::selections::BodySelectionError::Empty
         )));
         return Ok(None);
     }
@@ -1528,7 +1527,7 @@ fn build_shell_wire_set(
     if wire_edges.is_empty() && free_vertex_ids.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "wire shell #{shell_id}: {}",
-            cadmpeg_ir::features::BodySelectionError::Empty
+            cadmpeg_ir::features::selections::BodySelectionError::Empty
         )));
         return Ok(None);
     }
@@ -1983,7 +1982,7 @@ fn segment_parameter_range(index: &ModelIndex<'_>, curve: &CurveId) -> Option<[f
         .procedural_curves_for_curve(curve.as_str(), cadmpeg_ir::index::StandardIndex)
         .and_then(|procedurals| procedurals.first().copied())
     {
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
             procedural.definition()
         else {
             return None;
@@ -2099,7 +2098,7 @@ fn stage_boundary_loop(
         let vertex_id = VertexId::from(ids::data(kind!("vertex"), vertex_key));
         parts.points.push(cadmpeg_ir::topology::Point::new(
             point_id.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(start)?,
+            cadmpeg_ir::features::geometry::FinitePoint3::new(start)?,
             None,
         ));
         parts.vertices.push(Vertex {
@@ -3634,7 +3633,7 @@ fn build_one(
                     let mut pcurve_uses = Vec::new();
                     for (pcurve, parameter_range) in pcurves {
                         let parameter_range = match parameter_range
-                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                             .transpose()
                         {
                             Ok(range) => range,
@@ -4263,7 +4262,7 @@ fn poly_segment_curve(
 ) -> Option<(cadmpeg_ir::geometry::Curve, f64)> {
     let length = end.vector_from(start).norm();
     let direction = UnitVector3::normalized(end.vector_from(start))?;
-    let origin = cadmpeg_ir::features::FinitePoint3::new(start)?;
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(start)?;
     Some((
         cadmpeg_ir::geometry::Curve {
             id,
@@ -4437,7 +4436,7 @@ fn implicit_face_plane(
         }
     }
     let u_axis = u_axis?;
-    let origin = cadmpeg_ir::features::FinitePoint3::new(origin)?;
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?;
     let frame = OrthonormalFrame3::from_units(normal, u_axis)?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -5426,7 +5425,7 @@ fn surface_selection_parameter_domains(
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let parameter_ranges = definition_payload
                 .parameter_ranges()
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints);
             [
                 subset_parameter_domain(parameter_ranges[0]),
                 subset_parameter_domain(parameter_ranges[1]),

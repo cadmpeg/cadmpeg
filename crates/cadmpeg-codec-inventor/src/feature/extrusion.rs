@@ -3,9 +3,9 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeExtent, ExtrudeStart, LinearTermination, PlanarProfileRef,
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::units::UnitVector3;
 
 use super::{
@@ -27,7 +27,7 @@ pub(super) fn project(
     Result<
         (
             cadmpeg_ir::features::Feature,
-            cadmpeg_ir::features::FeatureResultTopology,
+            cadmpeg_ir::features::evaluation::FeatureResultTopology,
         ),
         cadmpeg_core::CodecError,
     >,
@@ -60,7 +60,7 @@ pub(super) fn project_surface(
     Result<
         (
             cadmpeg_ir::features::Feature,
-            cadmpeg_ir::features::FeatureResultTopology,
+            cadmpeg_ir::features::evaluation::FeatureResultTopology,
         ),
         cadmpeg_core::CodecError,
     >,
@@ -93,12 +93,13 @@ pub(super) fn project_surface(
 }
 
 pub(super) fn native_face_targets(definition: &cadmpeg_ir::features::FeatureDefinition) -> usize {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlaneTargetSource};
+    use cadmpeg_ir::features::extents::PlaneTargetSource;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
     else {
         return 0;
     };
-    let is_face = |side: &cadmpeg_ir::features::ExtrudeSide| {
+    let is_face = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
         usize::from(matches!(
             side.termination,
             LinearTermination::ToPlane {
@@ -180,7 +181,7 @@ pub(super) fn work_point_plane(
     } else {
         normal
     };
-    let plane = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+    let plane = cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
         point.origin,
         oriented_normal,
         u_axis.get(),
@@ -188,7 +189,7 @@ pub(super) fn work_point_plane(
     Some(LinearTermination::ToPlane {
         plane,
         native: cadmpeg_core::text::NonBlankString::new(point.native)?,
-        source: Some(cadmpeg_ir::features::PlaneTargetSource::WorkPoint),
+        source: Some(cadmpeg_ir::features::extents::PlaneTargetSource::WorkPoint),
     })
 }
 
@@ -368,7 +369,7 @@ pub(super) fn indexed_operands(
         && !matches!(
             &extent,
             ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
                     termination: LinearTermination::ThroughAll {},
                     ..
                 },
@@ -388,12 +389,12 @@ pub(super) fn indexed_operands(
 /// The surface extrusion extents that the format model defines: one side from
 /// the profile plane, through all or to a plane face.
 fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent) -> bool {
-    use cadmpeg_ir::features::PlaneTargetSource;
+    use cadmpeg_ir::features::extents::PlaneTargetSource;
     matches!(start, ExtrudeStart::ProfilePlane {})
         && matches!(
             extent,
             ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
                     termination: LinearTermination::ThroughAll {}
                         | LinearTermination::ToPlane {
                             source: Some(PlaneTargetSource::FaceSurface),
@@ -483,7 +484,9 @@ pub(crate) fn has_native_profile(definition: &cadmpeg_ir::features::FeatureDefin
         definition,
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(PlanarProfileRef::Native(_)),
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    PlanarProfileRef::Native(_)
+                ),
                 ..
             }
         )
@@ -601,9 +604,9 @@ pub(super) fn matches(
     label: &PmDcFeatureLabel,
     definition: &cadmpeg_ir::features::FeatureDefinition,
 ) -> bool {
-    use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrusionDirectionSource, FeatureDefinition, FeatureOperation, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrusionDirectionSource};
+    use cadmpeg_ir::features::profiles::ProfileRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,

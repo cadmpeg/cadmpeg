@@ -5,8 +5,8 @@ use crate::test_support::lp_utf16;
 
 const SCOPE_RECORD: u32 = 2180;
 
-/// A `RemoveBody` scope whose named tail carries a lane block over record
-/// indices above 255 and a class word other than 252.
+/// A `RemoveBody` scope whose labeled tail references records whose indices
+/// are `field_id + 256 * lane_high_byte`, with evaluation epoch `class_word`.
 fn remove_body_scope(lane_high_byte: u64, class_word: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -81,10 +81,13 @@ fn remove_body_scope_admits_a_lane_block_over_high_record_indices() {
 }
 
 #[test]
-fn remove_body_scope_refuses_lane_values_and_class_words_outside_the_layout() {
-    assert!(parse(&remove_body_scope(0x100, 0x101)).is_none());
-    assert!(parse(&remove_body_scope(8, 1000)).is_none());
-    assert!(parse(&remove_body_scope(8, 0)).is_none());
+fn remove_body_scope_admits_record_indices_above_65535_and_any_epoch() {
+    for (lane_high_byte, epoch) in [(0x100, 0x101), (8, 1000), (8, 0), (0x1_0000, 64)] {
+        let scope = parse(&remove_body_scope(lane_high_byte, epoch))
+            .unwrap_or_else(|| panic!("high byte {lane_high_byte} epoch {epoch}"));
+        assert_eq!(scope.previous_history_state_id(), None);
+        assert!(scope.previous_history_state_id_offset().is_some());
+    }
 }
 
 #[test]

@@ -17,13 +17,13 @@ use crate::nurbs::reader::{normalized, take_native_ident, Nullable, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    pcurve::PcurveNurbs,
-    BlendCrossSection, CurveGeometry, RevisionCacheForm, RevisionSurfaceParameterization,
-    RollingBallSide, RollingBallSupportCurve, SolvedCurveGeometry, SurfaceGeometry,
-    VariableBlendCache,
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, RollingBallSide, RollingBallSupportCurve};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::revision_forms::{
+    RevisionCacheForm, RevisionSurfaceParameterization, VariableBlendCache,
 };
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveI64;
 use cadmpeg_ir::units::UnitVector3;
@@ -50,7 +50,7 @@ pub enum EmbeddedOffsetLayout {
         extension: cadmpeg_ir::geometry::LegacyExtensionFlags,
     },
     /// A revision offset with its four orientation flags.
-    Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm<[bool; 4]>>),
+    Revision(Box<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm<[bool; 4]>>),
 }
 
 /// A decoded native procedural definition with layout-owned cache tolerance.
@@ -124,7 +124,7 @@ pub struct EmbeddedTSplineSurface {
     /// Native discontinuity flag.
     pub discontinuity_flag: bool,
     /// Revision layout fields, when present.
-    pub revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+    pub revision_form: Option<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>,
 }
 
 /// Parsed T-spline subtransform before reference and program admission.
@@ -143,7 +143,7 @@ pub enum EmbeddedTSplineSubtransform {
         /// Native table index.
         index: i64,
         /// Target when the reference chain resolves to an admitted inline program.
-        resolved: Option<cadmpeg_ir::geometry::InlineTSplineSubtransform>,
+        resolved: Option<cadmpeg_ir::geometry::tsplines::InlineTSplineSubtransform>,
     },
 }
 
@@ -152,12 +152,13 @@ pub enum DecodedProceduralSurfaceDefinition {
     /// Exact NURBS construction and retained native parameter fields.
     Exact {
         /// Complete legacy or revision-gated exact-spline layout.
-        spline: cadmpeg_ir::geometry::ExactSpline,
+        spline: cadmpeg_ir::geometry::procedural_surfaces::ExactSpline,
     },
     /// Native compound surface with ordered scalar/component pairs.
     Compound {
         /// Ordered embedded surfaces paired with native construction scalars.
-        components: Vec<cadmpeg_ir::geometry::CompoundComponent<SurfaceGeometry>>,
+        components:
+            Vec<cadmpeg_ir::geometry::procedural_curves::CompoundComponent<SurfaceGeometry>>,
     },
     /// Exact rectangular restriction of an embedded support surface.
     SubSurface {
@@ -177,9 +178,9 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native taper parameter.
         parameter: f64,
         /// Subtype-specific tail.
-        taper: cadmpeg_ir::geometry::TaperSurfaceKind,
+        taper: cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind,
         /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        revision_form: Option<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>,
     },
     /// Native loft construction graph with embedded carriers.
     Loft(EmbeddedLoft),
@@ -200,7 +201,7 @@ pub enum DecodedProceduralSurfaceDefinition {
     /// Native T-spline wrapper and subtransform program.
     TSpline(Box<EmbeddedTSplineSurface>),
     /// Native circular or linear helix surface.
-    Helix(Box<cadmpeg_ir::geometry::HelixSurfaceConstruction>),
+    Helix(Box<cadmpeg_ir::geometry::helix::HelixSurfaceConstruction>),
     /// Native deformable surface with embedded support.
     Deformable(Box<EmbeddedDeformableSurface>),
     /// Native G2 blend construction with embedded carriers.
@@ -223,7 +224,7 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native model-space origin.
         basepoint: Vector3,
         /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        revision_form: Option<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>,
     },
     /// Revolution of an embedded profile around an axis.
     Revolution {
@@ -238,7 +239,7 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native profile parameter interval.
         parameter_interval: [f64; 2],
         /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        revision_form: Option<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>,
     },
     /// Signed offset from an embedded support surface.
     Offset {
@@ -260,7 +261,7 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Native model-space position following the direction.
         native_position: Point3,
         /// Revision-gated form fields.
-        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
+        revision_form: Option<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>,
     },
     /// Rolling-ball blend with embedded support and spine caches.
     Blend {
@@ -286,11 +287,13 @@ impl DecodedProceduralSurfaceDefinition {
     fn revision_cache_fit_tolerance(&self) -> Option<f64> {
         match self {
             Self::Exact { spline } => match spline {
-                cadmpeg_ir::geometry::ExactSpline::Revision { form, .. } => form
+                cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Revision {
+                    form, ..
+                } => form
                     .cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
-                cadmpeg_ir::geometry::ExactSpline::Legacy { .. } => None,
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
+                cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy { .. } => None,
             },
             Self::Taper { revision_form, .. }
             | Self::Extrusion { revision_form, .. }
@@ -298,56 +301,56 @@ impl DecodedProceduralSurfaceDefinition {
             | Self::Sum { revision_form, .. } => revision_form
                 .as_ref()
                 .and_then(|form| form.cache.fit_tolerance())
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::Offset { layout, .. } => match layout {
                 EmbeddedOffsetLayout::Revision(form) => form
                     .cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                 EmbeddedOffsetLayout::Legacy { .. } => None,
             },
             Self::Loft(construction) => match &construction.layout {
                 EmbeddedLoftLayout::Revision(form, _) => form
                     .cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                 EmbeddedLoftLayout::Legacy { .. } => None,
             },
             Self::RevisionCompoundLoft(construction) => construction
                 .cache
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::RevisionG2Blend(construction) => construction
                 .cache
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::Sweep(construction) => match &construction.layout {
                 EmbeddedSweepSurfaceLayout::Revision { form, .. } => form
                     .cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                 EmbeddedSweepSurfaceLayout::Legacy { .. } => None,
             },
             Self::TSpline(construction) => construction
                 .revision_form
                 .as_ref()
                 .and_then(|form| form.cache.fit_tolerance())
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::Deformable(construction) => match &construction.layout {
                 EmbeddedDeformableSurfaceLayout::Revision(form) => form
                     .cache
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                 EmbeddedDeformableSurfaceLayout::Legacy { .. } => None,
             },
             Self::Blend { native, .. } => native
                 .as_ref()
                 .and_then(|construction| construction.cache.fit_tolerance())
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::VariableBlend(construction) => construction
                 .cache
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Self::Compound { .. }
             | Self::SubSurface { .. }
             | Self::CompoundLoft(_)
@@ -378,7 +381,7 @@ pub struct EmbeddedRevisionG2Blend {
     /// Two blend radii in document length units.
     pub radii: [f64; 2],
     /// The integer-valued optional-radius selector serialized after the radii.
-    pub radius_selector: cadmpeg_ir::geometry::RollingBallRadiusSelector<PositiveI64>,
+    pub radius_selector: cadmpeg_ir::geometry::blends::RollingBallRadiusSelector<PositiveI64>,
     /// Support-side parameter interval `(T0, T1)`.
     pub u_range: [Option<f64>; 2],
     /// Second interval; `None` marks an unbounded end.
@@ -428,7 +431,7 @@ pub struct EmbeddedRollingBallThirdSide {
 /// Embedded native variable blend before stable IR ids are assigned.
 pub struct EmbeddedVariableBlend {
     /// The blend subtype the record name selects.
-    pub subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype,
+    pub subtype: cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype,
     /// The revision integer that gates the layout.
     pub revision: PositiveI64,
     /// Two ordered embedded support sides.
@@ -440,9 +443,9 @@ pub struct EmbeddedVariableBlend {
     /// Two side offsets in document length units.
     pub offsets: [f64; 2],
     /// Structurally selected radius-law payloads.
-    pub radii: cadmpeg_ir::geometry::VariableBlendRadii,
+    pub radii: cadmpeg_ir::geometry::variable_blends::VariableBlendRadii,
     /// The cross-section law, when serialized.
-    pub cross_section: Option<cadmpeg_ir::geometry::VariableBlendCrossSection>,
+    pub cross_section: Option<cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection>,
     /// Support-side parameter interval `(T0, T1)`.
     pub u_range: [f64; 2],
     /// Second interval `(T lo, F)`: a lower bound with an unbounded-above
@@ -467,9 +470,9 @@ pub struct EmbeddedVariableBlend {
     /// A second embedded curve serialized after the tail, when present.
     pub secondary_curve: Option<RollingBallSupportCurve<CurveGeometry>>,
     /// The convexity enum of the blend.
-    pub convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
+    pub convexity: cadmpeg_ir::geometry::variable_blends::VariableBlendConvexity,
     /// The render-mode enum of the blend.
-    pub render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode,
+    pub render_mode: cadmpeg_ir::geometry::variable_blends::VariableBlendRenderMode,
     /// Optional parameter bounds of the post curve.
     pub post_range: [Option<f64>; 2],
     /// An embedded curve closing the record, when present.
@@ -487,7 +490,7 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         /// Optional endpoint bounds of the boundary curve.
         curve_endpoints: [Option<f64>; 2],
         /// Twist payload selected by the native circle form.
-        twists: cadmpeg_ir::geometry::VertexBlendTwists,
+        twists: cadmpeg_ir::geometry::blends::VertexBlendTwists,
         /// Two parameters closing the circle form.
         parameters: [f64; 2],
         /// The sense boolean of the boundary.
@@ -511,7 +514,7 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         /// The sense boolean of the boundary.
         sense: bool,
         /// The fit tolerance of the boundary approximation.
-        fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
+        fit_tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance,
     },
     /// A planar boundary carried by a normal and an embedded curve.
     Plane {
@@ -551,7 +554,7 @@ pub struct EmbeddedVertexBlend {
     /// The approximation grid size.
     pub grid_size: i64,
     /// The fit tolerance of the patch approximation.
-    pub fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
+    pub fit_tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance,
 }
 
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
@@ -607,15 +610,20 @@ pub struct EmbeddedG2Side {
 /// The shape block serialized after a G2 blend's first side.
 pub enum EmbeddedG2FirstShape {
     /// The full form: an optional surface cache and tolerance.
-    Full(Option<(NurbsSurface, cadmpeg_ir::geometry::FitTolerance)>),
+    Full(
+        Option<(
+            NurbsSurface,
+            cadmpeg_ir::geometry::legacy_cache::FitTolerance,
+        )>,
+    ),
     /// The reduced form: nine coefficients and a tolerance.
     None {
         /// Nine shape coefficients.
         coefficients: [f64; 9],
         /// The fit tolerance.
-        tolerance: cadmpeg_ir::geometry::FitTolerance,
+        tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance,
         /// The bridge token serialized after the tolerance, when present.
-        extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
+        extension: Option<cadmpeg_ir::geometry::lofts::LoftBridgeToken>,
         /// The embedded parameter curve closing the block, when present.
         pcurve: Option<PcurveNurbs>,
     },
@@ -697,8 +705,8 @@ pub(super) fn g2_side(cur: &mut Cur<'_>) -> Option<EmbeddedG2Side> {
     })
 }
 
-fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftBridgeToken> {
-    use cadmpeg_ir::geometry::LoftBridgeToken;
+fn bridge_token(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::lofts::LoftBridgeToken> {
+    use cadmpeg_ir::geometry::lofts::LoftBridgeToken;
     match cur.peek()? {
         Token::True | Token::False => Some(LoftBridgeToken::Boolean(cur.take_bool()?)),
         Token::Long(_) => Some(LoftBridgeToken::Integer(cur.take_long()?)),
@@ -753,8 +761,8 @@ fn g2_blend_spl_sur(
         ];
         let radii = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
         let radius_selector = match cur.take_enum()? {
-            -1 => cadmpeg_ir::geometry::RollingBallRadiusSelector::None {},
-            value => cadmpeg_ir::geometry::RollingBallRadiusSelector::Value {
+            -1 => cadmpeg_ir::geometry::blends::RollingBallRadiusSelector::None {},
+            value => cadmpeg_ir::geometry::blends::RollingBallRadiusSelector::Value {
                 value: PositiveI64::new(value)?,
             },
         };
@@ -813,7 +821,10 @@ fn g2_blend_spl_sur(
             cur.set_pos(surface_end);
             EmbeddedG2FirstShape::Full(Some((
                 surface,
-                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?,
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                    cur.take_f64()? * LEN_TO_MM,
+                )
+                .ok()?,
             )))
         }
     } else {
@@ -822,7 +833,8 @@ fn g2_blend_spl_sur(
             *coefficient = cur.take_f64()?;
         }
         let tolerance =
-            cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
+            cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM)
+                .ok()?;
         let extension = if matches!(cur.peek(), Some(token)
             if matches!(token, Token::Str(_)) || token.is_payload_ident())
         {
@@ -895,7 +907,7 @@ pub struct ClassicLoftProfileData {
     /// The ASM extension integer.
     pub asm_extension: i64,
     /// Constraint subdata.
-    pub subdata: cadmpeg_ir::geometry::LoftSubdata,
+    pub subdata: cadmpeg_ir::geometry::lofts::LoftSubdata,
     /// The optional direction vector.
     pub direction: Option<Vector3>,
 }
@@ -921,7 +933,7 @@ pub enum LoftProfileData {
         /// The stream-version-gated ASM extension.
         asm_extension: Option<i64>,
         /// Constraint subdata.
-        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        subdata: cadmpeg_ir::geometry::lofts::LoftSubdata,
         /// The optional direction vector.
         direction: Option<Vector3>,
     },
@@ -936,7 +948,7 @@ pub enum LoftProfileData {
         /// The stream-version-gated ASM extension.
         asm_extension: Option<i64>,
         /// Constraint subdata.
-        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        subdata: cadmpeg_ir::geometry::lofts::LoftSubdata,
         /// The optional direction vector.
         direction: Option<Vector3>,
     },
@@ -1010,7 +1022,7 @@ pub struct EmbeddedRevisionCompoundLoft {
     /// The loft direction selected after the kind flags.
     pub direction: EmbeddedCompoundLoftDirection,
     /// Trailing bounds and their dependent curve.
-    pub tail: cadmpeg_ir::geometry::RevisionCompoundLoftTail<NurbsCurve>,
+    pub tail: cadmpeg_ir::geometry::revision_forms::RevisionCompoundLoftTail<NurbsCurve>,
 }
 
 /// One section entry of an embedded loft.
@@ -1044,11 +1056,11 @@ pub enum EmbeddedLoftLayout {
         /// The loft mode.
         mode: i64,
         /// The bridge tokens in stream order.
-        bridge: Vec<cadmpeg_ir::geometry::LoftBridgeToken>,
+        bridge: Vec<cadmpeg_ir::geometry::lofts::LoftBridgeToken>,
     },
     /// The revision form and optional interval bounds.
     Revision(
-        Box<cadmpeg_ir::geometry::LoftRevisionForm>,
+        Box<cadmpeg_ir::geometry::lofts::LoftRevisionForm>,
         [[Option<f64>; 2]; 2],
     ),
 }
@@ -1312,7 +1324,7 @@ pub struct EmbeddedLawSurface {
     /// Additional law formulas serialized after the primary.
     pub additional: Vec<EmbeddedLawFormula>,
     /// Neutral tail fields of the record.
-    pub tail: cadmpeg_ir::geometry::LawSurfaceTail,
+    pub tail: cadmpeg_ir::geometry::laws::LawSurfaceTail,
     /// Six discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
 }
@@ -1335,7 +1347,7 @@ pub enum EmbeddedSkinSurfaceLayout {
         /// The first embedded curve.
         curve: NurbsCurve,
         /// Neutral subdata fields of the first curve.
-        subdata: cadmpeg_ir::geometry::LoftSubdata,
+        subdata: cadmpeg_ir::geometry::lofts::LoftSubdata,
         /// The integer serialized after the first curve.
         first_tail: i64,
         /// The second embedded curve.
@@ -1531,7 +1543,7 @@ pub enum EmbeddedSweepSurfaceLayout {
     /// A revision sweep with a profile and a law or formula tail.
     Revision {
         /// The revision form fields.
-        form: cadmpeg_ir::geometry::SweepRevisionForm,
+        form: cadmpeg_ir::geometry::sweep_surfaces::SweepRevisionForm,
         /// The profile and path fields.
         profile: Box<SweepProfile>,
         /// The law or formula tail.
@@ -1569,13 +1581,13 @@ pub enum EmbeddedDeformableSurfaceLayout {
         discontinuity_flag: bool,
     },
     /// The revision form that owns the discontinuity data.
-    Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
+    Revision(Box<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>),
 }
 
 /// The mode-discriminated payload of an embedded deformable surface.
 pub enum EmbeddedDeformableSurfaceData {
     /// A payload fully resolved to neutral IR fields.
-    Resolved(cadmpeg_ir::geometry::DeformableSurfaceData),
+    Resolved(cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData),
     /// The surface-curve payload: an embedded surface, curve, and frame.
     SurfaceCurve {
         /// The embedded payload surface.
@@ -1626,7 +1638,7 @@ pub enum EmbeddedDeformableSurfaceData {
         /// The embedded payload curve.
         curve: NurbsCurve,
         /// Two deformation vector frames.
-        frames: Box<[cadmpeg_ir::geometry::DeformableVectorFrame; 2]>,
+        frames: Box<[cadmpeg_ir::geometry::deformable_surfaces::DeformableVectorFrame; 2]>,
         /// The integer closing the payload.
         trailing_value: i64,
     },
@@ -1900,15 +1912,15 @@ fn revision_loft_section(
     Some(Ok(entries))
 }
 
-fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+fn loft_subdata(cur: &mut Cur<'_>) -> Option<cadmpeg_ir::geometry::lofts::LoftSubdata> {
     loft_subdata_form(cur, false)
 }
 
 fn loft_subdata_form(
     cur: &mut Cur<'_>,
     revision: bool,
-) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
-    use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
+) -> Option<cadmpeg_ir::geometry::lofts::LoftSubdata> {
+    use cadmpeg_ir::geometry::lofts::{LoftSubdata, LoftSubdataRow};
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
     let column_count = cur.take_long()?;
@@ -2104,7 +2116,7 @@ fn revision_loft(
         DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             layout: EmbeddedLoftLayout::Revision(
-                Box::new(cadmpeg_ir::geometry::LoftRevisionForm {
+                Box::new(cadmpeg_ir::geometry::lofts::LoftRevisionForm {
                     revision,
                     flags,
                     ints,
@@ -2123,7 +2135,7 @@ fn loft_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::LoftBridgeToken;
+    use cadmpeg_ir::geometry::lofts::LoftBridgeToken;
     let names = ["loft_spl_sur", "loftsur"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -2315,17 +2327,23 @@ fn revision_compound_loft(
         cur.take_optional_range_value()?.value(),
     ];
     let tail = match interval {
-        [None, None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::Unbounded {},
+        [None, None] => {
+            cadmpeg_ir::geometry::revision_forms::RevisionCompoundLoftTail::Unbounded {}
+        }
         [Some(value), None] => {
-            cadmpeg_ir::geometry::RevisionCompoundLoftTail::LowerBound { lower: value }
+            cadmpeg_ir::geometry::revision_forms::RevisionCompoundLoftTail::LowerBound {
+                lower: value,
+            }
         }
         [None, Some(value)] => {
-            cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound { upper: value }
+            cadmpeg_ir::geometry::revision_forms::RevisionCompoundLoftTail::UpperBound {
+                upper: value,
+            }
         }
         [Some(lower), Some(upper)] => {
             let (curve, curve_end) = curve_block(span, cur.pos())?;
             cur.set_pos(curve_end);
-            cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve {
+            cadmpeg_ir::geometry::revision_forms::RevisionCompoundLoftTail::Curve {
                 interval: [lower, upper],
                 curve,
             }
@@ -2881,20 +2899,23 @@ pub(super) fn law_spl_sur(
             cur.set_pos(cache_end);
             let fit_tolerance = cur.take_f64()? * LEN_TO_MM;
             (
-                cadmpeg_ir::geometry::LawSurfaceTail::Full {
-                    cache: cadmpeg_ir::geometry::LegacyCache::try_new(fit_tolerance).ok()?,
+                cadmpeg_ir::geometry::laws::LawSurfaceTail::Full {
+                    cache: cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(fit_tolerance)
+                        .ok()?,
                 },
                 Some(fit_tolerance),
             )
         }
         1 => {
             let parameters = [cur.take_float_array()?, cur.take_float_array()?];
-            let fit_tolerance =
-                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
+            let fit_tolerance = cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                cur.take_f64()? * LEN_TO_MM,
+            )
+            .ok()?;
             let closures = [cur.take_enum()?, cur.take_enum()?];
             let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
-                cadmpeg_ir::geometry::LawSurfaceTail::Summary {
+                cadmpeg_ir::geometry::laws::LawSurfaceTail::Summary {
                     parameters,
                     fit_tolerance,
                     closures,
@@ -2911,7 +2932,7 @@ pub(super) fn law_spl_sur(
             let closures = [cur.take_enum()?, cur.take_enum()?];
             let singularities = [cur.take_enum()?, cur.take_enum()?];
             (
-                cadmpeg_ir::geometry::LawSurfaceTail::None {
+                cadmpeg_ir::geometry::laws::LawSurfaceTail::None {
                     parameter_ranges,
                     closures,
                     singularities,
@@ -2919,8 +2940,11 @@ pub(super) fn law_spl_sur(
                 None,
             )
         }
-        3 => (cadmpeg_ir::geometry::LawSurfaceTail::Historical {}, None),
-        4 => (cadmpeg_ir::geometry::LawSurfaceTail::Optimal {}, None),
+        3 => (
+            cadmpeg_ir::geometry::laws::LawSurfaceTail::Historical {},
+            None,
+        ),
+        4 => (cadmpeg_ir::geometry::laws::LawSurfaceTail::Optimal {}, None),
         _ => return None,
     };
     let discontinuities = [
@@ -3386,7 +3410,7 @@ fn revision_sweep_sur(
     Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             layout: EmbeddedSweepSurfaceLayout::Revision {
-                form: cadmpeg_ir::geometry::SweepRevisionForm {
+                form: cadmpeg_ir::geometry::sweep_surfaces::SweepRevisionForm {
                     revision,
                     primary_flag,
                     profile_endpoints,
@@ -3407,7 +3431,7 @@ fn taper_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::TaperSurfaceKind;
+    use cadmpeg_ir::geometry::procedural_surfaces::TaperSurfaceKind;
     let names: &[(&str, u8)] = &[
         ("taper_spl_sur", 0),
         ("ortho_spl_sur", 1),
@@ -3469,7 +3493,7 @@ fn taper_spl_sur(
                 pcurve,
                 parameter,
                 taper: TaperSurfaceKind::Orthogonal { sense },
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                revision_form: Some(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                     revision,
                     support_bounds,
                     reference_endpoints,
@@ -3566,7 +3590,7 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let parameters = cur.take_float_array()?;
     let mut components = Vec::new();
     for parameter in parameters {
-        components.push(cadmpeg_ir::geometry::CompoundComponent {
+        components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
             parameter,
             component: embedded_surface(&mut cur)?,
         });
@@ -3596,7 +3620,10 @@ impl RevisionSurfaceCache {
     pub(super) fn into_form(self) -> Option<RevisionCacheForm> {
         Some(match self {
             Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache {
-                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(fit_tolerance).ok()?,
+                fit_tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                    fit_tolerance,
+                )
+                .ok()?,
             },
             Self::Parameterized(parameters) => RevisionCacheForm::Parameterization(parameters),
         })
@@ -3715,7 +3742,7 @@ fn off_spl_sur(
                 support,
                 distance,
                 layout: EmbeddedOffsetLayout::Revision(Box::new(
-                    cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                         revision,
                         support_bounds,
                         reference_endpoints: [None; 2],
@@ -3811,11 +3838,11 @@ fn rot_spl_sur(
                     origin[2] * LEN_TO_MM,
                 ),
                 axis_direction: UnitVector3::normalized_nonzero(
-                    cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+                    cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::from(axis))?,
                 )?,
                 angular_interval,
                 parameter_interval,
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                revision_form: Some(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                     revision,
                     support_bounds: [None; 4],
                     reference_endpoints: profile_endpoints,
@@ -3840,7 +3867,7 @@ fn rot_spl_sur(
     );
     let axis = cur.take_vector3()?;
     let axis_direction = UnitVector3::normalized_nonzero(
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::from(axis))?,
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::from(axis))?,
     )?;
     let (cache, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
@@ -3900,7 +3927,7 @@ fn sum_spl_sur(
                     origin[1] * LEN_TO_MM,
                     origin[2] * LEN_TO_MM,
                 ),
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                revision_form: Some(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                     revision,
                     support_bounds: [None; 4],
                     reference_endpoints: first_endpoints,
@@ -3998,10 +4025,10 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.at_scope_end().then_some(())?;
         return Some(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Exact {
-                spline: cadmpeg_ir::geometry::ExactSpline::Revision {
+                spline: cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Revision {
                     intervals: unextended_ranges,
                     extension,
-                    form: Box::new(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    form: Box::new(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                         revision,
                         support_bounds: [None; 4],
                         reference_endpoints: [None; 2],
@@ -4027,7 +4054,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Exact {
-            spline: cadmpeg_ir::geometry::ExactSpline::Legacy {
+            spline: cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
                 ranges: parameter_ranges,
                 extension,
                 cache: None,
@@ -4049,7 +4076,7 @@ fn t_spl_sur(
             discontinuity_flag: bool,
             parameter_ranges: [[f64; 2]; 2],
         },
-        Revision(Box<cadmpeg_ir::geometry::RevisionSurfaceForm>),
+        Revision(Box<cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm>),
     }
 
     let (start, _) = toks::find_owned_subtype_marker(toks, &["t_spl_sur"])?;
@@ -4071,17 +4098,19 @@ fn t_spl_sur(
             *bound = cur.take_optional_range_value()?.value();
         }
         type_code = cur.take_enum()?;
-        layout = Layout::Revision(Box::new(cadmpeg_ir::geometry::RevisionSurfaceForm {
-            revision,
-            support_bounds: bounds,
-            reference_endpoints: [None; 2],
-            second_endpoints: [None; 2],
-            flags: Vec::new(),
-            cache: cache.into_form()?,
-            discontinuities: tail_discontinuities,
-            tail_flag,
-            trailing_flags: Vec::new(),
-        }));
+        layout = Layout::Revision(Box::new(
+            cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
+                revision,
+                support_bounds: bounds,
+                reference_endpoints: [None; 2],
+                second_endpoints: [None; 2],
+                flags: Vec::new(),
+                cache: cache.into_form()?,
+                discontinuities: tail_discontinuities,
+                tail_flag,
+                trailing_flags: Vec::new(),
+            },
+        ));
     } else {
         let (_, cache_end) = surface_block(span, cur.pos())?;
         cur.set_pos(cache_end);
@@ -4194,7 +4223,7 @@ pub(crate) fn copy_revision_discontinuities(source: &[Vec<f64>; 6]) -> [Vec<f64>
 
 fn deformable_surface_frame(
     cur: &mut Cur<'_>,
-) -> Option<cadmpeg_ir::geometry::DeformableSurfaceFrame> {
+) -> Option<cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceFrame> {
     let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
     for vector in &mut leading_vectors {
         let value = cur.take_vector3()?;
@@ -4217,40 +4246,44 @@ fn deformable_surface_frame(
         cur.take_bool()?,
         cur.take_bool()?,
     ];
-    Some(cadmpeg_ir::geometry::DeformableSurfaceFrame {
-        leading_vectors,
-        leading_parameter,
-        leading_flags,
-        secondary_vectors,
-        secondary_parameter,
-        secondary_flags,
-        point: Point3::new(
-            point[0] * LEN_TO_MM,
-            point[1] * LEN_TO_MM,
-            point[2] * LEN_TO_MM,
-        ),
-        trailing_flags,
-    })
+    Some(
+        cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceFrame {
+            leading_vectors,
+            leading_parameter,
+            leading_flags,
+            secondary_vectors,
+            secondary_parameter,
+            secondary_flags,
+            point: Point3::new(
+                point[0] * LEN_TO_MM,
+                point[1] * LEN_TO_MM,
+                point[2] * LEN_TO_MM,
+            ),
+            trailing_flags,
+        },
+    )
 }
 
 fn deformable_vector_frame(
     cur: &mut Cur<'_>,
-) -> Option<cadmpeg_ir::geometry::DeformableVectorFrame> {
+) -> Option<cadmpeg_ir::geometry::deformable_surfaces::DeformableVectorFrame> {
     let mut vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
     for vector in &mut vectors {
         let value = cur.take_vector3()?;
         *vector = Vector3::new(value[0], value[1], value[2]);
     }
-    Some(cadmpeg_ir::geometry::DeformableVectorFrame {
-        vectors,
-        parameter: cur.take_f64()?,
-        flags: [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?],
-    })
+    Some(
+        cadmpeg_ir::geometry::deformable_surfaces::DeformableVectorFrame {
+            vectors,
+            parameter: cur.take_f64()?,
+            flags: [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?],
+        },
+    )
 }
 
 fn revision_deformable_mode3(
     cur: &mut Cur<'_>,
-) -> Option<cadmpeg_ir::geometry::DeformableSurfaceData> {
+) -> Option<cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData> {
     let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
     for vector in &mut leading_vectors {
         let value = cur.take_vector3()?;
@@ -4281,23 +4314,25 @@ fn revision_deformable_mode3(
     ];
     let trailing_parameter = cur.take_f64()?;
     let trailing_value = cur.take_long()?;
-    Some(cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3 {
-        leading_vectors,
-        leading_parameter,
-        leading_flags,
-        trailing_point,
-        trailing_vectors,
-        frame_parameter,
-        frame_flags,
-        parameters,
-        trailing_flags,
-        trailing_parameter,
-        trailing_value,
-    })
+    Some(
+        cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData::RevisionMode3 {
+            leading_vectors,
+            leading_parameter,
+            leading_flags,
+            trailing_point,
+            trailing_vectors,
+            frame_parameter,
+            frame_flags,
+            parameters,
+            trailing_flags,
+            trailing_parameter,
+            trailing_value,
+        },
+    )
 }
 
 fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -4435,7 +4470,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             DecodedProceduralSurfaceDefinition::Deformable(Box::new(EmbeddedDeformableSurface {
                 support,
                 layout: EmbeddedDeformableSurfaceLayout::Revision(Box::new(
-                    cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                         revision,
                         support_bounds,
                         reference_endpoints: [None; 2],
@@ -4478,7 +4513,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
 }
 
 pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
-    use cadmpeg_ir::geometry::HelixSurfaceProfile;
+    use cadmpeg_ir::geometry::helix::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];
     let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
@@ -4508,9 +4543,9 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
             return None;
         }
     }
-    let path = cadmpeg_ir::geometry::HelixPathConstruction::try_with_unit_axis(
+    let path = cadmpeg_ir::geometry::helix::HelixPathConstruction::try_with_unit_axis(
         path_angle_range,
-        cadmpeg_ir::geometry::HelixFrame {
+        cadmpeg_ir::geometry::helix::HelixFrame {
             center: Point3::new(
                 center[0] * LEN_TO_MM,
                 center[1] * LEN_TO_MM,
@@ -4538,13 +4573,16 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     .ok()?;
     let profile = if let Some(length) = length {
         HelixSurfaceProfile::Circle(
-            cadmpeg_ir::geometry::HelixCircleProfile::try_new(length, cur.take_f64()? * LEN_TO_MM)
-                .ok()?,
+            cadmpeg_ir::geometry::helix::HelixCircleProfile::try_new(
+                length,
+                cur.take_f64()? * LEN_TO_MM,
+            )
+            .ok()?,
         )
     } else {
         let direction = take_frame_vector(&mut cur)?;
         HelixSurfaceProfile::Line(
-            cadmpeg_ir::geometry::HelixLineProfile::try_new(Vector3::new(
+            cadmpeg_ir::geometry::helix::HelixLineProfile::try_new(Vector3::new(
                 direction[0],
                 direction[1],
                 direction[2] * LEN_TO_MM,
@@ -4554,7 +4592,7 @@ pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> 
     };
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Helix(Box::new(
-            cadmpeg_ir::geometry::HelixSurfaceConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixSurfaceConstruction::try_new(
                 angle_range,
                 dimension_range,
                 path,
@@ -4599,7 +4637,9 @@ fn resolve_t_spline_subtransform(
     index: usize,
     table: &SubtypeTable,
     seen: &mut std::collections::HashSet<usize>,
-) -> Option<Result<cadmpeg_ir::geometry::InlineTSplineSubtransform, cadmpeg_core::CodecError>> {
+) -> Option<
+    Result<cadmpeg_ir::geometry::tsplines::InlineTSplineSubtransform, cadmpeg_core::CodecError>,
+> {
     let _depth = propagate_resource!(ctx.enter_nested("resolve ASM t spline subtransform"));
     if seen.contains(&index) {
         return None;
@@ -4613,9 +4653,11 @@ fn resolve_t_spline_subtransform(
             program,
             separator,
             values,
-        } => cadmpeg_ir::geometry::InlineTSplineSubtransform::try_new(program, separator, values)
-            .ok()
-            .map(Ok),
+        } => cadmpeg_ir::geometry::tsplines::InlineTSplineSubtransform::try_new(
+            program, separator, values,
+        )
+        .ok()
+        .map(Ok),
         EmbeddedTSplineSubtransform::Reference { index, .. } => {
             resolve_t_spline_subtransform(ctx, usize::try_from(index).ok()?, table, seen)
         }

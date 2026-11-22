@@ -5,16 +5,17 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::{Feature, FeatureContent, FeatureHistory};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::parameters::DesignConfiguration;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{
+    ConfigurationId, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+    ParameterId, UnresolvedFamily,
+};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        ConfigurationId, DatumPlaneReference, DesignConfiguration, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureSourceContent, ParameterId, PathRef, PlanarProfileRef, ProfileRef,
-        SplitFaceTool, UnresolvedFamily,
-    },
-    scalar::Length,
-};
+use cadmpeg_ir::scalar::Length;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Write};
 
@@ -242,15 +243,16 @@ pub(crate) fn project_feature_model(
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
                     source_content: project_feature_content(feature, &by_native)?,
-                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                        project_definition(
-                            feature,
-                            &by_source,
-                            &native_by_source,
-                            &features_by_source,
-                            &history.features,
-                        )?,
-                    ),
+                    evaluation:
+                        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                            project_definition(
+                                feature,
+                                &by_source,
+                                &native_by_source,
+                                &features_by_source,
+                                &history.features,
+                            )?,
+                        ),
                     native_ref: Some(feature.id.clone()),
                     product_definition: None,
                 };
@@ -774,15 +776,16 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             {
                 *reference = (|| {
                     Some(DatumPlaneReference::ResolvedPlane {
-                        frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
-                            parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?,
-                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
-                                properties.get("ReferenceFaceNormal")?,
-                            )?)?,
-                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
-                                properties.get("ReferenceFaceUAxis")?,
-                            )?)?,
-                        )?,
+                        frame:
+                            cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::from_parts(
+                                parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?,
+                                cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                                    parse_vector3(properties.get("ReferenceFaceNormal")?)?,
+                                )?,
+                                cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                                    parse_vector3(properties.get("ReferenceFaceUAxis")?)?,
+                                )?,
+                            )?,
                     })
                 })();
             }
@@ -827,32 +830,34 @@ fn bind_native_construction_features(
         let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
         let insert_dependency =
-            |dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
+            |dependencies: &mut cadmpeg_ir::features::selections::DistinctMembers<FeatureId>,
              target: &FeatureId| {
                 if target != feature_id {
                     dependencies.insert(target.clone());
                 }
             };
-        let bind_planar =
-            |profile: &mut PlanarProfileRef,
-             dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| {
-                let PlanarProfileRef::Native(native) = profile else {
-                    return;
-                };
-                let Some(target) = feature_ids_by_native.get(native.as_str()) else {
-                    return;
-                };
-                let target_id = target.clone();
-                insert_dependency(dependencies, target);
-                *profile = PlanarProfileRef::Feature(target_id);
+        let bind_planar = |profile: &mut PlanarProfileRef,
+                           dependencies: &mut cadmpeg_ir::features::selections::DistinctMembers<
+            FeatureId,
+        >| {
+            let PlanarProfileRef::Native(native) = profile else {
+                return;
             };
-        let bind =
-            |profile: &mut ProfileRef,
-             dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>| {
-                if let ProfileRef::Planar(profile) = profile {
-                    bind_planar(profile, dependencies);
-                }
+            let Some(target) = feature_ids_by_native.get(native.as_str()) else {
+                return;
             };
+            let target_id = target.clone();
+            insert_dependency(dependencies, target);
+            *profile = PlanarProfileRef::Feature(target_id);
+        };
+        let bind = |profile: &mut ProfileRef,
+                    dependencies: &mut cadmpeg_ir::features::selections::DistinctMembers<
+            FeatureId,
+        >| {
+            if let ProfileRef::Planar(profile) = profile {
+                bind_planar(profile, dependencies);
+            }
+        };
         feature.evaluation.edit(|definition, _| match definition {
             FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                 bind(profile, dependencies);
@@ -877,7 +882,7 @@ fn bind_native_construction_features(
             }
             FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
                 for section in sections {
-                    if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                    if let cadmpeg_ir::features::profiles::LoftSection::Profile(profile) = section {
                         bind(profile, dependencies);
                     }
                 }
@@ -1119,9 +1124,9 @@ fn project_feature_content(
 fn project_feature_dependencies(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
-) -> Result<cadmpeg_ir::features::DistinctMembers<FeatureId>, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::DistinctMembers<FeatureId>, CodecError> {
     let owner = neutral_feature_id(&feature.id)?;
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    let mut dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     for property in FEATURE_REFERENCE_PROPERTIES {
         let Some(value) = feature.properties.get(*property) else {
             continue;
@@ -1171,7 +1176,7 @@ pub(crate) fn project_configurations(
                 id,
                 ordinal: configuration.ordinal,
                 active: false,
-                source_index: configuration.source_index,
+                source_index: configuration.partition_index(),
                 name: Some(name),
                 material,
                 properties,
@@ -1207,7 +1212,7 @@ fn project_definition(
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }));
     }
     let class = classify(feature);

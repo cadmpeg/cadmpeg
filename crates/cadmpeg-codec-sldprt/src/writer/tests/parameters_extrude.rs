@@ -83,7 +83,7 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
 #[test]
 fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
     use crate::records::FeatureContent;
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -390,7 +390,8 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
 
 #[test]
 fn semantic_writer_preserves_empty_dimensions() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -440,7 +441,8 @@ fn semantic_writer_preserves_empty_dimensions() {
 
 #[test]
 fn semantic_writer_preserves_keywords_attributes() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -478,7 +480,8 @@ fn semantic_writer_preserves_keywords_attributes() {
 #[test]
 fn semantic_writer_preserves_keywords_child_order() {
     use crate::records::HistoryContent;
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -521,6 +524,60 @@ fn semantic_writer_preserves_keywords_child_order() {
             HistoryContent::Configuration(_),
             HistoryContent::Feature(_),
         ] if text == "between"
+    ));
+}
+
+#[test]
+fn edited_history_write_keeps_the_application_element() {
+    use crate::records::HistoryContent;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Application Name="Simulation"><Keyword Name="Analysis type">Static</Keyword><Keyword Name="Mesh type">Solid Mesh</Keyword></Application><Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let application = sldprt_native(decoded.ir()).feature_histories[0].content[0].clone();
+    assert!(
+        matches!(&application, HistoryContent::Element(element) if element.tag == "Application")
+    );
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let depth = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        depth.expression = "20mm".into();
+        depth.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
+    }
+
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
+    assert_eq!(history.features[0].parameters["Depth"], "20mm");
+    assert!(matches!(
+        history.content.as_slice(),
+        [
+            element,
+            HistoryContent::Configuration(_),
+            HistoryContent::Feature(_),
+        ] if *element == application
     ));
 }
 
@@ -570,7 +627,7 @@ fn semantic_writer_applies_history_root_ordinals() {
                 .iter()
                 .find(|configuration| configuration.id == *id)
                 .map(|configuration| configuration.name.as_str()),
-            HistoryContent::Text(_) => None,
+            HistoryContent::Text(_) | HistoryContent::Element(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["Second", "B", "First", "A"]);
@@ -641,7 +698,8 @@ fn semantic_writer_applies_neutral_parameter_order() {
 
 #[test]
 fn semantic_writer_rejects_conflicting_parameter_edits() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let decoded = SldprtCodec
         .decode(
@@ -714,13 +772,11 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
 
 #[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
-    use cadmpeg_ir::{
-        features::{
-            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-            LinearTermination, ParameterValue,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -968,9 +1024,9 @@ fn semantic_writer_round_trips_feature_output_scope() {
         vec![decoded.ir().geometry.bodies[0].id.clone()]
     );
     let output = decoded.ir().geometry.bodies[1].id.clone();
-    decoded.ir_mut().model.features[0]
-        .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap());
+    decoded.ir_mut().model.features[0].evaluation.set_outputs(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![output]).unwrap(),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::serialize_history_in_native_envelope_after_refusal(
@@ -1002,10 +1058,10 @@ fn semantic_writer_round_trips_feature_output_scope() {
 
 #[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1023,8 +1079,8 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -1039,7 +1095,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                 vector: geometry_1,
                 source: None,
             },
@@ -1079,7 +1135,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
        decoded.ir().model.features[4].evaluation.definition(),
        FeatureDefinition::Operation(FeatureOperation::Extrude {
-           direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+           direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                vector: geometry_1,
                source: None,
            },
@@ -1109,9 +1165,11 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             else {
                 panic!("typed extrusion");
             };
-            *direction = cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
+            *direction = cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    1.0, 0.0, 0.0,
+                ))
+                .unwrap(),
                 source: None,
             };
             *extent = ExtrudeExtent::TwoSided {
@@ -1137,7 +1195,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             else {
                 panic!("typed extrusion");
             };
-            *direction = cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {};
+            *direction = cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {};
             *extent = ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ThroughAll {},
@@ -1172,10 +1230,9 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
 
 #[test]
 fn semantic_writer_round_trips_extrusion_to_face() {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1356,7 +1413,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
+            edges: cadmpeg_ir::features::selections::EdgeSelection::Native(selection),
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
@@ -1376,7 +1433,8 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
             groups[0].radius = cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
             };
-            groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
+            groups[0].edges =
+                cadmpeg_ir::features::selections::EdgeSelection::Native("edge:3".into());
         });
     }
 
@@ -1413,13 +1471,11 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 
 #[test]
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
-    use cadmpeg_ir::{
-        features::{
-            edge_treatments::{ChamferSpec, RadiusSpec},
-            EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let keywords = format!(
         r#"<Keywords>
@@ -1541,13 +1597,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
 #[test]
 fn semantic_writer_round_trips_variable_radius_fillet() {
-    use cadmpeg_ir::{
-        features::{
-            edge_treatments::{RadiusSpec, VariableRadius},
-            EdgeSelection, FeatureDefinition, FeatureOperation,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::edge_treatments::{RadiusSpec, VariableRadius};
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1648,9 +1701,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
 #[test]
 fn semantic_writer_round_trips_all_typed_chamfer_forms() {
-    use cadmpeg_ir::features::{
-        edge_treatments::ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+    use cadmpeg_ir::features::selections::EdgeSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1762,7 +1815,8 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
 #[test]
 fn semantic_writer_retains_partial_native_wall_operations() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

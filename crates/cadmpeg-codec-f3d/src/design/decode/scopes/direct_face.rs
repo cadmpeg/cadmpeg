@@ -32,6 +32,7 @@ use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
+use crate::layout::move_transform_omitted_matrix_frame_128 as omitted_move_128;
 use crate::layout::move_transform_v3_frame_256 as move_v3_frame_256;
 use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
 use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
@@ -221,11 +222,13 @@ fn marked_move_transform(
     }
     cursor = cursor.checked_add(4)?;
     let (group, _) = take_reference(bytes, &mut cursor)?.into_local()?;
-    if u32::try_from(group).ok()? != *scope.reference_members().values().next()?
-        || !scope
-            .reference_members()
-            .values()
-            .any(|index| *index == transform_record_index)
+    let group_record_index = u32::try_from(group).ok()?;
+    let mut members = scope.reference_members().values();
+    let first = *members.clone().next()?;
+    if group_record_index == transform_record_index
+        || !(first == group_record_index || first == transform_record_index)
+        || !members.clone().any(|index| *index == group_record_index)
+        || !members.any(|index| *index == transform_record_index)
     {
         return None;
     }
@@ -587,7 +590,7 @@ fn move_transform_at(
                     .window()
                     .len()
                     .checked_sub(form_at.checked_sub(move_frame::FORM)?)?,
-                omitted_move_125::LEN | omitted_move_126::LEN
+                omitted_move_125::LEN | omitted_move_126::LEN | omitted_move_128::LEN
             ))
     {
         return None;
@@ -771,7 +774,9 @@ fn rigid_transform_rule_breaks(
     };
     let version_3 = version == Some(RIGID_TRANSFORM_TYPE_VERSION_3);
     let length_form = match frame_length {
-        move_v3_frame_256::LEN if version_3 => direct_face::DesignMoveForm::Form5,
+        move_v3_frame_256::LEN | omitted_move_128::LEN if version_3 => {
+            direct_face::DesignMoveForm::Form5
+        }
         move_v3_frame_276::LEN if version_3 => direct_face::DesignMoveForm::Form1,
         move_v3_frame_286::LEN if version_3 => direct_face::DesignMoveForm::Form0,
         move_v3_frame_296::LEN if version_3 => direct_face::DesignMoveForm::Form2,

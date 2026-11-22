@@ -22,15 +22,18 @@
 //! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
+mod datum;
 mod operation;
 mod parameters;
+mod sheet_metal;
 #[cfg(test)]
 mod tests;
+mod thread;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -38,7 +41,6 @@ use cadmpeg_ir::design::refs::Position;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
-use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
@@ -51,16 +53,14 @@ const TYPES: &str = "design_types";
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
-/// definition is already stated. A decode whose `transfer` delivers no design
-/// class, as a geometry request that stopped before design intent, states no
-/// design record.
+/// definition is already stated.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    transfer: DecodeTransfer,
+    depth: DecodeDepth,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !transfer.depth().scope().design {
+    if depth < DecodeDepth::Design {
         return Ok(());
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
@@ -190,6 +190,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
@@ -203,6 +204,8 @@ pub(crate) fn project(
     ir.design
         .configurations
         .extend(scoped_configurations.records);
+    sheet_metal::project(ctx, ir, &definitions, losses)?;
+    thread::project(ctx, ir, losses)?;
     Ok(())
 }
 

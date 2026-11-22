@@ -301,7 +301,7 @@ pub(in crate::writer::generate) fn native_or_neutral(
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
     native: &F3dNative,
-) -> Result<Vec<cadmpeg_ir::features::DesignParameter>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -399,6 +399,31 @@ impl ParameterPlan {
         encode_document_parameters(&records, collection)
     }
 
+    /// The user parameter records of class `class_tag` at `indices`, each
+    /// with a tail that names `collection`, as records of `out`.
+    pub(in crate::writer::generate) fn roster_records(
+        &self,
+        class_tag: &crate::records::references::DesignClassTag,
+        indices: &[u32],
+        collection: u32,
+        out: &mut super::frames::DesignRecords,
+    ) -> Result<(), CodecError> {
+        for (ordinal, (parameter, record_index)) in
+            self.written.iter().zip(indices.iter().copied()).enumerate()
+        {
+            let record = parameter.record(class_tag.clone(), record_index, ordinal)?;
+            out.primaries.push((record_index, out.bytes.len()));
+            out.bytes
+                .extend(encode_document_parameters(&[record], collection)?);
+        }
+        Ok(())
+    }
+
+    /// The number of written parameters.
+    pub(in crate::writer::generate) fn written_count(&self) -> usize {
+        self.written.len()
+    }
+
     /// The ids of the written parameters.
     pub(in crate::writer::generate) fn written(&self) -> impl Iterator<Item = &ParameterId> {
         self.written.iter().map(|parameter| &parameter.source)
@@ -450,7 +475,7 @@ impl PlannedParameter {
         .and_then(|record| {
             record.with_comment(self.comment.clone().map(|comment| RecordedValue {
                 value: comment,
-                offset: 30,
+                offset: 31,
             }))
         })
         .map_err(|error| {

@@ -1857,7 +1857,7 @@ pub(crate) fn project_derived_instance_features(
     paths: &paths::LocalOccurrencePaths,
     projected: &[Occurrence],
 ) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::InsertedComponents;
+    use cadmpeg_ir::features::selections::InsertedComponents;
 
     let available = projected
         .iter()
@@ -1896,8 +1896,9 @@ pub(crate) fn project_derived_instance_features(
                     | InsertedComponents::Resolved { native, .. }
                     | InsertedComponents::Partial { native, .. } => native,
                 };
-                *native = cadmpeg_ir::features::SelectionReference::new(scope.id.clone())
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                *native =
+                    cadmpeg_ir::features::selections::SelectionReference::new(scope.id.clone())
+                        .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(
@@ -1994,7 +1995,8 @@ pub(crate) fn project_copy_paste_transfer_features(
     use crate::records::feature::occurrence_transfer::{
         DesignOccurrenceTransferMode, DesignOccurrenceTransferSource,
     };
-    use cadmpeg_ir::features::{ComponentTransferMode, FeatureOperation};
+    use cadmpeg_ir::features::tree::ComponentTransferMode;
+    use cadmpeg_ir::features::FeatureOperation;
     let mut losses = Vec::new();
     for scope in scopes {
         let Some(stream) = crate::ids::native_stream(&scope.id) else {
@@ -2241,8 +2243,10 @@ impl ComponentInserts {
             return inserts;
         }
         let authored =
-            crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)
-                .ok();
+            crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+                scopes, timelines,
+            )
+            .ok();
         for scope in scopes {
             let construction = scope.component_insert_construction();
             let partial = scope.component_insert_placement();
@@ -2797,6 +2801,69 @@ mod tests {
                     Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "expand F3D external occurrences"
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn four_placements_of_one_document_below_a_moved_owner_keep_their_own_poses() {
+        let components = two_component_stream(Some(276));
+        let mut moved = super::IDENTITY;
+        moved[0] = [0.0, -1.0, 0.0, 3.0];
+        moved[1] = [1.0, 0.0, 0.0, 4.0];
+        let guid = "00000000-0000-4000-8000-000000000001";
+        let carriers = [carrier(100, guid, placed(1, moved), DOCUMENT_ROOT)];
+        let bodies = BTreeSet::new();
+        let sources = super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &carriers,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let local = super::project_local_components(&sources).unwrap();
+        let mut table = external_owner_table(COMPONENT_ROOT);
+        let template = table.references.remove(0);
+        for placement in 0..4_u32 {
+            let mut reference = template.clone();
+            reference.id = format!("f3d:xref:reference#0-occurrence-{placement}");
+            reference.occurrence_ordinal = placement;
+            let mut matrix = super::IDENTITY;
+            matrix[0][3] = 2.0 + f64::from(placement);
+            reference.transform = Some(matrix.try_into().unwrap());
+            table.references.push(reference);
+        }
+        let projection =
+            crate::xref::project_occurrences(&table, &sources, &local.occurrences).unwrap();
+        let mut model = cadmpeg_ir::document::Model::default();
+        let local = crate::tree::Projected {
+            definitions: local.definitions.clone(),
+            occurrences: local.occurrences.clone(),
+            placements: local.placements.clone(),
+        };
+        crate::tree::assemble(&mut model, local, Some(projection));
+        let stated = crate::tree::stated(
+            crate::tree::Projected {
+                definitions: model.product_definitions.clone(),
+                occurrences: model.occurrences.clone(),
+                placements: Vec::new(),
+            },
+            None,
+        );
+        let poses = crate::tree::world_poses(&stated);
+        let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+        // A placement matrix is relative to the component that holds it; the
+        // holder, rotated a quarter turn at 30 mm and 40 mm, carries each
+        // placement to its own place.
+        for placement in 0..4_u32 {
+            let id = crate::ids::neutral_xref_occurrence_id(0, placement);
+            let row = stated.occurrences.iter().find(|o| o.id == id).unwrap();
+            let shift = 10.0 * (2.0 + f64::from(placement));
+            assert!((row.transform.unwrap().rows()[0][3] - shift).abs() < 1e-9);
+            let world = poses[&crate::ids::nested_xref_occurrence_id(&parent, 0, placement)].rows();
+            assert!((world[0][3] - 30.0).abs() < 1e-9 && (world[1][3] - 40.0 - shift).abs() < 1e-9);
         }
     }
 
@@ -3969,12 +4036,12 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),
                     parameters: std::collections::BTreeMap::new(),
@@ -4199,12 +4266,12 @@ mod tests {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Native {
                         kind: "ComponentInsert".into(),
                         parameters: BTreeMap::new(),
@@ -4357,12 +4424,12 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "ComponentInsert".into(),
                     parameters: std::collections::BTreeMap::new(),

@@ -5,7 +5,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{
         KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -158,9 +158,9 @@ impl DecodedProceduralSurface {
             &'static str,
             DecodedCurve,
         ) -> Result<cadmpeg_ir::ids::CurveId, E>,
-        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> E,
-    ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
-        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+        reject_payload: impl FnOnce(cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError) -> E,
+    ) -> Result<cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition, E> {
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
         Ok(match self {
             Self::Revolution {
@@ -175,7 +175,7 @@ impl DecodedProceduralSurface {
                 let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
                     axis_direction
-                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                    .ok_or(cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                         "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
                     ))
                     .and_then(|axis_direction| {
@@ -186,7 +186,7 @@ impl DecodedProceduralSurface {
                             None,
                             Some(parameter_interval),
                             transposed,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                         )
                     })
                     .map_err(reject_payload)?,
@@ -204,7 +204,7 @@ impl DecodedProceduralSurface {
                         first,
                         second,
                         basepoint,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .map_err(reject_payload)?,
                 )

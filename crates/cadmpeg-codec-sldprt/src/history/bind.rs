@@ -2,10 +2,9 @@
 //! Sketch binding, regeneration order, and feature-output derivation.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
-    SketchFeatureBinding, SplitFaceTool,
-};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
@@ -532,9 +531,9 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let outputs: Vec<_> = bodies.iter().copied().cloned().collect();
-            feature
-                .evaluation
-                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
+            feature.evaluation.set_outputs(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)?,
+            );
         }
     }
     Ok(())
@@ -559,7 +558,7 @@ pub(super) fn bind_definition_sketch(
             false
         }
     };
-    let bind_planar_profile = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
+    let bind_planar_profile = |profile: &mut cadmpeg_ir::features::profiles::PlanarProfileRef| {
         if has_profile
             && (matches!(profile, PlanarProfileRef::Unresolved(owner) if owner == native_ref)
                 || matches!(profile, PlanarProfileRef::Native(value) if value == native_ref)
@@ -621,7 +620,7 @@ pub(super) fn bind_definition_sketch(
         }) => {
             let mut profile_bound = false;
             for section in sections {
-                if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                if let cadmpeg_ir::features::profiles::LoftSection::Profile(profile) = section {
                     profile_bound |= bind_profile(profile);
                 }
             }

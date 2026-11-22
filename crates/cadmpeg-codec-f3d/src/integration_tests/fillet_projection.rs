@@ -15,7 +15,8 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::test_support::typed_reference_scopes::{parse, typed_scope_frame};
 use crate::test_support::{indexed_header, push_marked_reference};
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const BULK: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
 
@@ -350,7 +351,7 @@ fn bounded_face(scope: &DesignParameterScope) -> crate::records::topology::face:
 #[test]
 fn typed_fillet_full_round_requires_bounded_face_evidence() {
     use cadmpeg_ir::features::edge_treatments::FullRoundSideSelection;
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let scope = scope();
     let group = full_round_group(&scope);

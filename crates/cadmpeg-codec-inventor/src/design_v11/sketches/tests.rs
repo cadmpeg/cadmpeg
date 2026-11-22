@@ -4,9 +4,12 @@ use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::ops::sketch::SketchRelation;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::features::datums::{DatumPointConstruction, SketchPointSelection};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DatumPointConstruction, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FinitePoint3, SketchFeatureBinding, SketchPointSelection,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::check::Check;

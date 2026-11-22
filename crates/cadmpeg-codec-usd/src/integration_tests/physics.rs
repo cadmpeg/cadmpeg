@@ -304,8 +304,9 @@ fn coupling(model: &cadmpeg_ir::document::Model, gear: bool) -> (f64, Vec<String
 fn gear_and_rack_joints_couple_their_joints_and_survive_a_write() {
     let first = decode(COUPLINGS);
     let model = &first.ir().model;
+    // PhysX turns B the other way at twice A's angle: a ratio of -2.
     let (gear_ratio, gear_joints) = coupling(model, true);
-    assert!(close(gear_ratio, 2.0));
+    assert!(close(gear_ratio, -2.0));
     assert_eq!(
         gear_joints,
         [
@@ -327,10 +328,11 @@ fn gear_and_rack_joints_couple_their_joints_and_survive_a_write() {
     );
     let (text, _) = encode(first.ir());
     assert!(text.contains("def PhysxPhysicsGearJoint"), "{text}");
+    assert!(text.contains("float physics:gearRatio = 2"), "{text}");
     assert!(text.contains("float physics:ratio = 3600"), "{text}");
     let second = decode(&text);
     let again = &second.ir().model;
-    assert!(close(coupling(again, true).0, 2.0));
+    assert!(close(coupling(again, true).0, -2.0));
     assert!(close(coupling(again, false).0, rack_ratio));
     assert_eq!(coupling(again, true).1.len(), 2);
     assert_eq!(coupling(again, false).1.len(), 2);
@@ -343,6 +345,26 @@ fn gear_and_rack_joints_couple_their_joints_and_survive_a_write() {
         "{:#?}",
         second.report().losses
     );
+}
+
+/// A negative `physics:gearRatio` turns both gears the same way, as an
+/// internal gear does: a positive ratio, written back as it was read. A
+/// negative rack ratio moves the rack against the pinion's turn.
+#[test]
+fn couplings_that_turn_the_same_way_keep_their_sign() {
+    let source = COUPLINGS
+        .replace("physics:gearRatio = 2", "physics:gearRatio = -0.5")
+        .replace("physics:ratio = 36", "physics:ratio = -36");
+    let first = decode(&source);
+    let model = &first.ir().model;
+    assert!(close(coupling(model, true).0, 0.5));
+    assert!(close(
+        coupling(model, false).0,
+        -std::f64::consts::PI / 50.0
+    ));
+    let (text, _) = encode(first.ir());
+    assert!(text.contains("float physics:gearRatio = -0.5"), "{text}");
+    assert!(text.contains("float physics:ratio = -3600"), "{text}");
 }
 
 #[test]
@@ -497,9 +519,9 @@ fn box_with_mass() -> cadmpeg_ir::CadIr {
             target: PhysicsTarget::Body { body }.into(),
             mass: cadmpeg_ir::scalar::PositiveReal::new(2.0),
             density: None,
-            center_of_mass: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                5.0, 10.0, 15.0,
-            )),
+            center_of_mass: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
+            ),
             inertia: None,
             material: None,
             native_ref: None,

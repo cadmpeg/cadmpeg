@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Count records omitted inside arenas written by the semantic exporter.
 
+use std::collections::BTreeMap;
+
 use crate::loss::{NamedCount, SldprtLossCode};
 use cadmpeg_ir::{
     appearance::AppearanceTarget,
     geometry::{CurveGeometry, SolvedCurveGeometry},
     report::loss::LossNote,
+    schema::EntityKind,
     CadIr,
 };
 
@@ -142,17 +145,138 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
-    let mut unstated = NamedCount::default();
-    for attribute in super::metadata_attributes(ir) {
-        if super::states_no_value(attribute) {
-            unstated.push(attribute.id.as_str());
+    losses
+}
+
+/// Why the semantic exporter did not write one metadata attribute.
+///
+/// The order is the order of the loss notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Unwritten {
+    /// A position states no value.
+    NoValue,
+    /// The attribute is attached to a part element; SLDPRT metadata records
+    /// belong to the document.
+    EntityTarget,
+    /// No SLDPRT metadata record has the attribute's name.
+    UnknownName,
+    /// A value has a type, count or range its record cannot hold.
+    Unrepresentable,
+    /// The exporter cannot add, regenerate or edit this record in place.
+    NoSerializer,
+    /// The attribute's retained source position does not hold its record.
+    RetainedMismatch,
+    /// A saved-property edit; the property carrier is written as stored.
+    SavedProperty,
+    /// A retained record the document no longer states; its bytes are kept.
+    Removed,
+}
+
+/// What the output holds for one attribute the semantic exporter did not
+/// write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Held {
+    /// The record as the source file stores it: the attribute's edit is
+    /// dropped (`export:edit.dropped`).
+    Source,
+    /// No record: the attribute was added, or its record is generated
+    /// (`writer.attributes-omitted`).
+    Nothing,
+}
+
+impl Unwritten {
+    /// What the attributes state.
+    fn stated(self) -> &'static str {
+        match self {
+            Self::NoValue => "state a null value",
+            Self::EntityTarget => {
+                "are attached to a part element, but SLDPRT metadata records belong to the document"
+            }
+            Self::UnknownName => "name no SLDPRT metadata record",
+            Self::Unrepresentable => {
+                "hold a value whose type, count or range their SLDPRT record cannot hold"
+            }
+            Self::NoSerializer => {
+                "state a record the SLDPRT semantic exporter cannot add, regenerate or edit in place"
+            }
+            Self::RetainedMismatch => {
+                "name a retained source position that does not hold their SLDPRT record"
+            }
+            Self::SavedProperty => {
+                "are saved-property edits the SLDPRT semantic exporter cannot serialize"
+            }
+            Self::Removed => "are no longer stated by the document",
         }
     }
-    if !unstated.is_empty() {
-        losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
-            "{} sldprt metadata attribute record(s) state a null value, so the SLDPRT semantic exporter kept each one's retained source bytes or wrote no record: {unstated}",
-            unstated.count()
-        )));
+
+    /// What the exporter wrote instead.
+    fn instead(self, held: Held) -> &'static str {
+        match (self, held) {
+            (Self::SavedProperty, Held::Source) => {
+                "so it wrote the property carrier as the source stored it"
+            }
+            (Self::SavedProperty, Held::Nothing) => "so it wrote no property carrier row for them",
+            (Self::Removed, _) => {
+                "but the SLDPRT semantic exporter kept their retained source bytes"
+            }
+            (_, Held::Source) => {
+                "so the SLDPRT semantic exporter kept each one's retained source bytes"
+            }
+            (_, Held::Nothing) => "so the SLDPRT semantic exporter wrote no record",
+        }
     }
-    losses
+}
+
+/// The metadata attributes one semantic write did not write, by id. The
+/// first reason recorded for an id is kept.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct UnwrittenAttributes(BTreeMap<String, (Unwritten, Held)>);
+
+impl UnwrittenAttributes {
+    pub(super) fn record(&mut self, id: &str, reason: Unwritten, held: Held) {
+        self.0.entry(id.to_owned()).or_insert((reason, held));
+    }
+
+    pub(super) fn contains(&self, id: &str) -> bool {
+        self.0.contains_key(id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reason(&self, id: &str) -> Option<Unwritten> {
+        self.0.get(id).map(|(reason, _)| *reason)
+    }
+
+    /// One note per reason and holding: `export:edit.dropped` naming every
+    /// record kept as the source stored it, and `WriterAttributesOmitted`
+    /// naming the attributes with no record.
+    pub(crate) fn notes(&self) -> Vec<LossNote> {
+        let mut grouped = BTreeMap::<(Held, Unwritten), Vec<&str>>::new();
+        for (id, (reason, held)) in &self.0 {
+            grouped.entry((*held, *reason)).or_default().push(id);
+        }
+        grouped
+            .into_iter()
+            .map(|((held, reason), ids)| {
+                let head = format!(
+                    "{} sldprt metadata attribute record(s) {}, {}",
+                    ids.len(),
+                    reason.stated(),
+                    reason.instead(held)
+                );
+                match held {
+                    Held::Source => cadmpeg_ir::codec::write::edit_dropped(
+                        EntityKind::SourceAttribute,
+                        format!("{head}: {}", ids.join(", ")),
+                    ),
+                    Held::Nothing => {
+                        let mut named = NamedCount::default();
+                        for id in ids {
+                            named.push(id);
+                        }
+                        SldprtLossCode::WriterAttributesOmitted.note(format!("{head}: {named}"))
+                    }
+                }
+            })
+            .collect()
+    }
 }

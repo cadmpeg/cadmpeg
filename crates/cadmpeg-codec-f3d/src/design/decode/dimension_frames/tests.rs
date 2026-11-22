@@ -86,6 +86,71 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
 }
 
 #[test]
+fn counted_single_name_operands_keep_their_design_references_in_one_lane() {
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 2] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut starts = Vec::new();
+    for (token, references) in [(b"2", &[301i32, 302, 303][..]), (b"4", &[401i32][..])] {
+        starts.push(1_000 + u64_from_index(prefix.len()));
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        prefix.extend_from_slice(&u32::try_from(references.len()).unwrap().to_le_bytes());
+        for reference in references {
+            prefix.extend_from_slice(&reference.to_le_bytes());
+        }
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+    }
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    let references = super::decode_recipe_references(&prefix, 1_000);
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.design_reference)
+            .collect::<Vec<_>>(),
+        [301, 302, 303, 401]
+    );
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.operand_offset)
+            .collect::<Vec<_>>(),
+        [
+            Some(starts[0]),
+            Some(starts[0]),
+            Some(starts[0]),
+            Some(starts[1])
+        ]
+    );
+    assert_eq!(
+        crate::records::dimensions::reference_lanes(&references)
+            .iter()
+            .map(|lane| lane.len())
+            .collect::<Vec<_>>(),
+        [3, 1]
+    );
+    assert_eq!(
+        crate::records::topology::face::prefix_operand_ordinals(&references),
+        Some(vec![0, 0, 0, 1])
+    );
+    prefix[18..22].copy_from_slice(&3u32.to_le_bytes());
+    let uncounted = super::decode_recipe_references(&prefix, 1_000);
+    assert_eq!(
+        uncounted
+            .iter()
+            .map(|reference| reference.design_reference)
+            .collect::<Vec<_>>(),
+        [301, 302, 303, 401]
+    );
+    assert!(uncounted
+        .iter()
+        .all(|reference| reference.operand_offset.is_none()));
+}
+
+#[test]
 fn counted_recipe_operands_keep_every_name_in_one_operand_lane() {
     // Two operands: the first names its face once, the second three times.
     let name = |prefix: &mut Vec<u8>, lead: u32, token: &[u8], reference: u32| {
@@ -748,6 +813,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let frame = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -785,6 +851,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let leading = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         None,
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),

@@ -1177,8 +1177,8 @@ pub(crate) fn retained_control_losses<'a>(
         };
         let mut losses = vec![code.note(format!("Projected {} with {controls} retained in its native records.", feature.id))];
         if let FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { relief, transition, .. }) = feature.evaluation.definition() {
-            if matches!(relief.form, cadmpeg_ir::features::SheetMetalReliefForm::StyleDefault)
-                || matches!(transition.form, cadmpeg_ir::features::SheetMetalTransitionForm::StyleDefault) {
+            if matches!(relief.form, cadmpeg_ir::features::sheet_metal_forms::SheetMetalReliefForm::StyleDefault)
+                || matches!(transition.form, cadmpeg_ir::features::sheet_metal_forms::SheetMetalTransitionForm::StyleDefault) {
                 losses.push(InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(
                     "Projected {} with relief or transition set to StyleDefault; the form definitions remain in the native document style.", feature.id
                 )));

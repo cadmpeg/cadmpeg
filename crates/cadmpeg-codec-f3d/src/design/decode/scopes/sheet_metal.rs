@@ -5,6 +5,7 @@ pub(crate) mod corner_flange;
 
 use super::shared_frames::marked_record_reference;
 use crate::ids::native_stream;
+use crate::layout::base_flange_scope as base_flange;
 use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
 use crate::layout::edge_flange_class325_334_two_sided_per_edge_fixed_operation as edge_flange_325_per_edge;
 use crate::layout::edge_flange_class364_per_edge_width_fixed_operation as edge_flange_364_width;
@@ -42,26 +43,32 @@ pub(super) fn exact_base_flange_operation(
     else {
         return None;
     };
-    if paired_at.checked_sub(start)? != 416
+    if paired_at.checked_sub(start)? != base_flange::LEN
         || View::u32_le_at(bytes, start + 73)? != 1
         || bytes.get(start + 81) != Some(&1)
-        || View::u32_le_at(bytes, start + 82)? != *settings_record_index
+        || View::u32_le_at(bytes, start + base_flange::SETTINGS_RECORD_INDEX)?
+            != *settings_record_index
         || bytes.get(start + 86..start + 92)? != [0; 6]
         || View::u32_le_at(bytes, start + 92)? != 1
         || bytes.get(start + 112) != Some(&1)
-        || View::u32_le_at(bytes, start + 113)? != *thickness_record_index
-        || bytes.get(start + 117..start + 123)? != [0; 6]
+        || View::u32_le_at(bytes, start + base_flange::THICKNESS_RECORD_INDEX)?
+            != *thickness_record_index
+        || bytes.get(start + 117..start + base_flange::THICKNESS_COPY)? != [0; 6]
         || View::u32_le_at(bytes, start + 141)? != 1
         || bytes.get(start + 145) != Some(&1)
-        || View::u32_le_at(bytes, start + 146)? != *profile_group_record_index
+        || View::u32_le_at(bytes, start + base_flange::PROFILE_GROUP_RECORD_INDEX)?
+            != *profile_group_record_index
         || bytes.get(start + 150..start + 156)? != [0; 6]
     {
         return None;
     }
-    let thickness = cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, start + 123)?)?;
+    let thickness = cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(
+        bytes,
+        start + base_flange::THICKNESS_COPY,
+    )?)?;
     Some(DesignBaseFlangeOperation {
         thickness,
-        thickness_offset: u64::try_from(start + 123).ok()?,
+        thickness_offset: u64::try_from(start + base_flange::THICKNESS_COPY).ok()?,
         profile_group_record_index: *profile_group_record_index,
         profile_record_index: *profile_record_index,
         thickness_record_index: *thickness_record_index,
@@ -997,7 +1004,7 @@ fn hem_gap_length_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
@@ -1066,7 +1073,7 @@ fn hem_radius_angle_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
@@ -1131,7 +1138,7 @@ fn hem_gap_length_radius_operation_at(
     }
 
     Some(DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped,
         edge_wrapper_record_index,
         edge_group_record_index: edge_group_record_index.try_into().ok()?,
