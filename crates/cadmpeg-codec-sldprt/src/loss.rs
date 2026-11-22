@@ -325,6 +325,13 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// A construction edit that shapes the solid is written as edited, and the
+    /// output keeps the stored solid, which shows the state before the edit.
+    WriterSolidStaleAfterEdit,
+    /// An edit of the active configuration snapshot that the decoder
+    /// synthesized from the model is not written; the written configuration
+    /// states the model's state.
+    WriterConfigurationSnapshotEditUnwritten,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -513,6 +520,8 @@ impl SldprtLossCode {
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterSolidStaleAfterEdit,
+        Self::WriterConfigurationSnapshotEditUnwritten,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -671,6 +680,10 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterSolidStaleAfterEdit => "writer.solid-stale-after-edit",
+            Self::WriterConfigurationSnapshotEditUnwritten => {
+                "writer.configuration-snapshot-edit-unwritten"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -718,6 +731,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterSolidStaleAfterEdit => Severity::Warning,
+            Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -874,6 +889,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterSolidStaleAfterEdit => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -1328,6 +1345,8 @@ mod tests {
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.solid-stale-after-edit",
+                "writer.configuration-snapshot-edit-unwritten",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
