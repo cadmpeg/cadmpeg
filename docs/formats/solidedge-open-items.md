@@ -31,3 +31,27 @@
 **Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`.
 
 **Need.** A part with a known edge length saved under each option, with the displayed value of that length.
+
+### DR-1015. Feature suppression and rollback
+
+**Question.** Which fields store a feature's suppressed state and the feature-tree rollback position?
+
+**Known.** The feature navigator object lists the features in order (§4.1). In documents without suppressed features and without a rollback, its flag word is `0x08000003` or `0x08800013`.
+
+**Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
+
+### DR-1016. Feature navigator final word
+
+**Question.** What does the final word of the feature navigator object count?
+
+**Known.** For `n` listed features the word is `n` + 1 in most documents, `n` + 2 with a swept protrusion, and `n` with a lofted protrusion or a base tab followed by a flange.
+
+**Need.** Documents that differ in one feature of each kind.
+
+### DR-1017. Group feature kind and feature operands
+
+**Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where does a feature store its profile, extent and direction?
+
+**Known.** A `CLSID_JMGroup` object has a different layout from a `CLSID_JMPart` object after its frame. A `CLSID_JMPart` object stores its function name at the position in §4.2.
+
+**Need.** Mirror and pattern documents that differ in one parameter, and extrude documents that differ only in depth or direction.
