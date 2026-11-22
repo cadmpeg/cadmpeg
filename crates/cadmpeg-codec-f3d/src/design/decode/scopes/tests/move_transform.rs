@@ -888,6 +888,19 @@ fn a_version_three_omitted_matrix_frame_is_an_identity_free_move() {
         .prefix
         .as_ref()
         .is_some_and(|prefix| prefix.matrix_omitted));
+    assert_eq!(
+        decoded.form,
+        crate::records::feature::direct_face::DesignMoveForm::Form5
+    );
+    let notes =
+        crate::design::decode::scopes::direct_face::move_transform_prefix_losses(&scope, &decoded);
+    assert_eq!(
+        notes
+            .iter()
+            .map(|note| note.code)
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed.kind()]
+    );
     assert_eq!(marked_move_loss_of(&bytes, &scope, 3), None);
     assert!(marked_move_loss_of(&bytes, &scope, 2).is_some_and(|loss| loss.contains("128-byte")));
     let mut longer = bytes.clone();
