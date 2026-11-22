@@ -3694,11 +3694,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
 
-**Known.** A public design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection. A fourth design stores a typed-reference profile selection whose chain record is sketchless (`f3d.md` §3.1). Its asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631` is not the asset GUID of the containing Design, and no member of the three archives of its project has it as a document or asset GUID. Its owner text `46396` names no entity suffix of the Design stream, so the owning Sketch belongs to another design, and its primary identities 1817, 1826, 1828, 1833, 1834, 1835, and 1836 match no sketch-curve record of the Design. Four other records of the Design store the same asset GUID followed by GUID `81bef69d-071e-4b80-bf5a-a501ab34f2cf`. Extrude 1 is the first timeline feature, and no Sketch precedes it.
+**Known.** A public design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection. A fourth design stores a typed-reference profile selection whose chain record is sketchless (`f3d.md` §3.1). Its asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631` is not the asset GUID of the containing Design, and no member of the three archives of its project has it as a document or asset GUID. Its owner text `46396` names no entity suffix of the Design stream, so the owning Sketch belongs to another design, and its primary identities 1817, 1826, 1828, 1833, 1834, 1835, and 1836 match no sketch-curve record of the Design. Four other records of the Design store the same asset GUID followed by GUID `81bef69d-071e-4b80-bf5a-a501ab34f2cf`. Extrude 1 is the first timeline feature, and no Sketch precedes it. A further public design stores a compact sketchless profile selection (member 214 of group 204) whose asset GUID is not the containing Design's and whose owner text is a GUID.
 
 **Need.** A stored carrier or a derivation rule for the absent curves, the Sketch that owner 1977 names, and the design that owns a sketchless selection's asset GUID.
 
-**Note.** The selection stays native with `feature.profile-selection-native`.
+**Note.** The selection stays native with `feature.profile-selection-native`. Member 214 of group 204 also reports `feature.extrude-profile-sketch-absent`.
 
 ### DR-670. Carrier state of a Hole on a reconstructed plane
 
@@ -3914,17 +3914,6 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.
 
-### DR-740. Unbound Extrude profile members
-
-**Question.** Which carrier binds an Extrude construction member to its Sketch boundary when its indexed references have no paired loop identity record?
-
-**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. In one public design, group 3229 lists unbound members 3232, 3236, 3240, and 3244. In another, group 204 lists unbound member 214.
-
-**Need.** The relation from the asset-qualified member to a Sketch boundary, with the selected region proved against its Extrude end caps.
-
-**Conflict.** None.
-
-**Note.** These selections retain their native construction groups and `feature.profile-selection-native` losses.
 ### DR-819. Opaque word in a typed one-sided distance Extrude
 
 **Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
