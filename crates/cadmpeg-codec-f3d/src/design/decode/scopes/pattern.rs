@@ -226,6 +226,27 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
+    exact_pattern_direction_frame(
+        bytes,
+        start,
+        paired_at,
+        record_index,
+        selection_record_index,
+        scope_record_index,
+        false,
+    )
+}
+
+fn exact_pattern_direction_frame(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    record_index: u32,
+    selection_record_index: u32,
+    scope_record_index: u32,
+    circular_axis: bool,
+) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::circular_pattern_axis_record as circular;
     use crate::layout::rectangular_pattern_compact_extent_direction_record as compact_extent;
     use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
@@ -237,6 +258,7 @@ fn exact_rectangular_pattern_direction(
     let length = paired_at.checked_sub(start)?;
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
+        (circular::LEN, circular::CONTROL_VALUE) if circular_axis => 0,
         (spacing::LEN, 7 | 10) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
         (compact::LEN, 7 | 8)
         | (compact_extent::LEN, 8 | 10)
@@ -876,6 +898,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         }
         let mut solved_candidates = Vec::new();
         let mut extended_candidates = Vec::new();
+        let mut unpadded_candidates = Vec::new();
         for (record_index, selection_record_index) in scope
             .reference_members()
             .values()
@@ -907,7 +930,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     arguments.4,
                     arguments.5,
                 ) {
-                    (axis, &mut extended_candidates)
+                    let candidates = if paired_at.checked_sub(start)
+                        == Some(crate::layout::circular_pattern_axis_record::LEN)
+                    {
+                        &mut unpadded_candidates
+                    } else {
+                        &mut extended_candidates
+                    };
+                    (axis, candidates)
                 } else {
                     continue;
                 };
@@ -919,6 +949,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 });
             }
         }
+        let extended_candidates = inline_axis_candidates(extended_candidates, unpadded_candidates);
         let mut axis_candidates = inline_axis_candidates(solved_candidates, extended_candidates);
         for record_index in scope.reference_members().values() {
             for (start, paired_at) in records.frames(*record_index) {
@@ -1062,8 +1093,6 @@ struct CircularPatternAxisCandidate {
     separator_flag_offset: Option<usize>,
 }
 
-/// The inline axis candidates of a scope: its 195-byte records, or its
-/// 221-byte frames when it holds no 195-byte record.
 fn inline_axis_candidates(
     solved: Vec<CircularPatternAxisCandidate>,
     extended: Vec<CircularPatternAxisCandidate>,
@@ -1362,8 +1391,6 @@ fn exact_circular_pattern_axis(
     )
 }
 
-/// The 221-byte axis frame, which has the layout of the rectangular-pattern
-/// spacing direction record with selection kind `8`.
 fn exact_extended_circular_pattern_axis(
     bytes: &[u8],
     start: usize,
@@ -1372,18 +1399,24 @@ fn exact_extended_circular_pattern_axis(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignCircularPatternAxis> {
+    use crate::layout::circular_pattern_axis_record as circular;
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
 
-    if paired_at.checked_sub(start) != Some(spacing::LEN) {
-        return None;
+    match paired_at.checked_sub(start)? {
+        circular::LEN
+            if View::u32_le_at(bytes, start + circular::CONTROL)
+                == Some(circular::CONTROL_VALUE) => {}
+        spacing::LEN => {}
+        _ => return None,
     }
-    let record = exact_rectangular_pattern_direction(
+    let record = exact_pattern_direction_frame(
         bytes,
         start,
         paired_at,
         record_index,
         selection_record_index,
         scope_record_index,
+        true,
     )
     .filter(|record| record.selection_kind == 8)?;
     patterns::DesignCircularPatternAxis::inline(
