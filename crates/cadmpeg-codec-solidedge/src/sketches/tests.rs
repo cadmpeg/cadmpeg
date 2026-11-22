@@ -274,3 +274,14 @@ fn constraint_member_is_counted_and_a_keypoint_is_not() {
     assert_eq!(found.len(), 1);
     assert!(found[0].starts_with("2 "), "{found:?}");
 }
+
+#[test]
+fn member_that_names_no_object_is_skipped() {
+    let result = with_members(
+        &XY,
+        &[Member2d::Line([0.0, 0.0, 0.01, 0.0]), Member2d::None],
+    );
+    assert_eq!(result.ir().design.sketch_entities.len(), 1);
+    assert!(messages(&result, "sketch.unread").is_empty());
+    assert!(messages(&result, "sketch.relations-unread").is_empty());
+}

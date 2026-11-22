@@ -54,6 +54,8 @@ const EPS_AXIS_UNIT: f64 = 1e-6;
 const EPS_AXIS_ORTHO: f64 = 1e-6;
 /// Bytes of one `f64`.
 const REAL: usize = 8;
+/// A member identifier that names no object (§5.1).
+const NO_MEMBER: u32 = 0xFFFF_FFFF;
 /// Bytes of one member identifier.
 const WORD: usize = 4;
 
@@ -222,6 +224,9 @@ fn read_profile(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Result<Pro
         unread: 0,
     };
     for member_id in ids {
+        if member_id == NO_MEMBER {
+            continue;
+        }
         match member(cluster, types, member_id) {
             Member::Curve(curve) => profile.curves.push((member_id, curve)),
             Member::Keypoint => {}
