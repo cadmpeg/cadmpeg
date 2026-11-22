@@ -909,19 +909,21 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .map(|bodies| (configuration, bodies))
+            let subset = match configuration.bodies.as_deref() {
+                Some([]) => None,
+                Some(bodies) => Some(body_subset(ir, bodies)),
+                None => Some(Ok(stored_state(ir, configuration)?)),
+            };
+            Some((configuration, subset))
         })
-        .map(|(configuration, bodies)| {
+        .map(|(configuration, subset)| {
             let index = configuration.source_index.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT configuration {} has no assigned source index",
                     configuration.id.as_str()
                 ))
             })?;
-            if bodies.is_empty() {
+            let Some(subset) = subset else {
                 let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
                 payload.extend(parasolid_stream_named(
                     &[],
@@ -929,8 +931,8 @@ fn configuration_partitions(
                     "deltas body",
                 )?);
                 return Ok((format!("Contents/Config-{index}-Partition"), payload));
-            }
-            let subset = body_subset(ir, bodies)?;
+            };
+            let subset = subset?;
             let schema_32001 = subset
                 .geometry
                 .bodies
@@ -968,6 +970,33 @@ pub(super) fn reserve_configuration_index(
             )
         })?;
     }
+}
+
+/// The model with the geometry of the state the design stores for a
+/// configuration that is not active: its evaluation's records, which a
+/// configuration whose state is not current holds in place of `bodies`.
+fn stored_state(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
+) -> Option<CadIr> {
+    let native_ref = configuration.native_ref.as_ref()?;
+    let design = ir
+        .design
+        .configurations
+        .iter()
+        .find(|design| design.native_ref.as_ref() == Some(native_ref))?;
+    let records = ir.design.evaluations.iter().find_map(|evaluation| {
+        let content = evaluation.content.as_ref()?;
+        (evaluation.configuration.as_ref() == Some(&design.id)
+            && content.base == cadmpeg_ir::design::evaluation::StateBase::Empty)
+            .then_some(&content.delta.records)
+    })?;
+    let mut subset = ir.clone();
+    subset.geometry = records.clone();
+    for definition in &mut subset.model.product_definitions {
+        definition.bodies = records.bodies.iter().map(|body| body.id.clone()).collect();
+    }
+    Some(subset)
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {

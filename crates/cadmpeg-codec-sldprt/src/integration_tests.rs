@@ -669,6 +669,8 @@ mod weldment_refusal;
 
 mod partition_sketches;
 
+mod configuration_states;
+
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
     let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]

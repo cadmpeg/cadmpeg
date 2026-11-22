@@ -2343,7 +2343,10 @@ Compact analytic records, `00 11` coedges, `00 12` vertex-uses, and `00 1d` poin
 ### 3.3 Feature-local bodies
 
 `Contents/Config-<N>-Partition` holds the current bodies of configuration
-`N`. `Contents/Config-<N>-StockBodies` holds source bodies for Insert Part
+`N`. The partition of the active configuration holds the document's current
+model. The partition of each other configuration holds that configuration's
+model, in a site namespace of its own (§3.2); its bodies belong to that
+configuration alone. `Contents/Config-<N>-StockBodies` holds source bodies for Insert Part
 and Mirror Part features. The section name supplies the stock-body role.
 Both sections carry partition transmit headers and use independent site
 namespaces. Stock bodies remain derived-feature inputs. Configuration body

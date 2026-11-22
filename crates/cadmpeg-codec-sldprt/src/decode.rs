@@ -36,6 +36,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
 mod retention;
+pub(crate) mod retired_states;
 
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
@@ -182,11 +183,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
-    // A scoped root lists only the bodies of its current states. The bodies
-    // of a configuration that is not active are stated by that
-    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
-    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
-    // Local digests are stamped after the root is complete.
+    // A scoped root lists only the bodies of its current states. A body of a
+    // configuration that is not active and whose state the design does not
+    // state stays in the geometry unlisted, as a scoped CATIA or Rhino root
+    // leaves its own (interim, errata A1). Local digests are stamped after
+    // the root is complete.
     let current = (!decoded.ir.design.scopes.is_empty()).then(|| {
         decoded
             .ir
@@ -700,7 +701,9 @@ pub(crate) fn append_design_losses(
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.bodies.is_none())
+        .filter(|configuration| {
+            configuration.bodies.is_none() && !state_is_stored(ir, configuration)
+        })
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
         report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
@@ -2202,6 +2205,22 @@ pub(crate) fn append_design_losses(
         )));
     }
     Ok(())
+}
+
+/// Whether the design states a v10 configuration's bodies in an evaluation
+/// with content, which holds them in place of `bodies`.
+fn state_is_stored(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
+) -> bool {
+    configuration.native_ref.is_some()
+        && ir.design.configurations.iter().any(|design| {
+            design.native_ref == configuration.native_ref
+                && ir.design.evaluations.iter().any(|evaluation| {
+                    evaluation.configuration.as_ref() == Some(&design.id)
+                        && evaluation.content.is_some()
+                })
+        })
 }
 
 pub(crate) fn configuration_source_needs_update(
@@ -4279,13 +4298,13 @@ fn build_geometry_ir(
     if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
-    stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
             ctx,
             &mut ir,
+            &mut annotations,
+            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
@@ -4300,6 +4319,8 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
+    stamp_configuration_baseline(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4307,15 +4328,27 @@ fn build_geometry_ir(
 }
 
 /// State the v11 design of a part document beside its v10 records, with the
-/// rollback position its stored marks give.
+/// rollback position its stored marks give, and remove from the model what
+/// it says of the records that moved into the states of configurations that
+/// are not active.
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    annotations: &mut Annotations,
+    unknowns: &mut [UnknownRecord],
     part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ctx, ir, part, losses)?;
-    ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
+    let projection = crate::design_v11::project(ctx, ir, part, losses)?;
+    ctx.charge_entities(
+        u64_from_index(projection.added),
+        "admit SLDPRT design records",
+    )?;
+    if projection.retired.is_empty() {
+        return Ok(());
+    }
+    retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
+    stamp_feature_baseline(ctx, ir)
 }
 
 /// The bodies of the active configuration: those of the active Parasolid
@@ -5166,8 +5199,6 @@ fn build_metadata_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
-    stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir
@@ -5179,6 +5210,8 @@ fn build_metadata_ir(
         project_design(
             ctx,
             &mut ir,
+            &mut annotations,
+            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
@@ -5193,6 +5226,8 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
+    stamp_configuration_baseline(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir)?;
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
