@@ -8217,6 +8217,22 @@ pub(crate) mod assembly_typed_rigid_group_matrix_locator {
     pub(crate) const ZERO_TAIL: usize = 307;
 }
 
+/// Byte offsets for the `circular_pattern_axis_record` record.
+///
+/// Spec §Assembly operands. Record length 220 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220.
+/// ```
+pub(crate) mod circular_pattern_axis_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 220;
+    /// Offset of `control` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const CONTROL: usize = 89;
+    /// Stated value of `control` (`u32`). Spec §Assembly operands.
+    pub(crate) const CONTROL_VALUE: u32 = 0x0000_0007;
+}
+
 /// Byte offsets for the `rectangular_pattern_direction_record` record.
 ///
 /// Spec §Assembly operands. Record length 220 B.
@@ -11352,6 +11368,14 @@ pub(crate) mod move_marker_one_transform_prologue {
 pub(crate) mod move_transform_omitted_matrix_frame_126 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 126;
+}
+
+/// Byte offsets for the `move_transform_omitted_matrix_frame_128` record.
+///
+/// Spec §3.1. Record length 128 B.
+pub(crate) mod move_transform_omitted_matrix_frame_128 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 128;
 }
 
 /// Byte offsets for the `rigid_transform_leading_prefix` record.

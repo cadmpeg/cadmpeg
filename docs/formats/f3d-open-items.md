@@ -1498,11 +1498,11 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-306. Marked Move transform records outside the rigid-transform rules
 
-**Question.** What do the leading scalar, nullable reference slots, unsigned prefix codes other than the form-0 `Move` code words `0, 1`, source forms four and six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move`, `Modify`, or `MoveFace` scope selects store when its class type is not the rigid-transform type, its frame is not a length of its type version, or its form word is not the form word of its frame length, and what frame does a version-3 record with an omitted matrix have?
+**Question.** What do the leading scalar, nullable reference slots, unsigned prefix codes other than the form-0 `Move` code words `0, 1`, source forms four and six, and omitted-matrix marker of a rigid-transform record control, and what does a transform record that the marked reference of a `Move`, `Modify`, or `MoveFace` scope selects store when its class type is not the rigid-transform type, its frame is not a length of its type version, or its form word is not the form word of its frame length?
 
-**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each frame length of type versions 2 and 3, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record with a finite leading scalar, six nullable reference slots, two unsigned code words, and source form `0`, `1`, `2`, `4`, `5`, or `6`. Zero leading scalar and first two null slots reduce this prefix to the four-slot form. `Move` and `Modify` scopes record `feature.move-transform-assumed` with each fixed-frame rule that the record breaks, and `MoveFace` scopes with each frame-length or form-word rule. A nonzero leading scalar, present leading references, partially populated remaining reference run, or nonzero code words other than the form-0 `Move` code words `0, 1` of `f3d.md` §3.1 project with `feature.move-transform-prefix-assumed`. Forms four and six project with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the scalar, references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. Form four, and form five with zero scalar, null references and zero codes, admit identity from a 77- or 78-byte tail with `feature.move-transform-identity-assumed`.
+**Known.** `f3d.md` §3.1 "`Move` scopes with a fixed transform frame" gives the rigid-transform type, the form word of each frame length of type versions 2 and 3, and the marked reference that selects the transform record. A marked reference selects a 256-byte record with form word `5`, the zero run, and a rigid matrix at offset 48. The decoder keeps the matrix of each marked record with a finite leading scalar, six nullable reference slots, two unsigned code words, and source form `0`, `1`, `2`, `4`, `5`, or `6`. Zero leading scalar and first two null slots reduce this prefix to the four-slot form. `Move` and `Modify` scopes record `feature.move-transform-assumed` with each fixed-frame rule that the record breaks, and `MoveFace` scopes with each frame-length or form-word rule. A nonzero leading scalar, present leading references, partially populated remaining reference run, or nonzero code words other than the form-0 `Move` code words `0, 1` of `f3d.md` §3.1 project with `feature.move-transform-prefix-assumed`. Forms four and six project with `feature.move-transform-mode-assumed`. These fields are assumed to leave the stored matrix motion unchanged. The native operation retains the scalar, references, inline type GUIDs, code words, and matrix-omission flag. A one matrix-presence marker omits 128 matrix bytes and preserves the common tail. Form four, and form five with zero scalar, null references and zero codes, admit identity from a 77-, 78-, or 80-byte tail with `feature.move-transform-identity-assumed`; §3.1 gives the 128-byte version-3 omitted-matrix frame of the 80-byte tail.
 
-**Need.** `Move` saves that set a nonzero leading scalar or a code word other than the form-0 `0, 1`, and a version-3 `Move` record with an omitted matrix, each recording the frame length and the bytes from offset 11 to the matrix.
+**Need.** `Move` saves that set a nonzero leading scalar or a code word other than the form-0 `0, 1`, each recording the frame length and the bytes from offset 11 to the matrix.
 
 **Conflict.** None.
 
@@ -2776,6 +2776,16 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
+### DR-1030. Circular-pattern spacing control
+
+**Question.** Which bytes store the equal-spacing control of a circular pattern of features? Which bytes store the symmetric control in legacy circular-pattern records whose payload does not read?
+
+**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the Compute option and the symmetric byte of the circular payload. The five patterns with 220-byte axis frames in Parametric_20t_GT2_Pulley, LDO_153030, and Parametric_extrusion_generator retain their legacy distribution controls in native data. Their neutral definitions assume equal spacing: a full turn uses total angle divided by count; a partial turn uses total angle divided by count minus one and places the last instance at the total angle. Each circular projection reports `feature.circular-pattern-controls-assumed`, which names equal spacing and the unread spacing control. A partial-turn projection with an unread symmetric byte also reports `feature.circular-pattern-distribution-assumed` for its one-sided distribution.
+
+**Need.** Saves with the equal-spacing control changed separately from the Compute option and the symmetric byte, over three instances on a partial turn with asymmetric seed geometry, with the stored result bodies. Saves of the legacy patterns with the symmetric control changed.
+
+**Note.** The raw legacy distribution controls stay in the native payload.
+
 ### DR-818. Targets of rectangular-pattern body references
 
 **Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
@@ -2982,11 +2992,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-326. Extrude start face on another component's body
 
-**Question.** Which identity in a role-`0x0000001100000000` direct start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?
+**Question.** Which identity in a role-`0x0000001100000000` start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?
 
 **Known.** The group uses the 143-byte direct construction-group frame of `f3d.md` §3.1. Its sole member is a bounded-face recipe operand, and its two auxiliary records each carry one u64 entity identity. The recipe's references resolve no face in the input state of the Extrude's own history. The two auxiliary identities also occur in a second history, as a surface and a pcurve. The surface carries one planar face, and the coedge of the pcurve lies on a different face. In the Extrude's own history, both identities occur as coedges, first inserted after the Extrude's state. Each auxiliary identity occurs in both histories. No single history holds both identities on one face. Both auxiliary records use the compact placement form with variant byte `1`; neither carries a rigid transform. The decoder keeps the start face native.
 
-**Need.** Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
+In the public `00278-Moons__MS17HD6P420I-04.f3d`, start groups `2506`, `4199`, and `11991` have 144-byte counted frames and one bounded-face member each. Their owning scopes `2492`, `4085`, and `11833` each name preceding state `2`. Their recipes have 14, 72, and 12 prefix references respectively; every reference has an empty face lane in that state. Their ordered auxiliary identity pairs are `(2486, 2249)`, `(4079, 2486)`, and `(9236, 2249)`. Each auxiliary path has compact placement with variant `1`.
+
+The Moons Design type table registers `2249`, `2486`, `4079`, and `9236` as entities of Fusion type `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version `4`. The 72-byte component-context record in `f3d.md` §3.1, "Records the timeline context names," has this type and version.
+
+Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The first two programs each have five one-clause nodes. The third program has twelve two-clause nodes. DR-335 covers the one-clause binding.
+
+**Need.** The join from the auxiliary Design records to the source component and its selected ASM state. Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
 
 **Conflict.** `f3d.md` §3.1 names the sole member of a 143-byte direct construction-group frame a persistent entity-selection operand. In this group it is a bounded-face recipe operand, and the decoder reads it as a face operand.
 
@@ -2996,9 +3012,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Does the `u8 1` that a 130-byte two-wrapper circular-pattern axis record stores between its references to the axis-record indexes plus two and plus one encode the direction of travel? Which topology does the persistent identity of its wrappers name?
 
-**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder projects a pattern whose axis comes from the 130-byte form only when its total angle is a full turn, where the instance set does not depend on the direction of travel. In a 130-byte record whose pattern repeats an Extrude twenty times over a full turn, both wrappers carry the same persistent identity. No ASM history topology holds that identity. The design type table lists it among the entity identities of the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. It is one less than the record index of the seed Extrude's scope. The axis stays unresolved.
+**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder does not yet resolve the historical axis edge of the 130-byte form, so a pattern whose axis comes from that form keeps its native transform. A full turn would project once the edge resolves, because its instance set is independent of travel direction. Parametric_20t_GT2_Pulley C-Pattern 10 has two wrappers whose persistent identity is `115663`. The design type table lists this identity under the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. The seed Extrude 26 scope has record index `115664`. The wrapper identity stays native. A 220-byte inline carrier supplies the pattern axis independently.
 
-**Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history.
+**Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history. A resolution of the wrappers' persistent identity to the historical axis edge would supply the resolved axis that the circular-pattern projection takes for this form.
 
 **Conflict.** None.
 
@@ -3054,11 +3070,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-338. Extended circular-pattern axis controls and selection runs
 
-**Question.** How do the controls and selection runs of the 220-, 221-, and 241-byte circular-pattern axis frames determine the directed axis and its selected entity?
+**Question.** Which entities do extended circular-pattern axis selection runs select, and how do the 216-, 220-, and 241-byte forms determine their directed axes?
 
-**Known.** The decoder admits the 195-byte inline axis frame, the 221-byte frame with selection kind `8` as an inline axis, and the 118-, 129-, and 130-byte identity forms. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Three body instances over a quarter turn about a 221-byte frame with a Z displacement lie at 0, 45, and 90 degrees counterclockwise about that displacement. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn.
+**Known.** The decoder admits the 195-byte inline axis frame, the 220- and 221-byte frames with selection kind `8` as inline axes, and the 118-, 129-, and 130-byte identity forms. It retains the 195-byte and 221-byte precedence and uses a 220-byte frame when those forms are absent. Parametric_20t_GT2_Pulley C-Pattern 10, C-Pattern 12, and C-Pattern 13 store 220-byte frames with control `7`, origin `(0, 0.175, 0)` cm and displacement `(0, 2.075, 0)` cm. Their owner counts are 20, 2, and 2; their total angles are one turn, a quarter turn, and a quarter turn. The two screw bodies of C-Pattern 13 have measured centroids approximately `(4.3174141013582314, 14.75, 0)` mm and `(0, 14.75, -4.3174141013582314)` mm, a positive quarter turn about the stored axis. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Three body instances over a quarter turn about a 221-byte frame with a Z displacement lie at 0, 45, and 90 degrees counterclockwise about that displacement. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn. Voron_Construct_Runice_GT2_20T_B5_9mm C-Pattern 1 stores a 216-byte frame at byte 537511, record 4197, with control `7` at offset 89 and three consecutive marked references at offsets 97, 108, and 119. Its count is two and its total angle is a quarter turn.
 
-**Need.** Bind each extended selection run to its selected entity. Compare the controls for three instances over a partial turn in each travel direction, with asymmetric seeds, for each frame form. Bind each instance to its saved BREP geometry.
+**Need.** Bind each extended selection run to its selected entity. Compare the controls of the 216-, 220-, and 241-byte forms for three instances over a partial turn in each travel direction, with asymmetric seeds. Bind each instance to its saved BREP geometry.
 
 **Conflict.** None.
 
@@ -3189,6 +3205,21 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Question.** Which stored relations bind an `Extrude` start or termination recipe when its node run covers an earlier boundary or a prefix operand has an empty face lane in the preceding topology?
 
 **Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each, including a node with one side clause, which binds a closed boundary edge (`f3d.md` §3.1). Their remaining candidates include several preceding faces.
+
+The public `00550-Mini_AfterSherpa_Orbiter_v2_X_Carriage_MGN9C.f3d` has start group `1839` with bounded-face member `1842`. Its recipe has two one-clause nodes and three prefix operands. The middle operand names face `2675` through positive Design reference `7566` and token `6`. The first and third operands have negative Design references and empty face lanes. The selected-face candidate and historical support lanes are empty.
+
+The public `00622-Voron_V1.8_Master_Model_v148.f3z` has six further native starts. Each start group has one bounded-face member and a 123-byte primary frame. These groups have zero auxiliary path records. The counts below refer to each member in its scope's preceding state.
+
+| Scope | Extrude ordinal | Preceding state | Nodes | One-clause nodes | Preceding candidates | Historical support contexts |
+| --- | --- | --- | --- | --- | --- | --- |
+| `1908` | 5 | `8979` | 7 | 1 | 12 | 15 |
+| `22151` | 26 | `9019` | 20 | 1 | 152 | 152 |
+| `22201` | 27 | `9020` | 9 | 1 | 104 | 104 |
+| `22256` | 28 | `9021` | 13 | 1 | 43 | 43 |
+| `7449` | 17 | `340` | 33 | 2 | 2 | 2 |
+| `111282` | 22 | `4015` | 62 | 5 | 0 | 0 |
+
+Scope `22256` has one empty prefix-face lane. Scope `111282` has 63 prefix operands, each with a nonempty face lane. Its selected-face candidate lane is empty. The one-clause form occurs in three independent public designs: Moons, Mini, and Voron.
 
 **Need.** The mapping of a saved boundary edge to a chain of preceding edges, and the binding of empty prefix-face lanes (DR-170). Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
 

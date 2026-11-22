@@ -1435,7 +1435,7 @@ fn owned_rolling_ball_uses_the_terminal_transverse_gauge() {
     tail.extend([0, 0]);
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
-        Some(2.0)
+        Some((2.0, None))
     );
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
@@ -1449,7 +1449,7 @@ fn owned_rolling_ball_uses_the_terminal_transverse_gauge() {
     tail[59] = 1;
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
-        Some(2.0)
+        Some((2.0, None))
     );
 }
 
@@ -1605,4 +1605,58 @@ fn owned_surface_tail_rejects_descending_u_until_chart_transfer() {
     assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
     tail[layout::CONTROLS + 1] = 0x05;
     assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
+}
+
+#[test]
+fn owned_rolling_ball_doubled_span_retains_the_reference_gauge() {
+    let bytes = a5_freeform_curve_stream();
+    let mut tail = bytes[bytes.len() - 79..].to_vec();
+    tail[24..32].copy_from_slice(&le_f64(4.0));
+    tail[49..57].copy_from_slice(&le_f64(4.0));
+    tail[57] = 0x01;
+    tail.extend(le_f64(2.0));
+    tail.extend([0, 0]);
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some((2.0, Some(4.0)))
+    );
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
+        None
+    );
+    tail[79..87].copy_from_slice(&le_f64(4.0));
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        None
+    );
+}
+
+#[test]
+fn owned_rolling_ball_scalar_map_uses_the_terminal_span() {
+    let bytes = a5_freeform_curve_stream();
+    let original_tail = &bytes[bytes.len() - 79..];
+    let mut tail = original_tail[..57].to_vec();
+    tail[24..32].copy_from_slice(&le_f64(1.0));
+    tail[49..57].copy_from_slice(&le_f64(1.0));
+    tail.extend([0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        tail.extend(le_f64(value));
+    }
+    tail.extend(0u32.to_le_bytes());
+    tail.extend_from_slice(&original_tail[63..]);
+    tail.extend(le_f64(1.0));
+    tail.extend([0, 0]);
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some((1.0, Some(1.0)))
+    );
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
+        None
+    );
+    *tail.last_mut().expect("terminal") = 1;
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        None
+    );
 }
