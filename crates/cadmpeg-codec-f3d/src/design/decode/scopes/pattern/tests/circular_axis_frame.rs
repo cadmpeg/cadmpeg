@@ -117,6 +117,11 @@ fn circular_axis_control_seven_reads_the_unpadded_direction_frame() {
 /// symmetric byte, `references` marked references, two entries, and three
 /// instance references.
 fn circular_payload(symmetric: u8, references: u32) -> Vec<u8> {
+    circular_payload_with_keys(symmetric, references, &[])
+}
+
+/// `circular_payload` whose suffix stores the count of `keys` and `keys`.
+fn circular_payload_with_keys(symmetric: u8, references: u32, keys: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"355", 77);
     bytes.extend_from_slice(&[0; 10]);
@@ -145,7 +150,10 @@ fn circular_payload(symmetric: u8, references: u32) -> Vec<u8> {
     for index in [50, 10, 100] {
         push_marked_reference(&mut bytes, index);
     }
-    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&u32::try_from(keys.len()).unwrap().to_le_bytes());
+    for key in keys {
+        bytes.extend_from_slice(&key.to_le_bytes());
+    }
     indexed_header(&mut bytes, *b"307", 99);
     bytes
 }
@@ -173,6 +181,7 @@ fn circular_pattern_payload_supplies_the_symmetric_byte() {
             owners,
             count,
         )
+        .map(|(symmetric, _)| symmetric)
     };
     let one_sided = parse(&circular_payload(0, 0), [50, 52, 20], 3).expect("one-sided payload");
     assert_eq!((one_sided.value, one_sided.offset), (false, 21));
@@ -184,8 +193,18 @@ fn circular_pattern_payload_supplies_the_symmetric_byte() {
     assert!(parse(&bytes, [50, 53, 20], 3).is_none());
     assert!(parse(&bytes, [50, 52, 21], 3).is_none());
     assert!(parse(&bytes, [50, 52, 20], 4).is_none());
-    // The symmetric byte, the reference count, the zero run, the fixed word,
-    // the sentinel, the fixed byte, the entry count, and the scope reference.
+    // The Compute option at offset 56: Optimized, Identical, or Adjust.
+    for compute in 0..=2 {
+        let mut bytes = bytes.clone();
+        bytes[56] = compute;
+        assert!(
+            parse(&bytes, [50, 52, 20], 3).is_some(),
+            "Compute {compute}"
+        );
+    }
+    // The symmetric byte, the reference count, the zero run, a Compute option
+    // of 3, the sentinel, the fixed byte, the entry count, and the scope
+    // reference.
     for (offset, value) in [
         (21, 2),
         (44, 1),
@@ -206,4 +225,45 @@ fn circular_pattern_payload_supplies_the_symmetric_byte() {
     let mut ambiguous = bytes.clone();
     ambiguous.extend_from_slice(&bytes);
     assert!(parse(&ambiguous, [50, 52, 20], 3).is_none());
+}
+
+#[test]
+fn circular_pattern_payload_reads_its_suppressed_instance_keys() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::CPattern,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![100, 20, 23]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let parse = |bytes: &[u8]| {
+        super::super::exact_circular_pattern_symmetric(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            &scope,
+            [50, 52, 20],
+            3,
+        )
+        .map(|(_, suppressed)| suppressed)
+    };
+    let none = parse(&circular_payload(0, 0)).expect("no suppressed instance");
+    assert!(none.value.is_empty());
+    // Instance 2 of three has key 3.
+    let bytes = circular_payload_with_keys(0, 0, &[3]);
+    let one = parse(&bytes).expect("one suppressed instance");
+    assert_eq!(one.value, [3]);
+    assert_eq!(one.offset, u64::try_from(bytes.len() - 11 - 8).unwrap());
+    // The seed, an instance past the count, a repeated key, and key zero.
+    for keys in [&[1][..], &[4], &[2, 2], &[0]] {
+        assert!(
+            parse(&circular_payload_with_keys(0, 0, keys)).is_none(),
+            "{keys:?}"
+        );
+    }
 }

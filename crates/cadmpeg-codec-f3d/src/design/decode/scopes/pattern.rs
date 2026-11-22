@@ -323,15 +323,16 @@ fn exact_pattern_direction_frame(
     direction.direction().is_some().then_some(direction)
 }
 
-/// The record index, start, and end of each pattern payload linked to
-/// `scope`, its owners, and the U-direction record.
+/// The record index, start, end, and suffix offset of each pattern payload
+/// linked to `scope`, its owners, and the U-direction record, when the scope
+/// stores one.
 fn rectangular_pattern_payload_frames(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
-    u_direction: u32,
-) -> Option<Vec<(u32, usize, usize)>> {
+    u_direction: Option<u32>,
+) -> Option<Vec<(u32, usize, usize, usize)>> {
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
 
@@ -353,9 +354,9 @@ fn rectangular_pattern_payload_frames(
                     (prefix::U_DISTANCE, owners[2]),
                     (prefix::V_DISTANCE, owners[3]),
                     (prefix::V_COUNT_REPEAT, owners[1]),
-                    (prefix::U_DIRECTION, u_direction),
                 ]
                 .into_iter()
+                .chain(u_direction.map(|index| (prefix::U_DIRECTION, index)))
                 .any(|(offset, index)| {
                     marked_record_reference(bytes, start + offset) != Some(index)
                 })
@@ -363,22 +364,36 @@ fn rectangular_pattern_payload_frames(
                 continue;
             }
             let end = next_indexed_record_offset(bytes, start + prefix::LEN)?;
-            if end.checked_sub(start)? < prefix::LEN + suffix::LEN {
+            let Some(length) = end.checked_sub(start) else {
                 continue;
+            };
+            let longest = u64::try_from(length / 4)
+                .ok()?
+                .min(u64::from(construction.u_count()) * u64::from(construction.v_count()));
+            let tails = (0..=longest).filter_map(|suppressed| {
+                let suppressed = u32::try_from(suppressed).ok()?;
+                let keys = usize::try_from(suppressed).ok()?.checked_mul(4)?;
+                let tail = end.checked_sub(suffix::LEN.checked_add(keys)?)?;
+                (tail >= start + prefix::LEN
+                    && View::u32_le_at(bytes, tail + suffix::SUPPRESSED_COUNT) == Some(suppressed))
+                .then_some(tail)
+            });
+            for tail in tails {
+                let Some(seed_group) = marked_record_reference(bytes, tail + suffix::SEED_GROUP)
+                else {
+                    continue;
+                };
+                if marked_record_reference(bytes, tail + suffix::U_COUNT) == Some(owners[0])
+                    && marked_record_reference(bytes, tail + suffix::SCOPE)
+                        == Some(scope.record_index)
+                    && scope
+                        .reference_members()
+                        .values()
+                        .any(|index| *index == seed_group)
+                {
+                    frames.push((record_index, start, end, tail));
+                }
             }
-            let tail = end - suffix::LEN;
-            let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
-            if marked_record_reference(bytes, tail + suffix::U_COUNT) != Some(owners[0])
-                || marked_record_reference(bytes, tail + suffix::SCOPE) != Some(scope.record_index)
-                || !scope
-                    .reference_members()
-                    .values()
-                    .any(|index| *index == seed_group)
-                || bytes.get(tail + suffix::ZERO_TAIL..end) != Some(&[0; 4])
-            {
-                continue;
-            }
-            frames.push((record_index, start, end));
         }
     }
     Some(frames)
@@ -400,12 +415,12 @@ fn exact_rectangular_pattern_secondary_direction(
         return None;
     }
     let mut found = None;
-    for (_, start, _) in rectangular_pattern_payload_frames(
+    for (_, start, _, _) in rectangular_pattern_payload_frames(
         bytes,
         records,
         scope,
         construction,
-        direction.record_index,
+        Some(direction.record_index),
     )? {
         let Some(value) = finite_reals_at::<3>(bytes, start + prefix::V_DIRECTION) else {
             continue;
@@ -444,17 +459,27 @@ fn exact_rectangular_pattern_distribution(
     /// Bytes a four-byte zero run after one body reference moves the fixed fields back.
     const FOUR_ZERO_SHIFT: usize = 4;
 
-    let u_direction = directions.first()?.record_index;
+    // With direction one at count one, the block names the direction-two record.
+    let [first, ..] = directions else {
+        return None;
+    };
+    let v_direction =
+        (directions.len() == 1 && construction.u_count() == 1 && construction.v_count() > 1)
+            .then_some(first.record_index);
+    let u_direction = v_direction.is_none().then_some(first.record_index);
     let frames =
         rectangular_pattern_payload_frames(bytes, records, scope, construction, u_direction)?;
-    let [(record_index, start, end)] = frames.as_slice() else {
+    let [(record_index, start, end, tail)] = frames.as_slice() else {
         return None;
     };
     let after_prefix = start + prefix::LEN;
     let head = match bytes.get(after_prefix)? {
-        0 => after_prefix + 1,
+        0 if v_direction.is_none() => after_prefix + 1,
         1 => {
-            marked_record_reference(bytes, after_prefix)?;
+            let named = marked_record_reference(bytes, after_prefix)?;
+            if v_direction.is_some_and(|v_direction| v_direction != named) {
+                return None;
+            }
             after_prefix + MARKED_REFERENCE_LEN
         }
         _ => return None,
@@ -515,7 +540,28 @@ fn exact_rectangular_pattern_distribution(
         .ok()?
         .checked_mul(MARKED_REFERENCE_LEN)?
         .checked_add(instance_count_at + 4)?;
-    if suffix_at.checked_add(suffix::LEN)? != *end {
+    if suffix_at != *tail {
+        return None;
+    }
+    let suppressed_at = tail + suffix::SUPPRESSED_COUNT;
+    let keys_at = suppressed_at + 4;
+    let suppressed_count = bounded_len(
+        u64::from(View::u32_le_at(bytes, suppressed_at)?),
+        4,
+        end.checked_sub(keys_at)?,
+    )?;
+    let suppressed = (0..suppressed_count)
+        .map(|index| View::u32_le_at(bytes, keys_at + index * 4))
+        .collect::<Option<Vec<u32>>>()?;
+    let positions = suppressed
+        .iter()
+        .map(|key| patterns::suppressed_instance_position(*key))
+        .collect::<Option<std::collections::BTreeSet<_>>>()?;
+    if positions.len() != suppressed.len()
+        || positions.iter().any(|&[u, v]| {
+            [u, v] == [0, 0] || u >= construction.u_count() || v >= construction.v_count()
+        })
+    {
         return None;
     }
     let flag = |offset: usize| {
@@ -546,6 +592,10 @@ fn exact_rectangular_pattern_distribution(
             offset: u64::try_from(head + block::BODY_COUNT).ok()?,
         },
         untyped_body_references,
+        suppressed: crate::records::identity::Located {
+            value: suppressed,
+            offset: u64::try_from(suppressed_at).ok()?,
+        },
     })
 }
 
@@ -964,15 +1014,17 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
             return None;
         };
-        let symmetric = exact_circular_pattern_symmetric(
+        let (symmetric, suppressed) = exact_circular_pattern_symmetric(
             bytes,
             records,
             scope,
             [*count_record_index, *angle_record_index, axis_record_index],
             *count,
-        );
+        )
+        .unzip();
         Some(Ok(DesignCircularPatternConstruction {
             symmetric,
+            suppressed,
             count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
@@ -1333,21 +1385,28 @@ fn exact_extended_circular_pattern_axis(
     )
 }
 
-/// The symmetric byte of the one pattern payload that names the count owner,
-/// the total-angle owner, and the axis record of `scope`. The payload reads
-/// only when its reference, entry, and instance runs end at the suffix.
+/// The symmetric byte and the suppressed-instance keys of the one pattern
+/// payload that names the count owner, the total-angle owner, and the axis
+/// record of `scope`. The payload reads only when its reference, entry, and
+/// instance runs end at the suffix, and each key is distinct and names an
+/// instance other than the seed.
 fn exact_circular_pattern_symmetric(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     [count_owner, angle_owner, axis]: [u32; 3],
     count: u32,
-) -> Option<crate::records::identity::Located<bool>> {
+) -> Option<(
+    crate::records::identity::Located<bool>,
+    crate::records::identity::Located<Vec<u32>>,
+)> {
     use crate::layout::circular_pattern_payload_distribution as block;
     use crate::layout::circular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
     const ENTRY_LEN: usize = 16;
     const MARKED_REFERENCE_LEN: usize = 11;
+    /// Largest Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    const LAST_COMPUTE_OPTION: u32 = 2;
 
     let mut found = None;
     for (_, offsets) in records.records() {
@@ -1369,8 +1428,9 @@ fn exact_circular_pattern_symmetric(
                 let at = references
                     .checked_mul(MARKED_REFERENCE_LEN)?
                     .checked_add(start + prefix::LEN + 4)?;
-                if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 8])
-                    || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+                if bytes.get(at + block::ZERO_RUN..at + block::COMPUTE_OPTION) != Some(&[0; 8])
+                    || View::u32_le_at(bytes, at + block::COMPUTE_OPTION)
+                        .is_none_or(|option| option > LAST_COMPUTE_OPTION)
                     || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
                     || bytes.get(at + block::FIXED_ONE) != Some(&block::FIXED_ONE_VALUE)
                 {
@@ -1388,7 +1448,26 @@ fn exact_circular_pattern_symmetric(
                     .ok()?
                     .checked_mul(MARKED_REFERENCE_LEN)?
                     .checked_add(instance_count_at + 4)?;
-                let end = tail.checked_add(suffix::LEN)?;
+                let suppressed_at = tail + suffix::SUPPRESSED_COUNT;
+                let keys_at = suppressed_at + 4;
+                let suppressed_count = bounded_len(
+                    u64::from(View::u32_le_at(bytes, suppressed_at)?),
+                    4,
+                    bytes.len().checked_sub(keys_at)?,
+                )?;
+                let suppressed = (0..suppressed_count)
+                    .map(|index| View::u32_le_at(bytes, keys_at + index * 4))
+                    .collect::<Option<Vec<_>>>()?;
+                if suppressed
+                    .iter()
+                    .enumerate()
+                    .any(|(at, key)| *key < 2 || *key > count || suppressed[..at].contains(key))
+                {
+                    return None;
+                }
+                let end = suffix::LEN
+                    .checked_add(suppressed.len().checked_mul(4)?)?
+                    .checked_add(tail)?;
                 let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
                 (marked_record_reference(bytes, tail + suffix::U_COUNT) == Some(count_owner)
                     && marked_record_reference(bytes, tail + suffix::SCOPE)
@@ -1397,17 +1476,22 @@ fn exact_circular_pattern_symmetric(
                         .reference_members()
                         .values()
                         .any(|index| *index == seed_group)
-                    && bytes.get(tail + suffix::ZERO_TAIL..end) == Some(&[0; 4])
                     && next_indexed_record_offset(bytes, start + prefix::LEN) == Some(end))
-                .then_some(())
+                .then_some(crate::records::identity::Located {
+                    value: suppressed,
+                    offset: u64::try_from(suppressed_at).ok()?,
+                })
             })();
-            if parsed.is_none() {
+            let Some(suppressed) = parsed else {
                 continue;
-            }
-            let candidate = crate::records::identity::Located {
-                value: symmetric,
-                offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
             };
+            let candidate = (
+                crate::records::identity::Located {
+                    value: symmetric,
+                    offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
+                },
+                suppressed,
+            );
             if found.replace(candidate).is_some() {
                 return None;
             }

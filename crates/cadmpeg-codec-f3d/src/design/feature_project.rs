@@ -96,6 +96,7 @@ mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
 mod thread_companions;
+mod thread_detail;
 mod unstitch;
 mod work_axes;
 
@@ -838,6 +839,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Thread) => {
                     let resolved = scope.thread_construction().and_then(|construction| {
+                        projection_losses.push(thread_detail::loss(&scope.id, construction));
                         thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
                             .map(|size| (construction, size))
                     });

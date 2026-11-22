@@ -55,38 +55,82 @@ pub(super) fn project_circular_pattern(
         losses,
     );
     let axis_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)?;
-    let axis_dir = cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?;
-    let pattern = PatternKind::new(PatternTransform::Circular {
-        axis_origin,
-        axis_dir,
-        angle: construction.angle,
-        count: construction.count.get(),
-    })
-    .ok()?;
-    let distribution = match construction.symmetric {
-        Some(_) => format!(
-            "retains distribution control {} in its native payload",
-            crate::layout::circular_pattern_payload_distribution::FIXED_TWO_VALUE,
-        ),
-        None => "is read with one-sided distribution".to_owned(),
+    let suppressed = construction
+        .suppressed
+        .as_ref()
+        .map_or(&[][..], |keys| keys.value.as_slice());
+    let one_sided = construction
+        .symmetric
+        .is_some_and(|symmetric| !symmetric.value);
+    let pattern = if suppressed.is_empty()
+        || !one_sided
+        || construction.axis_separator_flag_offset.is_some()
+    {
+        if !suppressed.is_empty() {
+            let reason = if construction.axis_separator_flag_offset.is_some() {
+                "the 130-byte axis record leaves the direction of travel unread"
+            } else {
+                "the instance order of a symmetric pattern is unread"
+            };
+            losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternSuppressionNotTransferred.note(
+                    format!(
+                        "CircularPattern scope {} keeps its suppressed instances {suppressed:?}: {reason}.",
+                        scope.id
+                    ),
+                ),
+            );
+        }
+        PatternKind::new(PatternTransform::Circular {
+            axis_origin,
+            axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::new(axis_dir)?,
+            angle: construction.angle,
+            count: construction.count.get(),
+        })
+        .ok()?
+    } else {
+        let count = construction.count.get();
+        let full_turn = (construction.angle.get() - std::f64::consts::TAU).abs()
+            <= EPS_CIRCULAR_PATTERN_FULL_TURN;
+        let step = construction.angle.get()
+            / f64::from(if full_turn {
+                count
+            } else {
+                count.checked_sub(1)?
+            });
+        let angles = (0..count)
+            .filter(|instance| !suppressed.contains(&(instance + 1)))
+            .map(|instance| cadmpeg_ir::scalar::Angle::new(step * f64::from(instance)))
+            .collect::<Option<Vec<_>>>()?;
+        PatternKind::new(PatternTransform::CircularAngles {
+            axis_origin,
+            axis_dir: cadmpeg_ir::units::UnitVector3::normalized(axis_dir)?,
+            angles,
+        })
+        .ok()?
     };
     losses.push(
         crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.note(format!(
-            "CircularPattern scope {} is read with equal spacing; it {}; its spacing and Compute controls remain unread (DR-642).",
-            scope.id, distribution,
+            "CircularPattern scope {} is read with equal spacing; its spacing control remains unread (DR-1030).",
+            scope.id,
         )),
     );
-    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
-        && construction
-            .symmetric
-            .is_some_and(|symmetric| symmetric.value)
-    {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
-                "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
-                scope.id
-            )),
-        );
+    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
+        match construction.symmetric.map(|symmetric| symmetric.value) {
+            Some(true) => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
+                    "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
+                    scope.id
+                )),
+            ),
+            Some(false) => {}
+            None => losses.push(
+                crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.note(format!(
+                    "CircularPattern scope {} is read as one-sided: its partial turn has no readable payload symmetric byte.",
+                    scope.id
+                )),
+            ),
+        }
     }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
@@ -345,7 +389,7 @@ pub(super) fn project_rectangular_pattern_scalars(
         spacing,
         count,
         second,
-        omitted_instances: Vec::new(),
+        omitted_instances: construction.omitted_grid_positions()?,
         symmetric,
     })
     .ok()?;

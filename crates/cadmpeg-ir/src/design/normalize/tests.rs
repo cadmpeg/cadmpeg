@@ -309,6 +309,7 @@ fn document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::new(),
     });
     design.containers.push(Container::Ordered {
         id: id("container", "timeline"),
@@ -990,6 +991,7 @@ fn placed() -> CadIr {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::new(),
         });
     }
     for key in ["base", "large"] {
@@ -1070,11 +1072,19 @@ fn step(key: &str, configuration: Option<ConfigurationRef>) -> PathStep {
 }
 
 /// Makes `key` the root scope's active configuration: a configuration of
-/// `root` whose parent is `parent` and whose override for occurrence `cube`
-/// is `cube`.
-fn root_configured(ir: &mut CadIr, key: &str, parent: Option<&str>, cube: OccurrenceOverride) {
+/// `root` whose parent is `parent` and whose override for `occurrence` is
+/// `entry`.
+fn root_configured(
+    ir: &mut CadIr,
+    key: &str,
+    parent: Option<&str>,
+    occurrence: &str,
+    entry: OccurrenceOverride,
+) {
     let mut overrides = Overrides::default();
-    overrides.occurrences.insert(id("occurrence", "cube"), cube);
+    overrides
+        .occurrences
+        .insert(id("occurrence", occurrence), entry);
     ir.design.configurations.push(DesignConfiguration {
         id: id("configuration", key),
         scope: id("definition", "root"),
@@ -1157,6 +1167,64 @@ fn a_target_through_an_occurrence_of_another_scope_keeps_its_state() {
         .all(|target| target.state == kept));
 }
 
+/// `placed()` where the root's active configuration `swap` replaces the
+/// prototype of occurrence `other` with `prototype`.
+fn other_replaced_by(prototype: &str) -> CadIr {
+    let mut ir = placed();
+    root_configured(
+        &mut ir,
+        "swap",
+        None,
+        "other",
+        OccurrenceOverride {
+            prototype: Some(id("definition", prototype)),
+            ..OccurrenceOverride::default()
+        },
+    );
+    ir
+}
+
+#[test]
+fn a_target_through_an_occurrence_whose_prototype_is_replaced_keeps_its_state() {
+    let mut ir = other_replaced_by("part");
+    ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
+    assert_eq!(normalized_states(ir), vec![Some(base_state())]);
+}
+
+#[test]
+fn a_path_into_the_prototype_a_configuration_replaced_keeps_the_state() {
+    let through_deep = |mut ir: CadIr| {
+        place(&mut ir, "other", "deep", "part");
+        ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None), ("deep", None)]))];
+        normalized_states(ir)
+    };
+    assert_eq!(through_deep(placed()), vec![None]);
+    assert_eq!(
+        through_deep(other_replaced_by("inner")),
+        vec![Some(base_state())]
+    );
+}
+
+#[test]
+fn a_base_selection_of_the_replaced_prototype_keeps_the_state() {
+    let mut ir = other_replaced_by("part");
+    // `alt` is a configuration of `other`, the original prototype.
+    ir.design.configurations.push(DesignConfiguration {
+        id: id("configuration", "alt"),
+        scope: id("definition", "other"),
+        name: "alt".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    entry(&mut ir, "root", "other", local("alt"));
+    ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
+    assert_eq!(normalized_states(ir), vec![Some(base_state())]);
+}
+
 #[test]
 fn a_step_that_selects_a_configuration_by_name_keeps_the_state() {
     let mut ir = placed();
@@ -1180,6 +1248,7 @@ fn a_scope_entry_or_override_that_selects_a_configuration_by_name_keeps_the_stat
         &mut in_override,
         "variant",
         None,
+        "cube",
         OccurrenceOverride {
             configuration: Some(by_name("Big")),
             ..OccurrenceOverride::default()
@@ -1190,6 +1259,7 @@ fn a_scope_entry_or_override_that_selects_a_configuration_by_name_keeps_the_stat
         &mut to_large,
         "variant",
         None,
+        "cube",
         OccurrenceOverride {
             configuration: Some(local("large")),
             ..OccurrenceOverride::default()
@@ -1261,6 +1331,7 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
         &mut replaced,
         "swap",
         None,
+        "cube",
         OccurrenceOverride {
             prototype: Some(id("definition", "other")),
             ..OccurrenceOverride::default()
@@ -1271,6 +1342,7 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
         &mut cycle,
         "loop",
         Some("loop"),
+        "cube",
         OccurrenceOverride::default(),
     );
     let mut root_dangling = placed();
@@ -1314,6 +1386,7 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
         &mut arranged_in_configuration,
         "shown",
         None,
+        "cube",
         OccurrenceOverride::default(),
     );
     arranged_in_configuration
@@ -1404,6 +1477,7 @@ fn define(ir: &mut CadIr, key: &str, scoped: bool) {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::new(),
         });
     }
 }

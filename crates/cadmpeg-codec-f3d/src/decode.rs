@@ -5150,7 +5150,7 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
             &mut report.losses,
             F3dLossCode::XrefPlacementMetadataNative,
             format_args!(
-                "{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator, ordinal and cross-segment metadata reference only in native source frames"
+                "{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator and ordinal in native source frames"
             ),
         );
     }

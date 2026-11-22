@@ -26,6 +26,7 @@ mod operation;
 mod parameters;
 #[cfg(test)]
 mod tests;
+mod thread;
 mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -183,6 +184,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
@@ -196,6 +198,7 @@ pub(crate) fn project(
     ir.design
         .configurations
         .extend(scoped_configurations.records);
+    thread::project(ctx, ir, losses)?;
     Ok(())
 }
 
