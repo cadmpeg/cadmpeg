@@ -285,9 +285,13 @@ jobs:
           swapon --show
           free -m
 
-      - name: Limit full test builds
-        if: needs.changes.outputs.full == 'true'
-        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+      - name: Limit broad test builds
+        shell: bash
+        run: |
+          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
+          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
+            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+          fi
 
       - name: Hash the Cargo profiles
         id: profiles
