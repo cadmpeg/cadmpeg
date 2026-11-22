@@ -4,7 +4,7 @@
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/protein.md`](../layouts/protein.md), generated from `docs/layouts/protein.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/protein.md`](../layouts/protein.md), generated from `docs/layouts/protein.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 A Protein package is a ZIP archive of XML schemas and paged instance-property streams. Fusion `.f3d` containers carry nested `.protein` members. Inventor IPT/IAM documents wrap one Protein ZIP in a compound `Protein` stream whose four-byte length prefix is specified in [`inventor.md`](inventor.md) §7.
 

@@ -159,10 +159,11 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
     // MAX in x: at angle 0 its point is the origin and its acceleration
     // overflows. The extrusion point reads the directrix point alone, so the
     // pcurve (0, 1 + t) over [-1, 1] maps to the origin and to (0, 0, 2).
+    use cadmpeg_ir::geometry::legacy_cache::CacheContract;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
     use cadmpeg_ir::geometry::{
-        CacheContract, Curve, CurveGeometry, PlacedCurve, ProceduralSurface,
-        ProceduralSurfaceDefinition, SolvedCurveGeometry,
+        Curve, CurveGeometry, PlacedCurve, ProceduralSurface, SolvedCurveGeometry,
     };
     let directrix =
         cadmpeg_ir::ids::CurveId::mint("test:iges:curve#directrix").expect("identity grammar");

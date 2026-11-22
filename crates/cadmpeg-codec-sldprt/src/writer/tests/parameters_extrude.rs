@@ -528,6 +528,60 @@ fn semantic_writer_preserves_keywords_child_order() {
 }
 
 #[test]
+fn edited_history_write_keeps_the_application_element() {
+    use crate::records::HistoryContent;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Application Name="Simulation"><Keyword Name="Analysis type">Static</Keyword><Keyword Name="Mesh type">Solid Mesh</Keyword></Application><Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let application = sldprt_native(decoded.ir()).feature_histories[0].content[0].clone();
+    assert!(
+        matches!(&application, HistoryContent::Element(element) if element.tag == "Application")
+    );
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let depth = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        depth.expression = "20mm".into();
+        depth.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
+    }
+
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
+    assert_eq!(history.features[0].parameters["Depth"], "20mm");
+    assert!(matches!(
+        history.content.as_slice(),
+        [
+            element,
+            HistoryContent::Configuration(_),
+            HistoryContent::Feature(_),
+        ] if *element == application
+    ));
+}
+
+#[test]
 fn semantic_writer_applies_history_root_ordinals() {
     use crate::records::HistoryContent;
 
@@ -573,7 +627,7 @@ fn semantic_writer_applies_history_root_ordinals() {
                 .iter()
                 .find(|configuration| configuration.id == *id)
                 .map(|configuration| configuration.name.as_str()),
-            HistoryContent::Text(_) => None,
+            HistoryContent::Text(_) | HistoryContent::Element(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["Second", "B", "First", "A"]);

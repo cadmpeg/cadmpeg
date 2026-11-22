@@ -1011,6 +1011,11 @@ macro_rules! declare_design {
         }
 
         impl Design {
+            /// Whether every design arena and the current name table are empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* self.names.entries().is_empty()
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedDesign<'_> {
                 SortedDesign {
@@ -1061,6 +1066,11 @@ macro_rules! declare_process {
         }
 
         impl Process {
+            /// Whether every process arena is empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* true
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedProcess<'_> {
                 SortedProcess {

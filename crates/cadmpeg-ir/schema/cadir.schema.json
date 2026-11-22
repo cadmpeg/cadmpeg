@@ -17238,6 +17238,14 @@
           "items": {
             "$ref": "#/$defs/ContainerId"
           }
+        },
+        "unproduced": {
+          "description": "Bodies owned by definitions the scope spans that no member produces.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BodyId"
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false,
@@ -17246,7 +17254,8 @@
         "roots",
         "active_arrangements",
         "occurrences",
-        "current"
+        "current",
+        "unproduced"
       ]
     },
     "Deviations": {

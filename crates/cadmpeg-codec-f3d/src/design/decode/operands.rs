@@ -8270,48 +8270,66 @@ pub(crate) fn construction_closing_flag_losses(
 /// reference back to the selection record of a sketchless chain record.
 const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
 
-/// The asset GUID of the typed-reference profile selection at `header` when
-/// its chain record is sketchless.
+/// The asset GUID of the typed-reference or compact profile selection at
+/// `header` when its chain record is sketchless.
 fn sketchless_profile_selection_asset(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
 ) -> Option<String> {
-    use crate::layout::typed_reference_sketchless_profile_chain_record as sketchless_chain;
+    use crate::layout::compact_reference_sketchless_profile_chain_record as compact_chain;
+    use crate::layout::typed_reference_sketchless_profile_chain_record as typed_chain;
     let start = usize::try_from(header.byte_offset).ok()?;
     let record_index = header.record_index;
     let chain_index = record_index.checked_add(1)?;
     let identity_index = record_index.checked_add(3)?;
-    let typed_target = |at: usize| {
+    let local_target = |at: usize| {
         let mut end = at;
         let reference = take_reference(bytes, &mut end)?;
         let (target, inline_type) = reference.local()?;
-        inline_type.is_some().then_some((target, end))
+        Some((target, inline_type.is_some(), end))
     };
-    let (target, after_reference) = typed_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    let (target, typed, after_reference) =
+        local_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    let (constant_one, asset_at, zero_run, marker, selection_reference) = if typed {
+        (
+            typed_selection::CONSTANT_ONE,
+            typed_selection::LEN,
+            typed_chain::ZERO_RUN_14,
+            typed_chain::CHAIN_MARKER,
+            typed_chain::SELECTION_REFERENCE,
+        )
+    } else {
+        (
+            compact_profile_selection::CONSTANT_ONE,
+            compact_profile_selection::LEN,
+            compact_chain::ZERO_RUN_14,
+            compact_chain::CHAIN_MARKER,
+            compact_chain::SELECTION_REFERENCE,
+        )
+    };
     if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
         != Some(&[0; 10][..])
         || target != u64::from(identity_index)
-        || after_reference != start + typed_selection::CONSTANT_ONE
-        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+        || after_reference != start + constant_one
+        || View::u32_le_at(bytes, start + constant_one) != Some(1)
     {
         return None;
     }
-    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
-    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
-    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + asset_at, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=36)?;
+    if !(owner_text.len() <= 20 && owner_text.bytes().all(|byte| byte.is_ascii_digit())
+        || crate::bytes::is_guid_hyphenated(&owner_text))
+    {
         return None;
     }
     let &chain_at = records.offsets(chain_index).first()?;
-    if bytes
-        .get(chain_at + sketchless_chain::ZERO_RUN_14..chain_at + sketchless_chain::CHAIN_MARKER)
-        != Some(&[0; 14][..])
-        || bytes.get(
-            chain_at + sketchless_chain::CHAIN_MARKER
-                ..chain_at + sketchless_chain::SELECTION_REFERENCE,
-        ) != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
-        || typed_target(chain_at + sketchless_chain::SELECTION_REFERENCE)?.0
-            != u64::from(record_index)
+    let chain_reference = local_target(chain_at + selection_reference)?;
+    if bytes.get(chain_at + zero_run..chain_at + marker) != Some(&[0; 14][..])
+        || bytes.get(chain_at + marker..chain_at + selection_reference)
+            != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
+        || chain_reference.0 != u64::from(record_index)
+        || chain_reference.1 != typed
     {
         return None;
     }
@@ -8341,17 +8359,38 @@ fn sketchless_profile_selection_loss(
 }
 
 /// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
-/// member whose typed-reference selection has a sketchless chain record.
+/// member that stays native and whose typed-reference or compact selection
+/// has a sketchless chain record.
 pub(crate) fn sketchless_profile_selection_losses(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Result<Vec<LossNote>, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
     let headers = indexed_operand_headers(headers);
+    let native_profiles = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Native(_)),
+                    ..
+                })
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     let extrude_scopes = scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter(|scope| {
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+                && native_profiles.contains(scope.id.as_str())
+        })
         .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
         .collect::<HashSet<_>>();
     let mut records_by_stream = HashMap::new();
@@ -8360,7 +8399,9 @@ pub(crate) fn sketchless_profile_selection_losses(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+        if group.extrude_role() != Some(DesignExtrudeOperandRole::Profile)
+            || !extrude_scopes.contains(&(stream, group.scope_record_index))
+        {
             continue;
         }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)

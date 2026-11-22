@@ -4,7 +4,7 @@ use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::features::profiles::{
     PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
 };
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{

@@ -106,7 +106,7 @@ pub(super) fn project(
                     .and_then(|candidates| item_feature(candidates, item.value))
                     .map_or_else(
                         || unprojected_item(stream, timeline, item.value, &item_types, flags),
-                        |feature| resolved_item(feature, bodies),
+                        |feature| resolved_item(feature, bodies, losses),
                     );
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
@@ -205,12 +205,18 @@ fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a
         .copied()
 }
 
-fn resolved_item(feature: &LegacyFeature, bodies: &BTreeSet<&str>) -> Feature {
+fn resolved_item(
+    feature: &LegacyFeature,
+    bodies: &BTreeSet<&str>,
+    losses: &mut Vec<LossNote>,
+) -> Feature {
     let operation = feature.evaluation.definition().operation();
-    let operation = stored(operation, bodies).unwrap_or_else(|| match family(operation) {
-        Family::Typed(family) => FeatureOperation::Unresolved { family },
-        Family::Native(kind) => native(&kind),
-    });
+    let operation = super::datum::project(feature, losses)
+        .or_else(|| stored(operation, bodies))
+        .unwrap_or_else(|| match family(operation) {
+            Family::Typed(family) => FeatureOperation::Unresolved { family },
+            Family::Native(kind) => native(&kind),
+        });
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
