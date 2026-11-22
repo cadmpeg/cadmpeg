@@ -54238,6 +54238,30 @@ source = "spec"
 anchor = "The sketch collection of a component with `k` sketches stores, in order"
 
 [[record]]
+name = "local_component_occurrence_attributed_source_matrix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The two-byte prefix form also permits source flag `u8 0` after the ordinal"
+size = 129
+note = "Offsets are relative to the source flag after the occurrence ordinal. The carrier GUID follows this matrix."
+
+[[record.field]]
+name = "source_flag"
+offset = 0
+type = "u8"
+value = 0
+source = "spec"
+anchor = "The two-byte prefix form also permits source flag `u8 0` after the ordinal"
+
+[[record.field]]
+name = "source_matrix"
+offset = 1
+type = "bytes[128]"
+source = "spec"
+anchor = "The source matrix starts one byte after this flag and occupies 128 bytes."
+
+[[record]]
 name = "compact_legacy_external_placement_members"
 kind = "byte"
 section = "1.4"
