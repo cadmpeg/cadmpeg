@@ -42,7 +42,7 @@ pub(crate) enum DesignParameterKind {
 
 /// Admitted Design parameter family discriminator values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u64)]
+#[repr(u32)]
 pub(crate) enum DesignParameterDiscriminator {
     Code0 = 0,
     Code1 = 1,
@@ -54,7 +54,8 @@ pub(crate) enum DesignParameterDiscriminator {
 }
 
 impl DesignParameterDiscriminator {
-    pub(crate) fn code(self) -> u64 {
+    /// The stored u32 value (f3d.md §3.1).
+    pub(crate) fn code(self) -> u32 {
         match self {
             Self::Code0 => 0,
             Self::Code1 => 1,
@@ -576,7 +577,7 @@ impl Serialize for DesignParameter {
             byte_offset: self.byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index,
-            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator: family_discriminator.map(|value| u64::from(value.value.code())),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: self.source_ordinal,
             owner_record_index: self.owner_record_index(),
@@ -767,7 +768,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             byte_offset,
             class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
-            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator: family_discriminator.map(|value| u64::from(value.value.code())),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,
