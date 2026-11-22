@@ -354,6 +354,10 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
+    /// Parameters whose dimension text is a bare number and that hold no
+    /// value: no record types the dimension or binds it to a stored value,
+    /// or the part's length unit is not read.
+    DesignParameterValueUnread,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
@@ -511,6 +515,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
+        Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
@@ -684,6 +689,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
@@ -829,6 +835,7 @@ impl SldprtLossCode {
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
+            | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignEquationUnread
             | Self::DesignEquationSource => Severity::Warning,
@@ -889,6 +896,7 @@ impl SldprtLossCode {
             }
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParameterDisplayRounded
+            | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
@@ -1306,6 +1314,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
+                "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
                 "design.equation-unread",
                 "design.equation-source",

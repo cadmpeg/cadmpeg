@@ -27,7 +27,7 @@ mod tree;
 mod typed;
 mod units;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -51,7 +51,7 @@ use crate::rollback::{Reading, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
-pub(crate) use units::length_unit;
+pub(crate) use units::{length_places, length_unit};
 
 /// What a part's design is projected from.
 pub(crate) struct Part<'a> {
@@ -67,6 +67,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length: Option<UnitSymbol>,
     /// The equation managers of the configuration streams.
     pub(crate) equations: EquationManagers,
+    /// The number of decimal places at which the part shows lengths: the
+    /// largest its configurations state.
+    pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
@@ -74,10 +77,11 @@ pub(crate) struct Part<'a> {
 /// Project the design of a part document into `ir.design`, beside its v10
 /// records, and state the part's root definition. A rollback reading that
 /// does not fix the position, a configuration whose state cannot be stated, a
-/// sketch or extrude that cannot be typed, and a parameter whose literal is a
-/// rounded display add their reasons to `losses`. A part whose timeline is
-/// empty states no design, and its equation-manager lines go to `losses`.
-/// Returns the number of records added.
+/// sketch or extrude that cannot be typed, a parameter whose literal is a
+/// rounded display, and a dimension whose bare-number text has no value add
+/// their reasons to `losses`. A part whose timeline is empty states no design,
+/// and its equation-manager lines go to `losses`. Returns the number of records
+/// added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -91,6 +95,7 @@ pub(crate) fn project(
         persistent,
         length,
         equations: managers,
+        length_places,
         rollback,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
@@ -112,28 +117,41 @@ pub(crate) fn project(
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
-    let readings = parameters::Readings {
+    let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
+        length_places,
         bound: typed.bound,
         measured: typed.measured,
         driven: typed.references,
+        manager: equations::stored_values(
+            &managers,
+            active,
+            &timeline.features,
+            |feature, name| entries.owned(feature, name).cloned(),
+        ),
+        confirmed: HashSet::new(),
     };
-    let (mut parameters, rounded) = entries.parameters(&definition, &readings);
-    losses.extend(rounded);
+    let linking = equations::Linking {
+        managers: &managers,
+        scope: &definition,
+        active,
+        features: &timeline.features,
+        length_unit: length,
+        tolerances: &ir.tolerances,
+    };
+    let (mut parameters, mut notes) = entries.parameters(&definition, &readings);
+    let entered = parameters.len();
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
-    losses.extend(equations::link(
-        &mut parameters,
-        &equations::Linking {
-            managers: &managers,
-            scope: &definition,
-            active,
-            features: &timeline.features,
-            length_unit: length,
-            tolerances: &ir.tolerances,
-        },
-    ));
+    readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
+    if !readings.confirmed.is_empty() {
+        let driven = parameters.split_off(entered);
+        (parameters, notes) = entries.parameters(&definition, &readings);
+        parameters.extend(driven);
+    }
+    losses.extend(notes);
+    losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));

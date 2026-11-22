@@ -20,6 +20,7 @@
 //! the literal's value where the line is one literal.
 
 mod line;
+mod stored;
 mod translate;
 
 use std::collections::{HashMap, HashSet};
@@ -37,13 +38,14 @@ use cadmpeg_ir::design::parameter::{
 };
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::SourceMeta;
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::Tolerances;
 
 use self::line::{Line, Parsed, Segment};
+use self::stored::Stored;
 use crate::container::{configuration_index, ContainerScan};
 use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::FeatureHistory;
@@ -66,6 +68,11 @@ const SIDE_AFTER_RELATION: u16 = 2;
 /// The relative tolerance of a cache that is neither a length nor an angle
 /// (part 10, Caches).
 const RELATIVE: f64 = 1e-9;
+/// Millimetres in a metre: the manager stores a length in metres.
+const MM_PER_M: f64 = 1000.0;
+/// The relative difference within which a cache is the value the manager
+/// stores beside its name.
+const STORED_RELATIVE: f64 = 1e-9;
 
 /// The equation managers of the configuration streams.
 #[derive(Debug, Default)]
@@ -77,17 +84,24 @@ struct Manager {
     lines: Walk,
 }
 
+/// One relation: its text and the values it stores beside its names.
+#[derive(Debug, PartialEq)]
+struct Relation {
+    text: String,
+    stored: Option<Stored>,
+}
+
 /// A manager's relation list.
 #[derive(Debug, PartialEq)]
 enum Walk {
-    /// The relation texts, in stored order.
-    Lines(Vec<String>),
+    /// The relations, in stored order.
+    Lines(Vec<Relation>),
     /// The list stops before its stated count.
     Stopped,
 }
 
 impl Walk {
-    fn lines(&self) -> Option<&Vec<String>> {
+    fn lines(&self) -> Option<&Vec<Relation>> {
         match self {
             Self::Lines(lines) => Some(lines),
             Self::Stopped => None,
@@ -122,40 +136,69 @@ fn walk(payload: &[u8]) -> Option<Walk> {
     let Some(count) = View::u16_le_at(payload, count_at) else {
         return Some(Walk::Stopped);
     };
-    let mut lines = Vec::new();
+    let mut found = Vec::new();
     let mut cursor = count_at + 2;
     let mut token = None;
     for index in 0..count {
-        let found = if index == 0 {
+        let relation = if index == 0 {
             first_relation(payload, cursor)
         } else {
             later_relation(payload, cursor, &mut token)
         };
-        let Some((text, end)) = found else {
+        let Some(relation) = relation else {
             return Some(Walk::Stopped);
         };
-        lines.push(text);
-        cursor = end;
+        cursor = relation.side;
+        found.push(relation);
     }
+    let ends = found
+        .iter()
+        .skip(1)
+        .map(|relation| relation.start)
+        .chain([payload.len()]);
+    let lines = found
+        .iter()
+        .zip(ends)
+        .map(|(relation, end)| Relation {
+            stored: match line::parse(&relation.text) {
+                Parsed::Line(line) => payload
+                    .get(..end)
+                    .and_then(|owned| stored::read(owned, relation.side, relation.form, &line)),
+                Parsed::Comment | Parsed::Malformed => None,
+            },
+            text: relation.text.clone(),
+        })
+        .collect();
     Some(Walk::Lines(lines))
 }
 
+/// A relation the walk found: its text, where it opens, byte 1 of the six
+/// bytes after its text, and the offset after its first side's tag.
+struct Found {
+    text: String,
+    start: usize,
+    form: u8,
+    side: usize,
+}
+
 /// The first relation after `from`: its class declaration, its text, the six
-/// bytes after it, and the declaration of its first side. Returns the text and
-/// the offset after the side's declaration.
-fn first_relation(payload: &[u8], from: usize) -> Option<(String, usize)> {
+/// bytes after it, and the declaration of its first side.
+fn first_relation(payload: &[u8], from: usize) -> Option<Found> {
     let at = find(payload, RELATION, from)?;
     let (text, end) = counted(payload, at + RELATION.len())?;
-    let side = after_text(payload, end)?;
-    (payload.get(side..side.checked_add(SIDE.len())?) == Some(SIDE))
-        .then(|| (text, side + SIDE.len()))
+    let (side, form) = after_text(payload, end)?;
+    (payload.get(side..side.checked_add(SIDE.len())?) == Some(SIDE)).then(|| Found {
+        text,
+        start: at,
+        form,
+        side: side + SIDE.len(),
+    })
 }
 
 /// The next relation after `from`: a counted string behind a repeat token
 /// `t` (the same token for every later relation), the six bytes after it,
-/// and the side token `t + 2`. Returns the text and the offset after the
-/// side token.
-fn later_relation(payload: &[u8], from: usize, token: &mut Option<u16>) -> Option<(String, usize)> {
+/// and the side token `t + 2`.
+fn later_relation(payload: &[u8], from: usize, token: &mut Option<u16>) -> Option<Found> {
     let mut at = find(payload, STRING, from)?;
     loop {
         let candidate = at
@@ -164,10 +207,15 @@ fn later_relation(payload: &[u8], from: usize, token: &mut Option<u16>) -> Optio
             .filter(|tag| tag & REPEAT != 0 && token.is_none_or(|known| known == *tag));
         if let Some(tag) = candidate {
             if let Some((text, end)) = counted(payload, at) {
-                if let Some(side) = after_text(payload, end) {
+                if let Some((side, form)) = after_text(payload, end) {
                     if View::u16_le_at(payload, side) == tag.checked_add(SIDE_AFTER_RELATION) {
                         *token = Some(tag);
-                        return Some((text, side + 2));
+                        return Some(Found {
+                            text,
+                            start: at - 2,
+                            form,
+                            side: side + 2,
+                        });
                     }
                 }
             }
@@ -177,10 +225,10 @@ fn later_relation(payload: &[u8], from: usize, token: &mut Option<u16>) -> Optio
 }
 
 /// The offset after the six bytes that follow a relation's text, where bytes
-/// 3 to 5 are zero.
-fn after_text(payload: &[u8], end: usize) -> Option<usize> {
+/// 3 to 5 are zero, and byte 1, which tells the layout of its sides.
+fn after_text(payload: &[u8], end: usize) -> Option<(usize, u8)> {
     let bytes = payload.get(end..end.checked_add(AFTER_TEXT)?)?;
-    (bytes[3..] == [0, 0, 0]).then_some(end + AFTER_TEXT)
+    (bytes[3..] == [0, 0, 0]).then_some((end + AFTER_TEXT, bytes[1]))
 }
 
 /// The counted UTF-16LE string at `at`: `ff fe ff`, a u8 count (`ff` then a
@@ -235,6 +283,139 @@ pub(super) fn active_slot(
     usize::try_from(configurations[active].source_index?).ok()
 }
 
+/// The value the active configuration's manager stores beside each dimension
+/// its lines name, in metres, radians, or a count, by the parameter the name
+/// reaches in the same letter case through `owned`: the value stored where
+/// the lines read the dimension, where they all store the same f64, else the
+/// value on the assigned side of the lines that drive it, where they all
+/// store the same.
+pub(super) fn stored_values(
+    managers: &Managers,
+    active: Option<usize>,
+    features: &[Feature],
+    owned: impl Fn(&FeatureId, &str) -> Option<ParameterId>,
+) -> HashMap<ParameterId, f64> {
+    let Ok(lines) = active_lines(managers, active) else {
+        return HashMap::new();
+    };
+    let mut read = HashMap::<&str, Vec<f64>>::new();
+    let mut assigned = HashMap::<&str, Vec<f64>>::new();
+    for (line, stored) in lines.iter().flatten() {
+        let Some(stored) = stored else {
+            continue;
+        };
+        if let Some(value) = stored.assigned {
+            assigned.entry(line.name.as_str()).or_default().push(value);
+        }
+        let names = line.segments.iter().filter_map(|segment| match segment {
+            Segment::Name(name) => Some(name.as_str()),
+            Segment::Text(_) => None,
+        });
+        for (name, value) in names.zip(&stored.reads) {
+            if let Some(value) = value {
+                read.entry(name).or_default().push(*value);
+            }
+        }
+    }
+    let mut by_name = HashMap::<&str, Option<&FeatureId>>::new();
+    for feature in features {
+        if let Some(name) = feature.name.as_deref() {
+            by_name
+                .entry(name)
+                .and_modify(|found| *found = None)
+                .or_insert(Some(&feature.id));
+        }
+    }
+    let same = |values: &[f64]| {
+        let first = *values.first()?;
+        values
+            .iter()
+            .all(|value| value.to_bits() == first.to_bits())
+            .then_some(first)
+    };
+    read.keys()
+        .chain(assigned.keys())
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .filter_map(|name| {
+            let value = match read.get(name) {
+                Some(values) => same(values)?,
+                None => same(assigned.get(name)?)?,
+            };
+            let (dimension, feature) = name.split_once('@')?;
+            let feature = by_name.get(feature).copied().flatten()?;
+            Some((owned(feature, dimension)?, value))
+        })
+        .collect()
+}
+
+/// The dimensions whose value in `manager`, in metres, the line that drives
+/// them gives: every name the line reads resolves, the relation stores a
+/// value beside each, and that value is the parameter's cache; the line's
+/// tree with a length target, evaluated over those caches, is that length to
+/// one part in 10⁹.
+pub(super) fn results(
+    parameters: &[DesignParameter],
+    manager: &HashMap<ParameterId, f64>,
+    linking: &Linking<'_>,
+) -> HashSet<ParameterId> {
+    let Ok(lines) = active_lines(linking.managers, linking.active) else {
+        return HashSet::new();
+    };
+    let names = Names::new(parameters, linking.features);
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    lines
+        .iter()
+        .flatten()
+        .filter_map(|(line, stored)| {
+            let target = &parameters[names.resolve(&line.name)?];
+            if matches!(target.definition, ParameterDefinition::Driven) {
+                return None;
+            }
+            let metres = *manager.get(&target.id)?;
+            let stored = stored.as_ref()?;
+            let reads = line
+                .segments
+                .iter()
+                .filter_map(|segment| match segment {
+                    Segment::Name(name) => Some(names.resolve(name)),
+                    Segment::Text(_) => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if reads.is_empty() || reads.len() != stored.reads.len() {
+                return None;
+            }
+            let confirmed = reads
+                .iter()
+                .zip(&stored.reads)
+                .all(|(&read, value)| value.is_some_and(|value| stores(&parameters[read], value)));
+            if !confirmed {
+                return None;
+            }
+            let tree = translate::tree(
+                &line.expression,
+                &translate::Typing {
+                    parameters,
+                    names: &names,
+                    target: &length,
+                    length_unit: linking.length_unit,
+                },
+            )?;
+            let Value::Number {
+                value: millimetres,
+                quantity: Quantity::LENGTH,
+            } = evaluated(parameters, &tree, &reads)?
+            else {
+                return None;
+            };
+            let gives = millimetres / MM_PER_M;
+            ((gives - metres).abs() <= STORED_RELATIVE * gives.abs().max(metres.abs()))
+                .then(|| target.id.clone())
+        })
+        .collect()
+}
+
 /// What the lines are read against.
 pub(super) struct Linking<'a> {
     pub(super) managers: &'a Managers,
@@ -287,6 +468,7 @@ enum Kept {
     NameUnresolved,
     Untranslated,
     Untested,
+    Unconfirmed,
     Disagrees,
     BareReference,
 }
@@ -299,7 +481,13 @@ impl Kept {
                 "its text is outside the neutral grammar or its kinds do not type"
             }
             Self::Untested => "the document holds no value to test its reading against",
-            Self::Disagrees => "its evaluation disagrees with the stored value",
+            Self::Unconfirmed => {
+                "a value it reads is not the value the equation manager stores beside it"
+            }
+            Self::Disagrees => {
+                "its evaluation over the decoded values disagrees with the parameter's decoded \
+                 value"
+            }
             Self::BareReference => {
                 "it is one reference to a parameter whose kind differs or is not read"
             }
@@ -318,11 +506,15 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
     let mut unread = Losses::default();
     let mut kept = Losses::default();
     for minted in mint(parameters, &lines, linking.scope) {
-        kept.push(Kept::Untranslated, parameters[minted].id.as_str());
+        let parameter = &parameters[minted];
+        kept.push(
+            (Kept::Untranslated, parameter.value.is_some()),
+            parameter.id.as_str(),
+        );
     }
     let names = Names::new(parameters, linking.features);
     for line in lines {
-        let line = match line {
+        let (line, stored) = match line {
             Ok(line) => line,
             Err((why, name)) => {
                 unread.push(why, &name);
@@ -348,9 +540,11 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
         if reads.is_empty() {
             continue;
         }
-        let (expression, why) = expression(parameters, target, &line, &names, linking);
+        let (expression, why) =
+            expression(parameters, target, &line, stored.as_ref(), &names, linking);
         if let Some(why) = why {
-            kept.push(why, parameters[target].id.as_str());
+            let parameter = &parameters[target];
+            kept.push((why, parameter.value.is_some()), parameter.id.as_str());
         }
         let parameter = &mut parameters[target];
         parameter.definition = ParameterDefinition::Expression(expression);
@@ -370,7 +564,7 @@ pub(super) fn without_design(managers: &Managers, active: Option<usize>) -> Vec<
     let mut unread = Losses::default();
     for line in &lines {
         let name = match line {
-            Ok(line) => &line.name,
+            Ok((line, _)) => &line.name,
             Err((_, name)) => name,
         };
         unread.push(Unread::NoDesign, name);
@@ -398,7 +592,7 @@ fn mint(
     let mut minted_names = HashSet::new();
     let mut textual = Vec::new();
     for (index, line) in lines.iter().enumerate() {
-        let Ok(line) = line else {
+        let Ok((line, _)) = line else {
             continue;
         };
         if line.name.contains('@')
@@ -459,7 +653,7 @@ fn mint(
     textual
 }
 
-type LineResult = Result<Line, (Unread, String)>;
+type LineResult = Result<(Line, Option<Stored>), (Unread, String)>;
 
 /// The active configuration's lines, each parsed, with the lines another
 /// configuration's manager does not confirm refused; or, where none can be
@@ -482,7 +676,7 @@ fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineRe
             _ => return Err(Unread::NoActiveStream),
         }
     };
-    let Some(texts) = active.lines.lines() else {
+    let Some(relations) = active.lines.lines() else {
         return Err(Unread::ManagerUnwalked);
     };
     let others = managers
@@ -493,7 +687,7 @@ fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineRe
             manager.lines.lines().map(|lines| {
                 lines
                     .iter()
-                    .filter_map(|text| match line::parse(text) {
+                    .filter_map(|relation| match line::parse(&relation.text) {
                         Parsed::Line(line) => Some(line),
                         Parsed::Comment | Parsed::Malformed => None,
                     })
@@ -501,16 +695,16 @@ fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineRe
             })
         })
         .collect::<Vec<_>>();
-    let parsed = texts
+    let parsed = relations
         .iter()
-        .filter_map(|text| match line::parse(text) {
+        .filter_map(|relation| match line::parse(&relation.text) {
             Parsed::Comment => None,
-            Parsed::Line(line) => Some(Ok(line)),
-            Parsed::Malformed => Some(Err((Unread::Malformed, text.trim().to_owned()))),
+            Parsed::Line(line) => Some(Ok((line, relation.stored.clone()))),
+            Parsed::Malformed => Some(Err((Unread::Malformed, relation.text.trim().to_owned()))),
         })
         .collect::<Vec<_>>();
     let mut assigned = HashMap::<&str, usize>::new();
-    for line in parsed.iter().flatten() {
+    for (line, _) in parsed.iter().flatten() {
         *assigned.entry(line.name.as_str()).or_default() += 1;
     }
     let twice = assigned
@@ -521,7 +715,7 @@ fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineRe
     Ok(parsed
         .into_iter()
         .map(|line| {
-            let line = line?;
+            let (line, stored) = line?;
             if twice.contains(&line.name) {
                 return Err((Unread::AssignedTwice, line.name));
             }
@@ -536,7 +730,7 @@ fn active_lines(managers: &Managers, active: Option<usize>) -> Result<Vec<LineRe
                 )
             });
             if confirmed {
-                Ok(line)
+                Ok((line, stored))
             } else {
                 Err((Unread::ConfigurationsDiffer, line.name))
             }
@@ -550,6 +744,7 @@ fn expression(
     parameters: &[DesignParameter],
     target: usize,
     line: &Line,
+    stored: Option<&Stored>,
     names: &Names,
     linking: &Linking<'_>,
 ) -> (Expression, Option<Kept>) {
@@ -592,9 +787,17 @@ fn expression(
     if matches!(&tree, Node::Reference(_)) {
         return (Expression::Neutral(Neutral(tree)), None);
     }
-    match test(parameters, target, &tree, &reads, linking.tolerances) {
+    match test(
+        parameters,
+        target,
+        &tree,
+        &reads,
+        stored,
+        linking.tolerances,
+    ) {
         Test::Agrees => (Expression::Neutral(Neutral(tree)), None),
         Test::Untested => (source(parameters, line, names), Some(Kept::Untested)),
+        Test::Unconfirmed => (source(parameters, line, names), Some(Kept::Unconfirmed)),
         Test::Disagrees => (source(parameters, line, names), Some(Kept::Disagrees)),
     }
 }
@@ -648,19 +851,25 @@ enum Test {
     Disagrees,
     /// The parameter or a parameter the tree reads has no cache.
     Untested,
+    /// A parameter the tree reads has a cache other than the value the
+    /// manager stores beside its name.
+    Unconfirmed,
 }
 
 /// The tree's evaluation over the caches of the parameters it reads, against
 /// the cache of the parameter it defines, compared as part 10 compares a
-/// cache with its expression.
+/// cache with its expression. `reads` holds the parameter of each name of
+/// the line in order, as `stored` holds the value the manager stores beside
+/// each; each cache of a read with a stored value is that value.
 fn test(
     parameters: &[DesignParameter],
     target: usize,
     tree: &Node<ParameterRef>,
     reads: &[usize],
+    stored: Option<&Stored>,
     tolerances: &Tolerances,
 ) -> Test {
-    let Some(stored) = cached(&parameters[target]) else {
+    let Some(target_cache) = cached(&parameters[target]) else {
         return Test::Untested;
     };
     if reads
@@ -669,6 +878,26 @@ fn test(
     {
         return Test::Untested;
     }
+    if stored.is_some_and(|stored| {
+        reads
+            .iter()
+            .zip(&stored.reads)
+            .any(|(&read, value)| value.is_some_and(|value| !stores(&parameters[read], value)))
+    }) {
+        return Test::Unconfirmed;
+    }
+    match evaluated(parameters, tree, reads) {
+        Some(evaluated) if agree(&evaluated, &target_cache, tolerances) => Test::Agrees,
+        Some(_) | None => Test::Disagrees,
+    }
+}
+
+/// The tree's evaluation over the caches of the parameters `reads`.
+fn evaluated(
+    parameters: &[DesignParameter],
+    tree: &Node<ParameterRef>,
+    reads: &[usize],
+) -> Option<Value> {
     let by_id = reads
         .iter()
         .map(|&read| (parameters[read].id.as_str(), read))
@@ -679,10 +908,25 @@ fn test(
             .and_then(|&read| cached(&parameters[read])),
         RefTarget::External { .. } => None,
     };
-    match evaluate(tree, &mut value_of) {
-        Ok(evaluated) if agree(&evaluated, &stored, tolerances) => Test::Agrees,
-        Ok(_) | Err(_) => Test::Disagrees,
-    }
+    evaluate(tree, &mut value_of).ok()
+}
+
+/// Whether the manager's stored `value` (metres, radians, or a count) is the
+/// cache of `parameter`, within a relative 1e-9.
+fn stores(parameter: &DesignParameter, value: f64) -> bool {
+    let Some(Value::Number {
+        value: cache,
+        quantity,
+    }) = cached(parameter)
+    else {
+        return false;
+    };
+    let cache = match quantity {
+        Quantity::LENGTH => cache / MM_PER_M,
+        Quantity::ANGLE | Quantity::REAL => cache,
+        _ => return false,
+    };
+    (cache - value).abs() <= STORED_RELATIVE * cache.abs().max(value.abs())
 }
 
 /// A parameter's cache as an expression value of its kind.
@@ -816,7 +1060,9 @@ impl<W: Copy + PartialEq> Losses<W> {
 }
 
 impl Losses<Unread> {
-    fn notes(&self, kept: &Losses<Kept>) -> Vec<LossNote> {
+    /// The notes of the lines not read and of those `kept` as `Source`, the
+    /// latter by reason and by whether the parameter holds a value.
+    fn notes(&self, kept: &Losses<(Kept, bool)>) -> Vec<LossNote> {
         let mut notes = Vec::new();
         for (why, named) in &self.by_reason {
             notes.push(SldprtLossCode::DesignEquationUnread.note(format!(
@@ -826,10 +1072,15 @@ impl Losses<Unread> {
                 why.reason()
             )));
         }
-        for (why, named) in &kept.by_reason {
+        for ((why, valued), named) in &kept.by_reason {
+            let value = if *valued {
+                "a writer of another format writes their cached value"
+            } else {
+                "they hold no cached value for a writer of another format to write"
+            };
             notes.push(SldprtLossCode::DesignEquationSource.note(format!(
-                "{} parameters keep their equation as SolidWorks source text, because {}; a \
-                 writer of another format writes their cached value: {named}",
+                "{} parameters keep their equation as SolidWorks source text, because {}; \
+                 {value}: {named}",
                 named.count(),
                 why.reason()
             )));

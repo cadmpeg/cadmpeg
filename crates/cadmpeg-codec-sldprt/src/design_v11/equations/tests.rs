@@ -17,10 +17,11 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::line::{self, Line, Parsed, Segment};
+use super::stored::Stored;
 use super::translate::{self, Typing};
 use super::{
-    active_lines, link, walk, Linking, Manager, Managers, Names, Unread, Walk, MANAGER, RELATION,
-    SIDE,
+    active_lines, link, walk, Linking, Manager, Managers, Names, Relation, Unread, Walk, MANAGER,
+    RELATION, SIDE,
 };
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
@@ -51,10 +52,21 @@ fn counted_utf16(text: &str) -> Vec<u8> {
 /// A configuration stream holding a manager of `lines`, each relation
 /// followed by the six bytes `after_text`.
 fn manager_with(lines: &[&str], after_text: [u8; 6]) -> Vec<u8> {
+    let owning = lines
+        .iter()
+        .map(|line| (*line, OWNED.to_vec()))
+        .collect::<Vec<_>>();
+    manager_owning(&owning, after_text)
+}
+
+/// A configuration stream holding a manager of relations, each a text and
+/// the bytes it owns after its side tag, followed by the six bytes
+/// `after_text`.
+fn manager_owning(lines: &[(&str, Vec<u8>)], after_text: [u8; 6]) -> Vec<u8> {
     let mut bytes = b"moPart_c settings before the manager".to_vec();
     bytes.extend(MANAGER);
     bytes.extend(u16::try_from(lines.len()).unwrap().to_le_bytes());
-    for (index, text) in lines.iter().enumerate() {
+    for (index, (text, owned)) in lines.iter().enumerate() {
         if index == 0 {
             bytes.extend(RELATION);
         } else {
@@ -67,7 +79,7 @@ fn manager_with(lines: &[&str], after_text: [u8; 6]) -> Vec<u8> {
         } else {
             bytes.extend((RELATION_TOKEN + 2).to_le_bytes());
         }
-        bytes.extend(OWNED);
+        bytes.extend(owned);
     }
     bytes.extend(b"\x00\x00detailing settings");
     bytes
@@ -75,6 +87,25 @@ fn manager_with(lines: &[&str], after_text: [u8; 6]) -> Vec<u8> {
 
 fn manager(lines: &[&str]) -> Vec<u8> {
     manager_with(lines, [0, 2, 0, 0, 0, 0])
+}
+
+/// Relations of `lines` that store no values.
+fn relations(lines: &[&str]) -> Vec<Relation> {
+    lines
+        .iter()
+        .map(|line| Relation {
+            text: (*line).to_owned(),
+            stored: None,
+        })
+        .collect()
+}
+
+/// The texts of a walked manager's relations.
+fn texts(walked: Option<Walk>) -> Option<Vec<String>> {
+    match walked? {
+        Walk::Lines(relations) => Some(relations.into_iter().map(|r| r.text).collect()),
+        Walk::Stopped => None,
+    }
 }
 
 #[test]
@@ -85,17 +116,197 @@ fn a_manager_lists_its_relation_texts_in_stored_order() {
         "\"width\" = 4",
     ];
     assert_eq!(
-        walk(&manager(&lines)),
-        Some(Walk::Lines(
-            lines.iter().map(|line| (*line).to_owned()).collect()
-        ))
+        texts(walk(&manager(&lines))),
+        Some(lines.iter().map(|line| (*line).to_owned()).collect())
     );
     let older = manager_with(&lines, [0; 6]);
     assert_eq!(walk(&older).unwrap().lines().unwrap().len(), 3);
     let long = "\"D1@Sketch1\" = ".to_owned() + &"1 + ".repeat(80) + "1";
+    assert_eq!(texts(walk(&manager(&[&long]))), Some(vec![long.clone()]));
+}
+
+/// The declarations of the classes a relation's sides hold, which the first
+/// relation of a stream declares and later ones repeat by token.
+const DIMENSION_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x10\x00moRelDimension_c";
+const WRAPPER_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x11\x00moDimRefWrapper_c";
+const OPERATOR_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x0f\x00moRelOperator_c";
+const HANDLE_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x14\x00moSkDimHandleValG2_c";
+const DIMENSION_TOKEN: u16 = 0x810d;
+const OPERATOR_TOKEN: u16 = 0x8111;
+const HANDLE_TOKEN: u16 = 0x8113;
+/// The expression side's tag, a repeat of the side class.
+const EXPRESSION_SIDE_TOKEN: u16 = 0x8107;
+
+/// One token of a synthesized equation side.
+enum Token<'a> {
+    /// An operator or a number: its text and kind word.
+    Plain(&'a str, u32),
+    /// A dimension reference: its name and stored value.
+    Dimension(&'a str, f64),
+    /// A global-variable reference: its name and its evaluated number as
+    /// text. It declares its classes, so a stream holds one.
+    Global(&'a str, &'a str),
+}
+
+const GLOBAL_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x10\x00moRelGlobalVar_c";
+const GLOBAL_WRAPPER_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x17\x00moGlobalVarRefWrapper_c";
+const COMPONENT_GLOBAL_DECLARATION: &[u8] = b"\xff\xff\x01\x00\x11\x00moCompGlobalVar_c";
+
+/// A global-variable reference to `name`: its classes, its handle object,
+/// the counted decimal text `number`, and its name token. It stores no f64.
+fn global_reference(name: &str, number: &str) -> Vec<u8> {
+    let mut bytes = GLOBAL_DECLARATION.to_vec();
+    bytes.extend([0, 0]);
+    bytes.extend(GLOBAL_WRAPPER_DECLARATION);
+    bytes.extend(COMPONENT_GLOBAL_DECLARATION);
+    bytes.extend([0x02, 0, 0, 0]);
+    bytes.extend(counted_utf16(number));
+    bytes.extend(counted_utf16(&format!("\"{name}\"")));
+    bytes.extend(words(1, 0));
+    bytes
+}
+
+/// Four token words: the lead word, a character range, and a kind.
+fn words(lead: u32, kind: u32) -> Vec<u8> {
+    [lead, 0, 1, kind]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect()
+}
+
+/// A dimension reference holding `value`, its handle objects, and its name
+/// token. The first reference declares its classes; its handle carries a
+/// counted string with words and a stray repeat token that are no name.
+fn dimension_reference(first: &mut bool, name: &str, value: f64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if std::mem::take(first) {
+        bytes.extend(DIMENSION_DECLARATION);
+        bytes.extend([0; 4]);
+        bytes.extend(WRAPPER_DECLARATION);
+        bytes.extend(value.to_le_bytes());
+        bytes.extend(HANDLE_DECLARATION);
+        bytes.extend([0x2d, 0x80, 0x02, 0, 0, 0, 0, 0]);
+        bytes.extend(counted_utf16("Point1@Origin"));
+        bytes.extend(words(4, 0));
+        bytes.extend([0x01, 0x81, 0, 0, 0, 0, 0x03, 0x81]);
+        bytes.extend(2.0e-307f64.to_le_bytes());
+    } else {
+        bytes.extend(DIMENSION_TOKEN.to_le_bytes());
+        bytes.extend([0; 4]);
+        bytes.extend((DIMENSION_TOKEN + 2).to_le_bytes());
+        bytes.extend(value.to_le_bytes());
+        bytes.extend(HANDLE_TOKEN.to_le_bytes());
+        bytes.extend([0x02, 0, 0, 0, 0, 0]);
+    }
+    bytes.extend(counted_utf16(&format!("\"{name}\"")));
+    bytes.extend(words(1, 0));
+    bytes
+}
+
+/// The bytes a relation owns after its first side's tag: the assigned side
+/// with the dimension `assigned` and its value, the assigned name repeated,
+/// and the expression side of `tokens` after an `=` token. `first` holds
+/// whether the stream has declared the side classes yet.
+fn sides(first: &mut bool, assigned: (&str, f64), tokens: &[Token<'_>]) -> Vec<u8> {
+    let declare = *first;
+    let mut bytes = 1u16.to_le_bytes().to_vec();
+    bytes.extend(dimension_reference(first, assigned.0, assigned.1));
+    bytes.extend(counted_utf16(&format!("\"{}\"", assigned.0)));
+    bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, 0x5a, 0xa5]);
+    bytes.extend(EXPRESSION_SIDE_TOKEN.to_le_bytes());
+    bytes.extend(u16::try_from(tokens.len() + 1).unwrap().to_le_bytes());
+    let plain = |bytes: &mut Vec<u8>, declare: &mut bool, text: &str, kind: u32| {
+        if std::mem::take(declare) {
+            bytes.extend(OPERATOR_DECLARATION);
+        } else {
+            bytes.extend(OPERATOR_TOKEN.to_le_bytes());
+        }
+        bytes.extend(counted_utf16(text));
+        bytes.extend(words(8, kind));
+    };
+    let mut declare_operator = declare;
+    plain(&mut bytes, &mut declare_operator, "=", 3);
+    for token in tokens {
+        match token {
+            Token::Plain(text, kind) => plain(&mut bytes, &mut declare_operator, text, *kind),
+            Token::Dimension(name, value) => {
+                bytes.extend(dimension_reference(first, name, *value));
+            }
+            Token::Global(name, number) => bytes.extend(global_reference(name, number)),
+        }
+    }
+    bytes.extend(counted_utf16(" = expression text"));
+    bytes
+}
+
+/// The stored values of each relation of a walked manager.
+fn stored_of(walked: Option<Walk>) -> Vec<Option<Stored>> {
+    match walked.unwrap() {
+        Walk::Lines(relations) => relations.into_iter().map(|r| r.stored).collect(),
+        Walk::Stopped => panic!("stopped"),
+    }
+}
+
+/// A manager whose lines drive `D2@Boss` and `D3@Boss` from `D1@Boss`, a
+/// line whose sides hold no token, and a line whose name token names another
+/// dimension.
+fn manager_with_sides(after_text: [u8; 6]) -> Vec<u8> {
+    let mut first = true;
+    let half = sides(
+        &mut first,
+        ("D2@Boss", 0.011),
+        &[
+            Token::Dimension("D1@Boss", 0.022),
+            Token::Plain("/", 3),
+            Token::Plain("2", 2),
+        ],
+    );
+    let double = sides(
+        &mut first,
+        ("D3@Boss", 0.044),
+        &[
+            Token::Plain("2", 2),
+            Token::Plain("*", 3),
+            Token::Dimension("d1@BOSS", 0.022),
+        ],
+    );
+    let other = sides(
+        &mut first,
+        ("D9@Boss", 0.03),
+        &[Token::Dimension("D1@Boss", 0.022)],
+    );
+    manager_owning(
+        &[
+            ("\"D2@Boss\" = \"D1@Boss\" / 2", half),
+            ("\"D3@Boss\" = 2 * \"d1@BOSS\" 'twice", double),
+            ("\"D4@Boss\" = \"D1@Boss\"", vec![0, 0, 0xaa, 0xbb]),
+            ("\"D5@Boss\" = \"D1@Boss\"", other),
+        ],
+        after_text,
+    )
+}
+
+#[test]
+fn a_relation_stores_the_value_beside_each_dimension_it_names() {
     assert_eq!(
-        walk(&manager(&[&long])),
-        Some(Walk::Lines(vec![long.clone()]))
+        stored_of(walk(&manager_with_sides([0, 2, 0, 0, 0, 0]))),
+        [
+            Some(Stored {
+                assigned: Some(0.011),
+                reads: vec![Some(0.022)]
+            }),
+            Some(Stored {
+                assigned: Some(0.044),
+                reads: vec![Some(0.022)]
+            }),
+            None,
+            None,
+        ]
+    );
+    assert_eq!(
+        stored_of(walk(&manager_with_sides([0, 0, 0, 0, 0, 0]))),
+        [None, None, None, None],
+        "the older layout stores no value"
     );
 }
 
@@ -275,8 +486,12 @@ const KEYWORDS: &[u8] = br#"<Keywords Name="Bracket">
 </Keywords>"#;
 
 fn decode_with(streams: &[(&str, Vec<u8>)]) -> (CadIr, Vec<LossNote>) {
+    decode_keywords(KEYWORDS, streams)
+}
+
+fn decode_keywords(keywords: &[u8], streams: &[(&str, Vec<u8>)]) -> (CadIr, Vec<LossNote>) {
     let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(0x42, "Contents/Keywords", KEYWORDS));
+    source.extend(make_block(0x42, "Contents/Keywords", keywords));
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
@@ -406,7 +621,7 @@ fn equation_manager_lines_link_the_parameters_they_assign() {
             ExpressionToken::Reference(reference_to(d1)),
             ExpressionToken::Text(" * 3".into())
         ],
-        "a reading whose evaluation disagrees with the stored value stays source"
+        "a reading whose evaluation disagrees with the decoded value stays source"
     );
     let thickness = parameter(&ir, "thickness");
     assert_eq!(thickness.owner, None);
@@ -531,9 +746,17 @@ fn number(value: f64) -> ParameterValue {
 
 /// `lines`, the one manager's, read into `parameters`.
 fn linked(parameters: &mut Vec<DesignParameter>, lines: &[&str]) -> Vec<LossNote> {
+    linked_relations(parameters, relations(lines))
+}
+
+/// The one manager's `relations` read into `parameters`.
+fn linked_relations(
+    parameters: &mut Vec<DesignParameter>,
+    relations: Vec<Relation>,
+) -> Vec<LossNote> {
     let managers = Managers(vec![Manager {
         slot: 0,
-        lines: Walk::Lines(lines.iter().map(|line| (*line).to_owned()).collect()),
+        lines: Walk::Lines(relations),
     }]);
     link(
         parameters,
@@ -601,9 +824,7 @@ fn managers(stored: &[(usize, Option<&[&str]>)]) -> Managers {
             .iter()
             .map(|(slot, lines)| Manager {
                 slot: *slot,
-                lines: lines.map_or(Walk::Stopped, |lines| {
-                    Walk::Lines(lines.iter().map(|line| (*line).to_owned()).collect())
-                }),
+                lines: lines.map_or(Walk::Stopped, |lines| Walk::Lines(relations(lines))),
             })
             .collect(),
     )
@@ -616,7 +837,7 @@ fn outcome(
     active_lines(managers, active).map(|lines| {
         lines
             .into_iter()
-            .map(|line| line.map(|line| line.name).map_err(|(why, _)| why))
+            .map(|line| line.map(|(line, _)| line.name).map_err(|(why, _)| why))
             .collect()
     })
 }
@@ -716,5 +937,519 @@ fn several_managers_and_no_active_configuration_read_no_line() {
     assert_eq!(
         messages(&losses, SldprtLossCode::DesignEquationUnread).len(),
         1
+    );
+}
+
+#[test]
+fn a_tree_over_values_the_manager_stores_otherwise_is_source() {
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    let rounded = || {
+        vec![
+            valued("D1", length.clone(), number(0.43)),
+            valued("D2", length.clone(), number(0.86)),
+        ]
+    };
+    let line = "\"D2\" = \"D1\" * 2";
+    let with = |read: f64| {
+        vec![Relation {
+            text: line.to_owned(),
+            stored: Some(Stored {
+                assigned: Some(0.000_857_2),
+                reads: vec![Some(read)],
+            }),
+        }]
+    };
+
+    let mut parameters = rounded();
+    assert!(linked(&mut parameters, &[line]).is_empty());
+    assert_eq!(
+        neutral_text(&parameters[1]),
+        ("$0 * 2".to_owned(), vec![reference_to(&parameters[0])]),
+        "with no stored value the rounded displays agree"
+    );
+
+    let mut parameters = rounded();
+    let losses = linked_relations(&mut parameters, with(0.000_428_6));
+    assert_eq!(
+        source_tokens(&parameters[1]),
+        [
+            ExpressionToken::Reference(reference_to(&parameters[0])),
+            ExpressionToken::Text(" * 2".into())
+        ]
+    );
+    let kept = messages(&losses, SldprtLossCode::DesignEquationSource);
+    assert!(
+        kept.len() == 1
+            && kept[0].contains("stores beside it")
+            && kept[0].contains("writes their cached value")
+            && kept[0].contains(parameters[1].id.as_str()),
+        "{kept:?}"
+    );
+
+    let mut parameters = rounded();
+    assert!(linked_relations(&mut parameters, with(0.000_43)).is_empty());
+    assert_eq!(neutral_text(&parameters[1]).0, "$0 * 2");
+
+    let mut parameters = rounded();
+    parameters[1].value = None;
+    let losses = linked_relations(&mut parameters, with(0.000_43));
+    let kept = messages(&losses, SldprtLossCode::DesignEquationSource);
+    assert!(
+        kept.len() == 1
+            && kept[0].contains("hold no cached value")
+            && !kept[0].contains("writes their cached value"),
+        "a parameter with no value has none for a writer: {kept:?}"
+    );
+}
+
+const UNREAD_KIND_KEYWORDS: &[u8] = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="D1">12.5mm</Dimension>
+        <Dimension Name="Width">44</Dimension>
+        <Dimension Name="Half">22</Dimension>
+        <Dimension Name="Count">3</Dimension>
+    </Extrusion>
+</Keywords>"#;
+
+/// The length unit codes of a units table.
+const MILLIMETRE: u16 = 0;
+const INCH: u16 = 3;
+
+/// The length precision of a part whose displays the tests take as exact.
+const EXACT_PLACES: u32 = 8;
+
+/// A configuration stream's units table stating the length unit `code` and
+/// the length precision `places`, in the block container's layout.
+fn units_table(code: u16, places: u32) -> Vec<u8> {
+    let mut bytes = b"\xff\xff\x01\x00\x0e\x00moUnitsTable_c".to_vec();
+    bytes.extend(16u16.to_le_bytes());
+    bytes.extend(b"\xff\xff\x01\x00\x13\x00moLengthUserUnits_c");
+    let mut fields = vec![0xaa; 62];
+    fields[..4].copy_from_slice(&places.to_le_bytes());
+    fields[44..48].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend(fields);
+    bytes.extend(code.to_le_bytes());
+    bytes.extend([0, 0]);
+    bytes
+}
+
+/// The part of [`UNREAD_KIND_KEYWORDS`] with a manager whose lines drive
+/// `Half` from `Width` and `Count` from both, each relation followed by the
+/// six bytes `after_text`.
+fn decode_unread_kinds(after_text: [u8; 6]) -> (CadIr, Vec<LossNote>) {
+    let mut first = true;
+    let half = sides(
+        &mut first,
+        ("Half@Boss", 0.022),
+        &[
+            Token::Dimension("Width@Boss", 0.044),
+            Token::Plain("/", 3),
+            Token::Plain("2", 2),
+        ],
+    );
+    let count = sides(
+        &mut first,
+        ("Count@Boss", 3.0),
+        &[
+            Token::Dimension("Width@Boss", 0.044),
+            Token::Plain("/", 3),
+            Token::Dimension("Half@Boss", 0.022),
+            Token::Plain("+", 3),
+            Token::Plain("1", 2),
+        ],
+    );
+    let mut stream = units_table(MILLIMETRE, EXACT_PLACES);
+    stream.extend(manager_owning(
+        &[
+            ("\"Half@Boss\" = \"Width@Boss\" / 2", half),
+            ("\"Count@Boss\" = \"Width@Boss\" / \"Half@Boss\" + 1", count),
+        ],
+        after_text,
+    ));
+    decode_keywords(UNREAD_KIND_KEYWORDS, &[("Contents/Config-0", stream)])
+}
+
+#[test]
+fn the_manager_types_a_dimension_of_unread_kind_as_the_length_it_stores() {
+    let (ir, losses) = decode_unread_kinds([0, 2, 0, 0, 0, 0]);
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    let width = parameter(&ir, "Width");
+    assert_eq!(width.kind, length);
+    assert_eq!(width.value, Some(number(44.0)));
+    assert_eq!(neutral_text(width).0, "44[mm]");
+    let half = parameter(&ir, "Half");
+    assert_eq!(half.kind, length);
+    assert_eq!(half.value, Some(number(22.0)));
+    assert_eq!(
+        neutral_text(half),
+        ("$0 / 2".to_owned(), vec![reference_to(width)])
+    );
+    let count = parameter(&ir, "Count");
+    assert!(
+        matches!(count.kind, ValueKind::Native(_)),
+        "a count stores its own number: {:?}",
+        count.kind
+    );
+    let kept = messages(&losses, SldprtLossCode::DesignEquationSource);
+    assert!(
+        kept.len() == 1 && kept[0].contains(count.id.as_str()),
+        "{kept:?}"
+    );
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    for name in ["Width", "Half"] {
+        let id = parameter(&ir, name).id.as_str().to_owned();
+        assert!(
+            unvalued.iter().all(|message| !message.contains(&id)),
+            "{name}: {unvalued:?}"
+        );
+    }
+    assert_no_design_findings(&ir);
+
+    let (ir, _) = decode_unread_kinds([0; 6]);
+    assert!(
+        matches!(parameter(&ir, "Width").kind, ValueKind::Native(_)),
+        "the older layout stores no value to type it"
+    );
+    assert!(matches!(
+        parameter(&ir, "Half").definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
+}
+
+#[test]
+fn a_global_variable_in_the_expression_stores_no_value_beside_it() {
+    let mut first = true;
+    let owned = sides(
+        &mut first,
+        ("D2@Boss", 0.047),
+        &[
+            Token::Global("width", "12.5"),
+            Token::Plain("*", 3),
+            Token::Plain("2", 2),
+            Token::Plain("+", 3),
+            Token::Dimension("D1@Boss", 0.022),
+        ],
+    );
+    let walked = walk(&manager_owning(
+        &[("\"D2@Boss\" = \"width\" * 2 + \"D1@Boss\"", owned)],
+        [0, 2, 0, 0, 0, 0],
+    ));
+    assert_eq!(
+        stored_of(walked),
+        [Some(Stored {
+            assigned: Some(0.047),
+            reads: vec![None, Some(0.022)]
+        })]
+    );
+}
+
+/// A part of `keywords` whose length unit is `unit` and whose length
+/// precision is `places`, with a manager of `relations` in the layout that
+/// stores values.
+fn decode_relations(
+    keywords: &[u8],
+    unit: u16,
+    places: u32,
+    relations: &[(&str, Vec<u8>)],
+) -> (CadIr, Vec<LossNote>) {
+    let mut stream = units_table(unit, places);
+    stream.extend(manager_owning(relations, [0, 2, 0, 0, 0, 0]));
+    decode_keywords(keywords, &[("Contents/Config-0", stream)])
+}
+
+/// Keywords of a boss whose dimensions `Lead` and `Half` show the bare
+/// numbers `lead` and `half`, and whose `Quarter` shows `quarter`.
+fn boss_keywords(lead: &str, half: &str, quarter: &str) -> Vec<u8> {
+    format!(
+        r#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">{lead}</Dimension>
+        <Dimension Name="Half">{half}</Dimension>
+        <Dimension Name="Quarter">{quarter}</Dimension>
+    </Extrusion>
+</Keywords>"#
+    )
+    .into_bytes()
+}
+
+/// The relation `"Half@Boss" = "Lead@Boss" / 2` storing `lead` and `half`.
+fn half_of_lead(first: &mut bool, lead: f64, half: f64) -> (&'static str, Vec<u8>) {
+    (
+        "\"Half@Boss\" = \"Lead@Boss\" / 2",
+        sides(
+            first,
+            ("Half@Boss", half),
+            &[
+                Token::Dimension("Lead@Boss", lead),
+                Token::Plain("/", 3),
+                Token::Plain("2", 2),
+            ],
+        ),
+    )
+}
+
+fn is_untyped(ir: &CadIr, name: &str) -> bool {
+    matches!(parameter(ir, name).kind, ValueKind::Native(_))
+}
+
+#[test]
+fn an_angle_the_manager_stores_in_radians_stays_untyped() {
+    let degree = std::f64::consts::PI / 180.0;
+    let mut first = true;
+    let (ir, _) = decode_relations(
+        &boss_keywords("30", "15", "1"),
+        MILLIMETRE,
+        EXACT_PLACES,
+        &[half_of_lead(&mut first, 30.0 * degree, 15.0 * degree)],
+    );
+    for name in ["Lead", "Half"] {
+        assert!(is_untyped(&ir, name), "{name}: {:?}", parameter(&ir, name));
+    }
+    assert!(matches!(
+        parameter(&ir, "Half").definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
+}
+
+#[test]
+fn the_manager_types_a_length_in_a_part_in_inches() {
+    let mut first = true;
+    let (ir, _) = decode_relations(
+        &boss_keywords("1.75", "0.875", "1"),
+        INCH,
+        EXACT_PLACES,
+        &[half_of_lead(&mut first, 0.044_45, 0.022_225)],
+    );
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    let millimetres = |name: &str| {
+        let found = parameter(&ir, name);
+        assert_eq!(found.kind, length, "{name}");
+        match &found.value {
+            Some(ParameterValue::Number(value)) => value.get(),
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+    assert!((millimetres("Lead") - 44.45).abs() < 1e-9);
+    assert!((millimetres("Half") - 22.225).abs() < 1e-9);
+    let lead = parameter(&ir, "Lead");
+    assert_eq!(
+        neutral_text(parameter(&ir, "Half")),
+        ("$0 / 2".to_owned(), vec![reference_to(lead)])
+    );
+}
+
+#[test]
+fn reading_lines_that_store_different_values_give_none() {
+    let mut first = true;
+    let half = half_of_lead(&mut first, 0.044, 0.022);
+    let quarter = sides(
+        &mut first,
+        ("Quarter@Boss", 0.011),
+        &[
+            Token::Dimension("Lead@Boss", 0.045),
+            Token::Plain("/", 3),
+            Token::Plain("4", 2),
+        ],
+    );
+    let eighth = sides(
+        &mut first,
+        ("Eighth@Boss", 0.0055),
+        &[
+            Token::Dimension("Lead@Boss", 0.044),
+            Token::Plain("/", 3),
+            Token::Plain("8", 2),
+        ],
+    );
+    let keywords = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">44</Dimension>
+        <Dimension Name="Half">22</Dimension>
+        <Dimension Name="Quarter">11</Dimension>
+        <Dimension Name="Eighth">5.5</Dimension>
+    </Extrusion>
+</Keywords>"#;
+    let (ir, _) = decode_relations(
+        keywords,
+        MILLIMETRE,
+        EXACT_PLACES,
+        &[
+            half,
+            ("\"Quarter@Boss\" = \"Lead@Boss\" / 4", quarter),
+            ("\"Eighth@Boss\" = \"Lead@Boss\" / 8", eighth),
+        ],
+    );
+    assert!(
+        is_untyped(&ir, "Lead"),
+        "lines that store different values beside Lead type it with none of them, the first \
+         or the last: {:?}",
+        parameter(&ir, "Lead")
+    );
+    for name in ["Half", "Quarter", "Eighth"] {
+        assert!(
+            matches!(
+                parameter(&ir, name).definition,
+                ParameterDefinition::Expression(Expression::Source { .. })
+            ),
+            "{name}"
+        );
+    }
+}
+
+/// A part in the length unit `unit` at the length precision `places`, whose
+/// boss shows `lead.0` as `Lead`,
+/// `target.1` as the dimension named `target.0`, and `quarter` as `Quarter`,
+/// the target driven by `"<target>@Boss" = "Lead@Boss" / 3`, the relation
+/// storing `lead.1` metres beside `Lead` and `third` metres beside the target.
+fn decode_third(
+    unit: u16,
+    places: u32,
+    lead: (&str, f64),
+    target: (&str, &str),
+    quarter: &str,
+    third: f64,
+) -> (CadIr, Vec<LossNote>) {
+    let mut first = true;
+    let assigned = format!("{}@Boss", target.0);
+    let owned = sides(
+        &mut first,
+        (&assigned, third),
+        &[
+            Token::Dimension("Lead@Boss", lead.1),
+            Token::Plain("/", 3),
+            Token::Plain("3", 2),
+        ],
+    );
+    let keywords = format!(
+        r#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">{}</Dimension>
+        <Dimension Name="{}">{}</Dimension>
+        <Dimension Name="Quarter">{quarter}</Dimension>
+    </Extrusion>
+</Keywords>"#,
+        lead.0, target.0, target.1
+    );
+    let line = format!("\"{assigned}\" = \"Lead@Boss\" / 3");
+    decode_relations(keywords.as_bytes(), unit, places, &[(&line, owned)])
+}
+
+/// Asserts that `name` is the length `millimetres` with the formula
+/// `Lead / 3`, and that no note names it.
+fn assert_takes_its_line(ir: &CadIr, losses: &[LossNote], name: &str, millimetres: f64) {
+    let target = parameter(ir, name);
+    assert_eq!(target.kind, ValueKind::Quantity(Quantity::LENGTH));
+    match &target.value {
+        Some(ParameterValue::Number(value)) => {
+            assert!((value.get() - millimetres).abs() < 1e-9, "{value:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        neutral_text(target),
+        (
+            "$0 / 3".to_owned(),
+            vec![reference_to(parameter(ir, "Lead"))]
+        )
+    );
+    assert!(messages(losses, SldprtLossCode::DesignEquationSource).is_empty());
+    for code in [
+        SldprtLossCode::DesignParameterValueUnread,
+        SldprtLossCode::DesignParameterDisplayRounded,
+    ] {
+        let named = messages(losses, code);
+        assert!(
+            named
+                .iter()
+                .all(|message| !message.contains(target.id.as_str())),
+            "{named:?}"
+        );
+    }
+    assert_no_design_findings(ir);
+}
+
+#[test]
+fn a_display_that_rounds_the_length_its_line_gives_takes_the_stored_length() {
+    let lead = ("1.3", 0.0013);
+    let third = 0.0013 / 3.0;
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("Half", "0.43"), "2.5", third);
+    assert_takes_its_line(&ir, &losses, "Half", 1.3 / 3.0);
+
+    let (ir, losses) = decode_third(
+        MILLIMETRE,
+        3,
+        ("1.315", 0.001_315),
+        ("Half", "0.44"),
+        "2.5",
+        0.001_315 / 3.0,
+    );
+    assert_eq!(
+        parameter(&ir, "Lead").kind,
+        ValueKind::Quantity(Quantity::LENGTH)
+    );
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a display coarser than the length precision: {half:?}"
+    );
+    assert!(matches!(
+        half.definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued.len() == 1
+            && unvalued[0].contains("than the document's length precision")
+            && unvalued[0].contains(half.id.as_str()),
+        "{unvalued:?}"
+    );
+
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("Half", "0.43"), "2.5", 0.000_432);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a stored value the line does not give: {half:?}"
+    );
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued
+            .iter()
+            .all(|message| !message.contains("length precision")),
+        "{unvalued:?}"
+    );
+}
+
+#[test]
+fn a_length_that_holds_its_rounded_display_takes_the_length_its_line_gives() {
+    let lead = ("1.3", 0.0013);
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("D1", "0.43"), "2.5", 0.0013 / 3.0);
+    assert_takes_its_line(&ir, &losses, "D1", 1.3 / 3.0);
+
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("D1", "0.43"), "2.5", 0.000_432);
+    let depth = parameter(&ir, "D1");
+    assert_eq!(depth.kind, ValueKind::Quantity(Quantity::LENGTH));
+    match &depth.value {
+        Some(ParameterValue::Number(value)) => assert!((value.get() - 0.43).abs() < 1e-12),
+        other => panic!("a stored value the line does not give: {other:?}"),
+    }
+    let rounded = messages(&losses, SldprtLossCode::DesignParameterDisplayRounded);
+    assert!(
+        rounded
+            .iter()
+            .any(|message| message.contains(depth.id.as_str())),
+        "{rounded:?}"
+    );
+}
+
+#[test]
+fn a_part_in_inches_takes_the_length_its_line_gives_where_the_display_rounds_inches() {
+    let lead = 1.3 * 0.0254;
+    let (ir, losses) = decode_third(INCH, 2, ("1.3", lead), ("Half", "0.43"), "2.5", lead / 3.0);
+    assert_takes_its_line(&ir, &losses, "Half", 1.3 * 25.4 / 3.0);
+
+    let (ir, _) = decode_third(INCH, 2, ("1.3", lead), ("Half", "11.01"), "2.5", lead / 3.0);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a display of the millimetres in a part in inches: {half:?}"
     );
 }

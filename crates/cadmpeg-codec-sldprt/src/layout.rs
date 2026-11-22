@@ -48,6 +48,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const ZERO_TRAILER: usize = 8;
 }
 
+/// Byte offsets for the `feature_input_scalar_class_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// ```
+pub(crate) mod feature_input_scalar_class_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
+}
+
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §1.1. Record length 8 B.
@@ -2906,6 +2920,36 @@ pub(crate) mod named_object_header {
     pub(crate) const OBJECT_ID: usize = 8;
 }
 
+/// Byte offsets for the `length_user_units_base` record.
+///
+/// Spec §Configuration objects. Record length 48 B.
+///
+/// ```text
+/// The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+/// ```
+pub(crate) mod length_user_units_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `precision` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const PRECISION: usize = 0;
+    /// Offset of `last_word` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const LAST_WORD: usize = 44;
+    /// Stated value of `last_word` (`u32`). Spec §Configuration objects.
+    pub(crate) const LAST_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `length_user_units_block_base` record.
+///
+/// Spec §Configuration objects. Record length 62 B.
+///
+/// ```text
+/// The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+/// ```
+pub(crate) mod length_user_units_block_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 62;
+}
+
 /// Byte offsets for the `sketch_record_head` record.
 ///
 /// Spec §Sketch objects. Record length 64 B.
@@ -3382,6 +3426,51 @@ pub(crate) mod weldment_xt_entry_prefix {
     pub(crate) const LEADING_WORD_VALUE: u32 = 0x0000_0001;
     /// Offset of `stream_len` (`u32`, little-endian). Spec §3.1.1.
     pub(crate) const STREAM_LEN: usize = 4;
+}
+
+/// Byte offsets for the `equation_token_words` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words.
+/// ```
+pub(crate) mod equation_token_words {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 16;
+}
+
+/// Byte offsets for the `equation_expression_separator` record.
+///
+/// Spec §2. Record length 10 B.
+///
+/// ```text
+/// The expression side's class tag and token count follow.
+/// ```
+pub(crate) mod equation_expression_separator {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 10;
+    /// Stated value of `separator_lead` (`bytes[8]`). Spec §2.
+    pub(crate) const SEPARATOR_LEAD_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `equation_dimension_reference_token` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value.
+/// ```
+pub(crate) mod equation_dimension_reference_token {
+    /// Offset of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD: usize = 2;
+    /// Stated value of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `wrapper_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const WRAPPER_CLASS_TOKEN: usize = 6;
+    /// Offset of `stored_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STORED_VALUE: usize = 8;
 }
 
 /// Byte offsets for the `draft_declared_neutral_frame` record.
