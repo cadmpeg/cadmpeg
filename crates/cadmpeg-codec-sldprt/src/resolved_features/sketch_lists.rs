@@ -4,18 +4,22 @@
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
-//! selector has bit 0 clear, the endpoint and centre fields are zero-based
-//! indices into the point records of its own sketch, and the sense word
-//! selects a line, a counterclockwise arc or a clockwise arc.
+//! selector has bit 0 clear, except the current-prefix 92-byte selector-4
+//! line with locus `05 00 01 00` that §2 reads,
+//! the endpoint and centre fields are zero-based indices into the point
+//! records of its own sketch, and the sense word selects a line, a
+//! counterclockwise arc or a clockwise arc.
 
-use super::SKETCH_ANGLE_TOLERANCE;
+use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::layout::{
     sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
     sketch_record_head as head,
 };
+use crate::loss::SldprtLossCode;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
@@ -47,6 +51,8 @@ const SELECTOR: usize = head::SELECTOR;
 const SELECTOR_OPEN_BIT: u16 = 1;
 /// The selectors of the curve records that [`ListedReading::Roster`] reads.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
+const CONSTRUCTION_SELECTOR_BIT: u16 = 0x08;
 /// Where a current-layout line record stores its trailer u32.
 const LINE_TRAILER: usize = line::TRAILER;
 /// Where a current-layout line record stores its identity.
@@ -187,6 +193,48 @@ impl SketchRecordLists {
         Self { lists, records }
     }
 
+    /// The form of the curve record of a list that starts at `offset`, when
+    /// it is a line or an arc ([`curve_form`]).
+    pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
+        match self.record(offset)? {
+            ListedRecord::Curve { later: false, .. } => {
+                curve_form(payload, offset, ListedReading::Roster)
+            }
+            ListedRecord::Curve { later: true, .. } => None,
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The kind of the curve record of a list that starts at `offset`,
+    /// decided from the record's own shape ([`framed_curve`]).
+    pub(super) fn listed_curve_kind(&self, payload: &[u8], offset: usize) -> Option<FramedCurve> {
+        match self.record(offset)? {
+            ListedRecord::Curve { .. } => framed_curve(payload, offset).map(|(_, kind)| kind),
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The stream offsets of the point records at the two ends of the
+    /// listed line or arc at `offset`; `None` for a full circle, which has no
+    /// ends, and for a record that is not a readable curve.
+    pub(super) fn listed_curve_ends(&self, payload: &[u8], offset: usize) -> Option<[usize; 2]> {
+        let ListedRecord::Curve { sketch, .. } = self.record(offset)? else {
+            return None;
+        };
+        let (start, end) = match self.listed_curve(payload, offset)? {
+            CurveForm::Line { start, end } => (start, end),
+            CurveForm::Arc { start, end, .. } if start != end => (start, end),
+            CurveForm::Arc { .. } => return None,
+        };
+        Some([sketch.point(start)?, sketch.point(end)?])
+    }
+
+    /// Whether `offset` starts a curve record of a list whose form is a line
+    /// or an arc.
+    pub(super) fn readable_curve(&self, payload: &[u8], offset: usize) -> bool {
+        self.listed_curve(payload, offset).is_some()
+    }
+
     /// The listed record that starts at `offset`.
     pub(super) fn record(&self, offset: usize) -> Option<ListedRecord<'_>> {
         let &(list, place) = self.records.get(&offset)?;
@@ -208,7 +256,9 @@ impl SketchRecordLists {
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
 /// before it states *N*, the *N* heads from there are point records (or
 /// records projected from outside the sketch), and the next head is a curve
-/// record. The curve list is the run of curve records from there.
+/// record or a record projected from outside the sketch. The curve list is
+/// the run of curve records and projected records from there, up to its last
+/// curve record.
 fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchRecordList> {
     let head = *heads.get(first)?;
     let header = head.checked_sub(SKETCH_HEADER_LEN)?;
@@ -228,15 +278,18 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
     {
         return None;
     }
-    let curves = heads
+    let run = heads
         .get(end..)?
         .iter()
         .copied()
-        .take_while(|&curve| curve_record(payload, curve))
+        .take_while(|&curve| curve_record(payload, curve) || external_record(payload, curve))
         .collect::<Vec<_>>();
-    if curves.is_empty() {
-        return None;
-    }
+    // Projected records stand among the curve records; the list ends at its
+    // last curve record.
+    let last = run
+        .iter()
+        .rposition(|&curve| curve_record(payload, curve))?;
+    let curves = run.get(..=last)?.to_vec();
     Some(SketchRecordList {
         points: points.to_vec(),
         curves,
@@ -333,9 +386,57 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
     (u.is_finite() && v.is_finite()).then_some([u, v])
 }
 
+/// The kind of a curve record from its own shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FramedCurve {
+    /// Type `0`.
+    Line,
+    /// Sense `1` or `-1` in its arc layout with equal endpoint indices.
+    Circle,
+    /// Sense `1` or `-1` in its arc layout with distinct endpoint indices.
+    Arc,
+}
+
+/// The kind of the curve record at `offset` in the current layout with a
+/// roster selector: a low sense half of `0` is a line; sense `1` or `-1`
+/// is an arc when four i32 `-2` follow the centre index.
+fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
+    let fields = curve_fields(payload, offset)?;
+    if fields != offset.checked_add(CURRENT_FIELDS)?
+        || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
+    {
+        return None;
+    }
+    match View::i32_le_at(payload, fields.checked_add(SENSE)?)? {
+        sense if sense & LINE_TYPE_MASK == 0 => Some((fields, FramedCurve::Line)),
+        COUNTERCLOCKWISE | CLOCKWISE => {
+            let tail = fields.checked_add(MINUS_TWO)?;
+            if !payload
+                .get(tail..tail.checked_add(4 * I32_MINUS_TWO.len())?)?
+                .chunks_exact(4)
+                .all(|word| word == I32_MINUS_TWO)
+            {
+                return None;
+            }
+            let start = View::u16_le_at(payload, fields)?;
+            let end = View::u16_le_at(payload, fields.checked_add(2)?)?;
+            Some((
+                fields,
+                if start == end {
+                    FramedCurve::Circle
+                } else {
+                    FramedCurve::Arc
+                },
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// The form of the curve record at `offset`, in either head layout, when its
-/// selector has bit 0 clear: a line when the low half of its sense word is
-/// `0`, and an arc when the word is `1` or `-1` and the centre index is
+/// selector has bit 0 clear:
+/// a line when the low half of its sense word is `0`, and an arc when the
+/// word is `1` or `-1` and the centre index is
 /// followed by i32 `-2`. [`ListedReading::Roster`] also requires the current
 /// layout, a roster selector, and for a line no identifier trailer.
 pub(super) fn curve_form(
@@ -373,8 +474,37 @@ pub(super) fn curve_form(
     }
     (sense & LINE_TYPE_MASK == 0
         && start != end
+        && !(object_index_line(payload, offset, fields, selector)
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
         && !(roster && identifier_trailer_line(payload, offset)?))
     .then_some(CurveForm::Line { start, end })
+}
+
+fn object_index_locus(payload: &[u8], offset: usize) -> bool {
+    offset.checked_add(head::LOCUS).is_some_and(|at| {
+        at.checked_add(OBJECT_INDEX_LOCUS.len())
+            .and_then(|end| payload.get(at..end))
+            == Some(&OBJECT_INDEX_LOCUS)
+    })
+}
+
+fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16) -> bool {
+    let prefix_end = offset.checked_add(SKETCH_MARKER.len());
+    let end = offset.checked_add(line::RECORD_ID + size_of::<u32>());
+    selector == 4
+        && Some(fields) == offset.checked_add(CURRENT_FIELDS)
+        && prefix_end.and_then(|end| payload.get(offset..end)) == Some(SKETCH_MARKER)
+        && object_index_locus(payload, offset)
+        && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
+}
+
+pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
+    curve_form(payload, offset, ListedReading::Complete)?;
+    object_index_locus(payload, offset).then(|| {
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
+            "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
+        ))
+    })
 }
 
 /// Whether the current-layout line record at `offset` stores a trailer u32
@@ -383,6 +513,15 @@ fn identifier_trailer_line(payload: &[u8], offset: usize) -> Option<bool> {
     let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
     let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
     Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+}
+
+/// Whether bit 3 of the selector of the record at `offset` is set: the
+/// record is construction geometry.
+pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
+    offset
+        .checked_add(SELECTOR)
+        .and_then(|at| View::u16_le_at(payload, at))
+        .is_some_and(|selector| selector & CONSTRUCTION_SELECTOR_BIT != 0)
 }
 
 /// What the `sgSketch` curve record of a marker gives in place of the

@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::features::extents::LinearTermination;
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -518,7 +518,7 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
     let frame = frame.frame();
     let origin = frame.origin?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(origin))?,
         axis: frame.normal?.into(),
     })
 }
@@ -533,7 +533,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     }))?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: carrier.origin(),
-        axis: cadmpeg_ir::features::FeatureDirection3::from(*carrier.frame().axis()),
+        axis: cadmpeg_ir::features::geometry::FeatureDirection3::from(*carrier.frame().axis()),
     })
 }
 

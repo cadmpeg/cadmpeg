@@ -12,14 +12,16 @@ use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame;
 use cadmpeg_ir::features::mesh::{
     MeshFaceDistribution, MeshModification, MeshRebuildMode, MeshReduceTarget, MeshRepair,
     MeshSelection,
 };
-use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureOperation, FeatureSupportPlaneFrame, NativeSelections, SelectionReference,
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::selections::{
+    BodySelection, FaceSelection, NativeSelections, SelectionReference,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};

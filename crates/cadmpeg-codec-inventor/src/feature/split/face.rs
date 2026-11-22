@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Selected-face split operands.
 
-use cadmpeg_ir::features::{
-    FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, SplitFaceTool,
-};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
 use crate::{
     feature::{

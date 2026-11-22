@@ -7,21 +7,21 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    assets::Asset,
-    document::Model,
-    features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology},
-    geometry::Surface,
-    products::{AssemblyJoint, Occurrence},
-    report::loss::LossNote,
-    sketches::{
-        Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-        SpatialSketchEntity,
-    },
-    subd::SubdSurface,
-    topology::{Body, Face, Region, Shell},
-    units::Tolerances,
+use cadmpeg_ir::assets::Asset;
+use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::geometry::Surface;
+use cadmpeg_ir::products::{AssemblyJoint, Occurrence};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
 };
+use cadmpeg_ir::subd::SubdSurface;
+use cadmpeg_ir::topology::{Body, Face, Region, Shell};
+use cadmpeg_ir::units::Tolerances;
 
 use super::prereqs::{
     append_related_record_headers, collect_related_indices, history_ref_width, ProductPrereqs,
@@ -293,7 +293,8 @@ pub(super) struct DesignModel {
     /// Canvas and decal assets that the geometry assets do not hold yet.
     pub(super) assets: Vec<Asset>,
     pub(super) feature_input_topologies: Vec<FeatureInputTopology>,
-    pub(super) feature_result_topologies: Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    pub(super) feature_result_topologies:
+        Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     pub(super) sketches: Vec<Sketch>,
     pub(super) sketch_entities: Vec<SketchEntity>,
     pub(super) sketch_constraints: Vec<SketchConstraint>,
@@ -688,14 +689,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
-    losses.extend(
-        crate::design::decode::operands::sketchless_profile_selection_losses(
-            scan,
-            &design.design_parameter_scopes,
-            &design.design_construction_operand_groups,
-            &design.design_record_headers,
-        )?,
-    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.projection_losses);
     losses.extend(
@@ -1018,7 +1011,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
     );
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_construction_operand_groups,
@@ -1058,13 +1051,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
     losses.extend(spatial.losses);
-    crate::design::feature_project::bind_work_point_sketch_point_constructions(
+    crate::design::feature_project::work_points::bind_work_point_sketch_point_constructions(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
         &model.spatial_sketch_entities,
     );
-    crate::design::feature_project::bind_hole_sketch_point_profiles(
+    crate::design::feature_project::hole::bind_hole_sketch_point_profiles(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
@@ -1077,7 +1070,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.sketch_entities,
         ),
     );
-    crate::design::feature_project::bind_loft_sketch_point_sections(
+    crate::design::feature_project::sweep_loft::bind_loft_sketch_point_sections(
         &mut model.features,
         &crate::design::feature_project::LoftPointSources {
             groups: &design.design_construction_operand_groups,
@@ -1171,7 +1164,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut model.features,
         )?,
     );
-    crate::design::feature_project::orient_revolve_axes(
+    crate::design::feature_project::revolve::orient_revolve_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketches,
@@ -1181,7 +1174,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.tolerances.angular.get(),
         ),
     );
-    crate::design::feature_project::bind_sketch_feature_geometry(
+    crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_sketch_placements,
@@ -1331,6 +1324,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             angular_tolerance: geometry.tolerances.angular.get(),
         },
     ));
+    design.history_body_consumers.tails = crate::history::body_history_tail::collect(
+        &model.features,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+        geometry.primary_brep,
+    );
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
@@ -1526,6 +1525,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &mut model.configurations,
     )?;
+    losses.extend(
+        crate::design::decode::operands::sketchless_profile_selection_losses(
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &model.features,
+        )?,
+    );
     let phase_one_headers = prereqs
         .design_record_headers
         .iter()

@@ -449,7 +449,7 @@ pub(super) fn point_at(
         }
         _ => super::evaluation::surface_point(ctx, surface, uv.u, uv.v)?,
     };
-    Ok(point.map(cadmpeg_ir::features::FinitePoint3::get))
+    Ok(point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
 }
 
 /// A bare `SP_CURVE` over its whole knot domain (spec §7.6).

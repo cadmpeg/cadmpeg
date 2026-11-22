@@ -5,10 +5,11 @@ use std::borrow::Cow;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsSurface};
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::IncreasingParameterInterval;

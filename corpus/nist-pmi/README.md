@@ -4,7 +4,7 @@ Curated subset of the NIST Model-Based Engineering (MBE) Product and Manufacturi
 
 NIST is the author. The files are U.S. government works in the public domain under 17 U.S.C. §105, and the manifest tags them `LicenseRef-NIST-PD`.
 
-The subset keeps 18 of the archive members. It omits the STC natives, the remaining CTC and FTC natives and STEP files, the drawing PDFs, and every MTC member except the NX assembly. The NX assembly refers to component and fastener parts that the subset omits. Like every corpus specimen, each CAD file here must pass `cadmpeg check` (`cargo test -p cadmpeg --test corpus_manifest`).
+The subset keeps 18 of the archive members. It omits the STC natives, the remaining CTC and FTC natives and STEP files, the drawing PDFs, and every MTC member except the NX assembly. The NX assembly refers to component and fastener parts that the subset omits. Like every corpus specimen, each CAD file here must pass `cadmpeg check` (`cargo test -p cadmpeg --test integration corpus_manifest`).
 
 NIST states that the STEP files are not reference files and that a STEP checker reports some syntax errors in them.
 
@@ -133,4 +133,4 @@ cargo test -q -p cadmpeg --bin cadmpeg nist_twin -- --include-ignored --nocaptur
 
 ## Manifest
 
-CAD files are listed in [`../manifest.toml`](../manifest.toml) with `license = "LicenseRef-NIST-PD"`, `author = "National Institute of Standards and Technology"`, the document-page `source_url`, and `acquisition_date = "2026-10-30"`. Dialect pins are derived by `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest`.
+CAD files are listed in [`../manifest.toml`](../manifest.toml) with `license = "LicenseRef-NIST-PD"`, `author = "National Institute of Standards and Technology"`, the document-page `source_url`, and `acquisition_date = "2026-10-30"`. Dialect pins are derived by `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test integration corpus_manifest`.

@@ -138,7 +138,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>) -> (Feature, Vec<String>) {
         source_tag: Some("MeshTessellate".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native()),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(native()),
         native_ref: Some(scope_id),
     };
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);

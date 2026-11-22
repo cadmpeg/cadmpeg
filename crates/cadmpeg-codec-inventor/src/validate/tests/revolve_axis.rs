@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::features::{FeatureId, RevolveConstruction};
+use cadmpeg_ir::features::revolve::RevolveConstruction;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity};
 use serde_json::json;
 
@@ -61,8 +62,8 @@ fn construction() -> RevolveConstruction {
             "direction": {"x": 0.0, "y": 0.0, "z": 1.0},
         }))
         .expect("axis"),
-        extent: cadmpeg_ir::features::RevolveExtent::OneSided {
-            termination: cadmpeg_ir::features::AngularTermination::Angle {
+        extent: cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
+            termination: cadmpeg_ir::features::extents::AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
                     .expect("full turn"),
             },

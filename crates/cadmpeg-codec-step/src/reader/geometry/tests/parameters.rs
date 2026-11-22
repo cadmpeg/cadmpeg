@@ -10,11 +10,12 @@ use crate::reader::geometry::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
 
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -67,7 +68,7 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
     for (number, x) in [(1, 0.0), (2, 1.0)] {
         ir.geometry.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                 .expect("finite point"),
             None,
         ));
@@ -1275,7 +1276,7 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
     ] {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("step:test:point#{id}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position).expect("finite point"),
             None,
         ));
     }

@@ -223,3 +223,56 @@ fn a_node_without_a_parsed_structure_names_no_lane() {
     ];
     assert_eq!(fit_of(&operand, &[10]), LaneFit::Touches);
 }
+
+#[test]
+fn a_one_clause_node_names_its_lanes() {
+    use crate::records::topology::face::DesignFaceRecipeNode;
+    // Lanes 0 and 1 touch the top 10; lane 2 names the bottom 40.
+    let structure = |fields: &[i32]| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::operands::face_recipe_structure(ctx, fields)
+                .unwrap()
+                .unwrap()
+        })
+    };
+    let two_clause = structure(&[
+        0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 1, -1, 0, 0, -1,
+    ]);
+    let one_clause = structure(&[2, -1, 2, -1, 1, -1, 2, 0, -1, 1, -1, 0, 0, -1]);
+    assert_eq!(one_clause.sides.len(), 1);
+    let node = |offset, structure| DesignFaceRecipeNode {
+        byte_offset: offset,
+        end_byte_offset: offset + 12,
+        program: Vec::new(),
+        recipe_structure: Some(structure),
+    };
+    let mut operand = operand(&[&[20], &[30], &[40]]);
+    operand.recipe_nodes = vec![node(0, two_clause.clone())];
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Touches);
+    operand.recipe_nodes = vec![node(0, two_clause), node(12, one_clause)];
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(2));
+}
+
+#[test]
+fn a_parsed_node_with_an_ordinal_outside_the_operands_names_no_lane() {
+    use crate::records::topology::face::DesignFaceRecipeNode;
+    // Lane 0 touches the top 10; lane 1 names the bottom 40.
+    let mut operand = operand(&[&[20], &[40]]);
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(1));
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(
+            ctx,
+            &[2, -1, 2, -1, 1, -1, 2, 0, -1, 1, -1, 0, 0, -1],
+        )
+        .unwrap()
+        .unwrap()
+    });
+    assert!(!structure.has_valid_boundary_edge_ordinals(&operand.recipe_references));
+    operand.recipe_nodes = vec![DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program: Vec::new(),
+        recipe_structure: Some(structure),
+    }];
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Touches);
+}

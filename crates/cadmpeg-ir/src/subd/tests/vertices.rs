@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::subd::{SubdError, SubdVertex, SubdVertexTag};
 

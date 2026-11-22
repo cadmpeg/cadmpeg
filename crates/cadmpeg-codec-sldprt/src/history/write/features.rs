@@ -3,9 +3,8 @@
 
 use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent};
 use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -635,7 +634,7 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
                         .map_or_else(String::new, |(_, id)| id.clone());
                     feature_index += 1;
                 }
-                HistoryContent::Text(_) => {}
+                HistoryContent::Text(_) | HistoryContent::Element(_) => {}
             }
         }
         history.content.retain(|item| {

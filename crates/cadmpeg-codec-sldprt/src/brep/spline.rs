@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
@@ -1859,7 +1859,7 @@ mod tests {
         scan_curve_descriptors, scan_surface_carriers, surface_knot_values, unique_knots,
         unique_surface_knot_span, Arrays, CurveDescriptor,
     };
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
 

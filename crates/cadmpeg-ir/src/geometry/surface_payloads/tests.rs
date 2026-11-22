@@ -2,7 +2,8 @@
 use crate::test_support::edit;
 
 use super::{OffsetSurfaceConstruction, SubSurfaceConstruction, SubsetSurfaceConstruction};
-use crate::geometry::{LegacyExtensionFlags, OffsetExtension, ProceduralSurfaceDefinition};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{LegacyExtensionFlags, OffsetExtension};
 use crate::ids::SurfaceId;
 
 mod range_admissions;
@@ -116,7 +117,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
 
 #[test]
 fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
-    use crate::geometry::{
+    use crate::geometry::revision_forms::{
         RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
 
@@ -210,8 +211,9 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
 #[test]
 fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     use super::ExactSurfacePayload;
-    use crate::geometry::{
-        ExactSpline, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    use crate::geometry::procedural_surfaces::ExactSpline;
+    use crate::geometry::revision_forms::{
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
 
     let form = RevisionSurfaceForm {
@@ -287,7 +289,8 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
 #[test]
 fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
     use super::{CompoundSurfacePayload, ExactSurfacePayload};
-    use crate::geometry::{CompoundComponent, ExactSpline};
+    use crate::geometry::procedural_curves::CompoundComponent;
+    use crate::geometry::procedural_surfaces::ExactSpline;
 
     let exact = |range| {
         ExactSurfacePayload::try_new(ExactSpline::Legacy {
@@ -324,9 +327,8 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
 #[test]
 fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
     use super::LoftSurfacePayload;
-    use crate::geometry::{
-        LoftBridgeToken, LoftPath, LoftSection, LoftSectionEntry, SplineSurfaceParameters,
-    };
+    use crate::geometry::lofts::{LoftBridgeToken, LoftPath, LoftSection, LoftSectionEntry};
+    use crate::geometry::procedural_surfaces::SplineSurfaceParameters;
 
     let loft = |parameter, bridge| {
         LoftSurfacePayload::try_new(
@@ -353,7 +355,7 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
             [0; 2],
             0,
             vec![LoftBridgeToken::Double(bridge)],
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
     };
     let valid = ProceduralSurfaceDefinition::Loft(loft(-1.0, -2.0).unwrap());
@@ -374,7 +376,7 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
 #[test]
 fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() {
     use super::CompoundLoftSurfacePayload;
-    use crate::geometry::{
+    use crate::geometry::lofts::{
         ClassicLoftProfileData, CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale,
         CompoundLoftScaleMember, CompoundLoftScales, CompoundLoftTail, LoftSubdata,
     };
@@ -443,11 +445,14 @@ fn a_loft_member_form_direction_is_refused_by_the_loft_and_net_payload_admission
     use super::{
         LoftSurfacePayload, LoftSurfacePayloadWire, NetSurfacePayload, NetSurfacePayloadWire,
     };
-    use crate::geometry::{
-        CacheContract, LawFormula, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
-        LoftSection, LoftSectionEntry, LoftSubdata, NetSurfaceConstruction,
-        SplineSurfaceParameters,
+    use crate::geometry::laws::LawFormula;
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::lofts::{
+        LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember, LoftSection, LoftSectionEntry,
+        LoftSubdata,
     };
+    use crate::geometry::procedural_surfaces::SplineSurfaceParameters;
+    use crate::geometry::skin_surfaces::NetSurfaceConstruction;
     use crate::ids::CurveId;
     use crate::math::Vector3;
 
@@ -589,12 +594,15 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
     use super::{
         LoftSurfacePayload, LoftSurfacePayloadWire, NetSurfacePayload, NetSurfacePayloadWire,
     };
-    use crate::geometry::{
-        CacheContract, LawFormula, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
-        LoftRevisionForm, LoftSection, LoftSectionEntry, LoftSubdata, LoftSubdataRow,
-        NetSurfaceConstruction, RevisionCacheForm, RevisionSurfaceParameterization,
-        SplineSurfaceParameters,
+    use crate::geometry::laws::LawFormula;
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::lofts::{
+        LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember, LoftRevisionForm, LoftSection,
+        LoftSectionEntry, LoftSubdata, LoftSubdataRow,
     };
+    use crate::geometry::procedural_surfaces::SplineSurfaceParameters;
+    use crate::geometry::revision_forms::{RevisionCacheForm, RevisionSurfaceParameterization};
+    use crate::geometry::skin_surfaces::NetSurfaceConstruction;
     use crate::ids::CurveId;
     use crate::math::Vector3;
 
@@ -832,10 +840,14 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
         RevolutionSurfaceConstructionWire, SumSurfaceConstruction, SumSurfaceConstructionWire,
         TaperSurfaceConstruction, TaperSurfaceConstructionWire,
     };
-    use crate::features::FinitePoint3;
-    use crate::geometry::{
-        CacheContract, DeformableSurfaceConstruction, DeformableSurfaceData, ExactSpline,
-        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization, TaperSurfaceKind,
+    use crate::features::geometry::FinitePoint3;
+    use crate::geometry::deformable_surfaces::{
+        DeformableSurfaceConstruction, DeformableSurfaceData,
+    };
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::procedural_surfaces::{ExactSpline, TaperSurfaceKind};
+    use crate::geometry::revision_forms::{
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
@@ -1128,10 +1140,14 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
         SweepSurfacePayload, SweepSurfacePayloadWire, VertexBlendSurfacePayload,
         VertexBlendSurfacePayloadWire,
     };
-    use crate::geometry::{
-        CacheContract, FitTolerance, RevisionCacheForm, RevisionSurfaceParameterization,
-        SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VertexBlendBoundary,
-        VertexBlendBoundaryGeometry, VertexBlendConstruction, VertexBlendTwists,
+    use crate::geometry::blends::{
+        VertexBlendBoundary, VertexBlendBoundaryGeometry, VertexBlendConstruction,
+        VertexBlendTwists,
+    };
+    use crate::geometry::legacy_cache::{CacheContract, FitTolerance};
+    use crate::geometry::revision_forms::{RevisionCacheForm, RevisionSurfaceParameterization};
+    use crate::geometry::sweep_surfaces::{
+        SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
     };
     use crate::ids::CurveId;
     use crate::math::Vector3;
@@ -1176,9 +1192,9 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
                 directions: [Vector3::new(0.0, 0.0, 1.0); 5],
                 origin: crate::math::Point3::new(0.0, 0.0, 0.0),
                 parameters: [0.0; 4],
-                formulas: Box::new(std::array::from_fn(
-                    |_| crate::geometry::LawFormula::Null {},
-                )),
+                formulas: Box::new(std::array::from_fn(|_| {
+                    crate::geometry::laws::LawFormula::Null {}
+                })),
             },
             discontinuities: Default::default(),
             discontinuity_flag: false,
@@ -1317,7 +1333,8 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
 #[test]
 fn the_blend_admission_refuses_a_non_finite_radius_law() {
     use super::{BlendSurfacePayload, BlendSurfacePayloadWire};
-    use crate::geometry::{BlendCrossSection, BlendRadiusLaw, CacheContract};
+    use crate::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+    use crate::geometry::legacy_cache::CacheContract;
 
     let blend_new = |radius: BlendRadiusLaw| {
         BlendSurfacePayload::try_new(
@@ -1356,9 +1373,11 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
 
     // The law types state finiteness, so a non-finite radius is refused where
     // the law is admitted, with the refusal the payload stated for it.
-    let refusal = Err(crate::geometry::ProceduralGeometryError::Payload(
-        "blend radius law is not finite",
-    ));
+    let refusal = Err(
+        crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+            "blend radius law is not finite",
+        ),
+    );
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for law in [
             BlendRadiusLaw::constant(value),
@@ -1373,7 +1392,7 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
 #[test]
 fn an_axis_revolution_replaces_its_origin_and_keeps_the_admitted_direction() {
     use super::AxisRevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
 
@@ -1408,8 +1427,9 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
     use super::{
         admit_revolution_axis, RevolutionSurfaceConstruction, RevolutionSurfaceConstructionWire,
     };
-    use crate::features::FinitePoint3;
-    use crate::geometry::{CacheContract, ProceduralSurfaceDefinition};
+    use crate::features::geometry::FinitePoint3;
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
     use crate::units::UnitVector3;
@@ -1495,7 +1515,7 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
 #[test]
 fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
     use super::{admit_revolution_axis, admit_revolution_axis_from_parts};
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
 
     let origin = Point3::new(1.0, 2.0, 3.0);
@@ -1513,8 +1533,8 @@ fn admitted_revolution_axis_keeps_its_finite_origin_and_unit_refusal() {
 #[test]
 fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
-    use crate::geometry::CacheContract;
+    use crate::features::geometry::FinitePoint3;
+    use crate::geometry::legacy_cache::CacheContract;
     use crate::ids::CurveId;
     use crate::math::Point3;
     use crate::units::UnitVector3;
@@ -1550,9 +1570,10 @@ fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
 #[test]
 fn revolution_refusals_name_the_cache_form_first_then_each_interval() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
-    use crate::geometry::{
-        CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    use crate::features::geometry::FinitePoint3;
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::revision_forms::{
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
     use crate::ids::CurveId;
     use crate::units::UnitVector3;
@@ -1670,8 +1691,8 @@ fn a_legacy_offset_from_admitted_parts_matches_its_raw_admission() {
 #[test]
 fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
     use super::RevolutionSurfaceConstruction;
-    use crate::features::FinitePoint3;
-    use crate::geometry::CacheContract;
+    use crate::features::geometry::FinitePoint3;
+    use crate::geometry::legacy_cache::CacheContract;
     use crate::ids::CurveId;
     use crate::topology::IncreasingParameterInterval;
     use crate::units::UnitVector3;
@@ -1713,8 +1734,8 @@ fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
 #[test]
 fn a_legacy_extrusion_from_admitted_parts_matches_its_raw_admission() {
     use super::ExtrusionSurfaceConstruction;
-    use crate::features::{FinitePoint3, FiniteVector3};
-    use crate::geometry::{CacheContract, FitTolerance, LegacyCache};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
+    use crate::geometry::legacy_cache::{CacheContract, FitTolerance, LegacyCache};
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
     use crate::topology::IncreasingParameterInterval;

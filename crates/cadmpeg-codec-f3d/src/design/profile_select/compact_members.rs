@@ -7,7 +7,9 @@ use super::{
 };
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+};
 
 pub(super) fn resolve(
     group: &DesignConstructionOperandGroup,
@@ -124,7 +126,7 @@ pub(super) fn resolve(
         }
     }
     let candidate = match sweep.operation {
-        cadmpeg_ir::features::BooleanOp::Cut => {
+        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => {
             cap_regions::compact::removed_candidate(sketch, scoped, states, sweep)?
         }
         _ => cap_regions::compact::added_candidate(sketch, scoped, states, sweep)?,
@@ -183,7 +185,7 @@ fn outline(regions: &[SketchProfileRegion]) -> Option<Vec<SketchProfileBoundaryU
         };
         uses.push(SketchProfileBoundaryUse {
             entity: entity.clone(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
                 range.map(f64::from_bits),
             )
             .ok()?,
@@ -210,7 +212,10 @@ fn outline(regions: &[SketchProfileRegion]) -> Option<Vec<SketchProfileBoundaryU
             }
             if next == end {
                 last.parameter_range =
-                    cadmpeg_ir::geometry::DirectedParameterRange::new([start, far]).ok()?;
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                        start, far,
+                    ])
+                    .ok()?;
                 continue;
             }
         }

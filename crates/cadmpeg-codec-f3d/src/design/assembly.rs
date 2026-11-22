@@ -2034,13 +2034,15 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: Some(native_ref.into()),
         }
     }

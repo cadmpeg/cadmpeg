@@ -779,6 +779,14 @@ pub(crate) fn enrich_history_sweep_profiles(
             let Some(end) = sweep_object_end(lane, start, feature) else {
                 continue;
             };
+            let end = lane
+                .classes
+                .iter()
+                .filter(|class| class.name == "moWireContact_c")
+                .filter_map(|class| usize::try_from(class.offset).ok())
+                .filter(|offset| (start..end).contains(offset))
+                .min()
+                .unwrap_or(end);
             let mut profile_offset = None;
             let mut ambiguous_offset = false;
             let mut source = None;
@@ -963,7 +971,8 @@ pub(crate) fn project_sweep_reference_paths(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    use cadmpeg_ir::features::{FeatureId, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::FeatureId;
     let history_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1261,7 +1270,8 @@ pub(crate) fn project_compact_combine_paths(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
+    use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+    use cadmpeg_ir::features::CombineOperands;
     struct Projection {
         target: BodySelection,
         tools: BodySelection,

@@ -17238,6 +17238,14 @@
           "items": {
             "$ref": "#/$defs/ContainerId"
           }
+        },
+        "unproduced": {
+          "description": "Bodies owned by definitions the scope spans that no member produces.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BodyId"
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false,
@@ -17246,7 +17254,8 @@
         "roots",
         "active_arrangements",
         "occurrences",
-        "current"
+        "current",
+        "unproduced"
       ]
     },
     "Deviations": {
@@ -36790,10 +36799,235 @@
       "type": "string",
       "pattern": "^[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
     },
+    "HistoricalEdgeCarrier": {
+      "description": "Carrier of one historical edge: a curve that holds no arena references,\nand the parameter interval of the edge on it.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Carrier curve.",
+          "$ref": "#/$defs/HistoricalEdgeCurve"
+        },
+        "range": {
+          "description": "Parameter interval of the edge on `curve`, lower endpoint first.",
+          "$ref": "#/$defs/ParameterInterval"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "curve",
+        "range"
+      ]
+    },
+    "HistoricalEdgeCurve": {
+      "description": "Shape of a historical edge's carrier curve.",
+      "oneOf": [
+        {
+          "description": "Infinite line.",
+          "type": "object",
+          "properties": {
+            "direction": {
+              "description": "Line direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "line"
+            },
+            "origin": {
+              "description": "Line origin.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "direction"
+          ]
+        },
+        {
+          "description": "Full circle.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Circle center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "circle"
+            },
+            "radius": {
+              "description": "Circle radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Ellipse.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Ellipse center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ellipse"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Major semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Minor semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Parabola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "focal_distance": {
+              "description": "Distance from the vertex to the focus.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "parabola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "vertex": {
+              "description": "Parabola vertex.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "vertex",
+            "axis",
+            "major_direction",
+            "focal_distance"
+          ]
+        },
+        {
+          "description": "Hyperbola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Hyperbola center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "hyperbola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Transverse semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Conjugate semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Free-form NURBS curve.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nurbs"
+            }
+          },
+          "$ref": "#/$defs/NurbsCurve",
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
     "HistoricalEdgeGeometry": {
       "description": "Geometry of one historical edge in a feature's input state.\n\nPositions and directions are in millimetres in the frame of the body that\nthe feature evaluates, before the feature applies.",
       "type": "object",
       "properties": {
+        "carrier": {
+          "description": "Carrier curve of the edge and the parameter interval the edge covers\non it, in the frame of `interior`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoricalEdgeCarrier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "edge": {
           "description": "Edge of the owning input state.",
           "$ref": "#/$defs/HistoricalEdgeId"

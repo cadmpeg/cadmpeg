@@ -106,7 +106,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("catia:test:point#point-0").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
             .expect("a finite position is a point"),
         None,
     ));

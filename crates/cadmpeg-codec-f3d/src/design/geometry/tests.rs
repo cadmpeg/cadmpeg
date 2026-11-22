@@ -19,7 +19,7 @@ use cadmpeg_core::decode::DecodeArena;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
@@ -1598,9 +1598,12 @@ fn sketch_arrangement_faces_within_local_work_reports_no_loss() {
 #[test]
 fn arrangement_cycle_scan_skips_when_its_work_count_overflows() {
     let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
-    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+    let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity,
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            0.0, 1.0,
+        ])
+        .unwrap(),
         reversed: false,
     };
     let mut edges: Vec<_> = (0..3)
@@ -1625,9 +1628,12 @@ fn arrangement_cycle_scan_skips_when_its_work_count_overflows() {
 #[test]
 fn arrangement_ring_cycle_scan_skips_past_local_budget() {
     let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
-    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+    let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity,
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            0.0, 1.0,
+        ])
+        .unwrap(),
         reversed: false,
     };
     let mut edges: Vec<_> = (0..500)
@@ -1711,9 +1717,12 @@ fn coincident_line_boundary_requires_positive_length_overlap() {
         )
     };
     let carrier = line("carrier", 0.0, 2.0);
-    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+    let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity: carrier.id().clone(),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.25, 0.75]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            0.25, 0.75,
+        ])
+        .unwrap(),
         reversed: false,
     };
     let entities = [carrier];
@@ -1747,9 +1756,9 @@ fn coincident_circle_boundary_checks_center_radius_and_arc_length() {
         )
     };
     let carrier = circle("carrier", 0.0, 2.0);
-    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
+    let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity: carrier.id().clone(),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
             0.0,
             std::f64::consts::FRAC_PI_2,
         ])

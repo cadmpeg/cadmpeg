@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::math::{Point3, Vector3};
-use crate::{
-    features::{
-        patterns::{
-            CompositePattern, LinearPatternDirection, PatternKind, PatternLengthField,
-            PatternScaleCenter, PatternStage, PatternTransform,
-        },
-        FaceSelection, FeatureDirection3, FinitePoint3,
-    },
-    scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal},
-    units::UnitVector3,
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::patterns::{
+    CompositePattern, LinearPatternDirection, PatternKind, PatternLengthField, PatternScaleCenter,
+    PatternStage, PatternTransform,
 };
+use crate::features::selections::FaceSelection;
+use crate::math::{Point3, Vector3};
+use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
+use crate::units::UnitVector3;
 use serde_json::json;
 
 #[test]
 fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {
     use crate::features::patterns::curve_driven::CurveDrivenPatternParameters;
-    use crate::features::PathRef;
+    use crate::features::profiles::PathRef;
 
     let parameters = CurveDrivenPatternParameters {
         path: Some(PathRef::Native("synthetic:path".into())),

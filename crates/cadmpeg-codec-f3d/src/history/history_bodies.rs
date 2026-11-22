@@ -6,10 +6,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model, Topology};
-use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -84,9 +84,9 @@ pub(crate) fn derived_base_snapshots(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<HistoryBody>, CodecError> {
     use crate::records::feature::derived_base::DesignDerivedBaseSnapshot;
-    use cadmpeg_ir::features::{
-        BodySelection, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureContent, FeatureDefinition, FeatureOperation};
 
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut bodies = Vec::new();
@@ -205,6 +205,7 @@ pub(crate) fn derived_base_snapshots(
 pub(crate) struct ConsumerContext {
     pub(crate) bindings: HashMap<String, String>,
     pub(crate) remaining_work: usize,
+    pub(crate) tails: super::body_history_tail::BodyHistoryTails,
 }
 
 pub(crate) fn fill(
@@ -517,7 +518,8 @@ pub(crate) fn fill_consumed(
         &work,
         losses,
     );
-    contain_consumed_failure(ctx, result, losses)
+    contain_consumed_failure(ctx, result, losses)?;
+    super::body_history_tail::append(model, &context.tails, losses)
 }
 
 fn contain_consumed_failure(
@@ -858,7 +860,7 @@ fn identity_slot(
     Ok(slot.filter(|slot| carriers.next().is_none() && identity.revised.contains(slot)))
 }
 
-fn output_history<'a>(
+pub(super) fn output_history<'a>(
     bodies: impl Iterator<Item = &'a str>,
     histories: &'a [AsmHistory],
     primary_brep: Option<&str>,

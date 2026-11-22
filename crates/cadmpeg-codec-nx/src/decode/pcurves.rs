@@ -40,12 +40,16 @@ use cadmpeg_ir::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_
 use cadmpeg_ir::eval::pcurve_tangent;
 use cadmpeg_ir::eval::surface_second_partials;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionParameterization;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis};
+use cadmpeg_ir::geometry::pcurve::{
+    PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles, PolarPcurveNurbs,
+};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
-    pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles, PolarPcurveNurbs},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry, TolerantIntersectionParameterization,
+    Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
@@ -440,8 +444,9 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let candidates = incident.entry(incident_key).or_default();
             let candidate = (
                 use_.pcurve.clone(),
-                use_.parameter_range
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                use_.parameter_range.map(
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
+                ),
             );
             if !candidates.contains(&candidate) {
                 candidates.push(candidate);
@@ -580,7 +585,8 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                         support: &supports[side],
                         pcurve: &carriers[side].geometry,
                         range: first_range,
-                        endpoints: (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                        endpoints: (*endpoints)
+                            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                         tolerance: endpoint_tolerance,
                     },
                     geometry_budget,
@@ -1178,7 +1184,7 @@ type OppositeChartReplacement = (
     usize,
     usize,
     PcurveGeometry,
-    cadmpeg_ir::geometry::FitTolerance,
+    cadmpeg_ir::geometry::legacy_cache::FitTolerance,
     bool,
 );
 
@@ -1297,7 +1303,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 };
                 let Some(tolerance) = procedural
                     .cache_fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
                     .or_else(|| edge_tolerances.get(owner).copied())
                 else {
                     return Ok(None);
@@ -1338,7 +1344,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 else {
                     return Ok(None);
                 };
-                let Ok(fit_tolerance) = cadmpeg_ir::geometry::FitTolerance::try_new(tolerance)
+                let Ok(fit_tolerance) =
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(tolerance)
                 else {
                     return Ok(None);
                 };
@@ -1576,7 +1583,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 };
                 (
                     supports.each_ref(),
-                    (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                    (*endpoints).map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                     range,
                     tolerance,
                 )
@@ -1697,7 +1704,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             }
             [None, None] => continue,
         };
-        let fit_tolerance = cadmpeg_ir::geometry::FitTolerance::from(admitted_tolerance);
+        let fit_tolerance =
+            cadmpeg_ir::geometry::legacy_cache::FitTolerance::from(admitted_tolerance);
 
         replacements.push((
             procedural.id.clone(),
@@ -3377,7 +3385,7 @@ fn transferred_pcurve_sample_with_budget<'a>(
                     model_curve_point_by_id(admission, index, curve, parameter)
                 }),
         )?
-        .map(cadmpeg_ir::features::FinitePoint3::get);
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
     }
     let Some(point) = point else {
         return Ok(None);
@@ -3802,7 +3810,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
                             model_curve_point_by_id(admission, index, curve, parameter)
                         }),
                     )?
-                    .map(cadmpeg_ir::features::FinitePoint3::get);
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
                 }
                 let Some(source_point) = source_point else {
                     return Ok(false);
@@ -4276,7 +4284,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 
     for (xmt, edge_id, supports, endpoints, tolerance) in candidates {
         let Ok(admitted_intersection) =
-            cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+            cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                 supports, endpoints, tolerance,
             )
         else {
@@ -4558,11 +4566,10 @@ mod tests {
     use super::{finite_parameter_sample, opposite_chart_geometry_work_limit};
 
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::{
-        pcurve::{Pcurve, PcurveGeometry},
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve};
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, ShellId, SurfaceId,
         VertexId,
