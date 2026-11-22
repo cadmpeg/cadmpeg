@@ -8359,17 +8359,38 @@ fn sketchless_profile_selection_loss(
 }
 
 /// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
-/// member whose typed-reference selection has a sketchless chain record.
+/// member that stays native and whose typed-reference or compact selection
+/// has a sketchless chain record.
 pub(crate) fn sketchless_profile_selection_losses(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Result<Vec<LossNote>, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
     let headers = indexed_operand_headers(headers);
+    let native_profiles = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Native(_)),
+                    ..
+                })
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     let extrude_scopes = scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter(|scope| {
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+                && native_profiles.contains(scope.id.as_str())
+        })
         .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
         .collect::<HashSet<_>>();
     let mut records_by_stream = HashMap::new();
@@ -8378,7 +8399,9 @@ pub(crate) fn sketchless_profile_selection_losses(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+        if group.extrude_role() != Some(DesignExtrudeOperandRole::Profile)
+            || !extrude_scopes.contains(&(stream, group.scope_record_index))
+        {
             continue;
         }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)

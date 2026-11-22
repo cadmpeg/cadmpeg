@@ -3680,7 +3680,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** A stored carrier or a derivation rule for the absent curves, the Sketch that owner 1977 names, and the design that owns a sketchless selection's asset GUID.
 
-**Note.** The selection stays native with `feature.profile-selection-native`.
+**Note.** The selection stays native with `feature.profile-selection-native`. Member 214 of group 204 also reports `feature.extrude-profile-sketch-absent`.
 
 ### DR-670. Carrier state of a Hole on a reconstructed plane
 

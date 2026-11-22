@@ -584,6 +584,35 @@ fn sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
 }
 
 #[test]
+fn typed_sketchless_chain_accepts_a_hyphenated_guid_owner() {
+    let plain = sketchless_chain();
+    let owner_at = plain
+        .windows(8)
+        .position(|window| window == [2, 0, 0, 0, b'7', 0, b'5', 0])
+        .unwrap();
+    let mut bytes = plain[..owner_at].to_vec();
+    lp_utf16(&mut bytes, "e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca");
+    bytes.extend_from_slice(&plain[owner_at + 8..]);
+    assert_eq!(
+        sketchless_asset(&bytes).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+    assert!(parse(&bytes).is_none());
+}
+
+#[test]
+fn typed_sketchless_chain_record_keeps_the_selection_spelling() {
+    let mut bytes = sketchless_chain();
+    let marker_at = bytes
+        .windows(6)
+        .position(|window| window == [1, 1, 0, 0, 0, 0])
+        .unwrap();
+    let reference_at = marker_at + 6;
+    bytes.drain(reference_at + 9..reference_at + 49);
+    assert!(sketchless_asset(&bytes).is_none());
+}
+
+#[test]
 fn chain_record_with_a_sketch_scope_is_not_sketchless() {
     assert!(sketchless_asset(&chain(false)).is_none());
 }
@@ -701,4 +730,111 @@ fn sketchless_selection_of_the_design_asset_names_no_sketch() {
         note.message,
         "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch, and the profile stays native."
     );
+}
+
+#[test]
+fn sketchless_notes_require_an_extrude_profile_role_and_native_outcome() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::scalar::NonZeroLength;
+    use cadmpeg_ir::sketches::SketchId;
+
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    let stream = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut group = group();
+    group.id = format!("{stream}:construction-group#90");
+    let header = DesignRecordHeader {
+        id: format!("{stream}:design-record-header#0"),
+        record_index: 100,
+        class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &[],
+        &[],
+        &compact_sketchless_chain("e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca", false),
+        &[],
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        for kind in [DesignFeatureKind::Extrude, DesignFeatureKind::Revolve] {
+            let scope = DesignParameterScope::empty(
+                &format!("{stream}:design-parameter-scope#80"),
+                kind.clone(),
+                80,
+            );
+            for native in [true, false] {
+                let profile = if native {
+                    PlanarProfileRef::Native(group.id.clone())
+                } else {
+                    PlanarProfileRef::Sketch(SketchId::mint("synthetic:test:sketch#75").unwrap())
+                };
+                let feature = Feature {
+                    product_definition: None,
+                    id: FeatureId::mint("synthetic:test:feature#80").unwrap(),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: None,
+                    dependencies: Default::default(),
+                    source_properties: Default::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: Default::default(),
+                    native_ref: Some(scope.id.clone()),
+                    evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                        FeatureOperation::Extrude {
+                            profile: ProfileRef::Planar(profile),
+                            direction: ExtrudeDirection::ReversedProfileNormal {},
+                            start: ExtrudeStart::ProfilePlane {},
+                            extent: ExtrudeExtent::OneSided {
+                                side: ExtrudeSide {
+                                    termination: LinearTermination::Blind {
+                                        length: NonZeroLength::new(2.0).unwrap(),
+                                    },
+                                    draft: None,
+                                },
+                            },
+                            op: BooleanOp::Cut,
+                            solid: None,
+                            face_maker: None,
+                            inner_wire_taper: None,
+                            length_along_profile_normal: None,
+                            allow_multi_profile_faces: None,
+                        },
+                    )),
+                };
+                for role in [
+                    DesignConstructionOperandRole::ExtrudeProfile,
+                    DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A),
+                ] {
+                    group.operand_role = role;
+                    let losses = super::super::sketchless_profile_selection_losses(
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&group),
+                        std::slice::from_ref(&header),
+                        std::slice::from_ref(&feature),
+                    )
+                    .unwrap();
+                    let expected = usize::from(
+                        kind == DesignFeatureKind::Extrude
+                            && native
+                            && role == DesignConstructionOperandRole::ExtrudeProfile,
+                    );
+                    assert_eq!(losses.len(), expected, "{kind:?}, {native}, {role:?}");
+                    if let Some(loss) = losses.first() {
+                        assert_eq!(
+                            loss.code.local_code(),
+                            "feature.extrude-profile-sketch-absent"
+                        );
+                    }
+                }
+            }
+        }
+    });
 }
