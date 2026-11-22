@@ -3992,3 +3992,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Saves that pick a subset of the glyphs of one text, and saves that pick a glyph counter, with the local identities of each member.
 
 **Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.
+
+### DR-1033. Body key of a history-only body-map pair against the body slots of its generating feature
+
+**Question.** When the generating feature of a cross-component `Combine` tool inserts several bodies in its history state, does the body key of the history-only body-map pair of the tool equal the body slot of the tool in that state?
+
+**Known.** `f3d.md` §3.1 takes the one slot of a single-body result topology, and takes the slot that equals the body key of the pair when the topology holds several. A tool without such a slot leaves every tool native.
+
+**Need.** A Fusion readback of the tool bodies of a `Combine` whose generating feature inserts more than one body.
+
+**Conflict.** None.

@@ -6,7 +6,7 @@ use cadmpeg_ir::features::{
     CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 
-use super::bind;
+use super::{bind, reconcile_result_topologies};
 use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
 use crate::records::feature::combine::{
     DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
@@ -15,6 +15,8 @@ use crate::records::feature::combine::{
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -340,4 +342,81 @@ fn a_captured_base_feature_generates_the_second_combine_tool() {
             .map(|(_, value)| value.as_str()),
         Some(features[1].id.as_str())
     );
+}
+
+fn topology(generator: &Feature, slots: &[&str]) -> FeatureResultTopology {
+    let bodies = slots
+        .iter()
+        .map(|slot| NonBlankString::new((*slot).to_owned()).unwrap())
+        .collect::<Vec<_>>();
+    FeatureResultTopology::new(
+        crate::ids::history_result_state_id(&generator.id, 1),
+        generator.id.clone(),
+        FeatureResultMembers::new(bodies, Vec::new(), Vec::new(), Vec::new()).unwrap(),
+        None,
+    )
+}
+
+fn bound_tools() -> (Vec<Feature>, Vec<DesignBodyBinding>) {
+    let scopes = vec![
+        scope(DesignFeatureKind::Extrude, 100),
+        scope(DesignFeatureKind::Extrude, 200),
+        combine_scope(&[(150, 100), (250, 200)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("second", 2, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let bindings = vec![pair(150, true), pair(250, true)];
+    assert!(bind(&mut features, &scopes, &bindings).is_empty());
+    (features, bindings)
+}
+
+#[test]
+fn a_generator_with_a_result_topology_names_its_tool_by_body_slot() {
+    let (mut features, bindings) = bound_tools();
+    let topologies = [
+        topology(&features[0], &["7"]),
+        topology(&features[1], &["8"]),
+    ];
+    let losses = reconcile_result_topologies(&mut features, &topologies, &bindings);
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Generated { bodies, .. } = tools_of(&features[2]) else {
+        panic!("generated tools");
+    };
+    assert_eq!(bodies[0].local_id.as_str(), "7");
+    assert_eq!(bodies[1].local_id.as_str(), "8");
+}
+
+#[test]
+fn a_tool_that_no_result_topology_slot_identifies_returns_to_native() {
+    let (mut features, bindings) = bound_tools();
+    let topologies = [
+        topology(&features[0], &["7", "8"]),
+        topology(&features[1], &["8"]),
+    ];
+    let losses = reconcile_result_topologies(&mut features, &topologies, &bindings);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.combine-tool-body-unbound"
+    );
+    assert!(matches!(
+        tools_of(&features[2]),
+        BodySelection::Native(native) if *native == scope_id(400)
+    ));
+}
+
+#[test]
+fn a_generator_without_a_result_topology_keeps_the_pair_identity() {
+    let (mut features, bindings) = bound_tools();
+    let topologies = [topology(&features[1], &["8"])];
+    let losses = reconcile_result_topologies(&mut features, &topologies, &bindings);
+    assert!(losses.is_empty());
+    let BodySelection::Generated { bodies, .. } = tools_of(&features[2]) else {
+        panic!("generated tools");
+    };
+    assert_eq!(bodies[0].local_id.as_str(), bindings[0].id());
+    assert_eq!(bodies[1].local_id.as_str(), "8");
 }

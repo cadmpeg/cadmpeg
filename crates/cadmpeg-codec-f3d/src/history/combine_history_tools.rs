@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
 use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -222,6 +223,135 @@ pub(crate) fn bind(
         if let Some(error) = refusal {
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
                 "feature {} retains its native Combine tools: {error}",
+                feature.id
+            )));
+        }
+    }
+    losses
+}
+
+/// Name the generated tools of each operand-list `Combine` in the body
+/// identities of the result topology of their generating feature.
+///
+/// A generated tool initially names the body-map pair of its body. A
+/// generating feature with a result topology owns bodies by history body slot
+/// instead. The tool then names the one slot of that topology, or the slot
+/// that the body-map pair keys when the topology has several. A tool whose
+/// slot is not proven, or two tools that share a slot, return the selection
+/// to its native form.
+pub(crate) fn reconcile_result_topologies(
+    features: &mut [Feature],
+    topologies: &[FeatureResultTopology],
+    bindings: &[DesignBodyBinding],
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    for feature in features.iter_mut() {
+        let Some(native) = feature.native_ref.clone() else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let BodySelection::Generated { bodies, .. } = operands.tools() else {
+            continue;
+        };
+        let mut renamed = Vec::with_capacity(bodies.len());
+        let mut changed = false;
+        let mut failure = None;
+        for (ordinal, body) in bodies.iter().enumerate() {
+            let Some(topology) = topologies
+                .iter()
+                .find(|topology| topology.output_of == body.feature)
+            else {
+                renamed.push(body.local_id.as_str().to_owned());
+                continue;
+            };
+            let slots = topology.bodies();
+            if slots
+                .iter()
+                .any(|slot| slot.as_str() == body.local_id.as_str())
+            {
+                renamed.push(body.local_id.as_str().to_owned());
+                continue;
+            }
+            let keyed = bindings
+                .iter()
+                .find(|binding| binding.id().as_str() == body.local_id.as_str())
+                .map(|binding| binding.asm_body_key.to_string());
+            let slot = match (slots, keyed) {
+                ([only], _) => Some(only.as_str().to_owned()),
+                (_, Some(key)) => slots
+                    .iter()
+                    .find(|slot| slot.as_str() == key)
+                    .map(|slot| slot.as_str().to_owned()),
+                _ => None,
+            };
+            let Some(slot) = slot else {
+                failure = Some(format!(
+                    "tool {ordinal} names a body of {} that its result topology does not identify",
+                    body.feature
+                ));
+                break;
+            };
+            changed = true;
+            renamed.push(slot);
+        }
+        if failure.is_none() && changed {
+            let distinct = renamed
+                .iter()
+                .zip(bodies.iter())
+                .map(|(slot, body)| (&body.feature, slot))
+                .collect::<std::collections::BTreeSet<_>>();
+            if distinct.len() != renamed.len() {
+                failure = Some("two tools name the same body".to_owned());
+            }
+        }
+        if let Some(reason) = failure {
+            let mut refusal = None;
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands, ..
+                }) = definition
+                {
+                    refusal = operands
+                        .try_edit(|_, tools| *tools = BodySelection::Native(native.clone()))
+                        .err();
+                }
+            });
+            losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
+                "feature {} retains its native Combine tools; {reason}{}",
+                feature.id,
+                refusal.map_or_else(String::new, |error| format!("; {error}"))
+            )));
+            continue;
+        }
+        if !changed {
+            continue;
+        }
+        let refs = bodies
+            .iter()
+            .zip(renamed)
+            .map(|(body, slot)| GeneratedBodyRef::new(body.feature.clone(), slot))
+            .collect::<Result<Vec<_>, _>>();
+        let Some(selection) = refs
+            .ok()
+            .and_then(|refs| BodySelection::generated(refs, native.clone()).ok())
+        else {
+            continue;
+        };
+        let mut refusal = None;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                definition
+            {
+                refusal = operands.try_edit(|_, tools| *tools = selection).err();
+            }
+        });
+        if let Some(error) = refusal {
+            losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
+                "feature {} retains its pair-named Combine tools: {error}",
                 feature.id
             )));
         }
