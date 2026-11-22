@@ -125,12 +125,9 @@ fn profile_cap(
         return None;
     }
     let area = polygon_area(&ring).abs();
-    (area > tolerance * tolerance).then(|| Cap {
-        loops: vec![ring],
-        measured: vec![None; pieces.len()],
-        pieces,
-        corners,
-        area,
+    (area > tolerance * tolerance).then(|| {
+        let measured = vec![None; pieces.len()];
+        Cap::new(vec![ring], pieces, corners, area, measured)
     })
 }
 

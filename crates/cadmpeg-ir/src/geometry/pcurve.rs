@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-space curves, NURBS payloads, and source parameterization.
 
+use super::legacy_cache::FitTolerance;
 use super::nurbs::{
     admit_finite_weight, admit_weight, KnotVector, NurbsCurve, NurbsError, PoleValue,
 };
-use super::{FitTolerance, MAX_GEOMETRY_NESTING};
+use super::MAX_GEOMETRY_NESTING;
 use crate::ids::PcurveId;
 use crate::math::portable::Portable;
 use crate::math::{Point2, Point3};

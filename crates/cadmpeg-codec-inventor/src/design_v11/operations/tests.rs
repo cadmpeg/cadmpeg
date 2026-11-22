@@ -856,8 +856,10 @@ fn trimmed_profile_intervals_keep_native_operation_and_loss() {
     let boundary = cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
         entity: cadmpeg_ir::sketches::SketchEntityId::mint("inventor:design:entity#synthetic")
             .expect("entity"),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.25, 0.75])
-            .expect("interval"),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            0.25, 0.75,
+        ])
+        .expect("interval"),
         reversed: true,
     };
     let region =

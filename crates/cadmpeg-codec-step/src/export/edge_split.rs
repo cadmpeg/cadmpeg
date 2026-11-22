@@ -108,7 +108,8 @@ fn parameter_domain<'a>(
     index: &'a ModelIndex<'_>,
     mut id: &'a cadmpeg_ir::ids::CurveId,
 ) -> Option<ParameterDomain> {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
     let mut visited = std::collections::BTreeSet::new();
     loop {
         if !visited.insert(id.as_str()) {

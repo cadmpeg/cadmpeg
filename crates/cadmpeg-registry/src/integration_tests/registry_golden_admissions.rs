@@ -386,6 +386,11 @@ fn check_layer_set(
         );
         let read = registered_read(registry, layer, &occurrence.snapshot, &layer_pointer)?;
         if layer.format() == "parasolid" {
+            if (primary.format() == "nx" && !cfg!(feature = "nx"))
+                || (primary.format() == "sldprt" && !cfg!(feature = "sldprt"))
+            {
+                continue;
+            }
             let expected =
                 classify_parasolid_layer(primary, layer, &occurrence.snapshot, &layer_pointer)?;
             if layer.dialect() != expected.dialect() || layer.admission() != expected.admission() {
@@ -441,7 +446,9 @@ fn classify_parasolid_layer(
     pointer: &str,
 ) -> Result<DialectMatch, AdmissionViolation> {
     let verified = match primary.format() {
+        #[cfg(feature = "nx")]
         "nx" => cadmpeg_codec_nx::NxCodec::VERIFIED_PARASOLID_GRAMMARS,
+        #[cfg(feature = "sldprt")]
         "sldprt" => cadmpeg_codec_sldprt::SldprtCodec::VERIFIED_PARASOLID_GRAMMARS,
         _ => {
             return Err(AdmissionViolation::new(
@@ -503,7 +510,9 @@ fn native_admission_compatible(read: ReadDisposition, admission: &Admission) -> 
 fn check_parasolid_capabilities(registry: &RegistryRows) -> Result<(), AdmissionViolation> {
     let registry_path = Path::new("<embedded registry>");
     for (host, verified) in [
+        #[cfg(feature = "nx")]
         ("nx", cadmpeg_codec_nx::NxCodec::VERIFIED_PARASOLID_GRAMMARS),
+        #[cfg(feature = "sldprt")]
         (
             "sldprt",
             cadmpeg_codec_sldprt::SldprtCodec::VERIFIED_PARASOLID_GRAMMARS,
@@ -683,5 +692,5 @@ fn collect_json_files(directory: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "nx", feature = "sldprt"))]
 mod tests;

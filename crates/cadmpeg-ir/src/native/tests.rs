@@ -1147,6 +1147,7 @@ fn field_reads_report_invalid_stored_text_without_panicking() {
         let record = NativeRecord {
             id: id.clone(),
             json: json.into(),
+            depth: 1,
         };
         let NativeConvertError::ReadRecord {
             id: refused,
@@ -1164,6 +1165,7 @@ fn field_reads_report_invalid_stored_text_without_panicking() {
         let record = NativeRecord {
             id: id.clone(),
             json: json.into(),
+            depth: 1,
         };
         assert!(matches!(
             record.fields(),

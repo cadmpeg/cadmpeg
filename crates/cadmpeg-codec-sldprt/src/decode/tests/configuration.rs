@@ -466,6 +466,75 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     }));
 }
 
+fn unnamed_configurations_with_active_block(count: u32) -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            "Contents/Config-3-Partition".into(),
+        )]),
+    ));
+    for ordinal in 0..count {
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration:{ordinal}"))
+                .expect("identity grammar"),
+            ordinal,
+            active: false,
+            source_index: None,
+            name: Some(format!("Configuration {ordinal}")),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some(format!("native:{ordinal}")),
+        });
+    }
+    ir
+}
+
+#[test]
+fn a_lone_configuration_without_an_index_owns_the_active_partition() {
+    let mut ir = unnamed_configurations_with_active_block(1);
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+    mark_active_configuration(&mut ir);
+
+    let [configuration] = ir.model.configurations.as_slice() else {
+        panic!("one configuration: {:#?}", ir.model.configurations);
+    };
+    assert_eq!(configuration.source_index, Some(3));
+    assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
+    assert!(configuration.active);
+    assert!(configuration.native_ref.is_some());
+}
+
+#[test]
+fn several_configurations_without_an_index_leave_the_active_partition_inferred() {
+    let mut ir = unnamed_configurations_with_active_block(2);
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+    mark_active_configuration(&mut ir);
+
+    assert_eq!(ir.model.configurations.len(), 3);
+    assert!(ir.model.configurations[..2]
+        .iter()
+        .all(|configuration| configuration.source_index.is_none()
+            && configuration.bodies.is_none()
+            && !configuration.active));
+    let inferred = &ir.model.configurations[2];
+    assert!(inferred.native_ref.is_none());
+    assert_eq!(inferred.source_index, Some(3));
+    assert_eq!(inferred.bodies.as_deref(), Some([body].as_slice()));
+    assert!(inferred.active);
+}
+
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
     let mut ir = CadIr::empty();

@@ -194,6 +194,43 @@ fn configuration_projection_preserves_writer_projection() {
 }
 
 #[test]
+fn a_configuration_without_source_index_takes_its_keywords_id_as_index() {
+    let configuration = |ordinal: u32, source_index, id: Option<&str>| Configuration {
+        id: format!("sldprt:history:configuration#14:{ordinal}"),
+        parent: "history".into(),
+        ordinal,
+        source_index,
+        name: format!("Configuration {ordinal}"),
+        material: None,
+        properties: id
+            .map(|id| (cadmpeg_core::nonblank_literal!("id"), id.to_owned()))
+            .into_iter()
+            .collect(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: vec![
+            configuration(0, None, Some("4")),
+            configuration(1, Some(7), Some("7")),
+            configuration(2, None, Some("x")),
+            configuration(3, None, None),
+        ],
+        features: Vec::new(),
+    };
+    let projected = project_configurations(&[history]).expect("configuration projection");
+    assert_eq!(
+        projected
+            .iter()
+            .map(|configuration| configuration.source_index)
+            .collect::<Vec<_>>(),
+        [Some(4), Some(7), None, None]
+    );
+}
+
+#[test]
 fn source_less_offset_plane_resolves_a_native_feature_reference() {
     let mut principal = feature("principal-native", None, 0);
     principal.name = "Right".into();
