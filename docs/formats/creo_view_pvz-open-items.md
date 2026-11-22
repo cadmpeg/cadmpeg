@@ -258,11 +258,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which edge index space does the `edge` field of a singular-use record (`creo_view_pvz.md` §8.13) use in a stream that has composite edge records?
 
-**Known.** `creo_view_pvz.md` §8.2. A coedge edge index is an ordinal among the edge records that no composite lists, and a composite member index is an ordinal among all edge records. Without composite edge records the two spaces are equal. No available stream has both a composite edge record and a singular-use record.
+**Known.** `creo_view_pvz.md` §8.2. A coedge edge index is an ordinal among the edge records that no composite lists, and a composite member index is an ordinal among all edge records. Without composite edge records the two spaces are equal.
 
-**Need.** We must know the space to find the edge of a singular use in a stream with composite edges.
+**Need.** We must know the space to find the edge of a singular use in a stream with composite edges. A stream that has both a composite edge record and a singular-use record can show it.
 
-**Conflict.** `brep/records.rs:369-374` reads every singular-use edge index in the coedge index space unconditionally. The Known cites no stream with both a composite edge record and a singular-use record, so this choice has no test on current evidence.
+**Conflict.** `brep/records.rs:369-374` reads every singular-use edge index in the coedge index space unconditionally. No test covers a stream with both a composite edge record and a singular-use record.
 
 ### PVZ-41. Face records without a loop
 
@@ -308,7 +308,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `creo_view_pvz.md` §3.10 states the invariant as fact: the three basis vectors have one common length and form a right-handed set. `model.rs:311-316` keeps a violating basis as a general affine transform and reports the loss `StructurePlacementNotSimilarity`.
 
-**Need.** We must know whether such bases occur in real files and what semantics they carry before accepting affine transfer. A general affine placement can shear geometry.
+**Need.** We must know whether a producer writes such bases and what semantics they carry before accepting affine transfer. A general affine placement can shear geometry.
 
 **Conflict.** The decoder transfers geometry under a general affine placement while the specification admits only similarity placements.
 

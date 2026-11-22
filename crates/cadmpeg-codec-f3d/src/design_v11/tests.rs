@@ -8,7 +8,7 @@ use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -22,6 +22,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
 use crate::records::entity_header::{
     BaseTypeGuid, DesignFeatureTimeline, DesignTimelineFrame, SegmentType, SegmentTypeData,
 };
+use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::records::identity::{Located, ReferenceRun};
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -134,7 +135,10 @@ fn an_unresolved_coordinate_frame_keeps_the_next_timeline_item() {
             &features,
             &[timeline(STREAM, 0, &[10, 20])],
             &[],
-            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -217,7 +221,10 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             &features,
             &timelines,
             &types,
-            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -295,7 +302,10 @@ fn a_stream_whose_timelines_list_no_item_states_no_container() {
             &[],
             &[timeline(STREAM, 0, &[])],
             &[],
-            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -313,7 +323,10 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             &[],
             &[timeline(STREAM, 0, &[7])],
             &[],
-            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut Vec::new(),
         )
@@ -326,6 +339,155 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
         &feature.definition.operation,
         FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:timeline-item"
     ));
+}
+
+fn tail_flags(suppressed: bool, rolled_back: bool) -> DesignScopeTailFlags {
+    DesignScopeTailFlags {
+        suppressed,
+        rolled_back,
+        suppressed_offset: 0,
+        envelope_offset: None,
+    }
+}
+
+/// The rollback marker, the members and the losses of one timeline of
+/// `items`, whose scope tails carry the rolled-back flags in `flags`.
+fn rollback_of(
+    items: &[u64],
+    flags: &[(u64, bool)],
+) -> (
+    Rollback,
+    Vec<Member>,
+    Vec<cadmpeg_ir::report::loss::LossKind>,
+) {
+    let flags: super::timeline::TailFlags<'_> = flags
+        .iter()
+        .map(|&(record, rolled_back)| ((STREAM, record), tail_flags(false, rolled_back)))
+        .collect();
+    let mut losses = Vec::new();
+    let mut documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, items)],
+            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &flags,
+            },
+            &BTreeSet::new(),
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let Container::Ordered {
+        members, rollback, ..
+    } = documents.remove("").unwrap().containers.remove(0)
+    else {
+        panic!("ordered container")
+    };
+    (
+        rollback,
+        members,
+        losses.into_iter().map(|loss| loss.code).collect(),
+    )
+}
+
+#[test]
+fn the_rollback_marker_stands_before_the_first_of_the_trailing_rolled_back_items() {
+    let (rollback, members, losses) = rollback_of(
+        &[10, 20, 30, 40],
+        &[(10, false), (20, false), (30, true), (40, true)],
+    );
+    assert_eq!(rollback, Rollback::Before(members[2].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+    let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true), (20, true)]);
+    assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn an_unread_item_before_the_rolled_back_items_charges_the_marker_bound_loss() {
+    let (rollback, members, losses) = rollback_of(&[10, 20, 30], &[(10, false), (30, true)]);
+    assert_eq!(rollback, Rollback::Before(members[2].clone()));
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackBoundUnread.kind()]
+    );
+}
+
+#[test]
+fn an_unread_item_after_the_first_rolled_back_item_charges_the_rollback_loss() {
+    let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true)]);
+    assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
+    );
+}
+
+#[test]
+fn a_timeline_whose_items_are_all_read_and_built_ends_after_its_last_item() {
+    let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, false), (20, false)]);
+    assert_eq!(rollback, Rollback::End);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_built_item_after_a_rolled_back_item_leaves_the_marker_unread() {
+    let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, true), (20, false)]);
+    assert_eq!(rollback, Rollback::End);
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
+    );
+}
+
+#[test]
+fn the_current_state_stands_at_the_rollback_marker() {
+    let id =
+        cadmpeg_ir::design::ids::ContainerId::mint("f3d:design:timeline#0".to_owned()).unwrap();
+    let members = [10, 20, 30]
+        .map(|key| Member::Feature(FeatureId::mint(format!("f3d:model:feature#{key}")).unwrap()));
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::End),
+        Position::After(members[2].clone())
+    );
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::Before(members[1].clone())),
+        Position::After(members[0].clone())
+    );
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::Before(members[0].clone())),
+        Position::Start(id.clone())
+    );
+}
+
+#[test]
+fn an_unprojected_item_takes_its_suppression_from_its_scope_tail() {
+    let flags: super::timeline::TailFlags<'_> = [((STREAM, 7), tail_flags(true, false))]
+        .into_iter()
+        .collect();
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[7, 8])],
+            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &flags,
+            },
+            &BTreeSet::new(),
+            &mut Vec::new(),
+        )
+    })
+    .unwrap();
+    let [flagged, unflagged] = documents[""].features.as_slice() else {
+        panic!("two features")
+    };
+    assert_eq!(flagged.suppressed, Some(Dimension::Literal(true)));
+    assert_eq!(unflagged.suppressed, None);
 }
 
 #[test]
@@ -474,7 +636,10 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
                 &[feature],
                 &timelines,
                 &[],
-                &[],
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &super::timeline::TailFlags::new(),
+                },
                 &current,
                 &mut Vec::new(),
             )
