@@ -544,13 +544,12 @@ fn load(
     for (edge_id, edge) in &edges {
         match sample(edge) {
             Ok(mut sample) => {
-                sample
-                    .as_object_mut()
-                    .ok_or("edge sample is missing")?
-                    .insert(
-                        "faces".into(),
-                        json!(adjacency.get(edge_id).cloned().unwrap_or_default()),
-                    );
+                let row = sample.as_object_mut().ok_or("edge sample is missing")?;
+                row.insert(
+                    "faces".into(),
+                    json!(adjacency.get(edge_id).cloned().unwrap_or_default()),
+                );
+                row.insert("supports".into(), json!([]));
                 samples.push(sample);
             }
             Err(reason) => report.push_coded(
