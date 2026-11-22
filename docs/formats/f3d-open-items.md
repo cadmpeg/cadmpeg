@@ -76,13 +76,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record and field select the saved rollback position in the authored timeline?
 
-**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope. Both history-state identities of that scope are null, which establishes suppression under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
+**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. A suppressed `Combine` item stores null for both history-state identities, under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". The decoder reads the marker from the state byte `s1` of each scope tail, as §3.1 "In every form, the state bytes" states it: the items with `s1 = 1` are the last items of their timeline, and the marker stands before the first of them. With no such item, the marker stands after the last item. A built item after an item with `s1 = 1`, or an item with unread flags after it, makes the decoder state the timeline built through its last item or before that first item with `history.rollback-unread`. An item with unread flags immediately before that first item adds `history.rollback-bound-unread`.
 
-**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Include a `Combine` that is added after the marker and never computed. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+**Need.** Designs from other sources whose timelines hold items with `s1 = 1`, checked against their own BREP histories: the bound history must end at the state of the last item before the marker. Include a `Combine` after the marker that was never computed. A timeline whose marker and BREP history disagree would show what else selects the marker.
 
 **Conflict.** A `Combine` after the saved marker that Fusion reports as rolled back and not suppressed has null current and preceding history-state identities, and the §3.1 rule reads it as suppressed. A rolled-back `Combine` that was computed before the marker moved keeps both identities.
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
+
+### DR-1005. Live flags of duplicate scope envelopes
+
+**Question.** Same-index scope envelopes can differ only in their suppressed and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's flags are live?
+
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
+
+**Need.** A field or an order rule that selects the live envelope. The two flags decide whether the feature builds and where the timeline marker stands, so the selection changes the evaluated design.
 
 ### DR-520. Operation tables with an empty path, a two-reference path, or version two or three
 
@@ -351,11 +359,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-67. Base Face material side and result choice
 
-**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a legacy sheet-metal Base Face, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
+**Question.** Which producer fields select Side 1, Side 2, Center, New Body, and New Component for a sheet-metal Base Face or Base Flange, and what do the opaque carrier suffix and repeated-u32/f64 lane mean?
 
-**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
+**Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. A Base Flange in the fixed 416-byte form with a read operation frame places the thickness along the sketch plane's positive normal in the saves examined. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
 **Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
+
+**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`; its side remains native with `feature.base-flange-side-unresolved`. With a read operation frame the decoder assumes Forward and charges `feature.base-flange-side-assumed`.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 
@@ -554,13 +564,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-93. Sheet-metal rule word and entry run
 
-**Question.** What does the u32 word at rule-record offset 21 state, and how long is the rule's entry run?
+**Question.** What does the u32 word at rule-record offset 21 state, how long is the rule's entry run, and which entries set bend radius, neutral-axis factor and relief?
 
-**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again. So the word is not the entry count.
+**Known.** In two CC0 sheet-metal parts the word is 3. It is followed by four LP-UTF16 expression and f64 value entries (`Thickness`, `1`, `Thickness * 0.5`, `Thickness * 2.0`), then a zero u32 and the `Thickness` entry again.
 
-**Need.** Rules with a different number of entries, or a controlled edit of one rule value, would fix the word's meaning and the bounds of the entry run.
+**Need.** Controlled edits of thickness, bend radius, neutral-axis factor and relief, with the resulting geometry measured, must identify each entry and the entry-run boundary. Rules with different entry counts must identify the rule word.
 
 **Conflict.** Treating the word as an entry count reads one entry fewer than the record holds.
+
+**Note.** The decoder retains the rule controls in the source record and reports `feature.sheet-metal-rule-controls-native`.
 
 ### DR-94. Freedom entry word and trailing value
 
@@ -855,11 +867,11 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-883. Extrude side-face walk outside one-sided loops of lines
 
-**Question.** Which curve starts the side-face walk, and in which direction, for a loop that contains arcs, a profile with several loops or regions, a reversed-direction, two-sided, or symmetric `Extrude`, and a stream whose serializer magic is not `1234`?
+**Question.** Which curve starts the side-face walk, and in which direction, for a loop that contains arcs, a profile with a hole loop of several entries, two or more hole loops, an exterior loop of lines and hole loops, or several regions, a reversed-direction, two-sided, or symmetric `Extrude`, and a stream whose serializer magic is not `1234`? In which order does the identity record store the hole loops of a region?
 
-**Known.** `f3d.md` §3.1 "**Side-face walk.**" gives the walk of a one-loop line profile of a one-sided join, new-body, or cut `Extrude` with reversed-direction byte `0` in a stream with serializer magic `1234`. In streams with other serializer magic, the same walk names the side faces of most such loops. On the others, the tracked side-face keys run in the walk's direction from a start one line away, and the stored body has no side face for one loop line or for any loop line. With reversed-direction byte `1`, the side tokens of a loop of lines run against the ring. The ring of a loop of lines and arcs, with each arc run from its point at the start angle to its point at the end angle about its stored normal, is counterclockwise in the Sketch's coordinates on most loops and clockwise on some. The side tokens of one loop form one contiguous range. The loops of a region whose exterior loop is stored first take their ranges in the stored loop order. The side face of a one-sided or two-sided `Extrude` whose profile is one loop of one entry has side token `3`. A symmetric `Extrude` of such a profile can carry side token `5` without side token `3`.
+**Known.** `f3d.md` §3.1 "**Side-face walk.**" gives the walk of a one-loop line profile of a one-sided join, new-body, or cut `Extrude` with reversed-direction byte `0` in a stream with serializer magic `1234`. In streams with other serializer magic, the same walk names the side faces of most such loops. On the others, the tracked side-face keys run in the walk's direction from a start one line away, and the stored body has no side face for one loop line or for any loop line. With reversed-direction byte `1`, the side tokens of a loop of lines run against the ring. The ring of a loop of lines and arcs, with each arc run from its point at the start angle to its point at the end angle about its stored normal, is counterclockwise in the Sketch's coordinates on most loops and clockwise on some. The side tokens of one loop form one contiguous range. `f3d.md` §3.1 "**Profile with circular holes.**" gives the records and side tokens of a region whose hole loops are circles, and the ranges of a region with one hole loop. In streams with serializer magic `1234`, the exterior loop is the first loop of every region whose hole loops are circles; in regions with hole loops of other kinds and in streams with other serializer magic, it is the first loop of most regions and stands at another position in some. Its side faces take the tokens from `3` at every position in each region with hole loops of streams with serializer magic `1234`, and in most such regions of other streams. In a region with two or more hole loops, the exterior loop takes the range from `3`, and the hole ranges follow the stored order of the hole loops in some regions and another order in others. In the few such regions whose cap faces hold every hole loop, all in streams with other serializer magic, the order of the hole loops on the cap face is the order of their ranges; they are too few to tell whether the cap order gives the range order in general. The stored order of two or more one-entry hole loops is ascending in their primary identities in some regions, descending in others, and neither ascending nor descending in others; in streams with serializer magic `1234` it is neither in most regions. The record order of their sketch curves, the coordinates of the circle centres, the radii, and the distance and the angle of the centres about an exterior circle's centre each give the stored order in some regions only. In streams with other serializer magic, the walk of a one-loop profile of lines names the side faces of the exterior loop of lines of some regions with hole loops. The side face of a one-sided or two-sided `Extrude` whose profile is one loop of one entry has side token `3`. A symmetric `Extrude` of such a profile can carry side token `5` without side token `3`.
 
-**Need.** The run direction of an arc for its traversal flag, and the start of a loop whose last-recorded curve is an arc. The start and direction of each loop of a profile with hole loops, and the region order of multi-region profiles against the stored region order and the region geometry. The `AlongDistance` values of reversed-direction `Extrude` features against their token direction. A two-sided or symmetric `Extrude` of a loop of several lines. An `Extrude` whose stored profile normal is opposite its Sketch's normal, to tell whether the `AlongDistance` sign or the extrusion direction against the Sketch normal orders the tokens. A writer names side faces by the walk.
+**Need.** The run direction of an arc for its traversal flag, and the start of a loop whose last-recorded curve is an arc. The start and direction of a hole loop of several entries, and the walk of an exterior loop of lines in a region with hole loops in a stream with serializer magic `1234`. The stored order of the hole loops of a region with two or more holes and the order of their side-token ranges, which a writer of such a region must choose. The region order of multi-region profiles against the stored region order and the region geometry. The `AlongDistance` values of reversed-direction `Extrude` features against their token direction. A two-sided or symmetric `Extrude` of a loop of several lines. An `Extrude` whose stored profile normal is opposite its Sketch's normal, to tell whether the `AlongDistance` sign or the extrusion direction against the Sketch normal orders the tokens. A writer names side faces by the walk.
 
 ### DR-884. Sketch placement without a tracked identity
 
@@ -1013,7 +1025,7 @@ In the design with three solid bodies, records 193 to 200 are the further design
 
 - The record-timestamp table of the `Extrude` scope lists the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Extrude` scope, and the start record. The table of the start record lists the profile group, the `AlongDistance` owner, and the `TaperAngle` owner. The table of the profile group lists the profile selection. The table of the profile selection lists the `Sketch` scope.
 - The body-presentation owner is the only presentation record of the result body.
-- The coedge of each side face on the edge that the side face shares with the start cap carries a `sketch_attrib_def` attribute that names the sketch curve of the side face. The start cap's coedge on the same edge carries an attribute with the same values. The other coedges of the side faces and the coedges of the end cap carry no `sketch_attrib_def` attribute.
+- `f3d.md` §3.1 "**Sketch links of the start cap.**" gives the `sketch_attrib_def` attributes on the edges of the start cap and of the end cap. The other coedges of the side faces carry no `sketch_attrib_def` attribute.
 - When further `Sketch` items follow the `Extrude`, each later `Sketch` scope owns the next persistent identity after `302`.
 
 **Need.** A writer of a design with further items must fill these tables, presentation records, attributes, and identities. Designs whose timeline holds several `Extrude` items or other features, compared record by record with these lists, would settle it.
@@ -1459,6 +1471,16 @@ The first closing reference run identifies a direct contained child by its local
 **Need.** A writer of a driven dimension's parameter in either trailer must set the driven flag. The parameter of a dimension frame with style byte `1`, in a stream whose parameters use the nine-byte or ten-byte trailer, would settle its position.
 
 **Conflict.** If the first flag byte of the ten-byte trailer and the opaque flag of the compact owned trailer state the same property, the trailers align at that byte, and the second flag byte is the driven flag.
+
+### DR-1007. Header flag of a discriminated parameter record
+
+**Question.** Does the header flag state that a sheet-metal rule holds the parameter, and what sets the byte at the same offset of a compact document parameter?
+
+**Known.** `f3d.md` §3.1 "The form of an indexed parameter record follows the version of its type" places the flag in the discriminated form. A parameter that sets it is a `Thickness` parameter with the null owner, a ten-byte expression trailer of zero bytes, and an empty text value. A sheet-metal rule record, type `B42ED662-8999-4C1B-A744-759D1D446D55`, references each parameter that sets the flag and no parameter that clears it. A `Thickness` parameter that a timeline item owns clears the flag. The compact forms store a byte at the same offset, the eleventh of their fifteen zero bytes. It is `1` in each `Thickness` parameter that a rule record references. It is also `1` in some document parameters that an occurrence-source record of type `8ACBA2E5-5A4C-4438-8351-276DE96E6982` references, and `0` in other document parameters that such a record references. A frame that sets the byte closes the grammar of its form with the byte read as `0`.
+
+**Need.** A discriminated parameter that sets the flag in a stream with no rule record that references it, or the stored property that separates the compact document parameters that set the byte from those that clear it.
+
+**Note.** The decoder reads the flag in the discriminated form, keeps it unprojected, and reports `parameter.header-flag-uninterpreted` for each Design stream with a decoded parameter that sets it.
 
 ### DR-222. `MoveFace` and `OffsetFaces` member recipes that resolve no face
 
@@ -2079,6 +2101,18 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 **Conflict.** None.
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+
+### DR-1018. Flag byte before the Base Feature metadata record
+
+**Question.** What does the flag byte before the shared metadata record of an ordinary `Base Feature` result-body frame state, and does flag `1` with empty modern body maps always identify the snapshot body as the model body?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" places the byte after the repeated run. One design stores `0` there while its `Base Feature` is as created. The same design saved after an Edit Feature on that `Base Feature` stores `1`, has no history-bearing BREP, empty modern body maps, and a snapshot body map whose one pair names the body entity suffix of the frame. The decoder selects the snapshot `.smb` set as the model body set in a stream whose modern maps all have zero pairs and empty basenames, that holds a `Base Feature` ordinary result-body frame with flag byte `1`, and whose snapshot maps hold at least one pair with every pair naming a body entity suffix of such a frame. A flagged frame with populated modern body maps keeps its modern selection.
+
+**Need.** Further saves of designs whose `Base Feature` was edited after creation, with their modern and snapshot body maps, and saves of designs with a flagged frame and a populated modern body map.
+
+**Conflict.** None.
+
+**Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
 
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
@@ -2780,7 +2814,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which bytes store the equal-spacing control of a circular pattern of features? Which bytes store the symmetric control in legacy circular-pattern records whose payload does not read?
 
-**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the Compute option and the symmetric byte of the circular payload. The five patterns with 220-byte axis frames in Parametric_20t_GT2_Pulley, LDO_153030, and Parametric_extrusion_generator retain their legacy distribution controls in native data. Their neutral definitions assume equal spacing: a full turn uses total angle divided by count; a partial turn uses total angle divided by count minus one and places the last instance at the total angle. Each circular projection reports `feature.circular-pattern-controls-assumed`, which names equal spacing and the unread spacing control. A partial-turn projection with an unread symmetric byte also reports `feature.circular-pattern-distribution-assumed` for its one-sided distribution.
+**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the Compute option and the symmetric byte of the circular payload. The payload of a circular pattern with a 220-byte axis frame does not read, and its distribution controls stay in native data. Their neutral definitions assume equal spacing: a full turn uses total angle divided by count; a partial turn uses total angle divided by count minus one and places the last instance at the total angle. Each circular projection reports `feature.circular-pattern-controls-assumed`, which names equal spacing and the unread spacing control. A partial-turn projection with an unread symmetric byte also reports `feature.circular-pattern-distribution-assumed` for its one-sided distribution.
 
 **Need.** Saves with the equal-spacing control changed separately from the Compute option and the symmetric byte, over three instances on a partial turn with asymmetric seed geometry, with the stored result bodies. Saves of the legacy patterns with the symmetric control changed.
 
@@ -2996,11 +3030,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Known.** The group uses the 143-byte direct construction-group frame of `f3d.md` §3.1. Its sole member is a bounded-face recipe operand, and its two auxiliary records each carry one u64 entity identity. The recipe's references resolve no face in the input state of the Extrude's own history. The two auxiliary identities also occur in a second history, as a surface and a pcurve. The surface carries one planar face, and the coedge of the pcurve lies on a different face. In the Extrude's own history, both identities occur as coedges, first inserted after the Extrude's state. Each auxiliary identity occurs in both histories. No single history holds both identities on one face. Both auxiliary records use the compact placement form with variant byte `1`; neither carries a rigid transform. The decoder keeps the start face native.
 
-In the public `00278-Moons__MS17HD6P420I-04.f3d`, start groups `2506`, `4199`, and `11991` have 144-byte counted frames and one bounded-face member each. Their owning scopes `2492`, `4085`, and `11833` each name preceding state `2`. Their recipes have 14, 72, and 12 prefix references respectively; every reference has an empty face lane in that state. Their ordered auxiliary identity pairs are `(2486, 2249)`, `(4079, 2486)`, and `(9236, 2249)`. Each auxiliary path has compact placement with variant `1`.
+The group also uses a 144-byte counted frame with one bounded-face member. Recipes of 12, 14, and 72 prefix references occur in this form; every prefix reference has an empty face lane in the preceding state that the owning scope names. Several start groups of one design can share an auxiliary identity: three groups store the ordered pairs `(a, b)`, `(c, a)`, and `(d, b)`. Each auxiliary path has compact placement with variant `1`.
 
-The Moons Design type table registers `2249`, `2486`, `4079`, and `9236` as entities of Fusion type `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version `4`. The 72-byte component-context record in `f3d.md` §3.1, "Records the timeline context names," has this type and version.
+The Design type table registers each auxiliary identity as an entity of Fusion type `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version `4`. The 72-byte component-context record in `f3d.md` §3.1, "Records the timeline context names," has this type and version.
 
-Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The first two programs each have five one-clause nodes. The third program has twelve two-clause nodes. DR-335 covers the one-clause binding.
+The bounded-face programs of these groups have 13, 23, and 12 nodes. The first two programs each have five one-clause nodes. The third program has twelve two-clause nodes. DR-335 covers the one-clause binding.
 
 **Need.** The join from the auxiliary Design records to the source component and its selected ASM state. Designs with two components, A placed once in B. B's first `Extrude` starts from a planar face of a body in A and extends a sketch profile 5 mm. Save one design per selected face of A: the top face, a side face, and a face that a later feature of A changes. Save a further design where A is placed twice and the face of one occurrence is selected. Each save needs the start group frame, its auxiliary records, the ASM histories of both components, and the occurrence transforms of A in B.
 
@@ -3012,7 +3046,7 @@ Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The 
 
 **Question.** Does the `u8 1` that a 130-byte two-wrapper circular-pattern axis record stores between its references to the axis-record indexes plus two and plus one encode the direction of travel? Which topology does the persistent identity of its wrappers name?
 
-**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder does not yet resolve the historical axis edge of the 130-byte form, so a pattern whose axis comes from that form keeps its native transform. A full turn would project once the edge resolves, because its instance set is independent of travel direction. Parametric_20t_GT2_Pulley C-Pattern 10 has two wrappers whose persistent identity is `115663`. The design type table lists this identity under the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`. The seed Extrude 26 scope has record index `115664`. The wrapper identity stays native. A 220-byte inline carrier supplies the pattern axis independently.
+**Known.** The 129-byte two-wrapper form stores two zero bytes there, and the 130-byte form stores `u8 1` and two zero bytes, with every later field one byte later. The 220-byte rectangular-pattern direction record stores the same `u8 1` and two zero bytes between the same two references. The decoder does not yet resolve the historical axis edge of the 130-byte form, so a pattern whose axis comes from that form keeps its native transform. A full turn would project once the edge resolves, because its instance set is independent of travel direction. Both wrappers of one 130-byte record carry one persistent identity. The Design type table lists that identity under the body-visibility browser-node member type `D26351F0-5940-4D23-AA20-2C35475A6D9E`, and the seed Extrude scope of the pattern has the next record index. The wrapper identity stays native. A 220-byte inline carrier of the same pattern supplies the pattern axis independently.
 
 **Need.** Saves of one circular pattern of a body about an edge axis, with a total angle of 90 degrees and three instances, once in each direction of travel, plus the same pattern as a full turn. Save the full-turn pattern once about a linear edge, once about a circular edge, and once about a construction axis. Each save needs the axis record frame, its wrapper records, the parameter owners, and the ASM history. A resolution of the wrappers' persistent identity to the historical axis edge would supply the resolved axis that the circular-pattern projection takes for this form.
 
@@ -3072,7 +3106,7 @@ Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The 
 
 **Question.** Which entities do extended circular-pattern axis selection runs select, and how do the 216-, 220-, and 241-byte forms determine their directed axes?
 
-**Known.** The decoder admits the 195-byte inline axis frame, the 220- and 221-byte frames with selection kind `8` as inline axes, and the 118-, 129-, and 130-byte identity forms. It retains the 195-byte and 221-byte precedence and uses a 220-byte frame when those forms are absent. Parametric_20t_GT2_Pulley C-Pattern 10, C-Pattern 12, and C-Pattern 13 store 220-byte frames with control `7`, origin `(0, 0.175, 0)` cm and displacement `(0, 2.075, 0)` cm. Their owner counts are 20, 2, and 2; their total angles are one turn, a quarter turn, and a quarter turn. The two screw bodies of C-Pattern 13 have measured centroids approximately `(4.3174141013582314, 14.75, 0)` mm and `(0, 14.75, -4.3174141013582314)` mm, a positive quarter turn about the stored axis. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Three body instances over a quarter turn about a 221-byte frame with a Z displacement lie at 0, 45, and 90 degrees counterclockwise about that displacement. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn. Voron_Construct_Runice_GT2_20T_B5_9mm C-Pattern 1 stores a 216-byte frame at byte 537511, record 4197, with control `7` at offset 89 and three consecutive marked references at offsets 97, 108, and 119. Its count is two and its total angle is a quarter turn.
+**Known.** The decoder admits the 195-byte inline axis frame, the 220- and 221-byte frames with selection kind `8` as inline axes, and the 118-, 129-, and 130-byte identity forms. It retains the 195-byte and 221-byte precedence and uses a 220-byte frame when those forms are absent. Three 220-byte frames of one design store control `7`, origin `(0, 0.175, 0)` cm and displacement `(0, 2.075, 0)` cm. The counts of their patterns are 20, 2, and 2; the total angles are one turn, a quarter turn, and a quarter turn. The two bodies of one quarter-turn pattern have centroids approximately `(4.3174141013582314, 14.75, 0)` mm and `(0, 14.75, -4.3174141013582314)` mm, a positive quarter turn about the stored axis. An extended frame carries an origin and displacement in the same positions as the rectangular-pattern direction frame. Three body instances over a quarter turn about a 221-byte frame with a Z displacement lie at 0, 45, and 90 degrees counterclockwise about that displacement. Two 221-byte component-pattern frames carry a unit X displacement and an origin at Z = 1.92 cm. Their saved occurrence transforms are positive quarter turns about that line. A 220-byte feature-pattern frame carries a Z displacement. Its seed holes occur in symmetric pairs, so positive and negative quarter turns yield the same saved hole set. A 241-byte body-pattern frame carries an X displacement and three consecutive selection references. Its total-angle owner stores a full turn. A 216-byte frame stores control `7` at offset 89 and three consecutive marked references at offsets 97, 108, and 119. The count of its pattern is two and the total angle is a quarter turn.
 
 **Need.** Bind each extended selection run to its selected entity. Compare the controls of the 216-, 220-, and 241-byte forms for three instances over a partial turn in each travel direction, with asymmetric seeds. Bind each instance to its saved BREP geometry.
 
@@ -3206,20 +3240,20 @@ Members `2515`, `4208`, and `12000` have 13, 23, and 12 nodes respectively. The 
 
 **Known.** A two-sided termination stores two bounded-face recipes with Design reference `302`. One program has five nodes, of which four have a parsed two-clause structure. The other has four parsed two-clause nodes; its first prefix operand names face slot `50`, whose preceding loop has eight edges. Its aggregate candidate lane contains four side faces. A further termination program has eight parsed nodes and two empty prefix-face lanes. Two further programs have five nodes each, including a node with one side clause, which binds a closed boundary edge (`f3d.md` §3.1). Their remaining candidates include several preceding faces.
 
-The public `00550-Mini_AfterSherpa_Orbiter_v2_X_Carriage_MGN9C.f3d` has start group `1839` with bounded-face member `1842`. Its recipe has two one-clause nodes and three prefix operands. The middle operand names face `2675` through positive Design reference `7566` and token `6`. The first and third operands have negative Design references and empty face lanes. The selected-face candidate and historical support lanes are empty.
+A start group with one bounded-face member can have a recipe of two one-clause nodes and three prefix operands. The middle operand names a face through a positive Design reference and token `6`. The first and third operands have negative Design references and empty face lanes. The selected-face candidate and historical support lanes are empty.
 
-The public `00622-Voron_V1.8_Master_Model_v148.f3z` has six further native starts. Each start group has one bounded-face member and a 123-byte primary frame. These groups have zero auxiliary path records. The counts below refer to each member in its scope's preceding state.
+A start group with one bounded-face member and a 123-byte primary frame has zero auxiliary path records. The counts below refer to six such members, each in the preceding state of its scope.
 
-| Scope | Extrude ordinal | Preceding state | Nodes | One-clause nodes | Preceding candidates | Historical support contexts |
-| --- | --- | --- | --- | --- | --- | --- |
-| `1908` | 5 | `8979` | 7 | 1 | 12 | 15 |
-| `22151` | 26 | `9019` | 20 | 1 | 152 | 152 |
-| `22201` | 27 | `9020` | 9 | 1 | 104 | 104 |
-| `22256` | 28 | `9021` | 13 | 1 | 43 | 43 |
-| `7449` | 17 | `340` | 33 | 2 | 2 | 2 |
-| `111282` | 22 | `4015` | 62 | 5 | 0 | 0 |
+| Nodes | One-clause nodes | Preceding candidates | Historical support contexts |
+| --- | --- | --- | --- |
+| 7 | 1 | 12 | 15 |
+| 20 | 1 | 152 | 152 |
+| 9 | 1 | 104 | 104 |
+| 13 | 1 | 43 | 43 |
+| 33 | 2 | 2 | 2 |
+| 62 | 5 | 0 | 0 |
 
-Scope `22256` has one empty prefix-face lane. Scope `111282` has 63 prefix operands, each with a nonempty face lane. Its selected-face candidate lane is empty. The one-clause form occurs in three independent public designs: Moons, Mini, and Voron.
+The 13-node member has one empty prefix-face lane. The 62-node member has 63 prefix operands, each with a nonempty face lane, and its selected-face candidate lane is empty.
 
 **Need.** The mapping of a saved boundary edge to a chain of preceding edges, and the binding of empty prefix-face lanes (DR-170). Independent selections before and after a boundary split must distinguish a selected face from its adjacent faces.
 
@@ -3661,13 +3695,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
 
-**Known.** Carriers 505–508, 577–582, 587, 624 and 664 of one design and carrier 259 of another have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Their carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. The first design's chain 582 × 578 × 624 gives one disk a Y axis with its XZ center at (-4.3,13.5) mm; the mating shaft axis is near (0,0) mm. The second design's carrier 259 rotates the solved flange's X axis to Z; the mating pulley has axis X. These files have zero admitted CommonData component paths. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+**Known.** Carriers 505–508, 577–582, 587, 624 and 664 of one design and carrier 259 of another have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Their carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. The first design's chain 582 × 578 × 624 gives one disk a Y axis with its XZ center at (-4.3,13.5) mm; the mating shaft axis is near (0,0) mm. The second design's carrier 259 rotates the solved flange's X axis to Z; the mating pulley has axis X. These files have zero admitted CommonData component paths. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
 
 **Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
 
-**Conflict.** Treating every object-prelude closing matrix as a solved-body local placement gives the two incorrect mating placements above.
+**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement gives the two incorrect mating placements above.
 
-**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve.
+**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`.
 
 ### SM-03. ContourFlange travel, thickness side and rule entries
 
@@ -3727,9 +3761,9 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Known.** A public design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection. A fourth design stores a typed-reference profile selection whose chain record is sketchless (`f3d.md` §3.1). Its asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631` is not the asset GUID of the containing Design, and no member of the three archives of its project has it as a document or asset GUID. Its owner text `46396` names no entity suffix of the Design stream, so the owning Sketch belongs to another design, and its primary identities 1817, 1826, 1828, 1833, 1834, 1835, and 1836 match no sketch-curve record of the Design. Four other records of the Design store the same asset GUID followed by GUID `81bef69d-071e-4b80-bf5a-a501ab34f2cf`. Extrude 1 is the first timeline feature, and no Sketch precedes it. A further public design stores a compact sketchless profile selection (member 214 of group 204) whose asset GUID is not the containing Design's and whose owner text is a GUID.
 
-**Need.** A stored carrier or a derivation rule for the absent curves, the Sketch that owner 1977 names, and the design that owns a sketchless selection's asset GUID.
+**Need.** A stored carrier or a derivation rule for absent curves whose surviving members fail the complete directed-boundary and transition certificate in `f3d.md` §3.1. The Sketch that a typed-reference owner text names when no Sketch placement, sketch-curve record, or sketch-point record of the Design stream carries that owner. The document that owns the asset GUID of a sketchless chain record's selection when no archive member carries that GUID as a document or asset GUID.
 
-**Note.** The selection stays native with `feature.profile-selection-native`. Member 214 of group 204 also reports `feature.extrude-profile-sketch-absent`.
+**Note.** A selection whose surviving members pass the stale-identity certificate in `f3d.md` §3.1 binds its certified regions with `feature.profile-region-identities-stale`. Each other selection stays native with `feature.profile-selection-native`. Member 214 of group 204 also reports `feature.extrude-profile-sketch-absent`.
 
 ### DR-670. Carrier state of a Hole on a reconstructed plane
 
@@ -4013,6 +4047,18 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-uninterpreted`.
 
+### DR-1029. Version-3 settings reference prefix
+
+**Question.** Where are the override mask and optional inputs in the version-3 sheet-metal settings reference prefix, and which control does its first reference supply?
+
+**Known.** The settings type GUID is `E75C86D6-76D8-4F1F-BC16-AB8CB74958B0`, version 3. After the primary indexed header and ten zero bytes, the primary frame contains a present local reference, twelve zero bytes, a second present local reference, two zero bytes, a third present local reference, one zero byte, and a fourth present local reference. The first reference targets type `ACE707B5-1490-4837-A69A-724A92CEB69F`, version 0. The second targets rule type `B42ED662-8999-4C1B-A744-759D1D446D55`, version 1. The third targets presentation type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`, version 1. The fourth targets the owning `Bend` scope. Its same-index paired header is followed by eight zero bytes and a present local reference. The mask-and-slots form in `f3d.md` §3.1 places a u32 mask before the optional inputs and rule reference.
+
+**Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles.
+
+**Conflict.** None.
+
+**Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+
 ### DR-889. Extrude selection members in sketch text
 
 **Question.** Which glyph region of a sketch text does each Extrude selection member name?
@@ -4022,3 +4068,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** Saves that pick a subset of the glyphs of one text, and saves that pick a glyph counter, with the local identities of each member.
 
 **Note.** When the distinct members of the one selection group of an Extrude match no Sketch point, Sketch curve, or history binding and outnumber the atomic regions of the line, arc, and circle curves of a Sketch with non-construction text, the decoder takes the excess members as glyph picks. When the member count equals the count of non-whitespace characters of the Sketch text, the profile names the text entities and the decoder reports `feature.profile-text-glyphs-assumed`. Otherwise a Sketch with one profile loop selects that loop, any other Sketch keeps the group as a native selection within the Sketch, and the decoder reports `feature.profile-text-glyphs-native`. A Sketch with text and exactly one profile loop resolves to that loop when the distinct members are at most its atomic regions.
+
+### DR-920. Scene slot of a tessellated mesh body
+
+**Question.** What does the Scene-node slot of a `MeshTessellate` produced body name, and which Scene node displays the body?
+
+**Known.** The slot names a record of type `4912A0EC-8A3D-4FE2-9F0F-A5C2CB493A07`, base-type GUID `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB`, type version `0`, and add-in name `Scene`. Each record is 95 bytes: its indexed header, 34 zero bytes, byte `01`, six f64 values, and byte `01`, the form of the Scene-state record. The six values are the maximum and minimum corners of the body in centimetres. The design's Scene nodes of type `702B9CD2-537C-429E-8CC4-22BEEEB98C37` are as many as the source bodies. The produced bodies were saved by Fusion 2706.1.17.
+
+**Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
+
+**Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.

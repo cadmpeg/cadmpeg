@@ -521,7 +521,6 @@ pub(in crate::history) fn sync_neutral_features(
     let losses = clear_reversals(
         &cleared,
         &reversed_end_specs,
-        &contradicted_travel,
         &mut native.feature_input_lanes,
     );
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
@@ -586,12 +585,10 @@ pub(in crate::history) fn sync_neutral_features(
 /// Writes `0` to the end-spec reversal word of each extrusion whose decoded
 /// reversal an edit cleared, each paired with whether its record states the
 /// flag as a Keywords attribute, which the encoder already dropped. Names
-/// each extrusion whose flag the write could not clear, and each whose
-/// stored solid still shows the reversed travel.
+/// each extrusion whose flag the write could not clear.
 fn clear_reversals(
     cleared: &[(&cadmpeg_ir::features::Feature, bool)],
     reversed_end_specs: &HashMap<String, Vec<EndSpecAnchor>>,
-    contradicted_travel: &HashSet<FeatureId>,
     lanes: &mut [crate::records::FeatureInputLane],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::layout::extrusion_end_spec_header::REVERSAL;
@@ -617,11 +614,6 @@ fn clear_reversals(
         if unwritten {
             losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
                 "Extrusion {extrusion} is edited to travel along the profile normal, and the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal."
-            )));
-        }
-        if contradicted_travel.contains(&feature.id) {
-            losses.push(SldprtLossCode::WriterExtrudeSolidStale.note(format!(
-                "Extrusion {extrusion} is written along the profile normal as edited, and the stored solid still shows the reversed travel."
             )));
         }
     }

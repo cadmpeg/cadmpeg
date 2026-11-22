@@ -358,10 +358,7 @@ fn losses(
 }
 
 /// Clears the decoded reversal of `Extrude` and writes the part, with the
-/// write's losses. While the decoded feature baseline stands, the writer
-/// refuses any construction edit of a feature that shapes the B-rep, which
-/// it cannot regenerate (`brep_agreement`); the edit drops that baseline to
-/// reach the history writer.
+/// write's losses.
 fn clear_and_write(
     decoded: cadmpeg_ir::codec::DecodeResult,
 ) -> (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>) {
@@ -382,11 +379,6 @@ fn clear_and_write(
                 *direction = ExtrudeDirection::ProfileNormal {};
             }
         });
-        edit.source
-            .as_mut()
-            .expect("the decoded source")
-            .attributes
-            .remove("sldprt_neutral_feature_local_sha256");
     }
     let plan = SldprtCodec
         .plan(
@@ -431,7 +423,6 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
-    assert!(!has(&write_losses, SldprtLossCode::WriterExtrudeSolidStale));
 
     let again = decode(written);
     let (feature, direction, word) = extrusion_state(again.ir(), anchor);
@@ -445,7 +436,7 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
 }
 
 /// An edit that clears a reversal whose stored caps still show it is
-/// written, with the `0` word, and named as a stale solid.
+/// written, with the `0` word, and named by the general stale-solid loss.
 #[test]
 fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0));
@@ -460,9 +451,12 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     ));
 
     let (written, write_losses) = clear_and_write(decoded);
-    let stale = messages(&write_losses, SldprtLossCode::WriterExtrudeSolidStale);
-    assert_eq!(stale.len(), 1, "{write_losses:?}");
-    assert!(stale[0].contains("Extrusion \"Extrude\" ("), "{stale:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    let extrude = stale
+        .iter()
+        .filter(|message| message.contains("Feature \"Extrude\" ("))
+        .count();
+    assert_eq!(extrude, 1, "{write_losses:?}");
     assert!(!has(
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten

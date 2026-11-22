@@ -128,11 +128,13 @@ fn finish(
     if let Written::Semantic {
         coverage,
         omitted_envelope_bytes,
+        stale_solid,
         unwritten,
         losses: history_losses,
         ..
     } = written
     {
+        losses.extend(stale_solid.iter().cloned());
         losses.extend(history_losses.iter().cloned());
         losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
         // An unknown carrier cannot be generated. A successful semantic write
