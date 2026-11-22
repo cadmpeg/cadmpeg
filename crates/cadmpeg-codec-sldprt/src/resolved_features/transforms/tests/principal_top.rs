@@ -1,17 +1,17 @@
-use crate::resolved_features::compact_reference_planes::principal_top_component_frame;
+use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
 use crate::resolved_features::transforms::{
     component_sketch_marker_transform, feature_sketch_marker_transform,
     record_top_marker_coordinates,
 };
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 fn sketch() -> Sketch {
-    let (origin, normal, u_axis) = principal_top_component_frame();
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Top);
     Sketch {
         id: SketchId::mint("synthetic:test:id#top-component").unwrap(),
         name: None,
@@ -26,7 +26,7 @@ fn sketch() -> Sketch {
 #[test]
 fn top_component_rectangle_and_blind_travel_use_intrinsic_coordinates() {
     let sketch = sketch();
-    let (origin, normal, u_axis) = principal_top_component_frame();
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Top);
     let v_axis = normal.cross(u_axis);
     assert_eq!(normal, Vector3::new(0.0, 1.0, 0.0));
     let transform = component_sketch_marker_transform(&sketch, 1.0, true).unwrap();
@@ -101,5 +101,53 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
             .unwrap()
             .apply((2, 3)),
         Some((2, -3))
+    );
+}
+
+/// The Top-binding loss names the sketches whose frame the plane reference
+/// gave, by the route recorded where the frame was chosen. A compact sketch
+/// that a principal-plane component record placed, the unbound twin of a marker
+/// sketch of the same name, is not named; nor is a recorded sketch that no
+/// longer lies on the Top frame.
+#[test]
+fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
+    use crate::resolved_features::compact_reference_planes::TopReferenceSketches;
+    let named = |id: &str, name: &str| Sketch {
+        id: SketchId::mint(id).unwrap(),
+        name: Some(name.into()),
+        ..sketch()
+    };
+    let marker = named("sldprt:model:sketch#markers:1:7", "Sketch3");
+    let twin = named("sldprt:model:sketch#compact:1:7", "Sketch3");
+    let mut routes = TopReferenceSketches::default();
+    routes.record(&marker.id, false);
+    routes.record(&twin.id, false);
+    assert!(routes.note(&[marker.clone(), twin.clone()]).is_none());
+
+    let referenced = named("sldprt:model:sketch#markers:1:9", "Sketch5");
+    let moved = Sketch {
+        id: SketchId::mint("sldprt:model:sketch#markers:1:11").unwrap(),
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 4.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        ..referenced.clone()
+    };
+    routes.record(&referenced.id, true);
+    routes.record(&moved.id, true);
+    let note = routes
+        .note(&[marker, twin, referenced, moved])
+        .expect("named");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.kind()
+    );
+    assert!(
+        note.message
+            .starts_with("1 profile sketch(es) (Sketch5) are placed on the Top plane"),
+        "{}",
+        note.message
     );
 }

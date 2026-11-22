@@ -4296,10 +4296,48 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
+    feature_input_support_frame(
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+    .map(|support| support.frame)
+}
+
+/// The support frame of a feature-input profile, and the route that gave it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SupportFrame {
+    pub(super) frame: (Point3, Vector3, Vector3),
+    /// The frame is the principal Top plane's, taken from the plane the
+    /// profile's feature-input reference names rather than from a component
+    /// record or a stored frame (open item DI-73).
+    pub(super) top_reference: bool,
+}
+
+impl SupportFrame {
+    fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
+        Self {
+            frame,
+            top_reference: false,
+        }
+    }
+}
+
+pub(super) fn feature_input_support_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
     if let Some(frame) =
         resolved_support_component_frame(plane_frames, plane_index, [context_start, start, end])
     {
-        return Some(frame);
+        return Some(SupportFrame::stored(frame));
     }
     let reference = plane_index
         .profile_source(context_start, start, end)
@@ -4356,18 +4394,23 @@ pub(super) fn feature_input_sketch_frame(
                 .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
             if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
                 match component {
-                    Some(component) => Some(component),
+                    Some(component) => Some(SupportFrame::stored(component)),
                     None => explicit()
-                        .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame)),
+                        .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
+                        .map(SupportFrame::stored),
                 }
             } else {
-                component.or(Some(reference.as_tuple()))
+                Some(component.map_or(
+                    SupportFrame {
+                        frame: reference.as_tuple(),
+                        top_reference: reference.principal
+                            == Some(cadmpeg_ir::features::PrincipalPlane::Top),
+                    },
+                    SupportFrame::stored,
+                ))
             }
         }
-        None => match component {
-            Some(component) => Some(component),
-            None => explicit(),
-        },
+        None => component.or_else(explicit).map(SupportFrame::stored),
     }
 }
 
@@ -4417,8 +4460,8 @@ pub(super) fn sketch_feature_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, (Point3, Vector3, Vector3)> {
-    let mut candidates = HashMap::<String, Option<(Point3, Vector3, Vector3)>>::new();
+) -> HashMap<String, SupportFrame> {
+    let mut candidates = HashMap::<String, Option<SupportFrame>>::new();
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
@@ -4431,7 +4474,7 @@ pub(super) fn sketch_feature_frames(
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
             };
-            let Some(frame) = feature_input_sketch_frame(
+            let Some(frame) = feature_input_support_frame(
                 &lane.native_payload,
                 &plane_frames,
                 &plane_index,
@@ -4443,7 +4486,8 @@ pub(super) fn sketch_feature_frames(
             };
             if let Some(candidate) = candidates.get_mut(feature.id.as_str()) {
                 if candidate.as_ref().is_some_and(|current| {
-                    reference_plane_frame_key(current) != reference_plane_frame_key(&frame)
+                    reference_plane_frame_key(&current.frame)
+                        != reference_plane_frame_key(&frame.frame)
                 }) {
                     *candidate = None;
                 }

@@ -133,6 +133,9 @@ pub(crate) enum SldprtLossCode {
     /// line with an identifier trailer and that the handle's own read
     /// endpoints contradict when they coincide.
     SketchHandleReadingAssumed,
+    /// A profile sketch is placed on the Top frame through the plane its
+    /// feature-input reference names, a binding open item DI-73 questions.
+    SketchTopPlaneBindingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A compact sketch profile failed neutral profile admission.
@@ -162,6 +165,12 @@ pub(crate) enum SldprtLossCode {
     FeatureExtrudeDirectionUnresolved,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
+    /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
+    /// magnitude and no stored frame of the object states the side (DI-81).
+    FeatureOffsetPlaneSideAssumed,
+    /// An offset reference plane stores a frame of its own that is not the
+    /// plane the decoder places from its source plane and `D1` (DI-81).
+    FeatureOffsetPlaneFrameConflict,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -403,6 +412,7 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
+        Self::SketchTopPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
@@ -417,6 +427,8 @@ impl SldprtLossCode {
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
+        Self::FeatureOffsetPlaneSideAssumed,
+        Self::FeatureOffsetPlaneFrameConflict,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -548,6 +560,7 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
+            Self::SketchTopPlaneBindingAssumed => "sketch.top-plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
@@ -559,6 +572,8 @@ impl SldprtLossCode {
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
+            Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
+            Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -722,6 +737,7 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
+            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -735,6 +751,8 @@ impl SldprtLossCode {
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -944,6 +962,7 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
+            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -957,6 +976,8 @@ impl SldprtLossCode {
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1176,6 +1197,7 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
+                "sketch.top-plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",
@@ -1190,6 +1212,8 @@ mod tests {
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",
+                "feature.offset-plane-side-assumed",
+                "feature.offset-plane-frame-conflict",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",

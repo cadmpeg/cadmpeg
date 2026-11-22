@@ -1,9 +1,6 @@
 //! Tests for the `compact_reference_planes` module.
 
-use super::{
-    compact_reference_plane_source, principal_sketch_frame, principal_top_component_frame,
-    CompactReferencePlaneIndex,
-};
+use super::{compact_reference_plane_source, principal_sketch_frame, CompactReferencePlaneIndex};
 use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -208,7 +205,7 @@ fn front_frame_uses_model_xy_with_positive_z_normal() {
 #[test]
 fn principal_top_uses_positive_y_normal() {
     assert_eq!(
-        principal_top_component_frame(),
+        principal_sketch_frame(PrincipalPlane::Top),
         (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -246,7 +243,7 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     let index = CompactReferencePlaneIndex::new(&record);
     assert_eq!(
         index.principal_top_profile_frame(0, record.len()),
-        Some(principal_top_component_frame())
+        Some(principal_sketch_frame(PrincipalPlane::Top))
     );
     assert_eq!(index.principal_top_profile_frame(1, record.len()), None);
     assert_eq!(index.principal_top_profile_frame(0, record.len() - 1), None);
@@ -286,25 +283,5 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     assert_eq!(
         CompactReferencePlaneIndex::new(&record).principal_top_profile_frame(0, record.len()),
         None
-    );
-}
-
-#[test]
-fn deferred_principal_planes_retain_existing_frames() {
-    assert_eq!(
-        principal_sketch_frame(PrincipalPlane::Top),
-        (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0)
-        )
-    );
-    assert_eq!(
-        principal_sketch_frame(PrincipalPlane::Right),
-        (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0)
-        )
     );
 }

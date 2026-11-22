@@ -33,7 +33,7 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 #[test]
 fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
     use crate::resolved_features::compact_reference_planes::{
-        principal_sketch_frame, principal_top_component_frame, CompactReferencePlaneIndex,
+        principal_sketch_frame, CompactReferencePlaneIndex,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
@@ -82,7 +82,8 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             Vector3::new(0.0, 0.0, -1.0),
         );
         for context in [0, start] {
-            let expected_top = (source == 3 && context == 0).then(principal_top_component_frame);
+            let expected_top =
+                (source == 3 && context == 0).then(|| principal_sketch_frame(PrincipalPlane::Top));
             assert_eq!(
                 principal_top_profile_frame(&frames, &index, context, start, payload.len()),
                 expected_top
@@ -150,7 +151,7 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
                 profile_start,
                 reused.len()
             ),
-            (source == 3).then(principal_top_component_frame)
+            (source == 3).then(|| principal_sketch_frame(PrincipalPlane::Top))
         );
         let mut invalid = payload.clone();
         invalid[start + 15..start + 23].copy_from_slice(&2.0f64.to_le_bytes());
@@ -324,4 +325,40 @@ fn enclosing_custom_component_retains_its_profile_frame() {
             Vector3::new(1.0, 0.0, 0.0)
         ))
     );
+}
+
+/// The support frame records whether its Top frame comes from a plane
+/// reference that names the principal Top plane: a stored plane frame equal to
+/// the Top frame is not that route.
+#[test]
+fn support_frame_records_a_principal_top_reference() {
+    use crate::resolved_features::compact_reference_planes::{
+        principal_sketch_frame, CompactReferencePlaneIndex,
+    };
+    use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
+    use crate::resolved_features::holes::{feature_input_support_frame, SupportFrame};
+    use cadmpeg_ir::features::PrincipalPlane;
+    use std::collections::HashMap;
+
+    let mut payload = super::profile_reference_plane_payload(false);
+    let source = b"moCompRefPlane_c".len() + 11;
+    payload[source..source + 4].copy_from_slice(&3u32.to_le_bytes());
+    let index = CompactReferencePlaneIndex::new(&payload);
+    let top = principal_sketch_frame(PrincipalPlane::Top);
+    for (reference, top_reference) in [
+        (SketchPlaneFrame::principal(PrincipalPlane::Top), true),
+        (
+            SketchPlaneFrame::from_frame(top, SketchPlaneUAxisSource::Native),
+            false,
+        ),
+    ] {
+        let frames = HashMap::from([(3, reference)]);
+        assert_eq!(
+            feature_input_support_frame(&payload, &frames, &index, 0, 0, payload.len()),
+            Some(SupportFrame {
+                frame: top,
+                top_reference,
+            })
+        );
+    }
 }

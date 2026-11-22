@@ -1,4 +1,4 @@
-//! Placement-derived marker transforms on oblique sketch planes.
+//! Placement-derived marker transforms on support-plane and computed frames.
 
 use crate::resolved_features::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use cadmpeg_core::convert::f64_from_i64;
@@ -63,21 +63,6 @@ fn cells(u: f64, v: f64) -> (i64, i64) {
     (cell(u), cell(v))
 }
 
-/// A frame through `(5, -3, 7)` whose normal is tilted `tilt` radians from
-/// `z` toward `x`, and whose `u` axis is turned 30 degrees in the plane, so
-/// that no axis of the frame is a model axis.
-fn tilted(tilt: f64) -> Frame {
-    let normal = Vector3::new(tilt.sin(), 0.0, tilt.cos());
-    let tangent = Vector3::new(tilt.cos(), 0.0, -tilt.sin());
-    let (sin, cos) = 30.0_f64.to_radians().sin_cos();
-    let u_axis = Vector3::new(cos * tangent.x, sin + cos * tangent.y, cos * tangent.z);
-    Frame {
-        origin: Point3::new(5.0, -3.0, 7.0),
-        normal,
-        u_axis,
-    }
-}
-
 #[test]
 fn oblique_support_plane_frame_reads_markers_as_sketch_coordinates() {
     let frame = Frame {
@@ -93,9 +78,8 @@ fn oblique_support_plane_frame_reads_markers_as_sketch_coordinates() {
     }
 }
 
-/// The identity reading is witnessed on support-plane frames only, so a
-/// frame the decoder computed keeps the model-component reading (open item
-/// DI-80).
+/// A frame the decoder computed keeps the model-component reading, which is
+/// open item DI-80.
 #[test]
 fn oblique_computed_frame_keeps_the_model_component_reading() {
     let frame = Frame {
@@ -107,6 +91,155 @@ fn oblique_computed_frame_keeps_the_model_component_reading() {
 
     assert_ne!(transform, MarkerTransform::identity());
     assert!(frame.reads_model_components(transform));
+}
+
+fn frame(origin: (f64, f64, f64), normal: (f64, f64, f64), u_axis: (f64, f64, f64)) -> Frame {
+    Frame {
+        origin: Point3::new(origin.0, origin.1, origin.2),
+        normal: Vector3::new(normal.0, normal.1, normal.2),
+        u_axis: Vector3::new(u_axis.0, u_axis.1, u_axis.2),
+    }
+}
+
+/// A frame through `(5, -3, 7)` whose normal is tilted `tilt` radians from
+/// `z` toward `x`, and whose `u` axis is turned 30 degrees in the plane, so
+/// that no axis of the frame is a model axis.
+fn tilted(tilt: f64) -> Frame {
+    let normal = Vector3::new(tilt.sin(), 0.0, tilt.cos());
+    let tangent = Vector3::new(tilt.cos(), 0.0, -tilt.sin());
+    let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+    let u_axis = Vector3::new(cos * tangent.x, sin + cos * tangent.y, cos * tangent.z);
+    Frame {
+        origin: Point3::new(5.0, -3.0, 7.0),
+        normal,
+        u_axis,
+    }
+}
+
+/// On the Right frame and its translates along `X`, on the reversed frame
+/// `N=-X, U=+Z` with its origin on the `X` axis, on frames `N=+Y, U=-X` with
+/// their origin on the `Y` axis (the origin itself included), and on the
+/// translates of the Top frame along `Y` with `U=+X`, the pair `(a, b)` is the
+/// local sketch coordinate: on Right it is the model point `(0, b, -a)`.
+#[test]
+fn local_pair_frame_families_read_markers_as_sketch_coordinates() {
+    for (frame, expected) in [
+        (
+            frame((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (0.0, 20.0, -10.0),
+        ),
+        (
+            frame((7.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (7.0, 20.0, -10.0),
+        ),
+        (
+            frame((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            (0.0, 20.0, 10.0),
+        ),
+        (
+            frame((0.0, 5.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
+            (10.0, 5.0, -20.0),
+        ),
+        (
+            frame((0.0, -5.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)),
+            (-10.0, -5.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)),
+            (-10.0, 0.0, 20.0),
+        ),
+        (
+            frame((-3.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            (-3.0, 20.0, 10.0),
+        ),
+    ] {
+        let transform = frame.transform(MARKER_SKETCH);
+        assert_eq!(transform, MarkerTransform::identity());
+        let expected = Point3::new(expected.0, expected.1, expected.2);
+        assert!(frame.place(transform, (10.0, 20.0)).distance(expected) <= TOLERANCE);
+    }
+}
+
+/// Every other axis-parallel support frame keeps the model-component reading
+/// (open item DI-80): the pair is the two model coordinates other than the
+/// normal's, in ascending axis order. The Top frame itself is among them, so
+/// is the Front lane fallback frame `N=-Y, U=-Z`, and so are the `X`-family
+/// frames whose origin is displaced within the plane off the `X` axis.
+#[test]
+fn other_axis_parallel_support_frames_keep_the_model_component_reading() {
+    for (frame, expected) in [
+        (
+            frame((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
+            (10.0, 0.0, 20.0),
+        ),
+        (
+            frame((3.0, 5.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
+            (10.0, 5.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, 4.0), (0.0, 0.0, -1.0), (-1.0, 0.0, 0.0)),
+            (10.0, 20.0, 4.0),
+        ),
+        (
+            frame((0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (0.0, 10.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0)),
+            (10.0, 0.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, -244.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (0.0, 10.0, 20.0),
+        ),
+        (
+            frame((7.0, 3.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (7.0, 10.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, 6.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            (0.0, 10.0, 20.0),
+        ),
+    ] {
+        let transform = frame.transform(MARKER_SKETCH);
+        let expected = Point3::new(expected.0, expected.1, expected.2);
+        assert!(
+            frame.place(transform, (10.0, 20.0)).distance(expected) <= TOLERANCE,
+            "{:?}",
+            frame.normal
+        );
+    }
+}
+
+/// On the Top frame a computed-frame sketch reads `(a, b)` as `(a, 0, b)`.
+#[test]
+fn axis_parallel_computed_frame_keeps_the_model_component_reading() {
+    let frame = frame((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0));
+    let transform = frame.transform(FACE_SKETCH);
+    assert!(
+        frame
+            .place(transform, (10.0, 20.0))
+            .distance(Point3::new(10.0, 0.0, 20.0))
+            <= TOLERANCE
+    );
+}
+
+/// The three kinds that place a sketch on its support plane's frame read the
+/// pair locally; a bore sketch on the same frame keeps the model components.
+#[test]
+fn support_plane_sketch_kinds_read_markers_as_sketch_coordinates() {
+    let frame = frame((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0));
+    for id in [
+        "sldprt:model:sketch#markers:1:30",
+        "sldprt:model:sketch#compact:1:30",
+        "sldprt:model:sketch#legacy-config:1:30",
+    ] {
+        assert_eq!(frame.transform(id), MarkerTransform::identity(), "{id}");
+    }
+    assert_ne!(
+        frame.transform("sldprt:model:sketch#bore:1:30"),
+        MarkerTransform::identity()
+    );
 }
 
 /// The two readings differ by the whole origin translation, so the oblique
