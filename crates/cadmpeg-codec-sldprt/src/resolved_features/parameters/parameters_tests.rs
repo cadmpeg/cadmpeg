@@ -63,11 +63,11 @@ fn fillet_dimensions_are_lengths() {
         content: Vec::new(),
     };
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "D1"),
+        scalar_unit_from_feature_parameter(&feature, "D1", 0.005),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "missing"),
+        scalar_unit_from_feature_parameter(&feature, "missing", 0.005),
         None
     );
     let mut numeric = feature;
@@ -75,7 +75,7 @@ fn fillet_dimensions_are_lengths() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&numeric, "D1"),
+        scalar_unit_from_feature_parameter(&numeric, "D1", 0.0),
         Some(super::ScalarUnit::Length)
     );
 
@@ -87,7 +87,7 @@ fn fillet_dimensions_are_lengths() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2"),
+        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2", 0.006),
         None
     );
 
@@ -101,15 +101,15 @@ fn fillet_dimensions_are_lengths() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D0"),
+        scalar_unit_from_feature_parameter(&variable, "D0", 0.005),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D01"),
+        scalar_unit_from_feature_parameter(&variable, "D01", 0.005),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D1"),
+        scalar_unit_from_feature_parameter(&variable, "D1", 0.0),
         Some(super::ScalarUnit::Length)
     );
 }
@@ -140,11 +140,14 @@ fn thin_cut_native_dimensions_are_lengths() {
 
     for name in ["D5", "D6", "D7"] {
         assert_eq!(
-            scalar_unit_from_feature_parameter(&feature, name),
+            scalar_unit_from_feature_parameter(&feature, name, 0.0003),
             Some(ScalarUnit::Length)
         );
     }
-    assert_eq!(scalar_unit_from_feature_parameter(&feature, "D8"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&feature, "D8", 0.0003),
+        None
+    );
 }
 
 #[test]
@@ -175,15 +178,15 @@ fn sketch_source_dimension_establishes_scalar_unit() {
     };
 
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "depth"),
+        scalar_unit_from_feature_parameter(&feature, "depth", 0.000_75),
         Some(ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "angle"),
+        scalar_unit_from_feature_parameter(&feature, "angle", 1.5),
         Some(ScalarUnit::Angle)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "unowned"),
+        scalar_unit_from_feature_parameter(&feature, "unowned", 1.0),
         None
     );
 }
@@ -497,4 +500,39 @@ fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
     let one_sided = enriched(None);
     assert_eq!(one_sided["D1"], "38.1mm");
     assert_eq!(one_sided["D2"], "6");
+}
+
+#[test]
+fn extrude_depth_scalar_is_a_length_where_it_can_show_the_display() {
+    let extrude = |display: &str| crate::records::Feature {
+        id: "feature".into(),
+        parent: "history".into(),
+        xml_tag: "Extrusion".into(),
+        tree_parent: None,
+        source_id: None,
+        ordinal: 0,
+        name: "Cut-Extrude1".into(),
+        kind: "Extrusion".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), display.into())]),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: vec![FeatureContent::Dimension("D1".into())],
+    };
+    for (display, metres) in [("1.77", 0.044_831), ("10", 0.01), ("1.5in", 0.0381)] {
+        assert_eq!(
+            scalar_unit_from_feature_parameter(&extrude(display), "D1", metres),
+            Some(ScalarUnit::Length),
+            "{display}"
+        );
+    }
+    for (display, metres) in [("19.46667", 0.018_610_666), ("1.5mm", 0.0381)] {
+        assert_eq!(
+            scalar_unit_from_feature_parameter(&extrude(display), "D1", metres),
+            None,
+            "{display}"
+        );
+    }
 }

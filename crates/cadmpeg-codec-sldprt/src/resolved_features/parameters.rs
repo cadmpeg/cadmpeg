@@ -206,7 +206,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                     let unit = scalar_units
                         .get(scalar.id.as_str())
                         .copied()
-                        .or_else(|| scalar_unit_from_feature_parameter(feature, name))
+                        .or_else(|| {
+                            scalar_unit_from_feature_parameter(feature, name, scalar.value.get())
+                        })
                         .unwrap_or(ScalarUnit::Native);
                     if value_only {
                         continue;
@@ -290,26 +292,29 @@ pub(crate) fn enrich_history_parameters<'a>(
     }
 }
 
-/// Infer a length unit from the owning operation and its native display role.
-/// A dimension that its feature's role makes a length (an extrude depth, an
-/// offset plane distance, a linear pattern spacing, a Move Face distance;
-/// `native_parameter_is_length`) stores metres, as the parameter bound to it
-/// does. A standard fillet placeholder such as `R0` also identifies a
-/// radius; variable fillets use indexed radii instead.
+/// Infer the unit of a scalar of `value` from the owning operation and its
+/// native display role. A dimension that its feature's role makes a length
+/// (an extrude depth, an offset plane distance, a linear pattern spacing, a
+/// Move Face distance; `native_parameter_is_length`) stores metres, as the
+/// parameter bound to it does, where the scalar can be the length its display
+/// shows. A standard fillet placeholder such as `R0` also identifies a radius;
+/// variable fillets use indexed radii instead.
 fn scalar_unit_from_feature_parameter(
     feature: &crate::records::Feature,
     name: &str,
+    value: f64,
 ) -> Option<ScalarUnit> {
     if matches!(name, "D5" | "D6" | "D7")
         && crate::history::classify::matches_alnum_ascii(&feature.kind, b"cutextrudethin")
     {
         return Some(ScalarUnit::Length);
     }
-    if crate::history::parameters::native_parameter_is_length(
-        feature,
-        name,
-        feature.parameters.get(name).map(String::as_str),
-    ) {
+    let display = feature.parameters.get(name).map(String::as_str);
+    if crate::history::parameters::native_parameter_is_length(feature, name, display)
+        && display.is_none_or(|display| {
+            crate::history::literals::displays_length(display, value * 1000.0)
+        })
+    {
         return Some(ScalarUnit::Length);
     }
     let expression = feature.parameters.get(name)?;

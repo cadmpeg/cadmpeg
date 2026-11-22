@@ -15,6 +15,27 @@ const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
+/// Relative tolerance within which a length is the number a display shows,
+/// beyond the display's own rounding.
+const EPS_LITERALS_DISPLAYS_LENGTH_E9: f64 = 1.0e-9;
+
+/// The Keywords length unit suffixes and their millimetre scales, in match
+/// order.
+const LENGTH_SUFFIXES: [(&str, f64); 13] = [
+    ("uin", 25.4e-6),
+    ("mil", 0.0254),
+    ("mm", 1.0),
+    ("cm", 10.0),
+    ("in", 25.4),
+    ("ft", 304.8),
+    ("nm", EPS_LITERALS_PARSE_LENGTH_MM_E6),
+    ("um", 1.0e-3),
+    ("µm", 1.0e-3),
+    ("μm", 1.0e-3),
+    ("Å", EPS_LITERALS_PARSE_LENGTH_MM_E7),
+    ("A", EPS_LITERALS_PARSE_LENGTH_MM_E7),
+    ("m", 1000.0),
+];
 
 pub(super) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
     let normal_length = normal.norm();
@@ -35,21 +56,7 @@ pub(super) fn parse_length_mm(value: &str) -> Option<Length> {
     let (value, display_length) = value
         .strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}'])
         .map_or((value, false), |value| (value.trim(), true));
-    for (suffix, scale) in [
-        ("uin", 25.4e-6),
-        ("mil", 0.0254),
-        ("mm", 1.0),
-        ("cm", 10.0),
-        ("in", 25.4),
-        ("ft", 304.8),
-        ("nm", EPS_LITERALS_PARSE_LENGTH_MM_E6),
-        ("um", 1.0e-3),
-        ("µm", 1.0e-3),
-        ("μm", 1.0e-3),
-        ("Å", EPS_LITERALS_PARSE_LENGTH_MM_E7),
-        ("A", EPS_LITERALS_PARSE_LENGTH_MM_E7),
-        ("m", 1000.0),
-    ] {
+    for (suffix, scale) in LENGTH_SUFFIXES {
         if let Some(number) = value.strip_suffix(suffix) {
             return number
                 .trim()
@@ -62,6 +69,47 @@ pub(super) fn parse_length_mm(value: &str) -> Option<Length> {
         .then(|| value.parse::<f64>().ok())
         .flatten()
         .and_then(Length::new)
+}
+
+/// Whether `mm` millimetres can be the length that the dimension text
+/// `expression` shows: a number with a length unit suffix in that unit, a bare
+/// number in any Keywords length unit, each within half a unit in the number's
+/// last decimal place. Text that is no number shows every length.
+pub(crate) fn displays_length(expression: &str, mm: f64) -> bool {
+    let body = strip_dimension_count(expression.trim());
+    let body = strip_diameter_modifier(body)
+        .or_else(|| strip_radius_modifier(body))
+        .or_else(|| body.strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}']))
+        .unwrap_or(body)
+        .trim();
+    let (text, units) = if body.parse::<f64>().is_ok() {
+        (body, LENGTH_SUFFIXES.as_slice())
+    } else {
+        let suffixed = LENGTH_SUFFIXES.iter().find_map(|unit| {
+            let text = body.strip_suffix(unit.0)?.trim();
+            text.parse::<f64>()
+                .is_ok()
+                .then_some((text, std::slice::from_ref(unit)))
+        });
+        let Some(suffixed) = suffixed else {
+            return true;
+        };
+        suffixed
+    };
+    let Some(number) = text.parse::<f64>().ok().filter(|number| number.is_finite()) else {
+        return true;
+    };
+    let rounding = if text.contains(['e', 'E']) {
+        0.0
+    } else {
+        let places = text.split_once('.').map_or(0, |(_, places)| places.len());
+        i32::try_from(places).map_or(0.0, |places| 0.5 * 10f64.powi(-places))
+    };
+    units.iter().any(|&(_, scale)| {
+        let shown = mm / scale;
+        (shown - number).abs()
+            <= rounding + EPS_LITERALS_DISPLAYS_LENGTH_E9 * shown.abs().max(number.abs())
+    })
 }
 
 pub(super) fn parse_positive_length_mm(value: &str) -> Option<PositiveLength> {
