@@ -117,6 +117,8 @@ pub(crate) fn project(
     losses.extend(typed.state_construction);
     losses.extend(typed.dimension_construction);
     losses.extend(typed.profile_differs);
+    losses.extend(typed.sketch_empty);
+    losses.extend(typed.profile_unchecked);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,

@@ -357,6 +357,12 @@ pub(crate) enum SldprtLossCode {
     /// Typed extrudes whose `Sketch` pick's closed regions differ from the
     /// profile loops read from the stored records.
     DesignExtrudeProfileDiffers,
+    /// Typed extrudes whose sketch holds no profile curve, so their `Sketch`
+    /// pick takes no region.
+    DesignExtrudeSketchEmpty,
+    /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignExtrudeProfileUnchecked,
     /// Sketch circles and arcs built from a dimension record, which no curve
     /// record stores, stated construction where they repeat another curve of
     /// their sketch or no face of the solid witnesses them.
@@ -510,6 +516,8 @@ impl SldprtLossCode {
         Self::DesignExtrudeDepthAssumed,
         Self::DesignSketchConstructionAssumed,
         Self::DesignExtrudeProfileDiffers,
+        Self::DesignExtrudeSketchEmpty,
+        Self::DesignExtrudeProfileUnchecked,
         Self::DesignSketchDimensionCurveConstruction,
     ];
 
@@ -682,6 +690,8 @@ impl SldprtLossCode {
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
             Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
+            Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
             Self::DesignSketchDimensionCurveConstruction => {
                 "design.sketch-dimension-curve-construction"
             }
@@ -827,6 +837,7 @@ impl SldprtLossCode {
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
             | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCurveConstruction => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
@@ -835,6 +846,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::DesignExtrudeProfileUnchecked
             | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
@@ -886,6 +898,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
             | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignExtrudeProfileUnchecked
             | Self::DesignSketchDimensionCurveConstruction => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
@@ -1300,6 +1314,8 @@ mod tests {
                 "design.extrude-depth-assumed",
                 "design.sketch-construction-assumed",
                 "design.extrude-profile-differs",
+                "design.extrude-sketch-empty",
+                "design.extrude-profile-unchecked",
                 "design.sketch-dimension-curve-construction",
             ]
         );

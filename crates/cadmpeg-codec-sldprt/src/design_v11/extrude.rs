@@ -32,7 +32,7 @@ use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
 use super::parameters::Entries;
-use super::profile_check::{self, Difference};
+use super::profile_check::{self, Difference, Unchecked};
 use super::sketch::{pick, selection};
 
 /// The extrudes typed, and the quantity of each parameter a limit binds.
@@ -48,6 +48,9 @@ pub(super) struct Extrudes {
     /// profile loops the decoder resolved, with their name and how they
     /// differ.
     pub(super) differs: Vec<(FeatureId, Option<String>, Vec<Difference>)>,
+    /// The typed extrudes whose sketch's closed regions the check did not
+    /// compare with the stored profile, with their name and why.
+    pub(super) unchecked: Vec<(FeatureId, Option<String>, Unchecked)>,
 }
 
 /// What a typed extrude adds to the notes.
@@ -55,8 +58,9 @@ pub(super) struct Extrudes {
 struct Notes {
     /// The dimension its blind depth binds as its record's only one.
     assumed: Option<ParameterId>,
-    /// How its sketch's closed regions differ from the stored profile.
-    differs: Vec<Difference>,
+    /// How its sketch's closed regions differ from the stored profile, or
+    /// why the check did not compare them.
+    profile: Option<Result<Vec<Difference>, Unchecked>>,
 }
 
 /// What the projection reads besides the feature.
@@ -119,12 +123,13 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
                                 .assumed
                                 .map(|parameter| (feature.id.clone(), parameter)),
                         );
-                        if !notes.differs.is_empty() {
-                            out.differs.push((
-                                feature.id.clone(),
-                                feature.name.clone(),
-                                notes.differs,
-                            ));
+                        let named = (feature.id.clone(), feature.name.clone());
+                        match notes.profile {
+                            Some(Ok(differs)) if !differs.is_empty() => {
+                                out.differs.push((named.0, named.1, differs));
+                            }
+                            Some(Err(why)) => out.unchecked.push((named.0, named.1, why)),
+                            _ => {}
                         }
                     }
                     Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
@@ -229,7 +234,7 @@ fn extrude(
         cadmpeg_ir::features::operation_settings::BooleanOp::NewBody => Some(Boolean::NewBody),
         cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved => None,
     };
-    notes.differs = differences(sketch, context);
+    notes.profile = Some(differences(sketch, context));
     Ok(Extrude {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
         loops: None,
@@ -257,18 +262,14 @@ fn extrude(
 
 /// How the closed regions of `sketch` differ from the profile loops the
 /// decoder resolved for it.
-fn differences(sketch: &SketchId, context: &Context<'_>) -> Vec<Difference> {
-    let Some(record) = context
+fn differences(sketch: &SketchId, context: &Context<'_>) -> Result<Vec<Difference>, Unchecked> {
+    let loops = context
         .model
         .sketches
         .iter()
         .find(|record| &record.id == sketch)
-    else {
-        return Vec::new();
-    };
-    profile_check::curves(sketch, context.entities)
-        .map(|curves| profile_check::differences(&record.profiles, &curves))
-        .unwrap_or_default()
+        .map_or(&[][..], |record| &record.profiles[..]);
+    profile_check::check(loops, &profile_check::curves(sketch, context.entities)?)
 }
 
 fn apply(op: BooleanOp) -> Boolean {

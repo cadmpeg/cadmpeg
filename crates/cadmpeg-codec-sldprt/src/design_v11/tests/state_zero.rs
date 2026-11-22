@@ -231,8 +231,8 @@ fn a_sketch_whose_regions_are_the_stored_profile_charges_nothing() {
 
 /// A line joins the ends of the C-shaped ring's inner arc, which the stored
 /// profile leaves out: the whole-sketch pick also takes the half disc the
-/// line closes, which `SolidWorks` did not extrude, and the note names the
-/// extrude and the extra region.
+/// line closes, outside the stored profile, and the note names the extrude
+/// and the extra region.
 #[test]
 fn a_line_closing_a_c_ring_charges_an_extra_region() {
     let (mut ir, _) = sketch_and_extrude();
@@ -269,4 +269,64 @@ fn a_line_closing_a_c_ring_charges_an_extra_region() {
         note.message
     );
     assert_no_design_findings(&ir);
+}
+
+/// The top edge of the rectangle is read from a curve record of state `0`,
+/// and the rectangle closes only through it: it stays profile geometry and
+/// is not reported as construction. The stored profile holds only the
+/// circle, so the note names the rectangle's region as extra.
+#[test]
+fn a_curve_of_state_zero_that_closes_the_profile_stays_profile_geometry() {
+    let (mut ir, _) = sketch_and_extrude();
+    set_profiles(&mut ir, &[&[("hole", false)]]);
+    let (_, typed) = project(&mut ir, &HashSet::from([entity("l2")]));
+    let l2 = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|candidate| candidate.id == entity("l2"))
+        .unwrap();
+    assert_eq!(l2.construction, None);
+    assert!(
+        typed.state_construction.is_none(),
+        "{:?}",
+        typed.state_construction
+    );
+    let note = typed
+        .profile_differs
+        .expect("the difference from the stored profile is reported");
+    assert!(
+        note.message
+            .contains("(extra region outside the stored profile)"),
+        "{}",
+        note.message
+    );
+}
+
+/// A sketch whose decoder read no profile loop is not compared, and the
+/// note says why.
+#[test]
+fn an_extrude_whose_sketch_has_no_stored_loop_is_reported_unchecked() {
+    let (mut ir, _) = sketch_and_extrude();
+    set_profiles(&mut ir, &[]);
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert!(
+        typed.profile_differs.is_none(),
+        "{:?}",
+        typed.profile_differs
+    );
+    let note = typed
+        .profile_unchecked
+        .expect("the uncompared profile is reported");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::DesignExtrudeProfileUnchecked.kind()
+    );
+    assert_eq!(note.severity, cadmpeg_ir::report::Severity::Info);
+    assert!(
+        note.message.contains("(no stored profile loop)"),
+        "{}",
+        note.message
+    );
+    assert!(typed.sketch_empty.is_none(), "{:?}", typed.sketch_empty);
 }
