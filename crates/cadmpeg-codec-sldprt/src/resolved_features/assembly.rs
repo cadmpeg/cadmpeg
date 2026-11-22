@@ -115,18 +115,16 @@ fn type_scalars_from_archive(
     }) else {
         return Ok((Vec::new(), None));
     };
-    let map = match crate::archive::resolved_count(resolved) {
-        Some(count) => crate::archive::class_index_map(config, count, ctx)?
-            .map(|classes| (ConfigurationMap::reconciled(count, &classes), classes)),
-        None => None,
+    let Some(count) = crate::archive::resolved_count(resolved) else {
+        return Ok((Vec::new(), None));
     };
-    let (configuration, map) = map.unzip();
+    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
+        return Ok((Vec::new(), None));
+    };
+    let configuration = Some(ConfigurationMap::reconciled(count, &map));
     let Some(version) =
         crate::carchive::walk_version(crate::container::declared_sw_version(scan), config)
     else {
-        return Ok((Vec::new(), configuration));
-    };
-    let Some(map) = map else {
         return Ok((Vec::new(), configuration));
     };
     let Some(mut walk) = crate::carchive::walk_configuration(ctx, &map, resolved, Some(version))?

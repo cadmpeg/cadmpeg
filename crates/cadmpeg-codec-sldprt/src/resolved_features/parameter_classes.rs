@@ -110,12 +110,11 @@ enum Slot<'a> {
 
 /// What each scalar of `lane` states of its parameter, by scalar id. A
 /// scalar whose slot holds a class token states the class its sources give
-/// that token: `configuration`, the classes of the `Config-N` map the lane
-/// continues, the lane's declarations, and the relation class declared
-/// beside the token
-/// (see [`token_classes`]); it is contested where they name different
-/// classes. A scalar whose class is not a parameter class, or whose token no
-/// source names, states nothing.
+/// that token (see [`token_classes`]): `configuration`, the classes of the
+/// `Config-N` map the lane continues; the lane's declarations; and the
+/// relation class declared beside the token. It is contested where they
+/// name different classes. A scalar whose class is not a parameter class,
+/// or whose token no source names, states nothing.
 pub(crate) fn stated_parameters<'l>(
     lane: &'l FeatureInputLane,
     configuration: Option<&ConfigurationMap>,
