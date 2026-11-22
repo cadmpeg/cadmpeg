@@ -1950,7 +1950,7 @@ counter-row ordinal. List positions are a separate lane; a position can exceed
 the counter-row count. An endpoint does not directly contain the counter row's
 object-index value: 69 of 70, 71 of 73, and 66 of 66 distinct endpoints,
 respectively, do not occur in that value lane. Aligning equal list positions
-or pair tags within corresponding group and row ordinals in the two small-wing
+or pair tags within corresponding group and row ordinals in the first two
 tables yields 81 uses of a bijection between 70 endpoint identities. These
 observations support a save-local counter-row ordinal relation; they do not
 supply a Boolean suppression value or a unique operation-to-state-object binding.

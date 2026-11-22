@@ -427,7 +427,7 @@ The two groups match a tessellation chord tolerance that differs between files. 
 
 **Need.** Establish the terminal's writer-level meaning and selection rule through an independent source relation. Shared byte encodings alone do not assign allocation-addressing semantics.
 
-**Conflict.** The retained private air-filter quote at physical offset `571941` names face `45375` and loop `45372`; the source frame names face `45379` and loop `45376`. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
+**Conflict.** One part's retained quote at physical offset `571941` names face `45375` and loop `45372`; the source frame names face `45379` and loop `45376`. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
 
 ### OS-04. Object-stream body dimension
 

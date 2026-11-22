@@ -247,8 +247,8 @@ fn scan_skips_empty_binary_model_name_fields() {
 #[test]
 fn relation_model_name_accepts_binary_root_name() {
     assert_eq!(
-        super::super::relation_model_name("DRILL_BIT_10D0_SUPPRESSED_FEAT"),
-        Some("DRILL_BIT_10D0_SUPPRESSED_FEAT")
+        super::super::relation_model_name("SAMPLE_PART_42A1_BASE_FEATURE"),
+        Some("SAMPLE_PART_42A1_BASE_FEATURE")
     );
     assert_eq!(
         super::super::relation_model_name("widget.PrT "),
