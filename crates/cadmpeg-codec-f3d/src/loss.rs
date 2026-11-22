@@ -789,6 +789,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
+    /// The status record of a typed profile member lists a
+    /// `PROFILE_REFERENCE_LOST` record. The member contributes a region only
+    /// when its complete group resolves.
+    FeatureProfileMemberReferenceLost,
     /// Extrude profile picks that exceed the carried regions of their Sketch
     /// name its text on the reading that each pick is one glyph.
     FeatureProfileTextGlyphsAssumed,
@@ -1830,6 +1834,7 @@ impl F3dLossCode {
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
+        Self::FeatureProfileMemberReferenceLost,
         Self::FeatureProfileTextGlyphsAssumed,
         Self::FeatureProfileTextGlyphsNative,
         Self::FeatureProfileIslandAbsenceAssumed,
@@ -2866,6 +2871,7 @@ impl F3dLossCode {
             Self::FeatureProfileCrossingRunsAssumed => "feature.profile-crossing-runs-assumed",
             Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
+            Self::FeatureProfileMemberReferenceLost => "feature.profile-member-reference-lost",
             Self::FeatureProfileTextGlyphsAssumed => "feature.profile-text-glyphs-assumed",
             Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
@@ -3873,6 +3879,7 @@ impl F3dLossCode {
             | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileMemberReferenceLost
             | Self::FeatureProfileTextGlyphsAssumed
             | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
@@ -4623,6 +4630,7 @@ impl F3dLossCode {
             | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileMemberReferenceLost
             | Self::FeatureProfileTextGlyphsAssumed
             | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
@@ -5486,6 +5494,7 @@ mod tests {
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
+                "feature.profile-member-reference-lost",
                 "feature.profile-text-glyphs-assumed",
                 "feature.profile-text-glyphs-native",
                 "feature.profile-island-absence-assumed",
