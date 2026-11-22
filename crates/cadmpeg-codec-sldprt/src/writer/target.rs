@@ -129,9 +129,11 @@ fn finish(
         coverage,
         omitted_envelope_bytes,
         unwritten,
+        losses: history_losses,
         ..
     } = written
     {
+        losses.extend(history_losses.iter().cloned());
         losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.
