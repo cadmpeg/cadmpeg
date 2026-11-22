@@ -50,35 +50,11 @@
 
 ### DR-1021. Topology proxy selections
 
-**Question.** Which edges and faces does a `CLSID_JMTopologyProxy` object select, and which face of a two-setback chamfer is its reference face?
+**Question.** Which faces does a `CLSID_JMTopologyProxy` object select, how does an edge proxy select a curved edge, and how does a proxy name the topology of its creating feature?
 
-**Known.** Rounds and chamfers name their edges and reference faces by `CLSID_JMTopologyProxy` identifiers (§7.3, §7.4). A proxy object is 559 bytes for an edge selection and 827 bytes for a chamfer reference face in the read documents.
+**Known.** A 559-byte proxy selects one straight edge by its start point, direction and length (§7.6), and references the feature that created the edge. A byte at object offset 70 differs between edges of one feature. An 827-byte proxy selects the reference face of a chamfer or the open faces of a thin wall.
 
-**Need.** Documents that differ only in the selected edge of a round, and a two-setback chamfer and its copy with the setbacks swapped.
-
-### DR-1022. Tapped hole thread data
-
-**Question.** At which offset does a tapped hole's `CLSID_JMHolePropData` object store its thread diameters and designation?
-
-**Known.** A tapped hole's property data holds two `f64` diameters in millimetres, then a `u32` character count and the UTF-16LE thread designation. The block's offset varies with the object length. A tapped M6 hole with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm, and its solid removes about 200 mm³ more than a 5 mm bore with that counterbore.
-
-**Need.** Tapped holes of two thread sizes, with and without a counterbore.
-
-### DR-1023. Swept, lofted and thin-wall operands
-
-**Question.** Where do swept, lofted and thin-wall features store their paths, sections, thicknesses and open faces?
-
-**Known.** Swept and lofted features store their first profile at the §5.3 position. Extruded, revolved, hole, round, chamfer, pattern and mirror features store their parameters as §6 to §8 state.
-
-**Need.** Documents of each of these feature kinds that differ in one parameter.
-
-### DR-1024. Circular pattern sense and mirrors of several seeds
-
-**Question.** Which sense does a circular pattern turn about its axis, and where does a mirror of more than one seed store its plane?
-
-**Known.** Every read circular pattern fills a full turn. Every read mirror has one seed and stores its plane at object offset 329 (§8.2).
-
-**Need.** A circular pattern of three instances 30 degrees apart, and a mirror of two features.
+**Need.** A round on a circular edge, a thin wall with two open faces, and a chamfer on an edge that a cut created.
 
 ### DR-1025. Round set kinds
 
@@ -96,3 +72,18 @@
 
 **Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
 
+### DR-1027. Tapped hole with counterbore
+
+**Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?
+
+**Known.** A tapped M6 hole with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm and the thread values of §7.2. Its solid removes about 200 mm³ more than a 5 mm bore with that counterbore. A plain hole with a 5 mm drill and M6 thread values removes exactly a 5 mm bore.
+
+**Need.** Tapped holes with counterbores of two depths and two diameters.
+
+### DR-1028. Lofted feature operands
+
+**Question.** Where does a lofted feature store its sections and guide curves?
+
+**Known.** A lofted feature stores its first profile at the §5.3 position.
+
+**Need.** Lofts between two and three sections, and a copy of each with one section moved.
