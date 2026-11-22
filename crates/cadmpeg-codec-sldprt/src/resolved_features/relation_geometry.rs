@@ -389,6 +389,36 @@ pub(crate) fn project_spatial_relation_bindings(
     }
 }
 
+/// Adds every marker linked to or from a member of `referenced` until no
+/// marker is added.
+fn close_over_links<'a>(
+    markers_by_id: &HashMap<&'a str, &'a SketchInputEntity>,
+    referenced: &mut HashSet<&'a str>,
+) {
+    loop {
+        let mut linked = Vec::new();
+        for marker in markers_by_id.values() {
+            let marker_referenced = referenced.contains(marker.id());
+            for link in marker.links() {
+                let adjacent = if marker_referenced {
+                    Some(link.entity_ref.as_str())
+                } else if referenced.contains(link.entity_ref.as_str()) {
+                    Some(marker.id())
+                } else {
+                    None
+                };
+                if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
+                    linked.push(id);
+                }
+            }
+        }
+        if linked.is_empty() {
+            break;
+        }
+        referenced.extend(linked);
+    }
+}
+
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
@@ -423,6 +453,7 @@ pub(crate) fn project_relation_point_geometry(
     let mut point_operands = HashSet::new();
     let mut curve_operands = HashSet::new();
     let mut referenced = HashSet::new();
+    let mut listed_relations = Vec::new();
     for lane in lanes {
         for relation in &lane.relation_instances {
             let count = match relation.family {
@@ -457,40 +488,23 @@ pub(crate) fn project_relation_point_geometry(
                 referenced.insert(id);
             }
         }
-        // A list-curve reading (DI-77) replaces the kind, not the stored
-        // relation code, so the points the record's links reach stay drawn.
         for marker in &lane.sketch_entities {
-            if !matches!(marker.stored_kind(), SketchInputKind::Relation(_)) {
-                continue;
-            }
-            let id = marker.id();
-            referenced.insert(id);
-        }
-    }
-    loop {
-        let mut linked = Vec::new();
-        for marker in markers_by_id.values() {
-            let marker_referenced = referenced.contains(marker.id());
-            for link in marker.links() {
-                let adjacent = if marker_referenced {
-                    Some(link.entity_ref.as_str())
-                } else if referenced.contains(link.entity_ref.as_str()) {
-                    Some(marker.id())
-                } else {
-                    None
-                };
-                if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
-                    linked.push(id);
+            match (marker.kind(), marker.stored_kind()) {
+                (SketchInputKind::Relation(_), _) => {
+                    referenced.insert(marker.id());
                 }
+                // A list-curve reading (DI-77) replaces the kind, not the
+                // stored relation code: the points the record's links reach
+                // stay drawn, and the record itself stays a curve.
+                (_, SketchInputKind::Relation(_)) => listed_relations.push(marker.id()),
+                _ => {}
             }
         }
-        if linked.is_empty() {
-            break;
-        }
-        for id in linked {
-            referenced.insert(id);
-        }
     }
+    close_over_links(&markers_by_id, &mut referenced);
+    let mut point_reach = referenced.clone();
+    point_reach.extend(listed_relations);
+    close_over_links(&markers_by_id, &mut point_reach);
     for lane in lanes {
         let lane_key = lane
             .id
@@ -506,7 +520,7 @@ pub(crate) fn project_relation_point_geometry(
                         SketchGeometryDefinition::Point { .. }
                     )
             });
-            if !referenced.contains(marker.id())
+            if !point_reach.contains(marker.id())
                 || !(qualified_point
                     && matches!(
                         marker.kind(),
