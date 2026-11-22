@@ -107,6 +107,37 @@ type = "bytes[4]"
 source = "spec"
 anchor = "four zero bytes at +8"
 
+[[record]]
+name = "feature_input_scalar_class_prefix"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs"
+kind = "byte"
+section = "2"
+anchor = "In the token form this is an 8-byte prefix"
+size = 8
+endianness = "little"
+note = "The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form."
+
+[[record.field]]
+name = "relation_class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "the relation class token at prefix +0"
+
+[[record.field]]
+name = "zero"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "a zero u32 at prefix +2"
+
+[[record.field]]
+name = "parameter_class_token"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the parameter class token at prefix +6"
+
 
 # --- Container envelopes ---------------------------------------------------
 
@@ -12588,6 +12619,74 @@ source = "spec"
 anchor = "| +32 | little-endian u32 |"
 
 [[record]]
+name = "length_user_units_base"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
+kind = "byte"
+section = "Configuration objects"
+anchor = "In its four-word base form"
+size = 48
+endianness = "little"
+note = "The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read."
+
+[[record.field]]
+name = "precision"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The first u32 of a `moLengthUserUnits_c` base is the number of decimal places"
+
+[[record.gap]]
+offset = 4
+size = 40
+note = "A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them."
+
+[[record.field]]
+name = "last_word"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "four u32, the last `1`, 48 bytes"
+value = 1
+
+[[record]]
+name = "length_user_units_block_base"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
+kind = "byte"
+section = "Configuration objects"
+anchor = "in a block-container document an f64, a u32 and a u16 follow, 62 bytes"
+size = 62
+endianness = "little"
+note = "The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62."
+
+[[record.field]]
+name = "base"
+offset = 0
+type = "bytes[48]"
+source = "spec"
+anchor = "In its four-word base form"
+
+[[record.field]]
+name = "block_real"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
+
+[[record.field]]
+name = "block_word"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
+
+[[record.field]]
+name = "block_short"
+offset = 60
+type = "u16"
+source = "spec"
+anchor = "an f64, a u32 and a u16 follow"
+
+[[record]]
 name = "sketch_record_head"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sketch_lists.rs"
 kind = "byte"
@@ -14864,3 +14963,268 @@ offset = 8
 type = "u32"
 source = "spec"
 anchor = "the form word, a little-endian u32 at +8"
+
+
+[[record]]
+name = "sweep_wire_contact"
+kind = "byte"
+section = "2"
+anchor = "A sweep wire-contact body has two three-component f64 vectors"
+size = 62
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "first_vector"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Its first vector"
+
+[[record.field]]
+name = "zero"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "a zero u32"
+value = 0
+
+[[record.field]]
+name = "one"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "a unit u32"
+value = 1
+
+[[record.field]]
+name = "sentinel"
+offset = 32
+type = "i32"
+source = "spec"
+anchor = "a signed sentinel i32 `-1`"
+value = -1
+
+[[record.field]]
+name = "dimension"
+offset = 36
+type = "u16"
+source = "spec"
+anchor = "a dimension u16 `2`"
+value = 2
+
+[[record.field]]
+name = "second_vector"
+offset = 38
+type = "f64[3]"
+source = "spec"
+anchor = "second vector have finite components"
+
+[[record]]
+name = "sweep_component_tail"
+kind = "byte"
+section = "2"
+anchor = "A component-reference tail follows its complete component source record"
+size = 33
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "leading_zeros"
+offset = 0
+type = "bytes[12]"
+source = "spec"
+anchor = "a leading zero block of twelve bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "reference_sentinel"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "a reference sentinel of four `ff` bytes"
+value = [255, 255, 255, 255]
+
+[[record.field]]
+name = "second_zeros"
+offset = 16
+type = "bytes[8]"
+source = "spec"
+anchor = "a second zero block of eight bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "unit"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "a unit f64 `1`"
+
+[[record.field]]
+name = "body_flag"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "a body flag byte"
+
+[[record]]
+name = "sweep_component_suffix"
+kind = "byte"
+section = "2"
+anchor = "The suffix stores an eight-byte `ff` block and a six-byte zero block"
+size = 14
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "sentinel"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "an eight-byte `ff` block"
+value = [255, 255, 255, 255, 255, 255, 255, 255]
+
+[[record.field]]
+name = "zeros"
+offset = 8
+type = "bytes[6]"
+source = "spec"
+anchor = "a six-byte zero block"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "sweep_reference_blob_prefix"
+kind = "byte"
+section = "2"
+anchor = "The compressed-body prefix stores a first zero byte"
+size = 10
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "first_zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a first zero byte"
+value = 0
+
+[[record.field]]
+name = "outer_length"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "an outer length u32"
+
+[[record.field]]
+name = "second_zero"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "a second zero byte"
+value = 0
+
+[[record.field]]
+name = "inner_length"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "an inner length u32 equal to the outer length minus five"
+
+[[record]]
+name = "sweep_options"
+kind = "byte"
+section = "2"
+anchor = "The sweep options follow the path component-reference suffix"
+size = 105
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "circular_section"
+offset = 86
+type = "u16"
+source = "spec"
+anchor = "Their circular-section selector u16"
+
+[[record.field]]
+name = "section_word"
+offset = 88
+type = "u16"
+source = "spec"
+anchor = "A zero section word follows the selector"
+value = 0
+
+[[record.field]]
+name = "diameter"
+offset = 90
+type = "f64"
+source = "spec"
+anchor = "The section diameter f64 is in metres"
+
+[[record.gap]]
+offset = 0
+size = 86
+note = "Sweep options before the section fields."
+
+[[record.gap]]
+offset = 98
+size = 7
+note = "Sweep options after the section diameter."
+
+[[record]]
+name = "sweep_reference_blob_trailer"
+kind = "byte"
+section = "2"
+anchor = "eight trailer bytes"
+size = 8
+endianness = "n/a"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs"
+
+[[record.field]]
+name = "opaque"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "eight trailer bytes"
+
+[[record]]
+name = "sweep_component_profile_extended_prefix"
+kind = "byte"
+section = "2"
+anchor = "An extended path component-profile prefix"
+size = 85
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
+
+[[record.field]]
+name = "child_prefix"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "its ten-byte child prefix"
+
+[[record.gap]]
+offset = 10
+size = 35
+note = "Child data before the sentinel."
+
+[[record.field]]
+name = "reference_sentinel"
+offset = 45
+type = "bytes[16]"
+source = "spec"
+anchor = "a sixteen-byte `ff` sentinel block"
+value = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]
+
+[[record.gap]]
+offset = 61
+size = 20
+note = "Child data before the header word."
+
+[[record.field]]
+name = "header_word"
+offset = 81
+type = "u32"
+source = "spec"
+anchor = "a u32 header word before the complete component source record"

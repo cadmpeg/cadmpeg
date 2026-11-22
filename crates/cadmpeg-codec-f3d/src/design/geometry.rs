@@ -61,6 +61,7 @@ const MAX_SUBDIVISIONS: f64 = 100_000.0;
 /// Local work caps of the sketch-profile geometry that binds extrude profile
 /// selections, and the selections that skipped a search at each cap.
 pub(crate) struct ProfileGeometryWork {
+    join_envelope_limit: Cell<Option<usize>>,
     arrangement: WorkBudget,
     crossing_run_matches: WorkBudget,
     crossing_run_skipped: Cell<bool>,
@@ -102,6 +103,15 @@ pub(crate) struct ProfileGeometryWork {
     body_circle_rings_assumed_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
     arrangement_reuse: RefCell<Option<ArrangementReuse>>,
+    entity_index: RefCell<Option<EntityIndexCache>>,
+}
+
+struct EntityIndexCache {
+    ptr: usize,
+    len: usize,
+    first_id: String,
+    last_id: String,
+    by_id: HashMap<String, usize>,
 }
 
 /// The arrangement that the profile lookups inside one
@@ -141,12 +151,17 @@ struct RegionSampleEntry {
 }
 
 impl ProfileGeometryWork {
+    pub(crate) fn note_join_envelope_capped(&self, limit: usize) {
+        self.join_envelope_limit.set(Some(limit));
+    }
+
     pub(crate) fn new() -> Self {
         Self::with_arrangement_work(MAX_ARRANGEMENT_WALK_WORK)
     }
 
     pub(crate) fn with_arrangement_work(limit: usize) -> Self {
         Self {
+            join_envelope_limit: Cell::new(None),
             arrangement: WorkBudget::new(limit),
             crossing_run_matches: WorkBudget::new(MAX_CROSSING_RUN_MATCH_WORK),
             crossing_run_skipped: Cell::new(false),
@@ -188,7 +203,53 @@ impl ProfileGeometryWork {
             body_circle_rings_assumed_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
             arrangement_reuse: RefCell::new(None),
+            entity_index: RefCell::new(None),
         }
+    }
+
+    /// Look up one sketch entity by id in `entities`, caching an index for the
+    /// borrowed entity slice across repeated profile-selection calls.
+    pub(crate) fn find_entity<'a>(
+        &self,
+        entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+        id: &cadmpeg_ir::sketches::SketchEntityId,
+    ) -> Option<&'a cadmpeg_ir::sketches::SketchEntity> {
+        let first_id = entities.first()?.id().as_str();
+        let last_id = entities.last()?.id().as_str();
+        let ptr = entities.as_ptr().addr();
+        let len = entities.len();
+        {
+            let borrowed = self.entity_index.borrow();
+            if let Some(cache) = borrowed.as_ref() {
+                if cache.ptr == ptr
+                    && cache.len == len
+                    && cache.first_id == first_id
+                    && cache.last_id == last_id
+                {
+                    return cache
+                        .by_id
+                        .get(id.as_str())
+                        .and_then(|&index| entities.get(index));
+                }
+            }
+        }
+        let mut by_id = HashMap::with_capacity(len);
+        for (index, entity) in entities.iter().enumerate() {
+            by_id
+                .entry(entity.id().as_str().to_owned())
+                .or_insert(index);
+        }
+        let result = by_id
+            .get(id.as_str())
+            .and_then(|&index| entities.get(index));
+        *self.entity_index.borrow_mut() = Some(EntityIndexCache {
+            ptr,
+            len,
+            first_id: first_id.to_owned(),
+            last_id: last_id.to_owned(),
+            by_id,
+        });
+        result
     }
 
     /// A same-sketch extrude profile group did not resolve to one selection.
@@ -546,6 +607,11 @@ impl ProfileGeometryWork {
     /// One loss for each cap that made a closed selection skip a search.
     pub(crate) fn losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
+        if let Some(limit) = self.join_envelope_limit.get() {
+            losses.push(F3dLossCode::FeatureProfileJoinEnvelopeCapped.note(format!(
+                "Join profile envelope searches exceeded MAX_JOIN_ENVELOPE_COMPARISONS ({limit}); their selections retain native identities.",
+            )));
+        }
         let arrangement = self.arrangement_skipped_selections.get();
         if arrangement != 0 {
             losses.push(F3dLossCode::FeatureProfileArrangementCapped.note(format!(
@@ -4351,8 +4417,7 @@ pub(super) fn region_containing_points(
         let mut incident = HashSet::new();
         for (index, profile) in sketch.profiles.iter().enumerate() {
             for use_ in profile {
-                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity)
-                else {
+                let Some(entity) = work.find_entity(entities, &use_.entity) else {
                     continue;
                 };
                 if point_on_sketch_entity(*point, entity, tolerance) {
@@ -4528,7 +4593,96 @@ enum ProfileBoundarySegment {
 }
 
 impl ProfileBoundary {
+    /// Conservative outer bounding box `(min, max)` containing every point of
+    /// the boundary (exact for polygons and circles).
+    fn outer_bounds(&self) -> Option<(Point2, Point2)> {
+        match self {
+            Self::Polygon(vertices) => {
+                let first = *vertices.first()?;
+                let (mut min_u, mut min_v, mut max_u, mut max_v) =
+                    (first.u, first.v, first.u, first.v);
+                for p in &vertices[1..] {
+                    min_u = min_u.min(p.u);
+                    min_v = min_v.min(p.v);
+                    max_u = max_u.max(p.u);
+                    max_v = max_v.max(p.v);
+                }
+                Some((Point2::new(min_u, min_v), Point2::new(max_u, max_v)))
+            }
+            Self::Circle { center, radius } => {
+                let r = radius.get();
+                Some((
+                    Point2::new(center.u - r, center.v - r),
+                    Point2::new(center.u + r, center.v + r),
+                ))
+            }
+            Self::CircularArcLoop(segments) => {
+                if segments.is_empty() {
+                    return None;
+                }
+                let (mut min_u, mut min_v, mut max_u, mut max_v) = (
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                );
+                for segment in segments {
+                    match segment {
+                        ProfileBoundarySegment::Line { start, end } => {
+                            min_u = min_u.min(start.u).min(end.u);
+                            min_v = min_v.min(start.v).min(end.v);
+                            max_u = max_u.max(start.u).max(end.u);
+                            max_v = max_v.max(start.v).max(end.v);
+                        }
+                        ProfileBoundarySegment::Arc { center, radius, .. } => {
+                            let r = radius.get();
+                            min_u = min_u.min(center.u - r);
+                            min_v = min_v.min(center.v - r);
+                            max_u = max_u.max(center.u + r);
+                            max_v = max_v.max(center.v + r);
+                        }
+                    }
+                }
+                Some((Point2::new(min_u, min_v), Point2::new(max_u, max_v)))
+            }
+            Self::CertifiedLoop(_) => None,
+        }
+    }
+
+    /// Bounding box of guaranteed points on the boundary (exact for polygons
+    /// and circles; endpoint box for arc loops).
+    fn sample_bounds(&self) -> Option<(Point2, Point2)> {
+        match self {
+            Self::Polygon(_) | Self::Circle { .. } => self.outer_bounds(),
+            Self::CircularArcLoop(segments) => {
+                if segments.is_empty() {
+                    return None;
+                }
+                let (mut min_u, mut min_v, mut max_u, mut max_v) = (
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                );
+                for segment in segments {
+                    let (start, end) = boundary_segment_endpoints(segment);
+                    min_u = min_u.min(start.u).min(end.u);
+                    min_v = min_v.min(start.v).min(end.v);
+                    max_u = max_u.max(start.u).max(end.u);
+                    max_v = max_v.max(start.v).max(end.v);
+                }
+                Some((Point2::new(min_u, min_v), Point2::new(max_u, max_v)))
+            }
+            Self::CertifiedLoop(_) => None,
+        }
+    }
+
     fn contains_point(&self, point: Point2) -> bool {
+        if let Some((min, max)) = self.outer_bounds() {
+            if point.u < min.u || point.u > max.u || point.v < min.v || point.v > max.v {
+                return false;
+            }
+        }
         match self {
             Self::Polygon(vertices) => point_in_polygon(point, vertices),
             Self::CircularArcLoop(segments) => point_in_circular_arc_loop(point, segments),
@@ -4538,6 +4692,17 @@ impl ProfileBoundary {
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
+        if let (Some((outer_min, outer_max)), Some((inner_min, inner_max))) =
+            (self.outer_bounds(), inner.sample_bounds())
+        {
+            if inner_min.u <= outer_min.u
+                || inner_max.u >= outer_max.u
+                || inner_min.v <= outer_min.v
+                || inner_max.v >= outer_max.v
+            {
+                return false;
+            }
+        }
         match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
@@ -4601,6 +4766,16 @@ impl ProfileBoundary {
     }
 
     fn is_provably_disjoint(&self, other: &Self) -> bool {
+        if !matches!(self, Self::CertifiedLoop(_)) && !matches!(other, Self::CertifiedLoop(_)) {
+            if let (Some((a_min, a_max)), Some((b_min, b_max))) =
+                (self.outer_bounds(), other.outer_bounds())
+            {
+                if a_max.u < b_min.u || b_max.u < a_min.u || a_max.v < b_min.v || b_max.v < a_min.v
+                {
+                    return true;
+                }
+            }
+        }
         let intersects = match (self, other) {
             (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
                 polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
@@ -4886,7 +5061,7 @@ fn profile_boundary(
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let [use_] = profile {
-        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
+        let entity = geometric!(work.find_entity(entities, &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             return Ok(Some(ProfileBoundary::Circle {
                 center: center.get(),
@@ -4894,10 +5069,10 @@ fn profile_boundary(
             }));
         }
     }
-    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance) {
+    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance, work) {
         return Ok(Some(ProfileBoundary::Polygon(polygon)));
     }
-    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance) {
+    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance, work) {
         return Ok(Some(ProfileBoundary::CircularArcLoop(arc_loop)));
     }
     Ok(
@@ -5073,11 +5248,12 @@ fn circular_arc_profile_segments(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
 ) -> Option<Vec<ProfileBoundarySegment>> {
     let mut segments = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = work.find_entity(entities, &use_.entity)?;
         let segment = profile_use_segment(entity, use_.reversed)?;
         let (start, end) = boundary_segment_endpoints(&segment);
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
@@ -5133,13 +5309,14 @@ fn line_profile_vertices(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
 ) -> Option<Vec<Point2>> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut vertices = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = work.find_entity(entities, &use_.entity)?;
         let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
             return None;
         };
@@ -5403,18 +5580,20 @@ fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment
 }
 
 pub(super) fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
-    point_in_polygon_edges(point, polygon_edges(vertices))
-}
-
-fn point_in_polygon_edges(point: Point2, edges: impl Iterator<Item = (Point2, Point2)>) -> bool {
-    edges
-        .filter(|(start, end)| {
-            (start.v > point.v) != (end.v > point.v)
-                && point.u < start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
-        })
-        .count()
-        % 2
-        == 1
+    let Some(&last) = vertices.last() else {
+        return false;
+    };
+    let mut inside = false;
+    let mut start = last;
+    for &end in vertices {
+        if (start.v > point.v) != (end.v > point.v)
+            && point.u < start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
+        {
+            inside = !inside;
+        }
+        start = end;
+    }
+    inside
 }
 
 fn polygon_strictly_contains(outer: &[Point2], inner: &[Point2]) -> bool {
@@ -5440,6 +5619,31 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
 /// error: it states that the point projects onto the supporting line beyond an
 /// end, and the nearest point of the segment is then that end.
 pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
+    const SAFE_BOUND: f64 = 1.0e100;
+    const SAFE_MIN_LEN_SQ: f64 = 1.0e-100;
+    let dx = end.u - start.u;
+    let dy = end.v - start.v;
+    let px = point.u - start.u;
+    let py = point.v - start.v;
+    if dx.abs() < SAFE_BOUND
+        && dy.abs() < SAFE_BOUND
+        && px.abs() < SAFE_BOUND
+        && py.abs() < SAFE_BOUND
+    {
+        let len_sq = dx * dx + dy * dy;
+        if len_sq > SAFE_MIN_LEN_SQ {
+            let t = ((px * dx + py * dy) / len_sq).clamp(0.0, 1.0);
+            let rx = px - t * dx;
+            let ry = py - t * dy;
+            let dist_sq = rx * rx + ry * ry;
+            if dist_sq == 0.0 {
+                return 0.0;
+            }
+            if dist_sq > SAFE_MIN_LEN_SQ && dist_sq.is_finite() {
+                return dist_sq.sqrt();
+            }
+        }
+    }
     let Some(parameter) = cadmpeg_ir::math::planar::line_projection_parameter(start, end, point)
     else {
         return point_distance(point, start).min(point_distance(point, end));

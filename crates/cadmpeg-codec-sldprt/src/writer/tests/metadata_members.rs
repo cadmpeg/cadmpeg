@@ -176,6 +176,7 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         &decoded.source_fidelity().annotations,
         &mut patched,
         0.001,
+        &mut crate::writer::UnwrittenAttributes::default(),
     )
     .unwrap();
     assert_ne!(patched[0].1, original);
@@ -289,7 +290,7 @@ fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
 }
 
 #[test]
-fn unsupported_manager_fields_cannot_patch_a_retained_member() {
+fn unsupported_manager_fields_keep_a_retained_member() {
     use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
     let (decoded, _) = shared_member();
     let mut ir = decoded.ir().clone();
@@ -317,7 +318,7 @@ fn unsupported_manager_fields_cannot_patch_a_retained_member() {
         .unwrap();
     }
     ir.model.attributes.push(SourceAttribute {
-        id: attribute_id,
+        id: attribute_id.clone(),
         target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values: vec![
@@ -341,11 +342,19 @@ fn unsupported_manager_fields_cannot_patch_a_retained_member() {
         vec!["Contents/CMgr", MEMBER]
     );
     let before = sections.clone();
-    let error =
-        crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 0.001)
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("configuration-manager"));
+    let mut unwritten = crate::writer::UnwrittenAttributes::default();
+    crate::writer::patch_retained_swobjects_metadata(
+        &ir,
+        &annotations,
+        &mut sections,
+        0.001,
+        &mut unwritten,
+    )
+    .unwrap();
+    assert_eq!(
+        unwritten.reason(attribute_id.as_str()),
+        Some(crate::writer::Unwritten::NoSerializer)
+    );
     assert_eq!(sections, before);
 }
 

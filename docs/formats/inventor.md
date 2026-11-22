@@ -2,7 +2,7 @@
 
 This specification defines the byte semantics of the supported Autodesk Inventor document envelope. Multi-byte integers are little-endian unless a section states otherwise.
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/inventor.md`](../layouts/inventor.md), generated from `docs/layouts/inventor.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/inventor.md`](../layouts/inventor.md), generated from `docs/layouts/inventor.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Compound container
 

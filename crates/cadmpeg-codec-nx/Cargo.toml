@@ -37,13 +37,5 @@ cadmpeg-parasolid = { workspace = true, features = ["test-support"] }
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }
 
-[[bin]]
-name = "nx_profile"
-path = "src/bin/nx_profile.rs"
-
-# Local census helper. cargo-dist would otherwise ship it as a release app.
-[package.metadata.dist]
-dist = false
-
 [lints]
 workspace = true
