@@ -419,6 +419,8 @@ pub(crate) enum SldprtLossCode {
     WriterHistoryRegenerationRefused,
     /// A construction edit that shapes the solid is written as edited, and the
     /// output keeps the stored solid, which shows the state before the edit.
+    /// Without the retained source image, it names the kinds of record that
+    /// differ from the decoded source, whose edit may not shape the solid.
     WriterSolidStaleAfterEdit,
     /// An edit of the active configuration snapshot that the decoder
     /// synthesized from the model is not written; the written configuration

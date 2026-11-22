@@ -907,6 +907,9 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
     assert!(
         report.losses.iter().any(|loss| loss.code
             == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss
+                .message
+                .starts_with("The configurations differ from the decoded source.")
             && loss.message.contains("without the retained source image")),
         "{:#?}",
         report.losses
