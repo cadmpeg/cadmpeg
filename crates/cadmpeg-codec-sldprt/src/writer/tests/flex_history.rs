@@ -883,15 +883,19 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length::new(5.0).unwrap()));
-    let error = crate::test_support::plan_fixture_with_native_envelope(
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .and_then(|plan| plan.write_to(&mut Vec::new()))
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("not satisfied by measured geometry"));
+    .unwrap();
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "writer.sketch-constraints-omitted"
+                && loss.message.contains("not satisfied by measured geometry")
+        }),
+        "{:#?}",
+        plan.report().losses
+    );
 }
 
 #[test]
