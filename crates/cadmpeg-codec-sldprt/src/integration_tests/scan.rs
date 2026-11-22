@@ -190,19 +190,27 @@ fn scan_sldprt_truncated_later_block_keeps_prior_rows_incomplete() {
 }
 
 #[test]
-fn scan_sldprt_truncated_non_history_block_and_short_marker_tail_are_skipped() {
-    for tail in [true, false] {
-        let mut bytes = source(LIST);
-        if tail {
-            let marker = make_block(0x42, "Contents/Keywords", LIST);
-            bytes.extend_from_slice(&marker[..8]);
-        } else {
-            let mut other = make_block(0x42, "Preview/Thumbnail", LIST);
-            other.truncate(other.len() - 1);
-            bytes.extend(other);
-        }
-        assert_complete_history_listing(&bytes);
-    }
+fn scan_sldprt_truncated_non_history_block_is_skipped() {
+    let mut bytes = source(LIST);
+    let mut other = make_block(0x42, "Preview/Thumbnail", LIST);
+    other.truncate(other.len() - 1);
+    bytes.extend(other);
+    assert_complete_history_listing(&bytes);
+}
+
+#[test]
+fn scan_sldprt_history_block_cut_in_its_header_is_truncated() {
+    let mut bytes = source(LIST);
+    let marker = make_block(0x42, "Contents/Keywords", LIST);
+    bytes.extend_from_slice(&marker[..8]);
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert!(matches!(scan.stop_reason, Some(StopReason::Truncated(_))));
+    let census = scan.census.expect("first block's admitted rows");
+    assert!(!census.complete);
 }
 
 fn assert_complete_history_listing(bytes: &[u8]) {

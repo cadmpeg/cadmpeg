@@ -92,8 +92,7 @@ fn native(
             .ok_or_else(|| malformed("SolidWorks marker position"))?;
         reader.seek(at)?;
         if reader.remaining() < block::LEN {
-            reader.seek(next)?;
-            continue;
+            return Err(StopReason::Truncated("SolidWorks block header".into()));
         }
         let header = reader.take(block::LEN)?;
         let bytes = header.window();
@@ -110,8 +109,7 @@ fn native(
             .checked_add(name_size)
             .ok_or_else(|| malformed("SolidWorks block name extent"))?;
         if name_end > source.end() {
-            reader.seek(next)?;
-            continue;
+            return Err(StopReason::Truncated("SolidWorks block name".into()));
         }
         let name = reader.take(name_size)?;
         budget.retain(u64_from_index(name_size))?;
