@@ -553,3 +553,72 @@ fn a_principal_plane_role_edit_keeps_the_stored_plane_and_is_named() {
         unwritten[0]
     );
 }
+
+/// A configuration's `Config-N` object lane and its
+/// `Config-N-ResolvedFeatures` lane are each written to the stream they were
+/// read from.
+#[test]
+fn an_edit_writes_each_configuration_lane_to_its_own_stream() {
+    use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
+    use crate::test_support::history::resolved_features_payload;
+    use crate::test_support::parasolid::triangle_body;
+
+    let mut objects = Vec::new();
+    for class in ["sgSketch", "sgEntHandle"] {
+        objects.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        objects.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
+        objects.extend_from_slice(class.as_bytes());
+    }
+    let resolved = resolved_features_payload(&[0]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    source.extend(make_block(0x20, "Contents/Config-0", &objects));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved,
+    ));
+    let mut decoded = EditableDecodeResult::from(decode(native_envelope_fixture(&source)));
+    assert_eq!(
+        crate::test_support::native::sldprt_native(decoded.ir())
+            .feature_input_lanes
+            .len(),
+        2
+    );
+    {
+        let mut ir = decoded.ir_mut();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "D1")
+            .unwrap();
+        parameter.expression = "50mm".into();
+        parameter.value = Some(ParameterValue::Length(Length::new(50.0).unwrap()));
+    }
+
+    let mut output = Vec::new();
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut output,
+    )
+    .unwrap();
+
+    let scan = crate::test_support::container::scan(&output);
+    let payload = |name: &str| {
+        scan.sections()
+            .find(|section| section.name() == Some(name))
+            .map(|section| section.payload().to_vec())
+            .unwrap()
+    };
+    assert_eq!(payload("Contents/Config-0"), objects);
+    assert_eq!(
+        payload("Contents/Config-0-ResolvedFeatures").len(),
+        resolved.len()
+    );
+}
