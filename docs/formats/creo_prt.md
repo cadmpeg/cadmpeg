@@ -29,7 +29,7 @@ spaces pad the counted field.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name. A common name is free text. It can be the
 model filename, such as `widget.prt`, or a descriptive title, such as
-`MOUNTING PLATE 40 MM`. A repeated or malformed `CMNM` record establishes no
+`WIDGET BRACKET 40 MM`. A repeated or malformed `CMNM` record establishes no
 common name.
 
 Binary model-data sections store the model name in the named field
