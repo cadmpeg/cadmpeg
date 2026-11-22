@@ -13,8 +13,8 @@
 //! those digests from a fresh run.
 //!
 //! ```text
-//! cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
-//! cargo run -p cadmpeg-codec-iges --bin iges_stress -- --fast OUTPUT_DIRECTORY
+//! cargo run -p cadmpeg-codec-iges --example iges_stress -- OUTPUT_DIRECTORY
+//! cargo run -p cadmpeg-codec-iges --example iges_stress -- --fast OUTPUT_DIRECTORY
 //! ```
 
 use std::env;
