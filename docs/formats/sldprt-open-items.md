@@ -1239,6 +1239,6 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Question.** Which plane does the profile sketch of a revolution lie on where the axis read from its `moLineRef_w` record lies outside the plane the decoder binds the sketch to?
 
-**Known.** The record ends with the axis line, a point and a unit direction (`sldprt.md` §2). The decoder keeps such an axis and names the revolution under `feature.revolve-axis-off-profile-plane`. Every such axis compared with the B-rep, 15 in 8 parts, is the axis of a B-rep cylinder, cone or torus of the part. The axes run parallel to the bound plane at an offset, or along its normal. The sketches are bound by the plane records of open item DI-73.
+**Known.** The record ends with its tail, a scalar, a point and a unit direction (`sldprt.md` §2). The decoder keeps such an axis and names the revolution under `feature.revolve-axis-off-profile-plane`. Each such axis compared with the B-rep is the axis of a B-rep cylinder, cone or torus of the part, or passes through the centre of a B-rep sphere of the part. An axis runs parallel to the bound plane at an offset, along its normal, or oblique to it. The sketches are bound by the plane records of open item DI-73.
 
 **Need.** For each revolution named, the plane record of its profile sketch, compared with the plane through the stored axis that holds the most profile points on B-rep vertices.
