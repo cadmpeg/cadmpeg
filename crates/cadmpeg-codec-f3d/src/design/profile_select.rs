@@ -687,21 +687,21 @@ pub(crate) fn bind_extrude_profile_selections(
                                     }
                                     break 'feature_edit;
                                 }
-                            }
-                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve_stale(
-                                group,
-                                &curve_resolution.path_resolution(),
-                                scoped_resolution,
-                                states,
-                                cap_regions::compact::Sweep { operation: op, start, direction, extent },
-                            )? {
-                                *profile = ProfileRef::Planar(selection);
-                                for code in selection_losses {
-                                    losses.push(code.note(format!(
-                                        "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
-                                    )));
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve_stale(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
+                                        )));
+                                    }
+                                    break 'feature_edit;
                                 }
-                                break 'feature_edit;
                             }
                         }
                     }
