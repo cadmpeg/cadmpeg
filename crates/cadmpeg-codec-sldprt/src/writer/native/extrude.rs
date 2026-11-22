@@ -15,9 +15,8 @@ pub(in crate::writer) struct Extrusion {
     pub(in crate::writer) name: String,
     /// The feature's object identifier: the history summary's source id.
     pub(in crate::writer) feature_id: u32,
-    /// The position, among the part's user features, of the sketch it
-    /// extrudes.
-    pub(in crate::writer) profile: usize,
+    /// The object identifier of the sketch it extrudes, an earlier feature.
+    pub(in crate::writer) sketch_id: u32,
     /// The depth in metres.
     pub(in crate::writer) depth: f64,
     /// Whether it travels against the sketch plane's normal.

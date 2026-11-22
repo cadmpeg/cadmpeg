@@ -77,7 +77,7 @@ pub(in crate::writer) fn features(
         return Ok(Features::Lane("the write holds no history summary".into()));
     };
     let mut out = Vec::new();
-    let mut sketch_sides = Vec::new();
+    let mut written = Vec::new();
     for sketch in &ir.model.sketches {
         if sketch
             .configuration
@@ -116,10 +116,13 @@ pub(in crate::writer) fn features(
                 )))
             }
         };
-        sketch_sides.push((sketch.id.clone(), flipped));
+        written.push(WrittenSketch {
+            id: sketch.id.clone(),
+            feature_id,
+            flipped,
+        });
         out.push((
             owner.ordinal,
-            sketch.id.clone(),
             Feature::Sketch(Sketch {
                 name,
                 feature_id,
@@ -133,41 +136,27 @@ pub(in crate::writer) fn features(
             }),
         ));
     }
-    let unwritten_extrusion = match extrusion(ir, native, &sketch_sides, left_out) {
+    let unwritten_extrusion = match extrusion(ir, native, &written, left_out) {
         Ok(extrusion) => {
             out.extend(extrusion);
             None
         }
         Err(reason) => Some(reason),
     };
-    out.sort_by_key(|(ordinal, ..)| *ordinal);
-    // An extrusion's profile is the position, among the features, of the
-    // sketch it extrudes.
-    let sketches = out
-        .iter()
-        .map(|(_, key, feature)| matches!(feature, Feature::Sketch(_)).then_some(key))
-        .collect::<Vec<_>>();
-    let mut features = Vec::new();
-    for (_, key, mut feature) in out.iter().cloned() {
-        if let Feature::Extrusion(extrusion) = &mut feature {
-            let Some(position) = sketches.iter().position(|sketch| *sketch == Some(&key)) else {
-                return Ok(Features::Lane(format!(
-                    "extrusion {} extrudes no written sketch",
-                    extrusion.name
-                )));
-            };
-            extrusion.profile = position;
-        }
-        features.push(feature);
-    }
+    out.sort_by_key(|(ordinal, _)| *ordinal);
     Ok(Features::Native {
-        features,
+        features: out.into_iter().map(|(_, feature)| feature).collect(),
         unwritten_extrusion,
     })
 }
 
-/// A user feature with its ordinal and the sketch it is or extrudes.
-type Ordered = (u64, cadmpeg_ir::sketches::SketchId, Feature);
+/// A sketch the tree writes: its id, its object identifier and whether its
+/// normal opposes its plane's.
+struct WrittenSketch {
+    id: cadmpeg_ir::sketches::SketchId,
+    feature_id: u32,
+    flipped: bool,
+}
 
 /// The extrusion of `ir` with its ordinal and the sketch it extrudes, none
 /// when `ir` holds no extrusion, or why the tree writes none: the tree writes
@@ -180,21 +169,30 @@ type Ordered = (u64, cadmpeg_ir::sketches::SketchId, Feature);
 fn extrusion(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
-    sketches: &[(cadmpeg_ir::sketches::SketchId, bool)],
+    sketches: &[WrittenSketch],
     left_out: &[String],
-) -> Result<Option<Ordered>, String> {
+) -> Result<Option<(u64, Feature)>, String> {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FeatureDefinition,
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
-    let extrudes = |feature: &&cadmpeg_ir::features::Feature| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
-        )
-    };
-    let mut extrusions = ir.model.features.iter().filter(extrudes);
-    let Some(feature) = extrusions.next() else {
+    let mut extrusions =
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile,
+                    direction,
+                    start,
+                    extent,
+                    op,
+                    solid,
+                    ..
+                }) => Some((feature, (profile, direction, start, extent, op, solid))),
+                _ => None,
+            });
+    let Some((feature, (profile, direction, start, extent, op, solid))) = extrusions.next() else {
         return Ok(None);
     };
     let id = feature.id.as_str();
@@ -205,7 +203,7 @@ fn extrusion(
             left_out.join(", ")
         ));
     }
-    if let Some(second) = extrusions.next() {
+    if let Some((second, _)) = extrusions.next() {
         return Err(format!(
             "extrusion {} follows extrusion {id}, and the part's one moAtom_c can be the input \
              of one extrusion",
@@ -219,29 +217,18 @@ fn extrusion(
         ));
     }
     if let Some(other) = ir.model.features.iter().find(|candidate| {
-        !extrudes(candidate)
-            && !matches!(
-                candidate.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+        !matches!(
+            candidate.evaluation.definition(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Sketch { .. } | FeatureOperation::Extrude { .. }
             )
+        )
     }) {
         return Err(format!(
             "feature {} is neither a sketch nor an extrusion",
             other.id.as_str()
         ));
     }
-    let FeatureDefinition::Operation(FeatureOperation::Extrude {
-        profile,
-        direction,
-        start,
-        extent,
-        op,
-        solid,
-        ..
-    }) = feature.evaluation.definition()
-    else {
-        return Ok(None);
-    };
     let sketch = match profile {
         ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
         ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
@@ -262,9 +249,9 @@ fn extrusion(
         }
         _ => return Err(format!("extrusion {id} extrudes no planar sketch")),
     };
-    let &(_, flipped) = sketches
+    let sketch = sketches
         .iter()
-        .find(|(candidate, _)| candidate == sketch)
+        .find(|candidate| candidate.id == *sketch)
         .ok_or_else(|| format!("extrusion {id} extrudes a sketch the tree does not write"))?;
     let ExtrudeExtent::OneSided { side } = extent else {
         return Err(format!("extrusion {id} is not one-sided"));
@@ -308,13 +295,12 @@ fn extrusion(
     let depth = length.get();
     Ok(Some((
         feature.ordinal,
-        sketch.clone(),
         Feature::Extrusion(Extrusion {
             name: GENERATED_NAME.fit(name).text.to_owned(),
             feature_id,
-            profile: 0,
+            sketch_id: sketch.feature_id,
             depth: depth.abs() * METRES_PER_MILLIMETRE,
-            reversed: against ^ flipped ^ (depth < 0.0),
+            reversed: against ^ sketch.flipped ^ (depth < 0.0),
         }),
     )))
 }

@@ -254,7 +254,7 @@ fn extruded_top_sketch() -> (Vec<u8>, crate::carchive::Walk) {
         super::Feature::Extrusion(super::extrude::Extrusion {
             name: "Boss-Extrude1".into(),
             feature_id: 8,
-            profile: 0,
+            sketch_id: 7,
             depth: 0.005,
             reversed: false,
         }),

@@ -130,27 +130,27 @@ pub(super) fn resolved_features(
         Some(id) => id,
         None => archive.count32(usize::MAX, "object identifier"),
     };
+    // The map index of each sketch written, by its object identifier.
     let mut profiles = Vec::new();
     for feature in facts.features {
-        let profile = match feature {
-            Feature::Sketch(sketch) => Some(super::sketch::profile_feature(
-                &mut archive,
-                sketch,
-                &mut next_id,
-            )?),
+        match feature {
+            Feature::Sketch(sketch) => {
+                let profile = super::sketch::profile_feature(&mut archive, sketch, &mut next_id)?;
+                profiles.push((sketch.feature_id, profile));
+            }
             Feature::Extrusion(extrusion) => {
-                let profile = profiles.get(extrusion.profile).copied().flatten();
-                let Some(profile) = profile else {
+                let Some(&(_, profile)) = profiles
+                    .iter()
+                    .find(|(sketch, _)| *sketch == extrusion.sketch_id)
+                else {
                     return Err(CodecError::malformed(
-                        "SLDPRT native skeleton: an extrusion's profile is no earlier sketch",
+                        "SLDPRT native skeleton: an extrusion's sketch is no earlier feature",
                     ));
                 };
                 let parameter = super::sketch::take_id(&mut archive, &mut next_id);
                 super::extrude::extrusion(&mut archive, extrusion, profile, part.atom, parameter);
-                None
             }
-        };
-        profiles.push(profile);
+        }
     }
     for (body, &component) in facts.bodies.iter().zip(&part.bodies) {
         base_body(&mut archive, body, component);

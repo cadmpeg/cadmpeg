@@ -618,7 +618,7 @@ fn native_skeleton(
             } => (features, unwritten_extrusion, None),
             native::from_ir::Features::Lane(reason) => (Vec::new(), None, Some(reason)),
         };
-    // A body the native extrusions make is not also written as a stored body.
+    // The body a native extrusion makes is not also written as a stored body.
     let extruded = features
         .iter()
         .any(|feature| matches!(feature, native::Feature::Extrusion(_)));
