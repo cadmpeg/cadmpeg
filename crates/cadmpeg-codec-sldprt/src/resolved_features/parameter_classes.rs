@@ -70,27 +70,30 @@ pub(crate) enum ConfigurationMap {
         parameters: Option<BTreeMap<u16, ArchiveParameterClass>>,
     },
     /// A compound-file stream, which states no count: the indices at which
-    /// a walk of `Config-N` places a class.
-    Unstated { classes: BTreeSet<u32> },
+    /// a consistent walk of `Config-N` places a class, and the parameter
+    /// class at each that holds one. No count confirms the walk; a value
+    /// read in such a class is kept only where it shows its display.
+    Unstated {
+        classes: BTreeSet<u32>,
+        parameters: BTreeMap<u16, ArchiveParameterClass>,
+    },
 }
 
 impl ConfigurationMap {
     /// The map of a stream that states the count `end`, with the `Config-N`
     /// class at each index from `classes`, a walk that reconciles with `end`.
     pub(crate) fn counted(end: u32, classes: Option<&BTreeMap<u32, String>>) -> Self {
-        let parameters = classes.map(|classes| {
-            classes
-                .iter()
-                .filter(|&(&index, _)| index < end)
-                .filter_map(|(&index, name)| {
-                    Some((
-                        u16::try_from(index).ok()?,
-                        ArchiveParameterClass::from_class_name(name)?,
-                    ))
-                })
-                .collect()
-        });
+        let parameters = classes.map(|classes| parameter_classes(classes.range(..end)));
         Self::Counted { end, parameters }
+    }
+
+    /// The map of a compound-file stream, with the `Config-N` class at each
+    /// index from `classes`, a walk that no count bounds.
+    pub(crate) fn unstated(classes: &BTreeMap<u32, String>) -> Self {
+        Self::Unstated {
+            classes: classes.keys().copied().collect(),
+            parameters: parameter_classes(classes.iter()),
+        }
     }
 
     /// Whether `index` names a class `Config-N` holds rather than one the
@@ -98,18 +101,32 @@ impl ConfigurationMap {
     fn holds(&self, index: u16) -> bool {
         match self {
             Self::Counted { end, .. } => u32::from(index) < *end,
-            Self::Unstated { classes } => classes.contains(&u32::from(index)),
+            Self::Unstated { classes, .. } => classes.contains(&u32::from(index)),
         }
     }
 
-    /// The parameter class at each index of the `Config-N` map, when a walk
-    /// reconciles with the stated count.
+    /// The parameter class at each index of the `Config-N` map that holds
+    /// one, when the map is read.
     fn parameters(&self) -> Option<&BTreeMap<u16, ArchiveParameterClass>> {
         match self {
             Self::Counted { parameters, .. } => parameters.as_ref(),
-            Self::Unstated { .. } => None,
+            Self::Unstated { parameters, .. } => Some(parameters),
         }
     }
+}
+
+/// The parameter class of each of `classes` that names one, by index.
+fn parameter_classes<'c>(
+    classes: impl Iterator<Item = (&'c u32, &'c String)>,
+) -> BTreeMap<u16, ArchiveParameterClass> {
+    classes
+        .filter_map(|(&index, name)| {
+            Some((
+                u16::try_from(index).ok()?,
+                ArchiveParameterClass::from_class_name(name)?,
+            ))
+        })
+        .collect()
 }
 
 /// What a scalar's parameter-class slot holds.
@@ -236,8 +253,9 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
 /// names. A token of a class `Config-N` holds (see [`ConfigurationMap`];
 /// without one, a token below the stream's opening map count `stated`)
 /// names the parameter class `Config-N` holds at that index, read from
-/// `configuration` when its walk reconciles with the stated count; the
-/// lane's declarations name the other tokens (see
+/// `configuration` when its walk reconciles with the stated count or, in a
+/// compound-file lane, is consistent; the lane's declarations name the other
+/// tokens (see
 /// [`declared_token_classes`]).
 fn token_classes(
     configuration: Option<&ConfigurationMap>,

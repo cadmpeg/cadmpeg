@@ -872,11 +872,11 @@ resolve a seed feature?
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
 ### EV-05. Leading word of a compound-file `ResolvedFeatures` stream
 
-**Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold, and does that stream continue the class map of `Contents/Config-N`?
+**Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold?
 
-**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration.
+**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration. The compound-file stream continues the `Config-N` map: its first declaration takes the index at which `Config-N` ends.
 
-**Need.** Without the map count, a reader cannot check its `Config-N` class map against the stream, and cannot resolve a `ResolvedFeatures` tag that names a `Config-N` class.
+**Need.** The compound-file stream does not state the index at which `Config-N` ends. Without it, a reader cannot check its `Config-N` class map against the stream, and a `ResolvedFeatures` tag that names a `Config-N` class resolves through a map no count confirms.
 
 ### EV-06. Named-object header and feature-object block fields
 
