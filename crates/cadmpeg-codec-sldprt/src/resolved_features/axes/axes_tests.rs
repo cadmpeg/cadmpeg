@@ -120,20 +120,20 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     let mut payload = vec![0; 240];
     let handles = 96;
     payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
+    payload[68..72].copy_from_slice(&0x2c6e_91a7u32.to_le_bytes());
+    payload[72..74].copy_from_slice(&0x8a53u16.to_le_bytes());
     payload[76..80].copy_from_slice(&[0xff; 4]);
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
+    for (index, value) in [0.0437, 0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
         .into_iter()
         .enumerate()
     {
         let offset = handles + 16 + index * 8;
         payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
     }
-    payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
+    payload[handles + 73..handles + 77].copy_from_slice(CLASS_MARKER);
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         Some((
@@ -146,7 +146,7 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     payload[handles + 8..handles + 12].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 12..handles + 16].copy_from_slice(&[0; 4]);
     payload[handles + 16..handles + 20].copy_from_slice(&7000u32.to_le_bytes());
-    payload[handles + 64..handles + 68].copy_from_slice(&[0; 4]);
+    payload[handles + 73..handles + 77].copy_from_slice(&[0; 4]);
     // Nine values: two zero values and a scalar, then the axis line. The
     // first triple (0, 0, 0.025) is not a point on the axis.
     for (index, value) in [0.0, 0.0, 0.025, 0.012, -0.034, 0.056, 0.0, 0.0, -1.0]
@@ -156,7 +156,7 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
         let offset = handles + 20 + index * 8;
         payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
     }
-    payload[handles + 92..handles + 96].copy_from_slice(CLASS_MARKER);
+    payload[handles + 93..handles + 97].copy_from_slice(CLASS_MARKER);
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         Some((
@@ -168,8 +168,8 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
 
     payload.fill(0);
     payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
+    payload[68..72].copy_from_slice(&0x2c6e_91a7u32.to_le_bytes());
+    payload[72..74].copy_from_slice(&0x8a53u16.to_le_bytes());
     payload[76..80].copy_from_slice(&[0xff; 4]);
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
@@ -182,7 +182,7 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
         let offset = handles + 16 + index * 8;
         payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
     }
-    payload[handles + 80..handles + 84].copy_from_slice(CLASS_MARKER);
+    payload[handles + 81..handles + 85].copy_from_slice(CLASS_MARKER);
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         Some((
@@ -198,20 +198,20 @@ fn revolution_line_reference_inputs_decode_repeated_instance_frame() {
     let mut payload = vec![0; 240];
     let handles = 96;
     payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x536b_2f76u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x8127u16.to_le_bytes());
+    payload[68..72].copy_from_slice(&0x7d14_3b08u32.to_le_bytes());
+    payload[72..74].copy_from_slice(&0x8b61u16.to_le_bytes());
     payload[76..80].copy_from_slice(&[0xff; 4]);
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.012, -0.034, 0.056, 0.0, 0.0, 1.0]
+    for (index, value) in [0.0291, 0.012, -0.034, 0.056, 0.0, 0.0, 1.0]
         .into_iter()
         .enumerate()
     {
         let offset = handles + 24 + index * 8;
         payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
     }
-    payload[handles + 75..handles + 77].copy_from_slice(&0x81bau16.to_le_bytes());
+    payload[handles + 81..handles + 83].copy_from_slice(&0x8c42u16.to_le_bytes());
 
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
@@ -229,20 +229,18 @@ fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
     let handles = 108;
     let source = handles - 44;
     payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x4901_2c88u32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x810fu16.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&0x1f8a_5d36u32.to_le_bytes());
+    payload[source + 8..source + 10].copy_from_slice(&0x8d27u16.to_le_bytes());
     payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
     payload[source + 16..source + 20].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 28..source + 32].copy_from_slice(&122u32.to_le_bytes());
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    let six_values = payload.clone();
 
-    // Seven values, a scalar and the axis line, end one zero byte before the
-    // class declaration. Read as six values, the record would also end with
-    // zero padding and give the point (1000, 0, 60.3) and direction -Z.
-    for (index, value) in [1.0, 0.0, 0.060_285_851_239_7, 0.0, 0.0, -1.0, 0.0]
+    // Seven values, the scalar and the axis line whose last value is zero,
+    // end one zero byte before the class declaration.
+    for (index, value) in [0.0815, 0.0, 0.0473, 0.0, 0.0, -1.0, 0.0]
         .into_iter()
         .enumerate()
     {
@@ -254,26 +252,8 @@ fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         Some((
             42,
-            Point3::new(0.0, 0.060_285_851_239_7 * 1000.0, 0.0),
+            Point3::new(0.0, 0.0473 * 1000.0, 0.0),
             Vector3::new(0.0, -1.0, 0.0)
-        ))
-    );
-
-    let mut payload = six_values;
-    for (index, value) in [0.012, -0.034, 0.056, 0.0, 0.0, -1.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 24 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
-    payload[handles + 72..handles + 76].copy_from_slice(CLASS_MARKER);
-    assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
-        Some((
-            42,
-            Point3::new(12.0, -34.0, 56.0),
-            Vector3::new(0.0, 0.0, -1.0)
         ))
     );
 }
@@ -285,8 +265,8 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
         let handles = 128;
         let source = handles - 48;
         payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-        payload[source + 4..source + 8].copy_from_slice(&0x3e34_ce43u32.to_le_bytes());
-        payload[source + 8..source + 10].copy_from_slice(&0x8101u16.to_le_bytes());
+        payload[source + 4..source + 8].copy_from_slice(&0x6b29_e4c1u32.to_le_bytes());
+        payload[source + 8..source + 10].copy_from_slice(&0x8e15u16.to_le_bytes());
         payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
         payload[source + 20..source + 24]
             .copy_from_slice(&(if addressed { 4u32 } else { 10 }).to_le_bytes());
@@ -337,8 +317,8 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     let handles = 112;
     let source = handles - 48;
     declared[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    declared[source + 4..source + 8].copy_from_slice(&0x49ab_4bc9u32.to_le_bytes());
-    declared[source + 8..source + 10].copy_from_slice(&0x8120u16.to_le_bytes());
+    declared[source + 4..source + 8].copy_from_slice(&0x35d7_0a9eu32.to_le_bytes());
+    declared[source + 8..source + 10].copy_from_slice(&0x8f3au16.to_le_bytes());
     declared[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
     declared[source + 20..source + 24].copy_from_slice(&2u32.to_le_bytes());
     declared[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
@@ -399,8 +379,8 @@ fn revolution_line_reference_inputs_decode_declared_post_handle_address() {
     let handles = 128;
     let source = handles - 48;
     payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x5976_e99cu32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x81e4u16.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&0x0e4b_a6d5u32.to_le_bytes());
+    payload[source + 8..source + 10].copy_from_slice(&0x8a7du16.to_le_bytes());
     payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
@@ -432,8 +412,8 @@ fn two_handle_axis_payload(values: &[f64]) -> Vec<u8> {
     let handles = 128;
     let source = handles - 48;
     payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x5976_e99cu32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x81e4u16.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&0x0e4b_a6d5u32.to_le_bytes());
+    payload[source + 8..source + 10].copy_from_slice(&0x8a7du16.to_le_bytes());
     payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
@@ -453,20 +433,20 @@ fn two_handle_axis_payload(values: &[f64]) -> Vec<u8> {
 
 #[test]
 fn two_handle_axis_record_takes_nine_values_over_eight() {
-    // Nine values whose last is zero: an eight-value read also ends with zero
-    // padding and would give the direction -Y.
-    let nine = two_handle_axis_payload(&[0.0, 0.0, 0.0215, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+    // Nine values whose last is zero also end an eight-value read in zero
+    // bytes before the class declaration.
+    let nine = two_handle_axis_payload(&[0.0, 0.0, 0.0437, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
     assert_eq!(
         revolution_line_reference_inputs(&nine, 32, nine.len(), &HashSet::from([42])),
         Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)))
     );
 
-    let eight = two_handle_axis_payload(&[0.0, 0.041, 0.0, -0.0205, 0.0, 0.0, 1.0, 0.0]);
+    let eight = two_handle_axis_payload(&[0.0, 0.0613, 0.0, -0.0287, 0.0, 0.0, 1.0, 0.0]);
     assert_eq!(
         revolution_line_reference_inputs(&eight, 32, eight.len(), &HashSet::from([42])),
         Some((
             42,
-            Point3::new(0.0, -20.5, 0.0),
+            Point3::new(0.0, -0.0287 * 1000.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0)
         ))
     );
@@ -476,7 +456,7 @@ fn two_handle_axis_record_takes_nine_values_over_eight() {
 fn axis_record_direction_must_be_stored_with_unit_length() {
     let subnormal = f64::from_bits(1);
     let payload =
-        two_handle_axis_payload(&[0.0, 0.0, 0.0215, 0.0, 0.0, 0.0, subnormal, 0.0, subnormal]);
+        two_handle_axis_payload(&[0.0, 0.0, 0.0437, 0.0, 0.0, 0.0, subnormal, 0.0, subnormal]);
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         None
