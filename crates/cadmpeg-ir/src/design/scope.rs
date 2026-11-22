@@ -16,7 +16,7 @@ use super::evaluation::CurrentState;
 use super::ids::{ArrangementId, ContainerId};
 use super::refs::ConfigurationRef;
 use crate::features::{ConfigurationId, ParameterId};
-use crate::ids::{OccurrenceId, ProductDefinitionId};
+use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 
 /// The design of one product definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +46,10 @@ pub struct DesignScope {
     pub occurrences: BTreeMap<OccurrenceId, OccurrenceDesign>,
     /// The scope's current states.
     pub current: Vec<CurrentState>,
+    /// Bodies owned by definitions the scope spans that no member produces.
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<BodyId>"))]
+    pub unproduced: BTreeSet<BodyId>,
 }
 
 /// The base design state of one occurrence.
@@ -93,3 +97,6 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_configuration<T>, T, "configuration");
 cadmpeg_core::named_optional_field!(deserialize_flexible<T>, T, "flexible");
 cadmpeg_core::named_optional_field!(deserialize_grounded<T>, T, "grounded");
+
+#[cfg(test)]
+mod tests;

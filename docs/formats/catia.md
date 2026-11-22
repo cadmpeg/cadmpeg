@@ -6,7 +6,7 @@ All multi-byte integers are little-endian unless explicitly marked **BE**. Float
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Variant families
 
@@ -625,8 +625,8 @@ The frame carries no inline persistent object id. Its byte offset in the object 
 
 A non-owned A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
 
-In an A5 sheet-owned surface, the distinct-knot counts use compact unsigned
-integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
+In an A5 sheet-owned surface, a degree-one axis with two distinct knots also admits the one-byte array marker `0e`. Two increasing f64 knot values follow that marker, and the axis has two poles. The distinct-knot counts use compact unsigned
+integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its two-byte array marker also admits `08 19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
 
@@ -701,7 +701,7 @@ transferred geometric jet.
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is the underlying support's persistent CGM tag within its geometry factory. Explicit and implicit factories have separate tag namespaces. A tag remains stable through object creation, removal of other objects, and factory streaming. The array marker is `0x0c` or `0x08` followed by a one-byte `4q+1` or `4q+3` value. Both compact forms encode the leading-extrapolation count `q`. A sheet-owned
 pcurve can instead use `08 06 <q:u8>` for counts from 64 through 255. This form
 repeats the same count as `06 <q:u8>` after the knot array and the repeated
-definition-point count.
+definition-point count. With a one-byte extrapolation control, the sheet-owned channel header after the knots can instead be `14 <K:u16le>`. This three-byte header repeats the definition-point count `K`.
 
 The compact tag is separate from a physical file offset, record ordinal, allocation reference, and framed header token. Numeric equality supplies a candidate for an admitted typed identity relation; uniqueness and that relation's chart and endpoint invariants must also hold. Tags in separate factories or documents do not define a common identity.
 
@@ -785,7 +785,9 @@ representation identity and geometric placement.
 
 A compact class-`24` definition has payload `81 <compact operand d> 0f 87` and no scalar lane. A source-closed edge-use production has use vectors `(1,d+1)` and `(2,d+2)` and senses `88` and `84`. The contiguous sequence is either `24,06,06,5e`, with node parameter selectors `(2,1)`, or `5e,24,06,06`, with selectors `(1,2)`. The compact operand supplies an edge-use relation.
 
-A scalar class-`24` domain relation begins with marker `82`, two compact operands in source-then-target order, and `0a <selector:u16le>` or `0b <selector:u16le>`:
+A sheet-owned class-`24` map retains allocation-reference operands in target-then-source order. Its source relation maps the second representation to the first.
+
+A scalar class-`24` domain relation begins with marker `82`, two representation operands, and `0a <selector:u16le>` or `0b <selector:u16le>`. The generic compact-operand production uses source-then-target order:
 
 | Offset | Type | Meaning |
 | --- | --- | --- |
@@ -978,10 +980,11 @@ knot span and the scalar is measured from that span's first knot. The
 station can select a point inside the knot domain beyond the curve's active
 interval. A four-reference incidence with lead `80` stores three scalar
 lanes. The second and third scalars address its third and fourth
-references when the first tag is compact and the second tag is zero.
+references when the first tag is compact and the second tag is zero. The 28-byte four-reference form is `80 a:f64le tag0:u8 b:f64le tag1:u8 00 c:f64le`; both tags have the inline compact form `4n+1`, lane 2 uses compact-tagged `b`, and lane 3 uses absolute `c`.
 An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
+Each paired coordinate of an identity relation agrees within the greater of `1e-9` and `4·epsilon·max(|target|,|source|)`, where `epsilon` is binary64 machine epsilon.
 
 An extended spline-span tag is `04 <span:u8>`. The span byte is
 `44 + i`, where `i` is the zero-based index in the complete distinct-knot
@@ -1013,14 +1016,30 @@ A parameter-map companion spline uses its own knot array and extrapolation
 count before its station is mapped through the affine or sampled relation.
 
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
-degree and distinct-knot count as inline compact integers, `0c`,
+degree and distinct-knot count as inline compact integers, an array marker,
 the increasing f64 knots, and the UV pole pairs. Prefix
-`1e <span:f64le>` selects one span of degree one or five.
+`1e <span:f64le>` selects one span of degree one, four, or five.
 Prefix `1a <spans:compact> <last_span:f64le>` selects a degree-five
 spline with threefold interior knots. Prefix
 `16 <scalar:f64le> <span:f64le>` selects one degree-eleven span with a
 finite positive scalar. End knots have multiplicity degree plus one.
-The stored span equals the difference between the last two knots.
+The stored span equals the difference between the last two active knots.
+
+Prefixes `3a <spans:compact> <last_span:f64le>`, `3e <span:f64le>`, and
+`7e <span:f64le>` select extended degree-five splines. Prefixes `3e` and
+`7e` have one active span. The array marker `0c` sets the leading count to zero;
+`08 <leading:compact>` stores a leading count, including zero. A compact
+trailing extrapolation count follows the poles. Prefix `7e` then ends with
+control `05`. The leading, active, and trailing span counts sum to one less
+than the distinct-knot count. The active interval starts at the leading
+span count and covers the declared active spans. The NURBS keeps all poles
+and knots, including both extrapolation regions.
+
+Prefix `0e` selects an explicit-domain cubic. Its payload after that prefix
+is `<span:f64le> <upper:f64le> <lower:f64le> 0d 09 0e
+<lower:f64le> <upper:f64le> <UV poles:4*(2*f64le)>`. The limits repeat
+exactly, `lower<upper`, and `span=upper-lower`. Both endpoint knots have
+multiplicity four. The fourth pole exhausts the payload.
 The sheet circle form adds `05 05` between the two center coordinates
 and the radius, followed by the two arc-length limits and the usual chart
 shift trailer.
@@ -1199,7 +1218,7 @@ A unique fixed-nine dialect takes precedence over the generic counted grammar. A
 - **Owned-child `5f,62` relation:** for a counted owner packet, an owned-child face target selects a source-contiguous class-`37` construction record by `face_index + 1 + target`. An owned-child first terminal byte selects a class-`62` loop by the same rule. The second terminal byte is `03`. The loop's final backward-distance reference resolves to that construction record. Retain the face node with the counted owner when both targets remain in the same bounded source. The construction record's carrier reference resolves separately.
 
 - **Fixed-nine boundary-prelude `5f` relation:** a structurally complete `5f` face node is retained on a closed owner-boundary cycle when it immediately precedes the first resolved `5e` target, the node-to-owner source span is contiguous, the span contains only `5d` and `5e` records with exactly four `5e` records, the node terminal pair is `27 03` or `27 05`, and `5f.target` equals the owner packet's ninth identity plus `10`. Retain the node target encoding, target, terminal, and source span with the owner-boundary cycle. The relation is allocation-scoped and does not assign a standard face ordinal or a global edge identity.
-- **`b2/b3/b4 03 3b`** has width-coded header token `5` and a two-support chamfer payload `85 05 support0_ref support1_ref pcurve0_ref pcurve1_ref <controls:6u8> <scalar0:f64le> <scalar1:f64le>`. Literal `05` selects the preceding result carrier by backward frame distance one. Support references are width-coded compact unsigned integers; the two pcurve references are both inline or both width-coded. The references and the 22-byte tail exhaust the payload. The six controls and scalar modes follow the shared chamfer definition below. Result kind `05` requires a class-`29` cone, and `09` a class-`27` plane. Complete nested frames retain their own construction identity. Two immediately following source-contiguous class-`18` points with operands `1,2` supply the ordered support contacts when they have the same constant axis, increasing shared interval, and the control-selected lower/upper order. A further pair with operands `3,4` belongs to the construction only when its endpoint sets close the two remaining sides of that rectangle. Additional records do not extend the construction's contact list.
+- **`b2/b3/b4 03 3b`** has width-coded header token `5` and a two-support chamfer payload `85 05 support0_ref support1_ref pcurve0_ref pcurve1_ref <controls:6u8> <scalar0:f64le> <scalar1:f64le>`. Literal `05` selects the preceding result carrier by backward frame distance one. Support references are width-coded compact unsigned integers; the two pcurve references are both inline or both width-coded. The references and the 22-byte tail exhaust the payload. The six controls and scalar modes follow the shared chamfer definition below. Result kind `05` requires a class-`29` cone, and `09` a class-`27` plane. Sheet-owned support references also admit B-family class-`30` offset surfaces. The result kind selects the result carrier independently of the support types. Complete nested frames retain their own construction identity. Two immediately following source-contiguous class-`18` points with operands `1,2` supply the ordered support contacts when they have the same constant axis, increasing shared interval, and the control-selected lower/upper order. A further pair with operands `3,4` belongs to the construction only when its endpoint sets close the two remaining sides of that rectangle. Additional records do not extend the construction's contact list.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine finite f64 values with `lo<hi`. The repeated range is the native parameter interval shared by the two preceding pcurves.
 
 - A fixed-nine packet has a closed owner-boundary cycle only when its complete resolved target set contains exactly four class-`0x5e` records, every target endpoint resolves to a distinct class-`0x5d` record pair, and those four pairs form one simple four-vertex cycle. The derived relation retains the fixed-nine slots, edge-record offsets, and endpoint-record offsets in slot order. It is owner-local evidence and does not assign a standard face ordinal; packets with another target class, an incomplete endpoint walk, a repeated edge, or a non-cycle graph remain unclassified.
@@ -1488,6 +1507,8 @@ with unresolved references, endpoint lifts, or chain sense remain outside the
 connected graph.
 
 ---
+
+- An equator-reflected sphere class-`1d` pcurve stores the same four chart bounds, followed by two coordinate expressions. Each expression begins with the 27-byte coordinate selector `41 11 82 a:f64le b:f64le c:f64le`. The U selector is `(a,b,c)=(1,0,0)`, and the V selector is `(0,-1,0)`. Each selector is followed by the complete `41 05 81` affine expression and `41 1d` circle expression of the principal-branch form. The two copies of these inner expressions are byte-identical. The affine expression maps intrinsic station `t` to chart coordinate `U = chart_shift + direction·t`. Incidence stations and parameter-map intervals use `t`; the first stored bound pair uses `U`. Inverting the affine expression gives the intrinsic interval, with endpoint order reversed when `direction = -1`. The latitude is `−atan(slope·cos(reciprocal_scale·t + phase))`, and the length-valued V coordinate is that latitude times `chart_scale`. The complete second expression exhausts the payload.
 
 ### 6.8 Reference-closed object-stream graphs
 

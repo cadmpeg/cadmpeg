@@ -5,9 +5,8 @@ use std::f64::consts::TAU;
 
 use cadmpeg_ir::geometry::analytic::CircleCurve;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
-use cadmpeg_ir::geometry::{
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::{BodyKind, Face, LoopBoundary, Sense};
 

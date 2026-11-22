@@ -229,6 +229,22 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
 
+### CM-17. Keywords lead byte
+
+**Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
+
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+
+**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+
+### CM-18. Keywords `Application` element
+
+**Question.** What do the `Application` element of a Keywords root and its `Keyword` children record?
+
+**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The native history keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
+
+**Need.** The program state the keywords describe, and whether a target format has a record for it, before the decoder maps them to one.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
@@ -515,13 +531,15 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 ### DI-28. Sweep reference child versions
 
-**Question.** Which placement grammar selects a component source record that follows a u32 version word, and which source-less forms establish an operand owner?
+**Question.** Which carrier selects a component-source placement after a u32 header word, and which source-less forms establish an operand owner?
 
-**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. A general-curve reference identifies the sweep cross-section. A component-reference curve identifies its path. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
+**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. The pre-contact and post-contact general-curve references identify the cross-section and path respectively. A component-reference curve is a path child. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
 
-**Need.** We must identify each version before reading its source field and prove the reference namespace before selecting geometry.
+**Need.** Identify the placement selector and the reference namespace of the remaining source-less forms.
 
 **Conflict.** In the version-word form, the named sketch has no decoded profile, and its decoded plane differs from the plane of the three-edge compressed-body profile in the same feature-input lane that otherwise binds as the cross-section. A neighboring sketch does not replace an explicit reference whose child form is unsupported.
+
+**Note.** A complete post-contact path source after a u32 header word supplies the path sketch with `feature.sweep-path-header-assumed`.
 
 ### DI-29. Composite sweep path identity
 
@@ -538,6 +556,8 @@ Two omitted owner-qualified construction circles have separate current/extended 
 **Known.** The Merge property is Boolean. An unrecognized compact word does not establish NewBody, Cut, or Intersect. A missing carrier does not establish Merge false. An owned unknown, malformed, or ambiguous operation cannot corroborate another lane.
 
 **Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls. Retain unresolved operations when the carrier is unavailable.
+
+**Note.** A generated circular section supplies the solid construction and section diameter independently of Merge. The decoder applies the Merge reading to this construction and charges `feature.sweep-merge-assumed` whether or not a compact word resolved the shape.
 
 **Conflict.** For an unresolved solid sweep, the compact binder still projects Join when every owned lane supplies word `15`. An owned unknown, malformed or ambiguous lane prevents that consensus, but agreement on word `15` does not supply the independent Merge Boolean carrier required here.
 

@@ -87,7 +87,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

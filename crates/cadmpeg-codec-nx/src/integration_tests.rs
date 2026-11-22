@@ -399,7 +399,7 @@ fn swept_surface_face_rests_on_a_linear_sweep_of_its_section() {
         .iter()
         .find(|candidate| &candidate.id == construction)
         .unwrap();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(sweep) =
         procedural.definition()
     else {
         panic!("a swept surface is a linear sweep");

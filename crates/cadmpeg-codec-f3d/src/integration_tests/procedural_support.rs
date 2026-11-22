@@ -3,7 +3,7 @@
 use super::decode;
 use crate::test_support::procedural_support::revolution_intersection;
 use crate::test_support::zip_test::f3d_with_smbh;
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
 #[test]
 fn revolution_support_keeps_native_chart_without_false_endpoint_errors() {

@@ -18,12 +18,12 @@ use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::sampled::{GeometryLayoutError, PolylineCurve};
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface},
-    pcurve::{Pcurve, PcurveGeometry},
-    sampled::{GeometryLayoutError, PolylineCurve},
-    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -5459,8 +5459,11 @@ fn surface_entities_for_ir(
             });
             let ranges = construction.and_then(|row| match row.definition() {
                 ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
-                    cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
-                    cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
+                        ranges,
+                        ..
+                    } => Some(*ranges),
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Revision { .. } => None,
                 },
                 _ => None,
             });

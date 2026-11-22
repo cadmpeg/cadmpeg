@@ -39,10 +39,11 @@ use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::analytic::CircleCurve;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 
 use cadmpeg_core::decode::DecodeContext;
@@ -898,7 +899,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     Some([lower_knot, upper_knot]),
                     Vector3::from(sweep),
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
