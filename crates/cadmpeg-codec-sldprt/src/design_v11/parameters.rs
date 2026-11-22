@@ -28,10 +28,10 @@
 //! (Rule H1). A bare display that rounds the length the equation manager
 //! stores beside the dimension takes that length where the line that drives
 //! the dimension, evaluated over the values stored beside its names, gives
-//! it. A dimension whose kind no record states keeps the number its bound
-//! scalar stores, as a `Native` kind holds it (§5.12). The
-//! `design.parameter-value-unread` note names each dimension whose text is a
-//! bare number and that still has no value.
+//! it, unless the decoder bound it to a PMI record. A dimension whose kind no
+//! record states keeps the number its bound scalar stores, as a `Native` kind
+//! holds it (§5.12). The `design.parameter-value-unread` note names each
+//! dimension whose text is a bare number and that still has no value.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -272,6 +272,14 @@ impl<'a> Decoded<'a> {
             V10::String(text) => Some(ParameterValue::Text(text.clone())),
             V10::Length(_) | V10::Angle(_) => None,
         }
+    }
+
+    /// Whether the decoder's parameter of id `id` named `name` is bound to a
+    /// PMI record, which never yields to the equation manager's value
+    /// (`docs/formats/sldprt.md`).
+    fn pmi_bound(&self, id: &ParameterId, name: &str) -> bool {
+        self.parameter(id, name)
+            .is_some_and(|parameter| parameter.pmi.is_some())
     }
 
     /// The decoder's parameter of id `id` named `name`.
@@ -778,6 +786,10 @@ fn read(
         )
     });
     let bound = readings.bound.get(&entry.id).copied();
+    let managed = readings
+        .manager
+        .get(&entry.id)
+        .filter(|_| !decoded.pmi_bound(&entry.id, name));
     let mut unread = None;
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
@@ -792,7 +804,7 @@ fn read(
                     unread = named.and_then(Result::err);
                     let manager = shown
                         .filter(|_| !references && bound.is_none_or(|q| q == Quantity::LENGTH))
-                        .zip(readings.manager.get(&entry.id))
+                        .zip(managed)
                         .and_then(|(shown, stored)| {
                             manager_length(shown.number, *stored, readings.length_unit)
                         });
@@ -819,11 +831,9 @@ fn read(
             Some(finest),
         ) if !user && !references && readings.confirmed.contains(&entry.id) => {
             let rounded = |rounding: f64| {
-                shown
-                    .zip(readings.manager.get(&entry.id))
-                    .and_then(|(shown, stored)| {
-                        manager_rounded(shown, *stored, readings.length_unit, rounding)
-                    })
+                shown.zip(managed).and_then(|(shown, stored)| {
+                    manager_rounded(shown, *stored, readings.length_unit, rounding)
+                })
             };
             match rounded(finest) {
                 Some(value) => (ValueKind::Quantity(Quantity::LENGTH), Some(value)),
