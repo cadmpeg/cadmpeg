@@ -8,12 +8,12 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::nurbs::KnotVector;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError},
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
@@ -764,9 +764,9 @@ pub(crate) fn reverse_helix_definition(
         }
         Some((
             ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                     angle_range.get(),
-                    cadmpeg_ir::geometry::HelixFrame {
+                    cadmpeg_ir::geometry::helix::HelixFrame {
                         center,
                         major,
                         minor,
@@ -1071,11 +1071,10 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 mod tests {
     mod floating_point_extremes;
 
-    use cadmpeg_ir::geometry::{
-        nurbs::{NurbsCurve, NurbsSurface},
-        pcurve::PcurveGeometry,
-        CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
-    };
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::scalar::PositiveReal;
 
@@ -1285,9 +1284,9 @@ mod tests {
     fn reversed_helix_preserves_conical_path() {
         let range = [0.25, 2.0];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(1.0, -2.0, 3.0),
                     major: Vector3::new(2.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 2.0, 0.0),
@@ -1413,9 +1412,9 @@ mod tests {
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
         let range = [0.125, 1.570_797_917_999_999_6];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1454,9 +1453,9 @@ mod tests {
         // states more than one.
         let range = [0.0, 4.0];
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 range,
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1497,9 +1496,9 @@ mod tests {
         let radius = SMALL_ADMITTED_HELIX_RADIUS;
         let definition = |minor| {
             ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                     [0.0, 1.0],
-                    cadmpeg_ir::geometry::HelixFrame {
+                    cadmpeg_ir::geometry::helix::HelixFrame {
                         center: Point3::new(0.0, 0.0, 0.0),
                         major: Vector3::new(radius, 0.0, 0.0),
                         minor,
@@ -1539,9 +1538,9 @@ mod tests {
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1561,9 +1560,9 @@ mod tests {
             let minor = *helix_payload.minor();
             let apex_factor = helix_payload.apex_factor();
             let axis = *helix_payload.axis();
-            *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            *helix_payload = cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 angle_range.get(),
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center,
                     major: major.get(),
                     minor: minor.get(),
@@ -1584,9 +1583,9 @@ mod tests {
         .is_none());
 
         let overflowing_points = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(f64::MAX, 0.0, 0.0),
                     major: Vector3::new(f64::MAX, 0.0, 0.0),
                     minor: Vector3::new(0.0, f64::MAX, 0.0),
@@ -1800,9 +1799,9 @@ mod tests {
     #[test]
     fn circular_helix_cache_builds_a_unit_pitch_helix() {
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),
@@ -1848,9 +1847,9 @@ mod tests {
     #[test]
     fn a_circular_helix_counts_its_pitch_from_angle_zero() {
         let helix = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [std::f64::consts::PI, std::f64::consts::TAU],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: Point3::new(0.0, 0.0, 0.0),
                     major: Vector3::new(1.0, 0.0, 0.0),
                     minor: Vector3::new(0.0, 1.0, 0.0),

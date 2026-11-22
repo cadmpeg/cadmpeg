@@ -1,7 +1,8 @@
-use super::super::{
-    PcurveGeometry, ProceduralCurveDefinition, TolerantIntersectionConstruction,
-    TolerantIntersectionParameterization,
+use super::super::intersection_curves::{
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
 };
+use super::super::procedural_curves::ProceduralCurveDefinition;
+use super::super::PcurveGeometry;
 use crate::{ids::SurfaceId, math::Point3};
 use serde_json::json;
 

@@ -731,7 +731,7 @@ fn surface_cache_fit_scales_with_its_poles_and_refuses_overflow() {
         panic!("NURBS");
     };
     cache.set_cache_fit_tolerance(Some(
-        crate::geometry::FitTolerance::try_new(0.125).expect("fit"),
+        crate::geometry::legacy_cache::FitTolerance::try_new(0.125).expect("fit"),
     ));
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let scaled = surface
@@ -746,7 +746,7 @@ fn surface_cache_fit_scales_with_its_poles_and_refuses_overflow() {
         panic!("NURBS");
     };
     cache.set_cache_fit_tolerance(Some(
-        crate::geometry::FitTolerance::try_new(f64::MAX).expect("fit"),
+        crate::geometry::legacy_cache::FitTolerance::try_new(f64::MAX).expect("fit"),
     ));
     assert_eq!(
         surface.scaled(&ctx, scale(2.0)).expect("admission"),

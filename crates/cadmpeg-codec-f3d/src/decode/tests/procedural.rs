@@ -126,9 +126,8 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
 
 #[test]
 fn generated_compound_loft_decodes_scale_and_zero_tail() {
-    use cadmpeg_ir::geometry::{
-        CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
-    };
+    use cadmpeg_ir::geometry::lofts::{CompoundLoftDirection, CompoundLoftTail};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let result = F3dCodec
         .decode(
@@ -240,9 +239,8 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
 
 #[test]
 fn generated_compound_loft_writes_every_tail_shape_source_less() {
-    use cadmpeg_ir::geometry::{
-        CompoundLoftDirection, CompoundLoftTail, ProceduralSurfaceDefinition,
-    };
+    use cadmpeg_ir::geometry::lofts::{CompoundLoftDirection, CompoundLoftTail};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::math::Vector3;
 
     let decoded = F3dCodec
@@ -402,10 +400,10 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
 
 #[test]
 fn generated_scaled_compound_loft_decodes_full_direct_branch() {
-    use cadmpeg_ir::geometry::{
-        CompoundLoftDirection, ProceduralSurfaceDefinition, ScaledCompoundLoftBranch,
-        ScaledCompoundLoftShape,
+    use cadmpeg_ir::geometry::lofts::{
+        CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
     };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -479,10 +477,10 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
 
 #[test]
 fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
-    use cadmpeg_ir::geometry::{
-        CompoundLoftDirection, ProceduralSurfaceDefinition, ScaledCompoundLoftBranch,
-        ScaledCompoundLoftShape,
+    use cadmpeg_ir::geometry::lofts::{
+        CompoundLoftDirection, ScaledCompoundLoftBranch, ScaledCompoundLoftShape,
     };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::math::Vector3;
 
     let decoded = F3dCodec
@@ -599,9 +597,9 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
 
 #[test]
 fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, ScaledCompoundLoftShape, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::lofts::ScaledCompoundLoftShape;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let decoded = F3dCodec
         .decode(
@@ -678,7 +676,9 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
 
 #[test]
 fn generated_skin_surface_decodes_recursive_spline_law() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SkinSurfaceLayout};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::skin_surfaces::SkinSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -705,7 +705,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     assert_eq!(construction.direction.z, 1.0);
     assert_eq!(construction.trailing_parameter, 0.75);
     assert!(
-        matches!(&construction.formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "skin-law")
+        matches!(&construction.formula, cadmpeg_ir::geometry::laws::LawFormula::Named { name, .. } if name.as_str() == "skin-law")
     );
     assert!(matches!(
         construction.formula.variables(),
@@ -752,7 +752,8 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
 
 #[test]
 fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     for (name, legacy_ranges) in [("law_spl_sur", false), ("lawsur", true)] {
         let decoded = F3dCodec
@@ -777,7 +778,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
             legacy_ranges.then_some([[-1.0, 2.0], [-3.0, 4.0]])
         );
         assert!(
-            matches!(&construction.primary, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary-law")
+            matches!(&construction.primary, cadmpeg_ir::geometry::laws::LawFormula::Named { name, .. } if name.as_str() == "primary-law")
         );
         assert!(matches!(
             construction.primary.variables(),
@@ -786,7 +787,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         ));
         assert_eq!(construction.additional.len(), 1);
         assert!(
-            matches!(&construction.additional[0], cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "aux-law")
+            matches!(&construction.additional[0], cadmpeg_ir::geometry::laws::LawFormula::Named { name, .. } if name.as_str() == "aux-law")
         );
         assert!(matches!(
             construction.additional[0].variables(),
@@ -798,7 +799,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         assert_eq!(
             decoded.ir().geometry.procedural_surfaces[0]
                 .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(0.07)
         );
 
@@ -836,9 +837,8 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
 
 #[test]
 fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     for name in ["sub_spl_sur", "subsur"] {
         let decoded = F3dCodec
@@ -919,7 +919,8 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
 
 #[test]
 fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
-    use cadmpeg_ir::geometry::{LawSurfaceTail, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::LawSurfaceTail;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     for selector in 1..=4 {
         let decoded = F3dCodec
@@ -1012,7 +1013,8 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
 
 #[test]
 fn generated_skin_surface_round_trips_structural_law_nodes() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1105,7 +1107,8 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
 
 #[test]
 fn generated_skin_surface_round_trips_expanded_profiles() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SkinSurfaceLayout};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::skin_surfaces::SkinSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -1193,7 +1196,8 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
 
 #[test]
 fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1256,7 +1260,8 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
 
 #[test]
 fn source_less_writer_reduces_invalid_and_unframed_law_arities_to_their_cache() {
-    use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1342,7 +1347,8 @@ fn source_less_writer_reduces_invalid_and_unframed_law_arities_to_their_cache() 
 
 #[test]
 fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
-    use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::math::Vector3;
 
     let decoded = F3dCodec

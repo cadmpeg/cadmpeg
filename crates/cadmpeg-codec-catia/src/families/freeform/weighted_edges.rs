@@ -7,12 +7,13 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext;
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, SurfaceParameterAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::FitTolerance;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, IntcurveSupportContext, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::{ParameterInterval, PcurveUse};

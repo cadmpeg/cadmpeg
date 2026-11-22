@@ -18,13 +18,16 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_pcurve_uv,
     nurbs_surface_isocurve,
 };
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw, BlendSupport};
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 use cadmpeg_ir::geometry::{
-    nurbs::SurfaceParameterAxis,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -306,7 +309,7 @@ impl Brep {
                                     .as_ref()
                                     .map(|support| {
                                         qualified(&support.surface, &tail).map(|surface| {
-                                            cadmpeg_ir::geometry::BlendSupport {
+                                            cadmpeg_ir::geometry::blends::BlendSupport {
                                                 surface,
                                                 reversed: support.reversed,
                                             }
@@ -2152,25 +2155,30 @@ fn attach_surface_curve(
 /// The solved-cache tail stating [`super::fit::FIT_TOLERANCE_MM`], with
 /// neutral values in its other fields.
 fn fitted_cache_tail() -> Option<
-    cadmpeg_ir::geometry::SurfaceCurveCacheFirst<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>,
+    cadmpeg_ir::geometry::surface_curves::SurfaceCurveCacheFirst<
+        cadmpeg_ir::geometry::surface_curves::ParametricSurfaceCurveFlags,
+    >,
 > {
     let fit_tolerance =
-        cadmpeg_ir::geometry::FitTolerance::try_new(super::fit::FIT_TOLERANCE_MM).ok()?;
-    let form = cadmpeg_ir::geometry::SurfaceCurveTail::try_new(
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(super::fit::FIT_TOLERANCE_MM)
+            .ok()?;
+    let form = cadmpeg_ir::geometry::surface_curves::SurfaceCurveTail::try_new(
         0,
         cadmpeg_ir::scalar::PositiveI64::new(1)?,
-        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance },
+        cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::SolvedCache { fit_tolerance },
         [[None; 4]; 2],
         [None, None],
     )
     .ok()?;
-    Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst {
-        form,
-        flags: cadmpeg_ir::geometry::ParametricSurfaceCurveFlags {
-            flag: false,
-            second_flag: None,
+    Some(
+        cadmpeg_ir::geometry::surface_curves::SurfaceCurveCacheFirst {
+            form,
+            flags: cadmpeg_ir::geometry::surface_curves::ParametricSurfaceCurveFlags {
+                flag: false,
+                second_flag: None,
+            },
         },
-    })
+    )
 }
 
 /// The boundary of a face: its vertices (the ends of its edges), and the
@@ -4258,7 +4266,7 @@ fn decode_graph_inner(
                         };
                         let Some(Ok(fit_tolerance)) = support_data
                             .fit_tolerance_mm
-                            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new)
                         else {
                             return Ok(None);
                         };
@@ -4294,15 +4302,16 @@ fn decode_graph_inner(
                             native_ref: None,
                         });
                         Ok(Some(
-                            cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
-                                |range| {
-                                    vec![cadmpeg_ir::topology::PcurveUse {
-                                        pcurve: id,
-                                        isoparametric: None,
-                                        parameter_range: Some(range),
-                                    }]
-                                },
-                            ),
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                                parameter_range,
+                            )
+                            .map(|range| {
+                                vec![cadmpeg_ir::topology::PcurveUse {
+                                    pcurve: id,
+                                    isoparametric: None,
+                                    parameter_range: Some(range),
+                                }]
+                            }),
                         ))
                     })()?
                 } else {
@@ -4902,7 +4911,7 @@ fn decode_graph_inner(
                                 spine,
                                 radius,
                                 BlendCrossSection::Circular,
-                                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                             )
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4910,8 +4919,10 @@ fn decode_graph_inner(
                     if let Some(cache) = &cache {
                         out.approximations.blend(cache.fit_tolerance);
                         let fit_tolerance =
-                            cadmpeg_ir::geometry::FitTolerance::try_new(cache.fit_tolerance)
-                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                            cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
+                                cache.fit_tolerance,
+                            )
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                         definition
                             .set_cache_fit_tolerance(Some(fit_tolerance))
                             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -7075,8 +7086,9 @@ fn derive_spherical_pcurves(
     }
     for (coedge_id, id, pcurve, range) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            let parameter_range = range
-                .and_then(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
+            let parameter_range = range.and_then(|range| {
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()
+            });
             out.coedges[*index]
                 .pcurves
                 .push(cadmpeg_ir::topology::PcurveUse {
@@ -7259,7 +7271,7 @@ fn derive_nurbs_isoparametric_pcurves(
             None => None,
         };
         let Ok(fit_tolerance) = fit_tolerance
-            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new)
             .transpose()
         else {
             continue;
@@ -7297,7 +7309,11 @@ fn derive_nurbs_isoparametric_pcurves(
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: (pcurve.parameter_range())
-                    .map(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range.get()))
+                    .map(|range| {
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                            range.get(),
+                        )
+                    })
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             }];
@@ -9720,8 +9736,11 @@ fn synthesize_sphere_seams(
             pcurve: pcurve_id,
             isoparametric: None,
             parameter_range: Some(
-                cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                    0.0,
+                    std::f64::consts::TAU,
+                ])
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
         }];
         admit_brep_entity(ctx)?;
@@ -10985,10 +11004,9 @@ mod tests {
 
     #[test]
     fn topology_pruning_retains_a_procedural_blend_spine() {
-        use cadmpeg_ir::geometry::{
-            BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralSurface,
-            ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        };
+        use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry};
         use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 
         let spine = CurveId::mint("test:model:entity#spine").expect("identity grammar");
@@ -11014,7 +11032,7 @@ mod tests {
                         Some(spine.clone()),
                         BlendRadiusLaw::constant(0.5).unwrap(),
                         BlendCrossSection::Circular,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
