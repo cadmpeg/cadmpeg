@@ -107,15 +107,12 @@ pub(crate) enum SldprtLossCode {
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
-    /// A Keywords history member has no readable XML text, or its XML has no
-    /// element before its first error, so none of its records is read.
+    /// A Keywords history member has no XML text that parses, so none of its
+    /// records is read.
     HistoryUnread,
-    /// Keywords XML uses a namespace prefix that it does not declare; the
-    /// prefixed element and attribute names are read as plain names.
-    HistoryXmlPrefixUnbound,
-    /// Keywords XML has an error; the elements before it are read and the
-    /// text from it on is not.
-    HistoryXmlTruncated,
+    /// A Keywords root holds an `Application` element, which is not read as a
+    /// feature and has no document record.
+    HistoryApplicationUnread,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -403,8 +400,7 @@ impl SldprtLossCode {
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackMarkClassInferred,
         Self::HistoryUnread,
-        Self::HistoryXmlPrefixUnbound,
-        Self::HistoryXmlTruncated,
+        Self::HistoryApplicationUnread,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -548,8 +544,7 @@ impl SldprtLossCode {
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::HistoryUnread => "history.unread",
-            Self::HistoryXmlPrefixUnbound => "history.xml-prefix-unbound",
-            Self::HistoryXmlTruncated => "history.xml-truncated",
+            Self::HistoryApplicationUnread => "history.application-unread",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -699,7 +694,7 @@ impl SldprtLossCode {
             | Self::GeometryMeshBodyNotTransferred
             | Self::GeometryImportedBodiesNotTransferred
             | Self::HistoryUnread => Severity::Error,
-            Self::HistoryXmlPrefixUnbound | Self::HistoryXmlTruncated => Severity::Warning,
+            Self::HistoryApplicationUnread => Severity::Warning,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -932,9 +927,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
-            Self::HistoryXmlPrefixUnbound | Self::HistoryXmlTruncated => {
-                LossTaxonomy::NoncanonicalSourceSyntax
-            }
+            Self::HistoryApplicationUnread => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1188,8 +1181,7 @@ mod tests {
                 "history.rollback-unread",
                 "history.rollback-mark-class-inferred",
                 "history.unread",
-                "history.xml-prefix-unbound",
-                "history.xml-truncated",
+                "history.application-unread",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",

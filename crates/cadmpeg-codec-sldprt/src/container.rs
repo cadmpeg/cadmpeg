@@ -88,10 +88,7 @@ pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
         || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
-        || (xml_lead_marker(payload)
-            && payload
-                .get(1..)
-                .is_some_and(|rest| rest.starts_with(b"<?xml")))
+        || payload.starts_with(b"\x85<?xml")
     {
         PayloadFamily::Xml
     } else {
@@ -1270,12 +1267,6 @@ pub(crate) fn virtual_component_key(name: &str) -> Option<String> {
 
 /// Lead bytes that a section stores before its XML text.
 const XML_LEAD_MARKERS: [u8; 2] = [0x85, 0x86];
-
-fn xml_lead_marker(payload: &[u8]) -> bool {
-    payload
-        .first()
-        .is_some_and(|byte| XML_LEAD_MARKERS.contains(byte))
-}
 
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
     let bytes = match bytes.split_first() {

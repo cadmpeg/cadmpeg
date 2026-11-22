@@ -12,10 +12,8 @@ pub(crate) mod parameters;
 pub(crate) mod project;
 pub(crate) mod selections;
 pub(crate) mod write;
-mod xml;
 
 use self::classify::classless_builtin_node;
-use self::xml::{attribute_name, element_name};
 
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
@@ -33,14 +31,13 @@ use std::collections::{BTreeMap, HashMap};
 /// The element is still transferred. A key holding no non-whitespace character
 /// cannot be asked for, and a key the element states twice is already taken, so
 /// the charge names the element and, for a restated key, the key itself.
-fn keyed_attributes<'value, Name: AsRef<str>>(
+fn keyed_attributes<'name, 'value>(
     losses: &mut Vec<LossNote>,
     record: &str,
-    entries: impl IntoIterator<Item = (Name, &'value str)>,
+    entries: impl IntoIterator<Item = (&'name str, &'value str)>,
 ) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     let mut kept = BTreeMap::new();
     for (name, value) in entries {
-        let name = name.as_ref();
         if name.chars().all(char::is_whitespace) {
             report_unkeyed_property(losses, record, None);
             continue;
@@ -68,6 +65,56 @@ fn report_unkeyed_property(losses: &mut Vec<LossNote>, record: &str, duplicate: 
     losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
 }
 
+/// Whether a member name is a name of a Keywords history member:
+/// `KeyWords`, a compound-file `KeyWords__ZLB` stream, or a written
+/// `Keywords-<n>` member.
+fn names_history(name: Option<&str>) -> bool {
+    let Some(leaf) = name.and_then(|name| name.rsplit('/').next()) else {
+        return false;
+    };
+    let leaf = leaf.to_ascii_lowercase();
+    leaf == "keywords"
+        || leaf == "keywords__zlb"
+        || leaf.strip_prefix("keywords-").is_some_and(|index| {
+            !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+/// Charges a Keywords history member that no record is read from.
+fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
+    losses.push(crate::loss::SldprtLossCode::HistoryUnread.note(format!(
+        "Keywords member {member}: {cause}; no configuration or feature of the history is read"
+    )));
+}
+
+/// Charges an `Application` element of a Keywords root, which the reader does
+/// not take as a feature and which no document record holds.
+fn report_application(
+    losses: &mut Vec<LossNote>,
+    member: &str,
+    application: roxmltree::Node<'_, '_>,
+) {
+    let name = application
+        .attribute("Name")
+        .map_or_else(|| "without a Name".to_owned(), |name| format!("{name:?}"));
+    let children = application
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .map(|child| match child.attribute("Name") {
+            Some(name) => format!("{} {name:?}", child.tag_name().name()),
+            None => child.tag_name().name().to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let held = if children.is_empty() {
+        "no child element".to_owned()
+    } else {
+        format!("the child elements {}", children.join(", "))
+    };
+    losses.push(crate::loss::SldprtLossCode::HistoryApplicationUnread.note(format!(
+        "Keywords member {member}: the Application element {name} and {held} are not features and no document record holds them; they are not read"
+    )));
+}
+
 pub(crate) fn histories(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -78,20 +125,16 @@ pub(crate) fn histories(
         .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
             let stream = section.source_stream();
-            let named = xml::names_history(section.name());
+            let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
                 if named {
-                    xml::unread(
-                        losses,
-                        stream.as_str(),
-                        "its compressed member does not inflate",
-                    );
+                    report_unread(losses, stream.as_str(), "no XML payload is decoded from it");
                 }
                 return Ok(histories);
             };
             let Some(text) = crate::container::xml_text(payload) else {
                 if named {
-                    xml::unread(
+                    report_unread(
                         losses,
                         stream.as_str(),
                         "its bytes are not UTF-8 or UTF-16LE text",
@@ -99,20 +142,37 @@ pub(crate) fn histories(
                 }
                 return Ok(histories);
             };
-            let mut repaired = None;
-            let Some(parsed) =
-                xml::parse(ctx, stream.as_str(), named, &text, &mut repaired, losses)?
-            else {
-                return Ok(histories);
+            let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+                Ok(tree) => tree,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    if named {
+                        let cause = match error {
+                            CodecError::Malformed(message) => {
+                                format!("its XML does not parse: {message}")
+                            }
+                            refused => format!("its XML is refused: {refused}"),
+                        };
+                        report_unread(losses, stream.as_str(), &cause);
+                    }
+                    return Ok(histories);
+                }
             };
-            let root = parsed.document.root_element();
-            if !element_name(root).contains("Keywords") {
+            let root = doc.root_element();
+            if !root.tag_name().name().contains("Keywords") {
                 return Ok(histories);
+            }
+            let applications = root
+                .children()
+                .filter(|node| node.is_element() && node.tag_name().name() == "Application")
+                .collect::<Vec<_>>();
+            for application in &applications {
+                report_application(losses, stream.as_str(), *application);
             }
             let parent = format!("sldprt:history:feature-history#{source}");
             let configurations = root
                 .children()
-                .filter(|node| node.is_element() && element_name(*node) == "Configuration")
+                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
                 .enumerate()
                 .try_fold(Vec::new(), |mut configurations, (ordinal, node)| {
                     let id = format!("sldprt:history:configuration#{source}:{ordinal}");
@@ -120,9 +180,7 @@ pub(crate) fn histories(
                         annotations,
                         id.as_str(),
                         stream,
-                        cadmpeg_core::decode::u64_from_index(
-                            parsed.source_offset(node.range().start),
-                        ),
+                        cadmpeg_core::decode::u64_from_index(node.range().start),
                         "Configuration",
                         Exactness::ByteExact,
                     )?;
@@ -130,10 +188,10 @@ pub(crate) fn histories(
                         losses,
                         &id,
                         node.attributes()
-                            .map(|attribute| (attribute_name(&attribute), attribute.value()))
-                            .filter(|(name, _)| {
-                                !matches!(name.as_ref(), "Name" | "Material" | "SourceIndex")
-                            }),
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
+                            })
+                            .map(|attribute| (attribute.name(), attribute.value())),
                     );
                     configurations.push(Configuration {
                         id,
@@ -159,9 +217,12 @@ pub(crate) fn histories(
                 root.descendants().filter(|node| {
                     node.is_element()
                         && !matches!(
-                            element_name(*node).as_ref(),
+                            node.tag_name().name(),
                             "Keywords" | "Configuration" | "Dimension"
                         )
+                        && !node
+                            .ancestors()
+                            .any(|ancestor| applications.contains(&ancestor))
                 })
             };
             let feature_ids = feature_nodes()
@@ -184,20 +245,18 @@ pub(crate) fn histories(
                         annotations,
                         id.as_str(),
                         stream,
-                        cadmpeg_core::decode::u64_from_index(
-                            parsed.source_offset(node.range().start),
-                        ),
-                        &element_name(node),
+                        cadmpeg_core::decode::u64_from_index(node.range().start),
+                        node.tag_name().name(),
                         Exactness::ByteExact,
                     )?;
                     let properties = keyed_attributes(
                         losses,
                         &id,
                         node.attributes()
-                            .map(|attribute| (attribute_name(&attribute), attribute.value()))
-                            .filter(|(name, _)| {
-                                !matches!(name.as_ref(), "id" | "Name" | "Type" | "Suppressed")
-                            }),
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "id" | "Name" | "Type" | "Suppressed")
+                            })
+                            .map(|attribute| (attribute.name(), attribute.value())),
                     );
                     let content = node
                         .children()
@@ -207,7 +266,7 @@ pub(crate) fn histories(
                                 (!value.is_empty()).then(|| FeatureContent::Text(value.to_owned()))
                             } else if !child.is_element() {
                                 None
-                            } else if element_name(child) == "Dimension" {
+                            } else if child.tag_name().name() == "Dimension" {
                                 child
                                     .attribute("Name")
                                     .map(|name| FeatureContent::Dimension(name.to_owned()))
@@ -219,10 +278,9 @@ pub(crate) fn histories(
                         })
                         .collect::<Vec<_>>();
                     let mut dimension_properties = BTreeMap::new();
-                    for dimension in node
-                        .children()
-                        .filter(|child| child.is_element() && element_name(*child) == "Dimension")
-                    {
+                    for dimension in node.children().filter(|child| {
+                        child.is_element() && child.tag_name().name() == "Dimension"
+                    }) {
                         let Some(name) = dimension.attribute("Name") else {
                             continue;
                         };
@@ -231,8 +289,8 @@ pub(crate) fn histories(
                             name,
                             dimension
                                 .attributes()
-                                .map(|attribute| (attribute_name(&attribute), attribute.value()))
-                                .filter(|(name, _)| name != "Name"),
+                                .filter(|attribute| attribute.name() != "Name")
+                                .map(|attribute| (attribute.name(), attribute.value())),
                         );
                         if properties.is_empty() {
                             continue;
@@ -244,10 +302,9 @@ pub(crate) fn histories(
                         }
                     }
                     let mut parameters = BTreeMap::new();
-                    for dimension in node
-                        .children()
-                        .filter(|child| child.is_element() && element_name(*child) == "Dimension")
-                    {
+                    for dimension in node.children().filter(|child| {
+                        child.is_element() && child.tag_name().name() == "Dimension"
+                    }) {
                         let Some(name) = dimension.attribute("Name") else {
                             continue;
                         };
@@ -274,7 +331,7 @@ pub(crate) fn histories(
                     features.push(Feature {
                         id,
                         parent: parent.clone(),
-                        xml_tag: element_name(node).into_owned(),
+                        xml_tag: node.tag_name().name().to_owned(),
                         tree_parent: node.ancestors().skip(1).find_map(|ancestor| {
                             let record_id = feature_ids.get(&ancestor.range().start)?;
                             Some(crate::records::TreeParent::Record {
@@ -293,7 +350,8 @@ pub(crate) fn histories(
                         name: node.attribute("Name").unwrap_or("").to_owned(),
                         kind: node
                             .attribute("Type")
-                            .map_or_else(|| element_name(node).into_owned(), str::to_owned),
+                            .unwrap_or_else(|| node.tag_name().name())
+                            .to_owned(),
                         input_class: None,
                         suppressed: node
                             .attribute("Suppressed")
@@ -316,7 +374,7 @@ pub(crate) fn histories(
                         (!value.is_empty()).then(|| HistoryContent::Text(value.to_owned()))
                     } else if !child.is_element() {
                         None
-                    } else if element_name(child) == "Configuration" {
+                    } else if child.tag_name().name() == "Configuration" {
                         let id = format!(
                             "sldprt:history:configuration#{source}:{configuration_ordinal}"
                         );
@@ -342,8 +400,8 @@ pub(crate) fn histories(
                 losses,
                 &id,
                 root.attributes()
-                    .map(|attribute| (attribute_name(&attribute), attribute.value()))
-                    .filter(|(name, _)| name != "Name"),
+                    .filter(|attribute| attribute.name() != "Name")
+                    .map(|attribute| (attribute.name(), attribute.value())),
             );
             let mut spans: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
             for node in feature_nodes() {
@@ -362,7 +420,7 @@ pub(crate) fn histories(
                 spans
                     .entry(raw.to_owned())
                     .or_default()
-                    .push((parsed.source_offset(range.start), len));
+                    .push((range.start, len));
             }
             let mut duplicates: Vec<(String, Vec<(usize, usize)>)> = spans
                 .into_iter()

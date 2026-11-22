@@ -113,18 +113,6 @@ impl DecodeContext<'_> {
         text: &'input str,
         operation: &'static str,
     ) -> Result<roxmltree::Document<'input>, CodecError> {
-        self.parse_xml_syntax(text, operation)?
-            .map_err(Self::tree_malformed)
-    }
-
-    /// Parses XML as [`Self::parse_xml`] does, and returns a syntax error of
-    /// the text as the inner error so that a reader can recover from it. The
-    /// outer error is a refusal by the resource limits.
-    pub fn parse_xml_syntax<'input>(
-        &self,
-        text: &'input str,
-        operation: &'static str,
-    ) -> Result<Result<roxmltree::Document<'input>, roxmltree::Error>, CodecError> {
         let shape = xml_shape(text);
         if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
             return Err(CodecError::NotImplemented(format!(
@@ -149,16 +137,12 @@ impl DecodeContext<'_> {
             options.nodes_limit = limit;
         }
         // roxmltree recurses once per element level.
-        self.at_depth(
-            shape.depth,
-            operation,
-            || match roxmltree::Document::parse_with_options(text, options) {
-                Err(roxmltree::Error::NodesLimitReached) => {
-                    Err(tree_too_large("XML", allowance, operation))
-                }
-                parsed => Ok(parsed),
-            },
-        )
+        self.at_depth(shape.depth, operation, || {
+            roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
+                roxmltree::Error::NodesLimitReached => tree_too_large("XML", allowance, operation),
+                error => Self::tree_malformed(error),
+            })
+        })
     }
 
     /// Parses a JSON value tree after charging its nesting depth.
@@ -755,23 +739,6 @@ mod tests {
             assert!(matches!(
                 ctx.parse_xml("<r>", "XML"),
                 Err(CodecError::Malformed(_))
-            ));
-        });
-    }
-
-    #[test]
-    fn xml_syntax_error_is_returned_to_the_reader() {
-        with_depth(256, |ctx| {
-            let parsed = ctx
-                .parse_xml_syntax("<r p:a=\"1\"/>", "XML")
-                .expect("admitted XML");
-            assert!(matches!(
-                parsed,
-                Err(roxmltree::Error::UnknownNamespace(prefix, _)) if prefix == "p"
-            ));
-            assert!(matches!(
-                ctx.parse_xml_syntax("<a><b/></a>", "XML"),
-                Ok(Ok(_))
             ));
         });
     }
