@@ -17,7 +17,7 @@ impl Writer<'_> {
         let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
         let range = use_
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
             .or(edge_range);
         pcurve_nurbs(&pcurve.geometry, range)
     }

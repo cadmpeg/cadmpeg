@@ -160,6 +160,8 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         wire["designation_offset"] = serde_json::json!(46);
         let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(construction.form, form);
+        assert_eq!(construction.class(), Some("6H"));
+        assert_eq!(construction.external(), None);
         assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
         assert!(form.designation_offset_holds(46, 0));
         assert!(!form.designation_offset_holds(42, 0));
@@ -169,5 +171,21 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         wire["trailing_reference_record_index"] = serde_json::json!(7);
         wire["trailing_reference_offset"] = serde_json::json!(99);
         assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
+    }
+}
+
+#[test]
+fn thread_class_follows_the_prefix_token() {
+    for (form, class) in [
+        ("standard", "6g"),
+        ("standard_legacy", "6g"),
+        ("standard_compact", "6g"),
+        ("compact", "6H"),
+        ("compact_legacy", "6H"),
+    ] {
+        let mut wire = thread_wire();
+        wire["form"] = serde_json::json!(form);
+        let construction: DesignThreadConstruction = serde_json::from_value(wire).unwrap();
+        assert_eq!(construction.class(), Some(class));
     }
 }

@@ -938,7 +938,7 @@ fn rectangular_nurbs_patch() -> CadIr {
                 None,
                 Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
@@ -1045,7 +1045,7 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
                 None,
                 Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
@@ -1136,7 +1136,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
                 None,
                 Some(domain),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.0001)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.0001)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),

@@ -1214,3 +1214,20 @@ the sldprt and nx readers emit this residual layer for every other schema token
 extracted from a framed Parasolid stream. The source token names no classified
 row, so recovery is admitted without claiming a verified dialect. Both hosts
 charge source.kernel-dialect-unverified from this layer"""
+
+[format.onshape]
+level = 0
+scored = ["onshape:bundle-1"]
+
+[[support]]
+dialect = "onshape:bundle-1"
+read = "detected"
+write = "none"
+reason = "Synthetic bundles cover Part Studio history and composed STEP geometry."
+
+[[support]]
+dialect = "onshape:unknown"
+read = "refused"
+write = "none"
+refusal = "alternate-encoding-no-grammar"
+reason = "`onshape:unknown` selects an unsupported bundle schema."

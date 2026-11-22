@@ -6,9 +6,11 @@ use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,

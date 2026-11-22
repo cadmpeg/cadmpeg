@@ -7,7 +7,8 @@ use crate::examples::unit_cube;
 use crate::geometry::pcurve::{
     LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
 };
-use crate::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use crate::geometry::procedural_curves::DirectedParameterRange;
+use crate::geometry::SolvedSurfaceGeometry;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::topology::{CoedgeUseCurve, EdgeCarrier, ParameterInterval, PcurveUse};

@@ -12,12 +12,7 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::schema::ArenaRecord;
 
-pub(super) fn check_linkage(
-    index: &DesignRecords<'_>,
-    ids: &ModelIndex<'_>,
-    findings: &mut Vec<Finding>,
-) {
-    let ir = index.ir;
+pub(super) fn check_scope(ir: &CadIr, findings: &mut Vec<Finding>) {
     if let Err(violation) = ir.check_scope() {
         crate::validate::record_finding(
             findings,
@@ -27,6 +22,15 @@ pub(super) fn check_linkage(
             format_args!("the document breaks the scope invariants: {violation}"),
         );
     }
+}
+
+pub(super) fn check_linkage(
+    index: &DesignRecords<'_>,
+    ids: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let ir = index.ir;
+    check_scope(ir, findings);
     check_identities(ir, findings);
     check_native_refs(index, ids, findings);
 }

@@ -29,7 +29,8 @@ use crate::F3dCodec;
 
 #[test]
 fn generated_projection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionRole, ProjectionTail};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::{ProjectionRole, ProjectionTail};
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -100,7 +101,11 @@ fn generated_projection_decodes_and_writes_source_less() {
                 *parameter_range = [-4.0, 5.0];
                 *role = ProjectionRole::Surf1;
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap();
         *definition_payload =
@@ -165,7 +170,8 @@ fn generated_projection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_early_close_projection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::ProjectionTail;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -232,7 +238,8 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_three_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -288,7 +295,11 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
                 (*context_parameter_range) = [-1.0, 2.0];
                 *selector = -4;
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap();
         *definition_payload =
@@ -348,7 +359,8 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamilyKind};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind;
 
     for (name, expected_family) in [
         ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
@@ -382,13 +394,13 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             };
             edit::replace(
                 &mut *(match family {
-                    cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, .. }
-                    | cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained {
+                    cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Blend { context, .. }
+                    | cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::SurfaceConstrained {
                         context,
                         ..
                     }
-                    | cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, .. }
-                    | cadmpeg_ir::geometry::SurfaceCurveFamily::Skin { context, .. } => context,
+                    | cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. }
+                    | cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Skin { context, .. } => context,
                 }),
                 |previous| {
                     let sides = previous.sides().clone();
@@ -400,7 +412,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
 
                         *range = [-1.0, 2.0];
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -451,7 +463,8 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
 
 #[test]
 fn generated_silhouette_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SilhouetteKind};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::surface_curves::SilhouetteKind;
 
     for (name, draft_factor) in [
         ("silh_int_cur", None),

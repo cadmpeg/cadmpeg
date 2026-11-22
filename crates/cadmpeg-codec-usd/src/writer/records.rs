@@ -11,9 +11,9 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
@@ -950,7 +950,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
         let range = use_
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints);
         let curve = pcurve_nurbs(&pcurve.geometry, range)?.map(|point| chart.apply(point));
         let vertex = self.vertex(&pole.vertex)?;
         let position = *self.brep.vertices.get(vertex)?;
@@ -995,7 +995,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         // coedge direction.
         let range = use_
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
             .or_else(|| {
                 let [start, end] = *self.edge_ranges.get(&coedge.edge)?;
                 Some(if coedge.sense == Sense::Forward {

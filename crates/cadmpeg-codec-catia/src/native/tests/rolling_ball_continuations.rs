@@ -55,3 +55,49 @@ fn native_rolling_ball_continuation_keeps_explicit_scalar_jet_unbound() {
         native
     );
 }
+
+#[test]
+fn native_rolling_ball_continuation_keeps_sheet_scalar_jet_unbound() {
+    use crate::test_support::test_rolling_ball_continuation::{sheet_fixture, SheetTailForm};
+    for form in [
+        SheetTailForm::Absent,
+        SheetTailForm::Doubled,
+        SheetTailForm::Explicit,
+    ] {
+        let (bytes, _) = sheet_fixture(form, true);
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("native store");
+        let value = serde_json::to_value(&namespace).expect("namespace wire");
+        let rows = value["consolidated_rolling_ball_continuations"]
+            .as_array()
+            .expect("continuation arena");
+        assert_eq!(rows.len(), 1);
+        let scalar = &rows[0]["scalar_jet"];
+        if matches!(form, SheetTailForm::Explicit) {
+            assert_eq!(
+                scalar["values_bits"],
+                serde_json::json!([2.0_f64.to_bits(), 1.0_f64.to_bits()])
+            );
+            assert_eq!(
+                scalar["first_derivative_bits"],
+                serde_json::json!(vec![(-1.0_f64).to_bits(); 2])
+            );
+            assert_eq!(
+                scalar["second_derivative_bits"],
+                serde_json::json!(vec![(-0.0_f64).to_bits(); 2])
+            );
+        } else {
+            assert_eq!(scalar["kind"], "absent");
+        }
+        for field in ["source_curve", "sense", "unit", "target", "sign"] {
+            assert!(rows[0].get(field).is_none());
+            assert!(scalar.get(field).is_none());
+        }
+        let restored = serde_json::from_value(value).expect("namespace JSON round trip");
+        assert_eq!(
+            crate::native::CatiaNative::load(&restored).expect("checked native load"),
+            native
+        );
+    }
+}

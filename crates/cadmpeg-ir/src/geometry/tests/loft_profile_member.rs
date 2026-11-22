@@ -2,7 +2,7 @@
 //! The profile member nests its curve under `profile`, so the curve's own
 //! deny is reached and the member refuses unknown keys on both levels.
 
-use crate::geometry::{LoftMemberForm, LoftPathCurve, LoftProfileMember, LoftSubdata};
+use crate::geometry::lofts::{LoftMemberForm, LoftPathCurve, LoftProfileMember, LoftSubdata};
 use crate::ids::CurveId;
 
 fn member() -> LoftProfileMember {
@@ -59,7 +59,7 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
 // `secondary_pcurve` are unknown keys rather than values a reader refuses.
 #[test]
 fn classic_loft_profile_data_states_only_its_own_fields() {
-    use crate::geometry::ClassicLoftProfileData;
+    use crate::geometry::lofts::ClassicLoftProfileData;
 
     let wire = serde_json::json!({
         "surface": "test:model:surface#loft",

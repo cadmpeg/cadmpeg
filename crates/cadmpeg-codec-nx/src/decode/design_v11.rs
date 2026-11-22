@@ -81,6 +81,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
         active_arrangements,
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(container);
     design.features.extend(features);
