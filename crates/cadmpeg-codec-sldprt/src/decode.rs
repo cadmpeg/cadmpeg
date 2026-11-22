@@ -2665,6 +2665,40 @@ fn merge_local_bodies(
     Ok(())
 }
 
+/// One loss for each configuration whose partition holds no body and whose
+/// `Config-N-FeatureBodies` streams the decode does not take. Only the
+/// selected partition's empty model takes its configuration's imported
+/// bodies (spec §3.3); what those streams state for any other configuration
+/// is open (DI-84).
+fn untaken_local_bodies_losses(
+    scan: &ContainerScan<'_>,
+    taken: Option<usize>,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let held = configuration_bodies
+        .iter()
+        .filter(|(_, bodies)| !bodies.is_empty())
+        .map(|(index, _)| *index)
+        .collect::<BTreeSet<_>>();
+    let mut streams = BTreeMap::<usize, usize>::new();
+    for (_, stream) in all_local_body_streams(scan) {
+        if let Some(index) = configuration_index(stream.section.name().unwrap_or("")) {
+            *streams.entry(index).or_default() += 1;
+        }
+    }
+    streams
+        .into_iter()
+        .filter(|(index, _)| Some(*index) != taken && !held.contains(index))
+        .map(|(index, count)| {
+            SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
+                "configuration index {index}: its partition holds no body, and the \
+                 {count} imported body stream(s) of its Config-{index}-FeatureBodies are not \
+                 decoded."
+            ))
+        })
+        .collect()
+}
+
 /// The loss for `unreadable` of `total` imported body streams.
 fn imported_bodies_loss(
     unreadable: usize,
@@ -2808,10 +2842,14 @@ fn try_decode_brep(
         decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
+    let taken = takes_local_bodies
+        .then(|| {
+            configuration_index(streams[selected].source_stream().as_str())
+                .or_else(|| container::active_configuration_index(scan))
+        })
+        .flatten();
     if takes_local_bodies {
-        let configuration = configuration_index(streams[selected].source_stream().as_str())
-            .or_else(|| container::active_configuration_index(scan));
-        merge_local_bodies(ctx, scan, configuration, &mut decoded)?;
+        merge_local_bodies(ctx, scan, taken, &mut decoded)?;
     }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
@@ -2828,6 +2866,11 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate)?;
     }
+    decoded.losses.extend(untaken_local_bodies_losses(
+        scan,
+        taken,
+        &configuration_bodies,
+    ));
     merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
     let report = build_geometry_report(
         ctx,

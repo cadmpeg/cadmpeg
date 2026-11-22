@@ -516,6 +516,7 @@ fn an_empty_partition_takes_the_bodies_of_its_imported_features() {
     let decoded = decode(source);
 
     assert!(decoded.report().geometry_transferred());
+    assert!(untaken_imported_bodies(&decoded).is_empty());
     assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     assert_eq!(decoded.ir().geometry.faces.len(), 2);
     let ids: std::collections::BTreeSet<_> = decoded
@@ -611,6 +612,27 @@ fn imported_bodies_stay_out_while_another_site_has_geometry() {
         decoded.ir().geometry.bodies.len(),
         alone.ir().geometry.bodies.len()
     );
+    assert_eq!(
+        untaken_imported_bodies(&decoded),
+        [
+            "configuration index 1: its partition holds no body, and the 1 imported body \
+          stream(s) of its Config-1-FeatureBodies are not decoded."
+        ]
+    );
+}
+
+/// The messages of the losses of imported bodies that the decode does not
+/// take.
+fn untaken_imported_bodies(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<&str> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+        })
+        .map(|loss| loss.message.as_str())
+        .collect()
 }
 
 #[test]
@@ -632,6 +654,13 @@ fn imported_bodies_of_another_configuration_are_not_taken() {
     let decoded = decode(source);
 
     assert!(decoded.ir().geometry.bodies.is_empty());
+    assert_eq!(
+        untaken_imported_bodies(&decoded),
+        [
+            "configuration index 1: its partition holds no body, and the 1 imported body \
+          stream(s) of its Config-1-FeatureBodies are not decoded."
+        ]
+    );
 }
 
 #[test]

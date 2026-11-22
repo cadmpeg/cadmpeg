@@ -196,7 +196,7 @@ fn not_stored(configuration: &DesignConfiguration, stale: bool) -> LossNote {
         ", so its state is not stated"
     };
     SldprtLossCode::ConfigStateNotStored.note(format!(
-        "configuration {} ({:?}): the file stores no geometry of it{flag}.",
+        "configuration {} ({:?}): the file stores no partition of it{flag}.",
         configuration.id, configuration.name
     ))
 }
