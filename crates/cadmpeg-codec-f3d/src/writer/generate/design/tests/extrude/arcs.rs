@@ -33,8 +33,8 @@ use super::super::sketch::{feature_id, frame, picked, point2, principal, sketch_
 use super::super::{loss, write, write_bytes};
 use super::holes::{depth, links, mint, named_faces, tracked_sides};
 use super::{
-    blind, entry, kinds, planned, reference_at, sketch_and_extrude_of, u32_at, u64_at, SIDE,
-    TOLERANCE,
+    blind, curve_entity, entry, kinds, planned, reference_at, sketch_and_extrude_of, u32_at,
+    u64_at, SIDE, TOLERANCE,
 };
 
 /// A curve of a planned test sketch, in cm.
@@ -91,6 +91,7 @@ fn drawn<'a>(
         planned.curves.push(PlannedCurve {
             geometry,
             construction: false,
+            entity: curve_entity(planned.curves.len()),
         });
     }
     planned

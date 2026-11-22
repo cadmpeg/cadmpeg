@@ -27,7 +27,7 @@ use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::Length;
-use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 
 use super::super::extrude::profile::{profile, LoopEntry, ProfileLoop};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
@@ -797,6 +797,7 @@ fn planned<'a>(
                 end: points.len() - 1,
             },
             construction: false,
+            entity: curve_entity(curves.len()),
         });
     }
     PlannedSketch {
@@ -810,6 +811,11 @@ fn planned<'a>(
         candidates: Vec::new(),
         dimensions: Vec::new(),
     }
+}
+
+/// The design entity of planned curve `index` in a test plan.
+fn curve_entity(index: usize) -> SketchEntityId {
+    SketchEntityId::mint(format!("test:design:entity#curve-{index}")).expect("identity grammar")
 }
 
 fn entry(curve: usize, reversed: bool) -> LoopEntry {
@@ -878,6 +884,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
                 radius: 1.0,
             },
             construction: false,
+            entity: curve_entity(0),
         }],
         relations: Vec::new(),
         candidates: Vec::new(),

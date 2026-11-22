@@ -5,7 +5,7 @@
 //! which extrude the writer writes with its state and its names, and why it
 //! writes the Base Feature otherwise.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -22,14 +22,14 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
-use cadmpeg_ir::sketches::SketchId;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
 use super::parameters::{OwnedParameter, ParameterPlan};
 use super::sketch::{CurveGeometry, PlannedSketch, SketchPlan};
 
-use profile::{profile, ProfileLoop};
+use profile::{profile, profile_of, ProfileLoop};
 
 pub(super) mod profile;
 
@@ -178,16 +178,24 @@ fn typed_extrude<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a Extru
 
 const NOT_WRITTEN: &str = "its sketch is not written";
 
-/// The sketch that `picks` take: one pick of the sketch, or picks of regions
-/// of one sketch whose rings use each of its curves that is no construction
-/// once, so that they are the regions the walk of row 5 finds (§6.1,
-/// "Profiles and regions": construction entities bound no region).
-fn picked_sketch<'a>(target: &CadIr, picks: &'a [Picked]) -> Result<&'a SketchId, &'static str> {
+/// The curves of the regions a profile picks; `None` where it picks its
+/// whole sketch.
+type RegionCurves<'a> = Option<HashSet<&'a SketchEntityId>>;
+
+/// The sketch that `picks` take, and the curves of its picked regions: one
+/// pick of the sketch, whose walk takes every curve that is no construction,
+/// or picks of regions of one sketch, whose rings name such curves only
+/// (§6.1, "Profiles and regions": construction entities bound no region),
+/// and whose walk takes those curves.
+fn picked_sketch<'a>(
+    target: &CadIr,
+    picks: &'a [Picked],
+) -> Result<(&'a SketchId, RegionCurves<'a>), &'static str> {
     let sketch = match picks {
         [Picked {
             target: PickTarget::Sketch(sketch),
             ..
-        }] => return Ok(sketch),
+        }] => return Ok((sketch, None)),
         [Picked {
             target: PickTarget::SketchRegion { sketch, .. },
             ..
@@ -203,12 +211,12 @@ fn picked_sketch<'a>(target: &CadIr, picks: &'a [Picked]) -> Result<&'a SketchId
             _ => return Err(NOT_WRITTEN),
         }
     }
-    let mut used = rings
+    let used = rings
         .iter()
         .map(|usage| usage.fragment.is_none().then_some(&usage.entity))
-        .collect::<Option<Vec<_>>>()
+        .collect::<Option<HashSet<_>>>()
         .ok_or("its profile picks fragments of curves")?;
-    let mut curves = target
+    let curves = target
         .design
         .sketch_entities
         .iter()
@@ -221,15 +229,11 @@ fn picked_sketch<'a>(target: &CadIr, picks: &'a [Picked]) -> Result<&'a SketchId
                 )
         })
         .map(|entity| &entity.id)
-        .collect::<Vec<_>>();
-    used.sort();
-    curves.sort();
-    if used != curves {
-        return Err(
-            "its profile picks regions that are not every region its sketch's curves bound",
-        );
+        .collect::<HashSet<_>>();
+    if !used.is_subset(&curves) {
+        return Err("its profile picks a curve that is construction or not in its sketch");
     }
-    Ok(sketch)
+    Ok((sketch, Some(used)))
 }
 
 /// What the rows read.
@@ -264,10 +268,15 @@ impl<'a> Input<'a, '_> {
         };
         self.rollback()?;
         self.current(&body.id)?;
-        let (sketch, after) = self.sketch()?;
+        let (sketch, after, region) = self.sketch()?;
         let planned = &self.sketches.items[sketch];
         let linear = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
-        let loops = profile(planned, linear / MM_PER_CM)?;
+        let loops = match &region {
+            None => profile(planned, linear / MM_PER_CM)?,
+            Some(curves) => profile_of(planned, linear / MM_PER_CM, |curve| {
+                curves.contains(&curve.entity)
+            })?,
+        };
         if planned.mirrored {
             return Err("its sketch is written mirrored on its origin plane");
         }
@@ -391,14 +400,15 @@ impl<'a> Input<'a, '_> {
     }
 
     /// Row 4: the profile is one written sketch before the extrude, picked
-    /// whole or by regions that its walk finds (`picked_sketch`). Returns
-    /// its position in the plan and the number of written sketches before
-    /// the extrude.
-    fn sketch(&self) -> Result<(usize, usize), &'static str> {
-        let Picks::Named(members) = &self.extrude.profile.picks else {
+    /// whole or by regions (`picked_sketch`). Returns its position in the
+    /// plan, the number of written sketches before the extrude, and the
+    /// curves of its picked regions.
+    fn sketch(&self) -> Result<(usize, usize, RegionCurves<'a>), &'static str> {
+        let extrude: &'a Extrude = self.extrude;
+        let Picks::Named(members) = &extrude.profile.picks else {
             return Err(NOT_WRITTEN);
         };
-        let sketch = picked_sketch(self.target, members.as_slice())?;
+        let (sketch, region) = picked_sketch(self.target, members.as_slice())?;
         let owner = self
             .target
             .design
@@ -427,7 +437,7 @@ impl<'a> Input<'a, '_> {
             .iter()
             .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
             .count();
-        Ok((index, after))
+        Ok((index, after, region))
     }
 
     /// Row 7: along or against the profile normal from the profile plane,

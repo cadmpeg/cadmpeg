@@ -139,6 +139,8 @@ impl CurveGeometry {
 pub(super) struct PlannedCurve {
     pub(super) geometry: CurveGeometry,
     pub(super) construction: bool,
+    /// The design entity the curve writes.
+    pub(super) entity: SketchEntityId,
 }
 
 /// The kind of a written relation.
@@ -557,6 +559,7 @@ impl<'a> PlannedSketch<'a> {
                             planned.curves.push(PlannedCurve {
                                 geometry,
                                 construction: entity.construction == Some(true),
+                                entity: entity.id.clone(),
                             });
                         }
                         Err(reason) => notes.omit(entity.id.to_string(), reason),
