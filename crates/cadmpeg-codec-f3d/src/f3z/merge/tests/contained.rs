@@ -1462,3 +1462,195 @@ fn placements_of_one_shared_member_each_take_their_own_contained_pose() {
         assert!((x - expected).abs() < 1e-9, "placement {placement}: {x}");
     }
 }
+
+/// A holder member placed `holders` times, each instance holding one
+/// insertion of a nested member that a top-level occurrence also places. The
+/// nested member's leaf part sits at 7 mm. The holder's carrier stores the
+/// part at (3, 4, 5) cm in the holder's frame. Returns the model, the
+/// holder's reference table with the occurrences that place the holder, and
+/// the member instance scopes.
+fn nested_member_placed_several_times(
+    holders: usize,
+) -> (
+    cadmpeg_ir::CadIr,
+    Vec<(OccurrenceId, crate::xref::XrefTable)>,
+    crate::f3z::merge::InstanceScopes,
+) {
+    const REFERENCE: &str = "f3d:xref/holder-0/xref:reference#0-occurrence-0";
+    const PART: &str = "f3d:xref/part-top/Design/BulkStream.dat:design-component-occurrence#496";
+    let definition = |id: &str| {
+        ProductDefinition::new(
+            cadmpeg_ir::ids::ProductDefinitionId::mint(id).unwrap(),
+            Storage::Embedded,
+        )
+    };
+    let mut pose = retained(12, 496, &[], translation(3.0, 4.0, 5.0));
+    let mut bytes = pose.frame_bytes.to_vec();
+    let mut at = 24;
+    for _ in 0..2 {
+        crate::bytes::take_reference(&bytes, &mut at).unwrap();
+        at += 4;
+    }
+    bytes.splice(at..at + 11, inline_local(8506, PLACEMENT));
+    pose.frame_bytes = bytes.into();
+    let mut reference = reference(vec![pose]);
+    reference.id = REFERENCE.to_owned();
+    let mut root = definition("f3d:model:component#root");
+    let mut holder = definition("f3d:xref/holder-0/model:component#root");
+    let mut nested = definition("f3d:xref/part-top/model:component#root");
+    let mut scopes = crate::f3z::merge::InstanceScopes::new();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut tables = Vec::new();
+    let place = |ir: &mut cadmpeg_ir::CadIr,
+                 id: &str,
+                 native: Option<&str>,
+                 x: f64,
+                 prototype: &ProductDefinition| {
+        let mut placed = occurrence(id, native, x);
+        placed.prototype = prototype.id.clone();
+        ir.model.occurrences.push(placed);
+        OccurrenceId::mint(id).unwrap()
+    };
+    let top = place(
+        &mut ir,
+        "f3d:model:occurrence#xref-9-0",
+        Some("f3d:xref:reference#9-occurrence-0"),
+        200.0,
+        &nested,
+    );
+    scopes.insert(top.clone(), "f3d:xref/part-top".to_owned());
+    root.occurrences.push(top);
+    let leaf = place(
+        &mut ir,
+        "f3d:xref/part-top/model:occurrence#leaf",
+        Some(PART),
+        7.0,
+        &definition("f3d:xref/part-top/model:component#leaf"),
+    );
+    nested.occurrences.push(leaf);
+    for instance in 0..holders {
+        let boundary = place(
+            &mut ir,
+            &format!("f3d:model:occurrence#xref-0-{instance}"),
+            Some(&format!("f3d:xref:reference#0-occurrence-{instance}")),
+            0.0,
+            &holder,
+        );
+        if instance == 1 {
+            ir.model.occurrences.last_mut().unwrap().transform = Transform::affine([
+                [0.0, -1.0, 0.0, 100.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]);
+        }
+        let scope = format!("f3d:xref/holder-{instance}");
+        scopes.insert(boundary.clone(), scope.clone());
+        root.occurrences.push(boundary.clone());
+        let insertion = place(
+            &mut ir,
+            &format!("{scope}/model:occurrence#insertion"),
+            Some(REFERENCE),
+            0.0,
+            &nested,
+        );
+        scopes.insert(insertion.clone(), format!("{scope}/xref/part"));
+        holder.occurrences.push(insertion);
+        let leaf = place(
+            &mut ir,
+            &format!("{scope}/xref/part/model:occurrence#leaf"),
+            Some(PART),
+            7.0,
+            &definition("f3d:xref/part-top/model:component#leaf"),
+        );
+        nested.occurrences.push(leaf);
+        tables.push((
+            boundary,
+            crate::xref::XrefTable {
+                references: vec![reference.clone()],
+                ..Default::default()
+            },
+        ));
+    }
+    ir.model.product_definitions = vec![root, holder, nested];
+    crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
+        native.design_component_occurrences = vec![local_carrier(PART, 496)];
+        native.xref_references = vec![reference];
+    });
+    (ir, tables, scopes)
+}
+
+/// Places the holder boundaries of [`nested_member_placed_several_times`] and
+/// checks that each holder instance's part takes the carrier's pose in that
+/// holder's frame, while the top-level placement of the nested member keeps
+/// its part.
+fn assert_each_holder_places_its_nested_part(holders: usize) {
+    let (mut ir, tables, scopes) = nested_member_placed_several_times(holders);
+    let mut losses = Vec::new();
+    super::super::place_member_boundary_poses(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut ir,
+        &tables,
+        &mut losses,
+        &mut std::collections::BTreeSet::new(),
+        &scopes,
+    )
+    .unwrap();
+    let at = |id: &str| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id.as_str() == id)
+            .unwrap()
+            .transform
+            .unwrap()
+    };
+    assert!((at("f3d:xref/part-top/model:occurrence#leaf").rows()[0][3] - 7.0).abs() < 1e-9);
+    for instance in 0..holders {
+        let boundary = at(&format!("f3d:model:occurrence#xref-0-{instance}"));
+        let insertion = at(&format!(
+            "f3d:xref/holder-{instance}/model:occurrence#insertion"
+        ));
+        let leaf = at(&format!(
+            "f3d:xref/holder-{instance}/xref/part/model:occurrence#leaf"
+        ));
+        assert_eq!(insertion.rows(), Transform::identity().rows());
+        let world = boundary
+            .compose(insertion)
+            .and_then(|frame| frame.compose(leaf))
+            .unwrap();
+        let expected = if instance == 1 {
+            [60.0, 30.0, 50.0]
+        } else {
+            [30.0, 40.0, 50.0]
+        };
+        for (row, expected) in world.rows().iter().zip(expected) {
+            assert!(
+                (row[3] - expected).abs() < 1e-9,
+                "holder {instance}: {:?}",
+                world.rows()
+            );
+        }
+    }
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::XrefContainedPose.kind())
+            .count(),
+        holders
+    );
+}
+
+/// A holder member placed once holds an insertion of a member that a
+/// top-level occurrence also places: the nested member's part sits in the
+/// insertion whose instance scope names it.
+#[test]
+fn a_member_boundary_places_a_nested_member_that_another_occurrence_also_places() {
+    assert_each_holder_places_its_nested_part(1);
+}
+
+/// A holder member placed twice: each holder placement places the part of its
+/// own nested member instance in its own frame.
+#[test]
+fn a_member_boundary_places_the_nested_member_in_each_placement_of_its_holder() {
+    assert_each_holder_places_its_nested_part(2);
+}

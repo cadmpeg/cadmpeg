@@ -244,22 +244,14 @@ impl MergeSession<'_, '_> {
             &mut parent_report.losses,
             self.instance_scopes,
         )?;
-        // The carriers of a design that a member holds name its own nested
-        // placements; their parents stay the ones the identities give.
-        for (boundary, member_table) in &self.component_path_tables {
-            left_identity += place_contained_poses_in_members(
-                self.ctx,
-                parent_ir,
-                member_table,
-                &mut parent_report.losses,
-                &mut self.operation_protected,
-                PoseScope {
-                    pass: ContainedPass::Ordered,
-                    boundary: Some(boundary),
-                    instance_scopes: &InstanceScopes::new(),
-                },
-            )?;
-        }
+        left_identity += place_member_boundary_poses(
+            self.ctx,
+            parent_ir,
+            &self.component_path_tables,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+            self.instance_scopes,
+        )?;
         left_identity += place_contained_poses_in_members(
             self.ctx,
             parent_ir,
@@ -1390,6 +1382,38 @@ fn place_contained_poses_with_protected(
             instance_scopes: &InstanceScopes::new(),
         },
     )
+}
+
+/// Places the occurrences inside each archive member placement by the
+/// component-path carriers of the member's own design (`tables`, each with
+/// the occurrence that places the member). A carrier states its pose in the
+/// frame of that placement. The occurrences of a nested member that several
+/// occurrences place sit in the placement whose instance scope
+/// (`instance_scopes`) they are in.
+fn place_member_boundary_poses(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    tables: &[(cadmpeg_ir::ids::OccurrenceId, XrefTable)],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    instance_scopes: &InstanceScopes,
+) -> Result<usize, CodecError> {
+    let mut left_identity = 0usize;
+    for (boundary, table) in tables {
+        left_identity += place_contained_poses_in_members(
+            ctx,
+            ir,
+            table,
+            losses,
+            protected,
+            PoseScope {
+                pass: ContainedPass::Ordered,
+                boundary: Some(boundary),
+                instance_scopes,
+            },
+        )?;
+    }
+    Ok(left_identity)
 }
 
 /// Which carriers one placement pass reads and how it resolves the placement
