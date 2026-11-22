@@ -276,17 +276,11 @@ pub(crate) fn decode_recipe_references(
     }
 }
 
-/// The operand start of each persistent name of a standard recipe prefix
-/// whose operands carry several names, keyed by the name's prefix offset.
-///
-/// The word at offset 18 counts the operands. Each operand opens with a word
-/// counting its names; the standard frame reads that word as the first name's
-/// selector. A prefix whose operands each carry one name, or whose counted
-/// operands do not end exactly at the reference suffix, has no such starts.
+/// Preserve the operand ordinal when its names expand to several references.
 fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
     let operand_count = View::u32_le_at(prefix, 18).map(index_from_u32)?;
     let mut starts = HashMap::new();
-    let mut names_total = 0usize;
+    let mut references_total = 0usize;
     let mut at = 22usize;
     for _ in 0..operand_count {
         let names = View::u32_le_at(prefix, at)
@@ -295,11 +289,14 @@ fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
         let start = at;
         for _ in 0..names {
             starts.insert(at, start);
-            at = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?.next;
+            let name =
+                scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?;
+            references_total = references_total.checked_add(name.reference_count)?;
+            at = name.next;
         }
-        names_total = names_total.checked_add(names)?;
     }
-    (names_total > operand_count && recipe_reference_suffix(prefix.get(at..)?)).then_some(starts)
+    (references_total > operand_count && recipe_reference_suffix(prefix.get(at..)?))
+        .then_some(starts)
 }
 
 fn decode_standard_recipe_references(

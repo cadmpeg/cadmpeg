@@ -34,6 +34,10 @@ class LayoutCheck(harness.FixtureCase):
     def results(self, **options):
         return harness.run_check(check, self.repo.context(**options))
 
+    def test_layout_command_targets_the_layout_crate(self) -> None:
+        self.assertEqual(check.TEST, ["cargo", "test", "-q", "-p", "cadmpeg-layout-tables"])
+        self.assertIn("crates/cadmpeg-layout-tables/", check.GENERATOR)
+
     def test_untouched_passes(self) -> None:
         self.repo.commit({"README.md": "x\n"})
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
