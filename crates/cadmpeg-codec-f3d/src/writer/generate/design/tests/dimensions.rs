@@ -8,10 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
 };
-use cadmpeg_ir::design::parameter::DesignParameter;
+use cadmpeg_ir::design::parameter::{
+    DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner,
+};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::PrincipalEntity;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
@@ -376,6 +379,8 @@ struct WrittenFrame {
     prefix: String,
     text: String,
     measurement: Vec<u8>,
+    /// The text frame's style byte and four style values.
+    style: (u8, [f32; 4]),
 }
 
 fn utf16(bytes: &[u8], at: &mut usize) -> String {
@@ -421,7 +426,15 @@ fn written_frames(design: &Segment) -> Vec<WrittenFrame> {
             assert_eq!(bytes[at], 0, "record {index}: no property block");
             at += 1;
             let measured = bytes[at..at + measurement].to_vec();
-            at += measurement + 91;
+            at += measurement;
+            let style = (
+                bytes[at],
+                [0, 1, 2, 3].map(|value| {
+                    let from = at + 1 + 4 * value;
+                    f32::from_le_bytes(bytes[from..from + 4].try_into().expect("four bytes"))
+                }),
+            );
+            at += 91;
             let prefix = utf16(bytes, &mut at);
             let text = utf16(bytes, &mut at);
             frames.push(WrittenFrame {
@@ -429,6 +442,7 @@ fn written_frames(design: &Segment) -> Vec<WrittenFrame> {
                 prefix,
                 text,
                 measurement: measured,
+                style,
             });
         }
     }
@@ -724,4 +738,383 @@ fn the_residual_note_names_the_ordinals_suffixes_and_angular_point_order() {
     ] {
         assert!(note.contains(named), "{named}: {note}");
     }
+}
+
+/// The driven state of each decoded constraint bound to a parameter, by the
+/// parameter's name.
+fn driving(decoded: &CadIr) -> BTreeMap<String, Option<bool>> {
+    decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| {
+            let (_, id) = binding(constraint.definition.kind())?;
+            let name = decoded
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)?
+                .name
+                .clone();
+            Some((name, constraint.driving))
+        })
+        .collect()
+}
+
+/// The ten-byte expression trailer of each written dimension parameter, by
+/// the parameter's name, read in the eleven-byte discriminated form of the
+/// parameter type's version 8 (f3d.md §3.1).
+fn dimension_trailers(design: &Segment) -> BTreeMap<String, Vec<u8>> {
+    let mut trailers = BTreeMap::new();
+    for index in records_of(design, "7A6A3D31") {
+        let bytes = design.record(index);
+        let mut at = 27;
+        utf16(bytes, &mut at);
+        at += 4;
+        at += if bytes[at] == 1 { 11 } else { 1 };
+        utf16(bytes, &mut at);
+        let trailer = bytes[at..at + 10].to_vec();
+        at += 10;
+        if !utf16(bytes, &mut at).contains("Dimension") {
+            continue;
+        }
+        at += 4;
+        utf16(bytes, &mut at);
+        trailers.insert(utf16(bytes, &mut at), trailer);
+    }
+    trailers
+}
+
+/// The design parameter `key` of `ir`.
+fn parameter_mut<'a>(ir: &'a mut CadIr, key: &str) -> &'a mut DesignParameter {
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id(key))
+        .expect("the parameter")
+}
+
+/// A second aligned distance `key` from `l1` to `l3`, bound to the
+/// parameter `bound_to`.
+fn add_gap_dimension(ir: &mut CadIr, key: &str, bound_to: &str) {
+    let operand = |name: &str| {
+        cadmpeg_ir::design::ops::sketch::Operand::Entity(super::sketch::entity_id(SKETCH, name))
+    };
+    ir.design
+        .sketch_constraints
+        .push(cadmpeg_ir::design::ops::sketch::SketchConstraint {
+            id: constraint_id(SKETCH, key),
+            sketch: super::sketch::sketch_id(SKETCH),
+            relation: SketchRelation::Distance {
+                a: operand("l1"),
+                b: operand("l3"),
+                along: Some(DistanceAxis::Aligned),
+                doubled: None,
+                value: bound(bound_to),
+            },
+            name: None,
+            active: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
+            native_ref: None,
+        });
+}
+
+fn drive(ir: &mut CadIr, key: &str) {
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id(key))
+        .expect("the parameter")
+        .definition = ParameterDefinition::Driven;
+}
+
+#[test]
+fn driven_and_driving_dimensions_read_back_with_their_state() {
+    // `Gap` (an aligned distance of 20 mm) and `Hole` (a diameter of 8 mm)
+    // are driven; the other five dimensions are driving.
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    drive(&mut ir, "hole");
+    let (report, decoded, bytes) = write_bytes(&ir);
+    let omitted = omitted(&report);
+    for (constraint, _) in DIMENSIONS {
+        assert!(
+            !omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterParameterOmitted.kind().to_string()
+        )
+        .is_empty(),
+        "{:#?}",
+        report.losses
+    );
+    let states = driving(&decoded);
+    for (_, name) in DIMENSIONS {
+        let expected = matches!(name, "Gap" | "Hole").then_some(false);
+        assert_eq!(states.get(name), Some(&expected), "{name}: {states:#?}");
+    }
+    for (name, millimetres) in [("Gap", 20.0), ("Hole", 8.0)] {
+        let parameter = decoded
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(
+            Some(parameter.expression.as_str()),
+            super::super::expression::quantity_literal(millimetres, Some(UnitSymbol::Mm))
+                .as_deref(),
+            "{name}"
+        );
+    }
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1"));
+    let driven = frames
+        .iter()
+        .filter(|frame| frame.style.0 == 1)
+        .map(|frame| (frame.mask, frame.prefix.as_str(), frame.text.as_str()))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        driven,
+        BTreeSet::from([(0x4000, "", "20.00 mm"), (0x1_0000, "\u{d8}", "8.00 mm")])
+    );
+    for frame in &frames {
+        let values = if frame.style.0 == 1 {
+            [0.25, 0.25, 0.25, 1.0]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
+        assert_eq!(frame.style.1, values, "mask {:#x}", frame.mask);
+    }
+    assert_eq!(frames.len(), DIMENSIONS.len());
+    let trailers = dimension_trailers(&segment(&bytes, "FusionDesignSegmentType1"));
+    for (_, name) in DIMENSIONS {
+        let mut expected = vec![0; 10];
+        expected[6] = u8::from(matches!(name, "Gap" | "Hole"));
+        assert_eq!(trailers.get(name), Some(&expected), "{name}");
+    }
+}
+
+#[test]
+fn a_dimension_whose_parameter_is_not_in_the_design_is_omitted() {
+    let mut ir = on_xy();
+    ir.design
+        .parameters
+        .retain(|parameter| parameter.id != parameter_id("up"));
+    let (report, decoded) = write(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "{}: its parameter is not written as a length",
+            constraint_id(SKETCH, "up")
+        )),
+        "{omitted}"
+    );
+    assert!(driving(&decoded).contains_key("Gap"));
+}
+
+#[test]
+fn a_driven_parameter_shared_by_two_dimensions_is_written_with_the_first() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    add_gap_dimension(&mut ir, "gap_again", "gap");
+    let (report, decoded) = write(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "{}: an earlier dimension owns its driven parameter",
+            constraint_id(SKETCH, "gap_again")
+        )),
+        "{omitted}"
+    );
+    assert!(
+        !omitted.contains(&format!("{}:", constraint_id(SKETCH, "gap"))),
+        "{omitted}"
+    );
+    assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
+}
+
+#[test]
+fn a_driven_parameter_without_a_cached_value_states_the_measurement() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    parameter_mut(&mut ir, "gap").value = None;
+    let (_, decoded) = write(&ir);
+    let gap = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Gap")
+        .expect("Gap");
+    assert_eq!(
+        Some(gap.expression.as_str()),
+        super::super::expression::quantity_literal(20.0, Some(UnitSymbol::Mm)).as_deref()
+    );
+    assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
+}
+
+/// The record of a driven dimension's parameter keeps the literal its source
+/// record stores (the source setting `f3d:literal`, 21 mm), which differs
+/// from the measured value (20 mm, the parameter's value) that its frame
+/// states. Read back, the parameter is `Driven` with the measured value, and
+/// keeps the literal.
+#[test]
+fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
+    use cadmpeg_ir::design::options::NativeOption;
+    let literal = || {
+        NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new("21 mm".to_owned()).expect("nonblank"),
+        ))
+    };
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    parameter_mut(&mut ir, "gap")
+        .source_settings
+        .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
+    let (_, decoded, bytes) = write_bytes(&ir);
+    let gap = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Gap")
+        .expect("Gap");
+    assert_eq!(gap.expression, "21 mm");
+    assert!(
+        matches!(gap.value, Some(ParameterValue::Length(length))
+            if (length.get() - 21.0).abs() < TOLERANCE),
+        "{:?}",
+        gap.value
+    );
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1"));
+    let driven = frames
+        .iter()
+        .filter(|frame| frame.style.0 == 1)
+        .collect::<Vec<_>>();
+    let [frame] = driven.as_slice() else {
+        panic!("one driven frame")
+    };
+    assert_eq!(frame.text, "20.00 mm");
+    assert!((f64_at(&frame.measurement, 97) - 2.0).abs() < TOLERANCE);
+    let gap = decoded
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("Gap")
+        })
+        .expect("Gap in the design");
+    assert!(matches!(gap.definition, ParameterDefinition::Driven));
+    assert!(
+        matches!(gap.value, Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value))
+            if (value.get() - 20.0).abs() < TOLERANCE),
+        "{:?}",
+        gap.value
+    );
+    assert_eq!(
+        gap.source_settings
+            .get(crate::design_v11::parameters::LITERAL)
+            .cloned(),
+        Some(literal())
+    );
+}
+
+#[test]
+fn a_driven_parameter_of_another_quantity_is_named_with_its_dimension() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    parameter_mut(&mut ir, "gap").kind = ValueKind::Quantity(Quantity::ANGLE);
+    let (report, decoded) = write(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "{}: its driven parameter is of another quantity",
+            constraint_id(SKETCH, "gap")
+        )),
+        "{omitted}"
+    );
+    let untaken = loss(
+        &report,
+        &F3dLossCode::WriterParameterOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(
+        untaken.contains("no written dimension binds these")
+            && untaken.contains(parameter_id("gap").as_str()),
+        "{untaken}"
+    );
+    assert!(!driving(&decoded).contains_key("Gap"));
+}
+
+#[test]
+fn a_driven_parameter_keeps_its_comment_and_its_rename_is_reported() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    let gap = parameter_mut(&mut ir, "gap");
+    gap.name = cadmpeg_core::text::NonBlankString::new("Gap width".to_owned());
+    gap.comment = Some("measured".into());
+    let (report, decoded) = write(&ir);
+    let renamed = loss(&report, "export/parameter.renamed").join("\n");
+    assert!(
+        renamed.contains(&format!(
+            "{} (`Gap width` -> `Gap_width`)",
+            parameter_id("gap")
+        )),
+        "{renamed}"
+    );
+    assert!(crate::test_support::native_test::f3d_native(&decoded)
+        .design_parameters
+        .iter()
+        .any(
+            |parameter| parameter.name() == "Gap_width" && parameter.comment() == Some("measured")
+        ));
+    assert_eq!(driving(&decoded).get("Gap_width"), Some(&Some(false)));
+}
+
+#[test]
+fn a_claimed_driving_parameter_keeps_its_comment() {
+    let mut ir = on_xy();
+    parameter_mut(&mut ir, "up").comment = Some("rise".into());
+    let (_, decoded) = write(&ir);
+    assert!(crate::test_support::native_test::f3d_native(&decoded)
+        .design_parameters
+        .iter()
+        .any(|parameter| parameter.name() == "Up" && parameter.comment() == Some("rise")));
+    assert_eq!(driving(&decoded).get("Up"), Some(&None));
+}
+
+#[test]
+fn a_driven_parameter_names_its_owner_and_its_display_with_its_dimension() {
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let gap = parameter_mut(&mut ir, "gap");
+    gap.owner = Some(ParameterOwner::Container(timeline.clone()));
+    gap.display = Some(DimensionDisplay::Radius);
+    let (report, decoded) = write(&ir);
+    let unwritable = loss(&report, "export/value.unwritable");
+    let named = |reason: &str, entry: String| {
+        assert!(
+            unwritable
+                .iter()
+                .any(|message| message.contains(reason) && message.contains(&entry)),
+            "{reason}: {unwritable:#?}"
+        );
+    };
+    named(
+        "driven parameters as parameters of their dimensions without their owners",
+        format!("{} (owner container {timeline})", parameter_id("gap")),
+    );
+    named(
+        "driven parameters without their diameter or radius display presentation",
+        format!("{} (Radius)", parameter_id("gap")),
+    );
+    assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
 }

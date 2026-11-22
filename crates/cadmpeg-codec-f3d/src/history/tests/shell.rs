@@ -483,7 +483,7 @@ fn bounded_shell_member(
             fields.extend([3, fan[0], -1, fan[1], -1, fan[2], -1, 0, 0, -1]);
         }
         let structure = crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
                 .unwrap()
                 .unwrap()
         });

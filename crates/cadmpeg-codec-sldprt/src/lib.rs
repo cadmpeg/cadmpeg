@@ -304,6 +304,7 @@ impl SldprtCodec {
             written,
             claims: _,
             source: _,
+            losses,
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let native = ir
@@ -339,6 +340,7 @@ impl SldprtCodec {
             stale_solid,
             unwritten_edits,
             unwritten,
+            losses,
         })
     }
 }
@@ -430,6 +432,8 @@ enum Written {
         unwritten_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
         /// The metadata attributes the write did not write.
         unwritten: writer::UnwrittenAttributes,
+        /// The losses of the history the write prepared.
+        losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }
 

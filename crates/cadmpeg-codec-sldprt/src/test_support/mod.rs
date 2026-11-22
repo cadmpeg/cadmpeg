@@ -368,6 +368,7 @@ pub(crate) mod nist;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod readback;
+pub(crate) mod sketch_records;
 pub(crate) mod surfaces;
 pub(crate) mod swift;
 pub(crate) mod tessellation;

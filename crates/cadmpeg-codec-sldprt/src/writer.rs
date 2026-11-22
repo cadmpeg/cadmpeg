@@ -84,6 +84,8 @@ pub(crate) struct SemanticOutput {
     /// The retained source image decoded again, when the write compared the
     /// document with it.
     pub(crate) source: Option<cadmpeg_ir::codec::Decoded>,
+    /// The losses of the history the write prepared.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -192,8 +194,10 @@ pub(crate) fn write_semantic_with_records(
         &feature_name_changes,
     );
     let ir = &normalized;
-    let feature_input_renames =
-        crate::history::write::prepare_features_for_write(ir, &mut native, &mut edits)?;
+    let crate::history::write::features::PreparedFeatures {
+        renames: feature_input_renames,
+        losses: history_losses,
+    } = crate::history::write::prepare_features_for_write(ir, &mut native, &mut edits)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native, &edits)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
@@ -492,6 +496,7 @@ pub(crate) fn write_semantic_with_records(
         written,
         claims,
         source: source_baseline,
+        losses: history_losses,
     })
 }
 

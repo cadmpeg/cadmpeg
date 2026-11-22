@@ -118,6 +118,64 @@ fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
 }
 
+/// A discriminated parameter frame whose ten-byte trailer sets the second
+/// flag byte decodes through the full decode as driven and reports the
+/// driven-flag reading.
+#[test]
+fn ten_byte_trailer_driven_flag_reports_its_reading() {
+    const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+    let mut frame = crate::design::test_support::parameter_record(
+        Some(0x5d),
+        "1",
+        "Linear Dimension-2",
+        None,
+        "d4",
+        1.0,
+    );
+    let expression_end = 46 + 4 + 2;
+    frame.splice(
+        expression_end..expression_end + 9,
+        [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    );
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            TAIL_TYPE_GUID,
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[19],
+        )],
+        &[],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in [("BulkStream.dat", frame), ("MetaStream.dat", metadata)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    let decoded = decode(zip.finish().unwrap().into_inner());
+    let native = f3d_native(decoded.ir());
+    let [parameter] = native.design_parameters.as_slice() else {
+        panic!("expected the one driven parameter");
+    };
+    assert_eq!(parameter.driving(), Some(false));
+    let reported = |code: crate::loss::F3dLossCode| {
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind())
+    };
+    assert!(reported(
+        crate::loss::F3dLossCode::ParameterDrivenFlagAssumed
+    ));
+    assert!(!reported(
+        crate::loss::F3dLossCode::ParameterTrailerFlagUninterpreted
+    ));
+}
+
 #[test]
 fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
     for source_kind in [

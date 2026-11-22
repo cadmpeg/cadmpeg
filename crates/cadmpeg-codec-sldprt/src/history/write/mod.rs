@@ -135,7 +135,7 @@ pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     edits: &mut SourceEdits<'_>,
-) -> Result<Vec<features::FeatureInputRename>, CodecError> {
+) -> Result<features::PreparedFeatures, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -169,7 +169,7 @@ pub(crate) fn prepare_features_for_write(
         return sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native, edits);
     }
     match (neutral_changed, native_changed) {
-        (false, _) => Ok(Vec::new()),
+        (false, _) => Ok(features::PreparedFeatures::default()),
         (true, true) => {
             let projected_model = native
                 .as_ref()
@@ -179,7 +179,7 @@ pub(crate) fn prepare_features_for_write(
                 .transpose()?
                 .unwrap_or_default();
             if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
-                Ok(Vec::new())
+                Ok(features::PreparedFeatures::default())
             } else {
                 Err(CodecError::Malformed(
                     "conflicting neutral and native SLDPRT feature edits".into(),

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::operands::bind_hole_construction_sketch_points;
+use crate::design::decode::operands::work_constructions::bind_hole_construction_sketch_points;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::work_geometry::DesignWorkPointInputCarrier;

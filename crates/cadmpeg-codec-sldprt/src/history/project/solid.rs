@@ -187,6 +187,18 @@ pub(super) fn project_extrude(
                 source: None,
             }
         }
+        // The end-spec reversal flag is the travel of a one-sided extrusion
+        // that adds material (sldprt.md §2). A cut keeps the normal, as the
+        // flag does not give its side, and a two-direction extrusion keeps it
+        // until its end caps confirm the reversal
+        // (`extrude_direction::retain_contradicted_directions`). An operation
+        // that binds later settles in `extrude_direction::settle_reversal`.
+        None if crate::history::extrude_direction::reversal_flag(&feature.properties)
+            && !matches!(op, BooleanOp::Cut | BooleanOp::Intersect)
+            && matches!(extent, ExtrudeExtent::OneSided { .. }) =>
+        {
+            cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
+        }
         None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
     };
     if matches!(direction, cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))

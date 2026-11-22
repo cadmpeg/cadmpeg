@@ -185,6 +185,14 @@ fn sync_neutral_parameters(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
     }
+    // A record entry is an editable dimension, so the parameter of a driven
+    // dimension whose reference relation the write does not write stays out
+    // of its feature's record; the export charges it.
+    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
+    let parameters = parameters
+        .into_iter()
+        .filter(|parameter| !omitted.contains(&parameter.id))
+        .collect::<Vec<_>>();
     let features = ir
         .model
         .features

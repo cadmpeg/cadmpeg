@@ -431,6 +431,8 @@ pub enum Method {
     CriticalPoints,
     /// A NURBS Bézier control-net bound.
     ControlHull,
+    /// Trimmed surface bounds refined by Bézier subdivision.
+    SurfaceSubdivision,
     /// Volume, centroid, closure and mass properties from face fluxes.
     DivergenceQuadrature,
     /// The sum of member values.

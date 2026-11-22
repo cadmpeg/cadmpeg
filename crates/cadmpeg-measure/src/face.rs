@@ -8,6 +8,7 @@ use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::Face;
 
+mod nurbs_box;
 mod pole;
 mod readings;
 
@@ -482,6 +483,37 @@ impl<'ir> FaceInput<'_, 'ir> {
                 },
             ),
             (chart, region) => {
+                let boundary_edges = self.boundary_aabb(&coedges, &boundary);
+                let mut samples = [None, None];
+                let mut dual = false;
+                if let (Ok(chart @ Chart::Nurbs(_)), Ok(region), Ok(boundary), Ok((edges, error))) =
+                    (chart, region, &boundary, boundary_edges)
+                {
+                    dual = region.rule == RegionRule::DeclaredOrientation;
+                    for (index, sampled) in
+                        samples
+                            .iter_mut()
+                            .enumerate()
+                            .take(if dual { 2 } else { 1 })
+                    {
+                        *sampled = settle(
+                            nurbs_box::bound(
+                                eval,
+                                chart,
+                                region,
+                                nurbs_box::Trims {
+                                    shapes: &boundary.shapes,
+                                    resolved: Some(&boundary.resolved),
+                                },
+                                edges,
+                                tau_b,
+                                index == 1,
+                            )
+                            .map(|(aabb, numeric)| (aabb, numeric.max(error))),
+                        )?
+                        .ok();
+                    }
+                }
                 let (bbox, aabb) = self.plain_box(
                     face,
                     &coedges,
@@ -492,9 +524,33 @@ impl<'ir> FaceInput<'_, 'ir> {
                         hull_without_region: box_work,
                         tau_b,
                         hull,
+                        sampled: samples[0],
                     },
                 );
-                (Readings::single(bbox), [aabb, None])
+                if dual {
+                    let (complement, other) = self.plain_box(
+                        face,
+                        &coedges,
+                        &boundary,
+                        PlainBox {
+                            chart,
+                            region,
+                            hull_without_region: box_work,
+                            tau_b,
+                            hull,
+                            sampled: samples[1],
+                        },
+                    );
+                    (
+                        Readings {
+                            declared: bbox,
+                            complement: Some(complement),
+                        },
+                        [aabb, other],
+                    )
+                } else {
+                    (Readings::single(bbox), [aabb, None])
+                }
             }
         };
 
@@ -784,7 +840,20 @@ impl<'ir> FaceInput<'_, 'ir> {
             hull_without_region,
             tau_b,
             hull,
+            sampled,
         } = basis;
+        if let Some((aabb, numeric)) = sampled {
+            return (
+                measured(
+                    box_value(aabb, BoxKind::Tight, None),
+                    Unit::Millimeter,
+                    Method::SurfaceSubdivision,
+                    Errors::new(numeric, tau_b),
+                    id,
+                ),
+                Some(aabb),
+            );
+        }
         match (chart, region) {
             (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), Ok(_)) => self
                 .boundary_box(
@@ -1181,6 +1250,7 @@ struct PlainBox<'a, 'ir> {
     hull_without_region: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,
+    sampled: Option<(Aabb, f64)>,
 }
 
 /// What the box of a face on a sphere or torus reads.
