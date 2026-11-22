@@ -88,6 +88,29 @@ fn solved_frame_keeps_origin_axes_and_native_construction() {
 }
 
 #[test]
+fn solved_frame_without_source_properties_charges_the_dropped_construction() {
+    let frame = FeatureCoordinateFrame::new(
+        Point3::new(12.5, -25.0, 37.5),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .unwrap();
+    let mut source = feature(LegacyOperation::DatumCoordinateSystem { frame });
+    source.source_properties.clear();
+    let mut losses = Vec::new();
+    let FeatureOperation::Datum(datum) = project(&source, &mut losses).unwrap() else {
+        panic!("datum frame")
+    };
+    assert!(datum.native_options.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.coordinate-system-construction-dropped"
+    );
+}
+
+#[test]
 fn unresolved_frames_stay_native_and_each_charge_a_loss() {
     let mut losses = Vec::new();
     for kind in ["JointOrigin", "Coordinate System"] {

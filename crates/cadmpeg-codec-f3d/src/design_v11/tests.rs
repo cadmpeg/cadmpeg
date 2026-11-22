@@ -180,7 +180,7 @@ fn an_unresolved_coordinate_frame_keeps_the_next_timeline_item() {
             .collect::<Vec<_>>(),
         [
             "feature.coordinate-system-frame-unresolved",
-            "feature.coordinate-system-construction-native",
+            "feature.coordinate-system-construction-dropped",
             "history.rollback-unread",
         ]
     );

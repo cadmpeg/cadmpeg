@@ -634,6 +634,8 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
+    /// A coordinate frame transfers without its source construction references and expressions.
+    CoordinateSystemConstructionDropped,
     /// A coordinate-system scope has an unresolved solved frame.
     CoordinateSystemFrameUnresolved,
     /// Feature history-state dependency links were not projected.
@@ -1716,6 +1718,7 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::CoordinateSystemConstructionNative,
+        Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -2702,6 +2705,9 @@ impl F3dLossCode {
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
+            }
+            Self::CoordinateSystemConstructionDropped => {
+                "feature.coordinate-system-construction-dropped"
             }
             Self::CoordinateSystemFrameUnresolved => "feature.coordinate-system-frame-unresolved",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
@@ -3718,6 +3724,7 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -4450,6 +4457,7 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -5292,6 +5300,7 @@ mod tests {
                 "configuration.property-unprojected",
                 "history.rollback-unread",
                 "feature.coordinate-system-construction-native",
+                "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",

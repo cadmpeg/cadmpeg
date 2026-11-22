@@ -10,7 +10,7 @@ use cadmpeg_ir::design::construction::{
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
-use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::{Feature, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -42,11 +42,18 @@ pub(super) fn project(feature: &Feature, losses: &mut Vec<LossNote>) -> Option<F
                 NativeOption::Text(Dimension::Literal(NonBlankString::new(value.clone())?)),
             ))
         })
-        .collect();
-    losses.push(F3dLossCode::CoordinateSystemConstructionNative.note(format!(
-        "feature {} transfers its solved coordinate frame; construction references and parameter expressions retain their source meanings",
-        feature.id
-    )));
+        .collect::<NativeOptions>();
+    losses.push(if native_options.is_empty() {
+        F3dLossCode::CoordinateSystemConstructionDropped.note(format!(
+            "feature {} transfers its solved coordinate frame without its construction references and parameter expressions",
+            feature.id
+        ))
+    } else {
+        F3dLossCode::CoordinateSystemConstructionNative.note(format!(
+            "feature {} transfers its solved coordinate frame; construction references and parameter expressions retain their source meanings",
+            feature.id
+        ))
+    });
     Some(FeatureOperation::Datum(Box::new(Datum {
         element: DatumElement::Frame(Construction {
             inputs: vec![ConstructionInput {
