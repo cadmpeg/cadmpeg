@@ -44,8 +44,7 @@ fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
 }
 
-/// A stored unit direction: the triple's squared length is one. Normalising
-/// any nonzero triple would turn subnormal or unrelated values into an axis.
+/// A direction stored with unit length.
 fn stored_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     const UNIT_TOLERANCE: f64 = 1e-9;
     let [x, y, z] = values;
@@ -472,8 +471,7 @@ fn revolution_line_reference_inputs(
         .then_some(source)
     };
     // The scalar record ends with the axis line: a point in metres and the
-    // unit direction. Values before the line (zero values and one scalar) are
-    // not the point.
+    // unit direction.
     let axis_record = |frame: usize, scalar_count: usize| {
         let record_end = frame.checked_add(scalar_count.checked_mul(8)?)?;
         let line = record_end.checked_sub(axis_line::LEN)?;

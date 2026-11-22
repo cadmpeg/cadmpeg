@@ -1237,8 +1237,8 @@ The other axis-parallel support frames include the frames of those families whos
 
 ### DI-85. Revolution axes that lie outside the profile plane
 
-**Question.** Which reading of a revolution's stored axis, or of its profile sketch's plane, is wrong where the axis read from the `moLineRef_w` record does not lie in the plane of the profile sketch?
+**Question.** Which plane does the profile sketch of a revolution lie on where the axis read from its `moLineRef_w` record lies outside the plane the decoder binds the sketch to?
 
-**Known.** The record ends with the axis line, a point and a unit direction, and the values before the line are not the point (`sldprt.md` §2). Read that way, most axes lie in their profile plane and coincide with the axis of a B-rep cylinder, cone or torus; read from the first triple, most do not. The decoder keeps an axis that still lies outside the plane, and names the revolution under `feature.revolve-axis-off-profile-plane`. Where the B-rep has a surface of revolution about the axis, the profile plane is the doubtful reading (open item DI-73); where it has none, the axis is.
+**Known.** The record ends with the axis line, a point and a unit direction (`sldprt.md` §2). The decoder keeps such an axis and names the revolution under `feature.revolve-axis-off-profile-plane`. Every such axis compared with the B-rep, 15 in 8 parts, is the axis of a B-rep cylinder, cone or torus of the part. The axes run parallel to the bound plane at an offset, or along its normal. The sketches are bound by the plane records of open item DI-73.
 
-**Need.** For each revolution named, the B-rep surfaces of revolution the feature produced compared with the stored axis and with each line of its profile sketch, the plane record that binds the sketch, and the record bytes around the scalar record where its width is not structurally fixed.
+**Need.** For each revolution named, the plane record of its profile sketch, compared with the plane through the stored axis that holds the most profile points on B-rep vertices.
