@@ -4,11 +4,12 @@
 //! "Side-face walk"), decoded back and read from the archive's Design
 //! segment.
 
+use cadmpeg_ir::design::construction::Construction;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
-use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve};
+use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve, SketchPlane};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, NativeOptions, SolidOutput, SymmetricMeasure,
@@ -30,11 +31,11 @@ use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
 use super::super::extrude::{ring, LoopEntry};
-use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
+use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch, Support};
 use super::roster::segment;
 use super::sketch::{
     datum, feature, feature_id, fixed_clock_tables, frame, picked, point2, principal, sketch_id,
-    Source,
+    unread, Source,
 };
 use super::{
     loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
@@ -370,6 +371,56 @@ fn an_extrude_design_names_no_base_feature_in_its_notes() {
 }
 
 #[test]
+fn an_extrude_design_with_workplane_items_names_no_base_feature_in_its_notes() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let mut top = Source::new(
+        "top",
+        unread(),
+        frame([0.0, 0.0, 20.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    top.entity(
+        "line",
+        PlanarCurve::Line {
+            start: point2(1.0, 1.0),
+            end: point2(3.0, 2.0),
+        },
+        &[],
+    );
+    let top = top.add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the timeline");
+    };
+    // After the Extrude, before the datum plane that holds the current state.
+    members.insert(2, Member::Feature(top));
+    let (report, decoded) = write(&ir);
+    assert!(kinds(&decoded).contains(&"extrude"), "{:#?}", report.losses);
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The WorkPlane note, whose header and item-tail entry named a Base
+    // Feature in an Extrude design.
+    let notes = messages
+        .iter()
+        .filter(|message| message.contains("writes the WorkPlane items"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one WorkPlane note: {messages:#?}");
+    };
+    for named in [
+        "whose geometry item is the Extrude",
+        "WorkPlane scope tails, placements and placement paths (evaluation epoch",
+        "as the Extrude item tail)",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
+    for message in messages {
+        assert!(!message.contains("Base Feature"), "{message}");
+    }
+}
+
+#[test]
 fn the_distance_is_an_owned_parameter_of_the_extrude() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
     let extrude = decoded_extrude(&decoded).id.clone();
@@ -414,21 +465,13 @@ fn utf16_at(bytes: &[u8], at: usize) -> (String, usize) {
     (String::from_utf16(&units).expect("UTF-16"), end)
 }
 
-/// Each parameter record is framed by the version of the type the
+/// The kind and comment of each parameter record of the archive `bytes`,
+/// asserting that each is framed by the version of the type the
 /// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header,
 /// and the nine-byte expression trailer at version 7 or the ten-byte one at
 /// version 8, whose last byte is the document flag.
-#[test]
-fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
-    let mut ir = sketch_and_extrude(blind(), false);
-    ir.design
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.id == parameter_id("width"))
-        .expect("Width")
-        .comment = Some("overall width".into());
-    let (_, _, bytes) = write_bytes(&ir);
-    let design = segment(&bytes, "FusionDesignSegmentType1");
+pub(super) fn parameter_records(bytes: &[u8]) -> Vec<(String, String)> {
+    let design = segment(bytes, "FusionDesignSegmentType1");
     let mut written = Vec::new();
     for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
         let record = design.record(index);
@@ -457,6 +500,20 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
         assert_eq!(u32_at(record, end), 0, "record {index}: the text value");
         written.push((kind, comment));
     }
+    written
+}
+
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    ir.design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id("width"))
+        .expect("Width")
+        .comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let written = parameter_records(&bytes);
     for expected in [
         ("AlongDistance", ""),
         ("TaperAngle", ""),
@@ -796,13 +853,14 @@ fn planned<'a>(
     PlannedSketch {
         feature: id,
         sketch,
-        plane: OriginPlane::Xy,
+        support: Support::Origin(OriginPlane::Xy),
         mirrored: false,
         points,
         curves,
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
+        losses: Vec::new(),
     }
 }
 
@@ -852,7 +910,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
     let circle = PlannedSketch {
         feature: &id,
         sketch: &sketch,
-        plane: OriginPlane::Xy,
+        support: Support::Origin(OriginPlane::Xy),
         mirrored: false,
         points: vec![[0.0, 0.0]],
         curves: vec![PlannedCurve {
@@ -865,6 +923,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
+        losses: Vec::new(),
     };
     assert_eq!(ring(&circle, TOLERANCE), Ok(vec![entry(0, false)]));
 }
@@ -879,6 +938,29 @@ fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
         missing.contains(&format!(
             "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the Extrude records)"
         )),
+        "{missing}"
+    );
+}
+
+#[test]
+fn an_extrude_of_a_sketch_on_a_construction_plane_stays_in_the_base_feature() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let profile = ir
+        .design
+        .sketches
+        .iter_mut()
+        .find(|sketch| sketch.id == sketch_id("profile"))
+        .expect("the profile sketch");
+    profile.plane = SketchPlane::Placed(Box::new(Construction {
+        inputs: vec![unread()],
+        resolved: Some(frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])),
+        ..Construction::default()
+    }));
+    let (report, decoded) = write(&ir);
+    assert_eq!(kinds(&decoded), ["sketch", "base"]);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(EXTRUDE) && missing.contains("its sketch lies on a construction plane"),
         "{missing}"
     );
 }

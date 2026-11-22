@@ -119,7 +119,7 @@ pub(super) fn picked(target: PickTarget) -> ConstructionInput {
     }
 }
 
-fn unread() -> ConstructionInput {
+pub(super) fn unread() -> ConstructionInput {
     ConstructionInput {
         role: None,
         reference: Some(InputReference::Picks(Selection {
@@ -249,7 +249,7 @@ impl Source {
 }
 
 /// The world position of the source sketch point `(u, v)`.
-fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
+pub(super) fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
     let origin = frame.origin.get();
     let (x_axis, y_axis) = (frame.x_axis.as_raw(), frame.y_axis.as_raw());
     [
@@ -261,8 +261,8 @@ fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
 
 /// A rectangle of four lines whose corners are four points with two roles
 /// each, on Top (`XZ`) with its x axis along +Z; a circle on Front (`XY`);
-/// an arc and a chord on Right (`YZ`); an offset sketch; and a line on `XZ`
-/// whose normal is −Y.
+/// an arc and a chord on Right (`YZ`); a sketch on a plane tilted 30° about
+/// X; and a line on `XZ` whose normal is −Y.
 fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
     let mut ir = scoped_cube();
     let mut members = vec![
@@ -428,8 +428,9 @@ fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
     frames.push(("sketch3", right));
     timeline.push(Member::Feature(sketch3.add_to(&mut ir)));
 
-    let offset = frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-    let mut sketch4 = Source::new("sketch4", unread(), offset);
+    let (sin, cos) = std::f64::consts::FRAC_PI_6.sin_cos();
+    let tilted = frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, cos, sin]);
+    let mut sketch4 = Source::new("sketch4", unread(), tilted);
     sketch4.entity("p", PlanarCurve::Point(point2(1.0, 1.0)), &[]);
     timeline.push(Member::Feature(sketch4.add_to(&mut ir)));
 
@@ -455,7 +456,7 @@ fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
 }
 
 /// The model-space position of every decoded sketch point and line end.
-fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
+pub(super) fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
     let mut points = Vec::new();
     for sketch in &decoded.model.sketches {
         let (origin, normal, u) = sketch.resolved_placement().expect("a decoded frame");
@@ -490,7 +491,7 @@ fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
     points
 }
 
-fn near(a: [f64; 3], b: [f64; 3]) -> bool {
+pub(super) fn near(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|axis| (a[axis] - b[axis]).abs() <= TOLERANCE)
 }
 
@@ -638,7 +639,7 @@ fn written_sketches_leave_evaluation_missing() {
     let note = missing[0];
     assert!(
         note.contains(&format!(
-            "{} (its sketch lies on no origin plane)",
+            "{} (its sketch lies on a plane tilted from every origin plane)",
             feature_id("sketch4")
         )),
         "{note}"
@@ -1040,7 +1041,7 @@ fn a_failure_in_the_sketch_records_keeps_the_design() {
     }
     assert!(
         missing.contains(&format!(
-            "{} (its sketch lies on no origin plane)",
+            "{} (its sketch lies on a plane tilted from every origin plane)",
             feature_id("sketch4")
         )),
         "{missing}"
@@ -1226,7 +1227,7 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
     use super::super::sketch::{plan, RelationKind, TangencyEnds};
     let mut ir = scoped_cube();
     let id = tangent_sketch().add_to(&mut ir);
-    let plan = plan(&ir, &[&id]);
+    let plan = plan(&ir, &[&id], None);
     let [item] = plan.items.as_slice() else {
         panic!("one written sketch: {:?}", plan.unwritten);
     };
@@ -1337,7 +1338,7 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
             },
         );
     let id = sketch.add_to(&mut ir);
-    let planned = plan(&ir, &[&id]);
+    let planned = plan(&ir, &[&id], None);
     let [item] = planned.items.as_slice() else {
         panic!("one written sketch: {:?}", planned.unwritten);
     };

@@ -1231,6 +1231,8 @@ pub(crate) enum F3dLossCode {
     WriterParameterOmitted,
     /// A sketch entity or constraint was not written.
     WriterSketchContentOmitted,
+    /// A sketch was written on a plane that stands for its source support.
+    WriterSketchSupportSubstituted,
     /// A configuration was not written.
     WriterConfigurationOmitted,
     /// A tessellation was not written.
@@ -2043,6 +2045,7 @@ impl F3dLossCode {
         Self::WriterJointOmitted,
         Self::WriterParameterOmitted,
         Self::WriterSketchContentOmitted,
+        Self::WriterSketchSupportSubstituted,
         Self::WriterConfigurationOmitted,
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
@@ -3188,6 +3191,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => "writer.joint-omitted",
             Self::WriterParameterOmitted => "writer.parameter-omitted",
             Self::WriterSketchContentOmitted => "writer.sketch-content-omitted",
+            Self::WriterSketchSupportSubstituted => "writer.sketch-support-substituted",
             Self::WriterConfigurationOmitted => "writer.configuration-omitted",
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
@@ -3295,6 +3299,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => Severity::Warning,
             Self::WriterParameterOmitted => Severity::Warning,
             Self::WriterSketchContentOmitted => Severity::Warning,
+            Self::WriterSketchSupportSubstituted => Severity::Warning,
             Self::WriterConfigurationOmitted => Severity::Warning,
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
@@ -4078,6 +4083,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::WriterParameterOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchContentOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchSupportSubstituted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -5581,6 +5587,7 @@ mod tests {
                 "writer.joint-omitted",
                 "writer.parameter-omitted",
                 "writer.sketch-content-omitted",
+                "writer.sketch-support-substituted",
                 "writer.configuration-omitted",
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",
