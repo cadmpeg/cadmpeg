@@ -71,12 +71,13 @@ with one frame is the degenerate chained form.
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**; observed value `0x00000004`). The decoder stores the word in the `outer_version` attribute; every value decodes (`dialect.rs`). The rest is a sequence of compressed blocks.
 
 Native compressed members use ZIP local-file-header fields with a substituted
-four-byte signature token and nibble-swapped member names. Each local header,
-each central header (§1.3) and the end-of-directory root (§1.4) begins with a
-substituted token. The decoder retains each token as opaque bytes and compares
-none of them. The rule that gives the token values, and whether the headers of
-one file share a token, are open (CM-16). The archive coordinate zero is
-absolute file offset 8. The field marker begins four bytes after the local signature. In the native
+four-byte signature token and nibble-swapped member names. The signature token
+is retained as opaque bytes. Every local header of one file carries one local
+token, every central header carries one central token (§1.3), and the
+end-of-directory root carries a third (§1.4). The three tokens are nonzero and
+pairwise distinct. `file_id` is nonzero, and files with the same `file_id`
+carry the same three tokens. The archive coordinate zero is absolute file offset
+8. The field marker begins four bytes after the local signature. In the native
 DEFLATE profile, the marker is `14 00 06 00 08 00`: version needed 20,
 general-purpose flags 6, and compression method 8.
 
