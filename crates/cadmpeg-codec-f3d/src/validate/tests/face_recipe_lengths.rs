@@ -6,11 +6,15 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
     use crate::records::recipes::ConstructionRecipeKind;
 
     assert_eq!(
-        crate::validate::recipe_program_operand_length(ConstructionRecipeKind::Face),
+        crate::validate::operand_groups::recipe_program_operand_length(
+            ConstructionRecipeKind::Face
+        ),
         Some(16)
     );
     assert_eq!(
-        crate::validate::recipe_program_operand_length(ConstructionRecipeKind::BoundedFace),
+        crate::validate::operand_groups::recipe_program_operand_length(
+            ConstructionRecipeKind::BoundedFace
+        ),
         Some(24)
     );
     for kind in [
@@ -18,7 +22,10 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
         ConstructionRecipeKind::Edge,
         ConstructionRecipeKind::Vertex,
     ] {
-        assert_eq!(crate::validate::recipe_program_operand_length(kind), None);
+        assert_eq!(
+            crate::validate::operand_groups::recipe_program_operand_length(kind),
+            None
+        );
     }
 }
 
@@ -595,5 +602,38 @@ fn replacement_face_groups_validate_both_face_envelopes_and_record_bounds() {
                 1
             );
         }
+    }
+}
+
+#[test]
+fn bend_face_operands_require_role_0x10_members_and_record_bounds() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    for (kind, length) in [
+        (ConstructionRecipeKind::Face, 16),
+        (ConstructionRecipeKind::BoundedFace, 24),
+    ] {
+        let findings = |role, next_reference_at| {
+            operand_findings(
+                DesignFeatureKind::Bend,
+                kind,
+                length,
+                1_047,
+                role,
+                next_reference_at,
+                0,
+            )
+        };
+        let admitted = findings(Some(DesignOperandRole::ROLE_0X10), None);
+        assert!(admitted.is_empty(), "{admitted:#?}");
+        for role in [None, Some(DesignOperandRole::ROLE_0X21)] {
+            assert_eq!(findings(role, None).len(), 1);
+        }
+        assert_eq!(
+            findings(Some(DesignOperandRole::ROLE_0X10), Some(1_047 + length + 7),).len(),
+            1,
+        );
     }
 }

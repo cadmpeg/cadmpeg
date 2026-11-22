@@ -246,14 +246,14 @@ fn component_insert_roles_accept_qualified_strings_within_the_utf16_bound() {
         format!("{guid}_urn:example:component"),
         "urn:example:component".to_owned(),
     ] {
-        assert!(super::super::valid_component_insert_role(&role));
+        assert!(super::super::assembly::valid_component_insert_role(&role));
     }
     for role in [
         String::new(),
         "invalid".to_owned(),
         format!("urn:{}", "x".repeat(253)),
     ] {
-        assert!(!super::super::valid_component_insert_role(&role));
+        assert!(!super::super::assembly::valid_component_insert_role(&role));
     }
 }
 

@@ -128,9 +128,12 @@ fn finish(
     if let Written::Semantic {
         coverage,
         omitted_envelope_bytes,
+        stale_solid,
+        unwritten,
         ..
     } = written
     {
+        losses.extend(stale_solid.iter().cloned());
         losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.
@@ -138,6 +141,7 @@ fn finish(
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        losses.extend(unwritten.notes());
     }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));

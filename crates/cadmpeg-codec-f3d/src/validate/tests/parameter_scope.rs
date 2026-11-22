@@ -28,7 +28,7 @@ fn invalid_parameter_scope_preserves_finding() {
         let native = native();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+        super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(
             findings[0].message,
@@ -227,7 +227,7 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
         let findings = |native: &F3dNative| {
             let ctx = super::super::Ctx::new(&ir, native, decode);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings
         };
         set_frame(&mut native, 36, 25);
@@ -382,7 +382,8 @@ fn offset_faces_counted_member_runs_validate() {
                     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
                     let ctx = super::super::Ctx::new(&ir, native, service_ctx);
                     let mut findings = Vec::new();
-                    super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                    super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                        .unwrap();
                     findings
                 })
             };
@@ -488,7 +489,7 @@ fn operand_list_combine_requires_its_own_offsets() {
             let ir = cadmpeg_ir::examples::unit_cube().unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings.len()
         })
     };
@@ -641,7 +642,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
             };
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
             findings
         })
     };
@@ -722,7 +723,8 @@ fn scope_admits_only_its_deleted_absent_members() {
                 let ir = cadmpeg_ir::examples::unit_cube().unwrap();
                 let ctx = super::super::Ctx::new(&ir, native, service_ctx);
                 let mut findings = Vec::new();
-                super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                    .unwrap();
                 findings
             })
         };

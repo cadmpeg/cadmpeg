@@ -645,7 +645,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         });
     }
 
-    snapshot_active_configuration(&mut ir).unwrap();
+    snapshot_active_configuration(&mut ir);
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -679,7 +679,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .evaluation = cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
         outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
     };
-    snapshot_active_configuration(&mut ir).unwrap();
+    snapshot_active_configuration(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
         ParameterValue::Length(Length::new(25.0).unwrap())
