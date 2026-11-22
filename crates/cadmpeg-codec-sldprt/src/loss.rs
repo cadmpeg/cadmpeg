@@ -335,6 +335,18 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the unit code in a generated `Units` member that no
     /// `SolidWorks` file is known to hold.
     WriterUnitsMemberGenerated,
+    /// Export writes the generated feature history as a cadmpeg summary stream; the native
+    /// feature tree holds none of the source's features.
+    WriterNativeHistorySummary,
+    /// Export writes as zero bytes the native skeleton's byte runs whose fields `sldprt.md`
+    /// does not lay out.
+    WriterNativeSkeletonUnlaidRuns,
+    /// Export writes a generated part without the native skeleton.
+    WriterNativeSkeletonOmitted,
+    /// Export leaves out the named native streams of the generated part.
+    WriterNativeStreamsOmitted,
+    /// Export writes generated sketch marker records with no owning native object.
+    WriterNativeSketchLaneOrphan,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -578,6 +590,11 @@ impl SldprtLossCode {
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::WriterUnitsMemberGenerated,
+        Self::WriterNativeHistorySummary,
+        Self::WriterNativeSkeletonUnlaidRuns,
+        Self::WriterNativeSkeletonOmitted,
+        Self::WriterNativeStreamsOmitted,
+        Self::WriterNativeSketchLaneOrphan,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -759,6 +776,11 @@ impl SldprtLossCode {
                 "writer.native-envelope-auxiliary-omitted"
             }
             Self::WriterUnitsMemberGenerated => "writer.units-member-generated",
+            Self::WriterNativeHistorySummary => "writer.native-history-summary",
+            Self::WriterNativeSkeletonUnlaidRuns => "writer.native-skeleton-unlaid-runs",
+            Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
+            Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
+            Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -827,6 +849,11 @@ impl SldprtLossCode {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnitsMemberGenerated => Severity::Warning,
+            Self::WriterNativeHistorySummary => Severity::Warning,
+            Self::WriterNativeSkeletonUnlaidRuns => Severity::Warning,
+            Self::WriterNativeSkeletonOmitted => Severity::Warning,
+            Self::WriterNativeStreamsOmitted => Severity::Warning,
+            Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -1008,6 +1035,11 @@ impl SldprtLossCode {
             | Self::WriterHistoryNameNotWritten
             | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeHistorySummary => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSkeletonUnlaidRuns => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1500,6 +1532,11 @@ mod tests {
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
                 "writer.units-member-generated",
+                "writer.native-history-summary",
+                "writer.native-skeleton-unlaid-runs",
+                "writer.native-skeleton-omitted",
+                "writer.native-streams-omitted",
+                "writer.native-sketch-lane-orphan",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",
