@@ -33,18 +33,12 @@ fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
                 };
                 *operands = operands.clone().with_tangent_chain(tangent_chain);
             });
-        let result = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+        assert_eq!(
+            unwritten.is_empty(),
+            tangent_chain.is_none(),
+            "{unwritten:?}"
         );
-        if tangent_chain.is_some() {
-            assert!(matches!(
-                result,
-                Err(cadmpeg_core::CodecError::NotImplemented(_))
-            ));
-        } else {
-            assert!(result.is_ok());
-        }
     }
 }

@@ -97,17 +97,13 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact edge selection"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a compact edge selection")),
+        "{unwritten:?}"
     );
 }
 
@@ -204,16 +200,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact surface selection"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a compact surface selection")),
+        "{unwritten:?}"
     );
 }

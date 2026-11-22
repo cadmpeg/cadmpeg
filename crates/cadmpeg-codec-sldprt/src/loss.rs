@@ -315,6 +315,12 @@ pub(crate) enum SldprtLossCode {
     /// synthesized from the model is not written; the written configuration
     /// states the model's state.
     WriterConfigurationSnapshotEditUnwritten,
+    /// An edit of a parameter that the writer has no carrier for is not
+    /// written; the output keeps the stored native value.
+    WriterParameterEditUnwritten,
+    /// An edit of a feature's definition or selection that the native record
+    /// cannot encode is not written; the output keeps the stored record.
+    WriterFeatureEditUnwritten,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -488,6 +494,8 @@ impl SldprtLossCode {
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
+        Self::WriterParameterEditUnwritten,
+        Self::WriterFeatureEditUnwritten,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -640,6 +648,8 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => {
                 "writer.configuration-snapshot-edit-unwritten"
             }
+            Self::WriterParameterEditUnwritten => "writer.parameter-edit-unwritten",
+            Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -686,6 +696,8 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
+            Self::WriterParameterEditUnwritten => Severity::Warning,
+            Self::WriterFeatureEditUnwritten => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -833,6 +845,8 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterSolidStaleAfterEdit => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParameterEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -1271,6 +1285,8 @@ mod tests {
                 "writer.native-envelope-auxiliary-omitted",
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
+                "writer.parameter-edit-unwritten",
+                "writer.feature-edit-unwritten",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

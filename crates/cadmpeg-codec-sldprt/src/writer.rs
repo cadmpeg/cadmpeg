@@ -70,6 +70,11 @@ pub(crate) struct SemanticOutput {
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
     pub(crate) omitted_envelope_bytes: usize,
+    /// The edits the native records cannot carry, kept as stored.
+    pub(crate) unwritten: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Features written with their stored definition record: their
+    /// definition edits are among `unwritten`, not in the written history.
+    pub(crate) kept_definitions: std::collections::HashSet<cadmpeg_ir::features::FeatureId>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -125,6 +130,16 @@ pub(crate) fn write_semantic_with_records(
             "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
         ));
     }
+    // The envelope is regenerated from the source's block container; a
+    // compound-file source has none.
+    if source_scan
+        .as_ref()
+        .is_some_and(|scan| scan.blocks.is_empty() && !scan.compound_streams.is_empty())
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writes of compound-file parts need a compound-file writer".into(),
+        ));
+    }
     let mut source_baseline = None;
     if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
         let scan = source_scan.as_ref().ok_or_else(|| {
@@ -143,6 +158,17 @@ pub(crate) fn write_semantic_with_records(
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+    if native
+        .as_ref()
+        .is_some_and(|native| !native.feature_histories.is_empty())
+    {
+        retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+    }
+    let mut edits = crate::history::write::edits::SourceEdits::new(
+        ir,
+        native.as_ref(),
+        source_baseline.as_ref().map(|baseline| &baseline.ir),
+    )?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -152,12 +178,14 @@ pub(crate) fn write_semantic_with_records(
         &feature_name_changes,
     );
     let ir = &normalized;
-    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+    let feature_input_renames =
+        crate::history::write::prepare_features_for_write(ir, &mut native, &mut edits)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native, &edits)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
         &mut native,
         feature_parameter_changes_authorized,
+        &mut edits,
     )?;
     // The configuration states are projected again with the profile bodies
     // the decode bound, read from the retained source image.
@@ -165,6 +193,7 @@ pub(crate) fn write_semantic_with_records(
         ir,
         &mut native,
         annotations,
+        &mut edits,
         |lanes| {
             source_image(retained_records)
                 .map(|image| {
@@ -173,6 +202,7 @@ pub(crate) fn write_semantic_with_records(
                 .transpose()
         },
     )?;
+    let (unwritten, kept_definitions) = edits.into_parts();
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     if !validation.is_ok() {
@@ -430,6 +460,8 @@ pub(crate) fn write_semantic_with_records(
         dialect: written_dialect,
         coverage,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
+        unwritten,
+        kept_definitions,
     })
 }
 
@@ -1816,7 +1848,7 @@ fn resolved_feature_payload(
     {
         // All decoder-supported layouts can replay an unchanged marker. Writing
         // current-family offsets into legacy markers would alter unrelated bytes.
-        if entity == expected_entity {
+        if !marker_fields_edited(entity, expected_entity) {
             continue;
         }
         entity
@@ -1970,6 +2002,20 @@ fn resolved_feature_payload(
         payload.splice(start..end, replacement);
     }
     Ok(payload.into_inner())
+}
+
+/// Whether `entity` states a field the lane writer writes differently from
+/// the marker read from the payload. Decode reclassifies some markers into
+/// `Point` or `LineOrCircle` from their neighbourhood; the payload keeps its
+/// own code for them.
+fn marker_fields_edited(
+    entity: &crate::records::SketchInputEntity,
+    admitted: &crate::records::SketchInputEntity,
+) -> bool {
+    use crate::records::SketchInputKind::{LineOrCircle, Point};
+    entity.state_value != admitted.state_value
+        || entity.coordinates_m != admitted.coordinates_m
+        || (entity.kind() != admitted.kind() && !matches!(entity.kind(), Point | LineOrCircle))
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of

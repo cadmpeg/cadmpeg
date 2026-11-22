@@ -851,15 +851,14 @@ fn decode_projects_surface_sweep_reference_curve_path() {
     };
     *path = Some(PathRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &changed_profile,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a reference-curve sweep path"));
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(&changed_profile, decoded.source_fidelity());
+    assert!(
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a reference-curve sweep path")),
+        "{unwritten:?}"
+    );
 
     decoded
         .ir_mut()

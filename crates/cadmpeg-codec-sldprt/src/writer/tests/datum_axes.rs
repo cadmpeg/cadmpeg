@@ -55,17 +55,12 @@ fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry()
                     draft.into_operation().unwrap(),
                 ));
         }
-        let mut encoded = Vec::new();
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap_err();
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
-            matches!(&error,cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported datum-axis construction or partial geometry")),
-            "{error}"
+            unwritten.iter().any(|message| message
+                .contains("unsupported datum-axis construction or partial geometry")),
+            "{unwritten:?}"
         );
-        assert!(encoded.is_empty());
     }
 }

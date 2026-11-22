@@ -173,6 +173,7 @@ pub(in crate::history) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
+    edits: &mut super::edits::SourceEdits<'_>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
     let features = &ir.model.features;
     if features.is_empty() {
@@ -379,11 +380,7 @@ pub(in crate::history) fn sync_neutral_features(
                     feature.id
                 ))
             })?;
-        let NeutralFeatureEncoding {
-            kind,
-            mut parameters,
-            mut properties,
-        } = NeutralFeatureEncoder {
+        let encoded = NeutralFeatureEncoder {
             contradicted_travel: contradicted_travel.contains(&feature.id),
             feature,
             existing: existing.as_deref(),
@@ -395,7 +392,30 @@ pub(in crate::history) fn sync_neutral_features(
             parent_sources: &parent_sources,
             resolved_parameter_names: &resolved_parameter_names,
         }
-        .encode()?;
+        .encode();
+        // A stored record the encoder cannot restate from the neutral
+        // definition is written as stored.
+        let NeutralFeatureEncoding {
+            kind,
+            mut parameters,
+            mut properties,
+        } = match (encoded, existing.as_deref()) {
+            (Ok(encoding), _) => encoding,
+            (Err(CodecError::NotImplemented(reason)), Some(record)) if edits.has_source() => {
+                if edits.source_feature(&feature.id).is_none_or(|original| {
+                    original.evaluation.definition() != feature.evaluation.definition()
+                }) {
+                    edits.feature_unwritten(&feature.id, reason)?;
+                }
+                edits.keep_stored_definition(&feature.id);
+                NeutralFeatureEncoding {
+                    kind: record.kind.clone(),
+                    parameters: record.parameters.clone(),
+                    properties: record.properties.clone(),
+                }
+            }
+            (Err(error), _) => return Err(error),
+        };
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
                 record,
@@ -511,7 +531,10 @@ pub(in crate::history) fn sync_neutral_features(
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
         .collect::<HashMap<_, _>>();
-    for feature in features {
+    // A stored record keeps its stored operands.
+    for feature in features.iter().filter(|feature| {
+        !edits.operands_kept(&feature.id) && !edits.feature_construction_unedited(feature)
+    }) {
         let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
         let expected = feature
             .dependencies
@@ -802,8 +825,14 @@ mod tests {
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(native))
-            .expect_err("two lanes state the same object name");
+        let error = sync_neutral_features(
+            &ir,
+            &[],
+            &[],
+            &mut Some(native),
+            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+        )
+        .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -821,8 +850,14 @@ mod tests {
         let mut ir = decoded.ir().clone();
         ir.model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(sldprt_native(decoded.ir())))
-            .expect_err("a blank object name is not writable");
+        let error = sync_neutral_features(
+            &ir,
+            &[],
+            &[],
+            &mut Some(sldprt_native(decoded.ir())),
+            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+        )
+        .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"

@@ -66,16 +66,7 @@ pub(crate) fn project_parameters(
                     .get(&name)
                     .cloned()
                     .unwrap_or_default();
-                let parse_value = |value: &str| match display {
-                    Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                        parse_dimension_display_length(value).map(ParameterValue::Length)
-                    }
-                    None => parse_native_parameter_literal(feature, &name, value),
-                };
-                let value = properties
-                    .get("Value")
-                    .and_then(|value| parse_value(value))
-                    .or_else(|| parse_value(expression));
+                let value = stated_parameter_value(feature, &name, expression, &properties);
                 let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
                     CodecError::malformed("SLDPRT feature parameter ordinal exceeds u32")
                 })?;
@@ -235,6 +226,26 @@ pub(super) fn apply_evaluated_parameters(
         }
     }
     Ok(())
+}
+
+/// The value a feature record states for its dimension `name`: the stored
+/// `Value` property, else the expression literal.
+pub(crate) fn stated_parameter_value(
+    feature: &Feature,
+    name: &str,
+    expression: &str,
+    properties: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Option<ParameterValue> {
+    let parse_value = |value: &str| match dimension_display(expression) {
+        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+            parse_dimension_display_length(value).map(ParameterValue::Length)
+        }
+        None => parse_native_parameter_literal(feature, name, value),
+    };
+    properties
+        .get("Value")
+        .and_then(|value| parse_value(value))
+        .or_else(|| parse_value(expression))
 }
 
 pub(crate) fn parse_native_parameter_literal(

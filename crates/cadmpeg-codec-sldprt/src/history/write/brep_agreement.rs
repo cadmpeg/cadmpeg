@@ -25,11 +25,14 @@ use crate::native::SldprtNative;
 /// configuration snapshot cause: one stale-solid loss per construction edit
 /// that shapes the solid, and one loss per snapshot edit the model does not
 /// state. The writer has no modeling kernel, so the output keeps the stored
-/// solid and its caches as they were before the edit.
+/// solid and its caches as they were before the edit. A feature in
+/// `kept_definitions` is written with its stored definition record, so its
+/// definition edit does not reach the written history.
 pub(crate) fn stale_solid_losses(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     source_image: &[u8],
+    kept_definitions: &HashSet<FeatureId>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
         return Ok(Vec::new());
@@ -67,7 +70,14 @@ pub(crate) fn stale_solid_losses(
     // same edit.
     let mut named = HashSet::new();
     if features_changed {
-        feature_edits(ir, baseline, &hash_ctx, &mut named, &mut losses)?;
+        feature_edits(
+            ir,
+            baseline,
+            &hash_ctx,
+            kept_definitions,
+            &mut named,
+            &mut losses,
+        )?;
     }
     if parameters_changed {
         parameter_edits(ir, baseline, &mut losses);
@@ -98,6 +108,7 @@ fn feature_edits(
     ir: &CadIr,
     source: &CadIr,
     hash_ctx: &DecodeContext<'_>,
+    kept_definitions: &HashSet<FeatureId>,
     named: &mut HashSet<FeatureId>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
@@ -126,7 +137,15 @@ fn feature_edits(
             )));
             continue;
         }
-        if !construction_changed(original, feature) {
+        let definition_written = !kept_definitions.contains(&feature.id);
+        if !definition_written
+            && original.evaluation.definition() != feature.evaluation.definition()
+        {
+            // The definition edit is not written; an unwritten-edit loss
+            // names it.
+            explained = true;
+        }
+        if !construction_changed(original, feature, definition_written) {
             continue;
         }
         explained = true;
@@ -561,8 +580,10 @@ fn feature_directly_affects_brep(feature: &Feature) -> bool {
     )
 }
 
-fn construction_changed(original: &Feature, current: &Feature) -> bool {
-    original.evaluation.definition() != current.evaluation.definition()
+/// Whether the written construction of `current` differs from `original`;
+/// the definition counts only when it is `definition_written`.
+fn construction_changed(original: &Feature, current: &Feature, definition_written: bool) -> bool {
+    (definition_written && original.evaluation.definition() != current.evaluation.definition())
         || original.suppressed != current.suppressed
         || original.dependencies != current.dependencies
         || original.source_properties != current.source_properties

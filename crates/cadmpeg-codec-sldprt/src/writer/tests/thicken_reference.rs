@@ -44,15 +44,14 @@ fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
                     *result = Some(SolidFeatureResult::NewBody {});
                 }
             });
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
-            matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported thicken result or tangent-chain settings")),
-            "{error}"
+            unwritten
+                .iter()
+                .any(|message| message
+                    .contains("unsupported thicken result or tangent-chain settings")),
+            "{unwritten:?}"
         );
     }
 }
@@ -740,15 +739,13 @@ fn semantic_writer_refuses_a_two_sided_draft() {
             *second_side = Some(DraftSecondSide::Symmetric {});
         });
     }
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported draft semantics")),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("unsupported draft semantics")),
+        "{unwritten:?}"
     );
 }
 
@@ -1421,7 +1418,6 @@ fn semantic_writer_round_trips_all_move_face_forms() {
 
 #[test]
 fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
     use cadmpeg_ir::features::direct_edit::FaceMotion;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -1453,12 +1449,9 @@ fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
             };
         });
     }
-    let error = crate::test_support::plan_fixture_with_native_envelope(
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
         motion: FaceMotion::Transform { transform },
         ..
@@ -1682,13 +1675,18 @@ fn semantic_writer_round_trips_principal_reference_planes() {
                 plane: PrincipalPlane::Right,
             },
         ));
-    let error = crate::test_support::plan_inherited_write(
+    // The role edit keeps the stored record; the regenerated feature graph
+    // then meets the custom record that repeats source id 2.
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(error.to_string().contains("principal-plane role"));
+    assert!(
+        error.to_string().contains("duplicate feature source id"),
+        "{error}"
+    );
 }
 
 #[test]

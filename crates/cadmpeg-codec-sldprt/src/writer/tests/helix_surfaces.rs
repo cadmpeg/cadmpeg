@@ -550,17 +550,13 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes embedded helix geometry"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes embedded helix geometry")),
+        "{unwritten:?}"
     );
 }
 
@@ -1217,16 +1213,13 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
             ));
         });
     }
-    let mut encoded = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("weighted filled-surface condition")),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("weighted filled-surface condition")),
+        "{unwritten:?}"
     );
 }
 
@@ -1265,16 +1258,13 @@ fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_norm
                 }
             });
         }
-        let mut encoded = Vec::new();
-        let error = crate::test_support::plan_inherited_write(
-            edited.ir(),
-            edited.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap_err();
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(edited.ir(), edited.source_fidelity());
         assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("interior constraints or a reversed normal")),
-            "{error}"
+            unwritten
+                .iter()
+                .any(|message| message.contains("interior constraints or a reversed normal")),
+            "{unwritten:?}"
         );
     }
 }

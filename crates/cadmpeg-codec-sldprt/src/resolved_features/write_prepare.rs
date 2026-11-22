@@ -36,6 +36,7 @@ use std::collections::HashMap;
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
+    edits: &crate::history::write::edits::SourceEdits<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -87,11 +88,12 @@ pub(crate) fn prepare_sketches_for_write(
             "SLDPRT native sketch relation editing is not implemented".into(),
         ));
     }
-    let native_changed = match (&current_native, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) | (None, Some(_)) => true,
-        (None, None) => false,
-    };
+    let native_changed = !edits.native_unedited()
+        && match (&current_native, baseline_native) {
+            (Some(current), Some(baseline)) => current != baseline,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
     if native_changed {
         return Err(cadmpeg_core::CodecError::Malformed(
             "conflicting neutral and native SLDPRT sketch edits".into(),

@@ -7,15 +7,17 @@ use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use std::collections::{BTreeMap, HashMap};
 
+use super::edits::SourceEdits;
 use super::features::generated_feature_record_id;
 use crate::history::hash::{native_parameter_hash, parameter_hash};
 use crate::history::literals::{
     dimension_display, format_parameter_value, parse_neutral_parameter_literal,
     parse_parameter_literal,
 };
+use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
     expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters,
+    parse_native_parameter_literal, project_parameters, stated_parameter_value,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -24,6 +26,7 @@ pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
+    edits: &mut SourceEdits<'_>,
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -47,23 +50,24 @@ pub(crate) fn prepare_parameters_for_write(
         .as_ref()
         .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256"));
     let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
-    let native_changed = match (&native_hash, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) | (None, Some(_)) => true,
-        (None, None) => false,
-    };
+    let native_changed = !edits.native_unedited()
+        && match (&native_hash, baseline_native) {
+            (Some(current), Some(baseline)) => current != baseline,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
     if baseline_neutral.is_none() && baseline_native.is_none() {
         if ir.model.parameters.is_empty() {
             return Ok(());
         }
-        return sync_neutral_parameters(ir, native);
+        return sync_neutral_parameters(ir, native, edits);
     }
     match (neutral_changed, native_changed) {
         (false, true) if feature_parameter_changes_authorized => Ok(()),
         (false, _) => Ok(()),
         (true, true) => {
             if feature_parameter_changes_authorized {
-                return sync_neutral_parameters(ir, native);
+                return sync_neutral_parameters(ir, native, edits);
             }
             let lane_bytes = native
                 .as_ref()
@@ -90,24 +94,50 @@ pub(crate) fn prepare_parameters_for_write(
                 ))
             }
         }
-        (true, false) => sync_neutral_parameters(ir, native),
+        (true, false) => sync_neutral_parameters(ir, native, edits),
     }
+}
+
+/// The dimension properties the record states for `parameter`: a
+/// non-literal expression carries its value in the `Value` property.
+fn written_dimension_properties(
+    parameter: &DesignParameter,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+    let mut properties = parameter.properties.clone();
+    if parse_parameter_literal(&parameter.expression).is_none() {
+        if let Some(value) = &parameter.value {
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Value"),
+                format_parameter_value(value),
+            );
+        } else {
+            properties.remove("Value");
+        }
+    }
+    properties
 }
 
 fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
+    edits: &mut SourceEdits<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(parameter) = ir
+    // The decoder projects a display-only relation parameter from its
+    // relation's solved display scalar; no feature record holds it.
+    for parameter in ir
         .model
         .parameters
         .iter()
-        .find(|parameter| is_reference_relation_parameter(parameter))
+        .filter(|parameter| is_reference_relation_parameter(parameter))
     {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT display-only relation parameter {} has no writable native scalar",
-            parameter.id.as_str()
-        )));
+        if edits.parameter_edited(&parameter.id) {
+            edits.parameter_unwritten(format!(
+                "Display-only relation parameter {} ({} = {}) is not written; the stored relation keeps its solved value.",
+                parameter.id.as_str(),
+                parameter.name,
+                parameter.expression
+            ));
+        }
     }
     let mut parameters = ir.model.parameters.clone();
     let feature_names = ir
@@ -160,8 +190,17 @@ fn sync_neutral_parameters(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
+    let records = native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &parameters {
+        if is_reference_relation_parameter(parameter) {
+            continue;
+        }
         let Some(owner_id) = parameter.owner.as_ref() else {
             return Err(CodecError::NotImplemented(format!(
                 "global SLDPRT parameter {} cannot be written to a feature record",
@@ -174,19 +213,44 @@ fn sync_neutral_parameters(
                 parameter.id.as_str()
             )));
         };
-        if parameter.display != dimension_display(&parameter.expression) {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT parameter {} has display semantics inconsistent with its expression",
-                parameter.id.as_str()
-            )));
+        let edited = edits.parameter_edited(&parameter.id);
+        if edited && parameter.display != dimension_display(&parameter.expression) {
+            edits.parameter_unwritten(format!(
+                "Parameter {} is written with expression {}; its display semantics {:?} are not written.",
+                parameter.id.as_str(),
+                parameter.expression,
+                parameter.display
+            ));
         }
-        if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
-            .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT parameter {} has a value inconsistent with its expression",
-                parameter.id.as_str()
-            )));
+        // A scalar-bound parameter carries its value in the bound scalar and
+        // its expression in the record; the record alone states the value of
+        // any other parameter, read as the decoder reads it.
+        if edited && parameter.native_ref.is_none() {
+            let record_id = owner
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| generated_feature_record_id(owner_id));
+            let record = records.get(record_id.as_str()).copied();
+            let stated = record.map_or_else(
+                || parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression),
+                |record| {
+                    stated_parameter_value(
+                        record,
+                        &parameter.name,
+                        &parameter.expression,
+                        &written_dimension_properties(parameter),
+                    )
+                },
+            );
+            if let Some(stated) = stated.filter(|stated| parameter.value.as_ref() != Some(stated)) {
+                edits.parameter_unwritten(format!(
+                    "Parameter {} is written with expression {}, which states {}; its value {} is not written.",
+                    parameter.id.as_str(),
+                    parameter.expression,
+                    format_parameter_value(&stated),
+                    parameter.value.as_ref().map_or_else(|| "none".to_owned(), format_parameter_value)
+                ));
+            }
         }
         let owner_parameters = desired.entry(owner_id.clone()).or_default();
         if owner_parameters
@@ -241,18 +305,10 @@ fn sync_neutral_parameters(
         record.dimension_properties = parameters
             .iter()
             .map(|parameter| {
-                let mut properties = parameter.properties.clone();
-                if parse_parameter_literal(&parameter.expression).is_none() {
-                    if let Some(value) = &parameter.value {
-                        properties.insert(
-                            cadmpeg_core::nonblank_literal!("Value"),
-                            format_parameter_value(value),
-                        );
-                    } else {
-                        properties.remove("Value");
-                    }
-                }
-                (parameter.name.clone(), properties)
+                (
+                    parameter.name.clone(),
+                    written_dimension_properties(parameter),
+                )
             })
             .collect();
         let mut names = parameters
@@ -271,7 +327,12 @@ fn sync_neutral_parameters(
         content.extend(names.map(FeatureContent::Dimension));
         record.content = content;
     }
+    // The stored scalar of an unedited parameter keeps its bytes: the value
+    // the decoder derived from it does not convert back exactly.
     for parameter in &parameters {
+        if !edits.parameter_edited(&parameter.id) {
+            continue;
+        }
         let Some(native_ref) = parameter.native_ref.as_deref() else {
             continue;
         };
@@ -299,16 +360,23 @@ fn sync_neutral_parameters(
                 parameter.id.as_str()
             )));
         }
-        let value = match parameter.value {
-            Some(ParameterValue::Length(length)) => length.get() / 1000.0,
-            Some(ParameterValue::Angle(angle)) => angle.get(),
-            Some(ParameterValue::Real(value)) => value.get(),
-            _ => {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT scalar {} requires a real-valued parameter",
-                    scalar.id
-                )));
-            }
+        // The decoder keeps an integer or boolean value only for a scalar
+        // that equals it exactly.
+        let value = match &parameter.value {
+            Some(ParameterValue::Length(length)) => Some(length.get() / 1000.0),
+            Some(ParameterValue::Angle(angle)) => Some(angle.get()),
+            Some(ParameterValue::Real(value)) => Some(value.get()),
+            Some(ParameterValue::Integer(value)) => exact_integer_f64(*value),
+            Some(ParameterValue::Boolean(value)) => Some(if *value { 1.0 } else { 0.0 }),
+            Some(ParameterValue::String(_)) | None => None,
+        };
+        let Some(value) = value else {
+            edits.parameter_unwritten(format!(
+                "Parameter {} has no real value for its native scalar {}; the scalar keeps its stored value.",
+                parameter.id.as_str(),
+                scalar.id
+            ));
+            continue;
         };
         let offset = usize::try_from(scalar.offset).map_err(|_| {
             CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())

@@ -126,6 +126,24 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Writes through the public encoder with an authored native envelope and
+/// returns the messages of the feature edits the output keeps as stored.
+pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
+    let report = plan_fixture_with_native_envelope(
+        EncodeInput::new(ir, Some(fidelity)),
+        TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
 /// Write an edit that shapes the solid through the public encoder, and check
 /// that the export report names the stored solid as stale.
 pub(crate) fn write_history_over_stale_solid(

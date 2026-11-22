@@ -256,6 +256,8 @@ impl SldprtCodec {
             dialect,
             coverage,
             omitted_envelope_bytes,
+            unwritten,
+            kept_definitions,
         } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
@@ -271,8 +273,12 @@ impl SldprtCodec {
                     "SLDPRT semantic writes need the retained source image".into(),
                 )
             })?;
-        let stale_solid =
-            history::write::brep_agreement::stale_solid_losses(ir, native.as_ref(), source_image)?;
+        let stale_solid = history::write::brep_agreement::stale_solid_losses(
+            ir,
+            native.as_ref(),
+            source_image,
+            &kept_definitions,
+        )?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -284,6 +290,7 @@ impl SldprtCodec {
             coverage,
             omitted_envelope_bytes,
             stale_solid,
+            unwritten,
         })
     }
 }
@@ -365,6 +372,9 @@ enum Written {
         /// One loss per construction edit that shapes the solid: the output
         /// keeps the stored solid, which shows the state before the edit.
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// One loss per edit the native records cannot carry: the output keeps
+        /// the stored record or value.
+        unwritten: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }
 

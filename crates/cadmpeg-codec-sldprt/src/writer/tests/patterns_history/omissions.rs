@@ -35,14 +35,12 @@ fn semantic_writer_refuses_omitted_linear_pattern_instances() {
             omitted_instances.push([1, 0]);
             *pattern = PatternKind::new(transform).unwrap();
         });
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error.to_string().contains("omitted pattern instances"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("omitted pattern instances")),
+        "{unwritten:?}"
     );
 }
