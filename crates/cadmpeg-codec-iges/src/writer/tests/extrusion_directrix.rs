@@ -2,11 +2,10 @@
 //! Type 122 directrix ends evaluated on the extrusion's directrix carrier.
 
 use super::super::extrusion_surface_entities;
+use cadmpeg_ir::geometry::legacy_cache::CacheContract;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
-use cadmpeg_ir::geometry::{
-    CacheContract, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point3, Vector3};

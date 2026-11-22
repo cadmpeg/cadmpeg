@@ -198,7 +198,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                             .expect("finite fixture range"),
                     ),
                     Some(
-                        cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
@@ -235,7 +235,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             .filter(|pcurve| {
                 pcurve
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
                     == Some(0.001)
             })
             .collect::<Vec<_>>();
@@ -393,7 +393,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
                     cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range"),
                 ),
                 Some(
-                    cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+                    cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.002)
                         .expect("finite non-negative fixture tolerance"),
                 ),
             ),
@@ -429,7 +429,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .find(|pcurve| {
                 pcurve
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
                     == Some(0.002)
             })
             .expect("explicit line C2");
@@ -494,7 +494,7 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
         assert_eq!(decoded.ir().geometry.pcurves.len(), 4, "{version:?}");
         assert!(decoded.ir().geometry.pcurves.iter().all(|pcurve| pcurve
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
             == Some(0.001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
@@ -563,7 +563,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
                 .iter()
                 .filter(|pcurve| pcurve
                     .fit_tolerance()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
                     == Some(0.001))
                 .count(),
             4,
@@ -587,7 +587,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
                     == Some([30.0, 32.0])
                     && pcurve
                         .fit_tolerance()
-                        .map(cadmpeg_ir::geometry::FitTolerance::get)
+                        .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
                         != Some(0.001)
             })
             .expect("generated planar shared-edge pcurve");
@@ -677,7 +677,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         assert_eq!(decoded.ir().geometry.pcurves.len(), 7, "{version:?}");
         assert!(decoded.ir().geometry.pcurves.iter().all(|pcurve| pcurve
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
             == Some(0.0001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")
@@ -847,7 +847,7 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
             None,
             Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
             Some(
-                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                     .expect("finite non-negative fixture tolerance"),
             ),
         ),
@@ -924,7 +924,7 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
             None,
             Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
             Some(
-                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.001)
                     .expect("finite non-negative fixture tolerance"),
             ),
         ),

@@ -1,4 +1,4 @@
-use super::super::{InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform};
+use super::super::tsplines::{InlineTSplineSubtransform, SubtypeTableIndex, TSplineSubtransform};
 use serde_json::json;
 
 #[test]
@@ -42,7 +42,7 @@ fn subtransform_wire_rejects_invalid_payloads_and_recursive_references() {
 
 #[test]
 fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
-    use super::super::TSplineSurfaceConstruction;
+    use super::super::tsplines::TSplineSurfaceConstruction;
 
     let inline = TSplineSubtransform::Inline(
         InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
@@ -55,7 +55,7 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
             0,
             Default::default(),
             false,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
     };
     let valid = admit([[0.0, 1.0], [2.0, 2.0]], inline.clone()).unwrap();
@@ -88,10 +88,11 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
 
 #[test]
 fn surface_admission_checks_its_revision_cache_form() {
-    use super::super::{
-        CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
-        TSplineSurfaceConstruction,
+    use super::super::legacy_cache::CacheContract;
+    use super::super::revision_forms::{
+        RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
+    use super::super::tsplines::TSplineSurfaceConstruction;
     let inline = TSplineSubtransform::Inline(
         InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
     );
@@ -144,7 +145,7 @@ fn subtransform_wire_rejects_missing_resolved_payload() {
 /// The wire carries source programs and rejects additional graph fields.
 #[test]
 fn a_tspline_construction_states_no_program_graph_on_its_wire() {
-    use super::super::TSplineSurfaceConstruction;
+    use super::super::tsplines::TSplineSurfaceConstruction;
 
     let inline = TSplineSubtransform::Inline(
         InlineTSplineSubtransform::try_new("v 1 2", None, "e 3").unwrap(),
@@ -156,7 +157,7 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         4,
         Default::default(),
         false,
-        crate::geometry::CacheContract::from_form(None),
+        crate::geometry::legacy_cache::CacheContract::from_form(None),
     )
     .unwrap();
     let wire = serde_json::to_value(&construction).unwrap();
@@ -180,7 +181,7 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
 
 #[test]
 fn a_tspline_construction_holds_its_admitted_discontinuities() {
-    use super::super::TSplineSurfaceConstruction;
+    use super::super::tsplines::TSplineSurfaceConstruction;
     use crate::scalar::FiniteReal;
 
     let inline = TSplineSubtransform::Inline(
@@ -194,7 +195,7 @@ fn a_tspline_construction_holds_its_admitted_discontinuities() {
         4,
         lanes.clone(),
         false,
-        crate::geometry::CacheContract::from_form(None),
+        crate::geometry::legacy_cache::CacheContract::from_form(None),
     )
     .unwrap();
     assert_eq!(FiniteReal::raw_lanes(construction.discontinuities()), lanes);
@@ -211,7 +212,7 @@ fn a_tspline_construction_holds_its_admitted_discontinuities() {
         4,
         refused,
         false,
-        crate::geometry::CacheContract::from_form(None),
+        crate::geometry::legacy_cache::CacheContract::from_form(None),
     )
     .is_err());
 }

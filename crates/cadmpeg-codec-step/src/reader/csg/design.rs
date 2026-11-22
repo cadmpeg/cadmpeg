@@ -172,6 +172,7 @@ pub(in crate::reader) fn attach(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
     }
     losses

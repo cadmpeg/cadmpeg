@@ -3344,7 +3344,7 @@ Parsed by:
 | 13 | 4 | `attribute_minus_one` | `f32` | little | spec | and little-endian f32 `-1` |
 | 17 | 4 | `kind` | `u32` | little | spec | \| +17 \| little-endian u32 kind \| |
 | 21 | 2 | `zero_word` | `u16` | little | spec | \| +21 \| little-endian u16 `0` \| · value `0` |
-| 23 | 4 | `locus` | `u16[2]` | little | spec | two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry) |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | two little-endian u16, the locus (`04 00 02 00` profile, `05 00 01 00` geometry) |
 | 27 | 2 | `role` | `u16` | little | spec | \| +27 \| little-endian u16 role \| |
 | 29 | 2 | `state` | `u16` | little | spec | \| +29 \| little-endian u16 state \| |
 | 31 | 4 | `minus_one` | `f32` | little | spec | \| +31 \| little-endian f32 `-1` \| |

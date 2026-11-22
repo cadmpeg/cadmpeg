@@ -15,11 +15,15 @@ use crate::decode::pcurves::{
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::{
+    NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    pcurve::{Pcurve, PcurveGeometry},
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -306,7 +310,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             ProceduralCurve::new(
                 construction,
                 ProceduralCurveDefinition::TolerantIntersection {
-                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    construction: cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         [sphere, plane],
                         [
                             Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
@@ -1596,7 +1600,8 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
                 cadmpeg_ir::geometry::OffsetExtension::Legacy {
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     cache: Some(
-                        cadmpeg_ir::geometry::LegacyCache::try_new(0.0).expect("fit tolerance"),
+                        cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.0)
+                            .expect("fit tolerance"),
                     ),
                 },
             )
@@ -1652,7 +1657,8 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
                 .unwrap(),
                 discontinuity_flag: false,
                 cache: Some(
-                    cadmpeg_ir::geometry::LegacyCache::try_new(2.0).expect("fit tolerance"),
+                    cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(2.0)
+                        .expect("fit tolerance"),
                 ),
             },
         );
