@@ -147,3 +147,139 @@ coordinates, which are in metres for every unit setting.
 little-endian `u32` UTF-16 code-unit count followed by that many UTF-16LE
 code units. The labels list the available styles and do not select the
 document units.
+
+## 3. PSM object storage
+
+### 3.1 Objects, clusters and space maps
+
+The `PSM` streams store the document's object graph. An object identifier is
+a little-endian `u32`. Its bits 13 and above select the cluster, and its low
+13 bits are the serial in that cluster. Cluster 0 is the stream
+`PSMcluster0`. The space map of cluster `K` is the stream
+`PSMspacemap/0x%08x` named by `K << 13`, so cluster 0 has
+`PSMspacemap/0x00000000`.
+
+A space map starts with a 12-byte header. All fields are little-endian.
+
+| Offset | Field |
+| ---: | --- |
+| 0 | ASCII `sseg` |
+| 4 | `u16` item count `A` |
+| 6 | `u16` count of items without a body |
+| 8 | `u16` next free serial |
+| 10 | `u16` free-list count `F` |
+
+`F` `u16` free serials follow the header. `A` items follow them in
+ascending identifier order and end at the stream end. An item is a `u16`
+length `L` and `L` bytes:
+
+| Item offset | Field |
+| ---: | --- |
+| 0 | `u16` length `L` |
+| 2 | `u32` object offset in the cluster stream |
+| 6 | `u32` object identifier |
+| 10 | `u16` form word; bits 6 and above are the object's form |
+| 12 | `u16` |
+| 14 | `u16` |
+| 16 | `u16` flags; bit `0x2000` selects the class rule in §3.3 |
+
+An item with `L` = 16 has no body. A longer item carries a body of `L` − 16
+bytes after the flags.
+
+A cluster stream starts with the `u32` value `0x6C90F544` and a `u32` object
+count equal to the space map's item count. The objects follow. An object
+starts at its item's offset and ends at the next item's offset, or at the
+stream end for the last item. An object starts with an 8-byte frame:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u16` `0x5151` |
+| 2 | `u16` form, equal to the item's form word shifted right by 6 |
+| 4 | `u32` object identifier, equal to the item's identifier |
+
+### 3.2 Type table
+
+`PSMtypetable` contains two consecutive sections. Each section has a 20-byte
+header that starts with ASCII `ePyT`. The `u16` values at header offsets 10
+and 14 are equal and give the section's record count.
+
+The first section holds `N` named declarations, starting at stream offset 20.
+A declaration has this layout:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | 16-byte class GUID |
+| 16 | `u32` declaration index, from `0` through `N` − 1 |
+| 20 | `u16` `1` |
+| 22 | `u16` `0xFFFF` |
+| 24 | `u32` metadata word |
+| 28 | `u16` class-name byte count `n` |
+| 30 | ASCII class name of `n` bytes, ending with one zero byte |
+| 30 + `n` | `u16` byte count `m` of a second text field |
+| 32 + `n` | second text field of `m` bytes |
+
+The next declaration starts at offset 32 + `n` + `m`. The second section
+starts after the last declaration. It holds `K` compact records of 26 bytes,
+starting 20 bytes after its header: a 16-byte GUID and ten bytes, with a
+`u16` value `V` at record offset 18. The second section ends at the stream
+end.
+
+### 3.3 Object class
+
+The class of an object is a named declaration. Let `f` be the object's form
+and `Q` the flags of its space-map item. The class is declaration `f` when
+`Q` has bit `0x2000` set, when `f` ≥ `K`, or when compact record `f` has
+`V` = `0xFFFF`. Otherwise the class is declaration `V` of compact record
+`f`. Form numbers differ between documents; class names identify classes.
+
+## 4. Feature order
+
+### 4.1 Feature navigator object
+
+One cluster-0 object holds the ordered feature list. Its frame is followed by
+a `u32` flag word and the GUID `{44F66D50-4DD1-11CE-BF4E-08003601C72A}` at
+object offset 12. The rest of the object has this sequence. All integers are
+little-endian `u32` values.
+
+| Field | Content |
+| --- | --- |
+| first list | count `a`, then `a` object identifiers |
+| second list | count `b`, then `b` object identifiers |
+| constant block | 147 bytes |
+| navigator name | `31`, then ASCII `JMFeatureNavigatorPartModified` and one zero byte |
+| constant block | 68 bytes |
+| four words | `0`, `0`, `1`, `1` |
+| owner | identifier of the `CLSID_JMPartOwner` object, or `0` in a document without features |
+| last feature | identifier of the last listed feature |
+| entry count | `M` |
+| entries | `M` pairs of `0` and an object identifier |
+| final word | |
+
+One more `u32` can follow the final word. The object then ends. The first
+three entries are the three base reference planes, of class
+`ReferencePlaneObject`. The other `M` − 3 entries are the features in
+feature-tree order. Each feature is an object of class `CLSID_JMPart` or
+`CLSID_JMGroup`.
+
+### 4.2 Feature kind
+
+A `CLSID_JMPart` object stores its function name. The `u32` at object offset
+132 is a byte count `L`, and `L` bytes follow it. A `u32` byte count `s`
+follows them, then `s` bytes of ASCII function name ending with one zero
+byte. The function names are:
+
+| Function name | Feature |
+| --- | --- |
+| `JMProtrusionFunction` | extruded protrusion |
+| `JMCutoutFunction` | extruded cutout |
+| `JMRevolvedProtrusionFunction` | revolved protrusion |
+| `JMMultiSweepProtrusionFunction` | swept protrusion |
+| `JMLoftedProtrusionFunction` | lofted protrusion |
+| `JMHoleFunction` | hole |
+| `JMRoundFunction` | round |
+| `JMChamferFunction` | chamfer |
+| `JMThinwallAssocFunctionNew` | thin wall |
+| `JMBaseTabFunction` | sheet-metal base tab |
+| `JMFlangeFunction` | sheet-metal flange |
+
+A `CLSID_JMGroup` feature is a mirror copy or a pattern.
