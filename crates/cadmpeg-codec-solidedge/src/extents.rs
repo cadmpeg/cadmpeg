@@ -94,8 +94,8 @@ fn shape(function: &str) -> Option<Shape> {
 
 /// The sketch a feature owns: its identifier, frame and model-space sample
 /// points of its curves in millimetres.
-struct Profile {
-    id: SketchId,
+pub(crate) struct Profile {
+    pub(crate) id: SketchId,
     frame: FrameValue,
     points: Vec<Vector3>,
 }
@@ -416,7 +416,7 @@ pub(crate) fn model_point(frame: &FrameValue, u: f64, v: f64) -> Vector3 {
 }
 
 /// The sketch `owner` owns, with sample points of its curves.
-fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Profile> {
+pub(crate) fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Profile> {
     let sketch = ir.design.sketches.iter().find(|s| &s.owner == owner)?;
     let cadmpeg_ir::design::ops::sketch::SketchPlane::Placed(plane) = &sketch.plane else {
         return None;

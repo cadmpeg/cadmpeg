@@ -19,6 +19,7 @@ mod loss;
 mod patterns;
 mod psm;
 mod settings;
+mod sheet_metal;
 mod sketches;
 mod sweeps;
 

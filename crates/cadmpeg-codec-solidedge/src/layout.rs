@@ -360,3 +360,39 @@ pub(crate) mod file_moniker {
     /// Offset of `path_len` (`u32`, little-endian). Spec §9.3.
     pub(crate) const PATH_LEN: usize = 18;
 }
+
+/// Byte offsets for the `variable_table_header` record.
+///
+/// Spec §10.1. Record length 8 B.
+pub(crate) mod variable_table_header {
+    /// Record length in bytes. Spec §10.1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `count` (`u32`, little-endian). Spec §10.1.
+    pub(crate) const COUNT: usize = 0;
+    /// Offset of `version` (`u32`, little-endian). Spec §10.1.
+    pub(crate) const VERSION: usize = 4;
+    /// Stated value of `version` (`u32`). Spec §10.1.
+    pub(crate) const VERSION_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `variable_record` record.
+///
+/// Spec §10.1. Record length 24 B.
+pub(crate) mod variable_record {
+    /// Record length in bytes. Spec §10.1.
+    pub(crate) const LEN: usize = 24;
+    /// Offset of `key` (`u32`, little-endian). Spec §10.1.
+    pub(crate) const KEY: usize = 0;
+    /// Offset of `index` (`u32`, little-endian). Spec §10.1.
+    pub(crate) const INDEX: usize = 4;
+    /// Offset of `object` (`u32`, little-endian). Spec §10.1.
+    pub(crate) const OBJECT: usize = 8;
+    /// Offset of `unit` (`u16`, little-endian). Spec §10.1.
+    pub(crate) const UNIT: usize = 12;
+    /// Offset of `reserved` (`u16`, little-endian). Spec §10.1.
+    pub(crate) const RESERVED: usize = 14;
+    /// Stated value of `reserved` (`u16`). Spec §10.1.
+    pub(crate) const RESERVED_VALUE: u16 = 0x0000;
+    /// Offset of `value` (`f64`, little-endian). Spec §10.1.
+    pub(crate) const VALUE: usize = 16;
+}

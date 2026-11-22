@@ -723,6 +723,16 @@ pub(crate) fn sketch_document(
 /// A document with one base-plane triple, the feature object 10 with body
 /// `body`, the objects `extra` and a navigator that lists the feature.
 fn feature_with_groups(body: Vec<u8>, extra: Vec<Object>, classes: &[&str]) -> Vec<u8> {
+    feature_with_streams(body, extra, classes, &[])
+}
+
+/// [`feature_with_groups`] with the streams `streams` beside the cluster.
+fn feature_with_streams(
+    body: Vec<u8>,
+    extra: Vec<Object>,
+    classes: &[&str],
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
     let mut objects = Vec::new();
     for id in 1..=3 {
         objects.push(Object {
@@ -759,11 +769,13 @@ fn feature_with_groups(body: Vec<u8>, extra: Vec<Object>, classes: &[&str]) -> V
     objects.extend(extra);
     objects.sort_by_key(|object| object.id);
     let (cluster, map) = cluster_and_map(&objects);
-    document(&[
+    let mut all = vec![
         ("PSMcluster0", cluster),
         ("PSMspacemap/0x00000000", map),
         ("PSMtypetable", type_table(classes, &[])),
-    ])
+    ];
+    all.extend(streams.iter().cloned());
+    document(&all)
 }
 
 /// The profile sets of [`sweep_document`]: the path and the section.
@@ -890,6 +902,17 @@ pub(crate) fn extent_document(
     members: &[Member2d],
     slots: Slots,
 ) -> Vec<u8> {
+    extent_document_with_streams(function, frame, members, slots, &[])
+}
+
+/// [`extent_document`] with the streams `streams` beside the cluster.
+pub(crate) fn extent_document_with_streams(
+    function: &str,
+    frame: &ProfileFrame,
+    members: &[Member2d],
+    slots: Slots,
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
     let mut body = part_body_with_profile(function, 72, EXTENT_SET + 1);
     let end = body.len() - 72 - 4;
     body.resize(end + 216 + 4, 0);
@@ -908,7 +931,25 @@ pub(crate) fn extent_document(
             extra.push(object);
         }
     }
-    feature_with_groups(body, extra, &EXTENT_CLASSES)
+    feature_with_streams(body, extra, &EXTENT_CLASSES, streams)
+}
+
+/// A `CustomPropertyVariableInfo` stream that lists `records` as (index,
+/// value) pairs (§10.1). The table states `count` records.
+pub(crate) fn variable_table(count: u32, records: &[(u32, f64)]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&count.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    for &(index, value) in records {
+        let mut record = [0_u8; 24];
+        record[0..4].copy_from_slice(&((index << 24) | 1).to_le_bytes());
+        record[4..8].copy_from_slice(&index.to_le_bytes());
+        record[8..12].copy_from_slice(&(1000 + index).to_le_bytes());
+        record[12..14].copy_from_slice(&1_u16.to_le_bytes());
+        record[16..24].copy_from_slice(&value.to_le_bytes());
+        bytes.extend_from_slice(&record);
+    }
+    bytes
 }
 
 /// The class names of [`dressup_document`], by form.

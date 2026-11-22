@@ -31,6 +31,9 @@ pub(crate) enum SolidEdgeLossCode {
     AssemblyOccurrenceUnread,
     AssemblyReferenceUnread,
     AssemblyVisibilityUnread,
+    SheetMetalRuleUnread,
+    SheetMetalBendMethodUnread,
+    SheetMetalBaseTabUnread,
 }
 
 impl SolidEdgeLossCode {
@@ -79,6 +82,14 @@ impl SolidEdgeLossCode {
                 "assembly.visibility-unread",
                 LossTaxonomy::MetadataNotTransferred,
             ),
+            Self::SheetMetalRuleUnread => ("sheet-metal.rule-unread", LossTaxonomy::RecordNotTyped),
+            Self::SheetMetalBendMethodUnread => (
+                "sheet-metal.bend-method-unread",
+                LossTaxonomy::MetadataNotTransferred,
+            ),
+            Self::SheetMetalBaseTabUnread => {
+                ("sheet-metal.base-tab-unread", LossTaxonomy::RecordNotTyped)
+            }
             Self::FeatureRollbackUnread => (
                 "feature.rollback-unread",
                 LossTaxonomy::FeatureHistoryRetained,
