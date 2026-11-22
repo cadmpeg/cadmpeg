@@ -471,8 +471,9 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
     ))
 }
 
-/// The frame the decoder keeps for a Front reference with a deferred principal
-/// component record (`sldprt-open-items.md` SF-01). No support plane stores it.
+/// The frame the decoder keeps for a Front reference whose profile holds
+/// principal-plane component records that do not name its plane
+/// (`sldprt-open-items.md` SF-01). No support plane stores it.
 fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),

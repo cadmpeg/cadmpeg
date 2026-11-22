@@ -1511,8 +1511,8 @@ pub(crate) fn project_marker_backed_sketches(
                 .flatten();
             let top_component = principal
                 .is_some_and(|(_, plane)| plane == cadmpeg_ir::features::PrincipalPlane::Top);
-            let top_frame = principal.map(|(frame, _)| frame);
-            let support = if top_frame.is_some() {
+            let principal_frame = principal.map(|(frame, _)| frame);
+            let support = if principal_frame.is_some() {
                 None
             } else {
                 feature_input_support_frame(
@@ -1526,7 +1526,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
             };
             let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
-            let frame = top_frame
+            let frame = principal_frame
                 .or(support.map(|support| support.frame))
                 .or_else(|| {
                     block_definition.then_some((
