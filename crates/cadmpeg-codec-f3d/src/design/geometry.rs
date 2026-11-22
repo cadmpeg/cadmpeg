@@ -2271,7 +2271,7 @@ fn sketch_arrangement_faces_with_nodes(
         pending.push(SketchProfileBoundaryUse {
             entity: id,
             parameter_range: geometric!(
-                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()
             ),
             reversed: use_.reversed,
         });
@@ -2317,10 +2317,10 @@ fn sketch_arrangement_faces_with_nodes(
             let id = use_.entity.clone();
             pending.push(SketchProfileBoundaryUse {
                 entity: id,
-                parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
-                    range
-                )
-                .ok()),
+                parameter_range: geometric!(
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range)
+                        .ok()
+                ),
                 reversed: use_.reversed,
             });
         }
@@ -2339,8 +2339,9 @@ fn sketch_arrangement_faces_with_nodes(
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
             let id = boundary.entity.clone();
-            let parameter_range =
-                geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok());
+            let parameter_range = geometric!(
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()
+            );
             let polyline = geometric!(profile_use_polyline(
                 entity,
                 range,

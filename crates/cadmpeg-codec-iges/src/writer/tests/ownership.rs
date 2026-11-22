@@ -6,12 +6,10 @@ use cadmpeg_ir::codec::{
     write::{target::TargetRequest, EncodeInput, Encoder},
     DecodeOptions,
 };
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    surface_payloads::ExactSurfacePayload,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::{CadIr, Codec, SourceGeometryRole, SourceObjectAssociation};
@@ -89,7 +87,9 @@ fn exact_surface_export_keeps_its_active_rectangle() {
     let ProceduralSurfaceDefinition::Exact(payload) = definition.definition() else {
         panic!("exact domain")
     };
-    let cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } = payload.spline() else {
+    let cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy { ranges, .. } =
+        payload.spline()
+    else {
         panic!("legacy exact domain")
     };
     assert_eq!(

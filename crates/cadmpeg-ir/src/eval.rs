@@ -17,15 +17,16 @@ use cadmpeg_core::convert::f64_from_index;
 use std::cmp::Ordering;
 
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::helix::HelixCurveConstruction;
+use crate::geometry::laws::{LawExpression, LawFormula};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
-use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
-    pcurve::PcurveGeometry,
-    CurveGeometry, HelixCurveConstruction, LawExpression, LawFormula, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-    SweepSurfaceLayout,
-};
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis};
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::sweep_surfaces::SweepSurfaceLayout;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum};
 use crate::math::{product_quotient, scaled_sinh_cosh};
@@ -4571,7 +4572,9 @@ fn model_native_extrusion_jet(
 }
 
 fn extrusion_directrix_reversed(
-    revision_form: Option<&crate::geometry::RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
+    revision_form: Option<
+        &crate::geometry::revision_forms::RevisionSurfaceForm<Vec<bool>, FiniteReal>,
+    >,
 ) -> bool {
     revision_form
         .and_then(|form| form.flags.first())
@@ -4893,7 +4896,7 @@ fn model_curve_point_by_id_inner(
             helix_differential(helix, parameter).map(|differential| differential.point)
         }
         ProceduralCurveDefinition::SurfaceCurve {
-            family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+            family: crate::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. },
         } if curve.geometry.solved_cache().is_none() => {
             let mut sides = context
                 .sides()
@@ -5168,7 +5171,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     else {
         return Ok(None);
     };
-    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let crate::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization: Some(parameterization),
         ..
@@ -7064,7 +7067,7 @@ fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7152,7 +7155,7 @@ fn cacheless_law_sweep_point(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7189,7 +7192,7 @@ fn cacheless_law_sweep_first_order(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7293,7 +7296,7 @@ impl ContactTrack {
 fn variable_blend_contact_track(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
-    side: &crate::geometry::RollingBallSide<
+    side: &crate::geometry::blends::RollingBallSide<
         crate::ids::SurfaceId,
         crate::ids::CurveId,
         PcurveGeometry,
@@ -7359,8 +7362,8 @@ fn cacheless_variable_blend_domain_contains(
     let construction = payload.construction();
     let exact_construction = matches!(
         construction.cache,
-        crate::geometry::VariableBlendCache::Parameterization { .. }
-            | crate::geometry::VariableBlendCache::Stale {}
+        crate::geometry::revision_forms::VariableBlendCache::Parameterization { .. }
+            | crate::geometry::revision_forms::VariableBlendCache::Stale {}
     );
     exact_construction
         && (0.0..=1.0).contains(&u.get())
@@ -7381,7 +7384,7 @@ fn blend_parameters(u: f64, v: f64) -> Result<(FiniteReal, FiniteReal), Evaluati
 }
 
 fn variable_blend_has_current_cache(
-    construction: &crate::geometry::VariableBlendConstruction<
+    construction: &crate::geometry::variable_blends::VariableBlendConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7390,12 +7393,12 @@ fn variable_blend_has_current_cache(
     construction.cache.shape_prefix() > 0
         && matches!(
             construction.cache,
-            crate::geometry::VariableBlendCache::Current { .. }
+            crate::geometry::revision_forms::VariableBlendCache::Current { .. }
         )
 }
 
 fn sweep_has_current_cache(
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7408,24 +7411,28 @@ fn sweep_has_current_cache(
 }
 
 fn revision_surface_tail_has_current_cache<P>(
-    cache: &crate::geometry::RevisionCacheForm<P>,
+    cache: &crate::geometry::revision_forms::RevisionCacheForm<P>,
 ) -> bool {
     matches!(
         cache,
-        crate::geometry::RevisionCacheForm::SolvedCache { .. }
+        crate::geometry::revision_forms::RevisionCacheForm::SolvedCache { .. }
     )
 }
 
 fn variable_blend_is_zero_radius(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
 ) -> Result<bool, EvaluationFailure<()>> {
     admission.within_model(|admission| {
         let _depth = ModelEvaluationDepthGuard::enter(admission)
             .map_err(EvaluationFailure::ResourceLimit)?;
         admission.model_step()?;
         let zero = match &value.payload {
-            crate::geometry::VariableBlendValuePayload::TwoEnds {
+            crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
                 parameters: [first_parameter, second_parameter],
                 radii: [first_radius, second_radius],
                 ..
@@ -7434,9 +7441,11 @@ fn variable_blend_is_zero_radius(
                     && first_radius.get() == 0.0
                     && second_radius.get() == 0.0
             }
-            crate::geometry::VariableBlendValuePayload::Constant { radius, nested, .. } => {
-                radius.get() == 0.0 && variable_blend_is_zero_radius(admission, nested)?
-            }
+            crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+                radius,
+                nested,
+                ..
+            } => radius.get() == 0.0 && variable_blend_is_zero_radius(admission, nested)?,
             _ => false,
         };
         Ok(zero)
@@ -7455,8 +7464,9 @@ fn cacheless_ruled_variable_blend_tracks(
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
     let construction = payload.construction();
     let no_value = EvaluationFailure::NoValue;
-    let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
-        construction.cross_section.as_ref()
+    let Some(crate::geometry::variable_blends::VariableBlendCrossSection::RoundedChamfer {
+        radius,
+    }) = construction.cross_section.as_ref()
     else {
         return Err(no_value);
     };
@@ -7521,15 +7531,21 @@ fn cacheless_ruled_variable_blend_first_order(
 /// function that overflows leaves the evaluation outside the finite range.
 fn variable_blend_radius(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     parameter: f64,
 ) -> Result<FiniteReal, EvaluationFailure<()>> {
     let _depth =
         ModelEvaluationDepthGuard::enter(admission).map_err(EvaluationFailure::ResourceLimit)?;
     admission.model_step()?;
     match &value.payload {
-        crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
+        crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
+            parameters,
+            radii,
+            ..
         } => {
             let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
             let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
@@ -7541,11 +7557,17 @@ fn variable_blend_radius(
             FiniteReal::new(first_radius + fraction * (second_radius - first_radius))
                 .ok_or(EvaluationFailure::NonFinite(()))
         }
-        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
-            variable_blend_radius(admission, nested, parameter)
+        crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+            nested, ..
+        } => variable_blend_radius(admission, nested, parameter),
+        crate::geometry::variable_blends::VariableBlendValuePayload::Functional {
+            function,
+            ..
         }
-        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
-        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+        | crate::geometry::variable_blends::VariableBlendValuePayload::Interpolated {
+            function,
+            ..
+        } => {
             let [radius, _] = crate::eval::decode::pcurve_uv(admission, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
@@ -7559,15 +7581,21 @@ fn variable_blend_radius(
 /// none, in the terms of [`variable_blend_radius`].
 fn variable_blend_radius_derivative(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     parameter: f64,
 ) -> Result<FiniteReal, EvaluationFailure<()>> {
     let _depth =
         ModelEvaluationDepthGuard::enter(admission).map_err(EvaluationFailure::ResourceLimit)?;
     admission.model_step()?;
     match &value.payload {
-        crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
+        crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
+            parameters,
+            radii,
+            ..
         } => {
             let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
             let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
@@ -7577,11 +7605,17 @@ fn variable_blend_radius_derivative(
             }
             sweep_law::law_real((second_radius - first_radius) / width)
         }
-        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
-            variable_blend_radius_derivative(admission, nested, parameter)
+        crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+            nested, ..
+        } => variable_blend_radius_derivative(admission, nested, parameter),
+        crate::geometry::variable_blends::VariableBlendValuePayload::Functional {
+            function,
+            ..
         }
-        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
-        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+        | crate::geometry::variable_blends::VariableBlendValuePayload::Interpolated {
+            function,
+            ..
+        } => {
             let [derivative, _] = pcurve_tangent(admission, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
@@ -7643,7 +7677,7 @@ fn circular_variable_blend_applies(
         && construction.radii.is_single()
         && matches!(
             construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
+            None | Some(crate::geometry::variable_blends::VariableBlendCrossSection::Circular {})
         )
 }
 
@@ -7715,7 +7749,7 @@ struct CircularVariableBlendSection {
 fn cacheless_circular_variable_blend_section(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
+    construction: &crate::geometry::variable_blends::VariableBlendConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7837,16 +7871,17 @@ fn cacheless_constant_rolling_ball_section(
     let no_value = EvaluationFailure::NoValue;
     let native = payload.native().ok_or(no_value)?;
     let native_ranges = payload.native_ranges().ok_or(no_value)?;
-    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
+    let crate::geometry::blends::BlendRadiusLaw::Constant { signed_radius } = payload.radius()
+    else {
         return Err(no_value);
     };
     let signed_radius = signed_radius.get();
     let (finite_u, finite_v) = blend_parameters(u, v)?;
     if !matches!(
         native.cache,
-        crate::geometry::RevisionCacheForm::Parameterization(_)
+        crate::geometry::revision_forms::RevisionCacheForm::Parameterization(_)
     ) || native.third.is_some()
-        || *payload.cross_section() != crate::geometry::BlendCrossSection::Circular
+        || *payload.cross_section() != crate::geometry::blends::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, finite_v)
         || !sweep_tail_interval_contains(native_ranges[0].endpoints(), finite_u)
@@ -8542,7 +8577,7 @@ fn model_surface_mapping(
             let support = definition_payload.support();
             let parameter_ranges = definition_payload
                 .parameter_ranges()
-                .map(crate::geometry::DirectedParameterRange::finite_endpoints);
+                .map(crate::geometry::procedural_curves::DirectedParameterRange::finite_endpoints);
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
             subset_support_parameters_with_derivatives(u, v, parameter_ranges, *u_sense, *v_sense)

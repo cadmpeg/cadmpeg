@@ -43,11 +43,14 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw, BlendSupport};
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
-    IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -517,7 +520,7 @@ pub(super) fn try_decode_geometry(
                 );
             let mut definition = ProceduralSurfaceDefinition::Offset(admitted_payload);
             if let Some(tolerance) = cache_fit_tolerance {
-                let cache = cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
+                let cache = cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(tolerance)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 definition
                     .set_legacy_cache(Some(cache))
@@ -596,7 +599,7 @@ pub(super) fn try_decode_geometry(
                                 ),
                             },
                             BlendCrossSection::Circular,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
@@ -656,7 +659,7 @@ pub(super) fn try_decode_geometry(
                                 signed_radius: cadmpeg_ir::scalar::Length::ZERO,
                             },
                             BlendCrossSection::Circular,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
@@ -865,7 +868,7 @@ pub(super) fn try_decode_geometry(
                     .references()
                     .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)));
                 if let [Some(first), Some(second)] = [first, second] {
-                    cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
+                    cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::from_parts(
                         [first.clone(), second.clone()],
                         uncharted.endpoints,
                         uncharted.tolerance.into(),
@@ -1049,7 +1052,7 @@ pub(super) fn try_decode_geometry(
             let mut definition = definition;
             if let Some(charted) = charted {
                 definition
-                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                    .set_legacy_cache(cadmpeg_ir::geometry::legacy_cache::LegacyCache::new(
                         charted.fit_tolerance,
                     ))
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1221,7 +1224,7 @@ pub(super) fn try_decode_geometry(
                             surface_curve.state.tolerance().get(),
                         )
                         .map(|tolerance| {
-                            cadmpeg_ir::geometry::FitTolerance::from(
+                            cadmpeg_ir::geometry::legacy_cache::FitTolerance::from(
                                 cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
                             )
                         });

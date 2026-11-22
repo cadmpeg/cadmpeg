@@ -67,12 +67,13 @@ fn a_cone_apex_has_no_normal_even_when_its_parameter_rounds() {
 /// directrix, with an unknown solved cache.
 fn swept(revolution: bool) -> (cadmpeg_ir::CadIr, cadmpeg_ir::ids::SurfaceId) {
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::{
         AxisRevolutionSurfaceConstruction, LinearSweepSurfaceConstruction,
     };
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
+        Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -166,10 +167,10 @@ fn a_revolution_inverts_a_point_with_no_seed() {
 #[test]
 fn a_rectangular_trim_bounds_its_carrier_domain() {
     use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction;
     use cadmpeg_ir::geometry::{
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry,
+        ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::index::ModelIndex;

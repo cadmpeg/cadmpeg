@@ -224,7 +224,7 @@ fn decreasing_tspline_ranges_keep_face_and_native_construction() {
                 );
                 assert!(matches!(
                     out.procedural_surfaces[0].1.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Unknown { .. }
+                    cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Unknown { .. }
                 ));
             }
         }
