@@ -109,13 +109,15 @@ struct Inputs<'a> {
 /// Every proven tool adds its generating feature to the `Combine`
 /// dependencies and records `combine:tool:<ordinal>:generator`; the product
 /// definition of that feature owns the tool body. The tools become generated
-/// bodies only when every tool is proven.
+/// bodies only when every tool is proven. Return the losses and the native
+/// tools that each bound `Combine` replaces.
 pub(crate) fn bind(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     bindings: &[DesignBodyBinding],
-) -> Vec<LossNote> {
+) -> (Vec<LossNote>, Vec<ReplacedTools>) {
     let mut losses = Vec::new();
+    let mut replaced = Vec::new();
     let mut updates = Vec::<(usize, Vec<(usize, Result<ResolvedTool, &'static str>)>)>::new();
     {
         let inputs = Inputs {
@@ -222,13 +224,101 @@ pub(crate) fn bind(
             else {
                 return;
             };
+            let mut previous = None;
             refusal = operands
-                .try_edit(|_, operand_tools| *operand_tools = selection)
+                .try_edit(|_, operand_tools| {
+                    previous = Some(std::mem::replace(operand_tools, selection));
+                })
                 .err();
+            if refusal.is_none() {
+                replaced.extend(previous.map(|tools| ReplacedTools {
+                    feature: feature.id.clone(),
+                    tools,
+                }));
+            }
         });
         if let Some(error) = refusal {
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
                 "feature {} retains its native Combine tools: {error}",
+                feature.id
+            )));
+        }
+    }
+    (losses, replaced)
+}
+
+/// The native tools of a `Combine` that [`bind`] replaced with generated
+/// bodies.
+pub(crate) struct ReplacedTools {
+    feature: FeatureId,
+    tools: BodySelection,
+}
+
+/// Name each generated tool body by the identity that the result state of its
+/// generating feature lists. A generating feature whose result state lists one
+/// body generates that body, so a tool that it generates is that body. A
+/// `Combine` whose tools then name no listed identity, or name one twice,
+/// takes back its native tools.
+pub(crate) fn align_with_result_states(
+    features: &mut [Feature],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
+    replaced: Vec<ReplacedTools>,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    for ReplacedTools { feature: id, tools } in replaced {
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == id) else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let BodySelection::Generated { bodies, native } = operands.tools() else {
+            continue;
+        };
+        let aligned = bodies
+            .iter()
+            .map(|body| {
+                let Some(state) = results.iter().find(|state| state.output_of == body.feature)
+                else {
+                    return Some(body.clone());
+                };
+                if state
+                    .bodies()
+                    .iter()
+                    .any(|listed| listed.as_str() == body.local_id.as_str())
+                {
+                    return Some(body.clone());
+                }
+                let [only] = state.bodies() else {
+                    return None;
+                };
+                GeneratedBodyRef::new(body.feature.clone(), only.as_str().to_owned()).ok()
+            })
+            .collect::<Option<Vec<_>>>()
+            .and_then(|refs| BodySelection::generated(refs, native.as_str().to_owned()).ok());
+        let mut reverted = false;
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                definition
+            else {
+                return;
+            };
+            let aligned = aligned.is_some_and(|selection| {
+                operands
+                    .try_edit(|_, operand_tools| *operand_tools = selection)
+                    .is_ok()
+            });
+            if !aligned {
+                reverted = operands
+                    .try_edit(|_, operand_tools| *operand_tools = tools)
+                    .is_ok();
+            }
+        });
+        if reverted {
+            losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
+                "feature {} retains its native Combine tools: a generated tool body is absent from the result state of its generating feature",
                 feature.id
             )));
         }

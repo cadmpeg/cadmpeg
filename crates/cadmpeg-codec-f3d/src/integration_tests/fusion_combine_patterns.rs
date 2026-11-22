@@ -50,7 +50,7 @@ fn pattern_copies_bind_as_bodies_that_the_pattern_generates() {
     let (operands, codes) = combine_operands(include_bytes!(
         "../../../../corpus/f3d/combine_pattern_copies.f3d"
     ));
-    assert_eq!(operands["target"]["kind"], "historical", "{operands}");
+    assert_eq!(operands["target"]["kind"], "resolved", "{operands}");
     let generators = tool_generators(&operands);
     assert_eq!(generators.len(), 2);
     assert!(
@@ -75,7 +75,7 @@ fn a_repeated_seed_tool_selects_the_seed_body_once() {
     let (operands, codes) = combine_operands(include_bytes!(
         "../../../../corpus/f3d/combine_pattern_seed_repeated.f3d"
     ));
-    assert_eq!(operands["target"]["kind"], "historical", "{operands}");
+    assert_eq!(operands["target"]["kind"], "resolved", "{operands}");
     let generators = tool_generators(&operands);
     assert_eq!(generators.len(), 3, "{generators:?}");
     assert!(generators[0].contains(":Extrude2:"), "{generators:?}");

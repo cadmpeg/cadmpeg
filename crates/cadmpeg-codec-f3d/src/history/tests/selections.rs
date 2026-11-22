@@ -13,8 +13,6 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::active_brep_face_matches_source;
-use crate::history::admit_history_binding;
-use crate::history::archived_active_record_count;
 use crate::history::bind_snapshot_revision_ids;
 use crate::history::body_revision_without_topology_change;
 use crate::history::combine_recipe_family_tool_slots;
@@ -33,6 +31,7 @@ use crate::history::selection::per_history_identities;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
 use crate::history::TopologyStableBodyRevision;
+use crate::history::{admit_history_binding, archived_active_record_count};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
