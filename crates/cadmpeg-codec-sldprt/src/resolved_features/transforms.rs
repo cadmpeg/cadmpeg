@@ -9,7 +9,7 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
-const EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
+const EPS_TRANSFORMS_ROTATED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8: f64 = 1.0e-8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +184,7 @@ pub(super) fn sketch_frame_marker_transform(
         });
     }
     axis_aligned_sketch_frame_marker_transform(sketch, quantum)
-        .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
+        .or_else(|| rotated_sketch_frame_marker_transform(sketch, quantum))
 }
 
 fn axis_aligned_sketch_frame_marker_transform(
@@ -262,13 +262,26 @@ fn axis_aligned_sketch_frame_marker_transform(
     })
 }
 
-fn affine_sketch_frame_marker_transform(
+fn rotated_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
     const SCALE: f64 = 1_000_000_000_000.0;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let normal = [normal.x, normal.y, normal.z];
+    let normal_axis =
+        (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
+    let mut native_axes = (0..3).filter(|candidate| *candidate != normal_axis);
+    let first_axis = native_axes.next()?;
+    let second_axis = native_axes.next()?;
+    let normal_length = normal[first_axis]
+        .hypot(normal[second_axis])
+        .hypot(normal[normal_axis]);
+    if normal[normal_axis].abs()
+        < (1.0 - EPS_TRANSFORMS_ROTATED_SKETCH_FRAME_MARKER_TRANSFORM_E8) * normal_length
+    {
+        return Some(MarkerTransform::identity());
+    }
     let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
         normal[1] * u_axis[2] - normal[2] * u_axis[1],
@@ -281,46 +294,22 @@ fn affine_sketch_frame_marker_transform(
     if !(v_axis.into_iter().all(f64::is_finite) && quantum.is_finite() && quantum > 0.0) {
         return None;
     }
-    let normal_axis =
-        (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
-    if normal[normal_axis].abs() <= EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8 {
-        return None;
-    }
-    let mut native_axes = (0..3).filter(|candidate| *candidate != normal_axis);
-    let first_axis = native_axes.next()?;
-    let second_axis = native_axes.next()?;
-    let tangent = |axis: usize| {
-        let mut value = [0.0; 3];
-        value[axis] = 1.0;
-        value[normal_axis] = -normal[axis] / normal[normal_axis];
-        value
+    let row = |axis: [f64; 3]| {
+        quantize(
+            Point2::new(axis[first_axis] * SCALE, axis[second_axis] * SCALE),
+            1.0,
+        )
+        .cells()
     };
-    let dot = |left: [f64; 3], right: [f64; 3]| {
-        left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+    let first_row = row(u_axis)?;
+    let second_row = row(v_axis)?;
+    let origin_along = |axis: [f64; 3]| {
+        -(origin[first_axis] * axis[first_axis] + origin[second_axis] * axis[second_axis])
     };
-    let first = tangent(first_axis);
-    let second = tangent(second_axis);
-    let first_row = quantize(
-        Point2::new(dot(first, u_axis) * SCALE, dot(second, u_axis) * SCALE),
-        1.0,
-    )
-    .cells()?;
-    let second_row = quantize(
-        Point2::new(dot(first, v_axis) * SCALE, dot(second, v_axis) * SCALE),
-        1.0,
-    )
-    .cells()?;
-    let matrix = [first_row.0, first_row.1, second_row.0, second_row.1];
-    let mut zero_world_delta = [0.0; 3];
-    zero_world_delta[first_axis] = -origin[first_axis];
-    zero_world_delta[second_axis] = -origin[second_axis];
-    zero_world_delta[normal_axis] = -(normal[first_axis] * zero_world_delta[first_axis]
-        + normal[second_axis] * zero_world_delta[second_axis])
-        / normal[normal_axis];
     Some(MarkerTransform {
-        axes: Axes::Affine(matrix),
+        axes: Axes::Affine([first_row.0, first_row.1, second_row.0, second_row.1]),
         translation: quantize(
-            Point2::new(dot(zero_world_delta, u_axis), dot(zero_world_delta, v_axis)),
+            Point2::new(origin_along(u_axis), origin_along(v_axis)),
             quantum,
         )
         .cells()?,
