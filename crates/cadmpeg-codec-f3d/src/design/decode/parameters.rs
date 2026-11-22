@@ -1286,14 +1286,6 @@ fn parse_legacy_design_parameter(
     parsed.transpose()
 }
 
-pub(crate) fn design_parameter_discriminator(source_kind: &str) -> u64 {
-    match source_kind {
-        "ScaleFactor" => 5,
-        "TangencyWeight" => 6,
-        _ => 0,
-    }
-}
-
 /// Whether a class tag admits the legacy owner grammar without scope or scalar
 /// lanes.
 /// Design type of every parameter-owner record.

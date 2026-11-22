@@ -554,25 +554,33 @@ impl ParameterPlan {
             .zip(indices.iter().copied())
             .enumerate()
             .map(|(ordinal, (parameter, record_index))| {
-                parameter.record(class_tag.clone(), record_index, ordinal)
+                parameter.record(
+                    class_tag.clone(),
+                    record_index,
+                    ordinal,
+                    DesignParameterDiscriminator::Code0,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         encode_document_parameters(&records, collection)
     }
 
     /// The user parameter records of class `class_tag` at `indices`, each
-    /// with a tail that names `collection`, as records of `out`.
+    /// with family discriminator `discriminator` and a tail that names
+    /// `collection`, as records of `out`.
     pub(in crate::writer::generate) fn roster_records(
         &self,
         class_tag: &crate::records::references::DesignClassTag,
         indices: &[u32],
         collection: u32,
+        discriminator: DesignParameterDiscriminator,
         out: &mut super::frames::DesignRecords,
     ) -> Result<(), CodecError> {
         for (ordinal, (parameter, record_index)) in
             self.written.iter().zip(indices.iter().copied()).enumerate()
         {
-            let record = parameter.record(class_tag.clone(), record_index, ordinal)?;
+            let record =
+                parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
             out.bytes
                 .extend(encode_document_parameters(&[record], collection)?);
@@ -797,6 +805,7 @@ impl PlannedParameter {
         class_tag: crate::records::references::DesignClassTag,
         record_index: u32,
         ordinal: usize,
+        discriminator: DesignParameterDiscriminator,
     ) -> Result<crate::records::parameters::DesignParameter, CodecError> {
         let source_ordinal = u32::try_from(ordinal)
             .ok()
@@ -811,7 +820,7 @@ impl PlannedParameter {
             source: DesignParameterSource::User {
                 source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                 family_discriminator: Some(Located {
-                    value: DesignParameterDiscriminator::Code0,
+                    value: discriminator,
                     offset: 22,
                 }),
             },

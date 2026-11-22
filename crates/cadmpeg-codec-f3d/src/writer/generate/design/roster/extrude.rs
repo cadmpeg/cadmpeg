@@ -14,12 +14,12 @@ use super::super::frames::DesignRecords;
 use super::super::history::{HEAD_STATE, ROOT_STATE};
 use super::super::sketch::{CurveGeometry, PlannedSketch};
 use super::super::types;
-use super::owned::{Owned, DISCRIMINATOR};
+use super::owned::Owned;
 use super::sketches::{
     curve_identity, item_companion, SketchRecords, COMPONENT, CURVE_SECONDARY_IDENTITY,
     OWNER_COLLECTION,
 };
-use super::{count, Context};
+use super::{count, Context, PARAMETER_DISCRIMINATOR};
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 
@@ -683,7 +683,8 @@ pub(super) fn losses(
             records.scope
         ),
         format!(
-            "records {along} and {taper} (Extrude parameters: family discriminator {DISCRIMINATOR}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)"
+            "records {along} and {taper} (Extrude parameters: family discriminator {}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)",
+            PARAMETER_DISCRIMINATOR.code()
         ),
         format!(
             "records {} and {} (persistent selection identities: local identities {FIRST_SELECTION_IDENTITY} and {})",
