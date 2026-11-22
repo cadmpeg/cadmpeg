@@ -3,9 +3,11 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::loss::SldprtLossCode;
-use crate::records::FeatureHistory;
+use crate::records::{FeatureHistory, HistoryContent, HistoryElement, HistoryElementContent};
 use crate::test_support::container::{make_block, outer_header};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::report::loss::LossNote;
+use std::collections::BTreeMap;
 
 struct Decoded {
     histories: Vec<FeatureHistory>,
@@ -32,7 +34,7 @@ fn decode(section: &str, payload: &[u8]) -> Decoded {
 fn codes(losses: &[LossNote]) -> Vec<SldprtLossCode> {
     [
         SldprtLossCode::HistoryUnread,
-        SldprtLossCode::HistoryApplicationUnread,
+        SldprtLossCode::HistoryApplicationNotTransferred,
     ]
     .into_iter()
     .flat_map(|code| {
@@ -98,15 +100,41 @@ fn application_element_is_not_a_feature_and_is_named() {
         .map(|feature| (feature.name.as_str(), feature.ordinal))
         .collect::<Vec<_>>();
     assert_eq!(names, [("Sketch1", 0), ("Boss", 1)]);
-    assert_eq!(history.content.len(), 2);
+    let keyword = |name: &str, value: &str| {
+        HistoryElementContent::Element(HistoryElement {
+            tag: "Keyword".into(),
+            attributes: BTreeMap::from([(NonBlankString::new("Name").unwrap(), name.to_owned())]),
+            content: vec![HistoryElementContent::Text(value.into())],
+        })
+    };
+    assert_eq!(history.content.len(), 3);
+    assert_eq!(
+        history.content[0],
+        HistoryContent::Element(HistoryElement {
+            tag: "Application".into(),
+            attributes: BTreeMap::from([(
+                NonBlankString::new("Name").unwrap(),
+                "Simulation".to_owned(),
+            )]),
+            content: vec![
+                keyword("Analysis type", "Static"),
+                keyword("Mesh type", "Solid Mesh"),
+            ],
+        })
+    );
+    assert!(matches!(
+        history.content[1..],
+        [HistoryContent::Feature(_), HistoryContent::Feature(_)]
+    ));
     assert_eq!(
         codes(&decoded.losses),
-        [SldprtLossCode::HistoryApplicationUnread]
+        [SldprtLossCode::HistoryApplicationNotTransferred]
     );
     let message = &decoded.losses[0].message;
     assert!(
         message.contains(r#"Application element "Simulation""#)
-            && message.contains(r#"Keyword "Analysis type", Keyword "Mesh type""#),
+            && message.contains(r#"Keyword "Analysis type", Keyword "Mesh type""#)
+            && message.contains("kept in the native history"),
         "{message}"
     );
 }

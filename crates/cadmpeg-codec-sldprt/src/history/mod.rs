@@ -17,7 +17,10 @@ use self::classify::classless_builtin_node;
 
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
+use crate::records::{
+    Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent, HistoryElement,
+    HistoryElementContent,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
@@ -87,8 +90,8 @@ fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
     )));
 }
 
-/// Charges an `Application` element of a Keywords root, which the reader does
-/// not take as a feature and which no document record holds.
+/// Charges an `Application` element of a Keywords root, which the native
+/// history keeps and no neutral record holds.
 fn report_application(
     losses: &mut Vec<LossNote>,
     member: &str,
@@ -110,9 +113,43 @@ fn report_application(
     } else {
         format!("the child elements {}", children.join(", "))
     };
-    losses.push(crate::loss::SldprtLossCode::HistoryApplicationUnread.note(format!(
-        "Keywords member {member}: the Application element {name} and {held} are not features and no document record holds them; they are not read"
+    losses.push(crate::loss::SldprtLossCode::HistoryApplicationNotTransferred.note(format!(
+        "Keywords member {member}: the Application element {name} with {held} is kept in the native history; no neutral record holds it, so a write to another format omits it"
     )));
+}
+
+/// The native record of an XML element and its subtree.
+fn history_element(
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    node: roxmltree::Node<'_, '_>,
+) -> HistoryElement {
+    let attributes = keyed_attributes(
+        losses,
+        record,
+        node.attributes()
+            .map(|attribute| (attribute.name(), attribute.value())),
+    );
+    let content = node
+        .children()
+        .filter_map(|child| {
+            if child.is_text() {
+                let value = child.text().unwrap_or_default().trim();
+                (!value.is_empty()).then(|| HistoryElementContent::Text(value.to_owned()))
+            } else if child.is_element() {
+                Some(HistoryElementContent::Element(history_element(
+                    losses, record, child,
+                )))
+            } else {
+                None
+            }
+        })
+        .collect();
+    HistoryElement {
+        tag: node.tag_name().name().to_owned(),
+        attributes,
+        content,
+    }
 }
 
 pub(crate) fn histories(
@@ -380,6 +417,12 @@ pub(crate) fn histories(
                         );
                         configuration_ordinal += 1;
                         Some(HistoryContent::Configuration(id))
+                    } else if applications.contains(&child) {
+                        Some(HistoryContent::Element(history_element(
+                            losses,
+                            parent.as_str(),
+                            child,
+                        )))
                     } else {
                         feature_ids
                             .get(&child.range().start)

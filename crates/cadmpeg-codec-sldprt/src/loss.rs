@@ -110,9 +110,9 @@ pub(crate) enum SldprtLossCode {
     /// A Keywords history member has no XML text that parses, so none of its
     /// records is read.
     HistoryUnread,
-    /// A Keywords root holds an `Application` element, which is not read as a
-    /// feature and has no document record.
-    HistoryApplicationUnread,
+    /// A Keywords root holds an `Application` element, which the native history
+    /// keeps and no neutral record holds.
+    HistoryApplicationNotTransferred,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -400,7 +400,7 @@ impl SldprtLossCode {
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackMarkClassInferred,
         Self::HistoryUnread,
-        Self::HistoryApplicationUnread,
+        Self::HistoryApplicationNotTransferred,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -544,7 +544,7 @@ impl SldprtLossCode {
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::HistoryUnread => "history.unread",
-            Self::HistoryApplicationUnread => "history.application-unread",
+            Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -694,7 +694,7 @@ impl SldprtLossCode {
             | Self::GeometryMeshBodyNotTransferred
             | Self::GeometryImportedBodiesNotTransferred
             | Self::HistoryUnread => Severity::Error,
-            Self::HistoryApplicationUnread => Severity::Warning,
+            Self::HistoryApplicationNotTransferred => Severity::Warning,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -927,7 +927,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
-            Self::HistoryApplicationUnread => LossTaxonomy::MetadataNotTransferred,
+            Self::HistoryApplicationNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1181,7 +1181,7 @@ mod tests {
                 "history.rollback-unread",
                 "history.rollback-mark-class-inferred",
                 "history.unread",
-                "history.application-unread",
+                "history.application-not-transferred",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
