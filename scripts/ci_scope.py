@@ -44,8 +44,9 @@ STATIC_ONLY = {
 # Single-codec CLI builds in the feature-gate job, by output name.
 SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg-codec-step'}
 
-# Read by the `cadmpeg` package's `layout_tables` test.
+# Read by the layout-table test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
+LAYOUT_TEST_INPUTS = ('crates/cadmpeg-layout-tables/',)
 
 # Read with the schema by the Annex A check of the schema gate.
 ANNEX_INPUTS = {'docs/cadir-v11.md', 'scripts/generate-annex-a.py', 'scripts/test_generate_annex_a.py'}
@@ -121,6 +122,27 @@ def lock_dependents(old: str, new: str, names: set[str]) -> set[str]:
     return reached & names
 
 
+@functools.cache
+def layout_references(root: Path) -> set[str]:
+    """Files named by the tables for validation, beyond their owning crates."""
+    references = {'crates/cadmpeg-registry/docs/dialects.toml'}
+
+    def collect(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in {'spec', 'path', 'parsed_by'}:
+                    references.update([child] if isinstance(child, str) else child)
+                else:
+                    collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    for table in (root / 'docs/layouts').glob('*.toml'):
+        collect(tomllib.loads(table.read_text()))
+    return references
+
+
 def select(root: Path, paths: list[str], *, full: bool = False,
            base_lock: str | None = None, cache_writer: bool = False,
            tested: bool = False) -> dict:
@@ -165,6 +187,11 @@ def select(root: Path, paths: list[str], *, full: bool = False,
                 **dict.fromkeys(SINGLE_CODEC_GATES, False), 'schema': False,
                 'iges': False, 'inventor_cli': False, 'layout': False, 'codec_scope': [], 'prose_only': False,
                 'full': False, 'static': False, 'audit': False}
+    generator = root / 'crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs'
+    layout_sources = tuple(f'{path.rsplit("/", 1)[0]}/' for path in re.findall(
+        r'\("\w+",\s*"(crates/[^"]+/src/layout\.rs)"\)',
+        generator.read_text() if generator.exists() else ''))
+    layout_files = layout_references(root)
     affected = set()
     tested_only = set()
     layout = False
@@ -172,6 +199,9 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     fuzz = False
     audit = full
     for path in paths:
+        if (path in layout_files or path.startswith(LAYOUT_TABLE_INPUTS + LAYOUT_TEST_INPUTS)
+                or (path.endswith('.rs') and path.startswith(layout_sources))):
+            layout = True
         for prefix in (path, *(parent.as_posix() for parent in PurePosixPath(path).parents)):
             tested_only |= read_by.get(prefix, frozenset())
         if path.startswith('crates/cadmpeg-fuzz/'):
@@ -232,6 +262,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             if dependent not in affected:
                 affected.add(dependent)
                 pending.append(dependent)
+    layout |= 'cadmpeg-layout-tables' in affected
     gates = {}
     for output, codec in SINGLE_CODEC_GATES.items():
         inputs = {'cadmpeg', codec}
@@ -255,7 +286,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         'schema': full or annex or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
         'inventor_cli': full or 'cadmpeg-codec-inventor' in affected or cli_changed,
-        'layout': layout and 'cadmpeg' not in affected and not full,
+        'layout': layout or full,
         'prose_only': bool(paths) and not full and all(
             path == 'README.md' or re.fullmatch(r'crates/cadmpeg-codec-[^/]+/README\.md', path)
             or path.startswith(LAYOUT_TABLE_INPUTS) for path in paths),

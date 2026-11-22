@@ -107,6 +107,13 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual(cargo_main(), 0)
             run.assert_not_called()
 
+    def test_layout_crate_has_no_library_doc_tests(self):
+        with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg-layout-tables"]', 'CI_FULL': 'false'}), \
+                patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \
+                patch('scripts.ci_cargo.subprocess.run') as run:
+            self.assertEqual(cargo_main(), 0)
+            run.assert_not_called()
+
     def test_documentation_gate_keeps_selected_features(self):
         with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg","cadmpeg-ir"]', 'CI_FULL': 'false'}), \
                 patch('sys.argv', ['ci_cargo.py', 'test', '--doc']), \
@@ -286,6 +293,21 @@ class ScopeTests(unittest.TestCase):
                 self.assertEqual(scope['packages'], [])
                 self.assertTrue(scope['layout'])
 
+    def test_layout_crate_and_generated_code_select_layout_gate(self):
+        for path in ('crates/cadmpeg-layout-tables/tests/layout_tables/main.rs',
+                     'crates/cadmpeg-codec-f3d/src/layout.rs',
+                     'crates/cadmpeg-codec-f3d/src/layout/part.rs'):
+            with self.subTest(path=path):
+                self.assertTrue(select(ROOT, [path])['layout'])
+        self.assertIn('cadmpeg-layout-tables', select(
+            ROOT, ['crates/cadmpeg-layout-tables/tests/layout_tables/main.rs'])['packages'])
+        scope = select(ROOT, ['crates/cadmpeg-codec-f3d/src/decoder.rs'])
+        self.assertNotIn('cadmpeg-layout-tables', scope['packages'])
+        self.assertTrue(scope['layout'])
+        self.assertFalse(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['layout'])
+        self.assertTrue(select(ROOT, ['crates/cadmpeg-registry/docs/dialects.toml'])['layout'])
+        self.assertTrue(select(ROOT, [], full=True)['layout'])
+
     def test_the_specification_and_its_annex_generator_select_the_schema_gate(self):
         for path in sorted(ANNEX_INPUTS):
             with self.subTest(path=path):
@@ -417,10 +439,10 @@ class ScopeTests(unittest.TestCase):
             with self.subTest(output=output):
                 self.assertFalse(scope[output])
 
-    def test_specification_with_rust_runs_layout_in_the_regular_suite(self):
+    def test_specification_with_rust_runs_layout_gate(self):
         scope = select(ROOT, ['docs/formats/f3d.md', 'crates/cadmpeg-codec-f3d/src/lib.rs'])
         self.assertTrue(scope['rust'])
-        self.assertFalse(scope['layout'])
+        self.assertTrue(scope['layout'])
         self.assertIn('cadmpeg', scope['packages'])
 
     def test_corpus_manifest_selects_its_cli_test_without_full_gate(self):
