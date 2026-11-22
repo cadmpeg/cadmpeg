@@ -66,74 +66,32 @@ pub(crate) enum Statement {
     Contested,
 }
 
-/// The class of each index of a `Config-N` map at which a walk places one:
-/// its parameter class, or `None` for a class that is no parameter class.
-type HeldClasses = BTreeMap<u16, Option<ArchiveParameterClass>>;
-
-/// The `Config-N` class map a `ResolvedFeatures` lane's class tokens continue
-/// (`docs/formats/sldprt.md` §2.2). The lane's own declarations take the
-/// indices from the end of that map on, and a token below it names the class
-/// `Config-N` holds at that index.
+/// The classes of the `Config-N` map a `ResolvedFeatures` lane that states
+/// a map count continues (`docs/formats/sldprt.md` §2.2), read where a walk
+/// of `Config-N` reconciles with that count. The lane's own declarations
+/// take the indices from the count on, and a token below it names the class
+/// `Config-N` holds at that index. The map holds the class at each index
+/// below the count at which the walk places one: its parameter class, or
+/// `None` for a class that is no parameter class.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ConfigurationMap {
-    /// A stream that states the map count `end`. `classes` holds the class
-    /// at each index below `end` at which a walk of `Config-N` that
-    /// reconciles with `end` places one.
-    Counted {
-        end: u32,
-        classes: Option<HeldClasses>,
-    },
-    /// A compound-file stream, which states no count: the class at each
-    /// index at which a consistent walk of `Config-N` places one.
-    Unstated { classes: HeldClasses },
-}
+pub(crate) struct ConfigurationMap(BTreeMap<u16, Option<ArchiveParameterClass>>);
 
 impl ConfigurationMap {
-    /// The map of a stream that states the count `end`, with the `Config-N`
-    /// class at each index from `classes`, a walk that reconciles with `end`.
-    pub(crate) fn counted(end: u32, classes: Option<&BTreeMap<u32, String>>) -> Self {
-        let classes = classes.map(|classes| held_classes(classes.range(..end)));
-        Self::Counted { end, classes }
+    /// The classes below the count `end` of `classes`, the map of a walk of
+    /// `Config-N` that reconciles with `end`.
+    pub(crate) fn reconciled(end: u32, classes: &BTreeMap<u32, String>) -> Self {
+        Self(
+            classes
+                .range(..end)
+                .filter_map(|(&index, name)| {
+                    Some((
+                        u16::try_from(index).ok()?,
+                        ArchiveParameterClass::from_class_name(name),
+                    ))
+                })
+                .collect(),
+        )
     }
-
-    /// The map of a compound-file stream, with the `Config-N` class at each
-    /// index from `classes`, a walk that no count bounds.
-    pub(crate) fn unstated(classes: &BTreeMap<u32, String>) -> Self {
-        Self::Unstated {
-            classes: held_classes(classes.iter()),
-        }
-    }
-
-    /// Whether `index` names a class `Config-N` holds rather than one the
-    /// lane declares.
-    fn holds(&self, index: u16) -> bool {
-        match self {
-            Self::Counted { end, .. } => u32::from(index) < *end,
-            Self::Unstated { classes } => classes.contains_key(&index),
-        }
-    }
-
-    /// The class at each index at which the walk of `Config-N` places one,
-    /// when the map is read.
-    fn classes(&self) -> Option<&HeldClasses> {
-        match self {
-            Self::Counted { classes, .. } => classes.as_ref(),
-            Self::Unstated { classes } => Some(classes),
-        }
-    }
-}
-
-/// Each of `classes` by its index as a class token, with its parameter
-/// class where it names one.
-fn held_classes<'c>(classes: impl Iterator<Item = (&'c u32, &'c String)>) -> HeldClasses {
-    classes
-        .filter_map(|(&index, name)| {
-            Some((
-                u16::try_from(index).ok()?,
-                ArchiveParameterClass::from_class_name(name),
-            ))
-        })
-        .collect()
 }
 
 /// The class a class token names, from the sources that name it.
@@ -152,8 +110,9 @@ enum Slot<'a> {
 
 /// What each scalar of `lane` states of its parameter, by scalar id. A
 /// scalar whose slot holds a class token states the class its sources give
-/// that token: `configuration`, the `Config-N` map the lane continues, the
-/// lane's declarations, and the relation class declared beside the token
+/// that token: `configuration`, the classes of the `Config-N` map the lane
+/// continues, the lane's declarations, and the relation class declared
+/// beside the token
 /// (see [`token_classes`]); it is contested where they name different
 /// classes. A scalar whose class is not a parameter class, or whose token no
 /// source names, states nothing.
@@ -328,10 +287,9 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
 /// The class each class-token index of the lane's parameter slots names,
 /// from three sources, none of which outranks another:
 ///
-/// - for a token of a class `Config-N` holds (see [`ConfigurationMap`];
-///   without one, a token below the stream's opening map count `stated`),
-///   the class the walk of `Config-N` in `configuration` places at that
-///   index, where it places one;
+/// - for a token below the stream's opening map count `stated`, a class
+///   `Config-N` holds, the class the reconciled walk of `Config-N` places at
+///   that index, where `configuration` holds one (see [`ConfigurationMap`]);
 /// - for the lane's other tokens, its declarations (see
 ///   [`declared_token_classes`]);
 /// - for any token, the relation class declared beside it, `related`.
@@ -347,10 +305,7 @@ fn token_classes(
     slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
     related: &[(u16, ArchiveParameterClass)],
 ) -> HashMap<u16, TokenClass> {
-    let held = |index: u16| match configuration {
-        Some(configuration) => configuration.holds(index),
-        None => stated.is_some_and(|count| u32::from(index) < count),
-    };
+    let held = |index: u16| stated.is_some_and(|count| u32::from(index) < count);
     let own = slots
         .iter()
         .copied()
@@ -364,9 +319,8 @@ fn token_classes(
         })
         .collect::<BTreeSet<_>>();
     let walked = configuration
-        .and_then(ConfigurationMap::classes)
         .into_iter()
-        .flatten()
+        .flat_map(|configuration| &configuration.0)
         .filter(|&(&index, _)| used.contains(&index))
         .map(|(&index, &class)| (index, class));
     let ordered = declared_token_classes(classes, &own)

@@ -501,59 +501,6 @@ fn a_token_config_n_holds_no_parameter_class_at_names_none() {
 }
 
 #[test]
-fn a_compound_lane_token_names_the_class_the_config_n_walk_places() {
-    // The compound-file stream states no count; `Config-0` ends at 9. Token
-    // 7 is first used after the lane's only parameter declaration, so the
-    // lane's declarations alone would give it the length class; `Config-0`
-    // holds an angle at 7.
-    let mut stream = Stream::compound();
-    stream
-        .declare("sgPntPntDist")
-        .zero_word()
-        .declare("moLengthParameter_c")
-        .scalar("D1", &metres(0.01), 0, 7)
-        .token(9)
-        .zero_word()
-        .token(7)
-        .scalar("D2", &metres(0.02), 0, 8);
-    let (lane, configuration) = continued_lane(
-        &config_object_stream_declaring("moAngleParameter_c"),
-        &stream,
-    );
-    assert_eq!(
-        stated_in(&lane, configuration.as_ref()),
-        vec![
-            ("D1".into(), Some(StatedParameter::Length(0.01))),
-            ("D2".into(), Some(StatedParameter::Angle(0.02))),
-        ]
-    );
-}
-
-#[test]
-fn a_compound_lane_token_at_no_config_n_class_takes_the_lane_class() {
-    // The walk of `Config-0` places classes at 2, 4 and 7 only. Token 8
-    // lies below the walk's end, 9, and names the lane's length class.
-    let mut stream = Stream::compound();
-    stream
-        .declare("sgPntPntDist")
-        .zero_word()
-        .declare("moLengthParameter_c")
-        .scalar("D1", &metres(0.01), 0, 7)
-        .token(6)
-        .zero_word()
-        .token(8)
-        .scalar("D2", &metres(0.02), 0, 8);
-    let (lane, configuration) = continued_lane(&config_object_stream(), &stream);
-    assert_eq!(
-        stated_in(&lane, configuration.as_ref()),
-        vec![
-            ("D1".into(), Some(StatedParameter::Length(0.01))),
-            ("D2".into(), Some(StatedParameter::Length(0.02))),
-        ]
-    );
-}
-
-#[test]
 fn a_token_below_a_count_the_config_n_walk_misses_names_none() {
     // `Config-0` ends at 9, so its walk does not reconcile with the count
     // 12. Token 7 lies below the count and names no class; the lane's own
@@ -573,13 +520,7 @@ fn a_token_below_a_count_the_config_n_walk_misses_names_none() {
         .token(14)
         .scalar("D3", &metres(0.03), 0, 9);
     let (lane, configuration) = continued_lane(&config_object_stream(), &stream);
-    assert_eq!(
-        configuration,
-        Some(ConfigurationMap::Counted {
-            end: 12,
-            classes: None
-        })
-    );
+    assert_eq!(configuration, None);
     assert_eq!(
         stated_in(&lane, configuration.as_ref()),
         vec![
@@ -685,13 +626,7 @@ fn a_token_the_reconciled_walk_places_no_class_at_takes_its_relation_class() {
         .scalar("D1", &metres(0.02), 0, 7)
         .closing_count();
     let (lane, configuration) = continued_lane(&config_object_stream(), &stream);
-    assert!(matches!(
-        configuration,
-        Some(ConfigurationMap::Counted {
-            classes: Some(_),
-            ..
-        })
-    ));
+    assert!(configuration.is_some());
     assert_eq!(
         stated_in(&lane, configuration.as_ref()),
         vec![
@@ -771,4 +706,30 @@ fn a_token_beside_relation_classes_of_two_kinds_names_no_class() {
         .closing_count();
     let lane = stream.lane();
     assert_eq!(contested_in(&lane, None), vec!["D1", "D2"]);
+}
+
+#[test]
+fn a_compound_lane_reads_no_config_n_map() {
+    // The compound-file stream states no count, so no walk of `Config-0`
+    // reconciles; `Config-0` holds an angle at 7. Token 7 takes the class of
+    // the length relation declared beside it.
+    let mut stream = Stream::compound();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .token(7)
+        .scalar("D1", &metres(0.02), 0, 7)
+        .closing_count();
+    let (lane, configuration) = continued_lane(
+        &config_object_stream_declaring("moAngleParameter_c"),
+        &stream,
+    );
+    assert_eq!(configuration, None);
+    assert_eq!(
+        stated_in(&lane, None),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.02))),
+            ("N9".into(), Some(StatedParameter::Count(3))),
+        ]
+    );
 }

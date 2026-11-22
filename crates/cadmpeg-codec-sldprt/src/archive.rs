@@ -189,13 +189,6 @@ pub(crate) fn resolved_count(resolved: &[u8]) -> Option<u32> {
     View::u32_le_at(resolved, 0)
 }
 
-/// Whether a `ResolvedFeatures` stream opens with a u16 and then a class
-/// declaration: a compound-file part's stream, which continues the
-/// `Config-N` map from its end without stating that count.
-pub(crate) fn continues_unstated_count(resolved: &[u8]) -> bool {
-    !declaration_at(resolved, 0) && declaration_at(resolved, COMPOUND_OPENING_LEN)
-}
-
 fn declaration_at(stream: &[u8], at: usize) -> bool {
     stream.get(at..at + NEW_CLASS_TAG.len()) == Some(&NEW_CLASS_TAG[..])
 }
@@ -238,27 +231,6 @@ pub(crate) fn class_index_map(
 ) -> Result<Option<std::collections::BTreeMap<u32, String>>, CodecError> {
     let walker = walked(payload, Some(i64::from(resolved_count)), ctx)?;
     if !walker.reaches(i64::from(resolved_count))? {
-        return Ok(None);
-    }
-    Ok(Some(
-        walker
-            .known
-            .iter()
-            .filter_map(|(&index, &name)| Some((u32::try_from(index).ok()?, name.to_owned())))
-            .collect(),
-    ))
-}
-
-/// The class at each index at which a walk of one configuration object
-/// stream that no stated count bounds places a class: `None` when the walk's
-/// map is inconsistent. No count reconciles the walk, so an index can be
-/// wrong.
-pub(crate) fn unreconciled_class_index_map(
-    payload: &[u8],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<std::collections::BTreeMap<u32, String>>, CodecError> {
-    let walker = walked(payload, None, ctx)?;
-    if !walker.consistent()? {
         return Ok(None);
     }
     Ok(Some(
