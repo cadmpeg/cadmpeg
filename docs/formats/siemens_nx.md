@@ -1943,9 +1943,7 @@ position tokens use the non-null operation-state index encoding. Rows retain
 order, exact tokens, and source offsets. The table ends before the state-counter
 map with either no boundary bytes or the exact `01 01` boundary marker.
 
-In the retained `Drone Wing Chassis - Small wing radius.prt`,
-`Drone Wing Chassis - Small wing radius -90 degree.prt`, and
-`Drone Wing Chassis.prt` tables, all 261 endpoint values fall within the
+In three retained part tables, all 261 endpoint values fall within the
 zero-based row-ordinal ranges of their following counter maps, which contain 1,073, 1,109,
 and 1,447 rows respectively. Each table's largest endpoint equals its last
 counter-row ordinal. List positions are a separate lane; a position can exceed

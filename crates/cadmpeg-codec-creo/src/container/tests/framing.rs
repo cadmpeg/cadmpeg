@@ -183,7 +183,7 @@ fn binary_model_name_precedes_the_cmnm_common_name() {
         + 1;
     data.splice(
         header_end..header_end,
-        b"#- CMNM 014MOUNTING PLATE 40 MM      \\\n".iter().copied(),
+        b"#- CMNM 014WIDGET BRACKET 40 MM      \\\n".iter().copied(),
     );
 
     let scan = container::scan_bytes_ok(data.clone());
@@ -199,7 +199,7 @@ fn binary_model_name_precedes_the_cmnm_common_name() {
             .common_name
             .as_ref()
             .map(|model| model.name.as_str()),
-        Some("MOUNTING PLATE 40 MM")
+        Some("WIDGET BRACKET 40 MM")
     );
 
     let result = EditableDecodeResult::from(
@@ -214,7 +214,7 @@ fn binary_model_name_precedes_the_cmnm_common_name() {
     );
     assert_eq!(
         attributes.get("common_name").map(String::as_str),
-        Some("MOUNTING PLATE 40 MM")
+        Some("WIDGET BRACKET 40 MM")
     );
     assert_eq!(
         result.ir().model.product_definitions[0]

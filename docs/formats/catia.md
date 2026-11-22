@@ -1377,7 +1377,7 @@ payload after the five object references.
 | `2a` | 10 | selector2 |
 
 Distinct edge objects can have identical ordered curve, vertex, and parameter
-references with different terminals. In ssd-crucial-mx500-carter-inf, edge
+references with different terminals. In one part, edge
 objects 4425557, 4469071, and 4527226 all reference
 `(4425502,3978457,3978459,4425503,4425504)`; their terminals are `21`, `29`, and
 `29`, respectively. Keep their object identities distinct.
