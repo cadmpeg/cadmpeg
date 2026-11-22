@@ -18,7 +18,9 @@
 //! displayed number, which Keywords rounds to the display precision and the
 //! `design.parameter-display-rounded` note names. A length display at most
 //! one rounding step from zero, at the decimal places the units table states,
-//! is no cache: it holds no value of the length it rounds. Where the root
+//! is no cache where that step is coarser than the linear resolution, `1e-5`
+//! mm: it holds no value of the length it rounds. A display whose step is at
+//! or below the linear resolution is exact, zero included. Where the root
 //! definition states no length unit, a length display is no cache (§5.13).
 //! A parameter that a reference dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
 //! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
@@ -373,7 +375,7 @@ impl<'a> Entries<'a> {
         let step = readings.length_unit.map_or_else(String::new, |unit| {
             format!(
                 "lengths displayed at most one rounding step from zero, at the {} decimal places \
-                 of the part's length unit",
+                 of the part's length unit, a step coarser than the 1e-5 mm linear resolution",
                 unit.decimals
             )
         });
@@ -485,7 +487,7 @@ enum Unvalued {
     /// The dimension is a length and the part's length unit is not read.
     LengthUnit,
     /// The dimension is a length displayed at most one rounding step from
-    /// zero.
+    /// zero, a step coarser than the linear resolution.
     RoundingStep,
 }
 
@@ -573,7 +575,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             && value.is_none()
             && readings
                 .length_unit
-                .is_some_and(|unit| unit.within_one_step(number))
+                .is_some_and(|unit| unit.withholds(number))
     });
     if let Some(number) = number.filter(|_| !below_step) {
         if let Some((node, literal)) = displayed_literal(

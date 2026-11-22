@@ -80,7 +80,8 @@ fn a_length_display_at_most_one_rounding_step_from_zero_holds_no_value() {
     assert!(
         unvalued.message.contains(
             ": 3 lengths displayed at most one rounding step from zero, at the 2 decimal places \
-             of the part's length unit ("
+             of the part's length unit, a step coarser than the 1e-5 mm linear \
+             resolution ("
         ),
         "{}",
         unvalued.message
@@ -102,4 +103,37 @@ fn a_length_display_at_most_one_rounding_step_from_zero_holds_no_value() {
         "{}",
         rounded.message
     );
+}
+
+#[test]
+fn a_zero_display_whose_step_is_the_linear_resolution_is_exact() {
+    use cadmpeg_ir::design::parameter::{ParameterOwner, ParameterValue};
+    use cadmpeg_ir::design::units::UnitSymbol;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Length;
+
+    let (ir, parameters, notes) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Extrusion Name="Zero" Type="BossExtrude" id="7">
+                <Dimension Name="D1">0</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[("Zero", "D1", V10::Length(Length::new(0.0).unwrap()), None)],
+        &[],
+        Some(super::super::units::LengthUnit {
+            symbol: UnitSymbol::Mm,
+            decimals: 5,
+        }),
+    );
+    let owner = ParameterOwner::Feature(feature_named(&ir, "Zero").id.clone());
+    let parameter = parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&owner))
+        .unwrap();
+    assert_eq!(expression_json(parameter)["value"]["text"], "0[mm]");
+    let Some(ParameterValue::Number(value)) = parameter.value else {
+        panic!("the zero display has no value: {parameter:#?}");
+    };
+    assert_eq!(value.get(), 0.0);
+    assert!(note_of(&notes, SldprtLossCode::DesignParameterValueUnread).is_none());
 }

@@ -1178,7 +1178,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** Is the first u32 of a unit object's base the decimal places to which Keywords rounds a displayed number?
 
-**Known.** `sldprt.md` §2.3 names the word the display decimal places. No Keywords length display of a document has more decimal places than the length unit's word, and in some documents the longest displays have exactly that many. The word is `2` in most tables, and `0` to `8` in others. The decoder reads the length unit's word as the length display's decimal places. A length whose bare display is at most one step of those places from zero has no value, and `design.parameter-value-unread` names it.
+**Known.** `sldprt.md` §2.3 names the word the display decimal places. No Keywords length display of a document has more decimal places than the length unit's word, and in some documents the longest displays have exactly that many. The word is `2` in most tables, and `0` to `8` in others. The decoder reads the length unit's word as the length display's decimal places. A length whose bare display is at most one step of those places from zero has no value where that step is coarser than the linear resolution, `1e-5` mm, and `design.parameter-value-unread` names it. A display whose step is at or below the linear resolution is exact, zero included.
 
 **Need.** A document whose length displays show the word's decimal places with trailing zeros, or a document whose stored lengths and displays give the display precision independently of the word.
 

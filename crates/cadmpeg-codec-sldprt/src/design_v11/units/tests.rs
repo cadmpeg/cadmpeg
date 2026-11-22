@@ -132,21 +132,27 @@ fn the_length_unit_base_opens_with_the_display_decimal_places() {
 }
 
 #[test]
-fn a_display_at_most_one_rounding_step_from_zero_is_within_one_step() {
-    let metre = |decimals| LengthUnit {
-        symbol: UnitSymbol::M,
-        decimals,
-    };
+fn a_display_at_most_one_coarse_rounding_step_from_zero_is_withheld() {
+    let unit = |symbol, decimals| LengthUnit { symbol, decimals };
+    let metre = |decimals| unit(UnitSymbol::M, decimals);
     for display in [0.0, -0.0, 0.01, -0.01] {
-        assert!(metre(2).within_one_step(display), "{display}");
+        assert!(metre(2).withholds(display), "{display}");
     }
     for display in [0.02, -0.02, 0.011, 1.0] {
-        assert!(!metre(2).within_one_step(display), "{display}");
+        assert!(!metre(2).withholds(display), "{display}");
     }
-    assert!(metre(0).within_one_step(1.0));
-    assert!(!metre(0).within_one_step(2.0));
-    assert!(metre(u32::MAX).within_one_step(0.0));
-    assert!(!metre(u32::MAX).within_one_step(1.0e-300));
+    assert!(metre(0).withholds(1.0));
+    assert!(!metre(0).withholds(2.0));
+    // A step at or below the linear resolution, 1e-5 mm, is exact.
+    for display in [0.0, 0.00001] {
+        assert!(!unit(UnitSymbol::Mm, 5).withholds(display), "{display}");
+    }
+    assert!(unit(UnitSymbol::Mm, 4).withholds(0.0));
+    assert!(unit(UnitSymbol::In, 6).withholds(0.0));
+    assert!(!unit(UnitSymbol::In, 7).withholds(0.0));
+    assert!(!metre(8).withholds(0.0));
+    assert!(metre(7).withholds(0.0));
+    assert!(!metre(u32::MAX).withholds(0.0));
 }
 
 #[test]

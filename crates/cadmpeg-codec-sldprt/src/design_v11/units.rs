@@ -6,6 +6,7 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::units::UnitSymbol;
 
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::container::{ContainerScan, Section};
 use crate::layout::{
     units_length_unit_block as block, units_length_unit_compound_four_word as four_word,
@@ -27,7 +28,7 @@ const UNIT_CLASS_SUFFIX: &[u8] = b"Units_c";
 /// The unit class besides the length unit that holds a length unit pointer.
 const DENSITY_CLASS: &[u8] = b"moDensityUnits_c";
 /// Relative tolerance within which a displayed number equals one rounding
-/// step.
+/// step, and a rounding step equals the linear resolution.
 const EPS_DISPLAY_STEP: f64 = 1.0e-9;
 
 /// One base form of a unit object: the offsets, from the end of the class
@@ -64,11 +65,15 @@ pub(crate) struct LengthUnit {
 }
 
 impl LengthUnit {
-    /// Whether the displayed number `display` is at most one rounding step
-    /// from zero: a display that holds no value of the length it rounds.
-    pub(crate) fn within_one_step(self, display: f64) -> bool {
+    /// Whether the displayed number `display` holds no value of the length
+    /// it rounds: it is at most one rounding step from zero, and the step is
+    /// coarser than the linear resolution, `1e-5` mm. A display whose step
+    /// is at or below the linear resolution is exact, zero included.
+    pub(crate) fn withholds(self, display: f64) -> bool {
         let step = i32::try_from(self.decimals).map_or(0.0, |decimals| 10f64.powi(-decimals));
-        display.abs() <= step * (1.0 + EPS_DISPLAY_STEP)
+        let (millimetres, _) = self.symbol.canonical();
+        step * millimetres > LINEAR_RESOLUTION_MM * (1.0 + EPS_DISPLAY_STEP)
+            && display.abs() <= step * (1.0 + EPS_DISPLAY_STEP)
     }
 }
 
