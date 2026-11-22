@@ -545,6 +545,44 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         ),
         1
     );
+    let projected = decoded
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == result.id)
+        .expect("legacy formula in the design");
+    assert_eq!(
+        projected.definition,
+        cadmpeg_ir::design::parameter::ParameterDefinition::Expression(
+            cadmpeg_ir::design::expr::Expression::Source {
+                dialect: cadmpeg_ir::design::expr::ExpressionDialect::Catia,
+                tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
+                    "#1_ + \"-\" + #2_".into()
+                )],
+            }
+        )
+    );
+    let notes = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::CatiaLossCode::DesignParameterReferenceAsText.kind()
+        })
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one note: {notes:?}");
+    };
+    let [first, second] = result.dependencies.iter().collect::<Vec<_>>()[..] else {
+        panic!("two dependencies");
+    };
+    assert!(
+        note.message
+            .ends_with(&format!("{} ({first}, {second})", result.id)),
+        "{}",
+        note.message
+    );
     assert!(
         cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
             .expect("validate the neutral model")

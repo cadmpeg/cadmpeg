@@ -2,7 +2,7 @@
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/iges.md`](../layouts/iges.md), generated from `docs/layouts/iges.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## Physical representation
 
