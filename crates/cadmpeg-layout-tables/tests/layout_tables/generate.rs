@@ -10,8 +10,7 @@ mod read_set;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::io::Write as IoWrite;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use crate::{
     decode_field_value, is_multibyte_scalar, normalize, parse_token_tag, rust_byte_array, rust_hex,
@@ -38,11 +37,11 @@ fn render_into(out: &mut String, file: &LayoutFile) -> std::fmt::Result {
     )?;
     writeln!(
         out,
-        "     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;"
+        "     crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs. Do not edit by hand;"
     )?;
     writeln!(
         out,
-        "     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->"
+        "     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`. -->"
     )?;
     writeln!(out)?;
     writeln!(out, "# `{}` record layouts", file.format)?;
@@ -317,10 +316,9 @@ pub(crate) fn external_layout_files(
         body.push('\n');
         body.push_str(&rendered[body_start..body_end]);
         body.push('\n');
-        files.push((format!("layout/{module}.rs"), rustfmt_source(&body)));
+        files.push((format!("layout/{module}.rs"), body));
         rendered.replace_range(start..body_end + 2, &format!("pub(crate) mod {module};"));
     }
-    *rendered = rustfmt_source(rendered);
     Ok(files)
 }
 
@@ -734,7 +732,7 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
     writeln!(out, "//! Do not edit by hand. Regenerate with:")?;
     writeln!(
         out,
-        "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
+        "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`."
     )?;
     writeln!(out)?;
     if !omitted.is_empty() {
@@ -753,7 +751,7 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
     if !out.ends_with('\n') {
         out.push('\n');
     }
-    Ok(rustfmt_source(&out))
+    Ok(out)
 }
 
 /// A record template and the `(offset, width)` of its unstated slots.
@@ -897,29 +895,40 @@ fn field_value_bytes(
     Ok(bytes)
 }
 
-/// rustfmt the emitter output so checked-in `layout.rs` files stay equal to
-/// `cargo fmt` (long byte arrays wrap) and to `UPDATE_LAYOUT_CODE=1`.
-fn rustfmt_source(src: &str) -> String {
-    let mut child = Command::new("rustfmt")
-        .args(["--emit", "stdout", "--quiet", "--edition", "2021"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+/// Format all generated files in one rustfmt invocation.
+pub(crate) fn format_outputs(outputs: &mut [(std::path::PathBuf, String)]) {
+    let directory = tempfile::tempdir().expect("create rustfmt directory");
+    let paths: Vec<_> = outputs
+        .iter()
+        .enumerate()
+        .map(|(index, (_, body))| {
+            let path = directory.path().join(format!("{index}.rs"));
+            std::fs::write(&path, body).expect("write rustfmt input");
+            path
+        })
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+    let output = Command::new("rustfmt")
+        .args([
+            "--quiet",
+            "--edition",
+            "2021",
+            "--config",
+            "skip_children=true",
+        ])
+        .args(&paths)
+        .output()
         .expect("spawn rustfmt");
-    child
-        .stdin
-        .as_mut()
-        .expect("rustfmt stdin")
-        .write_all(src.as_bytes())
-        .expect("write rustfmt stdin");
-    let output = child.wait_with_output().expect("wait rustfmt");
     assert!(
         output.status.success(),
         "rustfmt rejected generated layout.rs:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("rustfmt stdout utf-8")
+    for ((_, body), path) in outputs.iter_mut().zip(paths) {
+        *body = std::fs::read_to_string(path).expect("read rustfmt output");
+    }
 }
 
 // ---------------------------------------------------------------------------
