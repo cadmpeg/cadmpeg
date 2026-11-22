@@ -20,6 +20,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1014. Order of a body-override appearance and the body's material assignment
+
+**Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
+
+**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 records a user's test in which a body's assigned appearance shows through a root override, which is the opposite order.
+
+**Need.** A save with a body whose material assignment and body-override record name different appearances, with the displayed appearance of the body.
+
+**Note.** The decoder binds the override's appearance, replaces the binding of the material assignment, and charges `appearance.body-override-precedence-assumed`.
+
 ### DR-1006. Coordinate System construction inputs and frame ownership
 
 **Question.** Which type registration identifies a timeline Coordinate System, and how do its construction references select the origin, axes, and containing frame?
@@ -3164,9 +3174,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-358. Compact complete-loop region identity across sketch arrangements
 
-**Question.** Which stored relation selects an atomic region for a compact complete-loop group when a Join updates its end caps, or the feature has an empty face delta, an unbound history state, or a selected-face start?
+**Question.** Which stored relation selects an atomic region for a compact complete-loop group when a Join updates its far end cap, has another start-cap outline, has several bounded member regions, or the feature has an empty face delta, an unbound history state, or a selected-face start?
 
-**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. An inserted analytic end-cap union can certify a complete initial boundary for a one-sided blind Join or NewBody when its directed intervals agree and every inserted lateral face stays on the boundary within the sweep or continues a deleted lateral face on the same carrier. A scope can have an updated end cap, an empty face delta, or an unbound history state.
+**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. An inserted analytic end-cap union can certify a complete initial boundary for a one-sided blind Join or NewBody when its directed intervals agree and every inserted lateral face stays on the boundary within the sweep or continues a deleted lateral face on the same carrier. An updated rectangular start cap aligned with the Sketch axes certifies a single exterior line group when its member graph has one bounded region and the complete changed-face envelope agrees with the rectangular sweep. A scope can have an updated far end cap, an empty face delta, or an unbound history state.
 
 **Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary for these transition forms, including intersecting and nested loops.
 
@@ -3712,11 +3722,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
 
-**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided recipe structure and its primary-reference faces own several boundary edges that the operation transition deletes?
+**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided structure, complete counted-prefix operand ordinals, and primary-reference face boundaries with several transition-deleted edges?
 
-**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. The member recipe then resolves against the input state of that history. Each side of the recipe structure lists boundary-edge counts and topology triplets of incident edges and vertices. A member whose primary-reference faces own exactly one candidate edge resolves to that edge. The other members name two faces, or a face set, whose boundaries hold eight or more edges of the transition-deleted set, and no recipe proof selects one of them. The projector retains the resolved edges and the unresolved operand identities in a partial historical selection.
+**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. Each counted operand keeps one program ordinal across its names and their Design-reference lists. The member recipe resolves against the input state of that history. Each side lists boundary-edge counts and topology triplets of incident edges and vertices. Two groups have twenty members each and input state 62. Their transition to state 63 deletes 34 edges. Each group resolves slots 929, 980, 1033, 1037, 1047, and 1051. Fourteen members retain multiple candidate edges or unresolved reference contexts. Their primary-reference face boundaries hold eight or more transition-deleted edges. The projector retains the six resolved edges and fourteen operand identities in a partial historical selection.
 
-**Need.** A rule that maps the side entries and topology triplets of the recipe structure to one boundary edge of the input topology, or a group rule that assigns every transition-deleted edge to one member.
+**Need.** A rule that maps the side entries and topology triplets, with complete prefix-operand grouping, to one input edge, or a group assignment that distinguishes selected edges from the other transition-deleted edges.
 
 **Conflict.** None.
 
