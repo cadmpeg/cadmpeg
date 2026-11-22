@@ -2527,7 +2527,7 @@ impl MetadataRecord {
                 }
                 let units = fitted.text.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| invalid)?;
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| Unwritten::TooWide)?;
                 Self::SourceLinearUnitName {
                     units,
                     byte_len,
