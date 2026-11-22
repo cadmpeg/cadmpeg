@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::evaluation::StateBase;
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
+use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -182,38 +182,21 @@ pub(crate) fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, Configurat
 /// back, by id, with their configuration, for [`retire_model`].
 pub(crate) fn restore(ir: &mut CadIr) -> BTreeMap<String, ConfigurationId> {
     let mut restored = BTreeMap::new();
-    for evaluation in &ir.design.evaluations {
-        let (Some(configuration), Some(content)) = (&evaluation.configuration, &evaluation.content)
+    for index in 0..ir.model.configurations.len() {
+        let Some((configuration, records)) = stored_state(ir, &ir.model.configurations[index])
+            .map(|(configuration, records)| (configuration.clone(), records.clone()))
         else {
             continue;
         };
-        if content.base != StateBase::Empty {
-            continue;
-        }
-        let Some(native_ref) = ir
-            .design
-            .configurations
-            .iter()
-            .find(|design| &design.id == configuration)
-            .and_then(|design| design.native_ref.as_ref())
-        else {
-            continue;
-        };
-        let Some(record) = ir.model.configurations.iter_mut().find(|record| {
-            record.bodies.is_none() && record.native_ref.as_ref() == Some(native_ref)
-        }) else {
-            continue;
-        };
-        let records = &content.delta.records;
-        record.bodies = Some(
+        ir.model.configurations[index].bodies = Some(
             records
                 .bodies
                 .iter()
                 .map(|body| body.id.clone())
                 .collect::<DistinctMembers<_>>(),
         );
-        append_records(&mut ir.geometry, records);
-        topology_ids(records, |id| {
+        append_records(&mut ir.geometry, &records);
+        topology_ids(&records, |id| {
             restored
                 .entry(id.to_owned())
                 .or_insert_with(|| configuration.clone());
@@ -221,6 +204,29 @@ pub(crate) fn restore(ir: &mut CadIr) -> BTreeMap<String, ConfigurationId> {
     }
     ir.geometry.finalize();
     restored
+}
+
+/// The state the design stores for a model configuration whose body list
+/// [`retire_model`] removed: the records of the evaluation, based on
+/// `Empty`, of the design configuration with the same native record.
+pub(crate) fn stored_state<'a>(
+    ir: &'a CadIr,
+    configuration: &DesignConfiguration,
+) -> Option<(&'a ConfigurationId, &'a Topology)> {
+    if configuration.bodies.is_some() {
+        return None;
+    }
+    let native_ref = configuration.native_ref.as_ref()?;
+    let design = ir
+        .design
+        .configurations
+        .iter()
+        .find(|design| design.native_ref.as_ref() == Some(native_ref))?;
+    ir.design.evaluations.iter().find_map(|evaluation| {
+        let content = evaluation.content.as_ref()?;
+        (evaluation.configuration.as_ref() == Some(&design.id) && content.base == StateBase::Empty)
+            .then_some((&design.id, &content.delta.records))
+    })
 }
 
 #[cfg(test)]

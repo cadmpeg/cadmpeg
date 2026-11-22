@@ -973,24 +973,12 @@ pub(super) fn reserve_configuration_index(
 }
 
 /// The model with the geometry of the state the design stores for a
-/// configuration that is not active: its evaluation's records, which a
-/// configuration whose state is not current holds in place of `bodies`.
+/// configuration whose body list the decoder moved into its evaluation.
 fn stored_state(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
 ) -> Option<CadIr> {
-    let native_ref = configuration.native_ref.as_ref()?;
-    let design = ir
-        .design
-        .configurations
-        .iter()
-        .find(|design| design.native_ref.as_ref() == Some(native_ref))?;
-    let records = ir.design.evaluations.iter().find_map(|evaluation| {
-        let content = evaluation.content.as_ref()?;
-        (evaluation.configuration.as_ref() == Some(&design.id)
-            && content.base == cadmpeg_ir::design::evaluation::StateBase::Empty)
-            .then_some(&content.delta.records)
-    })?;
+    let (_, records) = crate::decode::retired_states::stored_state(ir, configuration)?;
     let mut subset = ir.clone();
     subset.geometry = records.clone();
     for definition in &mut subset.model.product_definitions {

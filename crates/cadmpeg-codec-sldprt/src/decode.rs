@@ -702,7 +702,8 @@ pub(crate) fn append_design_losses(
         .configurations
         .iter()
         .filter(|configuration| {
-            configuration.bodies.is_none() && !state_is_stored(ir, configuration)
+            configuration.bodies.is_none()
+                && retired_states::stored_state(ir, configuration).is_none()
         })
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
@@ -2205,22 +2206,6 @@ pub(crate) fn append_design_losses(
         )));
     }
     Ok(())
-}
-
-/// Whether the design states a v10 configuration's bodies in an evaluation
-/// with content, which holds them in place of `bodies`.
-fn state_is_stored(
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
-) -> bool {
-    configuration.native_ref.is_some()
-        && ir.design.configurations.iter().any(|design| {
-            design.native_ref == configuration.native_ref
-                && ir.design.evaluations.iter().any(|evaluation| {
-                    evaluation.configuration.as_ref() == Some(&design.id)
-                        && evaluation.content.is_some()
-                })
-        })
 }
 
 pub(crate) fn configuration_source_needs_update(
