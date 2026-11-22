@@ -8,7 +8,7 @@ use super::*;
 fn thickness(flag: u8) -> Vec<u8> {
     let mut frame = parameter_record(None, "2.50 mm", "Thickness", Some("mm"), "d1", 0.25);
     frame[21] = flag;
-    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    frame[22..26].copy_from_slice(&6u32.to_le_bytes());
     let expression_end = 36 + 4 + 2 * "2.50 mm".len();
     frame.splice(expression_end..expression_end + 9, [0; 10]);
     frame

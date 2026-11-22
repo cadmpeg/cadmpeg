@@ -81,7 +81,7 @@ fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
         0.25,
     );
     frame[21] = 1;
-    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    frame[22..26].copy_from_slice(&6u32.to_le_bytes());
     let expression_end = 36 + 4 + 2 * "2.50 mm".len();
     frame.splice(expression_end..expression_end + 9, [0; 10]);
     let metadata = crate::test_support::streams_test::design_metastream_with_records(

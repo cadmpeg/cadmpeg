@@ -24,7 +24,6 @@ use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_tail as parameter_tail;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
-use crate::layout::design_parameter_wide_discriminated_prefix as wide_prefix;
 use crate::layout::design_parameter_wide_expression_trailer as wide_trailer;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -544,22 +543,15 @@ fn parse_header_form(
     trailer: DiscriminatedTrailerLength,
 ) -> Option<Result<ParsedDesignParameter, CodecError>> {
     let discriminator_at = prefix::FAMILY_DISCRIMINATOR + shift;
-    let comment = if discriminated && shift == WIDE_DISCRIMINATED_SHIFT {
-        Some(wide_parameter_comment(payload)?)
+    let comment = if discriminated {
+        Some(parameter_comment(payload, shift)?)
     } else {
         None
     };
-    let field_shift = shift
-        + comment
-            .as_ref()
-            .map_or(0, |(_, end)| end - wide_prefix::LEN);
+    let field_shift = comment.as_ref().map_or(shift, |(_, end)| end - prefix::LEN);
     let (family_discriminator, source_ordinal, owner_record_index, expression_at) = if discriminated
     {
-        let discriminator = if comment.is_some() {
-            u64::from(View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR)?)
-        } else {
-            View::u64_le_at(payload, discriminator_at)?
-        };
+        let discriminator = u64::from(View::u32_le_at(payload, discriminator_at)?);
         let discriminator =
             crate::records::parameters::DesignParameterDiscriminator::try_from(discriminator)
                 .ok()?;
@@ -700,7 +692,7 @@ fn parse_header_form(
             .filter(|(text, _)| !text.is_empty())
             .map(|(value, _)| ParsedParameterUnit {
                 value,
-                offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
+                offset: FrameRelative(i128::from(u64_from_index(prefix::LEN + shift))),
             }),
         flags,
         text_value: text.then(|| ParsedParameterUnit {
@@ -821,20 +813,22 @@ fn parse_comment_discriminated_parameter(
 /// at offset 26, and a parameter comment follows. Discriminator 0 leaves offsets
 /// 22 through 29 zero, which also read as a discriminator at offset 22.
 fn wide_discriminated_parameter(payload: &[u8]) -> bool {
-    payload.get(wide_prefix::ZERO_RUN_15..wide_prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 15])
-        && View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR).is_some_and(|value| {
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + WIDE_DISCRIMINATED_SHIFT;
+    payload.get(prefix::ZERO_RUN_10..discriminator_at) == Some(&[0; 15])
+        && View::u32_le_at(payload, discriminator_at).is_some_and(|value| {
             crate::records::parameters::DesignParameterDiscriminator::try_from(u64::from(value))
                 .is_ok()
         })
-        && wide_parameter_comment(payload).is_some()
+        && parameter_comment(payload, WIDE_DISCRIMINATED_SHIFT).is_some()
 }
 
-/// The LP-UTF16 comment of a wide discriminated parameter and the offset after it.
-fn wide_parameter_comment(payload: &[u8]) -> Option<(String, usize)> {
-    if *payload.get(wide_prefix::RESERVED_30)? != wide_prefix::RESERVED_30_VALUE {
+/// The LP-UTF16 comment of a discriminated parameter whose prefix starts
+/// `shift` further zero bytes on, and the offset after it.
+fn parameter_comment(payload: &[u8], shift: usize) -> Option<(String, usize)> {
+    if *payload.get(prefix::RESERVED_26 + shift)? != prefix::RESERVED_26_VALUE {
         return None;
     }
-    lp_utf16_bounded(payload, wide_prefix::COMMENT_LENGTH, 0..=4096)
+    lp_utf16_bounded(payload, prefix::COMMENT_LENGTH + shift, 0..=4096)
 }
 
 /// Parse the class-287 owned parameter family.
