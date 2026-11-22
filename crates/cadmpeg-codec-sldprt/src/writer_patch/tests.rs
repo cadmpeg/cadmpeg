@@ -634,7 +634,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
