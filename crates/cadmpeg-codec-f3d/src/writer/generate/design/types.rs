@@ -540,6 +540,28 @@ pub(super) const DIMENSION_ANCESTORS: [TypeRow; 3] = [
     OWNER_BASE,
 ];
 
+/// The `WorkPlane` scope (f3d.md §3.1, "Records of a construction-plane
+/// item").
+pub(super) const WORKPLANE_SCOPE: TypeRow = row(
+    "D869265F-F339-4751-A066-91D30F81FF08",
+    WORKPLANE_SCOPE_BASE_GUID,
+    3,
+    "Fusion",
+);
+const WORKPLANE_SCOPE_BASE_GUID: &str = "3CE194E6-A591-44AB-9AF1-C695B3DCF486";
+
+/// The base types of the `WorkPlane` records that the other ancestor lists
+/// leave out, each listed with an empty entity-ID run.
+pub(super) const WORKPLANE_ANCESTORS: [TypeRow; 2] = [
+    row(
+        WORKPLANE_SCOPE_BASE_GUID,
+        "A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB",
+        0,
+        "Fusion",
+    ),
+    OWNER_BASE,
+];
+
 /// The base types of the `Extrude` records that the other ancestor lists
 /// leave out, each listed with an empty entity-ID run.
 pub(super) const EXTRUDE_ANCESTORS: [TypeRow; 3] = [

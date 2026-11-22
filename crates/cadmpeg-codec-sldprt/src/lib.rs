@@ -256,6 +256,7 @@ impl SldprtCodec {
             dialect,
             coverage,
             omitted_envelope_bytes,
+            unwritten,
             losses,
         } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
@@ -291,6 +292,7 @@ impl SldprtCodec {
             fidelity,
             coverage,
             omitted_envelope_bytes,
+            unwritten,
             losses,
         })
     }
@@ -370,6 +372,8 @@ enum Written {
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
         omitted_envelope_bytes: usize,
+        /// The metadata attributes the write did not write.
+        unwritten: writer::UnwrittenAttributes,
         /// The losses of the history the write prepared.
         losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },

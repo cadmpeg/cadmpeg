@@ -70,7 +70,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                             .expect("finite fixture range"),
                     ),
                     Some(
-                        cadmpeg_ir::geometry::FitTolerance::try_new(EPS_FIT)
+                        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(EPS_FIT)
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
