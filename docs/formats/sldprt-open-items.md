@@ -1172,7 +1172,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** The role of the handle in the relation record (center, or a point on the curve) and the curve record the dimension's operands address when the sketch stores the curve, compared with the cylinder faces the feature produces.
 
-**Conflict.** A cylinder face witnesses a circle, not the feature that cut it: a built circle that a later feature's hole repeats stays profile geometry.
+**Conflict.** A cylinder face witnesses a circle, not the feature that cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads only cylinders along the sketch normal, so a built circle that a revolution sweeps has none; no typed feature picks such a sketch.
 
 ### DI-72. Length unit codes and the three-word unit base
 
