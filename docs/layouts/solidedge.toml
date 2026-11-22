@@ -894,3 +894,112 @@ offset = 37
 type = "f64[3]"
 source = "spec"
 anchor = "and three `f64` at offset 37, the unit plane normal."
+
+[[record]]
+name = "references_collection"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.1"
+anchor = "The cluster-0 object of class `References Collection Object` lists the"
+size = 20
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "§9.1 states no field before the occurrence count."
+
+[[record.field]]
+name = "count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The `u32` at object offset 16 is the"
+
+[[record]]
+name = "assembly_reference"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.2"
+anchor = "A `CLSID_JAsmReference` object stores:"
+size = 229
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "§9.2 states no field before the state word."
+
+[[record.field]]
+name = "state"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |"
+
+[[record.gap]]
+offset = 20
+size = 93
+note = "§9.2 states no field between the state word and the site identifier."
+
+[[record.field]]
+name = "site"
+offset = 113
+type = "u32"
+source = "spec"
+anchor = "| 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |"
+
+[[record.gap]]
+offset = 117
+size = 8
+note = "§9.2 states no field between the site identifier and the rotation."
+
+[[record.field]]
+name = "rotation"
+offset = 125
+type = "f64[9]"
+source = "spec"
+anchor = "| 125 | nine `f64`: the rotation `R`, row-major |"
+
+[[record.field]]
+name = "translation"
+offset = 197
+type = "f64[3]"
+source = "spec"
+anchor = "| 197 | three `f64`: the translation `t`, in metres |"
+
+[[record.field]]
+name = "unit"
+offset = 221
+type = "f64"
+value = 1.0
+source = "spec"
+anchor = "| 221 | `f64` `1` |"
+
+[[record]]
+name = "file_moniker"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.3"
+anchor = "header, then a file moniker at offset 12:"
+size = 22
+
+[[record.field]]
+name = "clsid"
+offset = 0
+type = "bytes[16]"
+value = [0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46]
+source = "spec"
+anchor = "| 0 | the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` |"
+
+[[record.field]]
+name = "up_level"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "| 16 | `u16` up-level count, `0` |"
+
+[[record.field]]
+name = "path_len"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "| 18 | `u32` byte count `n` |"

@@ -382,3 +382,52 @@ Parsed by:
 Unstated regions:
 
 - `0..13` (13 B): §8.2 states no field before the plane point.
+
+## `references_collection`
+
+Spec §9.1 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `count` | `u32` | little | spec | The `u32` at object offset 16 is the |
+
+Unstated regions:
+
+- `0..16` (16 B): §9.1 states no field before the occurrence count.
+
+## `assembly_reference`
+
+Spec §9.2 · layout: byte offsets · size: 229 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `state` | `u32` | little | spec | \| 16 \| `u32` state word; bit `0x04` set states that the occurrence is suppressed \| |
+| 113 | 4 | `site` | `u32` | little | spec | \| 113 \| `u32` identifier of the `CLSID_JSite` object of the referenced document \| |
+| 125 | 72 | `rotation` | `f64[9]` | little | spec | \| 125 \| nine `f64`: the rotation `R`, row-major \| |
+| 197 | 24 | `translation` | `f64[3]` | little | spec | \| 197 \| three `f64`: the translation `t`, in metres \| |
+| 221 | 8 | `unit` | `f64` | little | spec | \| 221 \| `f64` `1` \| · value `1.0` |
+
+Unstated regions:
+
+- `0..16` (16 B): §9.2 states no field before the state word.
+- `20..113` (93 B): §9.2 states no field between the state word and the site identifier.
+- `117..125` (8 B): §9.2 states no field between the site identifier and the rotation.
+
+## `file_moniker`
+
+Spec §9.3 · layout: byte offsets · size: 22 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `clsid` | `bytes[16]` | little | spec | \| 0 \| the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` \| · value `[3, 3, 0, 0, 0, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 70]` |
+| 16 | 2 | `up_level` | `u16` | little | spec | \| 16 \| `u16` up-level count, `0` \| |
+| 18 | 4 | `path_len` | `u32` | little | spec | \| 18 \| `u32` byte count `n` \| |

@@ -5,6 +5,7 @@
 //! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 //! <!-- /generated: capability solidedge -->
 
+mod assembly;
 mod container;
 mod decode;
 mod dialect;

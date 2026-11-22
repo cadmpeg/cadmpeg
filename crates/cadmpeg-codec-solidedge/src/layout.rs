@@ -295,3 +295,46 @@ pub(crate) mod reference_plane {
     /// Offset of `normal` (`f64[3]`, little-endian). Spec §8.2.
     pub(crate) const NORMAL: usize = 37;
 }
+
+/// Byte offsets for the `references_collection` record.
+///
+/// Spec §9.1. Record length 20 B.
+pub(crate) mod references_collection {
+    /// Offset of `count` (`u32`, little-endian). Spec §9.1.
+    pub(crate) const COUNT: usize = 16;
+}
+
+/// Byte offsets for the `assembly_reference` record.
+///
+/// Spec §9.2. Record length 229 B.
+pub(crate) mod assembly_reference {
+    /// Record length in bytes. Spec §9.2.
+    pub(crate) const LEN: usize = 229;
+    /// Offset of `state` (`u32`, little-endian). Spec §9.2.
+    pub(crate) const STATE: usize = 16;
+    /// Offset of `site` (`u32`, little-endian). Spec §9.2.
+    pub(crate) const SITE: usize = 113;
+    /// Offset of `rotation` (`f64[9]`, little-endian). Spec §9.2.
+    pub(crate) const ROTATION: usize = 125;
+    /// Offset of `translation` (`f64[3]`, little-endian). Spec §9.2.
+    pub(crate) const TRANSLATION: usize = 197;
+    /// Offset of `unit` (`f64`, little-endian). Spec §9.2.
+    pub(crate) const UNIT: usize = 221;
+}
+
+/// Byte offsets for the `file_moniker` record.
+///
+/// Spec §9.3. Record length 22 B.
+pub(crate) mod file_moniker {
+    /// Record length in bytes. Spec §9.3.
+    pub(crate) const LEN: usize = 22;
+    /// Stated value of `clsid` (`bytes[16]`). Spec §9.3.
+    pub(crate) const CLSID_VALUE: [u8; 16] = [
+        0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x46,
+    ];
+    /// Offset of `up_level` (`u16`, little-endian). Spec §9.3.
+    pub(crate) const UP_LEVEL: usize = 16;
+    /// Offset of `path_len` (`u32`, little-endian). Spec §9.3.
+    pub(crate) const PATH_LEN: usize = 18;
+}
