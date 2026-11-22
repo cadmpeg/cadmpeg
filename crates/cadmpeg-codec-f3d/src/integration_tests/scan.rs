@@ -280,7 +280,7 @@ fn scan_f3z_child_without_a_census_keeps_the_aggregate_incomplete() {
         ScanLimits::default(),
         &ManualClock::default(),
     );
-    assert!(matches!(scan.stop_reason, Some(StopReason::Unsupported(_))));
+    assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
     let census = scan.census.expect("first child's admitted rows");
     assert!(!census.complete);
     assert_eq!(census.total, None);
@@ -294,7 +294,7 @@ fn scan_f3z_child_without_a_census_keeps_the_aggregate_incomplete() {
     );
 }
 
-fn assert_decoder_and_scan_refuse_timeline(bytes: &[u8]) {
+fn assert_decoder_and_scan_leave_timeline_unread(bytes: &[u8]) {
     use std::io::{Cursor, Read, Write};
 
     let mut input = zip::ZipArchive::new(Cursor::new(bytes)).expect("timeline archive");
@@ -314,13 +314,13 @@ fn assert_decoder_and_scan_refuse_timeline(bytes: &[u8]) {
         output.write_all(&member).unwrap();
     }
     let decoder_bytes = output.finish().unwrap().into_inner();
+    let mut losses = Vec::new();
     let decoded = crate::test_support::zip_test::with_scan(&decoder_bytes, |container| {
-        crate::design::decode::meta::decode_feature_timelines(container, &mut Vec::new())
-    });
-    assert!(matches!(
-        decoded,
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        crate::design::decode::meta::decode_feature_timelines(container, &mut losses)
+    })
+    .expect("an unreadable timeline record is contained");
+    assert!(decoded.is_empty());
+    assert_eq!(losses.len(), 1);
     let scan = F3dCodec::scan_design(
         View::over_retained(bytes),
         ScanLimits::default(),
@@ -333,20 +333,20 @@ fn assert_decoder_and_scan_refuse_timeline(bytes: &[u8]) {
 }
 
 #[test]
-fn scan_f3d_unregistered_inline_guid_matches_decoder_refusal() {
-    assert_decoder_and_scan_refuse_timeline(&fixture_with(&[101], Some(SECOND), "Timeline"));
+fn scan_f3d_unregistered_inline_guid_matches_decoder_unread_record() {
+    assert_decoder_and_scan_leave_timeline_unread(&fixture_with(&[101], Some(SECOND), "Timeline"));
 }
 
 #[test]
-fn scan_f3d_payload_bounds_match_decoder_refusal() {
+fn scan_f3d_payload_bounds_match_decoder_unread_record() {
     for payload in ["a".repeat(2001), "Timéline".into()] {
-        assert_decoder_and_scan_refuse_timeline(&fixture_with(&[101], None, &payload));
+        assert_decoder_and_scan_leave_timeline_unread(&fixture_with(&[101], None, &payload));
     }
 }
 
 #[test]
-fn scan_f3d_repeated_reference_matches_decoder_frame_refusal() {
-    assert_decoder_and_scan_refuse_timeline(&fixture(&[101, 101]));
+fn scan_f3d_repeated_reference_matches_decoder_unread_record() {
+    assert_decoder_and_scan_leave_timeline_unread(&fixture(&[101, 101]));
 }
 
 #[test]

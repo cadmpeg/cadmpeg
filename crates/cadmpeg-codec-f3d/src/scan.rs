@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature census from Fusion Design timeline tables.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_container::scan::ScanZip;
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -40,6 +40,8 @@ fn admit_parser(
 struct Meta<'a> {
     kinds: HashMap<u64, Vec<&'a str>>,
     timelines: BTreeMap<u64, String>,
+    /// Timeline entities whose registration the decoder reports as unread.
+    unregistered: bool,
 }
 
 fn metadata<'a>(
@@ -48,19 +50,16 @@ fn metadata<'a>(
 ) -> Result<Meta<'a>, StopReason> {
     let mut kinds: HashMap<u64, Vec<&str>> = HashMap::new();
     let mut timelines = BTreeMap::new();
+    let mut unregistered = false;
     for (ordinal, registration) in source.types.iter().enumerate() {
         budget.check()?;
         let guid = registration.type_guid.as_str();
         let is_timeline = guid.eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID);
-        if is_timeline && !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&registration.version) {
-            return Err(StopReason::Unsupported(format!(
-                "Fusion timeline version {}",
-                registration.version
-            )));
-        }
-        if is_timeline && !is_supported_feature_timeline_type(registration) {
-            return Err(malformed("Fusion timeline registration"));
-        }
+        // The decoder reports a timeline of an unsupported version, an incompatible
+        // registration or an unrepresentable class tag as unread and reads the rest.
+        let readable = !is_timeline
+            || (FEATURE_TIMELINE_TYPE_VERSIONS.contains(&registration.version)
+                && is_supported_feature_timeline_type(registration));
         for id in registration.entities.values() {
             budget.check()?;
             budget.retain(160)?;
@@ -68,13 +67,21 @@ fn metadata<'a>(
             if is_timeline {
                 let class = u64_from_index(ordinal)
                     .checked_add(256)
-                    .filter(|class| *class <= 999)
-                    .ok_or_else(|| malformed("Fusion class index"))?;
-                timelines.insert(*id, class.to_string());
+                    .filter(|class| *class <= 999);
+                match class {
+                    Some(class) if readable => {
+                        timelines.insert(*id, class.to_string());
+                    }
+                    _ => unregistered = true,
+                }
             }
         }
     }
-    Ok(Meta { kinds, timelines })
+    Ok(Meta {
+        kinds,
+        timelines,
+        unregistered,
+    })
 }
 
 fn timeline(
@@ -85,17 +92,19 @@ fn timeline(
     budget: &ScanBudget<'_>,
     scan: &mut DesignScan,
     depth: u64,
-) -> Result<(), StopReason> {
+) -> Result<bool, StopReason> {
     admit_parser(source, TIMELINE_STORAGE_PER_BYTE, budget)?;
-    let (timeline, _) = parse_feature_timeline_record(
+    let Some((timeline, _)) = parse_feature_timeline_record(
         source.window(),
         stream,
         0..source.window().len(),
         expected,
         0,
         &meta.kinds,
-    )
-    .ok_or_else(|| malformed("Fusion timeline does not match its exact frame"))?;
+    ) else {
+        // The decoder reports a record that misses its exact frame as unread.
+        return Ok(false);
+    };
     budget.check()?;
     scan.census.get_or_insert_with(FeatureCensus::default);
     for item in timeline.frame().items() {
@@ -154,7 +163,7 @@ fn timeline(
             Suppressed::Unknown,
         )?;
     }
-    Ok(())
+    Ok(true)
 }
 
 fn document(
@@ -163,6 +172,7 @@ fn document(
     scan: &mut DesignScan,
     depth: u64,
     physical: bool,
+    unread: &mut bool,
 ) -> Result<bool, StopReason> {
     budget.depth(depth)?;
     let mut archive = ScanZip::new(source, budget, physical)?;
@@ -177,12 +187,19 @@ fn document(
             budget.depth(nested_depth)?;
             scan.declared_size(budget, &entry.name, entry.declared_size)?;
             let bytes = archive.open(entry.ordinal)?;
-            if !document(budget.view(&bytes)?, budget, scan, nested_depth, false)? {
-                return Err(StopReason::Unsupported(
-                    "Fusion child timeline listing is absent".into(),
-                ));
+            // The decoder reports a member without a readable timeline and continues.
+            if document(
+                budget.view(&bytes)?,
+                budget,
+                scan,
+                nested_depth,
+                false,
+                unread,
+            )? {
+                found = true;
+            } else {
+                *unread = true;
             }
-            found = true;
             continue;
         }
         let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
@@ -216,40 +233,54 @@ fn document(
         scan.declared_size(budget, &bulk.name, bulk.declared_size)?;
         let bytes = archive.open(bulk.ordinal)?;
         let source = budget.view(&bytes)?;
-        let mut seen = BTreeSet::new();
         let mut previous = None;
-        let mut ids = BTreeSet::new();
+        let mut ids = BTreeMap::<u64, u64>::new();
         for record in &parsed.records {
             budget.check()?;
             budget.retain(64)?;
-            if previous.is_some_and(|at| at >= record.bulk_offset) || !ids.insert(record.entity_id)
-            {
-                return Err(malformed("Fusion primary record index order or identity"));
+            if previous.is_some_and(|at| at >= record.bulk_offset) {
+                return Err(malformed("Fusion primary record index order"));
             }
+            *ids.entry(record.entity_id).or_default() += 1;
             previous = Some(record.bulk_offset);
         }
+        *unread |= meta.unregistered;
         for (ordinal, record) in parsed.records.iter().enumerate() {
             let (id, offset) = (record.entity_id, record.bulk_offset);
             budget.check()?;
             let Some(class) = meta.timelines.get(&id) else {
                 continue;
             };
+            if ids.get(&id) != Some(&1) {
+                // No unique primary record-index entry: unread in the decoder.
+                *unread = true;
+                continue;
+            }
             let end = parsed
                 .records
                 .get(ordinal + 1)
                 .map_or(u64_from_index(bytes.len()), |row| row.bulk_offset);
-            let start = usize::try_from(offset).map_err(|_| malformed("Fusion record offset"))?;
-            let end = usize::try_from(end).map_err(|_| malformed("Fusion record end"))?;
-            let frame = source
-                .child(start, end)
-                .ok_or_else(|| malformed("Fusion timeline extent"))?;
-            timeline(frame, (class, id), &bulk.name, &meta, budget, scan, depth)?;
-            seen.insert(id);
-            found = true;
+            let frame = usize::try_from(offset)
+                .ok()
+                .zip(usize::try_from(end).ok())
+                .filter(|(start, end)| start < end)
+                .and_then(|(start, end)| source.child(start, end));
+            let Some(frame) = frame else {
+                *unread = true;
+                continue;
+            };
+            if timeline(frame, (class, id), &bulk.name, &meta, budget, scan, depth)? {
+                found = true;
+            } else {
+                *unread = true;
+            }
         }
-        if seen.len() != meta.timelines.len() {
-            return Err(malformed("Fusion timeline has no primary record"));
-        }
+        let absent = meta
+            .timelines
+            .keys()
+            .filter(|id| !ids.contains_key(id))
+            .count();
+        *unread |= absent != 0;
     }
     Ok(found)
 }
@@ -264,8 +295,12 @@ impl crate::F3dCodec {
     /// Scans with a meter shared by detection and nested readers.
     pub fn scan_design_with_budget(input: View<'_>, budget: &ScanBudget<'_>) -> DesignScan {
         let mut scan = DesignScan::new(Some(crate::dialect::FORMAT));
-        let result = document(input, budget, &mut scan, 1, true).and_then(|found| {
-            if found {
+        let mut unread = false;
+        let result = document(input, budget, &mut scan, 1, true, &mut unread).and_then(|found| {
+            if unread {
+                // Readable rows stay listed; the listing is not claimed complete.
+                Err(malformed("Fusion timeline records are unread"))
+            } else if found {
                 scan.complete();
                 Ok(())
             } else {
