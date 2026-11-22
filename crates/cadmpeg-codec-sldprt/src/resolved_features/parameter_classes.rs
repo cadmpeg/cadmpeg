@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::View;
 
 use super::{is_class_token, COMPACT_SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use crate::archive::resolved_count;
+use crate::archive::{compound_opening, resolved_count};
 use crate::layout::feature_input_scalar_class_prefix as prefix;
 use crate::records::{
     ArchiveParameterClass, FeatureInputClass, FeatureInputLane, FeatureInputScalar,
@@ -61,9 +61,24 @@ impl StatedParameter {
 pub(crate) enum Statement {
     /// The parameter, in the class its record states.
     Parameter(StatedParameter),
+    /// The parameter, in the class a compound-file lane's own declarations
+    /// alone give its class token. The stream does not state the index at
+    /// which `Config-N` ends (§2.2), so reading the token as the lane's own is
+    /// an assumption (open item EV-05).
+    Assumed(StatedParameter),
     /// A class token whose class the decoder's sources name differently
     /// (see [`token_classes`]), so the record states no class it reads.
     Contested,
+}
+
+impl Statement {
+    /// The parameter the record states, in a class read or assumed.
+    pub(crate) fn parameter(self) -> Option<StatedParameter> {
+        match self {
+            Self::Parameter(parameter) | Self::Assumed(parameter) => Some(parameter),
+            Self::Contested => None,
+        }
+    }
 }
 
 /// The classes of the `Config-N` map a `ResolvedFeatures` lane that states
@@ -98,6 +113,8 @@ impl ConfigurationMap {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum TokenClass {
     Parameter(ArchiveParameterClass),
+    /// A class only a compound-file lane's own declarations give the token.
+    Assumed(ArchiveParameterClass),
     Contested,
 }
 
@@ -113,8 +130,9 @@ enum Slot<'a> {
 /// that token (see [`token_classes`]): `configuration`, the classes of the
 /// `Config-N` map the lane continues; the lane's declarations; and the
 /// relation class declared beside the token. It is contested where they
-/// name different classes. A scalar whose class is not a parameter class,
-/// or whose token no source names, states nothing.
+/// name different classes, and assumed where only the declarations of a
+/// compound-file lane name it. A scalar whose class is not a parameter
+/// class, or whose token no source names, states nothing.
 pub(crate) fn stated_parameters<'l>(
     lane: &'l FeatureInputLane,
     configuration: Option<&ConfigurationMap>,
@@ -160,6 +178,7 @@ pub(crate) fn stated_parameters<'l>(
     let tokens = token_classes(
         configuration,
         resolved_count(payload),
+        compound_opening(payload),
         &lane.classes,
         &slots,
         &related,
@@ -167,18 +186,24 @@ pub(crate) fn stated_parameters<'l>(
     slots
         .into_iter()
         .filter_map(|(scalar, _, slot)| {
-            let class = match slot {
-                Slot::Declared(name) => ArchiveParameterClass::from_class_name(name)?,
+            let (class, assumed) = match slot {
+                Slot::Declared(name) => (ArchiveParameterClass::from_class_name(name)?, false),
                 Slot::Token(index) => match *tokens.get(&index)? {
-                    TokenClass::Parameter(class) => class,
+                    TokenClass::Parameter(class) => (class, false),
+                    TokenClass::Assumed(class) => (class, true),
                     TokenClass::Contested => {
                         return Some((scalar.id.as_str(), Statement::Contested))
                     }
                 },
             };
+            let stated = stated(payload, scalar, class)?;
             Some((
                 scalar.id.as_str(),
-                Statement::Parameter(stated(payload, scalar, class)?),
+                if assumed {
+                    Statement::Assumed(stated)
+                } else {
+                    Statement::Parameter(stated)
+                },
             ))
         })
         .collect()
@@ -296,10 +321,14 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
 /// A token that every source naming it gives one parameter class has that
 /// class. A token at which the walk places a class that is no parameter
 /// class, and that no other source names, names none. A token the sources
-/// give different classes is contested.
+/// give different classes is contested. A `compound` lane, a compound-file
+/// lane, continues the `Config-N` map without stating its count, so every
+/// token joins the order rule over its declarations as the lane's own; a
+/// token only that rule names has its class by that assumption.
 fn token_classes(
     configuration: Option<&ConfigurationMap>,
     stated: Option<u32>,
+    compound: bool,
     classes: &[FeatureInputClass],
     slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
     related: &[(u16, ArchiveParameterClass)],
@@ -321,23 +350,33 @@ fn token_classes(
         .into_iter()
         .flat_map(|configuration| &configuration.0)
         .filter(|&(&index, _)| used.contains(&index))
-        .map(|(&index, &class)| (index, class));
+        .map(|(&index, &class)| (index, class, false));
     let ordered = declared_token_classes(classes, &own)
         .into_iter()
-        .map(|(index, class)| (index, Some(class)));
-    let related = related.iter().map(|&(index, class)| (index, Some(class)));
-    let mut claims = HashMap::<u16, Vec<Option<ArchiveParameterClass>>>::new();
-    for (index, claim) in walked.chain(ordered).chain(related) {
-        claims.entry(index).or_default().push(claim);
+        .map(|(index, class)| (index, Some(class), compound));
+    let related = related
+        .iter()
+        .map(|&(index, class)| (index, Some(class), false));
+    let mut claims = HashMap::<u16, Vec<(Option<ArchiveParameterClass>, bool)>>::new();
+    for (index, claim, assumed) in walked.chain(ordered).chain(related) {
+        claims.entry(index).or_default().push((claim, assumed));
     }
     claims
         .into_iter()
         .filter_map(|(index, claims)| {
-            let (&first, rest) = claims.split_first()?;
-            if rest.iter().any(|&claim| claim != first) {
+            let (&(first, _), rest) = claims.split_first()?;
+            if rest.iter().any(|&(claim, _)| claim != first) {
                 return Some((index, TokenClass::Contested));
             }
-            Some((index, TokenClass::Parameter(first?)))
+            let class = first?;
+            Some((
+                index,
+                if claims.iter().all(|&(_, assumed)| assumed) {
+                    TokenClass::Assumed(class)
+                } else {
+                    TokenClass::Parameter(class)
+                },
+            ))
         })
         .collect()
 }

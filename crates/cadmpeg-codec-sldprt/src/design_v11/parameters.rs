@@ -172,7 +172,8 @@ impl<'a> Decoded<'a> {
     /// kind. A bound scalar whose class token the decoder's class sources
     /// name differently, or whose archive class differs from the class its
     /// record states, gives no kind and no value, whatever the earlier
-    /// reading: [`Unvalued::ClassesDisagree`].
+    /// reading: [`Unvalued::ClassesDisagree`]. The kind is assumed where it
+    /// is the class of a [`Statement::Assumed`].
     fn dimension(
         &self,
         id: &ParameterId,
@@ -180,17 +181,18 @@ impl<'a> Decoded<'a> {
         display: Option<Shown>,
         unit: Option<UnitSymbol>,
         places: Option<u32>,
-    ) -> Result<Option<(ValueKind, Option<ParameterValue>)>, Unvalued> {
+    ) -> Result<Option<Typed>, Unvalued> {
         use cadmpeg_ir::features::parameters::ParameterValue as V10;
         let Some(parameter) = self.parameter(id, name) else {
             return Ok(None);
         };
         let scalar = parameter.native_ref.as_deref();
         let archive = scalar.and_then(|scalar| self.classes.get(scalar).copied().flatten());
-        let stated = match scalar.and_then(|scalar| self.stated.get(scalar)) {
+        let (stated, assumed) = match scalar.and_then(|scalar| self.stated.get(scalar)) {
             Some(Statement::Contested) => return Err(Unvalued::ClassesDisagree),
-            Some(Statement::Parameter(stated)) => Some(*stated),
-            None => None,
+            Some(Statement::Parameter(stated)) => (Some(*stated), false),
+            Some(Statement::Assumed(stated)) => (Some(*stated), true),
+            None => (None, false),
         };
         if archive
             .zip(stated)
@@ -201,6 +203,7 @@ impl<'a> Decoded<'a> {
         let stated = stated.filter(|stated| {
             display.is_none_or(|display| agrees(*stated, display, unit, places) != Some(false))
         });
+        let assumed = assumed && archive.is_none() && stated.is_some();
         let class = archive.or(stated.map(StatedParameter::class));
         let kind = match (class, &parameter.value) {
             (Some(ArchiveParameterClass::Length), _) | (None, Some(V10::Length(_))) => {
@@ -224,7 +227,11 @@ impl<'a> Decoded<'a> {
                     .filter(|(stated, _)| *stated == kind)
                     .map(|(_, value)| value)
             });
-        Ok(Some((kind, value)))
+        Ok(Some(Typed {
+            kind,
+            value,
+            assumed,
+        }))
     }
 
     /// The kind and value of a dimension of the history feature `feature`
@@ -236,7 +243,9 @@ impl<'a> Decoded<'a> {
     /// model, a reading that holds on the stored results of typed
     /// dimensions. A driving scalar outranks the others. The scalars that
     /// count state one parameter, whose class is the kind and whose stored
-    /// value the value; otherwise the reason the dimension has no value.
+    /// value the value, assumed where every one of them is a
+    /// [`Statement::Assumed`]; otherwise the reason the dimension has no
+    /// value.
     fn named_dimension(
         &self,
         feature: &str,
@@ -244,13 +253,13 @@ impl<'a> Decoded<'a> {
         display: Shown,
         unit: Option<UnitSymbol>,
         places: Option<u32>,
-    ) -> Result<(ValueKind, ParameterValue), Unvalued> {
+    ) -> Result<Typed, Unvalued> {
         let scalars = self.named.get(&(feature, name)).ok_or(Unvalued::NoScalar)?;
         let mut counted = Vec::new();
         let mut reason = Unvalued::NoScalar;
         for scalar in scalars {
             let stated = match scalar.stated {
-                Some(Statement::Parameter(stated)) => stated,
+                Some(Statement::Parameter(stated) | Statement::Assumed(stated)) => stated,
                 Some(Statement::Contested) => {
                     reason = reason.max(Unvalued::ClassesDisagree);
                     continue;
@@ -273,13 +282,23 @@ impl<'a> Decoded<'a> {
         let Some(first) = counted.first() else {
             return Err(reason);
         };
-        if counted.iter().any(|scalar| scalar.stated != first.stated) {
+        let parameter = |scalar: &NamedScalar| scalar.stated.and_then(Statement::parameter);
+        if counted
+            .iter()
+            .any(|scalar| parameter(scalar) != parameter(first))
+        {
             return Err(Unvalued::Disagrees);
         }
-        let Some(Statement::Parameter(stated)) = first.stated else {
-            return Err(Unvalued::Disagrees);
-        };
-        typed(stated).ok_or(Unvalued::Disagrees)
+        let (kind, value) = parameter(first)
+            .and_then(typed)
+            .ok_or(Unvalued::Disagrees)?;
+        Ok(Typed {
+            kind,
+            value: Some(value),
+            assumed: counted
+                .iter()
+                .all(|scalar| matches!(scalar.stated, Some(Statement::Assumed(_)))),
+        })
     }
 
     /// The cache of a dimension whose kind no record states: the value of the
@@ -326,6 +345,15 @@ impl<'a> Decoded<'a> {
             .copied()
             .filter(|parameter| parameter.name == name)
     }
+}
+
+/// A dimension's kind and cache as the decoder's readings type it, and
+/// whether its kind is the class a compound-file lane's own declarations
+/// alone give its scalar's class token ([`Statement::Assumed`]).
+struct Typed {
+    kind: ValueKind,
+    value: Option<ParameterValue>,
+    assumed: bool,
 }
 
 /// Whether a stored record gave the value of the decoder's `parameter`: a
@@ -613,6 +641,7 @@ impl<'a> Entries<'a> {
             }
         }
         let mut rounded = NamedCount::default();
+        let mut assumed = NamedCount::default();
         let mut unvalued = Unvalued::ALL.map(|reason| (reason, NamedCount::default()));
         let parameters = self
             .list
@@ -621,6 +650,9 @@ impl<'a> Entries<'a> {
             .map(|(entry, reading)| {
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
+                }
+                if reading.assumed {
+                    assumed.push(entry.id.as_str());
                 }
                 if let Some((_, named)) = unvalued
                     .iter_mut()
@@ -637,6 +669,15 @@ impl<'a> Entries<'a> {
                 "{} parameters hold their dimension's displayed number, rounded to the display \
                  precision, as their literal and value: {rounded}",
                 rounded.count()
+            )));
+        }
+        if !assumed.is_empty() {
+            losses.push(SldprtLossCode::DesignParameterClassAssumed.note(format!(
+                "{} dimensions take their kind from the parameter class that a compound-file \
+                 lane's own declarations alone give their scalar's class token. The stream does \
+                 not state the index at which the Config-N class map ends, so the decoder reads \
+                 the token as the lane's own: {assumed}",
+                assumed.count()
             )));
         }
         let unvalued = unvalued
@@ -724,6 +765,9 @@ struct Reading {
     display: Option<DimensionDisplay>,
     /// The literal and value are a display's rounded number.
     rounded: bool,
+    /// The kind is a class a compound-file lane's own declarations alone
+    /// give the scalar's class token.
+    assumed: bool,
     /// Why a dimension whose text is a bare number has no value.
     unvalued: Option<Unvalued>,
 }
@@ -809,6 +853,7 @@ fn read(
             value: Some(value),
             display: None,
             rounded: false,
+            assumed: false,
             unvalued: None,
         };
     }
@@ -830,6 +875,7 @@ fn read(
             value: Some(ParameterValue::Text(text.to_owned())),
             display: None,
             rounded: false,
+            assumed: false,
             unvalued: None,
         };
     }
@@ -855,6 +901,7 @@ fn read(
         .get(&entry.id)
         .filter(|_| !decoded.pmi_bound(&entry.id, name));
     let mut unread = None;
+    let mut assumed = false;
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
@@ -869,18 +916,19 @@ fn read(
             .transpose()
             .or_else(|| {
                 shown.filter(|_| !references).map(|shown| {
-                    decoded
-                        .named_dimension(
-                            &feature.id,
-                            name,
-                            shown,
-                            readings.length_unit,
-                            readings.length_places,
-                        )
-                        .map(|(kind, value)| (kind, Some(value)))
+                    decoded.named_dimension(
+                        &feature.id,
+                        name,
+                        shown,
+                        readings.length_unit,
+                        readings.length_places,
+                    )
                 })
             }) {
-            Some(Ok(reading)) => reading,
+            Some(Ok(reading)) => {
+                assumed = reading.assumed;
+                (reading.kind, reading.value)
+            }
             unvalued => {
                 unread = unvalued.and_then(Result::err);
                 let manager = shown
@@ -947,6 +995,7 @@ fn read(
                 rounded: value.is_none(),
                 value: Some(literal),
                 display,
+                assumed,
                 unvalued: None,
             };
         }
@@ -967,6 +1016,7 @@ fn read(
         value,
         display,
         rounded: false,
+        assumed,
         unvalued,
     }
 }

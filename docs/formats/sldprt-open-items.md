@@ -902,9 +902,9 @@ resolve a seed feature?
 
 **Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold?
 
-**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration. The compound-file stream continues the `Config-N` map: its first declaration takes the index at which `Config-N` ends.
+**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration. The compound-file stream continues the `Config-N` map: its first declaration takes the index at which `Config-N` ends. The decoder reads no `Config-N` map for a compound-file lane. It reads every class token of the lane as the lane's own, typed by the lane's parameter-class declarations under the order rule of `sldprt.md` §2 and by a relation class declared in place beside the token. A dimension whose kind comes from the lane's declarations alone charges `design.parameter-class-assumed`.
 
-**Need.** The compound-file stream does not state the index at which `Config-N` ends. Without it, a reader cannot check its `Config-N` class map against the stream, and a `ResolvedFeatures` tag that names a `Config-N` class resolves through a map no count confirms.
+**Need.** The compound-file stream does not state the index at which `Config-N` ends, so a reader cannot tell a lane's own class token from a token that names a `Config-N` class, and cannot check a walk of `Config-N` against the stream. Reading every token as the lane's own is an assumption: a lane that writes a `Config-N` class token after one of its own parameter-class declarations gives that token the lane's class. The index at which the stream's map begins, from a field that states it or from a reference in the stream to an object the stream itself declares, settles it.
 
 ### EV-06. Named-object header and feature-object block fields
 

@@ -187,18 +187,16 @@ fn statements_in(
         .collect()
 }
 
-/// The parameter each scalar states, by scalar name in stream order, where
-/// the lane continues `configuration`; a contested scalar states none.
+/// The parameter each scalar states, in a class read or assumed, by scalar
+/// name in stream order, where the lane continues `configuration`; a
+/// contested scalar states none.
 fn stated_in(
     lane: &FeatureInputLane,
     configuration: Option<&ConfigurationMap>,
 ) -> Vec<(String, Option<StatedParameter>)> {
     statements_in(lane, configuration)
         .into_iter()
-        .map(|(name, statement)| match statement {
-            Some(Statement::Parameter(parameter)) => (name, Some(parameter)),
-            Some(Statement::Contested) | None => (name, None),
-        })
+        .map(|(name, statement)| (name, statement.and_then(Statement::parameter)))
         .collect()
 }
 
@@ -731,5 +729,64 @@ fn a_compound_lane_reads_no_config_n_map() {
             ("D1".into(), Some(StatedParameter::Length(0.02))),
             ("N9".into(), Some(StatedParameter::Count(3))),
         ]
+    );
+}
+
+#[test]
+fn a_compound_lane_token_only_its_declarations_name_is_assumed() {
+    // A compound-file stream does not state the index at which `Config-0`
+    // ends, so token 302 has the length class from the lane's declarations
+    // alone. Token 402 also has the angle relation declared beside it. A
+    // stream that opens with its own map states both tokens' classes.
+    let body = |stream: &mut Stream| {
+        stream
+            .declare("sgPntPntDist")
+            .zero_word()
+            .declare("moLengthParameter_c")
+            .scalar("D1", &metres(0.025), 0, 7)
+            .token(300)
+            .zero_word()
+            .token(302)
+            .scalar("D2", &metres(0.017), 0, 8)
+            .declare("sgAnglDim")
+            .zero_word()
+            .declare("moAngleParameter_c")
+            .scalar("A1", &metres(0.5), 0, 9)
+            .declare("sgValG3Dim")
+            .zero_word()
+            .token(402)
+            .scalar("A2", &metres(0.25), 0, 10);
+    };
+    let mut compound = Stream::compound();
+    body(&mut compound);
+    assert_eq!(
+        statements_in(&compound.lane(), None),
+        vec![
+            (
+                "D1".into(),
+                Some(Statement::Parameter(StatedParameter::Length(0.025)))
+            ),
+            (
+                "D2".into(),
+                Some(Statement::Assumed(StatedParameter::Length(0.017)))
+            ),
+            (
+                "A1".into(),
+                Some(Statement::Parameter(StatedParameter::Angle(0.5)))
+            ),
+            (
+                "A2".into(),
+                Some(Statement::Parameter(StatedParameter::Angle(0.25)))
+            ),
+        ]
+    );
+    let mut own = Stream::declared();
+    body(&mut own);
+    assert!(
+        statements_in(&own.lane(), None)
+            .iter()
+            .all(|(_, statement)| matches!(statement, Some(Statement::Parameter(_)))),
+        "{:?}",
+        statements_in(&own.lane(), None)
     );
 }

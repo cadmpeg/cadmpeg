@@ -189,6 +189,13 @@ pub(crate) fn resolved_count(resolved: &[u8]) -> Option<u32> {
     View::u32_le_at(resolved, 0)
 }
 
+/// Whether a `ResolvedFeatures` stream opens as in a compound-file part:
+/// a u16 and then a class declaration. Such a stream continues the
+/// `Config-N` map without stating the count at which `Config-N` ended.
+pub(crate) fn compound_opening(resolved: &[u8]) -> bool {
+    !declaration_at(resolved, 0) && declaration_at(resolved, COMPOUND_OPENING_LEN)
+}
+
 fn declaration_at(stream: &[u8], at: usize) -> bool {
     stream.get(at..at + NEW_CLASS_TAG.len()) == Some(&NEW_CLASS_TAG[..])
 }

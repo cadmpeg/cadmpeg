@@ -1256,3 +1256,102 @@ fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
         "{notes:#?}"
     );
 }
+
+#[test]
+fn a_kind_only_a_compound_lane_declaration_gives_is_named() {
+    use super::super::parameters::NamedScalar;
+    use crate::resolved_features::parameter_classes::{StatedParameter, Statement};
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+
+    // D1 and D2 are bound to scalars whose class a compound-file lane's own
+    // declarations alone give and that the lane states, respectively. D3's
+    // one scalar under its name is assumed; D4 has an assumed and a stated
+    // scalar that agree.
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">12</Dimension>
+                <Dimension Name="D2">14</Dimension>
+                <Dimension Name="D3">16</Dimension>
+                <Dimension Name="D4">18</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let real = |value: f64| V10::Real(value.try_into().unwrap());
+    let readings = [
+        ("Sketch1", "D1", real(0.012), Some("scalar-d1")),
+        ("Sketch1", "D2", real(0.014), Some("scalar-d2")),
+    ];
+    let stated = [
+        (
+            "scalar-d1",
+            Statement::Assumed(StatedParameter::Length(0.012)),
+        ),
+        (
+            "scalar-d2",
+            Statement::Parameter(StatedParameter::Length(0.014)),
+        ),
+    ];
+    let scalar = |statement| NamedScalar {
+        stated: Some(statement),
+        driving: true,
+    };
+    let named = [
+        (
+            "Sketch1",
+            "D3",
+            scalar(Statement::Assumed(StatedParameter::Length(0.016))),
+        ),
+        (
+            "Sketch1",
+            "D4",
+            scalar(Statement::Assumed(StatedParameter::Length(0.018))),
+        ),
+        (
+            "Sketch1",
+            "D4",
+            scalar(Statement::Parameter(StatedParameter::Length(0.018))),
+        ),
+    ];
+    let (_, parameters, notes) = parameters_with_scalars(
+        keywords,
+        &readings,
+        &[],
+        &stated,
+        &named,
+        Some(UnitSymbol::Mm),
+        None,
+    );
+    let id = |name: &str| {
+        let (kind, number) = kind_and_number(&parameters, name);
+        assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH), "{name}");
+        assert!(number.is_some(), "{name}");
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap()
+            .id
+            .as_str()
+            .to_owned()
+    };
+    let ids = ["D1", "D2", "D3", "D4"].map(id);
+    for (name, number) in [("D1", 12.0), ("D2", 14.0), ("D3", 16.0), ("D4", 18.0)] {
+        let (_, value) = kind_and_number(&parameters, name);
+        assert!((value.unwrap() - number).abs() < 1e-9, "{name}: {value:?}");
+    }
+    let assumed = note_of(&notes, SldprtLossCode::DesignParameterClassAssumed)
+        .expect("the dimensions whose kind is assumed are named");
+    assert!(
+        assumed.message.starts_with("2 dimensions take their kind")
+            && assumed
+                .message
+                .ends_with(&format!(": {}, {}", ids[0], ids[2])),
+        "{}",
+        assumed.message
+    );
+}
