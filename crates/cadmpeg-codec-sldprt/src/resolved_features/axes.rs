@@ -506,6 +506,14 @@ fn revolution_line_reference_inputs(
             })
         })
     };
+    // The longest structurally terminated read is the record: a record whose
+    // last values are zero also ends a shorter read with zero padding.
+    let longest_terminated = |frame: usize, scalar_counts: &[usize]| {
+        scalar_counts.iter().rev().find_map(|&scalar_count| {
+            next_class_after_zeros(frame + scalar_count * 8, 24)?;
+            Some((scalar_count, axis_record(frame, scalar_count)?))
+        })
+    };
     let scan_end = search_end.checked_sub(64)?;
     let mut candidates = Vec::new();
     for handle_start in object_start..scan_end {
@@ -526,28 +534,9 @@ fn revolution_line_reference_inputs(
                 let handles_end = handle_start + 8;
                 let frame_gap = 16;
                 let frame = handles_end + frame_gap;
-                // The longest structurally terminated record is the record:
-                // a seven-value record whose last value is zero also ends a
-                // six-value read with zero padding.
-                let mut placed = None;
-                for scalar_count in [6usize, 7] {
-                    let record_end = frame + scalar_count * 8;
-                    let Some(next_record) = (record_end..=record_end + 24)
-                        .find(|offset| payload.get(*offset..*offset + 4) == Some(CLASS_MARKER))
-                    else {
-                        continue;
-                    };
-                    if payload
-                        .get(record_end..next_record)
-                        .is_some_and(|bytes| bytes.iter().any(|byte| *byte != 0))
-                    {
-                        continue;
-                    }
-                    if let Some(axis) = axis_record(frame, scalar_count) {
-                        placed = Some((scalar_count, axis));
-                    }
-                }
-                if let Some((scalar_count, (origin, direction))) = placed {
+                if let Some((scalar_count, (origin, direction))) =
+                    longest_terminated(frame, &[6, 7])
+                {
                     candidates.push((handle_start, scalar_count, (source, origin, direction)));
                 }
             }
@@ -566,13 +555,12 @@ fn revolution_line_reference_inputs(
             if let Some(source) = source_cell(source_offset) {
                 let handles_end = handle_start + 12;
                 let compact_frame = handles_end + 4;
-                let compact_end = compact_frame + 9 * 8;
                 if payload.get(handles_end..handles_end + 4) == Some(&[0; 4])
                     && payload.get(handles_end + 4..handles_end + 12) == Some(&[0; 8])
-                    && next_class_after_zeros(compact_end, 24).is_some()
                 {
-                    if let Some(axis) = axis_record(compact_frame, 9) {
-                        candidates.push((handle_start, 9, (source, axis.0, axis.1)));
+                    if let Some((scalar_count, axis)) = longest_terminated(compact_frame, &[9, 10])
+                    {
+                        candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                     }
                 }
                 let addressed_frame = handles_end + 24;
@@ -600,13 +588,10 @@ fn revolution_line_reference_inputs(
         {
             let source_offset = handle_start - 48;
             let frame = handle_start + 8;
-            let record_end = frame + 8 * 8;
             if let Some(source) = source_cell(source_offset) {
-                if payload.get(frame..frame + 8) == Some(&[0; 8])
-                    && next_class_after_zeros(record_end, 24).is_some()
-                {
-                    if let Some(axis) = axis_record(frame, 8) {
-                        candidates.push((handle_start, 8, (source, axis.0, axis.1)));
+                if payload.get(frame..frame + 8) == Some(&[0; 8]) {
+                    if let Some((scalar_count, axis)) = longest_terminated(frame, &[8, 9, 10]) {
+                        candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                     }
                 }
             }
@@ -656,22 +641,15 @@ fn revolution_line_reference_inputs(
                     && View::u32_le_at(payload, handle_start + 16)
                         .is_some_and(|address| address != 0)
                     && payload.get(handle_start + 20..handle_start + 24) == Some(&[0; 4]);
-                // A two-handle record holds eight or nine values; a nine-value
-                // record whose last value is zero also ends an eight-value
-                // read with zero padding, so the longest terminated read wins.
                 let layout: Option<(usize, &[usize])> = if two_handles {
-                    Some((handle_start + 16, &[9, 8]))
+                    Some((handle_start + 16, &[8, 9]))
                 } else if three_handles {
                     Some((handle_start + 24, &[9]))
                 } else {
                     None
                 };
                 if let Some((frame, scalar_counts)) = layout {
-                    let placed = scalar_counts.iter().find_map(|&scalar_count| {
-                        next_class_after_zeros(frame + scalar_count * 8, 24)?;
-                        Some((scalar_count, axis_record(frame, scalar_count)?))
-                    });
-                    if let Some((scalar_count, axis)) = placed {
+                    if let Some((scalar_count, axis)) = longest_terminated(frame, scalar_counts) {
                         candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                         continue;
                     }

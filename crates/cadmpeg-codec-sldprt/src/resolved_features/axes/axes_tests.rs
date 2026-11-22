@@ -307,7 +307,7 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
         } else {
             (
                 handles_end + 4,
-                vec![0.0, 0.0, 0.03, 0.052, 0.0, 0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, 0.052, 0.0, 0.0, 0.0, 0.0, 1.0],
                 handles_end + 85,
             )
         };
@@ -325,7 +325,9 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
     );
     assert_eq!(
         revolution_line_reference_inputs(&make_payload(false), 32, 320, &HashSet::from([42])),
-        Some((42, Point3::new(52.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        // The record holds ten values: the class declaration follows one zero
+        // byte after a tenth zero value, so the axis line is the last six.
+        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)))
     );
 }
 
@@ -344,7 +346,7 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     for offset in [handles, handles + 4] {
         declared[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    for (index, value) in [0.0, 0.03, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
+    for (index, value) in [0.0, 0.0, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
         .into_iter()
         .enumerate()
     {
@@ -354,7 +356,9 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     declared[handles + 89..handles + 93].copy_from_slice(CLASS_MARKER);
     assert_eq!(
         revolution_line_reference_inputs(&declared, 32, declared.len(), &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 64.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        // Ten values end one zero byte before the class declaration: two
+        // zero values follow the eight written here.
+        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)))
     );
 
     let mut nested = vec![0; 300];

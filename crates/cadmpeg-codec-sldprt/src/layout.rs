@@ -2429,7 +2429,7 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
 /// Spec §2. Record length 48 B.
 ///
 /// ```text
-/// Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values.
+/// Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to ten values.
 /// ```
 pub(crate) mod revolution_line_reference_axis_line {
     /// Record length in bytes. Spec §2.

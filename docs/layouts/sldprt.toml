@@ -10727,7 +10727,7 @@ section = "2"
 anchor = "The record ends with the axis line"
 size = 48
 endianness = "little"
-note = "Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values."
+note = "Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to ten values."
 
 [[record.field]]
 name = "point"

@@ -2737,7 +2737,7 @@ Parsed by:
 
 Spec §2 · layout: byte offsets · size: 48 B
 
-Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values.
+Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to ten values.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
