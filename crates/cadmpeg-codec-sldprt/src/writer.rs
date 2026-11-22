@@ -22,7 +22,7 @@ use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -512,7 +512,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
 }
 
 fn assign_configuration_indices(
-    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<(), CodecError> {
     let mut used = HashSet::new();
     let mut names = HashSet::new();
@@ -586,7 +586,7 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
 pub(crate) fn configurations_without_synthesized_snapshot(
     ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let mut configurations = ir.model.configurations.clone();
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source

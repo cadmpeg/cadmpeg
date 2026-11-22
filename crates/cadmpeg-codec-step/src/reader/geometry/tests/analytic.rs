@@ -104,15 +104,15 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     )
     .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
-    assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
-    assert!(!text.contains("GEOMETRIC_SET"));
-    assert!(report.losses.iter().any(|loss| loss
+    assert!(text.contains("CURVE_BOUNDED_SURFACE"));
+    assert!(text.contains("GEOMETRIC_SET"));
+    assert!(!report.losses.iter().any(|loss| loss
         .message
         .contains("geometry carrier(s) were not written")));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written curve-bounded surface");
-    assert!(!decoded
+    assert!(decoded
         .ir()
         .geometry
         .procedural_surfaces
@@ -189,7 +189,7 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
             10.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -330,7 +330,7 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
             5.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(5.0, 0.0, 0.0))
     );
     let partials = model_surface_partials_by_id(
@@ -374,7 +374,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
                 5.0,
                 0.0
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(5.0, 0.0, 0.0))
         );
         let partials = model_surface_partials_by_id(
@@ -429,7 +429,7 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
             0.0,
             10.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
     assert_eq!(decoded.ir().geometry.pcurves.len(), 1);

@@ -8,7 +8,7 @@ pub mod bounds;
 
 pub(super) mod admitted;
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_derive::DeserializeName;

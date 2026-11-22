@@ -5,10 +5,11 @@ use std::collections::HashSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{FaceMotion, FaceSelection, FeatureOperation, ParameterValue},
-    scalar::Length,
-};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::FeatureOperation;
+use cadmpeg_ir::scalar::Length;
 
 use super::{
     parse_enumeration, property, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureProperty,

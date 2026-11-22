@@ -4,7 +4,7 @@
 //! Every lookup keeps the first record of an identity; a repeated identity is
 //! reported by the scope-and-linkage rules and does not stop the others.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use crate::design::configuration::{Arrangement, DesignConfiguration};
@@ -19,7 +19,7 @@ use crate::features::ConfigurationId;
 use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in crate::validate) enum MemberKey<'a> {
     /// A feature.
     Feature(&'a str),
@@ -52,7 +52,7 @@ impl fmt::Display for MemberKey<'_> {
 }
 
 /// A position, by identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in crate::validate) enum PositionKey<'a> {
     /// The start of an ordered container.
     Start(&'a str),
@@ -115,6 +115,8 @@ pub(in crate::validate) struct DesignRecords<'a> {
     pub(in crate::validate) roots: BTreeMap<&'a str, &'a str>,
     /// The configurations of each scope.
     pub(in crate::validate) scope_configurations: BTreeMap<&'a str, Vec<&'a DesignConfiguration>>,
+    /// The first product definition that lists each occurrence id.
+    occurrence_owners: HashMap<&'a str, &'a str>,
 }
 
 /// A container's members: in order for an ordered container.
@@ -162,6 +164,15 @@ impl<'a> DesignRecords<'a> {
                 .or_default()
                 .push(configuration);
         }
+        let mut occurrence_owners: HashMap<&'a str, &'a str> = HashMap::new();
+        for definition in &ir.model.product_definitions {
+            let def_id = definition.id.as_str();
+            for occurrence in &definition.occurrences {
+                occurrence_owners
+                    .entry(occurrence.as_str())
+                    .or_insert(def_id);
+            }
+        }
         Self {
             ir,
             scopes: by_id(&design.scopes, |scope| scope.definition.as_str()),
@@ -180,7 +191,13 @@ impl<'a> DesignRecords<'a> {
             parents,
             roots,
             scope_configurations,
+            occurrence_owners,
         }
+    }
+
+    /// The first product definition that lists `occurrence`.
+    pub(in crate::validate) fn occurrence_owner(&self, occurrence: &str) -> Option<&'a str> {
+        self.occurrence_owners.get(occurrence).copied()
     }
 
     /// Whether the member's record exists.
@@ -332,8 +349,6 @@ impl<'a> DesignRecords<'a> {
             .collect()
     }
 
-    /// Whether `scope` holds the features of several definitions (§5.1): a
-    /// feature of it names a `component` other than the scope's definition.
     fn holds_several_definitions(&self, scope: &str) -> bool {
         self.features.iter().any(|(&id, feature)| {
             feature
@@ -344,21 +359,41 @@ impl<'a> DesignRecords<'a> {
         })
     }
 
-    /// The definitions `scope` spans (§5.1): its own, and, where it holds the
-    /// features of several definitions, every definition placed below it
-    /// that has no scope of its own.
-    ///
-    /// A definition places the prototypes of the occurrences it owns (§5.5,
-    /// §8.1). An `External` definition is never spanned: it has no design.
+    /// The scope's definition and the definitions it spans (§5.1).
     pub(in crate::validate) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
-        let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
+        let Some((&scope, root)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
         };
         let mut spanned = BTreeSet::from([scope]);
-        if !self.holds_several_definitions(scope) {
-            return spanned;
-        }
+        let several = self.holds_several_definitions(scope);
         let mut pending = vec![scope];
+        if matches!(root.storage, Storage::File { .. }) {
+            let key = scope.split_once('#').map(|(_, key)| key);
+            let placed: BTreeSet<&str> = self
+                .occurrences
+                .values()
+                .map(|occurrence| occurrence.prototype.as_str())
+                .collect();
+            for (&id, definition) in &self.definitions {
+                let file_key = id
+                    .split(':')
+                    .nth(1)
+                    .and_then(|scope| scope.split_once('@'))
+                    .map(|(key, _)| key);
+                let same_file = match file_key {
+                    Some(file_key) => Some(file_key) == key,
+                    None => root.is_root(),
+                };
+                if same_file
+                    && matches!(definition.storage, Storage::Embedded)
+                    && !self.scopes.contains_key(id)
+                    && !placed.contains(id)
+                    && spanned.insert(id)
+                {
+                    pending.push(id);
+                }
+            }
+        }
         while let Some(definition) = pending.pop() {
             let owned = self
                 .definitions
@@ -371,7 +406,8 @@ impl<'a> DesignRecords<'a> {
                 else {
                     continue;
                 };
-                if !matches!(placed.storage, Storage::External(_))
+                if (matches!(placed.storage, Storage::Embedded)
+                    || (several && matches!(placed.storage, Storage::File { .. })))
                     && !self.scopes.contains_key(prototype)
                     && spanned.insert(prototype)
                 {
@@ -382,3 +418,15 @@ impl<'a> DesignRecords<'a> {
         spanned
     }
 }
+
+impl CadIr {
+    pub(crate) fn spanned_definitions(
+        &self,
+        scope: &crate::ids::ProductDefinitionId,
+    ) -> BTreeSet<&str> {
+        DesignRecords::new(self).spanned_definitions(scope.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -25,7 +25,8 @@ use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
 use crate::design::units::{AngularSpeed, Duration, Feed, UnitSymbol};
-use crate::features::{FeatureId, FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::{FeatureId, ParameterId};
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::SolvedCurveGeometry;
 use crate::math::{Point3, Vector3};

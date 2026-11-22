@@ -6,7 +6,8 @@ use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
-use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::io::Cursor;
 
 #[test]

@@ -97,7 +97,7 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
             .validate_candidate(|ir, _| {
                 ir.geometry.points.push(Point::new(
                     "rhino:test:point#one".try_into().expect("id"),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("point"),
                     Some(cadmpeg_ir::SourceObjectAssociation {
                         geometry_role: None,
@@ -188,8 +188,8 @@ fn point_cloud_commit_skips_the_instance_member_at_the_local_entity_limit() {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction");
         context.set_expansion_limits([16, 16, 6]);
         select_instance_member(&mut context);
-        let point =
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point");
+        let point = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("point");
         let committed = context
             .commit_geometry(
                 0,

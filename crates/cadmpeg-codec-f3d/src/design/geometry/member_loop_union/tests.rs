@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
-use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,

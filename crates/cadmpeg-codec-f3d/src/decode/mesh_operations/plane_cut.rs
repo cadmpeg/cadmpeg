@@ -7,14 +7,13 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
 use cadmpeg_ir::features::mesh::{
     MeshModification, MeshPlaneCut, MeshPlaneCutFill, MeshPlaneCutMode, MeshPlaneCutSide,
     MeshSelection,
 };
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3,
-    NativeSelections, SelectionReference,
-};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;

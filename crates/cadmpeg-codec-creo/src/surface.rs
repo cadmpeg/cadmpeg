@@ -10,11 +10,12 @@ mod bends;
 pub(crate) mod cylinder_frame_readers;
 pub(crate) mod owners;
 pub(crate) mod revolution;
+pub(crate) mod row_prefix;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonNegativeLength, PositiveAngle, PositiveLength};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
@@ -24,6 +25,7 @@ use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg
 use crate::psb::{self, compact_int};
 use crate::scalar;
 use crate::vecmath::local_system_lanes;
+use row_prefix::positional_body_start;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
@@ -3368,10 +3370,178 @@ pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
-    rows_with_boundaries(payload, &[BoundaryType::Code00, BoundaryType::Code06])
+    cross_section_rows_with_packed_readings(payload).0
+}
+
+/// Rows of the reading a payload passes over, in one counted `srf_array`
+/// frame or outside every counted frame, that its kept reading lacks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PackedRowReading {
+    /// Offset of the first byte after the frame count.
+    pub(crate) frame_start: Option<usize>,
+    /// The reading the payload keeps.
+    pub(crate) kept: KeptRowReading,
+    /// Rows of the other reading that the kept reading lacks.
+    pub(crate) replaced: usize,
+}
+
+/// The reading of `srf_array` row fields a payload keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeptRowReading {
+    /// The packed `c0..df XX YY` reading.
+    Packed,
+    /// The one- and two-byte reading.
+    Compact,
 }
 
 fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
+    rows_and_packed_readings(payload, boundary_types).0
+}
+
+/// The candidates each counted frame retains: every candidate of a frame whose
+/// count they do not exceed, or every candidate when no frame holds one. The
+/// count is the frame's slot extent: a slot can lack a materialized
+/// fixed-prefix header, and more headers than slots withhold the frame.
+fn framed_rows(candidates: Vec<SurfaceRow>, frames: &[SurfaceArrayFrame]) -> Vec<SurfaceRow> {
+    let mut framed = Vec::new();
+    let mut saw_framed_candidate = false;
+    for frame in frames {
+        let inside: Vec<&SurfaceRow> = candidates
+            .iter()
+            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            .collect();
+        saw_framed_candidate |= !inside.is_empty();
+        if inside.len() <= frame.count {
+            framed.extend(inside.into_iter().cloned());
+        }
+    }
+    if saw_framed_candidate {
+        framed
+    } else {
+        candidates
+    }
+}
+
+/// Boundary filters whose kept rows decide the reading.
+const READING_CHOICE_BOUNDARY_FILTERS: [&[BoundaryType]; 2] = [
+    BOUNDARY_TYPES,
+    &[BoundaryType::Code00, BoundaryType::Code06],
+];
+
+/// The two readings of one payload.
+struct RowReadings {
+    packed: Vec<SurfaceRow>,
+    compact: Vec<SurfaceRow>,
+    frames: Vec<SurfaceArrayFrame>,
+}
+
+impl RowReadings {
+    fn new(payload: &[u8]) -> Self {
+        Self {
+            packed: row_candidates(payload, row_prefix::RowReading::Packed),
+            compact: row_candidates(payload, row_prefix::RowReading::Compact),
+            frames: surface_array_frames(payload).collect(),
+        }
+    }
+
+    /// The start of the counted frame that holds `row`.
+    fn frame_of(&self, row: &SurfaceRow) -> Option<usize> {
+        self.frames
+            .iter()
+            .find(|frame| row.offset >= frame.start && row.offset < frame.end)
+            .map(|frame| frame.start)
+    }
+
+    /// The rows a reading keeps with `boundary_types`.
+    fn kept(&self, candidates: &[SurfaceRow], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
+        framed_rows(
+            candidates
+                .iter()
+                .filter(|row| boundary_types.contains(&row.boundary_type))
+                .cloned()
+                .collect(),
+            &self.frames,
+        )
+    }
+
+    /// Whether the packed reading keeps, under every choice filter, at least
+    /// as many rows as the one- and two-byte reading in every counted frame
+    /// and outside the frames.
+    fn packed_chosen(&self) -> bool {
+        READING_CHOICE_BOUNDARY_FILTERS
+            .iter()
+            .all(|boundary_types| {
+                let packed = self.kept(&self.packed, boundary_types);
+                let compact = self.kept(&self.compact, boundary_types);
+                self.frames
+                    .iter()
+                    .map(|frame| Some(frame.start))
+                    .chain(std::iter::once(None))
+                    .all(|region| {
+                        let count = |rows: &[SurfaceRow]| {
+                            rows.iter()
+                                .filter(|row| self.frame_of(row) == region)
+                                .count()
+                        };
+                        count(&packed) >= count(&compact)
+                    })
+            })
+    }
+}
+
+/// Whether the payload keeps the packed `c0..df XX YY` reading of its rows.
+pub(crate) fn packed_reading_chosen(payload: &[u8]) -> bool {
+    RowReadings::new(payload).packed_chosen()
+}
+
+/// Rows with `boundary_types`, and the passed-over rows of the other reading.
+///
+/// The payload keeps its packed reading when, for every boundary filter in
+/// [`READING_CHOICE_BOUNDARY_FILTERS`], it keeps at least as many rows as the
+/// one- and two-byte reading in every counted frame and outside the frames.
+/// Otherwise it keeps the one- and two-byte reading.
+fn rows_and_packed_readings(
+    payload: &[u8],
+    boundary_types: &[BoundaryType],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    let readings = RowReadings::new(payload);
+    let compact_rows = readings.kept(&readings.compact, boundary_types);
+    let packed_rows = readings.kept(&readings.packed, boundary_types);
+    let (kept, kept_rows, other_rows) = if readings.packed_chosen() {
+        (KeptRowReading::Packed, packed_rows, compact_rows)
+    } else {
+        (KeptRowReading::Compact, compact_rows, packed_rows)
+    };
+    let mut replaced = BTreeMap::<Option<usize>, usize>::new();
+    for row in other_rows.iter().filter(|row| !kept_rows.contains(row)) {
+        *replaced.entry(readings.frame_of(row)).or_default() += 1;
+    }
+    let replaced = replaced
+        .into_iter()
+        .map(|(frame_start, replaced)| PackedRowReading {
+            frame_start,
+            kept,
+            replaced,
+        })
+        .collect();
+    (kept_rows, replaced)
+}
+
+/// Rows of every `srf_array` frame, and the passed-over rows of the other reading.
+pub(crate) fn rows_with_packed_readings(
+    payload: &[u8],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    rows_and_packed_readings(payload, BOUNDARY_TYPES)
+}
+
+/// Cross-section rows, and the passed-over rows of the other reading.
+pub(crate) fn cross_section_rows_with_packed_readings(
+    payload: &[u8],
+) -> (Vec<SurfaceRow>, Vec<PackedRowReading>) {
+    rows_and_packed_readings(payload, &[BoundaryType::Code00, BoundaryType::Code06])
+}
+
+fn row_candidates(payload: &[u8], reading: row_prefix::RowReading) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
@@ -3380,9 +3550,8 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         namespace_start = start;
         let value = |label: &[u8]| {
             find_in(payload, label, start, end).and_then(|at| {
-                let value_start = at + label.len();
-                let (value, after) = compact_int(payload, value_start);
-                (after > value_start).then_some((value, at))
+                row_prefix::named_row_field(payload, at + label.len(), end, reading)
+                    .map(|value| (value, at))
             })
         };
         let typed_kind = find_in(payload, b"geom_type\0", start, end)
@@ -3419,43 +3588,42 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             });
         }
     }
+    let frames: Vec<SurfaceArrayFrame> = surface_array_frames(payload).collect();
+    let frame_starts: Vec<usize> = frames.iter().map(|frame| frame.start).collect();
+    let labels = row_prefix::frame_label_offsets(payload);
     for type_offset in 1..payload.len() {
         let Some(kind) = SurfaceKind::from_byte(payload[type_offset]) else {
             continue;
         };
-        let Some((id, id_start)) = id_ending_at(payload, type_offset) else {
+        let limit = labels
+            .get(labels.partition_point(|label| *label <= type_offset))
+            .copied()
+            .unwrap_or(payload.len());
+        let containing_frame_start = frames
+            .iter()
+            .find(|frame| frame.start <= type_offset && type_offset < frame.end)
+            .map(|frame| frame.start);
+        let short = id_ending_at(payload, type_offset);
+        let anchored = |start: usize| row_prefix::packed_id_anchored(payload, start, &frame_starts);
+        let packed = containing_frame_start
+            .filter(|_| reading == row_prefix::RowReading::Packed)
+            .and_then(|lower| row_prefix::packed_id_ending_at(payload, type_offset, lower))
+            .filter(|(_, start)| {
+                anchored(*start) && !short.is_some_and(|(_, short)| anchored(short))
+            });
+        let Some((id, id_start)) = packed.or(short) else {
             continue;
         };
-        let mut pos = type_offset + 1;
-        let (feature_id, next) = compact_int(payload, pos);
-        if next == pos || next > payload.len() {
-            continue;
-        }
-        pos = next;
-        let Some(&orientation) = payload.get(pos) else {
+        let Some(prefix) = row_prefix::row_prefix(payload, type_offset, limit, reading) else {
             continue;
         };
-        if !matches!(orientation, 0x01 | 0xf6) {
-            continue;
-        }
-        let Some(&boundary_type) = payload.get(pos + 1) else {
-            continue;
-        };
-        let Some(boundary_type) = BoundaryType::from_byte(boundary_type) else {
-            continue;
-        };
-        pos += 2;
-        let (next_surface, end) = compact_int(payload, pos);
-        if end == pos {
-            continue;
-        }
         result.push(SurfaceRow {
             id,
             kind,
-            feature_id,
-            reversed: orientation == 0xf6,
-            boundary_type,
-            next_surface,
+            feature_id: prefix.feature_id,
+            reversed: prefix.reversed,
+            boundary_type: prefix.boundary_type,
+            next_surface: prefix.next_surface,
             offset: id_start,
         });
     }
@@ -3482,37 +3650,6 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
             .iter()
             .any(|(start, end)| row.offset >= *start && row.offset < *end)
     });
-    result.retain(|row| boundary_types.contains(&row.boundary_type));
-    let mut frames = surface_array_frames(payload).peekable();
-    if frames.peek().is_some() {
-        let mut framed = Vec::new();
-        let mut saw_framed_candidate = false;
-        for frame in frames {
-            let selected_count = result
-                .iter()
-                .filter(|row| row.offset >= frame.start && row.offset < frame.end)
-                .count();
-            saw_framed_candidate |= selected_count != 0;
-            // The count is the frame's slot extent. Releases can leave slots
-            // without a materialized fixed-prefix header; retaining the
-            // validated headers preserves the rows that are present without
-            // treating an incomplete frame as complete. More headers than
-            // slots is structurally invalid, so withhold that frame. Exact-
-            // count callers are kept separate in `counted_row_bounds` and
-            // `complete_surface_array_bounds`.
-            if selected_count <= frame.count {
-                for row in result
-                    .iter()
-                    .filter(|row| row.offset >= frame.start && row.offset < frame.end)
-                {
-                    framed.push(row.clone());
-                }
-            }
-        }
-        if saw_framed_candidate {
-            result = framed;
-        }
-    }
     result
 }
 
@@ -4122,26 +4259,6 @@ fn parent_feature_array_trailer(body: &[u8]) -> bool {
         return false;
     }
     matches!(&rest[cursor..], [] | [0xe1] | [0xe1, 0xf6, 0xf6])
-}
-
-fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
-    let (_, after_id) = compact_int(payload, row.offset);
-    (payload
-        .get(after_id)
-        .and_then(|byte| SurfaceKind::from_byte(*byte))
-        == Some(row.kind))
-    .then_some(())?;
-    let mut cursor = after_id + 1;
-    let (feature_id, next) = compact_int(payload, cursor);
-    (next > cursor && feature_id == row.feature_id).then_some(())?;
-    cursor = next;
-    let orientation = *payload.get(cursor)?;
-    let boundary = *payload.get(cursor + 1)?;
-    (matches!(orientation, 0x01 | 0xf6) && BoundaryType::from_byte(boundary).is_some())
-        .then_some(())?;
-    cursor += 2;
-    let (_, next) = compact_int(payload, cursor);
-    (next > cursor).then_some(next)
 }
 
 fn decode_row_scalar(

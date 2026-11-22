@@ -21,11 +21,10 @@ use cadmpeg_core::CodecError;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
 use crate::features::serialization::FeatureWriteWire;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-    FeatureRowWire,
-};
+use crate::features::{Feature, FeatureRowWire};
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
     ProceduralSurfaceRow, Surface, SurfaceGeometry,
@@ -1012,6 +1011,11 @@ macro_rules! declare_design {
         }
 
         impl Design {
+            /// Whether every design arena and the current name table are empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* self.names.entries().is_empty()
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedDesign<'_> {
                 SortedDesign {
@@ -1062,6 +1066,11 @@ macro_rules! declare_process {
         }
 
         impl Process {
+            /// Whether every process arena is empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* true
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedProcess<'_> {
                 SortedProcess {

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    patterns::PatternSeed, BodySelection, EdgeSelection, FaceSelection, FeatureDefinition,
-    FeatureOperation, PathRef, PlanarProfileRef,
-};
+use cadmpeg_ir::features::patterns::PatternSeed;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -179,7 +179,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         .unwrap();
     let revolution_feature = feature("Revolution");
     let FeatureOperation::Revolve {
-        construction: cadmpeg_ir::features::RevolveConstruction::Resolved { profile, .. },
+        construction: cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { profile, .. },
         ..
     } = operation_definition(revolution_feature)
     else {
@@ -367,7 +367,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     let draft_pull = native_property("Draft", "PullDirection");
     let draft_axis_id = crate::native::native_id("object", "DatumAxis");
     assert_link(draft_pull, draft_axis_id.as_str(), &[""]);
-    let cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+    let cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
         plane: FaceSelection::Native(plane),
         pull: Some(pull),
     } = anchor
@@ -826,7 +826,7 @@ fn auxiliary_sweep_path_resolves_selected_native_edges() {
         let FeatureOperation::Sweep { orientation, .. } = operation else {
             panic!("authored Sweep definition: {operation:#?}")
         };
-        *orientation = Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+        *orientation = Some(cadmpeg_ir::features::sweeps::SweepOrientation::Auxiliary {
             path: PathRef::Native(auxiliary_id.clone()),
             tangent: false,
             curvilinear: true,
@@ -876,7 +876,7 @@ fn auxiliary_sweep_path_resolves_selected_native_edges() {
         .unwrap();
     let FeatureOperation::Sweep {
         orientation:
-            Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+            Some(cadmpeg_ir::features::sweeps::SweepOrientation::Auxiliary {
                 path: PathRef::Edges(edges),
                 tangent: false,
                 curvilinear: true,

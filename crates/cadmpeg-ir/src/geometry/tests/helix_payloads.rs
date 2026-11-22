@@ -359,7 +359,7 @@ fn numerical_followup_helix_path_requires_two_equal_nonzero_radii() {
 
 #[test]
 fn helix_curve_finite_center_returns_the_admitted_center() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     for center in [
         Point3::new(0.0, 0.0, 0.0),
@@ -394,7 +394,7 @@ fn a_helix_line_profile_holds_its_admitted_direction() {
     let profile = HelixLineProfile::try_new(direction).unwrap();
     assert_eq!(
         profile.direction(),
-        crate::features::FiniteVector3::new(direction).unwrap()
+        crate::features::geometry::FiniteVector3::new(direction).unwrap()
     );
     assert!(HelixLineProfile::try_new(Vector3::new(0.0, 0.0, 0.0)).is_err());
     assert!(HelixLineProfile::try_new(Vector3::new(f64::NAN, 1.0, 0.0)).is_err());

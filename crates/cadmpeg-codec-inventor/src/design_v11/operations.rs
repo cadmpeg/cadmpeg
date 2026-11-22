@@ -100,9 +100,13 @@ fn definition(
         use cadmpeg_ir::design::feature::FuzzyTolerance;
         result.refine = Some(*refine);
         result.fuzzy_tolerance = Some(match fuzzy_tolerance {
-            cadmpeg_ir::features::FuzzyTolerance::KernelDefault => FuzzyTolerance::KernelDefault,
-            cadmpeg_ir::features::FuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
-            cadmpeg_ir::features::FuzzyTolerance::Explicit(value) => {
+            cadmpeg_ir::features::operation_settings::FuzzyTolerance::KernelDefault => {
+                FuzzyTolerance::KernelDefault
+            }
+            cadmpeg_ir::features::operation_settings::FuzzyTolerance::Automatic => {
+                FuzzyTolerance::Automatic
+            }
+            cadmpeg_ir::features::operation_settings::FuzzyTolerance::Explicit(value) => {
                 FuzzyTolerance::Explicit(Dimension::Literal(*value))
             }
         });
