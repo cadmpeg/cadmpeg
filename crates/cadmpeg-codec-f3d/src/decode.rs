@@ -3169,6 +3169,7 @@ struct GeometryIndex {
 struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
+    model_selection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 struct DeferredBodylessInputs {
@@ -3285,6 +3286,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities: _,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let mut untyped = std::collections::BTreeSet::new();
         let stats = &brep.asm.stats;
@@ -3303,6 +3305,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
             geometry_losses(&brep),
         )?;
+        report.losses.extend(model_selection_losses);
         if undecoded_candidates != 0 {
             push_loss_vec(
                 &mut report.losses,
@@ -3382,6 +3385,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let MetadataIr {
             mut ir,
@@ -3394,6 +3398,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
             container_losses(scan, brep_outcome),
         )?;
+        report.losses.extend(model_selection_losses);
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = std::collections::BTreeSet::new();
         if container::design_breps(scan).next().is_some()
@@ -4472,6 +4477,7 @@ fn decode_scanned_document<'a>(
                 DecodeSessionState {
                     admitted_entities,
                     report_scope,
+                    model_selection_losses: model_selection.losses,
                 },
             );
         }
@@ -4490,6 +4496,7 @@ fn decode_scanned_document<'a>(
             DecodeSessionState {
                 admitted_entities,
                 report_scope,
+                model_selection_losses: model_selection.losses,
             },
         );
     }
@@ -4501,6 +4508,7 @@ fn decode_scanned_document<'a>(
         DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses: model_selection.losses,
         },
         &brep_outcome,
     )?;

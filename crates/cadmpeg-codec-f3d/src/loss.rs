@@ -306,6 +306,9 @@ pub(crate) enum F3dLossCode {
     DesignBodyBindingUnresolved,
     /// Design body-map pairs name a body outside the current model.
     HistoryOnlyBodyOmitted,
+    /// Snapshot body maps select the model bodies of a Design stream whose
+    /// modern body maps are all empty beside a flagged `Base Feature` frame.
+    FlaggedBaseFeatureBodySelected,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
     ReferenceImageFlagAssumed,
@@ -1486,6 +1489,7 @@ impl F3dLossCode {
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
         Self::HistoryOnlyBodyOmitted,
+        Self::FlaggedBaseFeatureBodySelected,
         Self::ReferenceImageNativeRetained,
         Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
@@ -2330,6 +2334,7 @@ impl F3dLossCode {
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
             Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
+            Self::FlaggedBaseFeatureBodySelected => "design.flagged-base-feature-body-selected",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
@@ -3485,6 +3490,7 @@ impl F3dLossCode {
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::HistoryOnlyBodyOmitted
+            | Self::FlaggedBaseFeatureBodySelected
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::DecalPlacementNative
@@ -4793,6 +4799,7 @@ impl F3dLossCode {
             | Self::MeshBodyIdentityAssumed
             | Self::DialectLayerCollision
             | Self::LocalOccurrenceYieldedToRegistered
+            | Self::FlaggedBaseFeatureBodySelected
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
@@ -5052,6 +5059,7 @@ mod tests {
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
                 "design.history-only-body-omitted",
+                "design.flagged-base-feature-body-selected",
                 "appearance.reference-image-native",
                 "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",

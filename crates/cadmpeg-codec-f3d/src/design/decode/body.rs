@@ -936,6 +936,7 @@ fn select_flagged_snapshot_records(
 pub(crate) struct ModelBodySelection {
     pub(crate) blob_names: Vec<String>,
     pub(crate) explicitly_empty: bool,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Select model blobs independently in each Design stream.
@@ -961,6 +962,7 @@ pub(crate) fn design_model_selection(
     let mut saw_modern_map = false;
     let mut saw_snapshot_map = false;
     let mut selected_maps_empty = true;
+    let mut losses = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -997,6 +999,12 @@ pub(crate) fn design_model_selection(
         } else {
             edited_base_feature_snapshot_records(bytes, &metadata, &modern)?
         };
+        if edited.is_some() {
+            losses.push(crate::loss::F3dLossCode::FlaggedBaseFeatureBodySelected.note(format!(
+                "Design stream `{}` has only empty modern body maps and a `Base Feature` result-body frame with flag byte 1; its snapshot body maps select the model bodies.",
+                entry.name
+            )));
+        }
         let selected = match &edited {
             Some(records) => records,
             None if modern.is_empty() => &snapshots,
@@ -1022,6 +1030,7 @@ pub(crate) fn design_model_selection(
         return Ok(ModelBodySelection {
             blob_names: names,
             explicitly_empty: false,
+            losses,
         });
     }
     if carrier_counts != archive_counts || archive_counts.values().any(|count| *count != 1) {
@@ -1034,6 +1043,7 @@ pub(crate) fn design_model_selection(
     Ok(ModelBodySelection {
         blob_names: model_names,
         explicitly_empty: saw_modern_map && selected_maps_empty,
+        losses,
     })
 }
 
