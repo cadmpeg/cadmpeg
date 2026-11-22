@@ -466,3 +466,31 @@ Parsed by:
 | 0 | 16 | `clsid` | `bytes[16]` | little | spec | \| 0 \| the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` \| · value `[3, 3, 0, 0, 0, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 70]` |
 | 16 | 2 | `up_level` | `u16` | little | spec | \| 16 \| `u16` up-level count, `0` \| |
 | 18 | 4 | `path_len` | `u32` | little | spec | \| 18 \| `u32` byte count `n` \| |
+
+## `variable_table_header`
+
+Spec §10.1 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | It starts with a `u32` record count `n` and a `u32` |
+| 4 | 4 | `version` | `u32` | little | spec | version `1`. `n` records of 24 bytes follow: · value `1` |
+
+## `variable_record`
+
+Spec §10.1 · layout: byte offsets · size: 24 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `key` | `u32` | little | spec | \| 0 \| `u32` key: the index in bits 24..31, the group in bits 0..7 \| |
+| 4 | 4 | `index` | `u32` | little | spec | \| 4 \| `u32` index \| |
+| 8 | 4 | `object` | `u32` | little | spec | \| 8 \| `u32` identifier of the cluster-0 `Double Value Object` that holds the variable \| |
+| 12 | 2 | `unit` | `u16` | little | spec | \| 12 \| `u16` unit type: `1` length in metres, `16` density, `58` unitless \| |
+| 14 | 2 | `reserved` | `u16` | little | spec | \| 14 \| `u16` zero \| · value `0` |
+| 16 | 8 | `value` | `f64` | little | spec | \| 16 \| `f64` value, equal to the value of the referenced object \| |
