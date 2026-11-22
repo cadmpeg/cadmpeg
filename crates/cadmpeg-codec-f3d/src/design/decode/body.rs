@@ -107,6 +107,7 @@ pub(crate) fn decode_body_members(
 pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
     let mut out = Vec::new();
     for entity in entities
@@ -201,34 +202,47 @@ pub(crate) fn decode_body_bounds(
         if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
             continue;
         }
-        let corner = |start: usize| {
-            FinitePoint3::new(Point3::new(
-                values[start].get() * 10.0,
-                values[start + 1].get() * 10.0,
-                values[start + 2].get() * 10.0,
-            ))
-            .ok_or_else(|| {
-                CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+        let result = (|| {
+            let corner = |start: usize| {
+                FinitePoint3::new(Point3::new(
+                    values[start].get() * 10.0,
+                    values[start + 1].get() * 10.0,
+                    values[start + 2].get() * 10.0,
+                ))
+                .ok_or_else(|| {
+                    CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+                })
+            };
+            let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
+            DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
+                id,
+                entity_suffix: entity.entity_id.suffix(),
+                entity_byte_offset: entity.byte_offset,
+                record_indices,
+                record_byte_offsets: [
+                    u64_from_index(first),
+                    u64_from_index(second),
+                    u64_from_index(third),
+                ],
+                value_byte_offsets: value_offsets.map(u64_from_index),
+                body_binding_ids: Vec::new(),
+                maximum: corner(0)?,
+                minimum: corner(3)?,
             })
+            .map_err(CodecError::Malformed)
+        })();
+        let Some(record) = super::record::recover(
+            result,
+            losses,
+            crate::loss::F3dLossCode::BodyBoundsUndecoded,
+            format_args!(
+                "Body bounds for Design entity {}",
+                entity.entity_id.suffix()
+            ),
+        )?
+        else {
+            continue;
         };
-        let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
-        let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-            id,
-            entity_suffix: entity.entity_id.suffix(),
-            entity_byte_offset: entity.byte_offset,
-            record_indices,
-            record_byte_offsets: [
-                u64_from_index(first),
-                u64_from_index(second),
-                u64_from_index(third),
-            ],
-            value_byte_offsets: value_offsets.map(u64_from_index),
-            body_binding_ids: Vec::new(),
-            maximum: corner(0)?,
-            minimum: corner(3)?,
-        })
-        .map_err(CodecError::Malformed)?;
-
         out.push(record);
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
@@ -885,14 +899,58 @@ fn selected_body_map_records(
     let modern = body_map_records(bytes, meta)?;
     if modern.is_empty() {
         snapshot_body_map_records(bytes, meta)
+    } else if let Some(edited) = edited_base_feature_snapshot_records(bytes, meta, &modern)? {
+        Ok(edited)
     } else {
         Ok(modern)
     }
 }
 
+/// Snapshot body-map records that select the model bodies of a stream whose
+/// modern body maps are all empty while one of its Base Features stores the
+/// result-run flag `1`: the snapshot records when every pair names a body entity
+/// suffix of such a Base Feature. `None` when the rule does not apply.
+fn edited_base_feature_snapshot_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    modern: &[BodyMapRecord],
+) -> Result<Option<Vec<BodyMapRecord>>, CodecError> {
+    if !modern
+        .iter()
+        .all(|record| record.bindings.is_empty() && record.blob_name.is_empty())
+    {
+        return Ok(None);
+    }
+    let flagged = super::scopes::base_feature::flagged_base_feature_body_entities(bytes, meta)?;
+    if flagged.is_empty() {
+        return Ok(None);
+    }
+    Ok(select_flagged_snapshot_records(
+        snapshot_body_map_records(bytes, meta)?,
+        &flagged,
+    ))
+}
+
+/// The snapshot records when they hold at least one pair and every pair names
+/// a flagged body entity suffix.
+fn select_flagged_snapshot_records(
+    snapshots: Vec<BodyMapRecord>,
+    flagged: &HashSet<u64>,
+) -> Option<Vec<BodyMapRecord>> {
+    let selects_flagged_bodies = snapshots.iter().any(|record| !record.bindings.is_empty())
+        && snapshots.iter().all(|record| {
+            record
+                .bindings
+                .iter()
+                .all(|binding| flagged.contains(&binding.entity_suffix))
+        });
+    selects_flagged_bodies.then_some(snapshots)
+}
+
 pub(crate) struct ModelBodySelection {
     pub(crate) blob_names: Vec<String>,
     pub(crate) explicitly_empty: bool,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Select model blobs independently in each Design stream.
@@ -918,6 +976,7 @@ pub(crate) fn design_model_selection(
     let mut saw_modern_map = false;
     let mut saw_snapshot_map = false;
     let mut selected_maps_empty = true;
+    let mut losses = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -949,10 +1008,21 @@ pub(crate) fn design_model_selection(
                 }
             }
         }
-        let selected = if modern.is_empty() {
-            &snapshots
+        let edited = if modern.is_empty() {
+            None
         } else {
-            &modern
+            edited_base_feature_snapshot_records(bytes, &metadata, &modern)?
+        };
+        if edited.is_some() {
+            losses.push(crate::loss::F3dLossCode::FlaggedBaseFeatureBodySelected.note(format!(
+                "Design stream `{}` has only empty modern body maps and a `Base Feature` result-body frame with flag byte 1; its snapshot body maps select the model bodies.",
+                entry.name
+            )));
+        }
+        let selected = match &edited {
+            Some(records) => records,
+            None if modern.is_empty() => &snapshots,
+            None => &modern,
         };
         selected_maps_empty &= selected
             .iter()
@@ -974,6 +1044,7 @@ pub(crate) fn design_model_selection(
         return Ok(ModelBodySelection {
             blob_names: names,
             explicitly_empty: false,
+            losses,
         });
     }
     if carrier_counts != archive_counts || archive_counts.values().any(|count| *count != 1) {
@@ -986,6 +1057,7 @@ pub(crate) fn design_model_selection(
     Ok(ModelBodySelection {
         blob_names: model_names,
         explicitly_empty: saw_modern_map && selected_maps_empty,
+        losses,
     })
 }
 
@@ -1431,8 +1503,9 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{
-        body_bindings, body_bound_candidates, parse_body_map_frame, snapshot_body_map_records,
-        typed_browser_node_hidden_flags,
+        body_bindings, body_bound_candidates, parse_body_map_frame,
+        select_flagged_snapshot_records, snapshot_body_map_records,
+        typed_browser_node_hidden_flags, BodyBinding, BodyMapRecord,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::bytes::take_reference;
@@ -1449,6 +1522,7 @@ mod tests {
     use crate::test_support::manifest_test::write_synthetic_manifests;
     use crate::test_support::push_reference_u64;
     use crate::test_support::zip_test::with_scan;
+    use std::collections::HashSet;
 
     #[test]
     fn body_members_decode_one_member_identity() {
@@ -1743,6 +1817,44 @@ mod tests {
         names.dedup();
         let breps: Vec<_> = names.into_iter().map(|name| (name, &[0][..])).collect();
         crate::test_support::body_map_test::f3d_with_breps_and_design(&breps, &bulk, &meta)
+    }
+
+    fn snapshot_record(name: &str, entities: &[u64]) -> BodyMapRecord {
+        BodyMapRecord {
+            blob_name: name.to_owned(),
+            blob_name_offset: 0,
+            bindings: entities
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entity)| BodyBinding {
+                    asm_key: u64::try_from(ordinal).unwrap(),
+                    asm_key_offset: ordinal * 16,
+                    entity_suffix: *entity,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn flagged_snapshot_records_select_only_when_every_pair_is_flagged() {
+        let flagged = HashSet::from([238_u64]);
+        let selected =
+            select_flagged_snapshot_records(vec![snapshot_record("BREP.a.smb", &[238])], &flagged)
+                .expect("flagged pair is selected");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].bindings.len(), 1);
+        for records in [
+            vec![snapshot_record("BREP.a.smb", &[238, 300])],
+            vec![snapshot_record("BREP.a.smb", &[300])],
+            vec![
+                snapshot_record("BREP.a.smb", &[238]),
+                snapshot_record("BREP.b.smb", &[300]),
+            ],
+            vec![snapshot_record("", &[])],
+            Vec::new(),
+        ] {
+            assert!(select_flagged_snapshot_records(records, &flagged).is_none());
+        }
     }
 
     #[test]
@@ -2697,9 +2809,80 @@ mod tests {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let bounds = super::decode_body_bounds(scan, std::slice::from_ref(&entity)).unwrap();
+            let bounds =
+                super::decode_body_bounds(scan, std::slice::from_ref(&entity), &mut Vec::new())
+                    .unwrap();
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 7);
+        });
+    }
+
+    #[test]
+    fn unreadable_body_bounds_keep_the_sibling_entity() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut bulk = Vec::new();
+        indexed_header(&mut bulk, *b"256", 7);
+        bulk.extend_from_slice(&[0; 5]);
+        for record_index in [8, 9, 10] {
+            indexed_header(&mut bulk, *b"257", record_index);
+            bulk.push(1);
+            for value in [4.0_f64, 6.0, 1.5, -1.0, 0.0, -0.25] {
+                bulk.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mut invalid = bulk.clone();
+        for record_index in [8, 9, 10] {
+            let offset = super::indexed_headers_in(&invalid, 0, invalid.len())
+                .find(|(_, index)| *index == record_index)
+                .unwrap()
+                .0
+                + 12;
+            invalid[offset..offset + 8].copy_from_slice(&f64::MAX.to_le_bytes());
+        }
+        let sibling_offset = invalid.len();
+        for (offset, index) in super::indexed_headers_in(&bulk, 0, bulk.len()).collect::<Vec<_>>() {
+            bulk[offset + 7..offset + 11].copy_from_slice(&(index + 100).to_le_bytes());
+        }
+        invalid.extend_from_slice(&bulk);
+        let bulk = invalid;
+        let entity = crate::records::entity_header::DesignEntityHeader {
+            id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
+            byte_offset: 0,
+            entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned())
+                .unwrap(),
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
+            optional_slot_present: false,
+            registration: crate::records::entity_header::DesignEntityRegistration::new(
+                Some(DESIGN_MODULE_BODY.to_owned()),
+                None,
+                crate::records::identity::ReferenceRun::unlocated(Vec::new()),
+            )
+            .unwrap(),
+        };
+        let mut sibling = entity.clone();
+        sibling.byte_offset = u64_from_index(sibling_offset);
+        sibling.entity_id = "0_107".to_owned().try_into().unwrap();
+        sibling.id = format!(
+            "{}:design-entity-header#{sibling_offset}",
+            crate::ids::native_scope(ENTRY)
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let mut losses = Vec::new();
+            let bounds = super::decode_body_bounds(scan, &[entity, sibling], &mut losses).unwrap();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::BodyBoundsUndecoded.kind()
+            );
+            assert_eq!(bounds.len(), 1);
+            assert_eq!(bounds[0].entity_suffix(), 107);
         });
     }
 

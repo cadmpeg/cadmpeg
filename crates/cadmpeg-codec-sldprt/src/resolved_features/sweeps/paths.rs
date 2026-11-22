@@ -1,5 +1,5 @@
 use super::super::sketch_lists::{
-    curve_form, identifier_trailer_line_record, listed_record_geometry, CurveForm, ListedReading,
+    curve_form, identifier_trailer_line, off_chord_arc, point_record_index_basis_loss, CurveForm,
     ListedRecord, SketchRecordLists,
 };
 use crate::layout::{sketch_record_head as head, wide_spatial_marker_coordinate_prefix as xyz};
@@ -11,6 +11,17 @@ use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SpatialSket
 const PATH_JOIN_TOLERANCE_MM: f64 = 1.0e-7;
 const MAX_SWEEP_PATH_CURVES: usize = 1024;
 
+/// A reading of a path curve record that the format does not establish.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Assumption {
+    /// A curve record of a framed `sgSketch` object on locus `05 00 01 00`,
+    /// read by zero-based point-record position (open item EV-27).
+    IndexBasis,
+    /// An unframed spatial line with an identifier trailer, read by one-based
+    /// position in the primary-point roster.
+    Roster,
+}
+
 #[derive(Clone)]
 pub(super) struct Curve<G> {
     pub(super) offset: usize,
@@ -18,7 +29,7 @@ pub(super) struct Curve<G> {
     pub(super) geometry: G,
     pub(super) start: Point3,
     pub(super) end: Point3,
-    pub(super) assumed: bool,
+    pub(super) assumed: Option<Assumption>,
 }
 
 fn planar_ends(geometry: &SketchGeometry) -> Option<(Point3, Point3)> {
@@ -72,13 +83,21 @@ pub(super) fn planar(lane: &FeatureInputLane, owner: &str) -> Option<Vec<Curve<S
         ) {
             return None;
         }
-        let geometry = listed_record_geometry(
-            &lane.native_payload,
-            &lists,
-            offset,
-            &|[u, v]| Some(Point2::new(u * 1000.0, v * 1000.0)),
-            ListedReading::Complete,
-        )?;
+        // The record's own geometry from the point records of its sketch, with
+        // no chord test: the projection only scales, so it cannot move an arc's
+        // ends off its endpoint point records.
+        let entity = off_chord_arc(&lane.native_payload, &lists, offset, &|[u, v]| {
+            Some(Point2::new(u * 1000.0, v * 1000.0))
+        })?;
+        let assumed = entity
+            .index_basis_loss
+            .is_some()
+            .then_some(Assumption::IndexBasis);
+        let geometry = entity.geometry;
+        if matches!(geometry.definition(), SketchGeometryDefinition::Line { start, end } if start == end)
+        {
+            return None;
+        }
         let (start, end) = planar_ends(&geometry)?;
         if curves.len() == MAX_SWEEP_PATH_CURVES {
             return None;
@@ -89,7 +108,7 @@ pub(super) fn planar(lane: &FeatureInputLane, owner: &str) -> Option<Vec<Curve<S
             geometry,
             start,
             end,
-            assumed: identifier_trailer_line_record(&lane.native_payload, offset),
+            assumed,
         });
     }
     ordered(curves)
@@ -131,7 +150,7 @@ pub(super) fn spatial(
             Some(_) => continue,
             None => None,
         };
-        let form = curve_form(payload, offset, ListedReading::Complete);
+        let form = curve_form(payload, offset);
         let CurveForm::Line { start, end } = (match (form, sketch) {
             // An unlisted primary point record is read through the point roster; any
             // other unlisted selected record may be a path member, so the path stays native.
@@ -158,6 +177,12 @@ pub(super) fn spatial(
             }
             point3_at(payload, point + xyz::COORDINATES)
         };
+        let assumed = match sketch {
+            Some(_) => point_record_index_basis_loss(payload, offset)
+                .is_some()
+                .then_some(Assumption::IndexBasis),
+            None => identifier_trailer_line(payload, offset).then_some(Assumption::Roster),
+        };
         let start = coordinate(start)?;
         let end = coordinate(end)?;
         let geometry = SpatialSketchGeometry::try_line_from_parts(
@@ -174,7 +199,7 @@ pub(super) fn spatial(
             geometry,
             start,
             end,
-            assumed: identifier_trailer_line_record(payload, offset),
+            assumed,
         });
     }
     ordered(curves)
@@ -194,7 +219,7 @@ fn spatial_primary_points(
         let offset = usize::try_from(marker.offset()).ok()?;
         if !selected_curve(payload, offset)
             || View::u16_le_at(payload, offset + head::SELECTOR)? & 15 != 4
-            || curve_form(payload, offset, ListedReading::Complete).is_some()
+            || curve_form(payload, offset).is_some()
         {
             continue;
         }

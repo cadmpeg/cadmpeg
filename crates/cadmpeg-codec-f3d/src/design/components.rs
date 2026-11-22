@@ -400,6 +400,9 @@ struct PathPoseOutcome {
     inferred_carriers: usize,
     inferred_instances: usize,
     inferred_groups: usize,
+    /// Occurrences placed from the closing matrix of a marker-carrying object
+    /// prelude without a component-path proof.
+    marked_prelude_placements: usize,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
@@ -1401,7 +1404,7 @@ impl<'a> Projector<'a> {
             .filter_map(|(key, (_, carrier))| {
                 carrier
                     .filter(|carrier| {
-                        carrier.has_object_prelude()
+                        carrier.needs_object_pose_proof()
                             && carrier.transform().is_some()
                             && !self.path_poses.applied_instances.contains(key)
                     })
@@ -1425,6 +1428,17 @@ impl<'a> Projector<'a> {
                 break;
             }
         }
+        self.path_poses.marked_prelude_placements = self
+            .occurrences
+            .iter()
+            .filter(|(key, (_, carrier))| {
+                !rejected.contains(key.as_str())
+                    && !self.path_poses.applied_instances.contains(key.as_str())
+                    && carrier.is_some_and(|carrier| {
+                        carrier.has_marked_object_prelude() && carrier.transform().is_some()
+                    })
+            })
+            .count();
         for key in rejected {
             if let Some((_, carrier)) = self.occurrences.remove(&key) {
                 if let Some(carrier) = carrier {
@@ -1662,6 +1676,12 @@ impl<'a> Projector<'a> {
                 self.path_poses.inferred_carriers,
                 self.path_poses.inferred_instances,
                 self.path_poses.inferred_groups
+            )));
+        }
+        if self.path_poses.marked_prelude_placements != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceMarkedPreludeAssumed.note(format!(
+                "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier with a source marker and no component-path proof; the reference frame of that matrix is assumed to be the component frame",
+                self.path_poses.marked_prelude_placements
             )));
         }
         if self.path_poses.unresolved != 0 {
@@ -2801,6 +2821,69 @@ mod tests {
                     Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "expand F3D external occurrences"
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn four_placements_of_one_document_below_a_moved_owner_keep_their_own_poses() {
+        let components = two_component_stream(Some(276));
+        let mut moved = super::IDENTITY;
+        moved[0] = [0.0, -1.0, 0.0, 3.0];
+        moved[1] = [1.0, 0.0, 0.0, 4.0];
+        let guid = "00000000-0000-4000-8000-000000000001";
+        let carriers = [carrier(100, guid, placed(1, moved), DOCUMENT_ROOT)];
+        let bodies = BTreeSet::new();
+        let sources = super::LocalComponentSources {
+            hidden_bodies: None,
+            scopes: &[],
+            occurrences: &carriers,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let local = super::project_local_components(&sources).unwrap();
+        let mut table = external_owner_table(COMPONENT_ROOT);
+        let template = table.references.remove(0);
+        for placement in 0..4_u32 {
+            let mut reference = template.clone();
+            reference.id = format!("f3d:xref:reference#0-occurrence-{placement}");
+            reference.occurrence_ordinal = placement;
+            let mut matrix = super::IDENTITY;
+            matrix[0][3] = 2.0 + f64::from(placement);
+            reference.transform = Some(matrix.try_into().unwrap());
+            table.references.push(reference);
+        }
+        let projection =
+            crate::xref::project_occurrences(&table, &sources, &local.occurrences).unwrap();
+        let mut model = cadmpeg_ir::document::Model::default();
+        let local = crate::tree::Projected {
+            definitions: local.definitions.clone(),
+            occurrences: local.occurrences.clone(),
+            placements: local.placements.clone(),
+        };
+        crate::tree::assemble(&mut model, local, Some(projection));
+        let stated = crate::tree::stated(
+            crate::tree::Projected {
+                definitions: model.product_definitions.clone(),
+                occurrences: model.occurrences.clone(),
+                placements: Vec::new(),
+            },
+            None,
+        );
+        let poses = crate::tree::world_poses(&stated);
+        let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+        // A placement matrix is relative to the component that holds it; the
+        // holder, rotated a quarter turn at 30 mm and 40 mm, carries each
+        // placement to its own place.
+        for placement in 0..4_u32 {
+            let id = crate::ids::neutral_xref_occurrence_id(0, placement);
+            let row = stated.occurrences.iter().find(|o| o.id == id).unwrap();
+            let shift = 10.0 * (2.0 + f64::from(placement));
+            assert!((row.transform.unwrap().rows()[0][3] - shift).abs() < 1e-9);
+            let world = poses[&crate::ids::nested_xref_occurrence_id(&parent, 0, placement)].rows();
+            assert!((world[0][3] - 30.0).abs() < 1e-9 && (world[1][3] - 40.0 - shift).abs() < 1e-9);
         }
     }
 

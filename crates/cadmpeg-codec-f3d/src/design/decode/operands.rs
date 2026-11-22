@@ -61,7 +61,9 @@ use crate::layout::split_body_compact_group_prefix as split_group;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
+use crate::layout::typed_reference_profile_lost_record as lost_record;
 use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
+use crate::layout::typed_reference_profile_status_record as typed_status;
 use crate::layout::work_point_sketch_point_compact_identity as compact_identity;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
@@ -8043,6 +8045,15 @@ fn parse_profile_curve_selection_prefix(
     if !typed && indexed_record_header_at(bytes, identity_end)?.record_index != identity_index {
         return None;
     }
+    let lost_reference_records = if typed {
+        record_index
+            .checked_add(2)
+            .and_then(|status_index| records.offsets(status_index).first().copied())
+            .map(|status_at| lost_profile_references(bytes, records, status_at))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     Some((
         DesignProfileCurveSelection {
             id: String::new(),
@@ -8060,12 +8071,78 @@ fn parse_profile_curve_selection_prefix(
             scope_sketch_containers,
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
+            lost_reference_records,
             groups: Vec::new(),
         },
         identity_end,
         groups_start,
         if typed { 2 } else { 3 },
     ))
+}
+
+/// Type GUID of the typed references that a profile status record counts.
+const PROFILE_STATUS_REFERENCE_TYPE_GUID: &str = "1ABFB679-C79B-4F24-AD6C-215A7DCE1AC4";
+/// ASCII marker of a lost profile-reference record.
+const PROFILE_REFERENCE_LOST: &[u8] = b"PROFILE_REFERENCE_LOST";
+
+/// The lost profile-reference records that the typed profile status record at
+/// `status_at` references, in stored order. A status record whose fixed
+/// fields or counted references do not decode references none.
+fn lost_profile_references(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    status_at: usize,
+) -> Vec<u32> {
+    use crate::bytes::{typed_local_reference, TYPED_LOCAL_REFERENCE_LEN};
+    let mut lost = Vec::new();
+    if bytes.get(status_at + typed_status::ZERO_RUN_9..status_at + typed_status::CONSTANT_ONE)
+        != Some(&[0; 9][..])
+        || View::u32_le_at(bytes, status_at + typed_status::CONSTANT_ONE) != Some(1)
+        || bytes.get(status_at + typed_status::ZERO_BYTE) != Some(&0)
+    {
+        return lost;
+    }
+    let Some(count) = View::u32_le_at(bytes, status_at + typed_status::LOST_REFERENCE_COUNT) else {
+        return lost;
+    };
+    let first = status_at + typed_status::LEN;
+    let Some(available) = bytes.len().checked_sub(first) else {
+        return lost;
+    };
+    let available = available / TYPED_LOCAL_REFERENCE_LEN;
+    let Ok(count) = usize::try_from(count) else {
+        return lost;
+    };
+    if count > available {
+        return lost;
+    }
+    for at in (0..count).map(|ordinal| first + ordinal * TYPED_LOCAL_REFERENCE_LEN) {
+        let Some((target, guid)) = typed_local_reference(bytes, at) else {
+            return Vec::new();
+        };
+        if guid.eq_ignore_ascii_case(PROFILE_STATUS_REFERENCE_TYPE_GUID)
+            && records
+                .offsets(target)
+                .first()
+                .is_some_and(|&record_at| lost_profile_reference_record(bytes, record_at))
+            && !lost.contains(&target)
+        {
+            lost.push(target);
+        }
+    }
+    lost
+}
+
+/// Whether the record at `record_at` is a lost profile-reference record:
+/// its indexed header, fourteen zero bytes, the marker length, and the marker.
+fn lost_profile_reference_record(bytes: &[u8], record_at: usize) -> bool {
+    let zero_at = record_at + lost_record::ZERO_RUN_14;
+    let length_at = record_at + lost_record::MARKER_LENGTH;
+    let marker_at = record_at + lost_record::MARKER;
+    bytes.get(zero_at..length_at) == Some(&[0; 14][..])
+        && View::u32_le_at(bytes, length_at).and_then(|length| usize::try_from(length).ok())
+            == Some(PROFILE_REFERENCE_LOST.len())
+        && bytes.get(marker_at..record_at + lost_record::LEN) == Some(PROFILE_REFERENCE_LOST)
 }
 
 /// The record indices that typed local references of type
@@ -8270,48 +8347,66 @@ pub(crate) fn construction_closing_flag_losses(
 /// reference back to the selection record of a sketchless chain record.
 const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
 
-/// The asset GUID of the typed-reference profile selection at `header` when
-/// its chain record is sketchless.
+/// The asset GUID of the typed-reference or compact profile selection at
+/// `header` when its chain record is sketchless.
 fn sketchless_profile_selection_asset(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
 ) -> Option<String> {
-    use crate::layout::typed_reference_sketchless_profile_chain_record as sketchless_chain;
+    use crate::layout::compact_reference_sketchless_profile_chain_record as compact_chain;
+    use crate::layout::typed_reference_sketchless_profile_chain_record as typed_chain;
     let start = usize::try_from(header.byte_offset).ok()?;
     let record_index = header.record_index;
     let chain_index = record_index.checked_add(1)?;
     let identity_index = record_index.checked_add(3)?;
-    let typed_target = |at: usize| {
+    let local_target = |at: usize| {
         let mut end = at;
         let reference = take_reference(bytes, &mut end)?;
         let (target, inline_type) = reference.local()?;
-        inline_type.is_some().then_some((target, end))
+        Some((target, inline_type.is_some(), end))
     };
-    let (target, after_reference) = typed_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    let (target, typed, after_reference) =
+        local_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    let (constant_one, asset_at, zero_run, marker, selection_reference) = if typed {
+        (
+            typed_selection::CONSTANT_ONE,
+            typed_selection::LEN,
+            typed_chain::ZERO_RUN_14,
+            typed_chain::CHAIN_MARKER,
+            typed_chain::SELECTION_REFERENCE,
+        )
+    } else {
+        (
+            compact_profile_selection::CONSTANT_ONE,
+            compact_profile_selection::LEN,
+            compact_chain::ZERO_RUN_14,
+            compact_chain::CHAIN_MARKER,
+            compact_chain::SELECTION_REFERENCE,
+        )
+    };
     if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
         != Some(&[0; 10][..])
         || target != u64::from(identity_index)
-        || after_reference != start + typed_selection::CONSTANT_ONE
-        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+        || after_reference != start + constant_one
+        || View::u32_le_at(bytes, start + constant_one) != Some(1)
     {
         return None;
     }
-    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
-    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
-    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + asset_at, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=36)?;
+    if !(owner_text.len() <= 20 && owner_text.bytes().all(|byte| byte.is_ascii_digit())
+        || crate::bytes::is_guid_hyphenated(&owner_text))
+    {
         return None;
     }
     let &chain_at = records.offsets(chain_index).first()?;
-    if bytes
-        .get(chain_at + sketchless_chain::ZERO_RUN_14..chain_at + sketchless_chain::CHAIN_MARKER)
-        != Some(&[0; 14][..])
-        || bytes.get(
-            chain_at + sketchless_chain::CHAIN_MARKER
-                ..chain_at + sketchless_chain::SELECTION_REFERENCE,
-        ) != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
-        || typed_target(chain_at + sketchless_chain::SELECTION_REFERENCE)?.0
-            != u64::from(record_index)
+    let chain_reference = local_target(chain_at + selection_reference)?;
+    if bytes.get(chain_at + zero_run..chain_at + marker) != Some(&[0; 14][..])
+        || bytes.get(chain_at + marker..chain_at + selection_reference)
+            != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
+        || chain_reference.0 != u64::from(record_index)
+        || chain_reference.1 != typed
     {
         return None;
     }
@@ -8341,17 +8436,38 @@ fn sketchless_profile_selection_loss(
 }
 
 /// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
-/// member whose typed-reference selection has a sketchless chain record.
+/// member that stays native and whose typed-reference or compact selection
+/// has a sketchless chain record.
 pub(crate) fn sketchless_profile_selection_losses(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
+    features: &[cadmpeg_ir::features::Feature],
 ) -> Result<Vec<LossNote>, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
     let headers = indexed_operand_headers(headers);
+    let native_profiles = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Native(_)),
+                    ..
+                })
+            )
+        })
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     let extrude_scopes = scopes
         .iter()
-        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter(|scope| {
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
+                && native_profiles.contains(scope.id.as_str())
+        })
         .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
         .collect::<HashSet<_>>();
     let mut records_by_stream = HashMap::new();
@@ -8360,7 +8476,9 @@ pub(crate) fn sketchless_profile_selection_losses(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+        if group.extrude_role() != Some(DesignExtrudeOperandRole::Profile)
+            || !extrude_scopes.contains(&(stream, group.scope_record_index))
+        {
             continue;
         }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)

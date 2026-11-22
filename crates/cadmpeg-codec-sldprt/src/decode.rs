@@ -3412,6 +3412,8 @@ fn build_geometry_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -4288,7 +4290,7 @@ fn build_geometry_ir(
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4303,6 +4305,8 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -4722,6 +4726,8 @@ fn build_metadata_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -5186,7 +5192,7 @@ fn build_metadata_ir(
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir
@@ -5207,6 +5213,8 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -5439,7 +5447,36 @@ pub(crate) fn active_configuration_position(
     (configurations.len() == 1).then_some(0)
 }
 
-fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
+/// The design state the decoder states for an active configuration whose
+/// native records state none: the value of every valued parameter and the
+/// state of every feature of the model.
+pub(crate) struct ModelSnapshot {
+    pub(crate) parameter_values: BTreeMap<
+        cadmpeg_ir::features::ParameterId,
+        cadmpeg_ir::features::parameters::ParameterValue,
+    >,
+    pub(crate) feature_states: BTreeMap<
+        cadmpeg_ir::features::FeatureId,
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState,
+    >,
+}
+
+pub(crate) fn model_snapshot(model: &cadmpeg_ir::document::Model) -> ModelSnapshot {
+    ModelSnapshot {
+        parameter_values: model
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
+            .collect(),
+        feature_states: model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.configuration_state()))
+            .collect(),
+    }
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -5448,10 +5485,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
-        return Ok(());
+        return;
     };
     if active.next().is_some() {
-        return Ok(());
+        return;
     }
     if !ir.model.configurations[configuration_index]
         .parameter_values
@@ -5460,29 +5497,13 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             .feature_states
             .is_empty()
     {
-        return Ok(());
+        return;
     }
 
-    let mut parameter_values = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let Some(value) = &parameter.value else {
-            continue;
-        };
-        let value = value.clone();
-        let id = cadmpeg_ir::features::ParameterId::mint(parameter.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        parameter_values.insert(id, value);
-    }
-    let mut feature_states = BTreeMap::new();
-    for feature in &ir.model.features {
-        let id = cadmpeg_ir::features::FeatureId::mint(feature.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        let state = feature.configuration_state();
-        feature_states.insert(id, state);
-    }
+    let snapshot = model_snapshot(&ir.model);
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = parameter_values;
-    configuration.feature_states = feature_states;
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.as_str().to_owned();
@@ -5492,7 +5513,6 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             id,
         );
     }
-    Ok(())
 }
 
 fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
