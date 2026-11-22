@@ -207,7 +207,8 @@ fn finalize_result(
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
     crate::design::owners::release_unbound(&mut ir.model);
-    crate::tree::state_root_definition(ctx, &mut ir)?;
+    body.losses
+        .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     crate::design_v11::project(ctx, &mut ir, body.transfer.depth(), &mut body.losses)?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
