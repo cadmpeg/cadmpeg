@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The `Extrude` of a profile picked by its regions (cadir-v11.md §6.1,
-//! "Profiles and regions").
+//! The curves the `Extrude` of a profile walks: those of its picked regions,
+//! or every curve of its picked sketch that is no construction (cadir-v11.md
+//! §6 "Sources", §6.1 "Flags" and "Profiles and regions").
 
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::PlanarCurve;
@@ -8,6 +9,7 @@ use cadmpeg_ir::design::selection::{
     Anchor, BoundaryUse, Members, PickTarget, Picked, Picks, Selection, SketchRegion,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::scalar::PositiveLength;
 
 use super::super::sketch::{entity_id, point2, sketch_id};
 use super::super::{loss, write};
@@ -21,7 +23,22 @@ fn picked_region(outer: &[&str]) -> CadIr {
 
 /// `ir` with its extrude's profile picked as one region whose outer ring is
 /// `outer`.
-fn region_of(mut ir: CadIr, outer: &[&str]) -> CadIr {
+fn region_of(ir: CadIr, outer: &[&str]) -> CadIr {
+    regions_of(ir, &[(outer, &[])])
+}
+
+/// `ir` with its extrude's profile picked as `regions`, each its outer ring
+/// and its holes by curve name.
+fn regions_of(mut ir: CadIr, regions: &[(&[&str], &[&[&str]])]) -> CadIr {
+    let ring = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| BoundaryUse {
+                entity: entity_id("profile", name),
+                fragment: None,
+            })
+            .collect::<Vec<_>>()
+    };
     let extrude = ir
         .design
         .features
@@ -34,27 +51,26 @@ fn region_of(mut ir: CadIr, outer: &[&str]) -> CadIr {
     extrude.profile = Selection {
         at: Anchor::Input,
         picks: Picks::Named(
-            Members::new(vec![Picked {
-                target: PickTarget::SketchRegion {
-                    sketch: sketch_id("profile"),
-                    region: SketchRegion {
-                        outer: outer
-                            .iter()
-                            .map(|name| BoundaryUse {
-                                entity: entity_id("profile", name),
-                                fragment: None,
-                            })
-                            .collect(),
-                        holes: Vec::new(),
-                    },
-                },
-                context: None,
-                native: None,
-                domain: None,
-                witness: None,
-                resolved: None,
-            }])
-            .expect("one pick"),
+            Members::new(
+                regions
+                    .iter()
+                    .map(|(outer, holes)| Picked {
+                        target: PickTarget::SketchRegion {
+                            sketch: sketch_id("profile"),
+                            region: SketchRegion {
+                                outer: ring(outer),
+                                holes: holes.iter().map(|hole| ring(hole)).collect(),
+                            },
+                        },
+                        context: None,
+                        native: None,
+                        domain: None,
+                        witness: None,
+                        resolved: None,
+                    })
+                    .collect(),
+            )
+            .expect("a pick"),
         ),
         native: None,
     };
@@ -118,4 +134,70 @@ fn a_region_that_bounds_nothing_keeps_the_base_feature() {
             report.losses
         );
     }
+}
+
+/// The square with a circle inside it, picked as the region with the hole
+/// and as the disc inside the hole: the even-odd walk takes the circle once,
+/// as a hole, so it writes neither pick and keeps the Base Feature.
+#[test]
+fn a_region_and_the_disc_of_its_hole_keep_the_base_feature() {
+    let mut sketch = square();
+    sketch.entity(
+        "hole",
+        PlanarCurve::Circle {
+            center: point2(5.0, 5.0),
+            radius: PositiveLength::new(2.0).expect("a radius"),
+        },
+        &[],
+    );
+    let ir = regions_of(
+        sketch_and_extrude_of(sketch, blind(), false),
+        &[(&["l1", "l2", "l3", "l4"], &[&["hole"]]), (&["hole"], &[])],
+    );
+    let (report, decoded) = write(&ir);
+    assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
+    assert!(
+        loss(&report, EVALUATION_MISSING)
+            .iter()
+            .any(|message| message
+                .contains("its profile's loops are not the rings of the regions it picks")),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A whole-sketch pick walks every curve that is no construction: a
+/// diagonal across the square closes no ring once it is construction, and
+/// the square is written as the extrude; the same diagonal as profile
+/// geometry keeps the Base Feature.
+#[test]
+fn a_whole_sketch_pick_walks_no_construction_curve() {
+    let with_diagonal = |construction| {
+        let mut sketch = square();
+        sketch.entity(
+            "diagonal",
+            PlanarCurve::Line {
+                start: point2(0.0, 0.0),
+                end: point2(10.0, 10.0),
+            },
+            &[],
+        );
+        let mut ir = sketch_and_extrude_of(sketch, blind(), false);
+        ir.design
+            .sketch_entities
+            .iter_mut()
+            .find(|entity| entity.id == entity_id("profile", "diagonal"))
+            .expect("the diagonal")
+            .construction = construction;
+        ir
+    };
+    let (report, decoded) = write(&with_diagonal(Some(true)));
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (report, decoded) = write(&with_diagonal(None));
+    assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
 }

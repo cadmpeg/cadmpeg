@@ -22,7 +22,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
-use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
+use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
@@ -178,11 +178,15 @@ fn typed_extrude<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a Extru
 
 const NOT_WRITTEN: &str = "its sketch is not written";
 
-/// The curves of the regions a profile picks; `None` where it picks its
-/// whole sketch.
-type RegionCurves<'a> = Option<HashSet<&'a SketchEntityId>>;
+/// The rings of the regions a profile picks, each the curves it names and
+/// whether it is an outer ring; `None` where it picks its whole sketch.
+type PickedRings<'a> = Option<Vec<Ring<'a>>>;
 
-/// The sketch that `picks` take, and the curves of its picked regions: one
+/// One ring of a picked region, or one loop of the walk: whether it is the
+/// region's outer ring, and its curves by name.
+type Ring<'a> = (bool, Vec<&'a str>);
+
+/// The sketch that `picks` take, and the rings of its picked regions: one
 /// pick of the sketch, whose walk takes every curve that is no construction,
 /// or picks of regions of one sketch, whose rings name such curves only
 /// (§6.1, "Profiles and regions": construction entities bound no region),
@@ -190,7 +194,7 @@ type RegionCurves<'a> = Option<HashSet<&'a SketchEntityId>>;
 fn picked_sketch<'a>(
     target: &CadIr,
     picks: &'a [Picked],
-) -> Result<(&'a SketchId, RegionCurves<'a>), &'static str> {
+) -> Result<(&'a SketchId, PickedRings<'a>), &'static str> {
     let sketch = match picks {
         [Picked {
             target: PickTarget::Sketch(sketch),
@@ -206,16 +210,12 @@ fn picked_sketch<'a>(
     for picked in picks {
         match &picked.target {
             PickTarget::SketchRegion { sketch: of, region } if of == sketch => {
-                rings.extend(region.outer.iter().chain(region.holes.iter().flatten()));
+                rings.push((true, &region.outer));
+                rings.extend(region.holes.iter().map(|hole| (false, hole)));
             }
             _ => return Err(NOT_WRITTEN),
         }
     }
-    let used = rings
-        .iter()
-        .map(|usage| usage.fragment.is_none().then_some(&usage.entity))
-        .collect::<Option<HashSet<_>>>()
-        .ok_or("its profile picks fragments of curves")?;
     let curves = target
         .design
         .sketch_entities
@@ -230,10 +230,52 @@ fn picked_sketch<'a>(
         })
         .map(|entity| &entity.id)
         .collect::<HashSet<_>>();
-    if !used.is_subset(&curves) {
-        return Err("its profile picks a curve that is construction or not in its sketch");
+    let mut named = Vec::with_capacity(rings.len());
+    for (outer, uses) in rings {
+        let mut ring = Vec::with_capacity(uses.len());
+        for usage in uses {
+            if usage.fragment.is_some() {
+                return Err("its profile picks fragments of curves");
+            }
+            if !curves.contains(&usage.entity) {
+                return Err("its profile picks a curve that is construction or not in its sketch");
+            }
+            ring.push(usage.entity.as_str());
+        }
+        named.push((outer, ring));
     }
-    Ok((sketch, Some(used)))
+    Ok((sketch, Some(named)))
+}
+
+/// Whether the walk's `loops` of `sketch` are the picked `rings`, each with
+/// the same curves and the same role. Picks of a region and of the disc
+/// inside its hole name the hole's curves twice; the walk takes them once,
+/// even-odd, as a hole, so the rings differ.
+fn walks_rings(sketch: &PlannedSketch<'_>, loops: &[ProfileLoop], rings: &[Ring<'_>]) -> bool {
+    fn sorted(mut rings: Vec<Ring<'_>>) -> Vec<Ring<'_>> {
+        for (_, curves) in &mut rings {
+            curves.sort_unstable();
+        }
+        rings.sort_unstable();
+        rings
+    }
+    let walked = loops
+        .iter()
+        .map(|walked| {
+            let curves = walked
+                .entries
+                .iter()
+                .map(|entry| {
+                    sketch
+                        .curves
+                        .get(entry.curve)
+                        .map(|curve| curve.entity.as_str())
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((walked.exterior, curves))
+        })
+        .collect::<Option<Vec<_>>>();
+    walked.is_some_and(|walked| sorted(walked) == sorted(rings.to_vec()))
 }
 
 /// What the rows read.
@@ -268,14 +310,22 @@ impl<'a> Input<'a, '_> {
         };
         self.rollback()?;
         self.current(&body.id)?;
-        let (sketch, after, region) = self.sketch()?;
+        let (sketch, after, rings) = self.sketch()?;
         let planned = &self.sketches.items[sketch];
         let linear = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
-        let loops = match &region {
+        let loops = match &rings {
             None => profile(planned, linear / MM_PER_CM)?,
-            Some(curves) => profile_of(planned, linear / MM_PER_CM, |curve| {
-                curves.contains(&curve.entity)
-            })?,
+            Some(rings) => {
+                let loops = profile_of(planned, linear / MM_PER_CM, |curve| {
+                    rings
+                        .iter()
+                        .any(|(_, ring)| ring.contains(&curve.entity.as_str()))
+                })?;
+                if !walks_rings(planned, &loops, rings) {
+                    return Err("its profile's loops are not the rings of the regions it picks");
+                }
+                loops
+            }
         };
         if planned.mirrored {
             return Err("its sketch is written mirrored on its origin plane");
@@ -402,13 +452,13 @@ impl<'a> Input<'a, '_> {
     /// Row 4: the profile is one written sketch before the extrude, picked
     /// whole or by regions (`picked_sketch`). Returns its position in the
     /// plan, the number of written sketches before the extrude, and the
-    /// curves of its picked regions.
-    fn sketch(&self) -> Result<(usize, usize, RegionCurves<'a>), &'static str> {
+    /// rings of its picked regions.
+    fn sketch(&self) -> Result<(usize, usize, PickedRings<'a>), &'static str> {
         let extrude: &'a Extrude = self.extrude;
         let Picks::Named(members) = &extrude.profile.picks else {
             return Err(NOT_WRITTEN);
         };
-        let (sketch, region) = picked_sketch(self.target, members.as_slice())?;
+        let (sketch, rings) = picked_sketch(self.target, members.as_slice())?;
         let owner = self
             .target
             .design
@@ -437,7 +487,7 @@ impl<'a> Input<'a, '_> {
             .iter()
             .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
             .count();
-        Ok((index, after, region))
+        Ok((index, after, rings))
     }
 
     /// Row 7: along or against the profile normal from the profile plane,
