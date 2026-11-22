@@ -2,10 +2,11 @@
 
 use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};

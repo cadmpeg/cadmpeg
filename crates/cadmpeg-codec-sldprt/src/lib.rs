@@ -291,10 +291,11 @@ impl SldprtCodec {
             coverage,
             omitted_envelope_bytes,
             unwritten,
+            unwritten_edits,
             written,
             claims: _,
         } = output;
-        let unwritten = unwritten.render(&read_back);
+        let unwritten_edits = unwritten_edits.render(&read_back);
         let native = ir
             .native
             .namespace("sldprt")
@@ -326,6 +327,7 @@ impl SldprtCodec {
             coverage,
             omitted_envelope_bytes,
             stale_solid,
+            unwritten_edits,
             unwritten,
         })
     }
@@ -415,7 +417,9 @@ enum Written {
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
         /// One loss per edit the native records cannot carry: the output keeps
         /// the stored record or value.
-        unwritten: Vec<cadmpeg_ir::report::loss::LossNote>,
+        unwritten_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The metadata attributes the write did not write.
+        unwritten: writer::UnwrittenAttributes,
     },
 }
 

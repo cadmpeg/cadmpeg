@@ -8,7 +8,8 @@ use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsSurface};
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -39,6 +40,8 @@ pub(super) enum Carrier<'a> {
     OwnedRollingBall {
         definition: Box<Cow<'a, ProceduralSurfaceDefinition>>,
         chart_end: f64,
+        native_v_upper: Option<f64>,
+        variable_radius: bool,
         max_rail_shift_mm: f64,
     },
     Cylinder(SpatialCylinder),
@@ -59,11 +62,30 @@ impl Carrier<'_> {
         radius: f64,
         chart_end: f64,
     ) -> Option<Self> {
+        let native_v_upper = jet.extended_v_end;
         let (definition, max_rail_shift_mm) = jet.definition_at_radius(radius)?;
         Some(Self::OwnedRollingBall {
             definition: Box::new(Cow::Owned(definition)),
             chart_end,
+            native_v_upper,
+            variable_radius: false,
             max_rail_shift_mm,
+        })
+    }
+
+    pub(super) fn extended_rolling_ball(jet: &A5FreeformCurve) -> Option<Self> {
+        let upper = jet.extended_v_end?;
+        let first = &jet.sites.first()?.site;
+        let radius = first.limit1.distance(first.center.get());
+        let chart_end = jet.chart_v_end;
+        Self::rolling_ball_at_radius(jet.clone(), radius, chart_end).or_else(|| {
+            Some(Self::OwnedRollingBall {
+                definition: Box::new(Cow::Owned(jet.definition()?)),
+                chart_end,
+                native_v_upper: Some(upper),
+                variable_radius: true,
+                max_rail_shift_mm: 0.0,
+            })
         })
     }
 
@@ -82,12 +104,19 @@ impl Carrier<'_> {
                 else {
                     return None;
                 };
+                let upper = match self {
+                    Self::OwnedRollingBall {
+                        native_v_upper: Some(upper),
+                        ..
+                    } => *upper,
+                    _ => radius,
+                };
                 Some([
                     [
                         jet.stations().first()?.knot.get(),
                         jet.stations().last()?.knot.get(),
                     ],
-                    [0.0, radius],
+                    [0.0, upper],
                 ])
             }
             Self::Cylinder(cylinder) => Some(cylinder.bounds),
@@ -204,9 +233,19 @@ impl Carrier<'_> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
-                eval::rolling_ball_jet_point(definition, u, v)
-                    .ok()
-                    .map(FinitePoint3::get)
+                let end = self.extended_rolling_span().unwrap_or(1.0);
+                let point = if matches!(
+                    self,
+                    Self::OwnedRollingBall {
+                        variable_radius: true,
+                        ..
+                    }
+                ) {
+                    eval::variable_rolling_ball_jet_point_on_span(definition, u, v, end)
+                } else {
+                    eval::rolling_ball_jet_point_on_span(definition, u, v, end)
+                };
+                point.ok().map(FinitePoint3::get)
             }
             Self::Ruled(ruled) => ruled.point(u, v),
             Self::OffsetTensor(surface, _, distance) => {
@@ -229,14 +268,31 @@ impl Carrier<'_> {
         }
     }
 
+    fn extended_rolling_span(&self) -> Option<f64> {
+        match self {
+            Self::OwnedRollingBall {
+                native_v_upper: Some(upper),
+                chart_end,
+                ..
+            } => Some(upper * chart_end.recip()),
+            _ => None,
+        }
+    }
+
     pub(super) fn rolling_boundary_gap(&self, u: f64, v: f64) -> Option<f64> {
         let (definition, _) = self.rolling_definition()?;
+        if let Some(end) = self.extended_rolling_span() {
+            return (0.0..=end).contains(&v).then_some(0.0);
+        }
         let [u, s] = self.point([u, v]);
         eval::rolling_ball_jet_boundary_gap(definition, u, s).ok()
     }
 
     pub(super) fn evaluate_rolling_extension(&self, u: f64, v: f64) -> Option<Point3> {
         let (definition, _) = self.rolling_definition()?;
+        if self.extended_rolling_span().is_some() {
+            return self.evaluate([u, v]);
+        }
         eval::rolling_ball_jet_extended_point(definition, u, v, MAX_ROLLING_EXTENSION_MM)
             .ok()
             .map(FinitePoint3::get)
@@ -266,6 +322,9 @@ impl Carrier<'_> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
+                if self.extended_rolling_span().is_some() {
+                    return self.solve_rolling_extension(limits);
+                }
                 let adaptive = || {
                     surface_fit::rolling(
                         definition,

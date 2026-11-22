@@ -6,10 +6,12 @@
 //! bodies, the records they reach, and those records' name entries. Lookups
 //! walk down an evaluation's chain of bases, so no state is materialized.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::{OnceCell, RefCell};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
-use crate::design::names::NameEntry;
+use crate::design::names::{NameEntry, TopoName};
 use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
@@ -19,7 +21,7 @@ use super::records::PositionKey;
 use super::resolved::{records, Arena};
 
 /// The nameable entities of one `Topology`, by id.
-fn entities(topology: &Topology) -> BTreeMap<&str, Arena> {
+fn entities(topology: &Topology) -> HashMap<&str, Arena> {
     records(topology)
         .into_iter()
         .filter(|(arena, ..)| arena.is_entity())
@@ -30,23 +32,26 @@ fn entities(topology: &Topology) -> BTreeMap<&str, Arena> {
 /// One evaluation's own records and removals.
 struct Layer<'a> {
     evaluation: &'a Evaluation,
-    entities: BTreeMap<&'a str, Arena>,
-    removed: BTreeSet<&'a str>,
+    entities: HashMap<&'a str, Arena>,
+    removed: HashSet<&'a str>,
 }
 
 /// The extent of one current state: the records its bodies reach.
 pub(super) struct Extent<'a> {
+    pub(super) index: usize,
     pub(super) scope: &'a str,
     pub(super) state: &'a CurrentState,
-    pub(super) records: BTreeSet<&'a str>,
+    pub(super) records: HashSet<&'a str>,
 }
 
 /// The resolved states of a document's evaluations and current states.
 pub(super) struct States<'a> {
     ir: &'a CadIr,
-    geometry: BTreeMap<&'a str, Arena>,
-    layers: BTreeMap<&'a str, Layer<'a>>,
+    geometry: HashMap<&'a str, Arena>,
+    layers: HashMap<&'a str, Layer<'a>>,
     pub(super) extents: Vec<Extent<'a>>,
+    extent_names: Vec<OnceCell<BTreeSet<&'a TopoName>>>,
+    eval_names: RefCell<HashMap<&'a str, Option<Rc<BTreeSet<&'a TopoName>>>>>,
 }
 
 /// Where a lookup in an evaluation's chain stops.
@@ -57,7 +62,7 @@ enum Bottom<'a> {
 
 impl<'a> States<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
-        let mut layers = BTreeMap::new();
+        let mut layers = HashMap::new();
         for evaluation in &ir.design.evaluations {
             let Some(content) = &evaluation.content else {
                 continue;
@@ -75,26 +80,35 @@ impl<'a> States<'a> {
                         .collect(),
                 });
         }
-        let reach = Reach::new(&ir.geometry);
-        let extents = ir
+        let has_extents = ir
             .design
             .scopes
             .iter()
-            .flat_map(|scope| {
-                let reach = &reach;
-                scope.current.iter().map(move |state| Extent {
-                    scope: scope.definition.as_str(),
-                    state,
-                    records: reach
-                        .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
-                })
-            })
-            .collect();
+            .any(|scope| !scope.current.is_empty());
+        let mut extents: Vec<Extent<'a>> = Vec::new();
+        if has_extents {
+            let reach = Reach::new(&ir.geometry);
+            for scope in &ir.design.scopes {
+                for state in &scope.current {
+                    let index = extents.len();
+                    extents.push(Extent {
+                        index,
+                        scope: scope.definition.as_str(),
+                        state,
+                        records: reach
+                            .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
+                    });
+                }
+            }
+        }
+        let extent_names = (0..extents.len()).map(|_| OnceCell::new()).collect();
         Self {
             ir,
             geometry: entities(&ir.geometry),
             layers,
             extents,
+            extent_names,
+            eval_names: RefCell::new(HashMap::new()),
         }
     }
 
@@ -105,23 +119,45 @@ impl<'a> States<'a> {
             .find(|extent| extent.scope == scope && PositionKey::of(&extent.state.at) == at)
     }
 
-    /// Every entity of the current geometry within `extents` that
-    /// `Design.names` names, with its entry.
-    pub(super) fn extent_table(
-        &self,
-        extents: &[&Extent<'a>],
-    ) -> Vec<(&'a EntityRef, &'a NameEntry)> {
-        self.ir
-            .design
-            .names
-            .entries()
-            .iter()
-            .filter(|(entity, _)| {
-                extents
+    /// Whether any entity in `extents` carries `name` in `Design.names`.
+    pub(super) fn extents_contain_name(&self, extents: &[&Extent<'a>], name: &TopoName) -> bool {
+        extents.iter().any(|extent| {
+            let names = self.extent_names[extent.index].get_or_init(|| {
+                self.ir
+                    .design
+                    .names
+                    .entries()
                     .iter()
-                    .any(|extent| extent.records.contains(entity.id()))
-            })
-            .collect()
+                    .filter(|(entity, _)| extent.records.contains(entity.id()))
+                    .filter_map(|(_, entry)| entry.name.as_ref())
+                    .collect()
+            });
+            names.contains(name)
+        })
+    }
+
+    /// Whether the resolved state of `evaluation` carries `name`; `None` where
+    /// the chain of bases does not resolve.
+    pub(super) fn evaluation_contains_name(
+        &self,
+        evaluation: &str,
+        name: &TopoName,
+    ) -> Option<bool> {
+        if let Some(cached) = self.eval_names.borrow().get(evaluation) {
+            return cached.as_ref().map(|names| names.contains(name));
+        }
+        let (&key, _) = self.layers.get_key_value(evaluation)?;
+        let table = self.table(key).map(|table| {
+            Rc::new(
+                table
+                    .into_values()
+                    .filter_map(|entry| entry.name.as_ref())
+                    .collect::<BTreeSet<_>>(),
+            )
+        });
+        let found = table.as_ref().map(|names| names.contains(name));
+        self.eval_names.borrow_mut().insert(key, table);
+        found
     }
 
     /// Whether the geometry holds the entity in its arena.
@@ -157,7 +193,7 @@ impl<'a> States<'a> {
 
     /// Every entity the resolved state of a stored evaluation names, with its
     /// entry. `None` where the chain of bases does not resolve.
-    pub(super) fn table(&self, evaluation: &str) -> Option<BTreeMap<&'a EntityRef, &'a NameEntry>> {
+    fn table(&self, evaluation: &str) -> Option<BTreeMap<&'a EntityRef, &'a NameEntry>> {
         let mut seen: BTreeMap<&'a EntityRef, Option<&'a NameEntry>> = BTreeMap::new();
         let mut at = self.layers.get(evaluation)?;
         for _ in 0..=self.layers.len() {
@@ -227,12 +263,12 @@ impl<'a> States<'a> {
 /// The child records of each record of one `Topology`, through the parent
 /// pointers and the edges, vertices, and carriers they use.
 struct Reach<'a> {
-    children: BTreeMap<&'a str, Vec<&'a str>>,
+    children: HashMap<&'a str, Vec<&'a str>>,
 }
 
 impl<'a> Reach<'a> {
     fn new(topology: &'a Topology) -> Self {
-        let mut children: BTreeMap<&'a str, Vec<&'a str>> = BTreeMap::new();
+        let mut children: HashMap<&'a str, Vec<&'a str>> = HashMap::new();
         let mut add =
             |parent: &'a str, child: &'a str| children.entry(parent).or_default().push(child);
         for region in &topology.regions {
@@ -270,8 +306,8 @@ impl<'a> Reach<'a> {
         Self { children }
     }
 
-    fn reached_from(&self, bodies: impl Iterator<Item = &'a str>) -> BTreeSet<&'a str> {
-        let mut found = BTreeSet::new();
+    fn reached_from(&self, bodies: impl Iterator<Item = &'a str>) -> HashSet<&'a str> {
+        let mut found = HashSet::new();
         let mut stack: Vec<&'a str> = bodies.collect();
         while let Some(record) = stack.pop() {
             if found.insert(record) {

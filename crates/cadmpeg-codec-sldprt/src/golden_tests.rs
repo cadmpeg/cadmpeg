@@ -170,14 +170,15 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
-                match outcome {
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
                 SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
+                    matches!(error, CodecError::NotImplemented(detail) if detail == "semantic SLDPRT writing requires a B-rep"),
+                    "legacy history must refuse exactly the missing typed B-rep: {error:?}"
                 ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+                SemanticOutcome::Written { report, .. } => panic!(
+                    "legacy history has no typed B-rep to write: {:?}",
+                    report.write_path()
+                ),
             });
             continue;
         }
@@ -477,17 +478,12 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .expect("historical history fixture retains its source");
-    assert!(!result.ir().model.configurations.is_empty());
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .configurations
-            .iter()
-            .filter(|c| c.active)
-            .count(),
-        0
-    );
+    let [configuration] = result.ir().model.configurations.as_slice() else {
+        panic!("the lone Keywords configuration");
+    };
+    assert!(configuration.active);
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(configuration.bodies.is_none());
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();

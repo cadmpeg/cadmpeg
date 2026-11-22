@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::edit;
 
-use crate::geometry::{CurveOffsetRange, OffsetSide, ProceduralCurve, ProceduralCurveDefinition};
+use crate::geometry::curve_offsets::{CurveOffsetRange, OffsetSide};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::ProceduralCurve;
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::Vector3;
 
@@ -30,7 +32,7 @@ fn curve_payload_admission_requires_finite_ordered_subset_ranges() {
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
     let mut definition = subset([1.0, 1.0]);
     definition
-        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
+        .set_legacy_cache(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition);
     let wire = serde_json::to_value(&curve).unwrap();
@@ -118,9 +120,11 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
             .and_then(|range| definition(direction.clone(), Some(range)));
         assert_eq!(
             refused,
-            Err(crate::geometry::ProceduralGeometryError::Payload(
-                "curve offset distance, side, range, or law is invalid"
-            ))
+            Err(
+                crate::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "curve offset distance, side, range, or law is invalid"
+                )
+            )
         );
         let mut wire = serde_json::to_value(&valid).unwrap();
         wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
@@ -161,7 +165,7 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
 
 #[test]
 fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide};
+    use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
     use crate::ids::SurfaceId;
 
     let mut curve = ProceduralCurve::new(
@@ -177,7 +181,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             )
             .unwrap(),
             discontinuity_flag: false,
-            cache: Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()),
+            cache: Some(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap()),
         },
     );
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
@@ -191,7 +195,11 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 0.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
@@ -199,7 +207,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     assert_eq!(
         curve
             .cache_fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
     assert!(ProceduralCurve::new(id(), subset([0.0, 1.0]))
@@ -210,7 +218,8 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
 #[test]
 fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draft() {
     use crate::geometry::curve_payloads::SilhouetteCurveConstruction;
-    use crate::geometry::{IntcurveSupportContext, IntcurveSupportSide, SilhouetteKind};
+    use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use crate::geometry::surface_curves::SilhouetteKind;
     use crate::ids::SurfaceId;
     use crate::scalar::FiniteReal;
 
@@ -274,12 +283,12 @@ fn silhouette_admission_requires_a_nondegenerate_light_direction_and_finite_draf
 fn rejected_curve_definition_replacements_preserve_serialized_owner() {
     let mut definition = subset([0.0, 1.0]);
     definition
-        .set_legacy_cache(crate::geometry::LegacyCache::try_new(0.5).unwrap())
+        .set_legacy_cache(crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap())
         .unwrap();
     let curve = ProceduralCurve::new(id(), definition);
     let before = serde_json::to_vec(&curve).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
-        assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());
+        assert!(crate::geometry::legacy_cache::LegacyCache::try_new(tolerance).is_err());
         assert_eq!(serde_json::to_vec(&curve).unwrap(), before);
     }
 }
@@ -332,8 +341,12 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
 
 #[test]
 fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
-    let admitted = crate::geometry::LawCurveVersionForm::try_new(20_900, 0, [Some(-1.0), None])
-        .expect("finite law curve version form");
+    let admitted = crate::geometry::intersection_curves::LawCurveVersionForm::try_new(
+        20_900,
+        0,
+        [Some(-1.0), None],
+    )
+    .expect("finite law curve version form");
     assert_eq!(
         admitted.parameter_range(),
         [crate::scalar::FiniteReal::new(-1.0), None]
@@ -343,33 +356,41 @@ fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
     assert_eq!(wire["post_enum"], serde_json::json!(0));
     assert_eq!(wire["parameter_range"], serde_json::json!([-1.0, null]));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawCurveVersionForm>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::intersection_curves::LawCurveVersionForm>(wire)
+            .unwrap(),
         admitted
     );
 
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for range in [[Some(value), None], [None, Some(value)]] {
-            assert!(crate::geometry::LawCurveVersionForm::try_new(20_900, 0, range).is_err());
-            assert!(crate::geometry::LawCurveVersionForm::try_from(
-                crate::geometry::LawCurveVersionFormWire {
-                    stamp: 20_900,
-                    post_enum: 0,
-                    parameter_range: range,
-                }
-            )
-            .is_err());
+            assert!(
+                crate::geometry::intersection_curves::LawCurveVersionForm::try_new(
+                    20_900, 0, range
+                )
+                .is_err()
+            );
+            assert!(
+                crate::geometry::intersection_curves::LawCurveVersionForm::try_from(
+                    crate::geometry::intersection_curves::LawCurveVersionFormWire {
+                        stamp: 20_900,
+                        post_enum: 0,
+                        parameter_range: range,
+                    }
+                )
+                .is_err()
+            );
         }
     }
 }
 
-fn law_support_context() -> crate::geometry::IntcurveSupportContext {
-    crate::geometry::IntcurveSupportContext::try_new(
+fn law_support_context() -> crate::geometry::intersection_curves::IntcurveSupportContext {
+    crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
         [
-            crate::geometry::IntcurveSupportSide {
+            crate::geometry::intersection_curves::IntcurveSupportSide {
                 surface: None,
                 pcurve: None,
             },
-            crate::geometry::IntcurveSupportSide {
+            crate::geometry::intersection_curves::IntcurveSupportSide {
                 surface: None,
                 pcurve: None,
             },
@@ -380,16 +401,16 @@ fn law_support_context() -> crate::geometry::IntcurveSupportContext {
     .expect("finite ordered support context")
 }
 
-fn named_law(variable: crate::geometry::LawExpression) -> crate::geometry::LawFormula {
-    crate::geometry::LawFormula::Named {
+fn named_law(variable: crate::geometry::laws::LawExpression) -> crate::geometry::laws::LawFormula {
+    crate::geometry::laws::LawFormula::Named {
         name: cadmpeg_core::nonblank_literal!("primary_law"),
         variables: vec![variable],
     }
 }
 
 fn law_definition(
-    primary: crate::geometry::FiniteLawFormula,
-    additional: Vec<crate::geometry::FiniteLawFormula>,
+    primary: crate::geometry::laws::FiniteLawFormula,
+    additional: Vec<crate::geometry::laws::FiniteLawFormula>,
 ) -> ProceduralCurveDefinition {
     ProceduralCurveDefinition::Law {
         context: law_support_context(),
@@ -403,8 +424,8 @@ fn law_definition(
 
 /// Every law-expression shape that carries a scalar, each with one slot set to
 /// the degenerate value and the rest admitted.
-fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression> {
-    use crate::geometry::LawExpression;
+fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::laws::LawExpression> {
+    use crate::geometry::laws::LawExpression;
     let mut scalars = [0.0; 13];
     scalars[7] = value;
     vec![
@@ -440,7 +461,7 @@ fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression>
             flags: [false; 3],
         },
         LawExpression::Edge {
-            curve: crate::geometry::LoftPathCurve {
+            curve: crate::geometry::lofts::LoftPathCurve {
                 id: source(),
                 endpoints: None,
             },
@@ -479,10 +500,10 @@ fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression>
 
 #[test]
 fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
-    use crate::geometry::{FiniteLawFormula, LawExpression, LawFormula};
+    use crate::geometry::laws::{FiniteLawFormula, LawExpression, LawFormula};
 
     let primary = named_law(LawExpression::Edge {
-        curve: crate::geometry::LoftPathCurve {
+        curve: crate::geometry::lofts::LoftPathCurve {
             id: source(),
             endpoints: None,
         },
@@ -550,7 +571,8 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
 
 #[test]
 fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
-    use crate::geometry::{FiniteLawFormula, LawExpression, LoftPathCurve};
+    use crate::geometry::laws::{FiniteLawFormula, LawExpression};
+    use crate::geometry::lofts::LoftPathCurve;
 
     for endpoints in [None, Some([None, Some(1.0)]), Some([Some(0.0), None])] {
         let formula = named_law(LawExpression::Edge {
@@ -582,10 +604,10 @@ fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
 /// The recursion bound the law-expression walk states.
 const LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST: usize = 64;
 
-fn nested_algebraic_law(depth: usize) -> crate::geometry::LawFormula {
-    let mut expression = crate::geometry::LawExpression::Double { value: 1.0 };
+fn nested_algebraic_law(depth: usize) -> crate::geometry::laws::LawFormula {
+    let mut expression = crate::geometry::laws::LawExpression::Double { value: 1.0 };
     for _ in 0..depth {
-        expression = crate::geometry::LawExpression::Algebraic {
+        expression = crate::geometry::laws::LawExpression::Algebraic {
             operator: "+".to_owned(),
             operands: vec![expression],
         };
@@ -595,7 +617,7 @@ fn nested_algebraic_law(depth: usize) -> crate::geometry::LawFormula {
 
 #[test]
 fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
-    use crate::geometry::FiniteLawFormula;
+    use crate::geometry::laws::FiniteLawFormula;
 
     assert!(
         FiniteLawFormula::try_new(nested_algebraic_law(LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST))
@@ -609,7 +631,8 @@ fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
 
 #[test]
 fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
-    use crate::geometry::{CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralGeometryError};
+    use crate::geometry::curve_offsets::{CurveOffsetDistanceLaw, CurveOffsetLawBasis};
+    use crate::geometry::legacy_cache::ProceduralGeometryError;
 
     let refusal = Err(ProceduralGeometryError::Payload(
         "curve offset distance, side, range, or law is invalid",

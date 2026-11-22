@@ -158,6 +158,18 @@ pub(crate) struct Configuration {
     pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
+impl Configuration {
+    /// The configuration's index `N`, which names its `Config-N` streams: the
+    /// stored `SourceIndex`, else the decimal Keywords `id` (`sldprt.md` §2).
+    pub(crate) fn partition_index(&self) -> Option<u32> {
+        self.source_index.or_else(|| {
+            self.properties
+                .get("id")
+                .and_then(|value| value.parse().ok())
+        })
+    }
+}
+
 fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
@@ -506,6 +518,32 @@ pub(crate) enum HistoryContent {
     /// Native top-level feature record id.
     Feature(String),
     /// Non-whitespace root text content.
+    Text(String),
+    /// A root child element that is neither a configuration nor a feature: an
+    /// `Application` element with its `Keyword` children.
+    Element(HistoryElement),
+}
+
+/// One XML element of a Keywords root and its subtree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HistoryElement {
+    /// Element name.
+    pub(crate) tag: String,
+    /// Source attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attributes: BTreeMap<NonBlankString, String>,
+    /// Child elements and non-whitespace text, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) content: Vec<HistoryElementContent>,
+}
+
+/// One ordered item inside a [`HistoryElement`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum HistoryElementContent {
+    /// Child element.
+    Element(HistoryElement),
+    /// Non-whitespace text content.
     Text(String),
 }
 

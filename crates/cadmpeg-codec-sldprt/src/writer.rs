@@ -6,12 +6,13 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
-mod configuration_manager;
 mod default_properties;
 mod edge_direction;
 mod envelope;
 mod ownership;
 pub(crate) mod target;
+
+pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
@@ -70,10 +71,12 @@ pub(crate) struct SemanticOutput {
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
     pub(crate) omitted_envelope_bytes: usize,
+    /// The metadata attributes the write did not write, each with why.
+    pub(crate) unwritten: UnwrittenAttributes,
     /// The edits the native records cannot carry, kept as stored.
-    pub(crate) unwritten: crate::history::write::edits::UnwrittenLosses,
-    /// Which edits `unwritten` names: the stale-solid check reads no edit of
-    /// these as written.
+    pub(crate) unwritten_edits: crate::history::write::edits::UnwrittenLosses,
+    /// Which edits `unwritten_edits` names: the stale-solid check reads no
+    /// edit of these as written.
     pub(crate) written: crate::history::write::edits::UnwrittenEdits,
     /// The construction edits of the written features and what the rest of
     /// the document reads back as.
@@ -147,20 +150,21 @@ pub(crate) fn write_semantic_with_records(
         ));
     }
     let mut source_baseline = None;
+    let mut unwritten = UnwrittenAttributes::default();
     if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
-        let scan = source_scan.as_ref().ok_or_else(|| {
-            CodecError::NotImplemented(
-                "SLDPRT saved properties require their retained source carrier".into(),
-            )
-        })?;
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "SLDPRT saved properties require their retained source document".into(),
-                )
-            })?;
-        default_properties::validate(&normalized, &baseline.ir, scan)?;
-        default_properties::validate_retention(scan, retained_records, annotations)?;
+        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+        // No serializer writes a saved property: an edited one is charged and
+        // its carrier is emitted as the source stored it, or not at all.
+        let edited = match (source_scan.as_ref(), baseline) {
+            (Some(scan), Some(baseline)) => {
+                default_properties::validate_retention(scan, retained_records, annotations)?;
+                default_properties::edited_properties(&normalized, &baseline.ir, scan)
+            }
+            _ => default_properties::stated_properties(&normalized),
+        };
+        for (id, held) in edited {
+            unwritten.record(&id, Unwritten::SavedProperty, held);
+        }
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
@@ -210,7 +214,7 @@ pub(crate) fn write_semantic_with_records(
         },
     )?;
     let crate::history::write::edits::EditOutcome {
-        mut unwritten,
+        unwritten: mut unwritten_edits,
         claims,
         written,
         edited_parameters,
@@ -294,15 +298,7 @@ pub(crate) fn write_semantic_with_records(
                     .attributes
                     .get(SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE)
             });
-            let identity_baseline = ir.source.as_ref().and_then(|source| {
-                source
-                    .attributes
-                    .get(SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE)
-            });
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
-                || identity_baseline
-                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
-            {
+            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
@@ -313,12 +309,12 @@ pub(crate) fn write_semantic_with_records(
                 annotations,
                 &mut retained_swobjects,
                 length_scale,
+                &mut unwritten,
             )?;
         }
         true
     };
-    configuration_manager::validate(ir, annotations, &retained_swobjects)?;
-    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
+    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects, &mut unwritten);
     if replay_swobjects {
         generated_partition_sections
             .extend(retained_swobjects.iter().map(|(name, _)| name.clone()));
@@ -449,7 +445,7 @@ pub(crate) fn write_semantic_with_records(
             edited_parameters: &edited_parameters,
         },
     )?;
-    unwritten.extend(kept_pmi);
+    unwritten_edits.extend(kept_pmi);
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -489,6 +485,7 @@ pub(crate) fn write_semantic_with_records(
         coverage,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
         unwritten,
+        unwritten_edits,
         written,
         claims,
     })
@@ -509,8 +506,9 @@ pub(crate) fn write_semantic_with_records(
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
 /// `appearances`, `appearance_bindings` and `attributes` are `Reported` because
-/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted` and
-/// `WriterAttributesOmitted` account for their withheld records, respectively.
+/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted`, and
+/// `WriterAttributesOmitted` with `export:edit.dropped` account for their
+/// withheld records, respectively.
 /// `curves` is `Reported` unless `retained_brep` is true because
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
@@ -1513,26 +1511,35 @@ fn patch_retained_swobjects_metadata(
     annotations: &Annotations,
     sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
+    unwritten: &mut UnwrittenAttributes,
 ) -> Result<(), CodecError> {
     use std::cmp::Reverse;
 
-    let mut attributes = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .filter(|attribute| !states_no_value(attribute))
-        .map(|attribute| {
-            let provenance = annotations
-                .provenance
-                .get(attribute.id.as_str())
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT metadata attribute {} has no retained record provenance",
-                        attribute.id
-                    ))
-                })?;
-            Ok((provenance.stream().to_owned(), provenance.offset, attribute))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut attributes = Vec::new();
+    for attribute in metadata_attributes(ir) {
+        if attribute.name == "source_linear_unit_code" {
+            continue;
+        }
+        let provenance = annotations.provenance.get(attribute.id.as_str());
+        if let Some(reason) = unwritable(attribute) {
+            let held = if provenance.is_some() {
+                Held::Source
+            } else {
+                Held::Nothing
+            };
+            unwritten.record(attribute.id.as_str(), reason, held);
+            continue;
+        }
+        let Some(provenance) = provenance else {
+            // No retained record holds it, and none can be inserted.
+            let reason = MetadataRecord::project(attribute, length_scale, |_| Ok(()))
+                .err()
+                .unwrap_or(Unwritten::NoSerializer);
+            unwritten.record(attribute.id.as_str(), reason, Held::Nothing);
+            continue;
+        };
+        attributes.push((provenance.stream().to_owned(), provenance.offset, attribute));
+    }
     attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
 
     for (stream, offset, attribute) in attributes {
@@ -1548,163 +1555,177 @@ fn patch_retained_swobjects_metadata(
         let offset = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
         })?;
-        // The retained record's token and unit-name marker are checked once
-        // the values have the record's shape and before they are admitted.
-        let retained = |token: &'static [u8]| {
-            require_token(payload, offset, token)?;
-            if token == UNIT_NAME_TOKEN {
-                resident_unit_name_len(payload, offset + token.len())?;
-            }
-            Ok(())
-        };
-        if attribute.name == "configuration_manager"
-            && attribute.target.entity == cadmpeg_ir::attributes::AttributeTarget::Document
-            && crate::metadata::configuration_manager::values(payload, offset).is_some_and(
-                |values| {
-                    attribute.values == values.map(|value| Some(AttributeValue::Integer(value)))
-                },
-            )
-        {
-            continue;
+        if let Err(reason) = patch_retained_record(payload, offset, attribute, length_scale) {
+            unwritten.record(attribute.id.as_str(), reason, Held::Source);
         }
-        match MetadataRecord::project(attribute, length_scale, retained)? {
-            Some(MetadataRecord::BoundingEnvelope(values)) => {
-                let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained bounding envelope".into(),
-                    ));
-                };
-                let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
-                patch_retained_metadata_reals(
-                    payload,
-                    offset + BOUNDING_ENVELOPE_TOKEN.len() + 4,
-                    &values,
-                    &current,
-                    4,
-                    length_scale,
-                )?;
-            }
-            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained default plane".into(),
-                    ));
-                };
-                let current = current_origin
-                    .iter()
-                    .chain(current_frame)
-                    .map(|value| value.get())
-                    .collect::<Vec<_>>();
-                let values = origin.into_iter().chain(frame).collect::<Vec<_>>();
-                patch_retained_metadata_reals(
-                    payload,
-                    offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
-                    &values,
-                    &current,
-                    3,
-                    length_scale,
-                )?;
-            }
-            Some(MetadataRecord::TransformedReferenceEnclosure {
-                center,
-                upper,
-                lower,
-                radius,
-            }) => {
-                let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT enclosure edit requires a retained complete present record".into(),
-                    ));
-                };
-                let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "SLDPRT enclosure attribute has an invalid value shape".into(),
-                    ));
-                };
-                let ir_values = ir_center
-                    .iter()
-                    .chain(ir_upper)
-                    .chain(ir_lower)
-                    .map(|v| v.get())
-                    .chain([ir_radius.get()]);
-                let source_values = center.into_iter().chain(upper).chain(lower).chain([radius]);
-                let mut bytes = Vec::with_capacity(80);
-                for ((value, current), original) in source_values.zip(ir_values).zip(resident) {
-                    let value = if original * (1.0 / length_scale) == current {
-                        original
-                    } else {
-                        value
-                    };
-                    bytes.extend(value.to_le_bytes());
-                }
-                overwrite_bytes(
-                    payload,
-                    offset
-                        + TRANSFORMED_REFERENCE_PLANE_TOKEN.len()
-                        + crate::layout::transformed_reference_plane_metadata::LEN,
-                    &bytes,
-                )?;
-            }
-            Some(MetadataRecord::PartRecord {
-                first_word,
-                trailing_word,
-            }) => {
-                let crate::metadata::part::Root::Supported(resident) =
-                    crate::metadata::part::parse(payload)
-                else {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT Part edit requires a supported root scalar prefix".into(),
-                    ));
-                };
-                if offset != resident.token_offset
-                    || trailing_word.is_some() != resident.trailing_word.is_some()
-                {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT Part edit cannot change root ownership or scalar form".into(),
-                    ));
-                }
-                overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())?;
-                if let Some(word) = trailing_word {
-                    overwrite_bytes(
-                        payload,
-                        resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
-                        &word.to_le_bytes(),
-                    )?;
-                }
-            }
-            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
-                let marker = offset + UNIT_NAME_TOKEN.len();
-                let old_len = resident_unit_name_len(payload, marker)?;
-                if usize::from(byte_len) != old_len {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT writer cannot resize a retained source linear unit name".into(),
-                    ));
-                }
-                let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
-                replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
-                let end = marker.checked_add(4 + old_len).ok_or_else(|| {
-                    CodecError::Malformed("retained SLDPRT unit-name range overflow".into())
-                })?;
-                if end > payload.len() {
-                    return Err(CodecError::Malformed(
-                        "truncated retained SLDPRT unit name".into(),
-                    ));
-                }
-                payload.splice(marker..end, replacement);
-            }
-            Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
-                return Err(CodecError::NotImplemented(format!(
-                    "unsupported retained SLDPRT metadata attribute {}",
-                    attribute.name
-                )));
-            }
+    }
+
+    // A record the document no longer states keeps its retained bytes.
+    let stated = metadata_attributes(ir)
+        .into_iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<HashSet<_>>();
+    for (id, provenance) in &annotations.provenance {
+        if id.starts_with("sldprt:metadata:")
+            && !id.starts_with("sldprt:metadata:source_linear_unit_code#")
+            && !stated.contains(id.as_str())
+            && sections
+                .iter()
+                .any(|(name, _)| name.as_str() == provenance.stream())
+        {
+            unwritten.record(id, Unwritten::Removed, Held::Source);
         }
     }
     Ok(())
+}
+
+/// Write `attribute` into its retained record at `offset` of `payload`, or
+/// leave the record untouched and say why it was not written.
+fn patch_retained_record(
+    payload: &mut Vec<u8>,
+    offset: usize,
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
+    length_scale: f64,
+) -> Result<(), Unwritten> {
+    if attribute.name == "configuration_manager"
+        && crate::metadata::configuration_manager::values(payload, offset).is_some_and(|values| {
+            attribute.values == values.map(|value| Some(AttributeValue::Integer(value)))
+        })
+    {
+        return Ok(());
+    }
+    // The retained record's token and unit-name marker are checked once
+    // the values have the record's shape and before they are admitted.
+    let retained = |token: &'static [u8]| {
+        require_token(payload, offset, token)?;
+        if token == UNIT_NAME_TOKEN {
+            resident_unit_name_len(payload, offset + token.len())?;
+        }
+        Ok(())
+    };
+    let mismatch = |_: CodecError| Unwritten::RetainedMismatch;
+    match MetadataRecord::project(attribute, length_scale, retained)? {
+        MetadataRecord::BoundingEnvelope(values) => {
+            let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
+            patch_retained_metadata_reals(
+                payload,
+                offset + BOUNDING_ENVELOPE_TOKEN.len() + 4,
+                &values,
+                &current,
+                4,
+                length_scale,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::DefaultReferencePlane { origin, frame } => {
+            let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
+                attribute.values.as_slice()
+            else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let current = current_origin
+                .iter()
+                .chain(current_frame)
+                .map(|value| value.get())
+                .collect::<Vec<_>>();
+            let values = origin.into_iter().chain(frame).collect::<Vec<_>>();
+            patch_retained_metadata_reals(
+                payload,
+                offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
+                &values,
+                &current,
+                3,
+                length_scale,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::TransformedReferenceEnclosure {
+            center,
+            upper,
+            lower,
+            radius,
+        } => {
+            let resident = crate::metadata::transformed_enclosure(payload, offset)
+                .ok_or(Unwritten::NoSerializer)?;
+            let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
+                attribute.values.as_slice()
+            else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let ir_values = ir_center
+                .iter()
+                .chain(ir_upper)
+                .chain(ir_lower)
+                .map(|v| v.get())
+                .chain([ir_radius.get()]);
+            let source_values = center.into_iter().chain(upper).chain(lower).chain([radius]);
+            let mut bytes = Vec::with_capacity(80);
+            for ((value, current), original) in source_values.zip(ir_values).zip(resident) {
+                let value = if original * (1.0 / length_scale) == current {
+                    original
+                } else {
+                    value
+                };
+                bytes.extend(value.to_le_bytes());
+            }
+            overwrite_bytes(
+                payload,
+                offset
+                    + TRANSFORMED_REFERENCE_PLANE_TOKEN.len()
+                    + crate::layout::transformed_reference_plane_metadata::LEN,
+                &bytes,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::PartRecord {
+            first_word,
+            trailing_word,
+        } => {
+            let crate::metadata::part::Root::Supported(resident) =
+                crate::metadata::part::parse(payload)
+            else {
+                return Err(Unwritten::NoSerializer);
+            };
+            // The Part edit cannot change root ownership or scalar form.
+            if offset != resident.token_offset
+                || trailing_word.is_some() != resident.trailing_word.is_some()
+            {
+                return Err(Unwritten::NoSerializer);
+            }
+            // The trailing word lies past the first, so a truncated record
+            // fails before anything is written.
+            if let Some(word) = trailing_word {
+                overwrite_bytes(
+                    payload,
+                    resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
+                    &word.to_le_bytes(),
+                )
+                .map_err(mismatch)?;
+            }
+            overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())
+                .map_err(mismatch)
+        }
+        MetadataRecord::SourceLinearUnitName { units, byte_len } => {
+            let marker = offset + UNIT_NAME_TOKEN.len();
+            let old_len = resident_unit_name_len(payload, marker).map_err(mismatch)?;
+            if usize::from(byte_len) != old_len {
+                // The writer cannot resize a retained unit name.
+                return Err(Unwritten::NoSerializer);
+            }
+            let end = marker
+                .checked_add(4 + old_len)
+                .filter(|end| *end <= payload.len())
+                .ok_or(Unwritten::RetainedMismatch)?;
+            let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
+            replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
+            payload.splice(marker..end, replacement);
+            Ok(())
+        }
+        MetadataRecord::SourceLinearUnitCode(_) => Err(Unwritten::NoSerializer),
+    }
 }
 
 fn patch_retained_metadata_reals(
@@ -1720,6 +1741,9 @@ fn patch_retained_metadata_reals(
             "invalid retained metadata real fields".into(),
         ));
     }
+    // Every field is read before any is written, so a refused record is
+    // left as it was.
+    let mut writes = Vec::with_capacity(values.len());
     for (index, (&value, &current)) in values.iter().zip(current).enumerate() {
         let offset = index
             .checked_mul(8)
@@ -1734,8 +1758,11 @@ fn patch_retained_metadata_reals(
             original
         };
         if projected != current {
-            overwrite_bytes(payload, offset, &value.to_le_bytes())?;
+            writes.push((offset, value));
         }
+    }
+    for (offset, value) in writes {
+        overwrite_bytes(payload, offset, &value.to_le_bytes())?;
     }
     Ok(())
 }
@@ -2210,50 +2237,48 @@ enum MetadataRecord {
 }
 
 impl MetadataRecord {
-    /// Admit one metadata attribute, or `None` for a name no writer states.
+    /// Admit one metadata attribute, or say why it has no record.
     ///
     /// The values' shape is checked first. `retained` then receives the
     /// record's `SWObjects` token, and the values are admitted after it
-    /// returns.
+    /// returns; its refusal is [`Unwritten::RetainedMismatch`].
     fn project(
         attribute: &cadmpeg_ir::attributes::SourceAttribute,
         length_scale: f64,
         retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Self, Unwritten> {
         use cadmpeg_ir::attributes::AttributeValue;
 
-        let invalid = |kind: &str| CodecError::malformed(format_args!("invalid {kind}"));
+        let invalid = Unwritten::Unrepresentable;
+        let retained = |token| retained(token).map_err(|_| Unwritten::RetainedMismatch);
         let values = attribute.values.as_slice();
-        Ok(Some(match attribute.name.as_str() {
+        Ok(match attribute.name.as_str() {
             "bounding_envelope" => {
-                let kind = "bounding envelope";
                 let [Some(AttributeValue::Vector(values))] = values else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
-                let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
+                let values = ratios::<4>(values).ok_or(invalid)?;
                 retained(BOUNDING_ENVELOPE_TOKEN)?;
-                Self::BoundingEnvelope(scaled(values, length_scale).ok_or_else(|| invalid(kind))?)
+                Self::BoundingEnvelope(scaled(values, length_scale).ok_or(invalid)?)
             }
             "default_reference_plane" => {
-                let kind = "default reference plane";
                 let [Some(AttributeValue::Vector(origin)), Some(AttributeValue::Vector(frame))] =
                     values
                 else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 retained(DEFAULT_REFERENCE_PLANE_TOKEN)?;
-                let origin = scaled(origin, length_scale).ok_or_else(|| invalid(kind))?;
+                let origin = scaled(origin, length_scale).ok_or(invalid)?;
                 Self::DefaultReferencePlane { origin, frame }
             }
             "transformed_reference_enclosure" => {
-                let kind = "transformed reference enclosure";
                 let [Some(AttributeValue::Vector(center)), Some(AttributeValue::Vector(upper)), Some(AttributeValue::Vector(lower)), Some(AttributeValue::Float(radius))] =
                     values
                 else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 let (Some(center), Some(upper), Some(lower), Some([radius])) = (
                     ratios::<3>(center).and_then(|v| scaled(v, length_scale)),
@@ -2261,14 +2286,14 @@ impl MetadataRecord {
                     ratios::<3>(lower).and_then(|v| scaled(v, length_scale)),
                     scaled([radius.get()], length_scale),
                 ) else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 let values = [
                     center[0], center[1], center[2], upper[0], upper[1], upper[2], lower[0],
                     lower[1], lower[2], radius,
                 ];
                 if !crate::metadata::valid_transformed_enclosure(&values) {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 }
                 retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
                 Self::TransformedReferenceEnclosure {
@@ -2285,46 +2310,41 @@ impl MetadataRecord {
                     [Some(AttributeValue::Integer(first)), Some(AttributeValue::Integer(last))] => {
                         (*first, Some(*last))
                     }
-                    _ => return Err(invalid("part scalar prefix")),
+                    _ => return Err(invalid),
                 };
                 Self::PartRecord {
-                    first_word: u32::try_from(first).map_err(|_| invalid("Part first word"))?,
+                    first_word: u32::try_from(first).map_err(|_| invalid)?,
                     trailing_word: trailing
                         .map(u32::try_from)
                         .transpose()
-                        .map_err(|_| invalid("Part trailing word"))?,
+                        .map_err(|_| invalid)?,
                 }
             }
-            "configuration_manager" => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles".into(),
-                ));
-            }
+            // No serializer owns the version-specific manager fields or
+            // their scalar roles, so the record is neither edited nor
+            // generated.
+            "configuration_manager" => return Err(Unwritten::NoSerializer),
             "source_linear_unit_code" => {
                 let [Some(AttributeValue::Integer(code))] = values else {
-                    return Err(invalid("source linear unit code"));
+                    return Err(invalid);
                 };
                 Self::SourceLinearUnitCode(*code)
             }
             "source_linear_unit_name" => {
                 let [Some(AttributeValue::String(name))] = values else {
-                    return Err(invalid("source linear unit name"));
+                    return Err(invalid);
                 };
                 retained(UNIT_NAME_TOKEN)?;
                 let units = name.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
-                    CodecError::NotImplemented("source linear unit name is too long".into())
-                })?;
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| invalid)?;
                 if units.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
+                    return Err(invalid);
                 }
                 Self::SourceLinearUnitName { units, byte_len }
             }
-            _ => return Ok(None),
-        }))
+            _ => return Err(Unwritten::UnknownName),
+        })
     }
 }
 
@@ -2343,11 +2363,16 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .then_some(products)
 }
 
-/// Whether `attribute` states no value at some position. No metadata record
-/// has such a reading: the patch writer keeps the record's retained bytes, the
-/// generator writes no record for it, and `WriterAttributesOmitted` names it.
-fn states_no_value(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
-    attribute.values.iter().any(Option::is_none)
+/// Why no metadata record can hold `attribute`, judged from the attribute
+/// alone: a null at some position, or a target other than the document.
+fn unwritable(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> Option<Unwritten> {
+    if attribute.values.iter().any(Option::is_none) {
+        Some(Unwritten::NoValue)
+    } else if attribute.target.entity != cadmpeg_ir::attributes::AttributeTarget::Document {
+        Some(Unwritten::EntityTarget)
+    } else {
+        None
+    }
 }
 
 /// This codec's document attributes, ordered by source payload position.
@@ -2371,73 +2396,64 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .collect()
 }
 
+/// The generated `SWObjects` metadata records and the `Units` member.
+///
+/// With `retained_swobjects` the retained section holds every record but the
+/// unit code, replayed or patched in place, so only the unit code is
+/// generated. An attribute already in `unwritten` is not generated.
 fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
     retained_swobjects: bool,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
+    unwritten: &mut UnwrittenAttributes,
+) -> (Vec<u8>, Option<Vec<u8>>) {
     let mut objects = Vec::new();
     let mut unit_code = None;
     for attribute in metadata_attributes(ir) {
-        if states_no_value(attribute) {
+        let id = attribute.id.as_str();
+        if (retained_swobjects && attribute.name != "source_linear_unit_code")
+            || unwritten.contains(id)
+        {
             continue;
         }
-        if attribute.target.entity != AttributeTarget::Document {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer does not support entity attributes".into(),
-            ));
-        }
-        if retained_swobjects && attribute.name == "configuration_manager" {
+        if let Some(reason) = unwritable(attribute) {
+            unwritten.record(id, reason, Held::Nothing);
             continue;
         }
-        match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
-            Some(MetadataRecord::BoundingEnvelope(values)) => {
+        match MetadataRecord::project(attribute, length_scale, |_| Ok(())) {
+            Ok(MetadataRecord::BoundingEnvelope(values)) => {
                 objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
                 objects.extend_from_slice(&1u32.to_le_bytes());
                 for value in values {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
+            Ok(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
                 objects.extend_from_slice(DEFAULT_REFERENCE_PLANE_TOKEN);
                 for value in origin.into_iter().chain(frame) {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) if retained_swobjects => {}
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT enclosure generation requires a retained opaque serializer prologue"
-                        .into(),
-                ));
-            }
-            Some(MetadataRecord::PartRecord { .. }) if retained_swobjects => {}
-            Some(MetadataRecord::PartRecord { .. }) => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT Part generation requires a retained supported root serializer".into(),
-                ));
-            }
-            Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
-            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
+            // The enclosure's opaque serializer prologue and the Part root
+            // serializer exist only as retained bytes.
+            Ok(
+                MetadataRecord::TransformedReferenceEnclosure { .. }
+                | MetadataRecord::PartRecord { .. },
+            ) => unwritten.record(id, Unwritten::NoSerializer, Held::Nothing),
+            Ok(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
+            Ok(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 objects.extend_from_slice(UNIT_NAME_TOKEN);
                 objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
-            None => {
-                return Err(CodecError::NotImplemented(format!(
-                    "unsupported SLDPRT attribute {}",
-                    attribute.name
-                )))
-            }
+            Err(reason) => unwritten.record(id, reason, Held::Nothing),
         }
     }
     let units = unit_code.map(|code| {
         format!("<Metadata><Property Name=\"SW_UnitsLinear\" Value=\"{code}\"/></Metadata>")
             .into_bytes()
     });
-    Ok((objects, units))
+    (objects, units)
 }
 
 pub(crate) fn swobjects_local_sha256(
@@ -2660,6 +2676,9 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
                 }
             }
             crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
+            crate::records::HistoryContent::Element(element) => {
+                write_history_element(&mut out, element)?;
+            }
         }
     }
     for configuration in &history.configurations {
@@ -2819,6 +2838,39 @@ fn write_feature_xml(
     out.push_str("</");
     out.push_str(&feature.xml_tag);
     out.push('>');
+}
+
+fn write_history_element(
+    out: &mut String,
+    element: &crate::records::HistoryElement,
+) -> Result<(), CodecError> {
+    if !valid_xml_name(&element.tag) {
+        return Err(CodecError::Malformed(
+            "invalid history XML element name".into(),
+        ));
+    }
+    out.push('<');
+    out.push_str(&element.tag);
+    for (name, value) in &element.attributes {
+        xml_attribute(out, name.as_str(), value);
+    }
+    if element.content.is_empty() {
+        out.push_str("/>");
+        return Ok(());
+    }
+    out.push('>');
+    for item in &element.content {
+        match item {
+            crate::records::HistoryElementContent::Element(child) => {
+                write_history_element(out, child)?;
+            }
+            crate::records::HistoryElementContent::Text(text) => xml_text(out, text),
+        }
+    }
+    out.push_str("</");
+    out.push_str(&element.tag);
+    out.push('>');
+    Ok(())
 }
 
 fn xml_attribute(out: &mut String, name: &str, value: &str) {
