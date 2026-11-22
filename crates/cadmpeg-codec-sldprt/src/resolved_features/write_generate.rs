@@ -167,14 +167,21 @@ pub(super) fn append_generated_sketch_markers(
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
-        .flat_map(|constraint| generated_marker_relations(constraint.definition.kind()))
+        .flat_map(|constraint| {
+            generated_marker_relations(constraint.definition.kind())
+                .into_iter()
+                .map(move |relation| (&constraint.id, relation))
+        })
         .collect::<Vec<_>>();
     let dimensions = ir
         .model
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
-        .filter_map(|constraint| generated_dimension(ir, constraint.definition.kind()))
+        .filter_map(|constraint| {
+            generated_dimension(ir, constraint.definition.kind())
+                .map(|dimension| dimension.map(|dimension| (&constraint.id, dimension)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if relations.is_empty() && dimensions.is_empty() {
         return Ok(());
@@ -215,9 +222,9 @@ pub(super) fn append_generated_sketch_markers(
             next_id += 1;
         }
     }
-    for relation in relations {
-        let reverse_owner =
-            match &relation {
+    for (constraint, relation) in relations {
+        let (reverse_owner, kind, links) = (|| -> Result<_, cadmpeg_core::CodecError> {
+            let reverse_owner = match &relation {
                 GeneratedMarkerRelation::AtIntersection(point, ..) => Some(
                     unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
                 ),
@@ -226,56 +233,60 @@ pub(super) fn append_generated_sketch_markers(
                 ),
                 _ => None,
             };
-        let (kind, links) = match relation {
-            GeneratedMarkerRelation::Unary(kind, entity) => {
-                let ids = marker_ids.get(entity).ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(format!(
+            let (kind, links) = match relation {
+                GeneratedMarkerRelation::Unary(kind, entity) => {
+                    let ids = marker_ids.get(entity).ok_or_else(|| {
+                        cadmpeg_core::CodecError::NotImplemented(format!(
                         "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
                         entity.as_str()
                     ))
-                })?;
-                let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
-                    Ok(unique) => [unique, unique],
-                    Err(_) => [ids.0, ids.1.unwrap_or(ids.0)],
-                };
-                (kind, links)
-            }
-            GeneratedMarkerRelation::Binary(kind, first, second) => (
-                kind,
-                [
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
-                ],
-            ),
-            GeneratedMarkerRelation::Loci(kind, first, second) => (
-                kind,
-                [
-                    unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
-                    unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
-                ],
-            ),
-            GeneratedMarkerRelation::Midpoint(point, entity) => (
-                SketchRelationKind::Midpoint,
-                [
-                    unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
-                ],
-            ),
-            GeneratedMarkerRelation::AtIntersection(_, first, second) => (
-                SketchRelationKind::AtIntersection,
-                [
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
-                    unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
-                ],
-            ),
-            GeneratedMarkerRelation::Symmetric(first, second, _) => (
-                SketchRelationKind::Symmetric,
-                [
-                    unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
-                    unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
-                ],
-            ),
-        };
+                    })?;
+                    let links =
+                        match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
+                            Ok(unique) => [unique, unique],
+                            Err(_) => [ids.0, ids.1.unwrap_or(ids.0)],
+                        };
+                    (kind, links)
+                }
+                GeneratedMarkerRelation::Binary(kind, first, second) => (
+                    kind,
+                    [
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                    ],
+                ),
+                GeneratedMarkerRelation::Loci(kind, first, second) => (
+                    kind,
+                    [
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                    ],
+                ),
+                GeneratedMarkerRelation::Midpoint(point, entity) => (
+                    SketchRelationKind::Midpoint,
+                    [
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
+                    ],
+                ),
+                GeneratedMarkerRelation::AtIntersection(_, first, second) => (
+                    SketchRelationKind::AtIntersection,
+                    [
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                        unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                    ],
+                ),
+                GeneratedMarkerRelation::Symmetric(first, second, _) => (
+                    SketchRelationKind::Symmetric,
+                    [
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                        unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                    ],
+                ),
+            };
+            Ok((reverse_owner, kind, links))
+        })()
+        .map_err(|error| constraint_named(error, constraint))?;
         if let Some(owner) = reverse_owner {
             let relation_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_core::CodecError::malformed(format_args!(
@@ -292,179 +303,182 @@ pub(super) fn append_generated_sketch_markers(
             )
         })?;
     }
-    for dimension in dimensions {
-        let (class, operands, parameter) = match dimension {
-            GeneratedDimension::PointPoint(first, second, parameter) => (
-                "sgPntPntDist",
-                vec![
-                    (
-                        FeatureInputOperandKind::D6,
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            first,
+    for (constraint, dimension) in dimensions {
+        let (class, operands, parameter) = (|| -> Result<_, cadmpeg_core::CodecError> {
+            Ok(match dimension {
+                GeneratedDimension::PointPoint(first, second, parameter) => (
+                    "sgPntPntDist",
+                    vec![
+                        (
                             FeatureInputOperandKind::D6,
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::D6,
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            second,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                first,
+                                FeatureInputOperandKind::D6,
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::D6,
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::PointLine(point, line, parameter) => (
-                "sgPntLineDist",
-                vec![
-                    (
-                        FeatureInputOperandKind::D6,
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            point,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                second,
+                                FeatureInputOperandKind::D6,
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::PointLine(point, line, parameter) => (
+                    "sgPntLineDist",
+                    vec![
+                        (
                             FeatureInputOperandKind::D6,
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::E1,
-                        generated_entity_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            line,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                point,
+                                FeatureInputOperandKind::D6,
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::E1,
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::LineLine(first, second, parameter) => (
-                "sgLLDist",
-                vec![
-                    (
-                        FeatureInputOperandKind::E1,
-                        generated_entity_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            first,
+                            generated_entity_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                line,
+                                FeatureInputOperandKind::E1,
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::LineLine(first, second, parameter) => (
+                    "sgLLDist",
+                    vec![
+                        (
                             FeatureInputOperandKind::E1,
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::E1,
-                        generated_entity_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            second,
+                            generated_entity_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                first,
+                                FeatureInputOperandKind::E1,
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::E1,
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::Horizontal(first, second, parameter) => (
-                "sgPntPntHorDist",
-                vec![
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            first,
+                            generated_entity_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                second,
+                                FeatureInputOperandKind::E1,
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::Horizontal(first, second, parameter) => (
+                    "sgPntPntHorDist",
+                    vec![
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            second,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                first,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::Vertical(first, second, parameter) => (
-                "sgPntPntVertDist",
-                vec![
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            first,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                second,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::Vertical(first, second, parameter) => (
+                    "sgPntPntVertDist",
+                    vec![
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        generated_locus_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            second,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                first,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::Angle(first, second, parameter) => (
-                "sgAnglDim",
-                vec![
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
-                        generated_entity_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            first,
+                            generated_locus_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                second,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DCB),
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::Angle(first, second, parameter) => (
+                    "sgAnglDim",
+                    vec![
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
-                        )?,
-                    ),
-                    (
-                        FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
-                        generated_entity_operand(
-                            ir,
-                            sketch,
-                            &marker_loci,
-                            second,
+                            generated_entity_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                first,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
+                            )?,
+                        ),
+                        (
                             FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
-                        )?,
-                    ),
-                ],
-                parameter,
-            ),
-            GeneratedDimension::Circle(entity, parameter) => (
-                "sgCircleDim",
-                vec![(
-                    FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
-                    generated_entity_operand(
-                        ir,
-                        sketch,
-                        &marker_loci,
-                        entity,
+                            generated_entity_operand(
+                                ir,
+                                sketch,
+                                &marker_loci,
+                                second,
+                                FeatureInputOperandKind::Native(NativeOperandTag::TAG_8DDA),
+                            )?,
+                        ),
+                    ],
+                    parameter,
+                ),
+                GeneratedDimension::Circle(entity, parameter) => (
+                    "sgCircleDim",
+                    vec![(
                         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
-                    )?,
-                )],
-                parameter,
-            ),
-        };
+                        generated_entity_operand(
+                            ir,
+                            sketch,
+                            &marker_loci,
+                            entity,
+                            FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
+                        )?,
+                    )],
+                    parameter,
+                ),
+            })
+        })()
+        .map_err(|error| constraint_named(error, constraint))?;
         let parameter = ir
             .model
             .parameters
@@ -512,6 +526,27 @@ pub(super) fn append_generated_sketch_markers(
         })?;
     }
     Ok(())
+}
+
+/// `error` with the sketch constraint whose relation or dimension it concerns
+/// named as a whole token (§3.2), so the history drop can leave out that
+/// constraint alone.
+fn constraint_named(
+    error: cadmpeg_core::CodecError,
+    constraint: &cadmpeg_ir::sketches::SketchConstraintId,
+) -> cadmpeg_core::CodecError {
+    match error {
+        cadmpeg_core::CodecError::NotImplemented(message) => {
+            cadmpeg_core::CodecError::NotImplemented(format!(
+                "{message}: sketch constraint {}",
+                constraint.as_str()
+            ))
+        }
+        cadmpeg_core::CodecError::Malformed(message) => cadmpeg_core::CodecError::malformed(
+            format_args!("{message}: sketch constraint {}", constraint.as_str()),
+        ),
+        other => other,
+    }
 }
 
 fn generated_dimension<'a>(

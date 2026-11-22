@@ -278,3 +278,46 @@ fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
             && loss.message.contains(&format!("edge {edge}"))
     }));
 }
+
+#[test]
+fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
+    let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>()
+    };
+    let bare = crate::writer::native_skeleton_losses(None, false);
+    assert_eq!(
+        codes(&bare),
+        [
+            SldprtLossCode::WriterNativeSkeletonUnlaidRuns.kind(),
+            SldprtLossCode::WriterNativeStreamsOmitted.kind(),
+        ]
+    );
+    let full = crate::writer::native_skeleton_losses(
+        Some((
+            "Contents/Keywords-0".to_owned(),
+            vec!["feature#a".to_owned(), "feature#b".to_owned()],
+        )),
+        true,
+    );
+    assert_eq!(
+        codes(&full),
+        [
+            SldprtLossCode::WriterNativeHistorySummary.kind(),
+            SldprtLossCode::WriterNativeSkeletonUnlaidRuns.kind(),
+            SldprtLossCode::WriterNativeStreamsOmitted.kind(),
+            SldprtLossCode::WriterNativeSketchLaneOrphan.kind(),
+        ]
+    );
+    assert!(full[0].message.starts_with(
+        "2 source feature(s) are written only in the cadmpeg history summary Contents/Keywords-0,"
+    ));
+    assert!(full[0].message.ends_with("feature#a, feature#b"));
+    let (runs, bytes) = crate::writer::native::detailing_zero_runs();
+    assert!(full[1].message.contains(&format!(
+        "{runs} runs ({bytes} bytes) of the moRelMgr_c detailing settings"
+    )));
+    assert!(full[2].message.contains("Contents/3DExperienceExchange2"));
+}

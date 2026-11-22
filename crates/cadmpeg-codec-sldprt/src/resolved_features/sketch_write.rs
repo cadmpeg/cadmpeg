@@ -112,6 +112,9 @@ pub(super) fn sketch_brep(
     let profiles = sketch.profiles.clone();
     let mut face_loops = Vec::new();
     let mut vertex_by_position = HashMap::<(u64, u64), VertexId>::new();
+    let mut vertex_count = 0usize;
+    // A curve that bounds several profiles is one edge, used once by each.
+    let mut written_edges = HashMap::<&cadmpeg_ir::sketches::SketchEntityId, EdgeId>::new();
     for (profile_index, profile) in profiles.iter().enumerate() {
         let endpoints = profile
             .iter()
@@ -156,60 +159,6 @@ pub(super) fn sketch_brep(
                     entity_use.entity.as_str()
                 ))
             })?;
-            let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
-            let start_vertex = sketch_vertex(
-                &mut ir,
-                &mut vertex_by_position,
-                &prefix,
-                generated.start,
-                origin,
-                u_axis,
-                v_axis,
-            )?;
-            let end_vertex = sketch_vertex(
-                &mut ir,
-                &mut vertex_by_position,
-                &prefix,
-                generated.end,
-                origin,
-                u_axis,
-                v_axis,
-            )?;
-            let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
-            let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
-            let delta = Vector3::new(
-                end_3d.x - start_3d.x,
-                end_3d.y - start_3d.y,
-                end_3d.z - start_3d.z,
-            );
-            let length = delta.norm();
-            if length == 0.0
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-            {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "sketch entity {} has zero length",
-                    entity.id()
-                )));
-            }
-            let curve_id = CurveId::compose(
-                &sketch_namespace(),
-                prefix
-                    .clone()
-                    .colon(cadmpeg_ir::identity_key!("curve"))
-                    .colon(profile_index)
-                    .colon(use_index),
-            );
-            let edge_id = EdgeId::compose(
-                &sketch_namespace(),
-                prefix
-                    .clone()
-                    .colon(cadmpeg_ir::identity_key!("edge"))
-                    .colon(profile_index)
-                    .colon(use_index),
-            );
             let coedge_id = CoedgeId::compose(
                 &sketch_namespace(),
                 prefix
@@ -218,27 +167,92 @@ pub(super) fn sketch_brep(
                     .colon(profile_index)
                     .colon(use_index),
             );
-            ir.geometry.curves.push(Curve {
-                parameter_range: None,
-                id: curve_id.clone(),
-                geometry: generated.curve,
-                source_object: None,
-                native_ref: None,
-            });
-            ir.geometry.edges.push(Edge {
-                id: edge_id.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(curve_id),
-                    Some(generated.param_range),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
-                    start_vertex,
-                    end_vertex,
-                )),
-                tolerance: None,
-                native_ref: None,
-            });
+            let edge_id = if let Some(edge_id) = written_edges.get(&entity_use.entity) {
+                edge_id.clone()
+            } else {
+                let generated = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
+                // A closed curve's seam vertex is its own: a vertex shared with
+                // another curve states that the two curves meet there.
+                let closed = same_sketch_point(generated.start, generated.end);
+                let start_vertex = sketch_vertex(
+                    &mut ir,
+                    (!closed).then_some(&mut vertex_by_position),
+                    &mut vertex_count,
+                    &prefix,
+                    generated.start,
+                    (origin, u_axis, v_axis),
+                )?;
+                let end_vertex = if closed {
+                    start_vertex.clone()
+                } else {
+                    sketch_vertex(
+                        &mut ir,
+                        Some(&mut vertex_by_position),
+                        &mut vertex_count,
+                        &prefix,
+                        generated.end,
+                        (origin, u_axis, v_axis),
+                    )?
+                };
+                let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
+                let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
+                let delta = Vector3::new(
+                    end_3d.x - start_3d.x,
+                    end_3d.y - start_3d.y,
+                    end_3d.z - start_3d.z,
+                );
+                let length = delta.norm();
+                if length == 0.0
+                    && matches!(
+                        *entity.geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                    )
+                {
+                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                        "sketch entity {} has zero length",
+                        entity.id()
+                    )));
+                }
+                let curve_id = CurveId::compose(
+                    &sketch_namespace(),
+                    prefix
+                        .clone()
+                        .colon(cadmpeg_ir::identity_key!("curve"))
+                        .colon(profile_index)
+                        .colon(use_index),
+                );
+                let edge_id = EdgeId::compose(
+                    &sketch_namespace(),
+                    prefix
+                        .clone()
+                        .colon(cadmpeg_ir::identity_key!("edge"))
+                        .colon(profile_index)
+                        .colon(use_index),
+                );
+                ir.geometry.curves.push(Curve {
+                    parameter_range: None,
+                    id: curve_id.clone(),
+                    geometry: generated.curve,
+                    source_object: None,
+                    native_ref: None,
+                });
+                ir.geometry.edges.push(Edge {
+                    id: edge_id.clone(),
+                    carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                        Some(curve_id),
+                        Some(generated.param_range),
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        start_vertex,
+                        end_vertex,
+                    )),
+                    tolerance: None,
+                    native_ref: None,
+                });
+                written_edges.insert(&entity_use.entity, edge_id.clone());
+                edge_id
+            };
             match &mut ring {
                 Some(ring) => ring
                     .try_push(coedge_id.clone())
@@ -268,6 +282,19 @@ pub(super) fn sketch_brep(
             })?),
             native_ref: None,
         });
+    }
+    // The coedges of a shared edge are radial partners, in profile order.
+    let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
+    for (index, coedge) in ir.geometry.coedges.iter().enumerate() {
+        radial.entry(coedge.edge.clone()).or_default().push(index);
+    }
+    for uses in radial.values().filter(|uses| uses.len() > 1) {
+        for (position, &index) in uses.iter().enumerate() {
+            let next = ir.geometry.coedges[uses[(position + 1) % uses.len()]]
+                .id
+                .clone();
+            ir.geometry.coedges[index].radial_next = next;
+        }
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
         let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
@@ -553,25 +580,31 @@ fn generated_sketch_curve(
     }
 }
 
+/// The vertex at `position`: the one of `shared` there, else a new one, which
+/// joins `shared` when it is given.
 fn sketch_vertex(
     ir: &mut cadmpeg_ir::CadIr,
-    vertices: &mut HashMap<(u64, u64), VertexId>,
+    shared: Option<&mut HashMap<(u64, u64), VertexId>>,
+    count: &mut usize,
     prefix: &cadmpeg_ir::ids::IdentityKey,
     position: Point2,
-    origin: Point3,
-    u_axis: Vector3,
-    v_axis: Vector3,
+    (origin, u_axis, v_axis): (Point3, Vector3, Vector3),
 ) -> Result<VertexId, cadmpeg_core::CodecError> {
-    if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
-        same_sketch_point(
-            Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
-            position,
-        )
+    if let Some((_, id)) = shared.as_ref().and_then(|vertices| {
+        vertices.iter().find(|((u, v), _)| {
+            same_sketch_point(
+                Point2::new(f64::from_bits(*u), f64::from_bits(*v)),
+                position,
+            )
+        })
     }) {
         return Ok(id.clone());
     }
     let key = (position.u.to_bits(), position.v.to_bits());
-    let ordinal = vertices.len();
+    let ordinal = *count;
+    *count = ordinal.checked_add(1).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("source-less SLDPRT sketch vertex count overflows")
+    })?;
     let point_id = PointId::compose(
         &sketch_namespace(),
         prefix
@@ -600,7 +633,9 @@ fn sketch_vertex(
         tolerance: None,
         native_ref: None,
     });
-    vertices.insert(key, vertex_id.clone());
+    if let Some(vertices) = shared {
+        vertices.insert(key, vertex_id.clone());
+    }
     Ok(vertex_id)
 }
 
