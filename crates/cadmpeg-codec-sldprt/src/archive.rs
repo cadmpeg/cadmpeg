@@ -183,12 +183,21 @@ pub(crate) fn coverage(
 /// with a class declaration, or with a u16 and then a class declaration as in
 /// a compound-file part, carries none.
 pub(crate) fn resolved_count(resolved: &[u8]) -> Option<u32> {
-    let declaration_at =
-        |at: usize| resolved.get(at..at + NEW_CLASS_TAG.len()) == Some(&NEW_CLASS_TAG[..]);
-    if declaration_at(0) || declaration_at(COMPOUND_OPENING_LEN) {
+    if declaration_at(resolved, 0) || declaration_at(resolved, COMPOUND_OPENING_LEN) {
         return None;
     }
     View::u32_le_at(resolved, 0)
+}
+
+/// Whether a `ResolvedFeatures` stream opens with a u16 and then a class
+/// declaration: a compound-file part's stream, which continues the
+/// `Config-N` map from its end without stating that count.
+pub(crate) fn continues_unstated_count(resolved: &[u8]) -> bool {
+    !declaration_at(resolved, 0) && declaration_at(resolved, COMPOUND_OPENING_LEN)
+}
+
+fn declaration_at(stream: &[u8], at: usize) -> bool {
+    stream.get(at..at + NEW_CLASS_TAG.len()) == Some(&NEW_CLASS_TAG[..])
 }
 
 /// `contents/config-N` with a decimal `N`, in normalised lower case.
@@ -238,6 +247,20 @@ pub(crate) fn class_index_map(
             .filter_map(|(&index, &name)| Some((u32::try_from(index).ok()?, name.to_owned())))
             .collect(),
     ))
+}
+
+/// The map count one configuration object stream ends at, from a walk no
+/// stated count bounds: `None` when the walk's map is inconsistent. No
+/// count reconciles the walk, so the count can be wrong.
+pub(crate) fn unstated_map_count(
+    payload: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<u32>, CodecError> {
+    let walker = walked(payload, None, ctx)?;
+    if !walker.consistent()? {
+        return Ok(None);
+    }
+    Ok(u32::try_from(walker.next).ok())
 }
 
 /// Walks `payload` from its first map index. When the name tags do not give

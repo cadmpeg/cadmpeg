@@ -60,6 +60,7 @@ use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{
     ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane, FeatureInputScalarRole,
 };
+use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::resolved_features::parameter_classes::{stated_parameters, StatedParameter};
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
@@ -102,6 +103,7 @@ impl<'a> Decoded<'a> {
     pub(super) fn new(
         parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
         lanes: &'a [FeatureInputLane],
+        configuration_maps: &ConfigurationMaps,
     ) -> Self {
         let mut classes = HashMap::new();
         for scalar in lanes.iter().flat_map(|lane| &lane.scalars) {
@@ -120,7 +122,7 @@ impl<'a> Decoded<'a> {
         let mut stated = HashMap::new();
         let mut named = HashMap::<_, Vec<_>>::new();
         for lane in lanes {
-            let lane_stated = stated_parameters(lane);
+            let lane_stated = stated_parameters(lane, configuration_maps.get(&lane.id));
             let names = lane
                 .names
                 .iter()

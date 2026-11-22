@@ -3,8 +3,14 @@
 use super::super::names::{class_declarations, object_names};
 use super::super::scalars::named_scalars;
 use super::super::{COMPACT_SCALAR_HEADER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::{stated_parameters, StatedParameter};
+use super::{stated_parameters, ConfigurationMap, StatedParameter};
 use crate::records::FeatureInputLane;
+use crate::test_support::carchive::{config_object_stream, config_object_stream_declaring};
+use crate::test_support::container::{make_block, outer_header, scan};
+
+/// The map count the synthetic `Config-0` stream of
+/// [`config_object_stream_declaring`] ends at; it declares its class at 7.
+const CONFIGURATION_MAP_COUNT: u32 = 9;
 
 /// The class index the name records of these streams take.
 const NAME_CLASS: u16 = 0x72;
@@ -116,13 +122,43 @@ impl Stream {
     }
 }
 
+/// The lane the decoder reads from a part whose `Config-0` stream is
+/// `config` and whose `Config-0-ResolvedFeatures` stream is `stream`, and the
+/// `Config-N` class map the decoder gives that lane.
+fn continued_lane(config: &[u8], stream: &Stream) -> (FeatureInputLane, Option<ConfigurationMap>) {
+    let mut file = outer_header();
+    file.extend_from_slice(&make_block(0x20, "Contents/Config-0", config));
+    file.extend_from_slice(&make_block(
+        0x21,
+        "Contents/Config-0-ResolvedFeatures",
+        &stream.0,
+    ));
+    let scan = scan(&file);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let (mut lanes, _, _, mut maps) = super::super::assembly::lanes(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+        &mut Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(lanes.len(), 1);
+    let lane = lanes.remove(0);
+    let configuration = maps.remove(&lane.id);
+    (lane, configuration)
+}
+
 fn metres(value: f64) -> [u8; 8] {
     value.to_le_bytes()
 }
 
-/// The parameter each scalar states, by scalar name in stream order.
-fn stated_by_name(lane: &FeatureInputLane) -> Vec<(String, Option<StatedParameter>)> {
-    let stated = stated_parameters(lane);
+/// The parameter each scalar states, by scalar name in stream order, where
+/// the lane continues `configuration`.
+fn stated_in(
+    lane: &FeatureInputLane,
+    configuration: Option<&ConfigurationMap>,
+) -> Vec<(String, Option<StatedParameter>)> {
+    let stated = stated_parameters(lane, configuration);
     let names = lane
         .names
         .iter()
@@ -137,6 +173,12 @@ fn stated_by_name(lane: &FeatureInputLane) -> Vec<(String, Option<StatedParamete
             )
         })
         .collect()
+}
+
+/// The parameter each scalar of a lane that continues no `Config-N` map
+/// states, by scalar name in stream order.
+fn stated_by_name(lane: &FeatureInputLane) -> Vec<(String, Option<StatedParameter>)> {
+    stated_in(lane, None)
 }
 
 #[test]
@@ -363,6 +405,89 @@ fn a_stream_that_opens_with_a_declaration_states_no_map_count() {
         vec![
             ("D1".into(), Some(StatedParameter::Length(0.01))),
             ("D2".into(), Some(StatedParameter::Length(0.02))),
+        ]
+    );
+}
+
+#[test]
+fn a_token_below_the_map_count_names_the_class_config_n_declares() {
+    // `Config-0` declares `moLengthParameter_c` at 7; the lane's own
+    // declarations take 9 on.
+    let mut stream = Stream::counted(CONFIGURATION_MAP_COUNT);
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moAngleParameter_c")
+        .scalar("A1", &metres(0.5), 0, 7)
+        .token(9)
+        .zero_word()
+        .token(7)
+        .scalar("D1", &metres(0.017), 0, 8);
+    let (lane, configuration) = continued_lane(&config_object_stream(), &stream);
+    assert_eq!(
+        stated_in(&lane, configuration.as_ref()),
+        vec![
+            ("A1".into(), Some(StatedParameter::Angle(0.5))),
+            ("D1".into(), Some(StatedParameter::Length(0.017))),
+        ]
+    );
+}
+
+#[test]
+fn a_token_config_n_holds_no_parameter_class_at_names_none() {
+    // `Config-0` holds `moNoteData_c` at 7. The lane's own length class
+    // takes 11, after `sgPntPntDist` and its object at 9 and 10.
+    let mut stream = Stream::counted(CONFIGURATION_MAP_COUNT);
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .token(9)
+        .zero_word()
+        .token(7)
+        .scalar("D2", &metres(0.02), 0, 8)
+        .token(9)
+        .zero_word()
+        .token(11)
+        .scalar("D3", &metres(0.03), 0, 9);
+    let (lane, configuration) =
+        continued_lane(&config_object_stream_declaring("moNoteData_c"), &stream);
+    assert_eq!(
+        stated_in(&lane, configuration.as_ref()),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.01))),
+            ("D2".into(), None),
+            ("D3".into(), Some(StatedParameter::Length(0.03))),
+        ]
+    );
+}
+
+#[test]
+fn a_compound_lane_takes_no_class_from_its_declarations_for_a_config_n_token() {
+    // The compound-file stream states no count; `Config-0` ends at 9. Token
+    // 7 is first used after the lane's only parameter declaration, so the
+    // lane's declarations alone would give it the length class that
+    // `Config-0` holds at 7 for an angle.
+    let mut stream = Stream::compound();
+    stream
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .scalar("D1", &metres(0.01), 0, 7)
+        .token(9)
+        .zero_word()
+        .token(7)
+        .scalar("D2", &metres(0.02), 0, 8);
+    let (lane, configuration) = continued_lane(
+        &config_object_stream_declaring("moAngleParameter_c"),
+        &stream,
+    );
+    assert_eq!(
+        stated_in(&lane, configuration.as_ref()),
+        vec![
+            ("D1".into(), Some(StatedParameter::Length(0.01))),
+            ("D2".into(), None),
         ]
     );
 }

@@ -56,6 +56,38 @@ impl StatedParameter {
     }
 }
 
+/// The `Config-N` class map a `ResolvedFeatures` lane's class tokens continue
+/// (`docs/formats/sldprt.md` §2.2): the lane's own declarations take the
+/// indices from `end` on, and a token below `end` names the class `Config-N`
+/// holds at that index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigurationMap {
+    end: u32,
+    /// The parameter class at each index of the `Config-N` map that holds
+    /// one; `None` when no walk of `Config-N` reconciles with `end`.
+    parameters: Option<BTreeMap<u16, ArchiveParameterClass>>,
+}
+
+impl ConfigurationMap {
+    /// The map that ends at `end`, with the `Config-N` class at each index
+    /// below it from `classes`, a walk that reconciles with `end`.
+    pub(crate) fn new(end: u32, classes: Option<&BTreeMap<u32, String>>) -> Self {
+        let parameters = classes.map(|classes| {
+            classes
+                .iter()
+                .filter(|&(&index, _)| index < end)
+                .filter_map(|(&index, name)| {
+                    Some((
+                        u16::try_from(index).ok()?,
+                        ArchiveParameterClass::from_class_name(name)?,
+                    ))
+                })
+                .collect()
+        });
+        Self { end, parameters }
+    }
+}
+
 /// What a scalar's parameter-class slot holds.
 #[derive(Debug, Clone, Copy)]
 enum Slot<'a> {
@@ -64,10 +96,14 @@ enum Slot<'a> {
 }
 
 /// The parameter each scalar of `lane` states, by scalar id. A scalar whose
-/// slot holds a class token states the class the lane's declarations give
-/// that token (see [`token_classes`]); a scalar whose class is not a
-/// parameter class, or whose token no declaration answers, states none.
-pub(crate) fn stated_parameters(lane: &FeatureInputLane) -> HashMap<&str, StatedParameter> {
+/// slot holds a class token states the class `configuration`, the
+/// `Config-N` map the lane continues, or the lane's declarations give that
+/// token (see [`token_classes`]); a scalar whose class is not a parameter
+/// class, or whose token neither answers, states none.
+pub(crate) fn stated_parameters<'l>(
+    lane: &'l FeatureInputLane,
+    configuration: Option<&ConfigurationMap>,
+) -> HashMap<&'l str, StatedParameter> {
     let payload = lane.native_payload.as_slice();
     let name_offsets = lane
         .names
@@ -96,7 +132,12 @@ pub(crate) fn stated_parameters(lane: &FeatureInputLane) -> HashMap<&str, Stated
             Some((scalar, name, slot(payload, &declarations, name)?))
         })
         .collect::<Vec<_>>();
-    let tokens = token_classes(payload, &lane.classes, &slots);
+    let tokens = token_classes(
+        configuration,
+        resolved_count(payload),
+        &lane.classes,
+        &slots,
+    );
     slots
         .into_iter()
         .filter_map(|(scalar, _, slot)| {
@@ -168,18 +209,45 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
 }
 
 /// The parameter class each class-token index of the lane's parameter slots
-/// names. A token names the class declared at that index of the stream's
-/// class map; declarations take ascending indices in stream order, and a token
-/// follows its class's declaration. The tokens of driving and display scalars,
-/// ascending, are given the lane's parameter-class declarations, in stream
-/// order, such that both orders agree and each token is first used after its
-/// declaration. A token to which every such assignment gives one class has
-/// that class; a token the assignments disagree on, or that no assignment
-/// exists for, is not named. A token below the stream's opening map count
-/// (see [`resolved_count`]) names a class of the `Config-N` map, which the
-/// lane does not hold.
+/// names. A token below the end of the `Config-N` map the lane continues
+/// (`configuration`, else the stream's opening map count `stated`) names the
+/// class `Config-N` holds at that index, read from `configuration` when its
+/// walk reconciles; the lane's declarations name the other tokens (see
+/// [`declared_token_classes`]).
 fn token_classes(
-    payload: &[u8],
+    configuration: Option<&ConfigurationMap>,
+    stated: Option<u32>,
+    classes: &[FeatureInputClass],
+    slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
+) -> HashMap<u16, ArchiveParameterClass> {
+    let end = configuration
+        .map(|configuration| configuration.end)
+        .or(stated);
+    let own = slots
+        .iter()
+        .copied()
+        .filter(|&(_, _, slot)| {
+            matches!(slot, Slot::Token(index) if end.is_none_or(|end| u32::from(index) >= end))
+        })
+        .collect::<Vec<_>>();
+    let mut named = declared_token_classes(classes, &own);
+    if let Some(parameters) =
+        configuration.and_then(|configuration| configuration.parameters.as_ref())
+    {
+        named.extend(parameters.iter().map(|(&index, &class)| (index, class)));
+    }
+    named
+}
+
+/// The parameter class the lane's declarations give each class-token index
+/// of `slots`. Declarations take ascending indices in stream order, and a
+/// token follows its class's declaration. The tokens of driving and display
+/// scalars, ascending, are given the lane's parameter-class declarations, in
+/// stream order, such that both orders agree and each token is first used
+/// after its declaration. A token to which every such assignment gives one
+/// class has that class; a token the assignments disagree on, or that no
+/// assignment exists for, is not named.
+fn declared_token_classes(
     classes: &[FeatureInputClass],
     slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
 ) -> HashMap<u16, ArchiveParameterClass> {
@@ -204,10 +272,7 @@ fn token_classes(
         .into_iter()
         .filter_map(|index| Some((index, *first_use.get(&index)?)))
         .collect::<Vec<_>>();
-    if tokens.is_empty()
-        || resolved_count(payload)
-            .is_some_and(|count| tokens.iter().any(|&(index, _)| u32::from(index) < count))
-    {
+    if tokens.is_empty() {
         return HashMap::new();
     }
     let mut declared = classes

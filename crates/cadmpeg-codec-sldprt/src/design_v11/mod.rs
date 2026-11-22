@@ -46,6 +46,7 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, Unread};
 
 pub(crate) use names::Persistent;
@@ -56,6 +57,8 @@ pub(crate) struct Part<'a> {
     pub(crate) histories: &'a [FeatureHistory],
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
+    /// The `Config-N` class map each lane continues, by lane id.
+    pub(crate) configuration_maps: &'a ConfigurationMaps,
     /// The bodies of the current geometry: those of the active
     /// configuration.
     pub(crate) bodies: Vec<BodyId>,
@@ -83,6 +86,7 @@ pub(crate) fn project(
     let Part {
         histories,
         lanes,
+        configuration_maps,
         bodies,
         persistent,
         length,
@@ -106,7 +110,7 @@ pub(crate) fn project(
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     let readings = parameters::Readings {
-        decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
+        decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
         bound: typed.bound,
         measured: typed.measured,

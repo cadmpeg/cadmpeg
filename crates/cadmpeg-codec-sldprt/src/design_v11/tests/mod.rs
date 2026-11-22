@@ -876,7 +876,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     let (parameters, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             bound: typed.bound,
             measured: typed.measured,
@@ -1077,7 +1081,11 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
     let (parameters, _) = entries.parameters(
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             bound: typed.bound,
             measured: typed.measured,
