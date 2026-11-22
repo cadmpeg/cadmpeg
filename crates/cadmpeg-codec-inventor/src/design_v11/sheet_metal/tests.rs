@@ -340,7 +340,7 @@ fn sheet_metal_unfold_entry_naming_no_rule_is_unresolved() {
 }
 
 #[test]
-fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_no_loss() {
+fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_only_the_relief_loss() {
     use unfold::tests::{rule, selection, RULE_ORDINAL};
     let (rules, losses) = projected_document(
         vec![rule("Unfold_A", "0.44 ul")],

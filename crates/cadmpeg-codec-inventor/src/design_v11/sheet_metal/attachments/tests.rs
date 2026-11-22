@@ -169,8 +169,12 @@ fn native_validation_rejects_an_altered_attachment_pick() {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        // A refused contour plate stays a native legacy operation.
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            LegacyOperation::StoredGeometry {},
+            LegacyOperation::Native {
+                kind: "contour_flange".into(),
+                parameters: BTreeMap::new(),
+            },
         )),
         native_ref: Some(source.id()),
     });

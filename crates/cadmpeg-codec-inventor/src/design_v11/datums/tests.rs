@@ -36,8 +36,7 @@ fn project_operation(operation: LegacyOperation) -> FeatureOperation {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    crate::design_v11::project_history(&ctx, &mut ir, &BTreeMap::default(), false)
-        .expect("history");
+    crate::design_v11::project_history(&ctx, &mut ir, &BTreeMap::default(), false).expect("history");
     project(&ctx, &mut ir).expect("datums");
     assert_eq!(ir.model, original);
     assert_eq!(ir.design.features[0].id, ir.model.features[0].id);

@@ -38,15 +38,7 @@ pub(super) fn project(
             parameter,
         )
     }));
-    let properties = unique_index(inventory.properties.iter().map(|property| {
-        (
-            (
-                property.identity.segment_token.as_str(),
-                property.identity.record_ordinal,
-            ),
-            property,
-        )
-    }));
+    let properties = property_index(inventory);
     let values = unique_index(ir.model.parameters.iter().filter_map(|parameter| {
         Some((parameter.native_ref.as_deref()?, parameter.value.as_ref()?))
     }));
@@ -63,16 +55,11 @@ pub(super) fn project(
         }
     };
     let style_factor = |style: &Style| {
-        let mut named = parameters.iter().filter(|parameter| {
-            parameter.identity.segment_token == style.identity.segment_token
-                && parameter.name == STYLE_FACTOR_NAME
-        });
-        let Some(parameter) = named.next() else {
-            return StyleFactor::Absent;
+        let parameter = match style_factor_source(parameters, style) {
+            FactorSource::Absent => return StyleFactor::Absent,
+            FactorSource::Several => return StyleFactor::Unresolved,
+            FactorSource::One(parameter) => parameter,
         };
-        if named.next().is_some() {
-            return StyleFactor::Unresolved;
-        }
         match values.get(parameter.id().as_str()).and_then(Option::as_ref) {
             Some(ParameterValue::Real(value)) => StyleFactor::Value(*value),
             _ => StyleFactor::Unresolved,
@@ -117,11 +104,7 @@ pub(super) fn project(
     )?;
     for (rule, style) in projected.iter_mut().zip(&inventory.sheet_metal_styles) {
         if active.is_none() && matches!(rule.allowance, Some(BendAllowance::KFactor(_))) {
-            let mut factors = parameters.iter().filter(|parameter| {
-                parameter.identity.segment_token == style.identity.segment_token
-                    && parameter.name == STYLE_FACTOR_NAME
-            });
-            if let Some(source) = factors.next().filter(|_| factors.next().is_none()) {
+            if let FactorSource::One(source) = style_factor_source(parameters, style) {
                 if let Some(parameter) = design
                     .get(source.id().as_str())
                     .and_then(Option::as_ref)
@@ -193,6 +176,45 @@ pub(super) fn project(
 /// Name of the unitless K-factor parameter in the parameter segment of a
 /// sheet-metal style.
 const STYLE_FACTOR_NAME: &str = "KFactor";
+
+/// The `KFactor` parameters of a style's segment.
+enum FactorSource<'a> {
+    Absent,
+    Several,
+    One(&'a crate::design::PmDcParameter),
+}
+
+/// The `KFactor` parameter of `style`'s segment.
+fn style_factor_source<'a>(
+    parameters: &'a [crate::design::PmDcParameter],
+    style: &Style,
+) -> FactorSource<'a> {
+    let mut named = parameters.iter().filter(|parameter| {
+        parameter.identity.segment_token == style.identity.segment_token
+            && parameter.name == STYLE_FACTOR_NAME
+    });
+    match (named.next(), named.next()) {
+        (None, _) => FactorSource::Absent,
+        (Some(parameter), None) => FactorSource::One(parameter),
+        (Some(_), Some(_)) => FactorSource::Several,
+    }
+}
+
+/// The feature properties of `inventory` by segment token and record
+/// ordinal; a repeated key holds `None`.
+pub(super) fn property_index(
+    inventory: &FeatureInventory,
+) -> std::collections::HashMap<(&str, u32), Option<&crate::feature::PmDcFeatureProperty>> {
+    unique_index(inventory.properties.iter().map(|property| {
+        (
+            (
+                property.identity.segment_token.as_str(),
+                property.identity.record_ordinal,
+            ),
+            property,
+        )
+    }))
+}
 
 /// The active unfold rule of the document.
 struct DocumentRule<'a> {
@@ -319,15 +341,7 @@ pub(super) fn feature_reliefs(
             .iter()
             .map(|source| (source.id(), source)),
     );
-    let properties = unique_index(inventory.properties.iter().map(|property| {
-        (
-            (
-                property.identity.segment_token.as_str(),
-                property.identity.record_ordinal,
-            ),
-            property,
-        )
-    }));
+    let properties = property_index(inventory);
     let raw = unique_index(parameters.iter().map(|parameter| {
         (
             (

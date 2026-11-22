@@ -72,61 +72,24 @@ pub(super) fn face(value: &FaceSelection) -> Projected<SetSelection> {
     match value {
         FaceSelection::Faces(faces) if faces.is_empty() => selection(Vec::new()),
         FaceSelection::Native(text) => native(text),
-        FaceSelection::Resolved {
-            faces,
-            native: text,
-        } => {
-            let mut pick = named(text, None)?;
-            pick.resolved = Some(
-                faces
-                    .iter()
-                    .cloned()
-                    .map(cadmpeg_ir::design::refs::EntityRef::Face)
-                    .collect(),
-            );
-            selection(vec![pick])
-        }
-        FaceSelection::Generated {
-            faces,
-            native: text,
-        } => {
-            let mut result = selection(
-                faces
-                    .iter()
-                    .map(|face| {
-                        named(
-                            face.local_id.as_str(),
-                            Some(NativeOwner::Feature(face.feature.clone())),
-                        )
-                    })
-                    .collect::<Projected<_>>()?,
-            )?;
-            result.native = Some(
-                vec![text.as_str().to_owned()]
-                    .try_into()
-                    .map_err(|_| "a face group is blank")?,
-            );
-            Ok(result)
-        }
         FaceSelection::Historical {
             faces,
             native: text,
             ..
-        } => named_group(
+        } => source_group(
             text.as_str(),
             faces.iter().map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
+            &[],
         ),
         FaceSelection::HistoricalPartial {
             faces,
             unresolved,
             native: text,
             ..
-        } => named_group(
+        } => source_group(
             text.as_str(),
-            faces
-                .iter()
-                .map(cadmpeg_ir::ids::HistoricalFaceId::as_str)
-                .chain(unresolved.iter().map(String::as_str)),
+            faces.iter().map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
+            unresolved,
         ),
 
         _ => Err("the face selection has no persistent name"),
@@ -150,10 +113,42 @@ fn named_group<'a, O: MemberOrder>(
     Ok(value)
 }
 
+/// The native name of a historical face or edge: the source selector index
+/// that the input state keys it by within the owning feature's segment.
+fn source_pick(id: &str) -> Projected<Picked> {
+    let selector = id
+        .rsplit_once('-')
+        .and_then(|(_, selector)| selector.parse::<u32>().ok())
+        .ok_or("a historical selection has no source selector")?;
+    let mut pick = picked(PickTarget::Native { within: None });
+    pick.native = Some(NativeName {
+        codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+        value: NativeNameValue::Integers(vec![i64::from(selector)]),
+    });
+    Ok(pick)
+}
+
+fn source_group<'a, O: MemberOrder>(
+    group: &str,
+    ids: impl Iterator<Item = &'a str>,
+    unresolved: &[String],
+) -> Projected<Selection<O>> {
+    let mut picks = ids.map(source_pick).collect::<Projected<Vec<_>>>()?;
+    for name in unresolved {
+        picks.push(named(name, None)?);
+    }
+    let mut value = selection(picks)?;
+    value.native = Some(
+        vec![group.to_owned()]
+            .try_into()
+            .map_err(|_| "a native group is blank")?,
+    );
+    Ok(value)
+}
+
 fn historical_edges<'a>(
     state: &cadmpeg_ir::ids::FeatureInputTopologyId,
     edges: impl Iterator<Item = &'a cadmpeg_ir::ids::HistoricalEdgeId>,
-    unresolved: &[String],
     group: &str,
     inputs: &[FeatureInputTopology],
 ) -> Projected<OrderedSelection> {
@@ -167,7 +162,7 @@ fn historical_edges<'a>(
         if !input.edges.contains(edge) {
             return Err("the selected edge is absent from its state");
         }
-        let mut pick = named(edge.as_str(), None)?;
+        let mut pick = source_pick(edge.as_str())?;
         let mut samples = input
             .edge_geometry
             .iter()
@@ -191,9 +186,6 @@ fn historical_edges<'a>(
         }
         picks.push(pick);
     }
-    for name in unresolved {
-        picks.push(named(name, None)?);
-    }
     let mut value = selection(picks)?;
     value.native = Some(
         vec![group.to_owned()]
@@ -209,20 +201,6 @@ pub(super) fn edge(
 ) -> Projected<OrderedSelection> {
     match value {
         EdgeSelection::Native(text) => native(text),
-        EdgeSelection::Resolved {
-            edges,
-            native: text,
-        } => {
-            let mut pick = named(text, None)?;
-            pick.resolved = Some(
-                edges
-                    .iter()
-                    .cloned()
-                    .map(cadmpeg_ir::design::refs::EntityRef::Edge)
-                    .collect(),
-            );
-            selection(vec![pick])
-        }
         EdgeSelection::Generated {
             edges,
             native: text,
@@ -249,19 +227,7 @@ pub(super) fn edge(
             state,
             edges,
             native: text,
-        } => historical_edges(state, edges.iter(), &[], text.as_str(), inputs),
-        EdgeSelection::HistoricalPartial {
-            state,
-            edges,
-            unresolved,
-            native: text,
-        } => historical_edges(
-            state,
-            edges.iter(),
-            unresolved.as_slice(),
-            text.as_str(),
-            inputs,
-        ),
+        } => historical_edges(state, edges.iter(), text.as_str(), inputs),
 
         _ => Err("the edge selection has no persistent name"),
     }
@@ -270,50 +236,9 @@ pub(super) fn edge(
 pub(super) fn bodies(value: &BodySelection) -> Projected<OrderedSelection> {
     match value {
         BodySelection::Native(text) => native(text),
-        BodySelection::Resolved {
-            bodies,
-            native: text,
-        } => {
-            let mut pick = named(text, None)?;
-            pick.resolved = Some(
-                bodies
-                    .iter()
-                    .cloned()
-                    .map(cadmpeg_ir::design::refs::EntityRef::Body)
-                    .collect(),
-            );
-            selection(vec![pick])
-        }
-        BodySelection::Generated {
-            bodies,
-            native: text,
-        } => {
-            let mut result = selection(
-                bodies
-                    .iter()
-                    .map(|body| {
-                        named(
-                            body.local_id.as_str(),
-                            Some(NativeOwner::Feature(body.feature.clone())),
-                        )
-                    })
-                    .collect::<Projected<_>>()?,
-            )?;
-            result.native = Some(
-                vec![text.as_str().to_owned()]
-                    .try_into()
-                    .map_err(|_| "a body group is blank")?,
-            );
-            Ok(result)
-        }
-        BodySelection::Historical {
-            bodies,
-            native: text,
-            ..
-        } => named_group(
-            text.as_str(),
-            bodies.iter().map(cadmpeg_ir::ids::HistoricalBodyId::as_str),
-        ),
+        // The bodies are those of the final geometry, not of the stored
+        // anchored state, so the pick keeps only its native name.
+        BodySelection::Resolved { native: text, .. } => selection(vec![named(text, None)?]),
         BodySelection::Local {
             bodies,
             native: text,
@@ -322,23 +247,6 @@ pub(super) fn bodies(value: &BodySelection) -> Projected<OrderedSelection> {
             names
                 .iter()
                 .map(|name| named(name, None))
-                .collect::<Projected<_>>()?,
-        ),
-        BodySelection::ResolvedSet { members } => selection(
-            members
-                .iter()
-                .map(|member| {
-                    let (body, text) = member.clone().into_parts();
-                    let mut pick = named(&text, None)?;
-                    pick.resolved = Some(vec![cadmpeg_ir::design::refs::EntityRef::Body(body)]);
-                    Ok(pick)
-                })
-                .collect::<Projected<_>>()?,
-        ),
-        BodySelection::HistoricalSet { members, .. } => selection(
-            members
-                .iter()
-                .map(|member| named(&member.clone().into_parts().1, None))
                 .collect::<Projected<_>>()?,
         ),
         _ => Err("the body selection has no persistent name"),

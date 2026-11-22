@@ -63,6 +63,7 @@ fn project_part(ir: &mut CadIr) {
         })
         .collect();
     project_history(&ctx, ir, &flags, false).expect("projection");
+    place_current_bodies(ir).expect("placement");
 }
 
 fn timeline(ir: &CadIr) -> (&Vec<Member>, &Rollback) {
@@ -415,83 +416,6 @@ fn native_design_validation_uses_the_decoder_projection() {
 }
 
 #[test]
-fn source_metadata_and_topology_have_pinned_native_losses() {
-    use crate::loss::InventorLossCode;
-    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
-    use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
-    let mut source = feature("native", 0);
-    property(&mut source, "source_control", "true");
-    let mut ir = part(vec![source.clone()]);
-    ir.model
-        .feature_input_topologies
-        .push(FeatureInputTopology {
-            id: FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic")
-                .expect("id"),
-            input_of: source.id,
-            bodies: DistinctMembers::default(),
-            faces: std::iter::once(
-                HistoricalFaceId::mint("inventor:input-face#synthetic").expect("id"),
-            )
-            .collect(),
-            edges: DistinctMembers::default(),
-            vertices: DistinctMembers::default(),
-            edge_geometry: Vec::new(),
-            native_ref: None,
-        });
-    project_part(&mut ir);
-    let mut losses = Vec::new();
-    native_losses(&ir, &mut losses);
-    let codes = losses
-        .iter()
-        .map(|loss| loss.code.local_code())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        codes,
-        [
-            InventorLossCode::FeatureDesignMetadataNative.code(),
-            InventorLossCode::FeatureDesignTopologyNative.code()
-        ]
-    );
-    assert_eq!(
-        codes,
-        [
-            "feature.design-metadata-native",
-            "feature.design-topology-native"
-        ]
-    );
-}
-
-#[test]
-fn legacy_history_geometry_has_a_pinned_loss() {
-    use crate::loss::InventorLossCode;
-    use cadmpeg_ir::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-    use cadmpeg_ir::ids::HistoryBodyId;
-    let mut ir = part(Vec::new());
-    let body = serde_json::from_value(
-        serde_json::json!({"id":"inventor:history-body:body#synthetic","kind":"solid"}),
-    )
-    .expect("body");
-    ir.model.history_bodies.push(HistoryBody {
-        id: HistoryBodyId::mint("inventor:history-body:nest#synthetic").expect("id"),
-        produced_by: Some(FeatureId::mint("inventor:design:feature#base").expect("id")),
-        consumed_by: None,
-        state: HistoryStateRef {
-            ordinal: 2,
-            identifier: 77,
-        },
-        topology: Box::new(BodyTopology::new(body)),
-    });
-    let mut losses = Vec::new();
-    native_losses(&ir, &mut losses);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code.local_code(),
-        InventorLossCode::FeatureDesignHistoryLegacy.code()
-    );
-    assert_eq!(losses[0].code.local_code(), "feature.design-history-legacy");
-}
-
-#[test]
 fn native_operation_keeps_all_source_parameter_strings() {
     let parameters = BTreeMap::from([
         (
@@ -562,40 +486,11 @@ pub(super) fn validate_from_native(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-    let Some(namespace) = ir.native.namespace("inventor") else {
-        return super::operations::validate(ir);
-    };
-    let mut features = crate::feature::FeatureInventory::default();
-    features.features = namespace.arena_as_for_decode(ctx, "pm_dc_features")?;
-    features.pattern_features = namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?;
-    features.work_planes = namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?;
-    features.properties = namespace.arena_as_for_decode(ctx, "pm_dc_feature_properties")?;
-    features.sheet_metal_styles = namespace.arena_as_for_decode(ctx, "pm_dc_sheet_metal_styles")?;
-    features.sheet_metal_flanges =
-        namespace.arena_as_for_decode(ctx, "pm_dc_sheet_metal_flanges")?;
-    features.sheet_metal_unfold_rules =
-        namespace.arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_rules")?;
-    features.sheet_metal_unfold_selections =
-        namespace.arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_selections")?;
-    let sketches = crate::sketch::SketchInventory {
-        sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
-        entities: Vec::new(),
-        transforms: Vec::new(),
-        directions: Vec::new(),
-        constraints: Vec::new(),
-        text_members: Vec::new(),
-        issues: Vec::new(),
-    };
-    let parameters: Vec<crate::design::PmDcParameter> =
-        namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?;
-    let units: Vec<crate::design::PmDcUnit> = namespace.arena_as_for_decode(ctx, "pm_dc_units")?;
-    super::validate_operations(ctx, ir, &features, &sketches, &parameters, &units)
+    crate::validate::design_v11_findings_from_arenas(ctx, ir)
 }
 
 fn state_findings(ir: &CadIr) -> usize {
-    validate_states(ir, &DecodePolicy::service().limits)
-        .expect("validation")
-        .len()
+    validate_states(ir, &DecodePolicy::service().limits).len()
 }
 
 #[test]
@@ -611,19 +506,47 @@ fn state_validation_accepts_the_decoder_placement() {
 }
 
 #[test]
-fn state_validation_rejects_bodies_the_predicate_places_elsewhere() {
+fn native_validation_rejects_bodies_the_predicate_places_elsewhere() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let findings = |ir: &CadIr| validate_from_native(&ctx, ir).expect("validation").len();
+    let decode = |ir: &mut CadIr| {
+        let sketches = crate::sketch::SketchInventory {
+            sketches: Vec::new(),
+            entities: Vec::new(),
+            transforms: Vec::new(),
+            directions: Vec::new(),
+            constraints: Vec::new(),
+            text_members: Vec::new(),
+            issues: Vec::new(),
+        };
+        project(
+            &ctx,
+            ir,
+            &crate::feature::FeatureInventory::default(),
+            &sketches,
+            &[],
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("projection");
+    };
+
     let mut ir = with_bodies(part(vec![feature("sketch", 0), extrude("extrude", 1)]));
-    project_part(&mut ir);
+    decode(&mut ir);
+    assert_eq!(findings(&ir), 0);
     let body = ir.design.scopes[0].current[0].bodies.pop().expect("body");
     ir.design.scopes[0].unproduced.insert(body);
-    assert_eq!(state_findings(&ir), 1);
+    assert_eq!(findings(&ir), 1);
 
     let mut ir = with_bodies(part(vec![feature("sketch", 0)]));
-    project_part(&mut ir);
+    decode(&mut ir);
+    assert_eq!(findings(&ir), 0);
     let scope = &mut ir.design.scopes[0];
     let body = scope.unproduced.pop_first().expect("body");
     scope.current[0].bodies.push(body);
-    assert_eq!(state_findings(&ir), 1);
+    assert_eq!(findings(&ir), 1);
 }
 
 #[test]

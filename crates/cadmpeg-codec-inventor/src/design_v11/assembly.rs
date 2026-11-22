@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
-use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use cadmpeg_ir::products::{AssemblyJoint, JointOperands, OperandContainer, Storage};
+use cadmpeg_ir::ids::{BodyId, OccurrenceId};
+use cadmpeg_ir::products::{AssemblyJoint, JointOperands, OperandContainer};
 use cadmpeg_ir::CadIr;
 
 pub(crate) fn grounded(joints: &[AssemblyJoint]) -> BTreeSet<OccurrenceId> {
@@ -29,14 +29,51 @@ pub(crate) fn grounded(joints: &[AssemblyJoint]) -> BTreeSet<OccurrenceId> {
         .collect()
 }
 
-pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-    if ctx.depth() < cadmpeg_core::decode::DecodeDepth::Design {
+pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let design = ctx.depth() >= cadmpeg_core::decode::DecodeDepth::Design;
+    let scope = if design {
+        scope(ir, &ir.model.assembly_joints)?
+    } else {
+        None
+    };
+    if !ir.model.assembly_joints.is_empty() {
+        losses.push(crate::loss::InventorLossCode::AssemblyGroundingJointDropped.note(
+            if design {
+                format!(
+                    "{} grounding joints are stated as grounded occurrences; their joint ids and native records are dropped.",
+                    ir.model.assembly_joints.len()
+                )
+            } else {
+                format!(
+                    "{} grounding joints are design records outside the geometry depth.",
+                    ir.model.assembly_joints.len()
+                )
+            },
+        ));
         ir.model.assembly_joints.clear();
-        return Ok(());
     }
-    let grounded = grounded(&ir.model.assembly_joints);
+    if let Some(scope) = scope {
+        ctx.charge_entities(1, "project Inventor assembly design scope")?;
+        ir.design.scopes.push(scope);
+    }
+    Ok(())
+}
+
+/// The design scope of the root assembly definition that `joints` ground:
+/// its occurrences with their grounding, and as unproduced bodies the bodies
+/// of the definitions the scope spans (§5.1), which no member produces
+/// (§6.7). No joint grounds an occurrence: no scope.
+pub(crate) fn scope(
+    ir: &CadIr,
+    joints: &[AssemblyJoint],
+) -> Result<Option<DesignScope>, CodecError> {
+    let grounded = grounded(joints);
     if grounded.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let Some(root) = ir
         .model
@@ -48,7 +85,6 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             "Inventor assembly grounding has no root definition",
         ));
     };
-    ctx.charge_entities(1, "project Inventor assembly design scope")?;
     let occurrences = root
         .occurrences
         .iter()
@@ -65,8 +101,15 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             )
         })
         .collect();
-    let unproduced = spanned_bodies(ir, &root.id);
-    ir.design.scopes.push(DesignScope {
+    let spanned = ir.spanned_definitions(&root.id);
+    let unproduced = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| spanned.contains(definition.id.as_str()))
+        .flat_map(|definition| definition.bodies.iter().cloned())
+        .collect::<BTreeSet<BodyId>>();
+    Ok(Some(DesignScope {
         definition: root.id.clone(),
         roots: Vec::new(),
         active_configuration: None,
@@ -74,75 +117,16 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         occurrences,
         current: Vec::new(),
         unproduced,
-    });
-    ir.model.assembly_joints.clear();
-    Ok(())
-}
-
-/// The bodies of the definitions that a scope without members spans (§5.1),
-/// which no member produces (§6.7).
-fn spanned_bodies(ir: &CadIr, scope: &ProductDefinitionId) -> BTreeSet<BodyId> {
-    let definitions = ir
-        .model
-        .product_definitions
-        .iter()
-        .map(|definition| (&definition.id, definition))
-        .collect::<BTreeMap<_, _>>();
-    let prototypes = ir
-        .model
-        .occurrences
-        .iter()
-        .map(|occurrence| (&occurrence.id, &occurrence.prototype))
-        .collect::<BTreeMap<_, _>>();
-    let scoped = ir
-        .design
-        .scopes
-        .iter()
-        .map(|scope| &scope.definition)
-        .collect::<BTreeSet<_>>();
-    let open = |id: &ProductDefinitionId| {
-        definitions.get(id).is_some_and(|definition| {
-            matches!(definition.storage, Storage::Embedded) && !scoped.contains(id)
-        })
-    };
-    let mut spanned = BTreeSet::from([scope]);
-    let mut pending = vec![scope];
-    if definitions
-        .get(scope)
-        .is_some_and(|root| matches!(root.storage, Storage::File { .. }))
-    {
-        let placed = prototypes.values().copied().collect::<BTreeSet<_>>();
-        for id in definitions.keys().copied() {
-            if open(id) && !placed.contains(id) && spanned.insert(id) {
-                pending.push(id);
-            }
-        }
-    }
-    while let Some(id) = pending.pop() {
-        let Some(definition) = definitions.get(id) else {
-            continue;
-        };
-        for occurrence in &definition.occurrences {
-            if let Some(&prototype) = prototypes.get(occurrence) {
-                if open(prototype) && spanned.insert(prototype) {
-                    pending.push(prototype);
-                }
-            }
-        }
-    }
-    spanned
-        .into_iter()
-        .filter_map(|id| definitions.get(id))
-        .flat_map(|definition| definition.bodies.iter().cloned())
-        .collect()
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_ir::products::JointId;
+    use cadmpeg_ir::ids::ProductDefinitionId;
     use cadmpeg_ir::products::{JointConnector, JointOperand};
+    use cadmpeg_ir::products::{JointId, Storage};
     use cadmpeg_ir::transform::Transform;
 
     fn document() -> (CadIr, OccurrenceId) {
@@ -167,7 +151,7 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        project(&ctx, &mut ir).expect("projection");
+        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
         assert!(ir.model.assembly_joints.is_empty());
         assert_eq!(ir.design.scopes.len(), 1);
         assert_eq!(
@@ -204,12 +188,63 @@ mod tests {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        project(&ctx, &mut ir).expect("projection");
+        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
         assert_eq!(
             ir.design.scopes[0].unproduced,
             BTreeSet::from([body("embedded"), body("root")])
         );
     }
+    #[test]
+    fn a_spanned_body_dropped_from_unproduced_fails_native_validation() {
+        let (mut ir, id) = document();
+        let body = |key: &str| BodyId::mint(format!("inventor:brep:body#{key}")).expect("body");
+        let mut embedded = ir.model.product_definitions[0].clone();
+        embedded.id =
+            ProductDefinitionId::mint("inventor:product:definition#embedded").expect("id");
+        embedded.storage = Storage::Embedded;
+        embedded.occurrences = Vec::new();
+        embedded.bodies = vec![body("embedded")];
+        ir.model
+            .occurrences
+            .push(cadmpeg_ir::products::Occurrence::new(
+                id,
+                embedded.id.clone(),
+                None,
+            ));
+        ir.model.product_definitions.push(embedded);
+        ir.geometry.bodies.push(
+            serde_json::from_value(
+                serde_json::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
+            )
+            .expect("body"),
+        );
+        let joints = ir.model.assembly_joints.clone();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        project(&ctx, &mut ir, &mut Vec::new()).expect("projection");
+        let design_errors = |ir: &CadIr| {
+            cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+                .expect("validation")
+                .findings
+                .into_iter()
+                .filter(|finding| {
+                    finding.check == cadmpeg_ir::report::check::Check::Design
+                        && finding.severity == cadmpeg_ir::report::Severity::Error
+                })
+                .map(|finding| finding.message)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(design_errors(&ir), Vec::<String>::new());
+        assert!(crate::validate::assembly_scope_findings(&ir, &joints).is_empty());
+        ir.design.scopes[0].unproduced.remove(&body("embedded"));
+        assert_eq!(design_errors(&ir), Vec::<String>::new());
+        assert_eq!(
+            crate::validate::assembly_scope_findings(&ir, &joints).len(),
+            1
+        );
+    }
+
     #[test]
     fn geometry_depth_omits_grounding_design_records() {
         let (mut ir, _) = document();
@@ -222,8 +257,14 @@ mod tests {
             cadmpeg_core::decode::DecodeDepth::Geometry,
         )
         .expect("context");
-        project(&ctx, &mut ir).expect("projection");
+        let mut losses = Vec::new();
+        project(&ctx, &mut ir, &mut losses).expect("projection");
         assert!(ir.model.assembly_joints.is_empty());
         assert!(ir.design.scopes.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::InventorLossCode::AssemblyGroundingJointDropped.kind()
+        );
     }
 }

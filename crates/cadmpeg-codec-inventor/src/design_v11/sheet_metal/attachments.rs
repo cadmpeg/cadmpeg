@@ -150,15 +150,7 @@ pub(crate) fn project(ir: &mut CadIr, inventory: &FeatureInventory) -> Result<()
             source,
         )
     }));
-    let properties = unique_index(inventory.properties.iter().map(|property| {
-        (
-            (
-                property.identity.segment_token.as_str(),
-                property.identity.record_ordinal,
-            ),
-            property,
-        )
-    }));
+    let properties = super::property_index(inventory);
     for parent in &inventory.sheet_metal_flanges {
         let token = parent.identity.segment_token.as_str();
         let Some(source) = parent
@@ -180,12 +172,15 @@ pub(crate) fn project(ir: &mut CadIr, inventory: &FeatureInventory) -> Result<()
         else {
             continue;
         };
-        if let Some(feature) = ir
-            .design
-            .features
-            .iter_mut()
-            .find(|feature| feature.native_ref.as_deref() == Some(source.id().as_str()))
-        {
+        // Only a plate that the operation stages retained in its native
+        // form takes the attached contour flange.
+        if let Some(feature) = ir.design.features.iter_mut().find(|feature| {
+            feature.native_ref.as_deref() == Some(source.id().as_str())
+                && matches!(
+                    feature.definition.operation,
+                    FeatureOperation::Native { .. }
+                )
+        }) {
             feature.definition.operation = operation;
         }
     }

@@ -119,44 +119,6 @@ fn definition(
     Ok((result, reason))
 }
 
-#[cfg(test)]
-pub(super) fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-    use cadmpeg_core::decode::unique_index;
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
-    let mut findings = Vec::new();
-    if ir.model.product_definitions.is_empty() {
-        return Ok(findings);
-    }
-    let targets = unique_index(ir.design.features.iter().map(|target| (&target.id, target)));
-    for source in &ir.model.features {
-        if !projects(source.evaluation.definition().operation()) {
-            continue;
-        }
-        let (expected, _) = definition(
-            source,
-            &ir.model.sketches,
-            &ir.model.feature_input_topologies,
-        )?;
-        let target = targets.get(&source.id).and_then(|target| *target);
-        if target.is_none_or(|target| target.definition != expected) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!(
-                    "Inventor v11 operation {} differs from its admitted source operands",
-                    source.id
-                ),
-                entity: Some(source.id.to_string()),
-                related: Vec::new(),
-            });
-        }
-    }
-    Ok(findings)
-}
-
 type Projected<T> = Result<T, &'static str>;
 
 fn typed(

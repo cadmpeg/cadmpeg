@@ -1574,13 +1574,12 @@ fn decode_container<'a>(
         )?;
     }
     if document_kind == DocumentKind::Assembly {
-        crate::design_v11::assembly::project(ctx, &mut ir)?;
+        crate::design_v11::assembly::project(ctx, &mut ir, &mut losses)?;
     }
     coverage.record(
         crate::coverage::DESIGN_UNPRODUCED_BODIES,
         crate::design_v11::unproduced_bodies(&ir),
     );
-    crate::design_v11::contraction::finish(&mut ir);
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,

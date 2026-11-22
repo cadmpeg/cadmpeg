@@ -251,38 +251,47 @@ pub(crate) fn validate_native(
             )
         });
     }
-    if document_kind(ir) == Some("part") && !ir.design.scopes.is_empty() {
-        let mut features = crate::feature::FeatureInventory::default();
-        features.features = data.pm_dc_features;
-        features.pattern_features = data.pm_dc_pattern_features;
-        features.work_planes = data.pm_dc_work_planes;
-        features.properties = data.pm_dc_feature_properties;
-        features.sheet_metal_styles = data.pm_dc_sheet_metal_styles;
-        features.sheet_metal_flanges = data.pm_dc_sheet_metal_flanges;
-        features.sheet_metal_unfold_rules = data.pm_app_sheet_metal_unfold_rules;
-        features.sheet_metal_unfold_selections = data.pm_app_sheet_metal_unfold_selections;
-        let sketches = crate::sketch::SketchInventory {
-            sketches: data.pm_dc_sketches,
-            entities: Vec::new(),
-            transforms: Vec::new(),
-            directions: Vec::new(),
-            constraints: Vec::new(),
-            text_members: Vec::new(),
-            issues: Vec::new(),
-        };
-        findings.extend(crate::design_v11::validate_operations(
-            ctx,
-            ir,
-            &features,
-            &sketches,
-            &data.pm_dc_parameters,
-            &data.pm_dc_units,
-        )?);
-        findings.extend(crate::design_v11::validate_states(
-            ir,
-            &ctx.policy().limits,
-        )?);
+    findings.extend(design_v11_findings(ctx, ir, data)?);
+    Ok(findings)
+}
+
+/// The v11 history of a part at design depth against the history its native
+/// records project, and its states through the IR's state resolver.
+fn design_v11_findings(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: NativeData,
+) -> Result<Vec<Finding>, CodecError> {
+    if document_kind(ir) != Some("part") || !ir.scope().design {
+        return Ok(Vec::new());
     }
+    let mut features = crate::feature::FeatureInventory::default();
+    features.features = data.pm_dc_features;
+    features.pattern_features = data.pm_dc_pattern_features;
+    features.work_planes = data.pm_dc_work_planes;
+    features.properties = data.pm_dc_feature_properties;
+    features.sheet_metal_styles = data.pm_dc_sheet_metal_styles;
+    features.sheet_metal_flanges = data.pm_dc_sheet_metal_flanges;
+    features.sheet_metal_unfold_rules = data.pm_app_sheet_metal_unfold_rules;
+    features.sheet_metal_unfold_selections = data.pm_app_sheet_metal_unfold_selections;
+    let sketches = crate::sketch::SketchInventory {
+        sketches: data.pm_dc_sketches,
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        text_members: Vec::new(),
+        issues: Vec::new(),
+    };
+    let mut findings = crate::design_v11::validate_operations(
+        ctx,
+        ir,
+        &features,
+        &sketches,
+        &data.pm_dc_parameters,
+        &data.pm_dc_units,
+    )?;
+    findings.extend(crate::design_v11::validate_states(ir, &ctx.policy().limits));
     Ok(findings)
 }
 
@@ -3974,33 +3983,38 @@ fn validate_assembly(
         }
         return Ok(());
     }
-    projected
-        .joints
-        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut expected_joints = ir.model.assembly_joints.clone();
-    expected_joints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let grounded = ir
-        .design
-        .scopes
-        .iter()
-        .flat_map(|scope| scope.occurrences.iter())
-        .filter(|(_, state)| state.grounded == Some(true))
-        .map(|(id, _)| id.clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    let expected_grounded = crate::design_v11::assembly::grounded(&projected.joints);
-    if (ir.model.assembly_joints.is_empty()
-        && !ir.design.scopes.is_empty()
-        && grounded != expected_grounded)
-        || ((!ir.model.assembly_joints.is_empty() || ir.design.scopes.is_empty())
-            && expected_joints != projected.joints)
-    {
+    if !ir.model.assembly_joints.is_empty() {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor neutral assembly joints do not match the typed assembly records".into(),
+            "Inventor grounding joints remain at design depth".into(),
             None,
         ));
     }
+    if !is_assembly_document(ir) {
+        return Ok(());
+    }
+    findings.extend(assembly_scope_findings(ir, &projected.joints));
     Ok(())
+}
+
+/// The assembly design scope against the one the typed grounding records
+/// project: the same occurrences, grounding, and unproduced bodies.
+pub(crate) fn assembly_scope_findings(
+    ir: &CadIr,
+    joints: &[cadmpeg_ir::products::AssemblyJoint],
+) -> Vec<Finding> {
+    let expected = crate::design_v11::assembly::scope(ir, joints);
+    if expected
+        .as_ref()
+        .is_ok_and(|expected| ir.design.scopes.as_slice() == expected.as_slice())
+    {
+        return Vec::new();
+    }
+    vec![finding(
+        Check::NativeLinks,
+        "Inventor assembly design scope does not match the typed assembly records".into(),
+        None,
+    )]
 }
 
 fn is_assembly_document(ir: &CadIr) -> bool {
@@ -4219,6 +4233,117 @@ fn fillet_continuity_type_error<'a>(
         .and_then(type_at)
         .is_some_and(|type_id| type_id != boolean_type)
         .then_some("Inventor PmDc fillet continuity is not a Boolean record")
+}
+
+#[cfg(test)]
+impl NativeData {
+    /// Native data with every arena empty.
+    pub(crate) fn empty() -> Self {
+        Self {
+            storage_bands: Vec::new(),
+            databases: Vec::new(),
+            database_issues: Vec::new(),
+            registry: Vec::new(),
+            revisions: Vec::new(),
+            pairs: Vec::new(),
+            metadata: Vec::new(),
+            meta_sections: Vec::new(),
+            meta_types: Vec::new(),
+            metadata_issues: Vec::new(),
+            bulk: Vec::new(),
+            records: Vec::new(),
+            bulk_issues: Vec::new(),
+            unpaired: Vec::new(),
+            structural_issues: Vec::new(),
+            property_sets: Vec::new(),
+            property_sections: Vec::new(),
+            properties: Vec::new(),
+            property_issues: Vec::new(),
+            protein: ProteinRecord::Absent { id: String::new() },
+            protein_assets: Vec::new(),
+            protein_rejections: Vec::new(),
+            ufrx: UfrxRecord::Absent { id: String::new() },
+            assembly_occurrences: Vec::new(),
+            assembly_placements: Vec::new(),
+            design_view_representations: Vec::new(),
+            design_view_visibility: Vec::new(),
+            assembly_groundings: Vec::new(),
+            assembly_record_issues: Vec::new(),
+            pm_app_default_styles: Vec::new(),
+            pm_app_rendering_styles: Vec::new(),
+            pm_graphics_faces: Vec::new(),
+            pm_graphics_style_collections: Vec::new(),
+            pm_graphics_primary_color_styles: Vec::new(),
+            face_native_keys: Vec::new(),
+            body_native_keys: Vec::new(),
+            body_wrapper_links: Vec::new(),
+            composite_member_links: Vec::new(),
+            feature_history_states: Vec::new(),
+            presentation_record_issues: Vec::new(),
+            pm_dc_parameters: Vec::new(),
+            pm_dc_expressions: Vec::new(),
+            pm_dc_units: Vec::new(),
+            pm_dc_parameter_tables: Vec::new(),
+            pm_dc_model_roots: Vec::new(),
+            design_record_issues: Vec::new(),
+            pm_dc_sketches: Vec::new(),
+            pm_dc_sketch_entities: Vec::new(),
+            pm_dc_sketch_constraints: Vec::new(),
+            pm_dc_transforms: Vec::new(),
+            pm_dc_directions: Vec::new(),
+            sketch_record_issues: Vec::new(),
+            pm_dc_features: Vec::new(),
+            pm_dc_pattern_features: Vec::new(),
+            pm_dc_pattern_operands: Vec::new(),
+            pm_dc_feature_terminators: Vec::new(),
+            pm_dc_feature_properties: Vec::new(),
+            pm_dc_sheet_metal_styles: Vec::new(),
+            pm_dc_sheet_metal_flanges: Vec::new(),
+            pm_app_sheet_metal_unfold_rules: Vec::new(),
+            pm_app_sheet_metal_unfold_selections: Vec::new(),
+            pm_dc_feature_dimensions: Vec::new(),
+            pm_dc_feature_labels: Vec::new(),
+            pm_dc_thread_definitions: Vec::new(),
+            pm_dc_entity_style_links: Vec::new(),
+            pm_dc_kernel_entity_links: Vec::new(),
+            pm_dc_work_planes: Vec::new(),
+            feature_record_issues: Vec::new(),
+            active_carrier: ActiveCarrierRecord::NotApplicable { id: String::new() },
+            unknowns: Vec::new(),
+        }
+    }
+}
+
+/// [`design_v11_findings`] over the arenas a test document holds: each
+/// absent arena reads as empty.
+#[cfg(test)]
+pub(crate) fn design_v11_findings_from_arenas(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Finding>, CodecError> {
+    let mut data = NativeData::empty();
+    if let Some(namespace) = ir.native.namespace("inventor") {
+        let read = |name: &str| namespace.arenas().contains_key(name);
+        macro_rules! fill {
+            ($field:ident) => {
+                if read(stringify!($field)) {
+                    data.$field = namespace.arena_as_for_decode(ctx, stringify!($field))?;
+                }
+            };
+        }
+        fill!(pm_dc_features);
+        fill!(pm_dc_pattern_features);
+        fill!(pm_dc_work_planes);
+        fill!(pm_dc_feature_properties);
+        fill!(pm_dc_sheet_metal_styles);
+        fill!(pm_dc_sheet_metal_flanges);
+        fill!(pm_app_sheet_metal_unfold_rules);
+        fill!(pm_app_sheet_metal_unfold_selections);
+        fill!(pm_dc_sketches);
+        fill!(pm_dc_parameters);
+        fill!(pm_dc_units);
+    }
+    design_v11_findings(ctx, ir, data)
 }
 
 #[cfg(test)]

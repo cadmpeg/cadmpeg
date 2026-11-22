@@ -52,12 +52,6 @@ pub(crate) enum InventorLossCode {
     FeatureRecordMalformed,
     /// A decoded operation has operands outside the v11 operation contract.
     FeatureDesignOperationNative,
-    /// Source topology metadata retains native names and memberships.
-    FeatureDesignTopologyNative,
-    /// Decoded history geometry retains its legacy arena.
-    FeatureDesignHistoryLegacy,
-    /// Source participant links and operation properties retain their native form.
-    FeatureDesignMetadataNative,
     /// A sketch relation retains operands whose v11 relation is unresolved.
     SketchDesignConstraintNative,
     /// An optional feature label is empty and has no neutral display name.
@@ -185,7 +179,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalPlateRefused,
     /// Projected contour flanges retain construction controls and their bend and corner records natively.
     FeatureSheetMetalContourControlsRetained,
-    /// A contour flange stays native; the note names the first refused admission check.
+    /// The legacy feature record of a contour flange stays native; the note
+    /// names the first refused admission check.
     FeatureSheetMetalContourFlangeRefused,
     /// Projected Unfold and Refold features retain controls and face operands natively.
     FeatureSheetMetalFoldControlsRetained,
@@ -309,6 +304,9 @@ pub(crate) enum InventorLossCode {
     AssemblyPlacementNotTransferred,
     /// Occurrences hidden below a root occurrence stay in native records.
     AssemblyVisibilityNestedNative,
+    /// Grounding joints leave the document; at design depth only their
+    /// grounded occurrences remain, without the joint ids and native records.
+    AssemblyGroundingJointDropped,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -372,9 +370,6 @@ impl InventorLossCode {
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
         Self::FeatureDesignOperationNative,
-        Self::FeatureDesignTopologyNative,
-        Self::FeatureDesignHistoryLegacy,
-        Self::FeatureDesignMetadataNative,
         Self::SketchDesignConstraintNative,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
@@ -497,6 +492,7 @@ impl InventorLossCode {
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
         Self::AssemblyVisibilityNestedNative,
+        Self::AssemblyGroundingJointDropped,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -536,9 +532,6 @@ impl InventorLossCode {
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureDesignOperationNative => "feature.design-operation-native",
-            Self::FeatureDesignTopologyNative => "feature.design-topology-native",
-            Self::FeatureDesignHistoryLegacy => "feature.design-history-legacy",
-            Self::FeatureDesignMetadataNative => "feature.design-metadata-native",
             Self::SketchDesignConstraintNative => "sketch.design-constraint-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
@@ -696,6 +689,7 @@ impl InventorLossCode {
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
+            Self::AssemblyGroundingJointDropped => "assembly.grounding-joint-dropped",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -783,9 +777,6 @@ impl InventorLossCode {
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
             | Self::FeatureDesignOperationNative
-            | Self::FeatureDesignTopologyNative
-            | Self::FeatureDesignHistoryLegacy
-            | Self::FeatureDesignMetadataNative
             | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
@@ -876,7 +867,8 @@ impl InventorLossCode {
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
-            | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
+            | Self::FeatureLabelNameReplaced
+            | Self::AssemblyGroundingJointDropped => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -942,9 +934,6 @@ mod tests {
                 "sketch.record-malformed",
                 "feature.record-malformed",
                 "feature.design-operation-native",
-                "feature.design-topology-native",
-                "feature.design-history-legacy",
-                "feature.design-metadata-native",
                 "sketch.design-constraint-native",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
@@ -1067,6 +1056,7 @@ mod tests {
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
                 "assembly.visibility-nested-native",
+                "assembly.grounding-joint-dropped",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

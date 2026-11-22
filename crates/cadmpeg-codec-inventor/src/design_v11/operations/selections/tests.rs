@@ -1,28 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
+use cadmpeg_ir::ids::{BodyId, FeatureInputTopologyId, HistoricalEdgeId};
 use cadmpeg_ir::units::UnitVector3;
 
 #[test]
-fn resolved_edges_keep_the_source_name_and_entity_cache() {
-    let id = EdgeId::mint("inventor:brep:edge#synthetic").expect("id");
-    let value = edge(
-        &EdgeSelection::Resolved {
-            edges: vec![id.clone()],
-            native: "inventor:pmdc:selection#synthetic".into(),
-        },
-        &[],
-    )
+fn resolved_bodies_keep_only_the_source_name() {
+    let id = BodyId::mint("inventor:brep:body#synthetic").expect("id");
+    let value = bodies(&BodySelection::Resolved {
+        bodies: vec![id].try_into().expect("bodies"),
+        native: "inventor:pmdc:selection#synthetic".into(),
+    })
     .expect("selection");
     let Picks::Named(picks) = value.picks else {
         panic!("named picks")
     };
     let pick = &picks.as_slice()[0];
-    assert_eq!(pick.resolved, Some(vec![EntityRef::Edge(id)]));
+    assert_eq!(pick.resolved, None);
     assert_eq!(
         pick.native.as_ref().expect("name").value,
         NativeNameValue::Text(cadmpeg_core::nonblank_literal!(
@@ -35,7 +31,7 @@ fn resolved_edges_keep_the_source_name_and_entity_cache() {
 fn historical_edges_keep_samples_and_require_one_input_state() {
     let state =
         FeatureInputTopologyId::mint("inventor:design:feature-input#synthetic").expect("id");
-    let id = HistoricalEdgeId::mint("inventor:input-edge#synthetic").expect("id");
+    let id = HistoricalEdgeId::mint("inventor:input-edge#synthetic-7").expect("id");
     let point = |values| serde_json::from_value(serde_json::json!(values)).expect("point");
     let sample = HistoricalEdgeGeometry {
         edge: id.clone(),
@@ -70,9 +66,7 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
     let pick = &picks.as_slice()[0];
     assert_eq!(
         pick.native.as_ref().expect("name").value,
-        NativeNameValue::Text(
-            cadmpeg_core::text::NonBlankString::new(id.to_string()).expect("name")
-        )
+        NativeNameValue::Integers(vec![7])
     );
     let witness = pick.witness.as_ref().expect("witness");
     assert_eq!(witness.point, Some(sample.interior));

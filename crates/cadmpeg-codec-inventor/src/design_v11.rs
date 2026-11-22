@@ -19,7 +19,6 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::CadIr;
 
 pub(crate) mod assembly;
-pub(crate) mod contraction;
 mod datums;
 mod operations;
 mod parameters;
@@ -66,40 +65,8 @@ pub(crate) fn project(
     operations::project(ctx, ir, losses)?;
     sheet_metal::attachments::project(ir, features)?;
     losses.extend(sheet_metal::feature_reliefs(ir, features, parameters)?);
-    native_losses(ir, losses);
+    place_current_bodies(ir)?;
     Ok(())
-}
-
-fn native_losses(ir: &CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
-    use crate::loss::InventorLossCode;
-    for source in &ir.model.features {
-        if !source.dependencies.is_empty()
-            || source
-                .source_properties
-                .keys()
-                .any(|key| !matches!(key.as_str(), "suppressed" | "history" | "end_of_part"))
-        {
-            losses.push(InventorLossCode::FeatureDesignMetadataNative.note(format!(
-                "Feature {} keeps its source participant links and properties in native records; v11 references state its admitted operands.", source.id
-            )));
-        }
-    }
-    if !ir.model.history_bodies.is_empty() {
-        losses.push(InventorLossCode::FeatureDesignHistoryLegacy.note(
-            "Decoded history bodies retain source-linked legacy topology and native position identifiers."
-        ));
-    }
-    let native_outputs = ir.model.features.iter().any(|source| !source.evaluation.outputs().is_empty()
-        && !ir.design.features.iter().any(|feature| feature.id == source.id && matches!(&feature.definition.operation,
-            FeatureOperation::Stored { bodies: Some(bodies), .. } if bodies == source.evaluation.outputs())));
-    if !ir.model.feature_input_topologies.is_empty()
-        || !ir.model.feature_result_topologies.is_empty()
-        || native_outputs
-    {
-        losses.push(InventorLossCode::FeatureDesignTopologyNative.note(
-            "Source topology names, partial memberships, and non-stored result-body joins stay native; v11 picks and evaluations state admitted identities and geometry."
-        ));
-    }
 }
 
 pub(crate) fn unproduced_bodies(ir: &CadIr) -> usize {
@@ -112,8 +79,6 @@ pub(crate) fn unproduced_bodies(ir: &CadIr) -> usize {
 
 /// Whether a member before the rollback of `timeline` can change a state
 /// (§5.4), so that the member produces the timeline's current bodies (§5.5).
-/// An `Unresolved` operation of a family whose every operation is stateless
-/// is stateless.
 pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool, CodecError> {
     let Container::Ordered {
         members, rollback, ..
@@ -132,25 +97,6 @@ pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool
         let Member::Feature(id) = member else {
             continue;
         };
-        let feature = ir
-            .design
-            .features
-            .iter()
-            .find(|feature| &feature.id == id)
-            .ok_or_else(|| CodecError::malformed("Inventor v11 timeline names no feature"))?;
-        if let FeatureOperation::Unresolved { family } = &feature.definition.operation {
-            if matches!(
-                family,
-                OperationFamily::Sketch
-                    | OperationFamily::SpatialSketch
-                    | OperationFamily::Spreadsheet
-                    | OperationFamily::Datum
-                    | OperationFamily::TemplateInstance
-                    | OperationFamily::Decal
-            ) {
-                continue;
-            }
-        }
         if !ir
             .is_stateless(id, None)
             .map_err(|error| CodecError::malformed(error.to_string()))?
@@ -162,13 +108,12 @@ pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool
 }
 
 /// Checks each part scope's states through the IR's checked state resolver:
-/// every current state and evaluation resolves, a current state's extent
-/// holds exactly its listed bodies with the part as their owner, and the
-/// timeline production predicate places the owned bodies.
+/// every current state and evaluation resolves, and the part owns every
+/// body of a current state's extent.
 pub(crate) fn validate_states(
     ir: &CadIr,
     limits: &cadmpeg_core::decode::ResourceLimits,
-) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     let mut findings = Vec::new();
     let mut fail = |message: String, entity: Option<String>| {
         findings.push(cadmpeg_ir::report::check::Finding {
@@ -191,41 +136,13 @@ pub(crate) fn validate_states(
                     continue;
                 }
             };
-            let mut extent = state
-                .records()
-                .bodies
-                .iter()
-                .map(|body| &body.id)
-                .collect::<Vec<_>>();
-            extent.sort();
-            let mut listed = current.bodies.iter().collect::<Vec<_>>();
-            listed.sort();
-            if extent != listed
-                || state
-                    .owners()
-                    .values()
-                    .any(|owner| owner != &scope.definition)
+            if state
+                .owners()
+                .values()
+                .any(|owner| owner != &scope.definition)
             {
                 fail(
-                    "Inventor v11 current state extent differs from its part bodies".into(),
-                    Some(scope.definition.as_str().to_owned()),
-                );
-            }
-            let timeline = match &current.at {
-                Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
-                Position::After(member) => ir.design.containers.iter().find(
-                    |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
-                ),
-            };
-            let produces = match timeline {
-                Some(timeline) => timeline_produces(ir, timeline)?,
-                None => false,
-            };
-            if (produces && !scope.unproduced.is_empty())
-                || (!produces && !current.bodies.is_empty())
-            {
-                fail(
-                    "Inventor v11 current and unproduced bodies differ from the timeline's producing members".into(),
+                    "Inventor v11 current state holds a body the part does not own".into(),
                     Some(scope.definition.as_str().to_owned()),
                 );
             }
@@ -244,7 +161,7 @@ pub(crate) fn validate_states(
             }
         }
     }
-    Ok(findings)
+    findings
 }
 
 pub(crate) fn validate_operations(
@@ -310,6 +227,8 @@ fn project_history(
     flags: &BTreeMap<String, u32>,
     has_rules: bool,
 ) -> Result<(), CodecError> {
+    // A part without features, parameters, or sheet-metal rules has no
+    // design history, so it gets no scope or timeline.
     if ir.model.features.is_empty() && ir.model.parameters.is_empty() && !has_rules {
         return Ok(());
     }
@@ -330,7 +249,6 @@ fn project_history(
     owned.sort();
     let mut roots = Vec::new();
     let mut current = Vec::new();
-    let mut root_timeline = None;
     for (flat, key) in [(false, "root"), (true, "flat-pattern")] {
         let history = ordered
             .iter()
@@ -366,7 +284,6 @@ fn project_history(
                 status: EvaluationStatus::Current,
                 native_ref: None,
             });
-            root_timeline = Some(id.clone());
         }
         roots.push(id.clone());
         ir.design.containers.push(Container::Ordered {
@@ -420,23 +337,7 @@ fn project_history(
     ctx.charge_entities(1, "project Inventor v11 scope")?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
-    let produces = match root_timeline {
-        Some(id) => {
-            let timeline = ir
-                .design
-                .containers
-                .iter()
-                .find(|container| container.id() == &id)
-                .ok_or_else(|| CodecError::malformed("Inventor v11 root timeline is absent"))?;
-            timeline_produces(ir, timeline)?
-        }
-        None => false,
-    };
-    let mut unproduced = BTreeSet::new();
-    match current.first_mut() {
-        Some(state) if produces => state.bodies = owned,
-        _ => unproduced.extend(owned),
-    }
+    let unproduced = owned.into_iter().collect();
     ir.design.scopes.push(DesignScope {
         definition,
         roots,
@@ -446,6 +347,40 @@ fn project_history(
         current,
         unproduced,
     });
+    Ok(())
+}
+
+/// Moves each part scope's bodies from `unproduced` to its root current
+/// state when a member of the root timeline before its rollback can change a
+/// state (§5.5). Runs after the last operation stage, because the predicate
+/// reads the final operations.
+fn place_current_bodies(ir: &mut CadIr) -> Result<(), CodecError> {
+    for index in 0..ir.design.scopes.len() {
+        let Some(at) = ir.design.scopes[index]
+            .current
+            .first()
+            .map(|state| state.at.clone())
+        else {
+            continue;
+        };
+        let timeline = match &at {
+            Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
+            Position::After(member) => ir.design.containers.iter().find(
+                |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
+            ),
+        };
+        let produces = match timeline {
+            Some(timeline) => timeline_produces(ir, timeline)?,
+            None => false,
+        };
+        if produces {
+            let scope = &mut ir.design.scopes[index];
+            let bodies = std::mem::take(&mut scope.unproduced);
+            if let Some(state) = scope.current.first_mut() {
+                state.bodies = bodies.into_iter().collect();
+            }
+        }
+    }
     Ok(())
 }
 

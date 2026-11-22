@@ -16,6 +16,14 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The production v11 validation of a projected part.
+fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    crate::validate::design_v11_findings_from_arenas(&ctx, ir)
+}
+
 fn legacy(kind: &str, value: Value) -> LegacyOperation {
     let fields = serde_json::Map::from_iter([
         ("kind".to_owned(), Value::String(kind.to_owned())),
