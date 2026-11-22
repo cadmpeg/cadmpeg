@@ -42,6 +42,11 @@ const ZERO_RECORD: u32 = 2;
 pub(super) const AGGREGATE: u32 = 3;
 /// The component naming space.
 pub(super) const NAMING_SPACE: u32 = 6;
+/// The family discriminator of every parameter record the roster writes: the
+/// value of every parameter record in a Design stream whose component naming
+/// space is record [`NAMING_SPACE`] (f3d-open-items.md DR-911, DR-917).
+pub(super) const PARAMETER_DISCRIMINATOR: DesignParameterDiscriminator =
+    DesignParameterDiscriminator::Code6;
 /// The design `Body` owner.
 const DESIGN_OWNER: u32 = 7;
 /// The sketch collection.
@@ -275,24 +280,6 @@ impl Context<'_> {
         Ok(())
     }
 
-    /// The family discriminator of the user parameters: the value of the
-    /// parameters the timeline items own when an item owns one, else `0`, so
-    /// that the parameter records of the segment store one value (DR-911).
-    pub(super) fn user_discriminator(&self) -> DesignParameterDiscriminator {
-        let owns_parameters = self.roster.extrude.is_some()
-            || self
-                .roster
-                .sketches
-                .items
-                .iter()
-                .any(|sketch| sketch.parameters().next().is_some());
-        if owns_parameters {
-            owned::DISCRIMINATOR
-        } else {
-            DesignParameterDiscriminator::Code0
-        }
-    }
-
     /// The parameter records whose tails name the parameter collection, in
     /// ascending record index: the user parameters and the parameters the
     /// timeline items own.
@@ -445,8 +432,8 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     notes.extend(record_residual_unavailable(
         "F3D",
         &format!(
-            "writes these user parameters with family discriminator {}, the value of the parameters the timeline items own or 0 without one, where f3d-open-items.md DR-911 states no rule",
-            ctx.user_discriminator().code()
+            "writes these user parameters with family discriminator {}, the value of every parameter record in a Design stream whose component naming space is record {NAMING_SPACE} (f3d-open-items.md DR-911)",
+            PARAMETER_DISCRIMINATOR.code()
         ),
         ctx.roster
             .parameters

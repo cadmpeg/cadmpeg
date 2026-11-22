@@ -11,8 +11,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::super::super::frames::DesignRecords;
 use super::super::super::sketch::dimensions::{DimensionKind, Measure, PlannedDimension};
 use super::super::super::types;
-use super::super::owned::{Owned, DISCRIMINATOR};
-use super::super::{count, Context};
+use super::super::owned::Owned;
+use super::super::{count, Context, PARAMETER_DISCRIMINATOR};
 use super::{curve_payload, Item};
 use crate::writer::generate::presentation::TypeRow;
 
@@ -282,7 +282,7 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
             format!(
                 "dimension parameters {} (family discriminator {}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one)",
                 parameters.join(" "),
-                DISCRIMINATOR.code()
+                PARAMETER_DISCRIMINATOR.code()
             ),
             format!(
                 "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",

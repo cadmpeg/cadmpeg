@@ -776,21 +776,22 @@ fn the_snapshot_is_the_solved_part_of_the_history_stream() {
 }
 
 /// The user parameters of a design whose timeline items own no parameter
-/// store family discriminator `0`.
+/// store family discriminator `6`, the value of every parameter record in a
+/// Design stream whose component naming space is record 6 (DR-911).
 #[test]
-fn user_parameters_without_an_owned_parameter_store_discriminator_zero() {
+fn user_parameters_without_an_owned_parameter_store_discriminator_six() {
     let (report, _, bytes) = write_bytes(&scoped_cube());
     let design = segment(&bytes, "FusionDesignSegmentType1");
     let records = design.records_of(super::super::types::PARAMETER.guid);
     assert!(!records.is_empty());
     for (index, _) in records {
-        assert_eq!(u32_at(design.record(index), 22), 0, "record {index}");
+        assert_eq!(u32_at(design.record(index), 22), 6, "record {index}");
     }
     assert!(
         loss(&report, "export/record.residual-unavailable")
             .iter()
             .any(|message| message.contains("user parameter")
-                && message.contains("family discriminator 0")),
+                && message.contains("family discriminator 6")),
         "{:#?}",
         report.losses
     );

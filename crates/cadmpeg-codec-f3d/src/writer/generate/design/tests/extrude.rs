@@ -473,9 +473,8 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
     }
 }
 
-/// The user parameters store the family discriminator of the Extrude's
-/// owned parameters, so the segment's parameter records store one value, and
-/// the residual note names the choice (DR-911).
+/// The user parameters and the Extrude's owned parameters store family
+/// discriminator `6`, and the residual note names the value (DR-911).
 #[test]
 fn the_parameter_records_of_an_extrude_design_store_one_discriminator() {
     let (report, decoded, bytes) = write_bytes(&sketch_and_extrude(blind(), false));
