@@ -10,7 +10,11 @@
 //! coincidence of two of its ends is that entity's. An entity is
 //! construction where the decoder marks it construction or reads it from a
 //! curve record of state `0`, which no profile uses; another entity states
-//! no flag. A dimension binds the parameter that holds its value, and states
+//! no flag. A circle or arc the decoder built from a dimension record, which
+//! no curve record stores, is construction too where it repeats the carrier
+//! of another circle or arc of its sketch or no cylindrical face of the solid
+//! lies on it: the dimension keeps it as its reference, and it bounds no
+//! region. A dimension binds the parameter that holds its value, and states
 //! that parameter's quantity; a reference dimension makes the tree parameter
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
 //! `Driven` parameter minted for it. A sketch with a dimension that binds no
@@ -51,10 +55,16 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 
 use super::parameters::Entries;
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
+use crate::resolved_features::RELATION_INSTANCE_ID_PREFIX;
 
 /// Distance within which a stored point lies on a plane or at a curve's end,
 /// in millimetres per millimetre of the larger coordinate.
 const EPS_SKETCH_INCIDENCE: f64 = 1.0e-9;
+
+/// How far from one the cosine between a cylinder's axis and a sketch normal
+/// may be for the axis to lie along the normal.
+const EPS_AXIS_ALONG_NORMAL: f64 = 1.0e-8;
 
 /// The sketch records of the part, and what their dimensions state of the
 /// parameters they bind.
@@ -77,6 +87,30 @@ pub(super) struct Sketches {
     /// The entities stated construction because their curve record has
     /// state `0`, whose construction the decoder does not mark.
     pub(super) outside_profile: Vec<SketchEntityId>,
+    /// The circles and arcs built from a dimension record that are stated
+    /// construction although the decoder does not mark them, with why.
+    pub(super) dimension_curves: Vec<(SketchEntityId, Unstored)>,
+}
+
+/// Why a circle or arc built from a dimension record is not profile
+/// geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Unstored {
+    /// It repeats the center and radius of another circle or arc of its
+    /// sketch.
+    Repeats,
+    /// No cylindrical face of the solid has its radius on an axis along the
+    /// sketch normal through its center.
+    Unwitnessed,
+}
+
+impl Unstored {
+    pub(super) fn text(self) -> &'static str {
+        match self {
+            Self::Repeats => "repeats another curve of its sketch",
+            Self::Unwitnessed => "no face of the solid lies on it",
+        }
+    }
 }
 
 /// What the projection reads besides the v10 sketch records.
@@ -89,6 +123,8 @@ pub(super) struct Context<'a> {
     pub(super) supports: &'a HashMap<FeatureId, (FeatureId, PrincipalEntity)>,
     /// The entities read from a curve record of state `0`.
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The surfaces of the current geometry.
+    pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
 }
 
 /// Type each `Unresolved` sketch feature of `features` whose sketch the
@@ -151,7 +187,8 @@ fn sketch(
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
-    for entity in &entities {
+    let mut dimension_curves = Vec::new();
+    for (index, entity) in entities.iter().enumerate() {
         let Some(form) = curve(&entity.geometry) else {
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
@@ -160,12 +197,16 @@ fn sketch(
         if outside && !entity.construction {
             outside_profile.push(entity.id().clone());
         }
+        let unstored = unstored(index, &entities, record, context.surfaces);
+        if let Some(reason) = unstored.filter(|_| !entity.construction && !outside) {
+            dimension_curves.push((entity.id().clone(), reason));
+        }
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: (entity.construction || outside).then_some(true),
+            construction: (entity.construction || outside || unstored.is_some()).then_some(true),
             centerline: None,
             native: None,
             native_options: NativeOptions::new(),
@@ -237,6 +278,7 @@ fn sketch(
     });
     out.entities.extend(sketch_entities);
     out.outside_profile.extend(outside_profile);
+    out.dimension_curves.extend(dimension_curves);
     out.measured.extend(
         constraints
             .iter()
@@ -429,6 +471,100 @@ impl Roles {
     /// The point entity at the start (`true`) or end of `curve`.
     fn end(&self, curve: &SketchEntityId, start: bool) -> Option<&SketchEntityId> {
         self.ends.get(&(curve.clone(), start))
+    }
+}
+
+/// Why the circle or arc `entities[index]`, built from a dimension record, is
+/// not profile geometry; `None` where no dimension record built it or a face
+/// of the solid witnesses it. A dimension record stores a radius and a
+/// handle whose coordinate the decoder reads as the center (`sldprt.md` §2,
+/// open item DI-83); no curve record stores the curve.
+fn unstored(
+    index: usize,
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    record: &cadmpeg_ir::sketches::Sketch,
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) -> Option<Unstored> {
+    let (center, radius) = dimension_carrier(entities.get(index)?)?;
+    let repeats = entities.iter().enumerate().any(|(other, candidate)| {
+        other != index
+            && (other < index || dimension_carrier(candidate).is_none())
+            && carrier(&candidate.geometry).is_some_and(|(at, size)| {
+                (at[0] - center[0]).hypot(at[1] - center[1]) <= LINEAR_RESOLUTION_MM
+                    && (size - radius).abs() <= LINEAR_RESOLUTION_MM
+            })
+    });
+    if repeats {
+        return Some(Unstored::Repeats);
+    }
+    let witnessed = record
+        .resolved_placement()
+        .is_some_and(|(origin, normal, u_axis)| {
+            let v_axis = [
+                normal.y * u_axis.z - normal.z * u_axis.y,
+                normal.z * u_axis.x - normal.x * u_axis.z,
+                normal.x * u_axis.y - normal.y * u_axis.x,
+            ];
+            let at = [
+                origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
+                origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
+                origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
+            ];
+            surfaces
+                .iter()
+                .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
+        });
+    (!witnessed).then_some(Unstored::Unwitnessed)
+}
+
+/// Whether `surface` is a cylinder of `radius` whose axis lies along
+/// `normal` through `at`.
+fn on_cylinder(
+    surface: &cadmpeg_ir::geometry::Surface,
+    normal: [f64; 3],
+    at: [f64; 3],
+    radius: f64,
+) -> bool {
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder)) =
+        surface.geometry.solved()
+    else {
+        return false;
+    };
+    let axis = cylinder.frame().axis().as_raw();
+    let alignment = axis.x * normal[0] + axis.y * normal[1] + axis.z * normal[2];
+    if !((alignment.abs() - 1.0).abs() <= EPS_AXIS_ALONG_NORMAL
+        && (cylinder.radius().get() - radius).abs() <= LINEAR_RESOLUTION_MM)
+    {
+        return false;
+    }
+    let origin = cylinder.origin().get();
+    let offset = [at[0] - origin.x, at[1] - origin.y, at[2] - origin.z];
+    let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
+    let off_axis = [
+        offset[0] - along * axis.x,
+        offset[1] - along * axis.y,
+        offset[2] - along * axis.z,
+    ];
+    off_axis[0].hypot(off_axis[1]).hypot(off_axis[2]) <= LINEAR_RESOLUTION_MM
+}
+
+/// The center and radius of a circle or arc whose geometry carrier is a
+/// relation record: one the decoder built from a dimension record.
+fn dimension_carrier(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<([f64; 2], f64)> {
+    entity
+        .geometry_ref
+        .as_deref()?
+        .strip_prefix(RELATION_INSTANCE_ID_PREFIX)?;
+    carrier(&entity.geometry)
+}
+
+/// The center and radius of a circle or an arc.
+fn carrier(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<([f64; 2], f64)> {
+    match geometry.definition() {
+        Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
+            Some(([center.u, center.v], radius.get()))
+        }
+        _ => None,
     }
 }
 

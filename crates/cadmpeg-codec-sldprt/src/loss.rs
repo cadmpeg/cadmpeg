@@ -357,6 +357,10 @@ pub(crate) enum SldprtLossCode {
     /// Typed extrudes whose `Sketch` pick's closed regions differ from the
     /// profile loops read from the stored records.
     DesignExtrudeProfileDiffers,
+    /// Sketch circles and arcs built from a dimension record, which no curve
+    /// record stores, stated construction where they repeat another curve of
+    /// their sketch or no face of the solid witnesses them.
+    DesignSketchDimensionCurveConstruction,
 }
 
 impl SldprtLossCode {
@@ -506,6 +510,7 @@ impl SldprtLossCode {
         Self::DesignExtrudeDepthAssumed,
         Self::DesignSketchConstructionAssumed,
         Self::DesignExtrudeProfileDiffers,
+        Self::DesignSketchDimensionCurveConstruction,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -677,6 +682,9 @@ impl SldprtLossCode {
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
             Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignSketchDimensionCurveConstruction => {
+                "design.sketch-dimension-curve-construction"
+            }
         }
     }
 
@@ -818,7 +826,8 @@ impl SldprtLossCode {
             | Self::DesignParameterDisplayRounded
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
-            | Self::DesignExtrudeProfileDiffers => Severity::Warning,
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignSketchDimensionCurveConstruction => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -876,7 +885,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignSketchConstructionAssumed
-            | Self::DesignExtrudeProfileDiffers => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignSketchDimensionCurveConstruction => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1290,6 +1300,7 @@ mod tests {
                 "design.extrude-depth-assumed",
                 "design.sketch-construction-assumed",
                 "design.extrude-profile-differs",
+                "design.sketch-dimension-curve-construction",
             ]
         );
     }

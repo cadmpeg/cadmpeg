@@ -18,7 +18,7 @@ use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
 use super::profile_check::Difference;
-use super::sketch::Sketches;
+use super::sketch::{Sketches, Unstored};
 use super::tree::Timeline;
 use super::{extrude, sketch};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
@@ -39,6 +39,9 @@ pub(super) struct Typed {
     /// The note of the sketch curves stated construction for the state of
     /// their curve record.
     pub(super) state_construction: Option<LossNote>,
+    /// The note of the circles and arcs built from a dimension record that
+    /// are stated construction.
+    pub(super) dimension_construction: Option<LossNote>,
     /// The note of the typed extrudes whose sketch's closed regions differ
     /// from the stored profile.
     pub(super) profile_differs: Option<LossNote>,
@@ -50,6 +53,8 @@ pub(super) struct Scope<'a> {
     pub(super) definition: &'a ProductDefinitionId,
     /// The sketch entities read from a curve record of state `0`.
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The surfaces of the current geometry.
+    pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
 }
 
 /// Type the sketches, then the extrudes, of `timeline`.
@@ -70,6 +75,7 @@ pub(super) fn project(
             scope: scope.definition,
             supports: &supports,
             outside_profile: scope.outside_profile,
+            surfaces: scope.surfaces,
         },
     );
     let stated = sketches
@@ -101,6 +107,7 @@ pub(super) fn project(
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
+    let dimension_construction = dimension_construction(&sketches.dimension_curves);
     let profile_differs = profile_differs(&extrudes.differs);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
@@ -115,6 +122,7 @@ pub(super) fn project(
         loss,
         assumed,
         state_construction,
+        dimension_construction,
         profile_differs,
     }
 }
@@ -151,6 +159,28 @@ fn state_construction(entities: &[SketchEntityId]) -> Option<LossNote> {
              construction, as curves outside their sketch's profile (EV-32): {}",
             entities.len(),
             listed(entities.iter().map(|entity| entity.as_str().to_owned())),
+        )),
+    )
+}
+
+/// One note naming each circle and arc built from a dimension record that
+/// the design states construction, with why: no curve record stores it, and
+/// it repeats another curve of its sketch or no face of the solid lies on it
+/// (open item DI-83).
+fn dimension_construction(entities: &[(SketchEntityId, Unstored)]) -> Option<LossNote> {
+    if entities.is_empty() {
+        return None;
+    }
+    Some(
+        SldprtLossCode::DesignSketchDimensionCurveConstruction.note(format!(
+            "{} sketch circles and arcs built from a dimension record, which no curve record \
+             stores, are construction; their dimensions keep them as references (DI-83): {}",
+            entities.len(),
+            listed(entities.iter().map(|(entity, reason)| format!(
+                "{} ({})",
+                entity.as_str(),
+                reason.text()
+            ))),
         )),
     )
 }

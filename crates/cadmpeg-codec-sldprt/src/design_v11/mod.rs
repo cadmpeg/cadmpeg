@@ -109,11 +109,13 @@ pub(crate) fn project(
         &typed::Scope {
             definition: &definition,
             outside_profile,
+            surfaces: &ir.geometry.surfaces,
         },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_construction);
     losses.extend(typed.profile_differs);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
