@@ -1164,6 +1164,16 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
 
+### DI-83. Circles built from circular-dimension records
+
+**Question.** Which record states the circle or arc that an `sgCircleDim` dimension measures when no curve record of its sketch holds one at the handle, and when is the handle coordinate the center?
+
+**Known.** The decoder builds a full circle from such a dimension (`sldprt.md` §2, circular dimensions): the transformed handle coordinate is the center and the dimension is the radius; the relation record is its geometry carrier. On the fast tier 44 such circles reach a design sketch in 42 parts. 10 lie on the carrier of a circle or arc that a curve record of the sketch stores: 6 repeat a stored circle, with radii that differ in the ninth digit, and 4 have the center and radius of a stored arc. 12 have their center at the dimension radius from the center of a stored curve of that radius, so the handle is a point on that curve. 6 have a stored curve of that radius elsewhere in the sketch and 16 have none. 4 have a cylinder face of their radius on an axis along the sketch normal through their center, within 5e-9 mm; 30 that repeat no stored curve have none. The design states a built circle or arc construction where it repeats the center and radius of another circle or arc of its sketch, or where no cylinder face of its radius lies on an axis along the sketch normal through its center; otherwise it stays as built. The dimension keeps the curve as its reference, and `design.sketch-dimension-curve-construction` names each curve and the reason.
+
+**Need.** The role of the handle in the relation record (center, or a point on the curve) and the curve record the dimension's operands address when the sketch stores the curve, compared with the cylinder faces the feature produces.
+
+**Conflict.** A cylinder face witnesses a circle, not the feature that cut it: a built circle that a later feature's hole repeats stays profile geometry.
+
 ### DI-72. Length unit codes and the three-word unit base
 
 **Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
