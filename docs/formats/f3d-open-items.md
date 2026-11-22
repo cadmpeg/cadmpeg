@@ -76,13 +76,21 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which record and field select the saved rollback position in the authored timeline?
 
-**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope. Both history-state identities of that scope are null, which establishes suppression under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
+**Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. A suppressed `Combine` item stores null for both history-state identities, under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". The decoder reads the marker from the state byte `s1` of each scope tail, as §3.1 "In every form, the state bytes" states it: the items with `s1 = 1` are the last items of their timeline, and the marker stands before the first of them. With no such item, the marker stands after the last item. A built item after an item with `s1 = 1`, or an item with unread flags after it, makes the decoder state the timeline built through its last item or before that first item with `history.rollback-unread`. An item with unread flags immediately before that first item adds `history.rollback-bound-unread`.
 
-**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Include a `Combine` that is added after the marker and never computed. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+**Need.** Designs from other sources whose timelines hold items with `s1 = 1`, checked against their own BREP histories: the bound history must end at the state of the last item before the marker. Include a `Combine` after the marker that was never computed. A timeline whose marker and BREP history disagree would show what else selects the marker.
 
 **Conflict.** A `Combine` after the saved marker that Fusion reports as rolled back and not suppressed has null current and preceding history-state identities, and the §3.1 rule reads it as suppressed. A rolled-back `Combine` that was computed before the marker moved keeps both identities.
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
+
+### DR-1005. Live flags of duplicate scope envelopes
+
+**Question.** Same-index scope envelopes can differ only in their suppressed and rolled-back flags, with no envelope bound to an ASM transition and no single envelope at a primary record frame. Which envelope's flags are live?
+
+**Known.** `f3d.md` §3.1 "Same-index scope envelopes with the same logical payload" selects the authoritative envelope by a unique ASM transition, by equivalence of all logical payloads, or by a unique primary record frame. The decoder keeps the later envelope in stream order. Where that envelope stores flags, it keeps them. Where it stores none, it keeps the flags of the latest earlier envelope that stores them, with their byte offsets in that envelope. For each such record it charges one `feature.scope-envelope-superseded` note that names the scope, the envelope that supplied the kept flags and their values, and the byte offset and flags of each other envelope whose flags differ from the kept flags.
+
+**Need.** A field or an order rule that selects the live envelope. The two flags decide whether the feature builds and where the timeline marker stands, so the selection changes the evaluated design.
 
 ### DR-520. Operation tables with an empty path, a two-reference path, or version two or three
 

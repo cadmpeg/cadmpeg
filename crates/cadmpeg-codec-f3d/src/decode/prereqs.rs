@@ -44,9 +44,10 @@ pub(super) struct ProductPrereqs {
     /// final flag byte; the session reports them as losses.
     pub(super) design_parameter_owner_trailer_flags:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
-    /// Non-equivalent duplicate scope envelopes superseded by the
-    /// primary-indexed envelope; the session reports them as a loss.
-    pub(super) design_superseded_scope_envelopes: usize,
+    /// Non-equivalent duplicate scope envelopes that admission did not
+    /// decode; the session reports them as losses.
+    pub(super) design_superseded_scope_envelopes:
+        crate::design::decode::scopes::parameter_scope::SupersededScopeEnvelopes,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
     /// Headers of the records that entity headers index. Sketch relations
     /// decode from this set only.
