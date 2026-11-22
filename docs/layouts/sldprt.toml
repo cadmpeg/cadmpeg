@@ -15516,3 +15516,74 @@ anchor = "a little-endian u32 at trailer +26"
 offset = 30
 size = 2
 note = "Two bytes."
+
+[[record]]
+name = "sketch_external_handle_block_54"
+kind = "byte"
+section = "Sketch objects"
+anchor = "or 54 in older files and in some of `swVersion` 14000"
+size = 54
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs"
+note = "The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null."
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Four bytes."
+
+[[record.field]]
+name = "plane_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "whose u32 at +4 is the sketch's plane-reference identifier"
+
+[[record.gap]]
+offset = 8
+size = 12
+note = "Twelve bytes."
+
+[[record.field]]
+name = "first_sentinel"
+offset = 20
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.field]]
+name = "second_sentinel"
+offset = 24
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.field]]
+name = "third_sentinel"
+offset = 28
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.gap]]
+offset = 32
+size = 4
+note = "Four bytes."
+
+[[record.field]]
+name = "version"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "a version number at +36"
+
+[[record.field]]
+name = "trailing_zeros"
+offset = 40
+type = "bytes[14]"
+source = "spec"
+anchor = "which end with fourteen zero bytes after the version"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

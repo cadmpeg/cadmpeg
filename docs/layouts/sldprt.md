@@ -4272,6 +4272,30 @@ Unstated regions:
 - `4..20` (16 B): Sixteen bytes.
 - `30..32` (2 B): Two bytes.
 
+## `sketch_external_handle_block_54`
+
+Spec §Sketch objects · layout: byte offsets · size: 54 B
+
+The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 4 | `plane_reference` | `u32` | little | spec | whose u32 at +4 is the sketch's plane-reference identifier |
+| 20 | 4 | `first_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 24 | 4 | `second_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 28 | 4 | `third_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 36 | 4 | `version` | `u32` | little | spec | a version number at +36 |
+| 40 | 14 | `trailing_zeros` | `bytes[14]` | little | spec | which end with fourteen zero bytes after the version · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..4` (4 B): Four bytes.
+- `8..20` (12 B): Twelve bytes.
+- `32..36` (4 B): Four bytes.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
