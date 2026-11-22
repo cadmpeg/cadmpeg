@@ -423,11 +423,12 @@ fn a_selection_written_by_a_source_token_is_named_as_naming_no_written_record() 
 }
 
 #[test]
-fn a_profile_selection_read_back_as_its_whole_sketch_is_named() {
+fn a_profile_selection_of_every_profile_of_its_sketch_is_not_named() {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
     let mut ir = cube_with_foreign_history();
     let sketch = ir.model.sketches[0].id.clone();
+    assert_eq!(ir.model.sketches[0].profiles.len(), 1);
     let boss = ir
         .model
         .features
@@ -445,12 +446,267 @@ fn a_profile_selection_read_back_as_its_whole_sketch_is_named() {
         });
     });
     let losses = plan_losses(&ir);
-    let note = loss(&losses, "writer.feature-fields-omitted").expect("named profile");
     assert!(
-        note.message.contains(&format!(
-            "{BOSS} (profile: sketch_profiles read as a reference to a whole record)"
-        )),
-        "{}",
-        note.message
+        loss(&losses, "writer.feature-fields-omitted").is_none(),
+        "{losses:#?}"
     );
+}
+
+/// `cube_with_foreign_history` plus a pattern `Grid` of the boss.
+fn cube_with_foreign_pattern(
+    transform: cadmpeg_ir::features::patterns::PatternTransform,
+) -> (cadmpeg_ir::CadIr, FeatureId) {
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed};
+
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "grid", "Grid", |_, _, _| {
+        FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![PatternSeed::Feature(boss())],
+            pattern: PatternKind::new(transform).unwrap(),
+        })
+    });
+    ir.model.features.last_mut().unwrap().dependencies =
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss()]).unwrap();
+    (ir, id)
+}
+
+fn decoded_pattern(
+    ir: &cadmpeg_ir::CadIr,
+) -> (&Feature, &cadmpeg_ir::features::patterns::PatternTransform) {
+    let grid = decoded_feature(ir, "Grid");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        grid.evaluation.definition()
+    else {
+        panic!("{:?}", grid.evaluation.definition());
+    };
+    (grid, pattern.definition())
+}
+
+fn assert_renamed(losses: &[cadmpeg_ir::report::loss::LossNote], renames: &[(&str, &str)]) {
+    let note = loss(losses, "writer.parameters-renamed").expect("named rename");
+    for (from, to) in renames {
+        assert!(
+            note.message
+                .contains(&format!("other:model:parameter#{from} ({from} as {to})")),
+            "{}",
+            note.message
+        );
+    }
+}
+
+#[test]
+fn a_linear_pattern_decodes_back_with_its_counts_and_spacings_under_d1_to_d4() {
+    use cadmpeg_ir::features::patterns::{LinearPatternDirection, PatternTransform};
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let (mut ir, id) = cube_with_foreign_pattern(PatternTransform::Linear {
+        direction: Some(FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap()),
+        spacing: PositiveLength::new(5.0).unwrap(),
+        count: 4,
+        second: Some(LinearPatternDirection {
+            direction: FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            spacing: PositiveLength::new(7.0).unwrap(),
+            count: 3,
+            symmetric: false,
+        }),
+        omitted_instances: Vec::new(),
+        symmetric: false,
+    });
+    push_parameter(&mut ir, &id, "d11", "4".into(), ParameterValue::Integer(4));
+    push_length_parameter(&mut ir, &id, "d12", 5.0);
+    push_parameter(&mut ir, &id, "d13", "3".into(), ParameterValue::Integer(3));
+    push_length_parameter(&mut ir, &id, "d14", 7.0);
+    let losses = plan_losses(&ir);
+    assert_renamed(
+        &losses,
+        &[("d11", "D1"), ("d12", "D3"), ("d13", "D2"), ("d14", "D4")],
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (grid, pattern) = decoded_pattern(&decoded);
+    assert!(
+        matches!(
+            pattern,
+            PatternTransform::Linear { spacing, count: 4, second: Some(second), .. }
+                if (spacing.get() - 5.0).abs() < 1.0e-9
+                    && second.count == 3
+                    && (second.spacing.get() - 7.0).abs() < 1.0e-9
+        ),
+        "{pattern:?}"
+    );
+    assert_eq!(owned_names(&decoded, grid), ["D1", "D2", "D3", "D4"]);
+}
+
+#[test]
+fn a_curve_driven_pattern_decodes_back_with_its_count_and_spacing_under_d1_and_d3() {
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let (mut ir, id) = cube_with_foreign_pattern(PatternTransform::CurveDriven {
+        path: Some(cadmpeg_ir::features::PathRef::Sketch(
+            cadmpeg_ir::sketches::SketchId::mint("other:model:sketch#profile").unwrap(),
+        )),
+        spacing: PositiveLength::new(2.5).unwrap(),
+        count: 6,
+    });
+    push_parameter(&mut ir, &id, "d21", "6".into(), ParameterValue::Integer(6));
+    push_length_parameter(&mut ir, &id, "d22", 2.5);
+    let losses = plan_losses(&ir);
+    assert_renamed(&losses, &[("d21", "D1"), ("d22", "D3")]);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (grid, pattern) = decoded_pattern(&decoded);
+    assert!(
+        matches!(
+            pattern,
+            PatternTransform::CurveDriven { spacing, count: 6, .. }
+                if (spacing.get() - 2.5).abs() < 1.0e-9
+        ),
+        "{pattern:?}"
+    );
+    assert_eq!(owned_names(&decoded, grid), ["D1", "D3"]);
+}
+
+#[test]
+fn an_extrude_taper_decodes_back_under_draft() {
+    let taper = 3.0_f64.to_radians();
+    let mut ir = cube_with_foreign_history();
+    set_boss_extent(
+        &mut ir,
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                draft: Some(SlopeAngle::new(taper).unwrap()),
+                ..blind(12.0)
+            },
+        },
+    );
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    push_parameter(
+        &mut ir,
+        &boss(),
+        "d2",
+        "3 deg".into(),
+        ParameterValue::Angle(Angle::new(taper).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    assert_renamed(&losses, &[("d1", "D1"), ("d2", "Draft")]);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (boss, extent) = decoded_extent(&decoded);
+    assert!(
+        matches!(
+            extent,
+            ExtrudeExtent::OneSided { side: ExtrudeSide { draft: Some(draft), .. } }
+                if (draft.get() - taper).abs() < 1.0e-9
+        ),
+        "{extent:?}"
+    );
+    assert_eq!(owned_names(&decoded, boss), ["D1", "Draft"]);
+}
+
+#[test]
+fn a_face_rotation_decodes_back_with_its_angle_under_angle() {
+    let turn = 15.0_f64.to_radians();
+    let mut ir = cube_with_foreign_history();
+    let id = push_foreign_feature(&mut ir, "turn", "Turn", |state, face, _| {
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::historical(
+                state,
+                vec![face],
+                "other:design:face-operand#turn".into(),
+            )
+            .unwrap(),
+            motion: FaceMotion::Rotate {
+                axis_origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                axis_dir: FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                angle: Angle::new(turn).unwrap(),
+            },
+        })
+    });
+    push_parameter(
+        &mut ir,
+        &id,
+        "d31",
+        "15 deg".into(),
+        ParameterValue::Angle(Angle::new(turn).unwrap()),
+    );
+    let losses = plan_losses(&ir);
+    assert_renamed(&losses, &[("d31", "Angle")]);
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let turned = decoded_feature(&decoded, "Turn");
+    assert!(
+        matches!(
+            turned.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::MoveFace {
+                motion: FaceMotion::Rotate { angle, .. },
+                ..
+            }) if (angle.get() - turn).abs() < 1.0e-9
+        ),
+        "{:?}",
+        turned.evaluation.definition()
+    );
+    assert_eq!(owned_names(&decoded, turned), ["Angle"]);
+}
+
+#[test]
+fn the_bodies_a_feature_produces_are_named_when_its_record_reads_back_without_them() {
+    let mut ir = cube_with_foreign_history();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == BOSS)
+        .unwrap()
+        .evaluation
+        .edit(|_, outputs| {
+            *outputs = cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap();
+        });
+    let losses = plan_losses(&ir);
+    assert!(
+        losses.iter().any(|note| {
+            note.code.local_code() == "writer.feature-fields-omitted"
+                && note.message.contains(&format!(
+                    "writes 1 feature(s) whose records read back without 1 of the bodies their \
+                     source features produce: `{BOSS}`"
+                ))
+        }),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_dimension_whose_name_collides_after_replacement_is_named_as_not_written() {
+    let mut ir = cube_with_foreign_history();
+    push_length_parameter(&mut ir, &boss(), "d1", 12.0);
+    for (name, source_name, value) in [("w1", "w\u{1}", 3.0), ("w2", "w\u{2}", 4.0)] {
+        push_length_parameter(&mut ir, &boss(), name, value);
+        ir.model.parameters.last_mut().unwrap().name = source_name.into();
+    }
+    let losses = plan_losses(&ir);
+    let dropped = losses
+        .iter()
+        .find(|note| {
+            note.code.local_code() == "writer.features-omitted"
+                && note
+                    .message
+                    .contains("writes no dimension for 1 parameter(s)")
+        })
+        .unwrap_or_else(|| panic!("{losses:#?}"));
+    assert!(
+        dropped.message.ends_with(": other:model:parameter#w2"),
+        "{}",
+        dropped.message
+    );
+    let replaced = loss(&losses, "writer.keywords-characters-replaced").expect("named text");
+    assert!(
+        replaced.message.contains("other:model:parameter#w1")
+            && !replaced.message.contains("other:model:parameter#w2"),
+        "{}",
+        replaced.message
+    );
+
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    let (boss, _) = decoded_extent(&decoded);
+    assert_eq!(owned_names(&decoded, boss), ["D1", "w\u{fffd}"]);
 }

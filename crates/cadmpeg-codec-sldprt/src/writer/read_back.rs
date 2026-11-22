@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The features of another format against what their written Keywords
-//! records read back as (§3.4): each value a record does not hold, and each
-//! selection a record holds by a token of the source document, is named.
+//! records read back as (§3.4): each value a record does not hold, each
+//! selection a record holds by a token of the source document, and each
+//! feature whose record states fewer bodies than it produces, is named.
 
 use std::collections::HashMap;
 
@@ -12,7 +13,7 @@ use serde_json::Value;
 
 use crate::history::project::neutral_feature_id;
 use crate::history::write::features::generated_feature_record_id;
-use crate::loss::SldprtLossCode;
+use crate::loss::{named, SldprtLossCode};
 use crate::native::SldprtNative;
 
 /// Relative difference within which a number of a definition reads back as
@@ -30,9 +31,9 @@ const SOURCE_TOKEN_SELECTIONS: [&str; 6] = [
     "historical_partial",
 ];
 
-/// The definitions of the features of another format, as the writer received
-/// them.
-pub(super) struct SourceDefinitions(HashMap<FeatureId, FeatureDefinition>);
+/// The definitions of the features of another format, with the number of
+/// bodies each produces, as the writer received them.
+pub(super) struct SourceDefinitions(HashMap<FeatureId, (FeatureDefinition, usize)>);
 
 impl SourceDefinitions {
     pub(super) fn of(ir: &CadIr) -> Self {
@@ -40,14 +41,22 @@ impl SourceDefinitions {
             ir.model
                 .features
                 .iter()
-                .map(|feature| (feature.id.clone(), feature.evaluation.definition().clone()))
+                .map(|feature| {
+                    (
+                        feature.id.clone(),
+                        (
+                            feature.evaluation.definition().clone(),
+                            feature.evaluation.outputs().len(),
+                        ),
+                    )
+                })
                 .collect(),
         )
     }
 
     /// The notes for the features `ir` keeps: that `native` holds them as
-    /// Keywords records alone, the values their records read back without,
-    /// and the selections their records hold by a source token.
+    /// Keywords records alone, the values and the bodies their records read
+    /// back without, and the selections their records hold by a source token.
     pub(super) fn notes(&self, ir: &CadIr, native: Option<&SldprtNative>) -> Vec<LossNote> {
         let kept = ir
             .model
@@ -85,11 +94,19 @@ impl SourceDefinitions {
         };
         let projected = projected
             .iter()
-            .map(|feature| (&feature.id, feature.evaluation.definition()))
+            .map(|feature| (&feature.id, feature))
+            .collect::<HashMap<_, _>>();
+        let profiles = ir
+            .model
+            .sketches
+            .iter()
+            .map(|sketch| (sketch.id.as_str(), sketch.profiles.len()))
             .collect::<HashMap<_, _>>();
         let mut tokens = Vec::new();
         let mut differences = Vec::new();
-        for (feature, source) in kept {
+        let mut bodiless = Vec::new();
+        let mut bodies = 0;
+        for (feature, (source, outputs)) in kept {
             let record = feature
                 .native_ref
                 .clone()
@@ -104,8 +121,13 @@ impl SourceDefinitions {
                 ));
                 continue;
             };
-            let mut comparison = Comparison::default();
-            comparison.compare(&value(source), &value(read), "");
+            let missing = outputs.saturating_sub(read.evaluation.outputs().len());
+            if missing > 0 {
+                bodiless.push(feature.id.as_str());
+                bodies += missing;
+            }
+            let mut comparison = Comparison::new(&profiles);
+            comparison.compare(&value(source), &value(read.evaluation.definition()), "");
             if comparison.token {
                 tokens.push(feature.id.as_str());
             }
@@ -136,6 +158,14 @@ impl SourceDefinitions {
                 differences.join(", ")
             )));
         }
+        if !bodiless.is_empty() {
+            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
+                "the SLDPRT history writer writes {} feature(s) whose records read back without \
+                 {bodies} of the bodies their source features produce: {}",
+                bodiless.len(),
+                named(&bodiless)
+            )));
+        }
         notes
     }
 }
@@ -144,19 +174,29 @@ fn value(definition: &FeatureDefinition) -> Value {
     serde_json::to_value(definition).unwrap_or(Value::Null)
 }
 
-#[derive(Default)]
-struct Comparison {
+struct Comparison<'a> {
+    /// The number of profiles of each sketch, by sketch identity.
+    profiles: &'a HashMap<&'a str, usize>,
     /// A selection reads back as a token of the source document.
     token: bool,
     /// Each source value the record reads back without, by field path.
     differences: Vec<String>,
 }
 
-impl Comparison {
+impl<'a> Comparison<'a> {
+    fn new(profiles: &'a HashMap<&'a str, usize>) -> Self {
+        Self {
+            profiles,
+            token: false,
+            differences: Vec::new(),
+        }
+    }
+
     /// Compare the source value at `path` with the value read back there.
-    /// Field paths leave out the `value` of each tagged variant. A reference,
-    /// a record with an identity field, reads back under the identity of a
-    /// written record; the writer's dependency check compares references.
+    /// Field paths leave out the `value` of each tagged variant. An identity
+    /// reads back as the identity of a written record, so identities and
+    /// tagged references are not compared; the writer's dependency check
+    /// compares references.
     fn compare(&mut self, source: &Value, read: &Value, path: &str) {
         match (source, read) {
             (Value::Object(source), Value::Object(read)) => {
@@ -169,12 +209,16 @@ impl Comparison {
                     self.token = true;
                     return;
                 }
-                if source.values().any(identity) {
+                if reference(source) {
                     return;
                 }
                 if source_kind != read_kind {
+                    let whole_record = read.values().any(identity);
+                    if whole_record && self.every_profile(source) {
+                        return;
+                    }
                     let source_kind = source_kind.unwrap_or("a record");
-                    self.differences.push(if read.values().any(identity) {
+                    self.differences.push(if whole_record {
                         format!(
                             "{}: {source_kind} read as a reference to a whole record",
                             label(path)
@@ -189,7 +233,7 @@ impl Comparison {
                     return;
                 }
                 for (key, value) in source {
-                    if value.is_null() || key == "kind" {
+                    if value.is_null() || key == "kind" || identity(value) {
                         continue;
                     }
                     let child = match (path.is_empty(), key.as_str()) {
@@ -199,10 +243,7 @@ impl Comparison {
                     };
                     match read.get(key) {
                         Some(read) => self.compare(value, read, &child),
-                        None if identity(value)
-                            || value
-                                .as_object()
-                                .is_some_and(|record| record.values().any(identity)) => {}
+                        None if value.as_object().is_some_and(reference) => {}
                         None => self.differences.push(format!(
                             "{}: {} lost",
                             label(&child),
@@ -234,6 +275,35 @@ impl Comparison {
         }
     }
 
+    /// Whether `source` selects every profile of its sketch, which the
+    /// whole sketch selects too.
+    fn every_profile(&self, source: &serde_json::Map<String, Value>) -> bool {
+        if source.get("kind").and_then(Value::as_str) != Some("sketch_profiles") {
+            return false;
+        }
+        let selection = source.get("value");
+        let Some(count) = selection
+            .and_then(|selection| selection.get("sketch"))
+            .and_then(Value::as_str)
+            .and_then(|sketch| self.profiles.get(sketch))
+        else {
+            return false;
+        };
+        let Some(indices) = selection
+            .and_then(|selection| selection.get("profiles"))
+            .and_then(Value::as_array)
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|index| index.as_u64().and_then(|index| usize::try_from(index).ok()))
+                    .collect::<Option<std::collections::BTreeSet<_>>>()
+            })
+        else {
+            return false;
+        };
+        *count > 0 && indices.is_some_and(|indices| indices.into_iter().eq(0..*count))
+    }
+
     fn read_as(&mut self, path: &str, source: &Value, read: &Value) {
         self.differences.push(format!(
             "{}: {} read as {}",
@@ -242,6 +312,11 @@ impl Comparison {
             summary(read)
         ));
     }
+}
+
+/// Whether `record` is a tagged variant whose value is an identity.
+fn reference(record: &serde_json::Map<String, Value>) -> bool {
+    record.contains_key("kind") && record.get("value").is_some_and(identity)
 }
 
 /// Whether `value` is an identity or a list of identities.
@@ -271,5 +346,45 @@ fn summary(value: &Value) -> String {
         Value::Array(items) => format!("{} item(s)", items.len()),
         Value::String(text) => text.clone(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use super::Comparison;
+
+    #[test]
+    fn a_value_beside_an_identity_is_compared() {
+        let profiles = HashMap::new();
+        let mut comparison = Comparison::new(&profiles);
+        comparison.compare(
+            &json!({"kind": "sketch_profiles", "value": {"sketch": "other:sketch#a", "profiles": [0, 1]}}),
+            &json!({"kind": "sketch_profiles", "value": {"sketch": "sldprt:sketch#1", "profiles": [0]}}),
+            "profile",
+        );
+        assert_eq!(
+            comparison.differences,
+            ["profile.profiles: 2 item(s) read as 1 item(s)"]
+        );
+    }
+
+    #[test]
+    fn a_selection_of_every_profile_reads_back_as_its_whole_sketch() {
+        let profiles = HashMap::from([("other:sketch#a", 2)]);
+        let read = json!({"kind": "sketch", "value": "sldprt:sketch#1"});
+        let selection = |indices: &[u32]| json!({"kind": "sketch_profiles", "value": {"sketch": "other:sketch#a", "profiles": indices}});
+        let mut every = Comparison::new(&profiles);
+        every.compare(&selection(&[1, 0]), &read, "profile");
+        assert!(every.differences.is_empty(), "{:?}", every.differences);
+        let mut subset = Comparison::new(&profiles);
+        subset.compare(&selection(&[1]), &read, "profile");
+        assert_eq!(
+            subset.differences,
+            ["profile: sketch_profiles read as a reference to a whole record"]
+        );
     }
 }

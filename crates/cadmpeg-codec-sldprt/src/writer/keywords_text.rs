@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The texts and attribute names of the Keywords history as the reader's XML
 //! parser reads them back (§3.4). A character XML 1.0 does not allow is
-//! written as U+FFFD, and a property whose name is not an attribute name of
-//! its element is left out; both are named.
+//! written as U+FFFD, a property whose name is not an attribute name of its
+//! element is left out, and a dimension whose name becomes the name of another
+//! dimension of its record is left out; each is named.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -44,6 +45,7 @@ pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
         .collect::<HashMap<_, _>>();
     let mut replaced = BTreeSet::new();
     let mut left_out = Vec::new();
+    let mut dimensions_left_out = Vec::new();
     for history in &mut native.feature_histories {
         let label = format!("history {}", history.id);
         let mut changed = history.part_name.as_mut().is_some_and(replace);
@@ -103,12 +105,27 @@ pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
                     replaced.insert(label);
                 }
             }
-            for name in dimension_names(feature) {
+            let (written, collided) = dimension_names(feature);
+            for name in written {
                 replaced.insert(dimension_label(&parameters, owner, &name));
+            }
+            for name in collided {
+                let label = dimension_label(&parameters, owner, &name);
+                replaced.remove(&label);
+                dimensions_left_out.push(label);
             }
         }
     }
     let mut notes = Vec::new();
+    if !dimensions_left_out.is_empty() {
+        notes.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
+            "the SLDPRT history writer writes no dimension for {} parameter(s): with U+FFFD in \
+             place of each character XML 1.0 does not allow, the name of each is the name of \
+             another dimension of its Keywords record, which holds one dimension per name: {}",
+            dimensions_left_out.len(),
+            dimensions_left_out.join(", ")
+        )));
+    }
     if !left_out.is_empty() {
         notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
             "the SLDPRT history writer writes {} record(s) without the source properties whose \
@@ -140,8 +157,10 @@ fn dimension_label(parameters: &HashMap<(&str, &str), &str>, owner: &str, name: 
 
 /// Write each dimension name of `feature` that holds a character XML 1.0
 /// does not allow with U+FFFD in its place, in its parameters, its dimension
-/// properties and its content, and return the source names.
-fn dimension_names(feature: &mut crate::records::Feature) -> Vec<String> {
+/// properties and its content. A dimension whose written name is already a
+/// name of `feature` is left out. Returns the source names written and the
+/// source names left out.
+fn dimension_names(feature: &mut crate::records::Feature) -> (Vec<String>, Vec<String>) {
     let renames = feature
         .parameters
         .keys()
@@ -150,24 +169,34 @@ fn dimension_names(feature: &mut crate::records::Feature) -> Vec<String> {
             replace(&mut text).then(|| (name.as_str().to_owned(), text))
         })
         .collect::<Vec<_>>();
-    for (source, written) in &renames {
-        if let Some(expression) = feature.parameters.remove(source.as_str()) {
-            if let Some(written) = NonBlankString::new(written.clone()) {
-                feature.parameters.insert(written, expression);
-            }
+    let mut written_names = Vec::new();
+    let mut collided = Vec::new();
+    for (source, written) in renames {
+        let expression = feature.parameters.remove(source.as_str());
+        let properties = feature.dimension_properties.remove(&source);
+        if feature.parameters.contains_key(written.as_str()) {
+            feature
+                .content
+                .retain(|item| !matches!(item, FeatureContent::Dimension(name) if *name == source));
+            collided.push(source);
+            continue;
         }
-        if let Some(properties) = feature.dimension_properties.remove(source) {
+        if let (Some(expression), Some(name)) = (expression, NonBlankString::new(written.clone())) {
+            feature.parameters.insert(name, expression);
+        }
+        if let Some(properties) = properties {
             feature
                 .dimension_properties
                 .insert(written.clone(), properties);
         }
         for item in &mut feature.content {
-            if matches!(item, FeatureContent::Dimension(name) if name == source) {
+            if matches!(item, FeatureContent::Dimension(name) if *name == source) {
                 *item = FeatureContent::Dimension(written.clone());
             }
         }
+        written_names.push(source);
     }
-    renames.into_iter().map(|(source, _)| source).collect()
+    (written_names, collided)
 }
 
 /// Leave out of `properties` each entry whose name is not an attribute name

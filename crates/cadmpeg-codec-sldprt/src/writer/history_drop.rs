@@ -319,8 +319,10 @@ impl ConstructionDimension {
 
 /// The construction values a Keywords record of `definition` reads from a
 /// named dimension, with the name a native record holds where the decoder
-/// reads it (`D1`, `D2`, `D3`, `D4`). A chamfer reads its values in dimension
-/// order and keeps its names.
+/// reads it (`D1`, `D2`, `D3`, `D4`). The decoder reads an extrude taper as
+/// `Draft`, a circular pattern as `Angle` and `Count`, and a face rotation as
+/// `Angle`, where native records hold `D3`, `D2` and `D1`, and `D1`. A
+/// chamfer reads its values in dimension order and keeps its names.
 fn construction_dimensions(definition: &FeatureDefinition) -> Vec<ConstructionDimension> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     use cadmpeg_ir::features::patterns::PatternTransform;

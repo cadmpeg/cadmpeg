@@ -1190,6 +1190,23 @@ pub(crate) fn spline_refusal(
     ))
 }
 
+/// Number of names that one loss message lists before it counts the rest.
+const NAMED_PER_NOTE: usize = 8;
+
+/// The first [`NAMED_PER_NOTE`] of `names`, then the count of the rest.
+pub(crate) fn named<S: AsRef<str>>(names: &[S]) -> String {
+    let mut text = names
+        .iter()
+        .take(NAMED_PER_NOTE)
+        .map(|name| format!("`{}`", name.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() > NAMED_PER_NOTE {
+        text = format!("{text}, and {} more", names.len() - NAMED_PER_NOTE);
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
