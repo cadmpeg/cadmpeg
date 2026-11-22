@@ -9,8 +9,8 @@
 //! that several curves name is one point entity with a role for each, so a
 //! coincidence of two of its ends is that entity's. An entity is
 //! construction where the decoder marks it construction or reads it from a
-//! curve record of state `0`, which no profile uses, unless it joins a
-//! curve of the sketch that closes only with the curves of state `0`;
+//! curve record of state `0`, which no profile uses, except in a sketch
+//! where another curve closes a loop only with the curves of state `0`;
 //! another entity states no flag. A dimension binds the parameter that holds its value, and states
 //! that parameter's quantity; a reference dimension makes the tree parameter
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
@@ -470,8 +470,8 @@ fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
 }
 
 /// The curves of `entities` read from a curve record of state `0`, with
-/// their construction bit clear, that the sketch's other non-construction
-/// curves close through (`profile_check::needed`).
+/// their construction bit clear, where the sketch's other non-construction
+/// curves close only through them (`profile_check::needed`).
 fn needed_state_zero<'a>(
     entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
     forms: &'a [Option<PlanarCurve>],
