@@ -241,15 +241,15 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
 
-**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`. cadmpeg regenerates an edited member after the lead byte and declaration of its source member, and writes a member with no source member after lead byte `86` (`sldprt.md` §2).
 
-**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+**Need.** The producer rule that selects the byte, so that a writer selects it for a Keywords member with no source member.
 
 ### CM-18. Keywords `Application` element
 
 **Question.** What do the `Application` element of a Keywords root and its `Keyword` children record?
 
-**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The native history keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
+**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The decoder keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
 
 **Need.** The program state the keywords describe, and whether a target format has a record for it, before the decoder maps them to one.
 
@@ -1020,7 +1020,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
 
-**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. In a part of `swVersion` 14000 the template holds `CString` values, the unit names and `moLengthUserUnits_c` objects among its byte runs; the count and lengths of its runs and strings differ between parts. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
 

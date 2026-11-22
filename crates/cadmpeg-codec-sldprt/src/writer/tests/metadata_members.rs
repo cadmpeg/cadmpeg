@@ -681,7 +681,8 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert_eq!(blocks[0].payload, history);
     let mut changed = native.feature_histories[0].clone();
     changed.features[0].name = "EditedTree".into();
-    let regenerated = crate::writer::retained_history_payload(
+    let mut losses = Vec::new();
+    let regenerated = crate::history::write::keywords::history_member(
         &changed,
         "Contents/Keywords",
         &[(
@@ -689,8 +690,12 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
             "Contents/Keywords".into(),
             history.to_vec(),
         )],
+        &[],
+        &mut losses,
     )
+    .unwrap()
     .unwrap();
+    assert!(losses.is_empty());
     assert_ne!(regenerated, history);
     assert!(String::from_utf8(regenerated)
         .unwrap()
