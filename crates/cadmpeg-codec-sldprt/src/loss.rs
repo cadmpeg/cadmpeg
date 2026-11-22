@@ -319,6 +319,8 @@ pub(crate) enum SldprtLossCode {
     WriterAppearanceBindingsOmitted,
     /// Export omits records named by the counted loss message.
     WriterAttributesOmitted,
+    /// Export omits the driven (reference) dimensions of a generated sketch.
+    WriterDrivenDimensionsOmitted,
     /// Export omits records named by the counted loss message.
     WriterUnboundAppearancesOmitted,
     /// Export omits records named by the counted loss message.
@@ -504,6 +506,7 @@ impl SldprtLossCode {
         Self::WriterSphereSeamCurvesOmitted,
         Self::WriterAppearanceBindingsOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterDrivenDimensionsOmitted,
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
@@ -658,6 +661,7 @@ impl SldprtLossCode {
             Self::WriterSphereSeamCurvesOmitted => "writer.sphere-seam-curves-omitted",
             Self::WriterAppearanceBindingsOmitted => "writer.appearance-bindings-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterDrivenDimensionsOmitted => "writer.driven-dimensions-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
@@ -710,6 +714,7 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
+            Self::WriterDrivenDimensionsOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
             Self::WriterSphereSeamCurvesOmitted => Severity::Warning,
             Self::WriterCoedgePcurveUsesOmitted => Severity::Warning,
@@ -864,6 +869,7 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterDrivenDimensionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterSphereSeamCurvesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterCoedgePcurveUsesOmitted => LossTaxonomy::TopologyNotTransferred,
@@ -1310,6 +1316,7 @@ mod tests {
                 "writer.sphere-seam-curves-omitted",
                 "writer.appearance-bindings-omitted",
                 "writer.attributes-omitted",
+                "writer.driven-dimensions-omitted",
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",

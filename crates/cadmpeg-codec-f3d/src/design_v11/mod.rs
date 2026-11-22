@@ -24,7 +24,7 @@
 mod configurations;
 mod datum;
 mod operation;
-mod parameters;
+pub(crate) mod parameters;
 #[cfg(test)]
 mod tests;
 mod thread;

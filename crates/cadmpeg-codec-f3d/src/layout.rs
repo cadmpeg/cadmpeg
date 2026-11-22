@@ -12097,6 +12097,8 @@ pub(crate) mod sketch_item_geometry_member_run_head {
 pub(crate) mod sketch_item_dimension_frame_linear {
     /// Record length in bytes. Spec §Records of a Sketch item.
     pub(crate) const LEN: usize = 129;
+    /// Offset of `value` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const VALUE: usize = 97;
 }
 
 /// Byte offsets for the `sketch_item_dimension_frame_radial` record.
@@ -12109,6 +12111,8 @@ pub(crate) mod sketch_item_dimension_frame_linear {
 pub(crate) mod sketch_item_dimension_frame_radial {
     /// Record length in bytes. Spec §Records of a Sketch item.
     pub(crate) const LEN: usize = 153;
+    /// Offset of `radius` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const RADIUS: usize = 145;
 }
 
 /// Byte offsets for the `sketch_item_dimension_frame_angular` record.
@@ -12121,6 +12125,8 @@ pub(crate) mod sketch_item_dimension_frame_radial {
 pub(crate) mod sketch_item_dimension_frame_angular {
     /// Record length in bytes. Spec §Records of a Sketch item.
     pub(crate) const LEN: usize = 146;
+    /// Offset of `angle` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const ANGLE: usize = 0;
 }
 
 /// Byte offsets for the `sketch_item_dimension_frame_text` record.

@@ -957,6 +957,75 @@ fn a_driven_parameter_without_a_cached_value_states_the_measurement() {
     assert_eq!(driving(&decoded).get("Gap"), Some(&Some(false)));
 }
 
+/// The record of a driven dimension's parameter keeps the literal its source
+/// record stores (the source setting `f3d:literal`, 21 mm), which differs
+/// from the measured value (20 mm, the parameter's value) that its frame
+/// states. Read back, the parameter is `Driven` with the measured value, and
+/// keeps the literal.
+#[test]
+fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
+    use cadmpeg_ir::design::options::NativeOption;
+    let literal = || {
+        NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new("21 mm".to_owned()).expect("nonblank"),
+        ))
+    };
+    let mut ir = on_xy();
+    drive(&mut ir, "gap");
+    parameter_mut(&mut ir, "gap")
+        .source_settings
+        .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
+    let (_, decoded, bytes) = write_bytes(&ir);
+    let gap = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Gap")
+        .expect("Gap");
+    assert_eq!(gap.expression, "21 mm");
+    assert!(
+        matches!(gap.value, Some(ParameterValue::Length(length))
+            if (length.get() - 21.0).abs() < TOLERANCE),
+        "{:?}",
+        gap.value
+    );
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1"));
+    let driven = frames
+        .iter()
+        .filter(|frame| frame.style.0 == 1)
+        .collect::<Vec<_>>();
+    let [frame] = driven.as_slice() else {
+        panic!("one driven frame")
+    };
+    assert_eq!(frame.text, "20.00 mm");
+    assert!((f64_at(&frame.measurement, 97) - 2.0).abs() < TOLERANCE);
+    let gap = decoded
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("Gap")
+        })
+        .expect("Gap in the design");
+    assert!(matches!(gap.definition, ParameterDefinition::Driven));
+    assert!(
+        matches!(gap.value, Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value))
+            if (value.get() - 20.0).abs() < TOLERANCE),
+        "{:?}",
+        gap.value
+    );
+    assert_eq!(
+        gap.source_settings
+            .get(crate::design_v11::parameters::LITERAL)
+            .cloned(),
+        Some(literal())
+    );
+}
+
 #[test]
 fn a_driven_parameter_of_another_quantity_is_named_with_its_dimension() {
     let mut ir = on_xy();

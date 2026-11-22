@@ -739,6 +739,104 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     );
 }
 
+/// The parameter of a driven (reference) dimension is `Driven` (§5.12, D11).
+/// Its value is the measured value its frame stores, not the value of the
+/// literal its record stores, and the source setting `f3d:literal` keeps
+/// that literal; with no measured value it has no value. A driving dimension's
+/// parameter keeps its literal expression.
+#[test]
+fn the_parameter_of_a_driven_dimension_is_driven() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::options::NativeOption;
+    use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
+    const OWNER: &str = "f3d:model:feature#sketch:20";
+    let legacy = [
+        parameter(
+            "reference",
+            Some(OWNER),
+            "12.5 mm",
+            Some(V10::Length(Length::new(12.5).unwrap())),
+            &[],
+            &[
+                ("source_kind", "Linear Dimension-2"),
+                ("driven", "true"),
+                ("measured_value", "12.25"),
+            ],
+        ),
+        parameter(
+            "unmeasured",
+            Some(OWNER),
+            "3 mm",
+            Some(V10::Length(Length::new(3.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-4"), ("driven", "true")],
+        ),
+        parameter(
+            "driving",
+            Some(OWNER),
+            "4 mm",
+            Some(V10::Length(Length::new(4.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-3")],
+        ),
+    ];
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let [reference, unmeasured, driving] = projected.as_slice() else {
+        panic!("three parameters: {projected:?}")
+    };
+    let literal = |text: &str| {
+        Some(NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(text.to_owned()).unwrap(),
+        )))
+    };
+    assert!(matches!(reference.definition, ParameterDefinition::Driven));
+    assert_eq!(
+        reference.value,
+        Some(ParameterValue::Number(FiniteReal::new(12.25).unwrap()))
+    );
+    assert_eq!(
+        reference
+            .source_settings
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("12.5 mm")
+    );
+    assert!(matches!(unmeasured.definition, ParameterDefinition::Driven));
+    assert_eq!(unmeasured.value, None);
+    assert_eq!(
+        unmeasured
+            .source_settings
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("3 mm")
+    );
+    assert!(matches!(
+        &driving.definition,
+        ParameterDefinition::Expression(expression)
+            if expression == &number(4.0, Some(UnitSymbol::Mm))
+    ));
+    assert_eq!(
+        driving.value,
+        Some(ParameterValue::Number(FiniteReal::new(4.0).unwrap()))
+    );
+    assert_eq!(
+        driving.source_settings.get(super::parameters::LITERAL),
+        None
+    );
+    assert!(reference.native_options.is_empty());
+}
+
 #[test]
 fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it() {
     use cadmpeg_ir::features::parameters::ParameterValue as V10;

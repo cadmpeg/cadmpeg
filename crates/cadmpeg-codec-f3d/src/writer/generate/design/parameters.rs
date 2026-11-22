@@ -15,8 +15,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{parameter_flattened, parameter_renamed, value_unwritable};
-use cadmpeg_ir::design::dimension::ParameterRef;
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
+use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -65,10 +66,40 @@ struct DrivenParameter {
     unit: Option<UnitSymbol>,
     /// The cached value in Fusion's database units.
     evaluated: Option<f64>,
+    literal: Option<RecordLiteral>,
     comment: Option<String>,
     unheld: Unheld,
     /// Whether a written dimension owns it.
     taken: bool,
+}
+
+/// The literal the record of a driven dimension's parameter stores (the
+/// source setting `f3d:literal`), which can differ from its measured value
+/// (f3d.md §3.1, "Sketch dimensions").
+#[derive(Clone)]
+pub(super) struct RecordLiteral {
+    pub(super) text: String,
+    /// Its value in Fusion's database units.
+    pub(super) value: f64,
+}
+
+impl RecordLiteral {
+    /// The literal of `parameter`'s source setting `f3d:literal`, where it is
+    /// one number with a unit of the parameter's quantity.
+    fn of(parameter: &DesignParameter, form: Form) -> Option<Self> {
+        let Some(NativeOption::Text(Dimension::Literal(text))) = parameter
+            .source_settings
+            .get(crate::design_v11::parameters::LITERAL)
+        else {
+            return None;
+        };
+        let node = crate::design_v11::parameters::literal(text.as_str(), &parameter.kind)?;
+        let canonical = expression::evaluate(&node, &|_| None)?;
+        Some(Self {
+            text: text.as_str().to_owned(),
+            value: form.database(canonical),
+        })
+    }
 }
 
 /// A driven parameter that a dimension can own.
@@ -76,6 +107,8 @@ pub(super) struct Driven {
     index: usize,
     /// The cached value in Fusion's database units.
     pub(super) evaluated: Option<f64>,
+    /// The literal its source record stores, which its record keeps.
+    pub(super) literal: Option<RecordLiteral>,
     pub(super) unit: UnitSymbol,
 }
 
@@ -262,6 +295,7 @@ pub(in crate::writer::generate) fn plan(
                 form: *form,
                 unit: form.unit(parameter.unit.as_ref()),
                 evaluated: cached(parameter).map(|value| form.database(value)),
+                literal: RecordLiteral::of(parameter, *form),
                 comment: parameter
                     .comment
                     .clone()
@@ -628,6 +662,7 @@ impl ParameterPlan {
         Ok(Some(Driven {
             index,
             evaluated: parameter.evaluated,
+            literal: parameter.literal.clone(),
             unit,
         }))
     }
