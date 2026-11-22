@@ -37,9 +37,39 @@ pub(crate) fn file_root_id() -> ProductDefinitionId {
 pub(crate) fn state_root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
-) -> Result<(), CodecError> {
-    ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?;
-    Ok(())
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    if ctx.container_only() {
+        return Ok(losses);
+    }
+    let design = match ir.native.namespace("f3d") {
+        Some(namespace) => namespace
+            .arena_iter_as_for_decode::<crate::records::xref::XrefDesign>(ctx, "xref_designs")
+            .next()
+            .transpose()?,
+        None => None,
+    };
+    let document = design.as_ref().map(crate::xref::document_identity);
+    if let Some(root) =
+        ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
+    {
+        if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
+            // The manifest terminal supplies only the lineage; the version
+            // always comes from design ordinal zero.
+            if let (Some(kept), Some(other)) = (&document.document_id, &identity.document_id) {
+                if kept != other {
+                    losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                        "file root lineage {:?} (manifest terminal) disagrees with design ordinal 0 lineage {:?}; the manifest terminal supplies the root lineage",
+                        kept.as_str(),
+                        other.as_str()
+                    )));
+                }
+            }
+            document.document_id = document.document_id.take().or(identity.document_id);
+            document.version = document.version.take().or(identity.version);
+        }
+    }
+    Ok(losses)
 }
 
 /// The file's root definition in `model`, added when it is absent.

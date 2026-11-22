@@ -93,7 +93,7 @@ fn invalid(native: &crate::native::F3dNative) -> bool {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+        super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings).unwrap();
         findings.iter().any(|finding| finding.message == INVALID)
     })
 }

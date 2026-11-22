@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rigid alignment scalar and member validation.
 
-use crate::validate::{rigid_alignment_scalars_hold, rigid_group_members_link};
+use crate::validate::assembly::{rigid_alignment_scalars_hold, rigid_group_members_link};
 
 /// An owner-less rigid alignment holds only a zero angle and offset.
 #[test]
@@ -249,7 +249,8 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             let findings = |native: &crate::native::F3dNative| {
                 let ctx = crate::validate::Ctx::new(&ir, native, decode);
                 let mut findings = Vec::new();
-                crate::validate::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                crate::validate::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                    .unwrap();
                 findings
             };
             assert!(findings(&native).is_empty());
@@ -299,7 +300,7 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
                     panic!("occurrence path operand");
                 };
                 assert!(
-                    !crate::validate::as_built_operand_frame_link(
+                    !crate::validate::assembly::as_built_operand_frame_link(
                         &placement,
                         path,
                         &operand.frame,

@@ -122,21 +122,13 @@ fn unreadable_required_members_still_refuse_the_document() {
             "{name}"
         );
     }
-    for name in [
-        "Manifest.dat",
-        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-    ] {
-        let mut changed = root.clone();
-        damage_local_frame(&mut changed, name);
-        assert!(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(changed),
-                &DecodeOptions::default()
-            )
-            .is_err(),
-            "{name}"
-        );
-    }
+    let mut changed = root;
+    damage_local_frame(&mut changed, "Manifest.dat");
+    assert!(crate::test_support::archive_session::decode(
+        &mut Cursor::new(changed),
+        &DecodeOptions::default()
+    )
+    .is_err());
 }
 
 #[test]

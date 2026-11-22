@@ -63,7 +63,7 @@ fn cap_operand(cap: i64, wall: i64) -> DesignFaceOperand {
     operand.changed_candidate_faces = operand.candidate_faces.clone();
     let fields = [1, -1, 0, -1, 1, -1, 2, 1, -1, 0, -1, 0, 0, -1];
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
             .unwrap()
             .unwrap()
     });

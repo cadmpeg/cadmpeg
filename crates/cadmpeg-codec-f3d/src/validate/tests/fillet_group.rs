@@ -114,7 +114,7 @@ fn lowercase_fillet_radius_valid_assignment_has_no_finding() {
         add_radius_parameter(&mut native, 201, "radius", 2.0, Some("mm"));
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&ctx, &mut findings);
+        super::super::fillets::validate_fillet_radius_groups(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -156,13 +156,13 @@ fn fillet_variable_radius_midpoints_keep_order_validation() {
         let valid_native = variable_radius_native(true);
         let valid_ctx = super::super::Ctx::new(&ir, &valid_native, service_ctx);
         let mut valid_findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings);
+        super::super::fillets::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings);
         assert!(valid_findings.is_empty());
 
         let invalid_native = variable_radius_native(false);
         let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, service_ctx);
         let mut invalid_findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings);
+        super::super::fillets::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings);
         assert!(invalid_findings.iter().any(|finding| finding.message
             == "Fusion Design Fillet radius group has an invalid parameter assignment"));
     })
@@ -201,7 +201,7 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
             .push(wire.try_into().unwrap());
     }
     native.design_fillet_radius_groups =
-        crate::design::decode::operands::decode_fillet_radius_groups(
+        crate::design::decode::operands::fillets::decode_fillet_radius_groups(
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
@@ -226,13 +226,13 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        let assignments = super::super::validate_fillet_radius_groups(&ctx, &mut findings);
-        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &assignments);
+        let assignments = super::super::fillets::validate_fillet_radius_groups(&ctx, &mut findings);
+        super::super::fillets::validate_fillet_operand_groups(&ctx, &mut findings, &assignments);
         assert!(findings.is_empty(), "{findings:?}");
     });
     native.design_parameters.pop();
     assert!(
-        crate::design::decode::operands::decode_fillet_radius_groups(
+        crate::design::decode::operands::fillets::decode_fillet_radius_groups(
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
@@ -260,7 +260,7 @@ fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
     second.id.push_str("-second");
     native.design_construction_operand_groups.push(second);
     assert!(
-        crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+        crate::design::decode::operands::fillets::fixed_fillet_assignment_is_unresolved(
             &native.design_parameter_scopes[0],
             &native.design_construction_operand_groups,
         )
@@ -269,7 +269,11 @@ fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &Default::default());
+        super::super::fillets::validate_fillet_operand_groups(
+            &ctx,
+            &mut findings,
+            &Default::default(),
+        );
         assert!(findings.is_empty());
     });
 }
@@ -290,7 +294,11 @@ fn a_sole_face_group_without_a_stored_radius_has_no_finding() {
             let ir = cadmpeg_ir::examples::unit_cube().unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_fillet_operand_groups(&ctx, &mut findings, &Default::default());
+            super::super::fillets::validate_fillet_operand_groups(
+                &ctx,
+                &mut findings,
+                &Default::default(),
+            );
             findings.len()
         })
     };
@@ -341,7 +349,7 @@ fn fillet_radius_findings(native: &crate::native::F3dNative) -> usize {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_fillet_radius_groups(&ctx, &mut findings);
+        super::super::fillets::validate_fillet_radius_groups(&ctx, &mut findings);
         findings.len()
     })
 }
@@ -366,7 +374,7 @@ fn fillet_set_findings(native: &crate::native::F3dNative) -> usize {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_fillet_sets(&ctx, &mut findings);
+        super::super::fillets::validate_fillet_sets(&ctx, &mut findings);
         findings.len()
     })
 }
@@ -471,11 +479,11 @@ fn validated_explicit_chordal_sets_cover_their_operand_groups() {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        let groups = super::super::validate_fillet_sets(&ctx, &mut findings);
+        let groups = super::super::fillets::validate_fillet_sets(&ctx, &mut findings);
         assert!(findings.is_empty());
         assert!(groups.contains(&("f3d:Design/BulkStream.dat", 100)));
         assert!(groups.contains(&("f3d:Design/BulkStream.dat", 110)));
-        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &groups);
+        super::super::fillets::validate_fillet_operand_groups(&ctx, &mut findings, &groups);
         assert!(findings.is_empty());
     });
 }

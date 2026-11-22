@@ -114,14 +114,23 @@ impl ReferenceNames {
     }
 }
 
+/// Bind each sketch that `read_from_profiles` admits and whose one profile is
+/// one circle to the only sketch feature with a radius or diameter dimension
+/// of that circle, and give the sketch that feature's name. A sketch read from
+/// a feature's own records already has its feature, so `read_from_profiles`
+/// admits only the sketches read from profile streams.
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
+    read_from_profiles: impl Fn(&Sketch) -> bool,
 ) {
     let mut proposals = Vec::new();
     for (sketch_index, sketch) in sketches.iter().enumerate() {
+        if !read_from_profiles(sketch) {
+            continue;
+        }
         let [profile] = sketch.profiles.as_slice() else {
             continue;
         };

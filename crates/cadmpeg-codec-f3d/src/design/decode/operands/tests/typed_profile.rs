@@ -168,7 +168,14 @@ fn parse(
         byte_offset: 0,
     };
     crate::test_support::with_decode_context(|ctx| {
-        super::super::parse_profile_curve_selection(ctx, bytes, &records, &group(), 0, &header)
+        super::super::sketch_profiles::parse_profile_curve_selection(
+            ctx,
+            bytes,
+            &records,
+            &group(),
+            0,
+            &header,
+        )
     })
     .unwrap()
 }
@@ -492,8 +499,10 @@ fn compact_profile_selection_preserves_the_counted_member_reading() {
         .windows(7)
         .position(|window| window == b"\x03\x00\x00\x00262")
         .unwrap();
-    let counted =
-        super::super::parse_sketch_profile_region_selection(&bytes, 100, paired_at).unwrap();
+    let counted = super::super::sketch_profiles::parse_sketch_profile_region_selection(
+        &bytes, 100, paired_at,
+    )
+    .unwrap();
     assert_eq!(counted.regions.len(), 2);
     assert_eq!(counted.regions[0].members[0].curve_primary_id.get(), 11);
     assert_eq!(counted.regions[1].members[0].curve_primary_id.get(), 13);
@@ -511,7 +520,7 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     let mut group = group();
     group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
     let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
-        super::super::decode_profile_curve_selections(
+        super::super::sketch_profiles::decode_profile_curve_selections(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &[group],
@@ -570,7 +579,7 @@ fn sketchless_asset(bytes: &[u8]) -> Option<String> {
         class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    super::super::sketchless_profile_selection_asset(bytes, &records, &header)
+    super::super::sketch_profiles::sketchless_profile_selection_asset(bytes, &records, &header)
 }
 
 #[test]
@@ -698,7 +707,7 @@ fn compact_profile_chain_with_a_sketch_scope_is_not_sketchless() {
 
 #[test]
 fn sketchless_selection_of_another_asset_names_its_asset_guid() {
-    let note = super::super::sketchless_profile_selection_loss(
+    let note = super::super::sketch_profiles::sketchless_profile_selection_loss(
         100,
         80,
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -716,7 +725,7 @@ fn sketchless_selection_of_another_asset_names_its_asset_guid() {
 
 #[test]
 fn sketchless_selection_of_the_design_asset_names_no_sketch() {
-    let note = super::super::sketchless_profile_selection_loss(
+    let note = super::super::sketch_profiles::sketchless_profile_selection_loss(
         100,
         80,
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -730,6 +739,71 @@ fn sketchless_selection_of_the_design_asset_names_no_sketch() {
         note.message,
         "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch, and the profile stays native."
     );
+}
+
+const STATUS_REFERENCE: &str = "1ABFB679-C79B-4F24-AD6C-215A7DCE1AC4";
+
+/// `chain(false)` with status record 102 counting typed references to
+/// `targets` of type `guid`, followed by lost profile-reference record 120.
+fn chain_with_status(targets: &[u32], guid: &str, marker: &[u8]) -> Vec<u8> {
+    let plain = chain(false);
+    let status = plain
+        .windows(7)
+        .position(|window| window == b"\x03\x00\x00\x00273")
+        .unwrap();
+    let identity = plain
+        .windows(7)
+        .position(|window| window == b"\x03\x00\x00\x00297")
+        .unwrap();
+    let mut record = Vec::new();
+    header(&mut record, b"290", 102);
+    record.extend_from_slice(&[0; 9]);
+    record.extend_from_slice(&1u32.to_le_bytes());
+    record.push(0);
+    record.extend_from_slice(&u32::try_from(targets.len()).unwrap().to_le_bytes());
+    for &target in targets {
+        typed_reference_of(&mut record, target, guid);
+    }
+    record.extend_from_slice(&u32::from(!targets.is_empty()).to_le_bytes());
+    let mut bytes = plain;
+    bytes.splice(status..identity, record);
+    header(&mut bytes, b"411", 120);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&u32::try_from(marker.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(marker);
+    header(&mut bytes, b"262", 121);
+    bytes
+}
+
+#[test]
+fn typed_profile_status_record_lists_lost_profile_references() {
+    let lost = parse(&chain_with_status(
+        &[120],
+        STATUS_REFERENCE,
+        b"PROFILE_REFERENCE_LOST",
+    ))
+    .expect("typed profile selection");
+    assert!(lost.valid_layout());
+    assert_eq!(lost.lost_reference_records, [120]);
+    assert!(lost.reference_lost());
+    let live = parse(&chain_with_status(
+        &[],
+        STATUS_REFERENCE,
+        b"PROFILE_REFERENCE_LOST",
+    ))
+    .expect("typed profile selection");
+    assert!(!live.reference_lost());
+    // A reference of another type, or to a record without the marker, names
+    // no lost profile reference.
+    for (guid, marker) in [
+        (TYPE, &b"PROFILE_REFERENCE_LOST"[..]),
+        (STATUS_REFERENCE, &b"EDGE_REFERENCE_LOST"[..]),
+    ] {
+        let selection = parse(&chain_with_status(&[120], guid, marker)).unwrap();
+        assert!(selection.lost_reference_records.is_empty());
+    }
+    // The plain chain has no status record fields.
+    assert!(!parse(&chain(false)).unwrap().reference_lost());
 }
 
 #[test]
@@ -813,14 +887,15 @@ fn sketchless_notes_require_an_extrude_profile_role_and_native_outcome() {
                     DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A),
                 ] {
                     group.operand_role = role;
-                    let losses = super::super::sketchless_profile_selection_losses(
-                        scan,
-                        std::slice::from_ref(&scope),
-                        std::slice::from_ref(&group),
-                        std::slice::from_ref(&header),
-                        std::slice::from_ref(&feature),
-                    )
-                    .unwrap();
+                    let losses =
+                        super::super::sketch_profiles::sketchless_profile_selection_losses(
+                            scan,
+                            std::slice::from_ref(&scope),
+                            std::slice::from_ref(&group),
+                            std::slice::from_ref(&header),
+                            std::slice::from_ref(&feature),
+                        )
+                        .unwrap();
                     let expected = usize::from(
                         kind == DesignFeatureKind::Extrude
                             && native

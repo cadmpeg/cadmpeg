@@ -9,11 +9,15 @@
 //! scope's configuration, arrangements and occurrence states, for every
 //! current state's `Stale` or `Failed` status and poses, and for every stored
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
-//! failure. Its fallbacks write the design without its `Sketch` items, then
-//! write no design ([`dropped_records`]): they never drop a body.
+//! failure. Its fallbacks, in [`Part`] order, write the sketches without
+//! their dimensions, the extrude in the Base Feature, the design without its
+//! construction planes and the sketches on them, the design without its
+//! `Sketch` items, then no design ([`dropped_records`]): they never drop a
+//! body.
 
 mod base_feature;
 mod expression;
+mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
 pub(super) mod parameters;
@@ -46,9 +50,16 @@ use super::reduce::named_loss;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
+use extrude::Decision;
 use frames::DesignRecords;
 use parameters::ParameterPlan;
 use sketch::SketchPlan;
+
+/// The smallest linear tolerance a dimension is checked with, in mm: the
+/// decoder's linear resolution.
+const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
+/// Millimetres per Fusion length unit (cm).
+const MM_PER_CM: f64 = 10.0;
 
 #[cfg(test)]
 thread_local! {
@@ -74,6 +85,55 @@ fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
         })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes a construction plane on this
+    /// thread fail in the plane records.
+    static FAIL_NEXT_PLANES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_PLANES`] requests, once.
+#[cfg(test)]
+fn requested_plane_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_PLANES.with(|fail| fail.replace(false)).then(|| {
+        cadmpeg_core::CodecError::NotImplemented("a test failure of the plane records".into())
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes a sketch dimension on this thread
+    /// fail in the dimension records.
+    static FAIL_NEXT_DIMENSIONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_DIMENSIONS`] requests, once.
+#[cfg(test)]
+fn requested_dimension_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_DIMENSIONS
+        .with(|fail| fail.replace(false))
+        .then(|| {
+            cadmpeg_core::CodecError::NotImplemented(
+                "a test failure of the dimension records".into(),
+            )
+        })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes an `Extrude` item on this thread
+    /// fail in the `Extrude` records.
+    static FAIL_NEXT_EXTRUDE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_EXTRUDE`] requests, once.
+#[cfg(test)]
+fn requested_extrude_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_EXTRUDE.with(|fail| fail.replace(false)).then(|| {
+        cadmpeg_core::CodecError::NotImplemented("a test failure of the Extrude records".into())
+    })
+}
+
 /// The failure [`FAIL_NEXT_PLAN`] requests, once.
 #[cfg(test)]
 pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
@@ -93,30 +153,122 @@ pub(super) const DROPPED: DesignArenaDispositions = DesignArenaDispositions {
     ..DesignArenaDispositions::uniform(ArenaDisposition::Omitted)
 };
 
+/// A part of the design scope's form the writer drops after a failure with
+/// it, in the order it drops them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Part {
+    /// The sketch dimensions: their parameters stay user parameters.
+    Dimensions,
+    /// The `Extrude` item: the Base Feature holds the extrude.
+    Extrude,
+    /// The `WorkPlane` items and the `Sketch` items on them.
+    Planes,
+    /// The `Sketch` items.
+    Sketches,
+}
+
+impl Part {
+    const ORDER: [Self; 4] = [
+        Self::Dimensions,
+        Self::Extrude,
+        Self::Planes,
+        Self::Sketches,
+    ];
+}
+
+/// The parts the writer has dropped, each with the failure that dropped it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct Fallback {
+    dropped: Vec<(Part, String)>,
+}
+
+impl Fallback {
+    /// Why `part` is dropped.
+    fn reason(&self, part: Part) -> Option<&str> {
+        self.dropped
+            .iter()
+            .find(|(dropped, _)| *dropped == part)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    /// Drop the first part after the parts already dropped that the design
+    /// of `target` writes, for `reason`. Returns whether a part was dropped.
+    pub(super) fn drop_next(&mut self, target: &CadIr, reason: &str) -> bool {
+        let after = self.dropped.last().map(|(part, _)| *part);
+        for part in Part::ORDER
+            .into_iter()
+            .filter(|part| after.is_none_or(|after| *part > after))
+        {
+            let writes = plan(target, self)
+                .ok()
+                .flatten()
+                .is_some_and(|design| match part {
+                    Part::Dimensions => design.writes_dimensions(),
+                    Part::Extrude => matches!(design.extrude, Decision::Extrude(_)),
+                    Part::Planes => !design.sketches.planes.is_empty(),
+                    Part::Sketches => design.writes_sketches(),
+                });
+            if writes {
+                self.dropped.push((part, reason.to_owned()));
+                return true;
+            }
+        }
+        false
+    }
+}
+
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
     parameters: ParameterPlan,
     sketches: SketchPlan<'a>,
+    /// The scope's extrude, written as an `Extrude` item in place of the
+    /// Base Feature where the rule of [`extrude::plan`] allows it.
+    extrude: Decision<'a>,
     base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
 
 /// The plan for the root definition's design scope; `None` when the
-/// document holds none. With `sketch_failure`, the reason a design with
-/// its sketches failed, the plan writes no `Sketch` item.
+/// document holds none. Each part `fallback` drops is written in its
+/// fallback form and charged with the failure that dropped it.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
-    sketch_failure: Option<&str>,
+    fallback: &Fallback,
 ) -> Result<Option<NeutralDesign<'a>>, CodecError> {
     let Some(scope) = root_scope(target) else {
         return Ok(None);
     };
-    let parameters = parameters::plan(target, &scope.definition);
+    let mut parameters = parameters::plan(target, &scope.definition);
     let features = scope_features(target, scope);
-    let mut sketches = sketch_plan(target, &features);
-    if let Some(reason) = sketch_failure {
+    let mut sketches = sketch_plan(target, &features, fallback.reason(Part::Planes));
+    let mut ordinal = 1;
+    if let Some(reason) = fallback.reason(Part::Sketches) {
         sketches.drop_items(reason);
+    } else {
+        if let Some(reason) = fallback.reason(Part::Dimensions) {
+            sketches.drop_dimensions(reason);
+        }
+        ordinal = sketches.claim_parameters(
+            &mut parameters,
+            sketch::dimensions::Tolerances {
+                linear: target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE) / MM_PER_CM,
+                angular: target.tolerances.angular.get(),
+            },
+        );
     }
+    let extrude = if target.geometry.bodies.is_empty() {
+        Decision::None
+    } else {
+        extrude::plan(
+            target,
+            scope,
+            &features,
+            &sketches,
+            &mut parameters,
+            fallback.reason(Part::Extrude),
+            ordinal,
+        )
+    };
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -131,11 +283,14 @@ pub(super) fn plan<'a>(
     }
     let unwritten = features
         .iter()
-        .filter(|feature| !sketches.writes(feature))
+        .filter(|feature| !sketches.writes(feature) && !extrude.writes(feature))
         .map(|feature| {
             let mut notes = Vec::new();
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
+            }
+            if let Some(reason) = extrude.reason(feature) {
+                notes.push(format!("the Base Feature holds it: {reason}"));
             }
             if let Some(parameters) = owned.get(*feature) {
                 notes.push(format!(
@@ -149,19 +304,21 @@ pub(super) fn plan<'a>(
                 format!("{feature} ({})", notes.join("; "))
             }
         });
-    let mut losses = evaluation_missing(
-        "F3D",
-        "stores the current bodies as one Base Feature and no timeline item for these features of the design",
-        unwritten,
-    )
-    .into_iter()
-    .collect::<Vec<_>>();
+    let reason = if matches!(extrude, Decision::Extrude(_)) {
+        "stores no timeline item for these features of the design"
+    } else {
+        "stores the current bodies as one Base Feature and no timeline item for these features of the design"
+    };
+    let mut losses = evaluation_missing("F3D", reason, unwritten)
+        .into_iter()
+        .collect::<Vec<_>>();
     losses.extend(unwritten_records(target, scope));
     losses.extend(states(target));
-    let base_feature = base_feature::plan(target, sketches.items.len())?;
+    let base_feature = base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
+        extrude,
         base_feature,
         losses,
     }))
@@ -177,9 +334,14 @@ impl NeutralDesign<'_> {
     /// Name the result bodies and their faces in `native`, whose records the
     /// B-rep stream is written from.
     pub(super) fn stamp(&mut self, native: &mut F3dNative) -> Result<(), CodecError> {
-        let losses = self.base_feature.stamp(native)?;
-        self.losses.extend(losses);
-        Ok(())
+        match &self.extrude {
+            Decision::Extrude(plan) => extrude::stamp(plan, &self.sketches.items, native),
+            Decision::None | Decision::BaseFeature { .. } => {
+                let losses = self.base_feature.stamp(native)?;
+                self.losses.extend(losses);
+                Ok(())
+            }
+        }
     }
 
     /// The parameter records and the design's records, with their types
@@ -207,17 +369,31 @@ impl NeutralDesign<'_> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let bodies = self.base_feature.roster_bodies(target);
+        let extrude = match &self.extrude {
+            Decision::Extrude(plan) => Some(plan.as_ref()),
+            Decision::None | Decision::BaseFeature { .. } => None,
+        };
         let roster = roster::Roster::new(
             bodies.len(),
             self.parameters.written_count(),
-            &self.sketches.items,
+            &self.sketches,
+            extrude,
         )?;
+        let timeline_value = roster::ContextValue::of(
+            self.parameters.names(),
+            &self.sketches.items,
+            &self.sketches.planes,
+            extrude,
+        );
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
             values: roster::values::Values::new(target, &scope.definition, smbh),
             bodies,
             sketches: &self.sketches.items,
+            planes: &self.sketches.planes,
+            extrude,
+            timeline_value,
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
@@ -231,6 +407,14 @@ impl NeutralDesign<'_> {
         !self.sketches.items.is_empty()
     }
 
+    /// Whether the design writes a sketch dimension.
+    fn writes_dimensions(&self) -> bool {
+        self.sketches
+            .items
+            .iter()
+            .any(|item| !item.dimensions.is_empty())
+    }
+
     pub(super) fn into_losses(self) -> Vec<LossNote> {
         let mut losses = self.losses;
         losses.extend(self.parameters.into_losses());
@@ -239,22 +423,19 @@ impl NeutralDesign<'_> {
     }
 }
 
-/// Whether the root definition's design scope writes a `Sketch` item.
-pub(super) fn writes_sketches(target: &CadIr) -> bool {
-    root_scope(target).is_some_and(|scope| {
-        !sketch_plan(target, &scope_features(target, scope))
-            .items
-            .is_empty()
-    })
-}
-
-/// The plan of the sketches among `features`. The `Sketch` items precede
-/// the `Base Feature`, which a design with no body does not write.
-fn sketch_plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchPlan<'a> {
+/// The plan of the sketches among `features`, without the sketches off the
+/// origin planes where `planes` names the failure that dropped them. The
+/// `Sketch` items precede the `Base Feature`, which a design with no body
+/// does not write.
+fn sketch_plan<'a>(
+    target: &'a CadIr,
+    features: &[&'a FeatureId],
+    planes: Option<&str>,
+) -> SketchPlan<'a> {
     if target.geometry.bodies.is_empty() {
         SketchPlan::default()
     } else {
-        sketch::plan(target, features)
+        sketch::plan(target, features, planes)
     }
 }
 
@@ -501,7 +682,7 @@ fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
     losses.extend(named_loss(
         F3dLossCode::WriterDesignRecordOmitted,
         "design container",
-        "the F3D timeline holds one Base Feature and no other container",
+        "the F3D design writes one timeline and no other container",
         target
             .design
             .containers
@@ -538,7 +719,7 @@ fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
         losses.extend(named_loss(
             F3dLossCode::WriterDesignRecordOmitted,
             "timeline value",
-            "the F3D timeline holds one Base Feature, so no folder, rollback or placement of the source timeline has its members",
+            "the F3D timeline holds its written items in one run, so no folder, rollback or placement of the source timeline has its members",
             values,
         ));
     }
