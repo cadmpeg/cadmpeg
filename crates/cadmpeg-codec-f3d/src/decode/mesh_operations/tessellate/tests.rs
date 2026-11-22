@@ -234,6 +234,19 @@ fn tessellation_without_metadata_keeps_its_native_parameters() {
 }
 
 #[test]
+fn tessellation_retains_a_changed_tail_byte() {
+    let (mut stream, meta) = fixture(1, false);
+    let tail_byte_2 = crate::layout::mesh_tessellate_scope_prefix::OPERAND_COUNT + 4 + 11 + 2;
+    stream[tail_byte_2] = 7;
+    let (feature, codes) = project(&stream, Some(&meta));
+    assert_eq!(
+        feature.source_properties["mesh-field:tessellate-tail-byte:2"],
+        "7"
+    );
+    assert!(codes.contains(&"feature.mesh-tessellate-fields-uninterpreted".to_owned()));
+}
+
+#[test]
 fn tessellation_binds_no_operand_after_an_unread_reference() {
     let (stream, meta) = fixture(1, true);
     let (feature, codes) = project(&stream, Some(&meta));
