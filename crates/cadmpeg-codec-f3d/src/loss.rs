@@ -612,8 +612,10 @@ pub(crate) enum F3dLossCode {
     EmbossScalarOwnerAssumed,
     EmbossScalarUnitAssumed,
     EmbossPlacementNative,
-    /// A non-equivalent duplicate scope envelope was superseded by the
-    /// primary-indexed envelope.
+    /// A duplicate scope envelope that differs from the kept envelope in
+    /// payload or history state was superseded by the primary-indexed
+    /// envelope, or by the later envelope when the two differ only in their
+    /// tail flags.
     FeatureScopeEnvelopeSuperseded,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
@@ -655,8 +657,10 @@ pub(crate) enum F3dLossCode {
     ConfigurationScopeWithoutActiveRow,
     /// Configuration properties the design does not state.
     ConfigurationPropertyUnprojected,
-    /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
+    /// The rollback marker of a timeline is not read, or an unread item follows a rolled-back item; the marker is stated at its most likely position.
     HistoryRollbackUnread,
+    /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
+    HistoryRollbackBoundUnread,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1805,6 +1809,7 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::HistoryRollbackBoundUnread,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2838,6 +2843,7 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -3901,6 +3907,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4680,6 +4687,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5580,6 +5588,7 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "history.rollback-bound-unread",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",

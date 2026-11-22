@@ -99,11 +99,11 @@ source = "spec"
 anchor = "the associated count is at offset 12"
 
 [[record.field]]
-name = "padding"
+name = "state_bytes"
 offset = 16
 type = "bytes[3]"
 source = "spec"
-anchor = "followed by a counted associated-reference list, three zero bytes"
+anchor = "followed by a counted associated-reference list, three state bytes"
 
 [[record.field]]
 name = "first_reference"
@@ -28472,11 +28472,32 @@ source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
 
 [[record.field]]
-name = "zero_run_15"
+name = "zero_word"
 offset = 4
-type = "bytes[15]"
+type = "bytes[4]"
 source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "label_length"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "zero_count"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "state_bytes"
+offset = 16
+type = "bytes[3]"
+source = "spec"
+anchor = "three state bytes, a 51-byte typed reference at tail offset 19"
 
 [[record.field]]
 name = "first_reference"
@@ -28521,11 +28542,18 @@ source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
 
 [[record.field]]
-name = "second_zero_run_2"
+name = "suppressed_flag"
 offset = 141
-type = "bytes[2]"
+type = "u8"
 source = "spec"
-anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+anchor = "the suppressed flag at tail offset 141"
+
+[[record.field]]
+name = "rolled_back_flag"
+offset = 142
+type = "u8"
+source = "spec"
+anchor = "the rolled-back flag at tail offset 142"
 
 [[record.field]]
 name = "third_reference"
