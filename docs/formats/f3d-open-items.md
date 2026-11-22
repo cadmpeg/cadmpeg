@@ -20,6 +20,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1006. Coordinate System construction inputs and frame ownership
+
+**Question.** Which type registration identifies a timeline Coordinate System, and how do its construction references select the origin, axes, and containing frame?
+
+**Known.** `f3d.md` §3.1 "A `JointOrigin` scope owns one coordinate frame" defines admitted scope matrices and assembly operand frames. The separate placement-carrier grammar follows §3.1 "A version-2 `JointOrigin` scope can store its solved frame". A public JointOrigin has a 333-byte version-2 scope with nine ordered references. Its first reference names a 389-byte version-8 placement carrier with reference type 20 and four value references. The carrier stores a rigid matrix and a scope backlink. The pin body has model-space end planes at z = 0 and 14 millimetres. The carrier translation is (172.435358383, 15.303201895, 38.907575495) millimetres. The decoder keeps this scope native with `feature.coordinate-system-frame-unresolved`. Admitted solved frames transfer to v11 datum frame caches with an unread construction input. A frame whose scope keeps its source construction references and parameter expressions charges `feature.coordinate-system-construction-native`; a frame whose scope keeps none charges `feature.coordinate-system-construction-dropped`.
+
+**Need.** Bind the type registration, carrier frame, occurrence space, input roles, offset signs, and axis flags to final geometry in independent public designs. Establish the relation between the timeline label Coordinate System and the registered JointOrigin type.
+
 ### DR-817. Silhouette Split direction selection
 
 **Question.** How does the direction selector bind to the datum or topology in the state before the split?
