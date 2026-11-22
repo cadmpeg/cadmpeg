@@ -116,6 +116,10 @@ pub(crate) enum SldprtLossCode {
     /// An `Application` element nests deeper than the levels the native history
     /// keeps, so the elements below them are not kept.
     HistoryApplicationNestingCut,
+    /// A Keywords text holds comments, processing instructions, text with
+    /// edge whitespace or namespace prefixes, which the native history does
+    /// not keep.
+    HistoryXmlNormalised,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -374,9 +378,21 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the named Keywords records with U+FFFD in place of each
     /// character XML 1.0 does not allow.
     WriterKeywordsCharactersReplaced,
+    /// Export writes the text items and dimension values of the named
+    /// Keywords records without their edge whitespace, and leaves out text
+    /// items that hold only whitespace, which the reader does not keep.
+    WriterKeywordsTextTrimmed,
     /// Export writes the named features as Keywords history records without
     /// the feature objects from which `SolidWorks` rebuilds a part.
     WriterHistoryKeywordsOnly,
+    /// Export writes the named Keywords features under the `Feature` tag, or
+    /// leaves out the named Keywords elements with their subtrees, because XML
+    /// cannot hold the tag or the reader reads it as another record.
+    WriterHistoryNameNotWritten,
+    /// A regenerated Keywords text cannot be built or is refused by the
+    /// reader, so the source member, or the retained source blocks of the
+    /// member, are written in its place, or no member is written.
+    WriterHistoryRegenerationRefused,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -469,6 +485,7 @@ impl SldprtLossCode {
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
         Self::HistoryApplicationNestingCut,
+        Self::HistoryXmlNormalised,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -579,7 +596,10 @@ impl SldprtLossCode {
         Self::WriterFeatureFieldsOmitted,
         Self::WriterParametersRenamed,
         Self::WriterKeywordsCharactersReplaced,
+        Self::WriterKeywordsTextTrimmed,
         Self::WriterHistoryKeywordsOnly,
+        Self::WriterHistoryNameNotWritten,
+        Self::WriterHistoryRegenerationRefused,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -640,6 +660,7 @@ impl SldprtLossCode {
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
             Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
+            Self::HistoryXmlNormalised => "history.xml-normalised",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -756,7 +777,10 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
             Self::WriterParametersRenamed => "writer.parameters-renamed",
             Self::WriterKeywordsCharactersReplaced => "writer.keywords-characters-replaced",
+            Self::WriterKeywordsTextTrimmed => "writer.keywords-text-trimmed",
             Self::WriterHistoryKeywordsOnly => "writer.history-keywords-only",
+            Self::WriterHistoryNameNotWritten => "writer.history-name-not-written",
+            Self::WriterHistoryRegenerationRefused => "writer.history-regeneration-refused",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -821,7 +845,10 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => Severity::Warning,
             Self::WriterParametersRenamed => Severity::Warning,
             Self::WriterKeywordsCharactersReplaced => Severity::Warning,
+            Self::WriterKeywordsTextTrimmed => Severity::Warning,
             Self::WriterHistoryKeywordsOnly => Severity::Warning,
+            Self::WriterHistoryNameNotWritten => Severity::Warning,
+            Self::WriterHistoryRegenerationRefused => Severity::Error,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -969,14 +996,17 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
-            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryXmlNormalised => Severity::Info,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
-            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted
+            | Self::WriterHistoryNameNotWritten
+            | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
@@ -996,6 +1026,7 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterParametersRenamed => LossTaxonomy::AttributesNotTransferred,
             Self::WriterKeywordsCharactersReplaced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsTextTrimmed => LossTaxonomy::AttributesNotTransferred,
             Self::WriterHistoryKeywordsOnly => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
@@ -1097,9 +1128,9 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
-            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::HistoryApplicationNotTransferred
+            | Self::HistoryApplicationNestingCut
+            | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1376,6 +1407,7 @@ mod tests {
                 "history.unread",
                 "history.application-not-transferred",
                 "history.application-nesting-cut",
+                "history.xml-normalised",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1486,7 +1518,10 @@ mod tests {
                 "writer.feature-fields-omitted",
                 "writer.parameters-renamed",
                 "writer.keywords-characters-replaced",
+                "writer.keywords-text-trimmed",
                 "writer.history-keywords-only",
+                "writer.history-name-not-written",
+                "writer.history-regeneration-refused",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

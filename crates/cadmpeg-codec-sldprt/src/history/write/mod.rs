@@ -22,6 +22,7 @@ use crate::history::project::{project_feature_model, project_features, FeaturePr
 pub(crate) mod brep_agreement;
 pub(crate) mod configurations;
 pub(crate) mod features;
+pub(crate) mod keywords;
 pub(crate) mod parameters;
 pub(crate) mod xml;
 

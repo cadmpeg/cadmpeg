@@ -11,7 +11,7 @@ mod default_properties;
 mod edge_direction;
 mod envelope;
 mod history_drop;
-mod keywords_text;
+pub(crate) mod keywords_text;
 mod materials;
 mod metadata_owners;
 mod ownership;
@@ -42,7 +42,6 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 use crate::container::MARKER;
-use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -397,6 +396,8 @@ pub(crate) fn write_semantic_with_records(
     } else {
         Vec::new()
     };
+    let mut history_members = Vec::new();
+    let mut stored_sections = HashMap::<String, usize>::new();
     for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
@@ -406,12 +407,37 @@ pub(crate) fn write_semantic_with_records(
             || format!("Contents/Keywords-{index}"),
             |provenance| provenance.stream().to_owned(),
         );
-        members.push(
-            &mut sections,
-            &mut unwritten,
-            section.clone(),
-            retained_history_payload(history, &section, &retained_histories)?,
-        );
+        let source_blocks = retained_blocks(retained_records, annotations, &section);
+        match crate::history::write::keywords::history_member(
+            history,
+            &section,
+            &retained_histories,
+            &source_blocks,
+            &mut losses,
+        )? {
+            Some(payload) => history_members.push((section, history.id.as_str(), payload)),
+            None => {
+                let stored = source_blocks.iter().flatten().count();
+                if stored != 0 {
+                    stored_sections.insert(section, stored);
+                }
+            }
+        }
+    }
+    for (section, history, payload) in history_members {
+        if let Some(stored) = stored_sections.get(&section) {
+            losses.push(
+                crate::loss::SldprtLossCode::WriterHistoryRegenerationRefused.note(format!(
+                    "Keywords member {section}: another history of the member is not \
+                     regenerated, so the {stored} retained source block(s) of the member are \
+                     written as stored in place of every member generated for it; history \
+                     {history} is in the file only as those blocks hold it, so its edits are not \
+                     written"
+                )),
+            );
+            continue;
+        }
+        members.push(&mut sections, &mut unwritten, section, payload);
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = match &lane.configuration {
@@ -1195,6 +1221,26 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .retain(|pcurve| pcurves.contains(&pcurve.id));
     subset.finalize();
     Ok(subset)
+}
+
+/// The bytes of each retained source block of `section`, `None` for a block
+/// the source fidelity holds no bytes of.
+fn retained_blocks<'a>(
+    records: &[SourceRecord<'a>],
+    annotations: &Annotations,
+    section: &str,
+) -> Vec<Option<&'a [u8]>> {
+    records
+        .iter()
+        .filter(|record| {
+            record.id.as_str().starts_with("sldprt:file:block#")
+                && annotations
+                    .provenance
+                    .get(record.id.as_str())
+                    .is_some_and(|provenance| provenance.stream() == section)
+        })
+        .map(|record| record.data)
+        .collect()
 }
 
 /// The retained blocks the output holds as stored, and the retained blocks it
@@ -2485,7 +2531,7 @@ fn retained_display_sections(
 fn retained_history_sections(
     baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<(crate::records::FeatureHistory, String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<crate::history::write::keywords::RetainedHistory>, CodecError> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
     // indices from the active partition after parsing the Keywords XML.
@@ -2516,109 +2562,9 @@ fn retained_history_sections(
         .collect()
 }
 
-fn retained_history_payload(
-    history: &crate::records::FeatureHistory,
-    section: &str,
-    retained: &[(crate::records::FeatureHistory, String, Vec<u8>)],
-) -> Result<Vec<u8>, CodecError> {
-    let mut originals = retained
-        .iter()
-        .filter(|(original, name, _)| original.id == history.id && name == section);
-    let original = originals.next();
-    if originals.next().is_some() {
-        return Err(CodecError::NotImplemented(
-            "ambiguous retained SLDPRT history".into(),
-        ));
-    }
-    if let Some((original, _, payload)) = original {
-        if original == history {
-            return Ok(payload.clone());
-        }
-    }
-    history_payload(history)
-}
-
-fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
-    let mut out = String::from("<Keywords");
-    if let Some(name) = &history.part_name {
-        xml_attribute(&mut out, "Name", name);
-    }
-    for (name, value) in &history.properties {
-        xml_attribute(&mut out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
-        out.push_str("<Configuration");
-        xml_attribute(out, "Name", &configuration.name);
-        if let Some(source_index) = configuration.source_index {
-            xml_attribute(out, "SourceIndex", &source_index.to_string());
-        }
-        if let Some(material) = &configuration.material {
-            xml_attribute(out, "Material", material);
-        }
-        for (name, value) in &configuration.properties {
-            xml_attribute(out, name.as_str(), value);
-        }
-        out.push_str("/>");
-    };
-    let mut roots = history
-        .features
-        .iter()
-        .filter(|feature| feature.tree_parent.is_none())
-        .collect::<Vec<_>>();
-    roots.sort_by_key(|feature| feature.ordinal);
-    let mut emitted_configurations = HashSet::new();
-    let mut emitted_features = HashSet::new();
-    for item in &history.content {
-        match item {
-            crate::records::HistoryContent::Configuration(id) => {
-                if let Some(configuration) = history
-                    .configurations
-                    .iter()
-                    .find(|configuration| configuration.id == *id)
-                {
-                    write_configuration(&mut out, configuration);
-                    emitted_configurations.insert(configuration.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Feature(id) => {
-                if let Some(feature) = roots.iter().find(|feature| feature.id == *id) {
-                    write_feature_xml(&mut out, feature, &history.features);
-                    emitted_features.insert(feature.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
-            crate::records::HistoryContent::Element(element) => {
-                write_history_element(&mut out, element)?;
-            }
-        }
-    }
-    for configuration in &history.configurations {
-        if emitted_configurations.insert(configuration.id.as_str()) {
-            write_configuration(&mut out, configuration);
-        }
-    }
-    for feature in roots {
-        if emitted_features.insert(feature.id.as_str()) {
-            write_feature_xml(&mut out, feature, &history.features);
-        }
-    }
-    out.push_str("</Keywords>");
-    Ok(out.into_bytes())
-}
-
 pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
-    {
-        return Err(CodecError::Malformed(
-            "invalid feature XML element name".into(),
-        ));
-    }
     let mut by_id = HashMap::new();
     for feature in features {
         if let Some(id) = feature.source_id {
@@ -2665,155 +2611,6 @@ pub(crate) fn validate_feature_graph(
         }
     }
     Ok(())
-}
-
-fn write_feature_xml(
-    out: &mut String,
-    feature: &crate::records::Feature,
-    features: &[crate::records::Feature],
-) {
-    out.push('<');
-    out.push_str(&feature.xml_tag);
-    if let Some(id) = feature.source_id {
-        xml_attribute(out, "id", &String::from(id));
-    }
-    xml_attribute(out, "Name", &feature.name);
-    xml_attribute(out, "Type", &feature.kind);
-    if feature.suppressed {
-        xml_attribute(out, "Suppressed", "true");
-    }
-    for (name, value) in &feature.properties {
-        xml_attribute(out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_dimension = |out: &mut String, name: &str, value: &str| {
-        out.push_str("<Dimension");
-        xml_attribute(out, "Name", name);
-        if let Some(properties) = feature.dimension_properties.get(name) {
-            for (property, value) in properties {
-                xml_attribute(out, property.as_str(), value);
-            }
-        }
-        out.push('>');
-        xml_text(out, value);
-        out.push_str("</Dimension>");
-    };
-    let mut children = features
-        .iter()
-        .filter(|child| {
-            child.tree_parent_record_id() == Some(feature.id.as_str())
-                || (child.tree_parent_record_id().is_none()
-                    && child.parent_source_id() == feature.source_id
-                    && feature.source_id.is_some())
-        })
-        .collect::<Vec<_>>();
-    children.sort_by_key(|child| child.ordinal);
-    let mut emitted_dimensions = HashSet::new();
-    let mut emitted_children = HashSet::new();
-    if feature.content.is_empty() {
-        for (name, value) in &feature.parameters {
-            write_dimension(out, name.as_str(), value);
-            emitted_dimensions.insert(name.as_str());
-        }
-        if let Some(text) = &feature.text {
-            xml_text(out, text);
-        }
-    } else {
-        for item in &feature.content {
-            match item {
-                crate::records::FeatureContent::Dimension(name) => {
-                    if let Some(value) = feature.parameters.get(name.as_str()) {
-                        write_dimension(out, name, value);
-                        emitted_dimensions.insert(name.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Feature(id) => {
-                    if let Some(child) = children.iter().find(|child| child.id == *id) {
-                        write_feature_xml(out, child, features);
-                        emitted_children.insert(child.id.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Text(text) => xml_text(out, text),
-            }
-        }
-    }
-    for (name, value) in &feature.parameters {
-        if emitted_dimensions.insert(name.as_str()) {
-            write_dimension(out, name.as_str(), value);
-        }
-    }
-    for child in children {
-        if !emitted_children.insert(child.id.as_str()) {
-            continue;
-        }
-        write_feature_xml(out, child, features);
-    }
-    out.push_str("</");
-    out.push_str(&feature.xml_tag);
-    out.push('>');
-}
-
-fn write_history_element(
-    out: &mut String,
-    element: &crate::records::HistoryElement,
-) -> Result<(), CodecError> {
-    if !valid_xml_name(&element.tag) {
-        return Err(CodecError::Malformed(
-            "invalid history XML element name".into(),
-        ));
-    }
-    out.push('<');
-    out.push_str(&element.tag);
-    for (name, value) in &element.attributes {
-        xml_attribute(out, name.as_str(), value);
-    }
-    if element.content.is_empty() {
-        out.push_str("/>");
-        return Ok(());
-    }
-    out.push('>');
-    for item in &element.content {
-        match item {
-            crate::records::HistoryElementContent::Element(child) => {
-                write_history_element(out, child)?;
-            }
-            crate::records::HistoryElementContent::Text(text) => xml_text(out, text),
-        }
-    }
-    out.push_str("</");
-    out.push_str(&element.tag);
-    out.push('>');
-    Ok(())
-}
-
-fn xml_attribute(out: &mut String, name: &str, value: &str) {
-    out.push(' ');
-    out.push_str(name);
-    out.push_str("=\"");
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '"' => out.push_str("&quot;"),
-            '\t' => out.push_str("&#9;"),
-            '\r' => out.push_str("&#13;"),
-            '\n' => out.push_str("&#10;"),
-            _ => out.push(character),
-        }
-    }
-    out.push('"');
-}
-
-fn xml_text(out: &mut String, value: &str) {
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '\r' => out.push_str("&#13;"),
-            _ => out.push(character),
-        }
-    }
 }
 
 /// The display-list member, and the meshes whose auxiliary channels it does
@@ -4706,7 +4503,7 @@ pub(crate) fn parasolid_stream_named(
     out.extend_from_slice(body);
     Ok(out)
 }
-fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;

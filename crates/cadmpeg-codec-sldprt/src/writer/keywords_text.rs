@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The texts and attribute names of the Keywords history as the reader's XML
-//! parser reads them back (§3.4). A character XML 1.0 does not allow is
-//! written as U+FFFD, a property whose name is not an attribute name of its
-//! element is left out, and a dimension whose name becomes the name of another
-//! dimension of its record is left out; each is named.
+//! The names, tags and texts of the Keywords history as the reader's XML
+//! parser reads them back (§3.4). This is the one place that makes a native
+//! history writable; the Keywords emitter only escapes. A character XML 1.0
+//! does not allow is written as U+FFFD. A property whose name is not an
+//! attribute name of its element is left out. A feature whose tag XML cannot
+//! hold, or that the reader reads as another record, is written under
+//! `Feature` with its kind in `Type`. An element of the history whose tag XML
+//! cannot hold is left out with its subtree. A dimension whose name becomes
+//! the name of another dimension of its record is left out. A text item or
+//! dimension value is written without its edge whitespace, and a text item
+//! that holds only whitespace is left out. Each is named.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -12,14 +18,43 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::history::write::features::generated_feature_record_id;
+use crate::history::write::xml::{valid_xml_name, xml_char};
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
-use crate::records::{FeatureContent, HistoryContent};
+use crate::records::{FeatureContent, HistoryContent, HistoryElement, HistoryElementContent};
 
-/// Make every text and attribute name of the histories of `native` one the
+/// The attributes the emitter writes itself on each element it generates. A
+/// property with one of these names is left out: it would repeat the
+/// attribute, or the reader would read it as the field.
+const ROOT_ATTRIBUTES: &[&str] = &["Name"];
+const CONFIGURATION_ATTRIBUTES: &[&str] = &["Name", "SourceIndex", "Material"];
+const FEATURE_ATTRIBUTES: &[&str] = &["id", "Name", "Type", "Suppressed"];
+const DIMENSION_ATTRIBUTES: &[&str] = &["Name"];
+
+/// What [`readable_keywords`] changed, by record.
+#[derive(Default)]
+struct Changes {
+    /// Records with a character replaced.
+    replaced: BTreeSet<String>,
+    /// Records with a text item or dimension value trimmed or left out.
+    trimmed: BTreeSet<String>,
+    /// Records with properties left out, each with the names.
+    left_out: Vec<String>,
+    /// Dimensions left out.
+    dimensions_left_out: Vec<String>,
+    /// Features written under `Feature`, each with its tag.
+    tags: Vec<String>,
+    /// `SolidWorks` features whose source tag is not written, each with the
+    /// tag and the tag written.
+    source_tags: Vec<String>,
+    /// History elements left out with their subtrees.
+    elements: Vec<String>,
+}
+
+/// Make every name, tag and text of the histories of `native` one the
 /// reader's XML parser reads back, and name each record changed. Records are
 /// named by the identity of the `ir` feature or parameter they write.
-pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<LossNote> {
+pub(crate) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<LossNote> {
     let features = ir
         .model
         .features
@@ -29,7 +64,7 @@ pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
                 .native_ref
                 .clone()
                 .unwrap_or_else(|| generated_feature_record_id(&feature.id));
-            (record, feature.id.as_str())
+            (record, feature)
         })
         .collect::<HashMap<_, _>>();
     let parameters = ir
@@ -43,20 +78,26 @@ pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut replaced = BTreeSet::new();
-    let mut left_out = Vec::new();
-    let mut dimensions_left_out = Vec::new();
+    let mut changes = Changes::default();
     for history in &mut native.feature_histories {
         let label = format!("history {}", history.id);
         let mut changed = history.part_name.as_mut().is_some_and(replace);
-        changed |= properties(&mut history.properties, &["Name"], &label, &mut left_out);
-        for item in &mut history.content {
-            if let HistoryContent::Text(text) = item {
+        changed |= properties(
+            &mut history.properties,
+            ROOT_ATTRIBUTES,
+            &label,
+            &mut changes.left_out,
+        );
+        history.content.retain_mut(|item| match item {
+            HistoryContent::Text(text) => {
                 changed |= replace(text);
+                readable_text(text, &label, &mut changes.trimmed)
             }
-        }
+            HistoryContent::Element(element) => readable_element(element, &label, &mut changes),
+            HistoryContent::Configuration(_) | HistoryContent::Feature(_) => true,
+        });
         if changed {
-            replaced.insert(label);
+            changes.replaced.insert(label);
         }
         for configuration in &mut history.configurations {
             let label = format!("configuration {}", configuration.id);
@@ -64,88 +105,211 @@ pub(super) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
             changed |= configuration.material.as_mut().is_some_and(replace);
             changed |= properties(
                 &mut configuration.properties,
-                &["Name", "SourceIndex", "Material"],
+                CONFIGURATION_ATTRIBUTES,
                 &label,
-                &mut left_out,
+                &mut changes.left_out,
             );
             if changed {
-                replaced.insert(label);
+                changes.replaced.insert(label);
             }
         }
         for feature in &mut history.features {
-            let owner = features
-                .get(&feature.id)
-                .map_or_else(|| feature.id.clone(), |id| (*id).to_owned());
+            let source = features.get(&feature.id).copied();
+            let owner = source.map_or_else(
+                || feature.id.clone(),
+                |source| source.id.as_str().to_owned(),
+            );
             let owner = owner.as_str();
+            let tag = feature.xml_tag.as_str();
+            let other_record = matches!(tag, "Keywords" | "Configuration" | "Dimension")
+                || (feature.tree_parent.is_none() && tag == "Application");
+            if !valid_xml_name(tag) || other_record {
+                changes.tags.push(format!("{owner} <{tag}>"));
+                feature.xml_tag = "Feature".into();
+            }
+            if let Some((source, tag)) = source.and_then(|source| {
+                source
+                    .source_tag
+                    .as_ref()
+                    .filter(|tag| source.id.as_str().starts_with("sldprt:") && !valid_xml_name(tag))
+                    .map(|tag| (source, tag))
+            }) {
+                changes.source_tags.push(format!(
+                    "{} {tag:?} as <{}>",
+                    source.id.as_str(),
+                    feature.xml_tag
+                ));
+            }
             let mut changed = replace(&mut feature.name);
             changed |= replace(&mut feature.kind);
             changed |= feature.text.as_mut().is_some_and(replace);
-            changed |= properties(
-                &mut feature.properties,
-                &["id", "Name", "Type", "Suppressed"],
-                owner,
-                &mut left_out,
-            );
-            for item in &mut feature.content {
-                if let FeatureContent::Text(text) = item {
-                    changed |= replace(text);
+            if let Some(text) = &mut feature.text {
+                if !readable_text(text, owner, &mut changes.trimmed) {
+                    feature.text = None;
                 }
             }
+            changed |= properties(
+                &mut feature.properties,
+                FEATURE_ATTRIBUTES,
+                owner,
+                &mut changes.left_out,
+            );
+            feature.content.retain_mut(|item| match item {
+                FeatureContent::Text(text) => {
+                    changed |= replace(text);
+                    readable_text(text, owner, &mut changes.trimmed)
+                }
+                FeatureContent::Dimension(_) | FeatureContent::Feature(_) => true,
+            });
             if changed {
-                replaced.insert(owner.to_owned());
+                changes.replaced.insert(owner.to_owned());
             }
             for (name, expression) in &mut feature.parameters {
+                let label = || dimension_label(&parameters, owner, name.as_str());
                 if replace(expression) {
-                    replaced.insert(dimension_label(&parameters, owner, name.as_str()));
+                    changes.replaced.insert(label());
+                }
+                let kept = expression.trim();
+                if kept.len() != expression.len() {
+                    *expression = kept.to_owned();
+                    changes.trimmed.insert(label());
                 }
             }
             for (name, properties_of) in &mut feature.dimension_properties {
                 let label = dimension_label(&parameters, owner, name);
-                if properties(properties_of, &["Name"], &label, &mut left_out) {
-                    replaced.insert(label);
+                if properties(
+                    properties_of,
+                    DIMENSION_ATTRIBUTES,
+                    &label,
+                    &mut changes.left_out,
+                ) {
+                    changes.replaced.insert(label);
                 }
             }
             let (written, collided) = dimension_names(feature);
             for name in written {
-                replaced.insert(dimension_label(&parameters, owner, &name));
+                changes
+                    .replaced
+                    .insert(dimension_label(&parameters, owner, &name));
             }
             for name in collided {
                 let label = dimension_label(&parameters, owner, &name);
-                replaced.remove(&label);
-                dimensions_left_out.push(label);
+                changes.replaced.remove(&label);
+                changes.dimensions_left_out.push(label);
             }
         }
     }
-    let mut notes = Vec::new();
-    if !dimensions_left_out.is_empty() {
-        notes.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
-            "the SLDPRT history writer writes no dimension for {} parameter(s): with U+FFFD in \
-             place of each character XML 1.0 does not allow, the name of each is the name of \
-             another dimension of its Keywords record, which holds one dimension per name: {}",
-            dimensions_left_out.len(),
-            dimensions_left_out.join(", ")
-        )));
+    changes.notes()
+}
+
+impl Changes {
+    fn notes(self) -> Vec<LossNote> {
+        let mut notes = Vec::new();
+        if !self.dimensions_left_out.is_empty() {
+            notes.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
+                "the SLDPRT history writer writes no dimension for {} parameter(s): with U+FFFD \
+                 in place of each character XML 1.0 does not allow, the name of each is the name \
+                 of another dimension of its Keywords record, which holds one dimension per name: \
+                 {}",
+                self.dimensions_left_out.len(),
+                self.dimensions_left_out.join(", ")
+            )));
+        }
+        if !self.left_out.is_empty() {
+            notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
+                "the SLDPRT history writer writes {} record(s) without the source properties \
+                 whose names are not attribute names of their Keywords element (an XML name \
+                 without a colon, other than xmlns and the attributes the writer writes on that \
+                 element): {}",
+                self.left_out.len(),
+                self.left_out.join("; ")
+            )));
+        }
+        if !self.tags.is_empty() {
+            notes.push(SldprtLossCode::WriterHistoryNameNotWritten.note(format!(
+                "the SLDPRT history writer writes {} feature(s) under the Feature tag, with \
+                 their kind in Type, because XML cannot hold their tag or the reader reads an \
+                 element of that tag as another record: {}",
+                self.tags.len(),
+                self.tags.join(", ")
+            )));
+        }
+        if !self.source_tags.is_empty() {
+            notes.push(SldprtLossCode::WriterHistoryNameNotWritten.note(format!(
+                "the SLDPRT history writer writes {} SolidWorks feature(s) under another tag \
+                 than the source tag they state, because XML cannot hold that tag: {}",
+                self.source_tags.len(),
+                self.source_tags.join(", ")
+            )));
+        }
+        if !self.elements.is_empty() {
+            notes.push(SldprtLossCode::WriterHistoryNameNotWritten.note(format!(
+                "the SLDPRT history writer leaves out {} Keywords element(s) whose tag XML \
+                 cannot hold, with the elements and texts inside them: {}",
+                self.elements.len(),
+                self.elements.join(", ")
+            )));
+        }
+        if !self.trimmed.is_empty() {
+            notes.push(SldprtLossCode::WriterKeywordsTextTrimmed.note(format!(
+                "the SLDPRT history writer writes the text items and dimension values of {} \
+                 record(s) without their edge whitespace, and leaves out their text items that \
+                 hold only whitespace, which the reader does not keep: {}",
+                self.trimmed.len(),
+                self.trimmed.into_iter().collect::<Vec<_>>().join(", ")
+            )));
+        }
+        if !self.replaced.is_empty() {
+            notes.push(
+                SldprtLossCode::WriterKeywordsCharactersReplaced.note(format!(
+                "the SLDPRT history writer writes U+FFFD in place of each character XML 1.0 does \
+                 not allow in the texts of {} record(s): {}",
+                self.replaced.len(),
+                self.replaced.into_iter().collect::<Vec<_>>().join(", ")
+            )),
+            );
+        }
+        notes
     }
-    if !left_out.is_empty() {
-        notes.push(SldprtLossCode::WriterFeatureFieldsOmitted.note(format!(
-            "the SLDPRT history writer writes {} record(s) without the source properties whose \
-             names are not attribute names of their Keywords element (an ASCII XML name without \
-             a namespace prefix, other than xmlns and the element's own attributes): {}",
-            left_out.len(),
-            left_out.join("; ")
-        )));
+}
+
+/// Make `element`, an element of the history `parent` names, readable with
+/// its subtree. Returns false when XML cannot hold its tag, so the caller
+/// leaves it out.
+fn readable_element(element: &mut HistoryElement, parent: &str, changes: &mut Changes) -> bool {
+    let label = match element.attributes.get("Name") {
+        Some(name) => format!("{parent} > {} {name:?}", element.tag),
+        None => format!("{parent} > {}", element.tag),
+    };
+    if !valid_xml_name(&element.tag) {
+        changes.elements.push(label);
+        return false;
     }
-    if !replaced.is_empty() {
-        notes.push(
-            SldprtLossCode::WriterKeywordsCharactersReplaced.note(format!(
-            "the SLDPRT history writer writes U+FFFD in place of each character XML 1.0 does not \
-             allow in the texts of {} record(s): {}",
-            replaced.len(),
-            replaced.into_iter().collect::<Vec<_>>().join(", ")
-        )),
-        );
+    let mut changed = properties(&mut element.attributes, &[], &label, &mut changes.left_out);
+    element.content.retain_mut(|item| match item {
+        HistoryElementContent::Text(text) => {
+            changed |= replace(text);
+            readable_text(text, &label, &mut changes.trimmed)
+        }
+        HistoryElementContent::Element(child) => readable_element(child, &label, changes),
+    });
+    if changed {
+        changes.replaced.insert(label);
     }
-    notes
+    true
+}
+
+/// Write `text`, a text item of the record `label` names, without its edge
+/// whitespace. Returns false when nothing is left, so the caller leaves the
+/// item out. Records `label` in `trimmed` when the item changes or is left
+/// out.
+fn readable_text(text: &mut String, label: &str, trimmed: &mut BTreeSet<String>) -> bool {
+    let kept = text.trim();
+    if kept.is_empty() || kept.len() != text.len() {
+        *text = kept.to_owned();
+        trimmed.insert(label.to_owned());
+    }
+    !text.is_empty()
 }
 
 fn dimension_label(parameters: &HashMap<(&str, &str), &str>, owner: &str, name: &str) -> String {
@@ -212,12 +376,7 @@ fn properties(
     let names = properties
         .keys()
         .map(NonBlankString::as_str)
-        .filter(|name| {
-            !crate::history::write::xml::valid_xml_name(name)
-                || name.contains(':')
-                || *name == "xmlns"
-                || reserved.contains(name)
-        })
+        .filter(|name| !valid_xml_name(name) || *name == "xmlns" || reserved.contains(name))
         .map(str::to_owned)
         .collect::<Vec<_>>();
     for name in &names {
@@ -236,17 +395,13 @@ fn properties(
 /// Write U+FFFD in place of each character of `text` XML 1.0 does not allow,
 /// and return whether one was replaced.
 fn replace(text: &mut String) -> bool {
-    let allowed = |character: char| {
-        matches!(character, '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}')
-            || character >= '\u{10000}'
-    };
-    if text.chars().all(allowed) {
+    if text.chars().all(xml_char) {
         return false;
     }
     *text = text
         .chars()
         .map(|character| {
-            if allowed(character) {
+            if xml_char(character) {
                 character
             } else {
                 char::REPLACEMENT_CHARACTER

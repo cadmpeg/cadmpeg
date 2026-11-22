@@ -852,6 +852,46 @@ mod tests {
     }
 
     #[test]
+    fn a_solidworks_source_tag_xml_cannot_hold_keeps_the_record_tag_and_is_named() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        for (tag, written, named) in [
+            ("Pattern Geometry", "Feature", true),
+            ("PartDesign::Pad", "Feature", true),
+            ("Schlüssel", "Schlüssel", false),
+        ] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].source_tag = Some(tag.into());
+            let mut native = Some(sldprt_native(decoded.ir()));
+            sync_neutral_features(&ir, &ir.model.parameters, &ir.geometry.bodies, &mut native)
+                .expect("the history is written");
+            let mut native = native.expect("native history");
+            let notes = crate::writer::keywords_text::readable_keywords(&ir, &mut native);
+            assert_eq!(
+                native.feature_histories[0].features[0].xml_tag, written,
+                "{tag}"
+            );
+            let names = notes
+                .iter()
+                .filter(|note| {
+                    note.code == crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.kind()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), usize::from(named), "{tag}: {notes:?}");
+            assert!(
+                names
+                    .iter()
+                    .all(|note| note.message.contains(&format!("{tag:?} as <Feature>"))),
+                "{names:?}"
+            );
+        }
+    }
+
+    #[test]
     fn generated_feature_identities_escape_embedded_separators() {
         let feature =
             FeatureId::mint("test:model:feature#original%23key").expect("fixture identity");
