@@ -146,6 +146,10 @@ scored = ["nx:splmsstr", "nx:legacy-cfb"]
 level = 3
 scored = ["sat:text"]
 
+[format.edrawings]
+level = 2
+scored = ["edrawings:hsf-19-10", "edrawings:hsf-18-00", "edrawings:hsf-19-00"]
+
 [format.pvz]
 level = 3
 scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:pvs-0305"]
@@ -934,6 +938,33 @@ refusal = "no-framing-grammar"
 reason = """
 `sat:unknown` means no ASM, ACIS, or text stream framing matched. Detection
 returns Confidence::No and the forced codec path returns WrongFormat"""
+
+# --------------------------------------------------------------------------
+# edrawings
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "edrawings:hsf-19-10"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "edrawings:hsf-18-00"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "edrawings:hsf-19-00"
+read = "detected"
+write = "none"
+
+[[support]]
+dialect = "edrawings:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+no known model stream version; the package is read on the residual path and
+charges edrawings/source.dialect-unverified"""
 
 # --------------------------------------------------------------------------
 # pvz

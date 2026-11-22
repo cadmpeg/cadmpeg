@@ -1,0 +1,116 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "6332",
+        "crc32": "be9113e1",
+        "data_offset": "36",
+        "header_offset": "0",
+        "hsf_version": "18.00"
+      },
+      "kind": "stored",
+      "name": "eModel",
+      "role": "model-data",
+      "size": {
+        "kind": "exact",
+        "size": 5997
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6384",
+        "crc32": "00983853",
+        "data_offset": "6074",
+        "header_offset": "6033"
+      },
+      "kind": "stored",
+      "name": "preview.jpg",
+      "role": "preview-image",
+      "size": {
+        "kind": "exact",
+        "size": 19
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6441",
+        "crc32": "7bd5c66f",
+        "data_offset": "6126",
+        "header_offset": "6093"
+      },
+      "kind": "stored",
+      "name": "OLE",
+      "role": "opaque",
+      "size": {
+        "kind": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6490",
+        "crc32": "ffb8728e",
+        "data_offset": "6177",
+        "header_offset": "6138"
+      },
+      "kind": "stored",
+      "name": "scene.xml",
+      "role": "auxiliary",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6545",
+        "crc32": "782fc053",
+        "data_offset": "6255",
+        "header_offset": "6212"
+      },
+      "kind": "stored",
+      "name": "materials.xml",
+      "role": "material-texture",
+      "size": {
+        "kind": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6604",
+        "crc32": "bd77646e",
+        "data_offset": "6315",
+        "header_offset": "6267"
+      },
+      "kind": "stored",
+      "name": "FileProperties.xml",
+      "role": "properties",
+      "size": {
+        "kind": "exact",
+        "size": 17
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "hsf_version": "18.00"
+        },
+        "dialect": "edrawings:hsf-18-00"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "6 members",
+    "HSF V18.00; info record 4; bounds [-0.5, 0.0, -0.25]..[0.5, 1.0, 0.25]; model stream at offset 47"
+  ]
+}
