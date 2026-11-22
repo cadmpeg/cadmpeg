@@ -326,3 +326,49 @@ bytes after the end of its function name (§4.2). A feature with function
 bytes after the end of its function name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
 profile. At most one feature names a profile.
+
+## 6. Feature extents
+
+### 6.1 Parameter slots
+
+A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
+`JMCutoutFunction` or `JMRevolvedProtrusionFunction` stores its parameters
+as `u32` object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 72 | the profile (§5.3) |
+| 100 | the extent kind |
+| 128 | the side |
+| 184 | the depth of an extruded feature, or the axis of a revolved feature |
+| 212 | the sweep angle of a revolved feature |
+
+An identifier `0` names no object. A `Double Value Object` stores its value
+as the `f64` at object offset 8. A `CLSID_JDim` stores its value as the
+`f64` at object offset 202. Lengths are metres and angles are radians.
+
+### 6.2 Extent kind and side
+
+The extent kind is a `Double Value Object`. Value `13` is a finite extent
+and value `16` is an extent through all material.
+
+The side is a `Double Value Object`. Value `2` extends the feature along the
+profile normal `A` (§5.1), value `1` extends it against the normal, and
+value `3` extends it to both sides of the profile plane. For a revolved
+feature, value `2` sweeps towards the profile normal and value `1` away
+from it.
+
+### 6.3 Depth
+
+The depth of a finite extruded feature is a `CLSID_JDim` or a
+`Double Value Object`. A one-sided feature extends by the depth from the
+profile plane. A feature extended to both sides extends by half the depth to
+each side. A feature through all material stores no depth.
+
+### 6.4 Revolve axis and angle
+
+The axis of a revolved feature is a `CLSID_JMRefAxis` object. Its byte at
+object offset 12 is `3`. The three `f64` at offset 13 are a point on the
+axis in model space, and the three `f64` at offset 37 are the unit axis
+direction. The sweep angle is a `Double Value Object` or a `CLSID_JDim`.
+

@@ -50,8 +50,18 @@
 
 ### DR-1017. Group feature kind and feature operands
 
-**Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where does a feature store its profile, extent and direction?
+**Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where do swept, lofted, hole, round, chamfer and thin-wall features store their operands?
 
-**Known.** A `CLSID_JMGroup` object has a different layout from a `CLSID_JMPart` object after its frame. A `CLSID_JMPart` object stores its function name at the position in §4.2.
+**Known.** A `CLSID_JMGroup` object has a different layout from a `CLSID_JMPart` object after its frame. Extruded and revolved features store their parameters in the slots of §6.1. Swept and lofted features store their first profile at the §5.3 position.
 
-**Need.** Mirror and pattern documents that differ in one parameter, and extrude documents that differ only in depth or direction.
+**Need.** Mirror and pattern documents that differ in one parameter, and documents of each other feature kind that differ in one parameter.
+
+
+### DR-1020. Second side word of extruded features
+
+**Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
+
+**Known.** The slot holds no object in the first feature of a document. In the later features of controlled saves it holds `2` for protrusions, including one extended against its profile normal, and `1` for cutouts, including one extended along its profile normal. Four protrusions in other documents hold `1`.
+
+**Need.** The protrusions that hold `1` rebuilt in controlled saves, and a protrusion and a cutout that differ only in the boolean operation.
+
