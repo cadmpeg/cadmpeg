@@ -156,11 +156,15 @@ pub(crate) fn is_top_level(definitions: &[ProductDefinition], occurrence: &Occur
     cadmpeg_ir::products::owner(definitions, occurrence).is_none_or(ProductDefinition::is_root)
 }
 
-/// The occurrence `occurrence` sits in, or `None` at the top level.
-pub(crate) fn parent<'m>(
+/// The occurrence `occurrence` sits in, or `None` at the top level. Where
+/// the owning definition has several placements, the placement is the one
+/// whose identity `occurrence` extends, or whose archive member instance
+/// scope (`instance_scopes`) `occurrence` is in.
+fn parent<'m>(
     definitions: &[ProductDefinition],
     occurrences: &'m [Occurrence],
     occurrence: &OccurrenceId,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Option<&'m Occurrence> {
     let owner = cadmpeg_ir::products::owner(definitions, occurrence)?;
     if owner.is_root() {
@@ -173,10 +177,28 @@ pub(crate) fn parent<'m>(
     let Some(second) = placements.next() else {
         return Some(first);
     };
-    std::iter::once(first)
+    let candidates = std::iter::once(first)
         .chain(std::iter::once(second))
         .chain(placements)
+        .collect::<Vec<_>>();
+    candidates
+        .iter()
+        .copied()
         .find(|candidate| extends(occurrence, &candidate.id))
+        .or_else(|| {
+            let scope = instance_scope(occurrence.as_str())?;
+            let mut matching = candidates
+                .iter()
+                .copied()
+                .filter(|candidate| match instance_scopes.get(&candidate.id) {
+                    Some(instance) => instance == scope,
+                    None => instance_scope(candidate.id.as_str()) == Some(scope),
+                });
+            match (matching.next(), matching.next()) {
+                (Some(placement), None) => Some(placement),
+                _ => None,
+            }
+        })
 }
 
 /// The occurrence each nested occurrence sits in.
@@ -184,10 +206,22 @@ pub(crate) fn parent_ids(
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
 ) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
+    parent_ids_in_members(definitions, occurrences, &BTreeMap::new())
+}
+
+/// [`parent_ids`] for a model that places archive member instances:
+/// `instance_scopes` maps each occurrence that places one to the identity
+/// scope of that instance, which names the placement of a member's own
+/// occurrences below a definition several occurrences place.
+pub(crate) fn parent_ids_in_members(
+    definitions: &[ProductDefinition],
+    occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
+) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
     occurrences
         .iter()
         .filter_map(|occurrence| {
-            parent(definitions, occurrences, &occurrence.id)
+            parent(definitions, occurrences, &occurrence.id, instance_scopes)
                 .map(|parent| (occurrence.id.clone(), parent.id.clone()))
         })
         .collect()

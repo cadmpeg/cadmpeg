@@ -95,6 +95,7 @@ fn read(walk: &mut View<'_>) -> Result<Option<EntryRecord>, CodecError> {
         }),
         utf8_name: flags & 0x800 != 0,
         local_header_error: None,
+        metadata_error: None,
         unreadable_range: None,
     };
     let frame = (|| {

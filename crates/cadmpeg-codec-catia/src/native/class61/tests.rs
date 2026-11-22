@@ -147,7 +147,7 @@ fn malformed_packed_width_high_bits_and_terminals_refuse() {
 }
 
 #[test]
-fn clothes_record_has_one_counted_interpretation_and_no_scalar_lane() {
+fn long_counted_record_has_one_counted_interpretation_and_no_scalar_lane() {
     let mut payload = vec![0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb];
     for value in [
         74, 80, 86, 91, 94, 97, 99, 101, 104, 111, 114, 132, 137, 142, 144, 146, 148, 150, 152,
