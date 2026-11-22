@@ -407,9 +407,10 @@ fn visit_blind_extrude_lengths(
     count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// A blind-depth edit is written as edited over the stored B-rep, which the
+/// export names as the state before the edit.
 #[test]
-fn edited_blind_depth_without_regenerated_brep_is_refused() {
+fn edited_blind_depth_is_written_over_the_stored_brep_and_named() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
@@ -431,7 +432,11 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                 }) != 0
             },
             |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
+                MutationOutcome::Written {
+                    edited,
+                    bytes,
+                    report,
+                } => {
                     let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
@@ -459,15 +464,20 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     assert_eq!(
                         arena_sizes(written.ir()),
                         arena_sizes(edited),
-                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
-                         written; entities were lost or invented"
+                        "fixture `{name}`: the written B-rep is not the stored one; entities were lost \
+                         or invented"
                     );
-                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
+                    assert!(
+                        report.losses.iter().any(|loss| loss.code
+                            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+                        "fixture `{name}`: the stored B-rep shows the depth before the edit, and no \
+                         loss says so: {:?}",
+                        report.losses
+                    );
                 }
-                MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-                    "fixture `{name}`: {error}"
-                ),
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a blind-depth edit was refused: {error}")
+                }
             },
         );
         if ran {

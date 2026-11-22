@@ -16,10 +16,11 @@ use super::{CLASS_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{FeatureInputOperandKind, SketchInputKind, SketchRelationKind};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::design::parameter::ParameterDefinition;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntityId,
-    SketchGeometryDefinition, SketchLocus,
+    Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
+    SketchEntityId, SketchGeometryDefinition, SketchLocus,
 };
 use std::collections::HashMap;
 
@@ -178,6 +179,7 @@ pub(super) fn append_generated_sketch_markers(
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
+        .filter(|constraint| !is_driven_dimension(ir, constraint))
         .filter_map(|constraint| {
             generated_dimension(ir, constraint.definition.kind())
                 .map(|dimension| dimension.map(|dimension| (&constraint.id, dimension)))
@@ -549,11 +551,11 @@ fn constraint_named(
     }
 }
 
-fn generated_dimension<'a>(
-    ir: &cadmpeg_ir::CadIr,
-    definition: &'a SketchConstraintDefinitionInput,
-) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
-    let parameter_id = match definition {
+/// The parameter of a dimension the generated sketch writes as a scalar.
+pub(super) fn dimension_parameter(
+    definition: &SketchConstraintDefinitionInput,
+) -> Option<&cadmpeg_ir::features::ParameterId> {
+    match definition {
         SketchConstraintDefinitionInput::DistanceLoci { parameter, .. }
         | SketchConstraintDefinitionInput::Distance { parameter, .. }
         | SketchConstraintDefinitionInput::HorizontalDistance { parameter, .. }
@@ -562,7 +564,28 @@ fn generated_dimension<'a>(
         | SketchConstraintDefinitionInput::Radius { parameter, .. }
         | SketchConstraintDefinitionInput::Diameter { parameter, .. } => Some(parameter),
         _ => None,
-    }?;
+    }
+}
+
+/// Whether `constraint` is a driven (reference) dimension: its record states
+/// it is driven, or the design states its parameter `Driven` (D11). A
+/// generated scalar is driving, so the generated sketch omits it.
+pub(super) fn is_driven_dimension(ir: &cadmpeg_ir::CadIr, constraint: &SketchConstraint) -> bool {
+    let Some(parameter) = dimension_parameter(constraint.definition.kind()) else {
+        return false;
+    };
+    constraint.driving == Some(false)
+        || ir.design.parameters.iter().any(|candidate| {
+            candidate.id == *parameter
+                && matches!(candidate.definition, ParameterDefinition::Driven)
+        })
+}
+
+fn generated_dimension<'a>(
+    ir: &cadmpeg_ir::CadIr,
+    definition: &'a SketchConstraintDefinitionInput,
+) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
+    let parameter_id = dimension_parameter(definition)?;
     if let Some(parameter) = ir
         .model
         .parameters
@@ -662,8 +685,11 @@ fn append_generated_scalar(
     }
     cut.extend(name.unwritable_entry(record));
     let units = name.text.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len())
-        .expect("GENERATED_NAME.width fits the u8 count (writer::tests::capacity)");
+    let length = u8::try_from(units.len()).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed(
+            "SLDPRT generated name exceeds 255 UTF-16 code units".into(),
+        )
+    })?;
     let class_length = u16::try_from(class.len()).map_err(|_| {
         cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated parameter class name exceeds 65535 bytes".into(),
@@ -916,8 +942,11 @@ pub(super) fn append_generated_object_name(
     }
     cut.extend(name.unwritable_entry(record));
     let units = name.text.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len())
-        .expect("GENERATED_NAME.width fits the u8 count (writer::tests::capacity)");
+    let length = u8::try_from(units.len()).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed(
+            "SLDPRT generated name exceeds 255 UTF-16 code units".into(),
+        )
+    })?;
     payload.extend_from_slice(NAME_MARKER);
     payload.push(length);
     for unit in units {

@@ -400,6 +400,9 @@ struct PathPoseOutcome {
     inferred_carriers: usize,
     inferred_instances: usize,
     inferred_groups: usize,
+    /// Occurrences placed from the closing matrix of a marker-carrying object
+    /// prelude without a component-path proof.
+    marked_prelude_placements: usize,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
     /// Expanded instances with an independently resolved world pose.
@@ -1401,7 +1404,7 @@ impl<'a> Projector<'a> {
             .filter_map(|(key, (_, carrier))| {
                 carrier
                     .filter(|carrier| {
-                        carrier.has_object_prelude()
+                        carrier.needs_object_pose_proof()
                             && carrier.transform().is_some()
                             && !self.path_poses.applied_instances.contains(key)
                     })
@@ -1425,6 +1428,17 @@ impl<'a> Projector<'a> {
                 break;
             }
         }
+        self.path_poses.marked_prelude_placements = self
+            .occurrences
+            .iter()
+            .filter(|(key, (_, carrier))| {
+                !rejected.contains(key.as_str())
+                    && !self.path_poses.applied_instances.contains(key.as_str())
+                    && carrier.is_some_and(|carrier| {
+                        carrier.has_marked_object_prelude() && carrier.transform().is_some()
+                    })
+            })
+            .count();
         for key in rejected {
             if let Some((_, carrier)) = self.occurrences.remove(&key) {
                 if let Some(carrier) = carrier {
@@ -1662,6 +1676,12 @@ impl<'a> Projector<'a> {
                 self.path_poses.inferred_carriers,
                 self.path_poses.inferred_instances,
                 self.path_poses.inferred_groups
+            )));
+        }
+        if self.path_poses.marked_prelude_placements != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceMarkedPreludeAssumed.note(format!(
+                "{} local occurrence(s) are placed from the closing matrix of an object-prelude carrier with a source marker and no component-path proof; the reference frame of that matrix is assumed to be the component frame",
+                self.path_poses.marked_prelude_placements
             )));
         }
         if self.path_poses.unresolved != 0 {

@@ -224,8 +224,8 @@ pub(crate) fn write_semantic_with_records(
     if let Some(source_definitions) = &source_definitions {
         losses.extend(source_definitions.notes(&normalized, native.as_ref()));
     }
+    let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
         losses.extend(
@@ -277,7 +277,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials::materials_payload(ir);
+    let materials = materials::materials_payload(ir)?;
     let owners = metadata_owners::metadata_owners(
         ir,
         retained_records,
@@ -912,6 +912,45 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         }
     }
     configurations
+}
+
+/// Validate `ir` as its written part decodes when the model suppresses a
+/// feature: the decoder restates the synthesized active snapshot from the
+/// model, and validation requires the active configuration to state each
+/// suppression. The snapshot is cleared again for the write.
+fn validate_with_model_snapshot(
+    ir: &mut CadIr,
+) -> Result<cadmpeg_ir::report::check::ValidationReport, CodecError> {
+    let synthesized = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+    });
+    let Some(index) = synthesized
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .position(|configuration| configuration.id.as_str() == id)
+        })
+        .filter(|_| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.suppressed == Some(true))
+        })
+    else {
+        return cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    };
+    let snapshot = crate::decode::model_snapshot(&ir.model);
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values.clear();
+    configuration.feature_states.clear();
+    validation
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -2488,8 +2527,7 @@ impl MetadataRecord {
                 }
                 let units = fitted.text.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2)
-                    .expect("UNIT_NAME.width fits the u8 byte count (writer::tests::capacity)");
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| invalid)?;
                 Self::SourceLinearUnitName {
                     units,
                     byte_len,

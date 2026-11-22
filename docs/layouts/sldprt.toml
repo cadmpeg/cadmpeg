@@ -14345,6 +14345,108 @@ source = "spec"
 anchor = "| +28 | u8 | equation_angular_mode |"
 
 [[record]]
+name = "equation_token_words"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs"
+kind = "byte"
+section = "2"
+anchor = "A token's four words are 16 bytes after its counted string"
+size = 16
+endianness = "little"
+note = "Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words."
+
+[[record.field]]
+name = "token_lead_word"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| +0 | u32 | token_lead_word |"
+
+[[record.field]]
+name = "token_first_character"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| +4 | u32 | token_first_character |"
+
+[[record.field]]
+name = "token_end_character"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| +8 | u32 | token_end_character |"
+
+[[record.field]]
+name = "token_kind"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| +12 | u32 | token_kind |"
+
+[[record]]
+name = "equation_expression_separator"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs"
+kind = "byte"
+section = "2"
+anchor = "The ten bytes before the expression side follow the repeated assigned name"
+size = 10
+endianness = "little"
+note = "The expression side's class tag and token count follow."
+
+[[record.field]]
+name = "separator_lead"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "| +0 | bytes[8] | separator_lead, `00 00 00 00 01 00 00 00` |"
+value = [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
+
+[[record.field]]
+name = "separator_word"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "| +8 | u16 | separator_word |"
+
+[[record]]
+name = "equation_dimension_reference_token"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs"
+kind = "byte"
+section = "2"
+anchor = "A dimension reference whose two classes the stream has already declared is 16 bytes"
+size = 16
+endianness = "little"
+note = "The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value."
+
+[[record.field]]
+name = "dimension_class_token"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "| +0 | u16 | dimension_class_token |"
+
+[[record.field]]
+name = "dimension_pad"
+offset = 2
+type = "bytes[4]"
+source = "spec"
+anchor = "| +2 | bytes[4] | dimension_pad, zero |"
+value = [0x00, 0x00, 0x00, 0x00]
+
+[[record.field]]
+name = "wrapper_class_token"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| +6 | u16 | wrapper_class_token, `dimension_class_token` + 2 |"
+
+[[record.field]]
+name = "stored_value"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| +8 | f64 | stored_value |"
+
+[[record]]
 name = "draft_declared_neutral_frame"
 kind = "byte"
 section = "2"

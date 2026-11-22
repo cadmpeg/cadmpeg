@@ -663,6 +663,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     assert_eq!(classify(written), claimed);
 }
 
+mod inch_feature_lengths;
 mod mass_property_conformance;
 mod nist_pmi_conformance;
 mod terminal_edge_ownership;

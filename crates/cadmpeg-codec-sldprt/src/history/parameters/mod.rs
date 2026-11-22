@@ -284,6 +284,7 @@ pub(crate) fn native_parameter_is_length(
                 || cosmetic_thread
         }
         "D2" if cosmetic_thread => true,
+        "D2" if is_extrude(feature) && extrude_second_side_blind(feature) => true,
         "D2" if is_chamfer(feature) => {
             expression.is_none_or(|value| parse_angle_rad(value).is_none())
         }
@@ -304,6 +305,13 @@ pub(crate) fn native_parameter_is_length(
                 && feature.parameters.contains_key(name)
         }
     }
+}
+
+/// Whether an extrude's second side is blind, its depth the `D2` dimension:
+/// a second end condition `Blind`, or a `TwoSided` end condition.
+fn extrude_second_side_blind(feature: &Feature) -> bool {
+    feature.properties.get("EndCondition2").map(String::as_str) == Some("Blind")
+        || feature.properties.get("EndCondition").map(String::as_str) == Some("TwoSided")
 }
 
 /// The expression of a native scalar `value` in metres or radians, in the

@@ -3865,6 +3865,52 @@ Starts at the parsed post-relation settings boundary H, not at a fixed displacem
 | 25 | 3 | `settings_before_mode` | `bytes[3]` | little | spec | \| +25 \| bytes[3] \| settings_before_mode \| |
 | 28 | 1 | `equation_angular_mode` | `u8` | little | spec | \| +28 \| u8 \| equation_angular_mode \| |
 
+## `equation_token_words`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `token_lead_word` | `u32` | little | spec | \| +0 \| u32 \| token_lead_word \| |
+| 4 | 4 | `token_first_character` | `u32` | little | spec | \| +4 \| u32 \| token_first_character \| |
+| 8 | 4 | `token_end_character` | `u32` | little | spec | \| +8 \| u32 \| token_end_character \| |
+| 12 | 4 | `token_kind` | `u32` | little | spec | \| +12 \| u32 \| token_kind \| |
+
+## `equation_expression_separator`
+
+Spec §2 · layout: byte offsets · size: 10 B
+
+The expression side's class tag and token count follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `separator_lead` | `bytes[8]` | little | spec | \| +0 \| bytes[8] \| separator_lead, `00 00 00 00 01 00 00 00` \| · value `[0, 0, 0, 0, 1, 0, 0, 0]` |
+| 8 | 2 | `separator_word` | `u16` | little | spec | \| +8 \| u16 \| separator_word \| |
+
+## `equation_dimension_reference_token`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `dimension_class_token` | `u16` | little | spec | \| +0 \| u16 \| dimension_class_token \| |
+| 2 | 4 | `dimension_pad` | `bytes[4]` | little | spec | \| +2 \| bytes[4] \| dimension_pad, zero \| · value `[0, 0, 0, 0]` |
+| 6 | 2 | `wrapper_class_token` | `u16` | little | spec | \| +6 \| u16 \| wrapper_class_token, `dimension_class_token` + 2 \| |
+| 8 | 8 | `stored_value` | `f64` | little | spec | \| +8 \| f64 \| stored_value \| |
+
 ## `draft_declared_neutral_frame`
 
 Spec §2 · layout: byte offsets · size: 120 B

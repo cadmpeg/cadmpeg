@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::convert::truncate_f64_to_u8;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::document::CadIr;
@@ -162,14 +163,14 @@ pub(super) struct MaterialsPayload {
     pub(super) omitted: Vec<LossNote>,
 }
 
-pub(super) fn materials_payload(ir: &CadIr) -> MaterialsPayload {
+pub(super) fn materials_payload(ir: &CadIr) -> Result<MaterialsPayload, CodecError> {
     let materials = swobjects_materials(ir);
     let mut bytes = Vec::new();
     let mut cut = Vec::new();
     for material in &materials.records {
         let name = MATERIAL_NAME.fit(material.name);
         cut.extend(name.unwritable_entry(material.source));
-        bytes.extend(material_payload(name.text, material.color));
+        bytes.extend(material_payload(name.text, material.color)?);
     }
     let mut grouped = BTreeMap::<MaterialSkip, NamedCount>::new();
     for (source, reason) in &materials.skipped {
@@ -186,17 +187,18 @@ pub(super) fn materials_payload(ir: &CadIr) -> MaterialsPayload {
             ))
         })
         .collect();
-    MaterialsPayload {
+    Ok(MaterialsPayload {
         bytes,
         cut,
         omitted,
-    }
+    })
 }
 
 /// One `moVisualProperties_c` record. `name` fits [`MATERIAL_NAME`].
-fn material_payload(name: &str, color: Color) -> Vec<u8> {
-    let length = u8::try_from(name.encode_utf16().count())
-        .expect("MATERIAL_NAME.width fits the u8 count (writer::tests::capacity)");
+fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
+    let length = u8::try_from(name.encode_utf16().count()).map_err(|_| {
+        CodecError::Malformed("SLDPRT material name exceeds 255 UTF-16 code units".into())
+    })?;
     let mut out = b"moVisualProperties_c".to_vec();
     let component = |value: f64| {
         let component = truncate_f64_to_u8((value * 255.0).round());
@@ -216,7 +218,7 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
     for unit in name.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
     }
-    out
+    Ok(out)
 }
 
 /// `export:edit.dropped` for a write that keeps the retained `SWObjects`
