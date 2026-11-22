@@ -3,11 +3,11 @@
 //! ([spec §1.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#12-stored-property-and-configuration-entries),
 //! [§1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 //!
-//! [`decode`] parses the top-level `RedirectionsStream.dat` table into
-//! [`XrefDesign`] and [`XrefReference`] records. [`docstruct`] parses the JSON
-//! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
-//! whose model is the placement of its XREF targets.
+//! [`decode`] collects external document identities and occurrence roles.
+//! [`docstruct`] reads document-type properties. [`is_assembly`] identifies
+//! a BREP-less placement assembly.
 
+pub(crate) mod api_export;
 pub(crate) mod operation_pose;
 
 use cadmpeg_core::container::ContainerRole;
@@ -59,6 +59,8 @@ pub(crate) const COMPONENT_PATH_TYPE_GUID: &str = "3B6814F4-D87B-46BD-AD9D-0BE07
 pub(crate) struct XrefTable {
     /// Design entries in source order; entry 0 is the document itself.
     pub(crate) designs: Vec<XrefDesign>,
+    pub(crate) identity_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) documents: std::collections::BTreeMap<String, ExternalDocument>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
     pub(crate) derived_references: Vec<DerivedReference>,
@@ -286,12 +288,12 @@ fn reference_data(
     let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
         Ok(bytes) => bytes,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+        Err(_) => return api_export::decode(ctx, scan),
     };
     parse(ctx, bytes).map(Some)
 }
 
-/// Parse the top-level `RedirectionsStream.dat` table, if present.
+/// Decode the container's external references.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -484,6 +486,14 @@ pub(crate) fn design_for<'a>(
         .find(|design| design.target_file_name == reference.relative_path)
 }
 
+pub(crate) fn document_identity(design: &XrefDesign) -> ExternalDocument {
+    ExternalDocument {
+        document_id: cadmpeg_core::text::NonBlankString::new(design.lineage_urn.clone()),
+        version: cadmpeg_core::text::NonBlankString::new(design.version_urn.clone()),
+        ..ExternalDocument::default()
+    }
+}
+
 /// External product structure projected into local component instance paths.
 pub(crate) struct ExternalOccurrenceProjection {
     /// One definition of external storage per referenced document.
@@ -553,7 +563,7 @@ pub(crate) fn project_occurrences(
         definitions: Vec::new(),
         occurrences: Vec::new(),
         placements: Vec::new(),
-        losses: Vec::new(),
+        losses: table.identity_losses.clone(),
     };
     for reference in &table.references {
         let path = reference.relative_path.as_str();
@@ -565,7 +575,13 @@ pub(crate) fn project_occurrences(
         {
             projection.definitions.push(ProductDefinition::new(
                 id,
-                Storage::External(ExternalDocument::path(path.to_owned())),
+                Storage::External(ExternalDocument {
+                    path: cadmpeg_core::text::NonBlankString::new(path),
+                    ..table.documents.get(path).cloned().unwrap_or_else(|| {
+                        design_for(table, reference)
+                            .map_or_else(ExternalDocument::default, document_identity)
+                    })
+                }),
             ));
         }
     }
