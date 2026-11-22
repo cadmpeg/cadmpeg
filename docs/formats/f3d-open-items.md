@@ -2062,7 +2062,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
-### DR-1013. Flag byte before the Base Feature metadata record
+### DR-1018. Flag byte before the Base Feature metadata record
 
 **Question.** What does the flag byte before the shared metadata record of an ordinary `Base Feature` result-body frame state, and does flag `1` with empty modern body maps always identify the snapshot body as the model body?
 
