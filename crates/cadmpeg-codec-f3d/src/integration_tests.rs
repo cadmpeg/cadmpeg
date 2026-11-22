@@ -18,6 +18,7 @@ mod f30_placements;
 mod fillet_projection;
 mod fusion_circular_patterns;
 mod fusion_combine_middle_lists;
+mod fusion_combine_patterns;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_mirror_remove;

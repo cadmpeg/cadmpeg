@@ -1932,7 +1932,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** Do the class-387 and class-329 `Combine` prologues store the fields of the operand-list prologue?
 
-**Known.** `f3d.md` §3.1 reads the operation at offset 21 with values one through three and keep-tools at offset 25 in the class-387 form, and reads keep-tools at offset 30 and the operation at offset 31 in the class-329 form. The operand-list form stores a zero-based operation at offset 21, keep-tools at offset 29, and u32 one at offset 31.
+**Known.** `f3d.md` §3.1 reads the operation at offset 21 with values one through three and keep-tools at offset 25 in the class-387 form, and reads keep-tools at offset 30 and the operation at offset 31 in the class-329 form. The operand-list form stores a zero-based operation at offset 21, keep-tools at offset 29, and the operation-entry count at offset 31.
 
 **Need.** Controlled class-387 and class-329 frames, or a type-table rule that separates them from the operand-list form, with stored operations proved by result volumes.
 
@@ -1995,6 +1995,16 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 **Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
 
 **Note.** The neutral Combine retains the new-component request, and the native operation retains the first created-body node as its destination browser node and the complete created-body list. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
+
+### DR-924. Body slot of a pattern copy that a Combine keeps
+
+**Question.** Which body slot of its creating state does the browser node of a body-pattern copy name when that state inserts several bodies and the body is not history-only?
+
+**Known.** `f3d.md` §3.1 binds an operand-list `Combine` tool through the single body that its creating state inserts, or through the history-only body-map pair of its body entity. A consumed pattern copy has a history-only pair and binds as the generated body of the pattern feature. A three-element body pattern makes two copies. When a later `Combine` keeps these copies as tools, the creating state of the copies inserts one body slot for each copy, and the body-map pair of each copy entity is not history-only. The selector of each pair is a key that selects one BREP body record. The index of that record is equal to the slot that the creating state inserts for the same copy.
+
+**Need.** Body patterns whose copies a later feature changes before a keep-tools `Combine`, with the readback of each copy body, to show whether the body record index of the pair selector names the inserted slot in every history.
+
+**Note.** The tools of such a `Combine` stay native and the decoder reports `feature.combine-operand-body-unbound`.
 
 ### DR-560. Prologue of a Combine with an expanded named tail
 
