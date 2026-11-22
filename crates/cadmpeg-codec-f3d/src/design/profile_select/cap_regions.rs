@@ -29,7 +29,7 @@ pub(super) mod compact;
 pub(super) mod overlap;
 pub(super) mod spatial;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -43,7 +43,11 @@ use crate::design::geometry::{
     point_segment_distance, profile_loop_contains_points, AtomicSketchRegion, BoundaryCarrier,
     ProfileGeometryWork,
 };
-use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalCurveAxis, AsmHistoricalCylinder,
+    AsmHistoricalEdge, AsmHistoricalEdgeSample, AsmHistoricalPlane, AsmHistoricalTopology,
+    AsmHistory,
+};
 
 /// Line segments one full circle or arc of a cap boundary is drawn with.
 const ARC_SEGMENTS: u32 = 64;
@@ -317,10 +321,116 @@ pub(super) fn distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
+/// Axis-aligned bounding box in 2D sketch/frame coordinates.
+#[derive(Clone, Copy)]
+pub(super) struct Aabb2 {
+    pub(super) min_u: f64,
+    pub(super) min_v: f64,
+    pub(super) max_u: f64,
+    pub(super) max_v: f64,
+}
+
+impl Aabb2 {
+    pub(super) const EMPTY: Self = Self {
+        min_u: f64::INFINITY,
+        min_v: f64::INFINITY,
+        max_u: f64::NEG_INFINITY,
+        max_v: f64::NEG_INFINITY,
+    };
+
+    #[inline]
+    pub(super) fn contains(self, point: Point2) -> bool {
+        point.u >= self.min_u
+            && point.u <= self.max_u
+            && point.v >= self.min_v
+            && point.v <= self.max_v
+    }
+
+    #[inline]
+    pub(super) fn expanded(self, margin: f64) -> Self {
+        Self {
+            min_u: self.min_u - margin,
+            min_v: self.min_v - margin,
+            max_u: self.max_u + margin,
+            max_v: self.max_v + margin,
+        }
+    }
+
+    #[inline]
+    pub(super) fn contains_box(self, inner: Self) -> bool {
+        inner.min_u >= self.min_u
+            && inner.max_u <= self.max_u
+            && inner.min_v >= self.min_v
+            && inner.max_v <= self.max_v
+    }
+
+    #[inline]
+    pub(super) fn interior_overlap(self, other: Self) -> Option<Self> {
+        let min_u = self.min_u.max(other.min_u);
+        let max_u = self.max_u.min(other.max_u);
+        let min_v = self.min_v.max(other.min_v);
+        let max_v = self.max_v.min(other.max_v);
+        (min_u < max_u && min_v < max_v).then_some(Self {
+            min_u,
+            min_v,
+            max_u,
+            max_v,
+        })
+    }
+
+    #[inline]
+    fn union(self, other: Self) -> Self {
+        Self {
+            min_u: self.min_u.min(other.min_u),
+            min_v: self.min_v.min(other.min_v),
+            max_u: self.max_u.max(other.max_u),
+            max_v: self.max_v.max(other.max_v),
+        }
+    }
+
+    #[inline]
+    fn distance_to_point(self, point: Point2) -> f64 {
+        let du = if point.u < self.min_u {
+            self.min_u - point.u
+        } else if point.u > self.max_u {
+            point.u - self.max_u
+        } else {
+            0.0
+        };
+        let dv = if point.v < self.min_v {
+            self.min_v - point.v
+        } else if point.v > self.max_v {
+            point.v - self.max_v
+        } else {
+            0.0
+        };
+        du.hypot(dv)
+    }
+}
+
+pub(super) fn ring_bounds(ring: &[Point2]) -> Option<Aabb2> {
+    let first = *ring.first()?;
+    let mut bounds = Aabb2 {
+        min_u: first.u,
+        min_v: first.v,
+        max_u: first.u,
+        max_v: first.v,
+    };
+    for p in &ring[1..] {
+        bounds.min_u = bounds.min_u.min(p.u);
+        bounds.min_v = bounds.min_v.min(p.v);
+        bounds.max_u = bounds.max_u.max(p.u);
+        bounds.max_v = bounds.max_v.max(p.v);
+    }
+    Some(bounds)
+}
+
 /// One planar cap: its loops as closed frame polylines, the proven
 /// pieces they are drawn from, and the loop vertices.
 pub(super) struct Cap {
     pub(super) loops: Vec<Vec<Point2>>,
+    loop_bounds: Vec<Aabb2>,
+    bounds: Aabb2,
     pieces: Vec<Piece>,
     pub(super) corners: Vec<Point2>,
     pub(super) area: f64,
@@ -328,6 +438,31 @@ pub(super) struct Cap {
 }
 
 impl Cap {
+    fn new(
+        loops: Vec<Vec<Point2>>,
+        pieces: Vec<Piece>,
+        corners: Vec<Point2>,
+        area: f64,
+        measured: Vec<Option<Vec<Point2>>>,
+    ) -> Self {
+        let mut loop_bounds = Vec::with_capacity(loops.len());
+        let mut bounds = Aabb2::EMPTY;
+        for ring in &loops {
+            let b = ring_bounds(ring).unwrap_or(Aabb2::EMPTY);
+            bounds = bounds.union(b);
+            loop_bounds.push(b);
+        }
+        Self {
+            loops,
+            loop_bounds,
+            bounds,
+            pieces,
+            corners,
+            area,
+            measured,
+        }
+    }
+
     /// Whether any piece was read from samples alone.
     fn assumed(&self) -> bool {
         self.measured.iter().any(Option::is_some)
@@ -336,9 +471,13 @@ impl Cap {
 
 impl Cap {
     pub(super) fn contains(&self, point: Point2) -> bool {
+        if !self.bounds.contains(point) {
+            return false;
+        }
         self.loops
             .iter()
-            .filter(|ring| point_in_polygon(point, ring))
+            .zip(&self.loop_bounds)
+            .filter(|(ring, ring_box)| ring_box.contains(point) && point_in_polygon(point, ring))
             .count()
             % 2
             == 1
@@ -497,14 +636,15 @@ fn changed_planes(
         (after, faces.inserted.iter().chain(&faces.updated), false),
     ];
     for (topology, changed, is_before) in sides {
+        let index = HistoricalTopologyIndex::new(topology);
         for face in changed {
-            let point = match parallel_plane(topology, *face, frame.normal) {
+            let point = match parallel_plane_indexed(&index, *face, frame.normal) {
                 ParallelPlane::At(point) => point,
                 ParallelPlane::Elsewhere => continue,
                 ParallelPlane::Unreadable => return None,
             };
             let offset = frame.height(point);
-            let Some(cap) = face_cap(&frame, topology, *face, tolerance) else {
+            let Some(cap) = face_cap_indexed(&frame, &index, *face, tolerance) else {
                 incomplete.push(offset);
                 continue;
             };
@@ -985,6 +1125,124 @@ fn unique_state(
     Some((history.topology(state)?, state))
 }
 
+#[derive(Clone, Copy)]
+enum OneOrMany<T> {
+    One(T),
+    Many,
+}
+
+fn insert_one_or_many<T>(map: &mut HashMap<i64, OneOrMany<T>>, key: i64, value: T) {
+    map.entry(key)
+        .and_modify(|slot| *slot = OneOrMany::Many)
+        .or_insert(OneOrMany::One(value));
+}
+
+fn sole_indexed<T: Copy>(map: &HashMap<i64, OneOrMany<T>>, key: i64) -> Result<Option<T>, Several> {
+    match map.get(&key) {
+        None => Ok(None),
+        Some(OneOrMany::One(value)) => Ok(Some(*value)),
+        Some(OneOrMany::Many) => Err(Several),
+    }
+}
+
+/// Borrowed O(1) lookup index over one [`AsmHistoricalTopology`].
+struct HistoricalTopologyIndex<'a> {
+    face_surfaces: HashMap<i64, OneOrMany<i64>>,
+    surface_planes: HashMap<i64, OneOrMany<&'a AsmHistoricalPlane>>,
+    vertex_points: HashMap<i64, OneOrMany<i64>>,
+    point_positions: HashMap<i64, OneOrMany<Point3>>,
+    face_loops: HashMap<i64, OneOrMany<&'a [i64]>>,
+    loop_owner_face: HashMap<i64, OneOrMany<i64>>,
+    loop_coedges: HashMap<i64, OneOrMany<&'a [i64]>>,
+    coedge_by_id: HashMap<i64, OneOrMany<&'a AsmHistoricalCoedge>>,
+    coedges_by_edge: HashMap<i64, Vec<&'a AsmHistoricalCoedge>>,
+    edge_vertices: HashMap<i64, OneOrMany<&'a AsmHistoricalEdge>>,
+    edge_samples: HashMap<i64, OneOrMany<&'a AsmHistoricalEdgeSample>>,
+    edge_curves: HashMap<i64, OneOrMany<Option<i64>>>,
+    curve_axes: HashMap<i64, OneOrMany<&'a AsmHistoricalCurveAxis>>,
+    surface_cylinders: HashMap<i64, Vec<&'a AsmHistoricalCylinder>>,
+}
+
+impl<'a> HistoricalTopologyIndex<'a> {
+    fn new(topology: &'a AsmHistoricalTopology) -> Self {
+        let mut face_surfaces = HashMap::with_capacity(topology.face_surfaces.len());
+        for binding in &topology.face_surfaces {
+            insert_one_or_many(&mut face_surfaces, binding.entity, binding.carrier);
+        }
+        let mut surface_planes = HashMap::with_capacity(topology.surface_planes.len());
+        for plane in &topology.surface_planes {
+            insert_one_or_many(&mut surface_planes, plane.surface, plane);
+        }
+        let mut vertex_points = HashMap::with_capacity(topology.vertex_points.len());
+        for binding in &topology.vertex_points {
+            insert_one_or_many(&mut vertex_points, binding.entity, binding.carrier);
+        }
+        let mut point_positions = HashMap::with_capacity(topology.point_positions.len());
+        for row in &topology.point_positions {
+            insert_one_or_many(&mut point_positions, row.point, row.position);
+        }
+        let mut face_loops = HashMap::with_capacity(topology.face_loops.len());
+        let mut loop_owner_face = HashMap::with_capacity(topology.face_loops.len());
+        for rel in &topology.face_loops {
+            insert_one_or_many(&mut face_loops, rel.owner_ref, rel.member_refs.as_slice());
+            for &loop_id in &rel.member_refs {
+                insert_one_or_many(&mut loop_owner_face, loop_id, rel.owner_ref);
+            }
+        }
+        let mut loop_coedges = HashMap::with_capacity(topology.loop_coedges.len());
+        for rel in &topology.loop_coedges {
+            insert_one_or_many(&mut loop_coedges, rel.owner_ref, rel.member_refs.as_slice());
+        }
+        let mut coedge_by_id = HashMap::with_capacity(topology.coedge_topology.len());
+        let mut coedges_by_edge: HashMap<i64, Vec<&'a AsmHistoricalCoedge>> =
+            HashMap::with_capacity(topology.edge_vertices.len());
+        for row in &topology.coedge_topology {
+            insert_one_or_many(&mut coedge_by_id, row.coedge, row);
+            coedges_by_edge.entry(row.edge).or_default().push(row);
+        }
+        let mut edge_vertices = HashMap::with_capacity(topology.edge_vertices.len());
+        for row in &topology.edge_vertices {
+            insert_one_or_many(&mut edge_vertices, row.edge, row);
+        }
+        let mut edge_samples = HashMap::with_capacity(topology.edge_samples.len());
+        for row in &topology.edge_samples {
+            insert_one_or_many(&mut edge_samples, row.edge, row);
+        }
+        let mut edge_curves = HashMap::with_capacity(topology.edge_curves.len());
+        for binding in &topology.edge_curves {
+            insert_one_or_many(&mut edge_curves, binding.entity, binding.carrier);
+        }
+        let mut curve_axes = HashMap::with_capacity(topology.curve_axes.len());
+        for row in &topology.curve_axes {
+            insert_one_or_many(&mut curve_axes, row.curve, row);
+        }
+        let mut surface_cylinders: HashMap<i64, Vec<&'a AsmHistoricalCylinder>> =
+            HashMap::with_capacity(topology.surface_cylinders.len());
+        for cylinder in &topology.surface_cylinders {
+            surface_cylinders
+                .entry(cylinder.surface)
+                .or_default()
+                .push(cylinder);
+        }
+        Self {
+            face_surfaces,
+            surface_planes,
+            vertex_points,
+            point_positions,
+            face_loops,
+            loop_owner_face,
+            loop_coedges,
+            coedge_by_id,
+            coedges_by_edge,
+            edge_vertices,
+            edge_samples,
+            edge_curves,
+            curve_axes,
+            surface_cylinders,
+        }
+    }
+}
+
 /// The inserted planar faces parallel to the frame at the offset farthest
 /// from its plane, each with every loop resolved. `None` when an inserted
 /// face has no surface binding or several, or its surface several plane rows.
@@ -994,15 +1252,16 @@ fn far_caps(
     inserted: &[i64],
     tolerance: f64,
 ) -> Option<(f64, Vec<Cap>)> {
+    let index = HistoricalTopologyIndex::new(topology);
     let mut caps: Vec<(f64, Cap)> = Vec::new();
     for face in inserted {
-        let origin = match parallel_plane(topology, *face, frame.normal) {
+        let origin = match parallel_plane_indexed(&index, *face, frame.normal) {
             ParallelPlane::At(origin) => origin,
             ParallelPlane::Elsewhere => continue,
             ParallelPlane::Unreadable => return None,
         };
         let height = frame.height(origin);
-        let cap = face_cap_reading(frame, topology, *face, tolerance)?;
+        let cap = face_cap_reading_indexed(frame, &index, *face, tolerance)?;
         caps.push((height, cap));
     }
     let far = caps
@@ -1027,6 +1286,23 @@ enum ParallelPlane {
     /// The face has no surface binding or several, or its surface several
     /// plane rows.
     Unreadable,
+}
+
+fn parallel_plane_indexed(
+    index: &HistoricalTopologyIndex<'_>,
+    face: i64,
+    normal: cadmpeg_ir::math::Vector3,
+) -> ParallelPlane {
+    let Ok(Some(surface)) = sole_indexed(&index.face_surfaces, face) else {
+        return ParallelPlane::Unreadable;
+    };
+    match sole_indexed(&index.surface_planes, surface) {
+        Err(Several) => ParallelPlane::Unreadable,
+        Ok(Some(plane)) if (plane.normal.dot(normal).abs() - 1.0).abs() <= PARALLEL_CAP => {
+            ParallelPlane::At(plane.origin)
+        }
+        Ok(_) => ParallelPlane::Elsewhere,
+    }
 }
 
 fn parallel_plane(
@@ -1090,6 +1366,195 @@ pub(super) fn face_outlines_cover_caps(caps: &[Cap], faces: &[Cap], tolerance: f
             .all(|piece| piece.covered_by(&outline, tolerance))
 }
 
+fn face_cap_indexed(
+    frame: &PlaneFrame,
+    index: &HistoricalTopologyIndex<'_>,
+    face: i64,
+    tolerance: f64,
+) -> Option<Cap> {
+    face_cap_reading_indexed(frame, index, face, tolerance).filter(|cap| !cap.assumed())
+}
+
+fn face_cap_reading_indexed(
+    frame: &PlaneFrame,
+    index: &HistoricalTopologyIndex<'_>,
+    face: i64,
+    tolerance: f64,
+) -> Option<Cap> {
+    let mut loops = Vec::new();
+    let mut pieces = Vec::new();
+    let mut corners = Vec::new();
+    let mut measured = Vec::new();
+    for steps in oriented_loops_indexed(index, face)? {
+        let mut ring: Vec<Point2> = Vec::new();
+        for (edge, from, to) in steps {
+            let (piece, points) =
+                edge_piece_indexed(frame, index, face, edge, (from, to), tolerance)?;
+            measured.push(points);
+            corners.push(frame.project(from));
+            piece.push(&mut ring);
+            pieces.push(piece);
+        }
+        if ring.len() < 3 {
+            return None;
+        }
+        loops.push(ring);
+    }
+    let mut areas: Vec<f64> = loops.iter().map(|ring| polygon_area(ring).abs()).collect();
+    let outer = areas
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(index, _)| index)?;
+    let outer_area = areas.swap_remove(outer);
+    let area = outer_area - areas.iter().sum::<f64>();
+    (area > tolerance * tolerance).then(|| Cap::new(loops, pieces, corners, area, measured))
+}
+
+fn oriented_loops_indexed(
+    index: &HistoricalTopologyIndex<'_>,
+    face: i64,
+) -> Option<Vec<Vec<(i64, Point3, Point3)>>> {
+    let position = |vertex: i64| -> Option<Point3> {
+        let point = sole_indexed(&index.vertex_points, vertex).ok()??;
+        sole_indexed(&index.point_positions, point).ok()?
+    };
+    let mut loops = Vec::new();
+    let mut edges_seen = 0usize;
+    for loop_ in sole_indexed(&index.face_loops, face).ok()?? {
+        let coedges = sole_indexed(&index.loop_coedges, *loop_).ok()??;
+        edges_seen = edges_seen.checked_add(coedges.len())?;
+        if coedges.is_empty() || edges_seen > CAP_EDGES {
+            return None;
+        }
+        let mut ends = Vec::with_capacity(coedges.len());
+        for coedge in coedges {
+            let edge = sole_indexed(&index.coedge_by_id, *coedge).ok()??.edge;
+            ends.push(sole_indexed(&index.edge_vertices, edge).ok()??);
+        }
+        let mut steps: Vec<(i64, i64, i64)> = Vec::with_capacity(ends.len());
+        for (idx, edge) in ends.iter().enumerate() {
+            let (from, to) = (edge.start_vertex, edge.end_vertex);
+            let step = match steps.last() {
+                Some(&(_, _, previous)) if previous == from => (from, to),
+                Some(&(_, _, previous)) if previous == to => (to, from),
+                Some(_) => return None,
+                None if ends.len() == 1 => (from, to),
+                None => {
+                    let next = ends.get(idx + 1)?;
+                    let next = [next.start_vertex, next.end_vertex];
+                    if next.contains(&to) {
+                        (from, to)
+                    } else if next.contains(&from) {
+                        (to, from)
+                    } else {
+                        return None;
+                    }
+                }
+            };
+            steps.push((edge.edge, step.0, step.1));
+        }
+        if steps.first()?.1 != steps.last()?.2 {
+            return None;
+        }
+        loops.push(
+            steps
+                .into_iter()
+                .map(|(edge, from, to)| Some((edge, position(from)?, position(to)?)))
+                .collect::<Option<Vec<_>>>()?,
+        );
+    }
+    Some(loops)
+}
+
+fn edge_piece_indexed(
+    frame: &PlaneFrame,
+    index: &HistoricalTopologyIndex<'_>,
+    face: i64,
+    edge: i64,
+    (from, to): (Point3, Point3),
+    tolerance: f64,
+) -> Option<(Piece, Option<Vec<Point2>>)> {
+    let normal = frame.normal;
+    let start = frame.project(from);
+    let end = frame.project(to);
+    let interior = sole_indexed(&index.edge_samples, edge)
+        .ok()?
+        .map(|row| frame.project(row.interior));
+    let closed = distance(start, end) <= tolerance;
+    let curve = sole_indexed(&index.edge_curves, edge).ok()?.flatten();
+    let axis = match curve {
+        Some(curve) => sole_indexed(&index.curve_axes, curve).ok()?,
+        None => None,
+    };
+    if !closed {
+        if let Some(axis) = axis {
+            let chord = to.vector_from(from);
+            let direction = axis.direction;
+            let off_line = |point: Point3| {
+                point.vector_from(axis.origin).cross(direction).norm() / direction.norm()
+            };
+            if direction.cross(chord).norm() <= STRAIGHT_CARRIER * direction.norm() * chord.norm()
+                && off_line(from) <= tolerance
+                && off_line(to) <= tolerance
+            {
+                return match interior {
+                    Some(point) if point_segment_distance(point, (start, end)) > tolerance => None,
+                    _ => Some((Piece::Line(start, end), None)),
+                };
+            }
+        }
+    }
+    let mut surfaces = Vec::new();
+    if let Some(coedges) = index.coedges_by_edge.get(&edge) {
+        for row in coedges {
+            let owner = sole_indexed(&index.loop_owner_face, row.owner_loop).ok()??;
+            if owner == face {
+                continue;
+            }
+            let surface = sole_indexed(&index.face_surfaces, owner).ok()??;
+            if !surfaces.contains(&surface) {
+                surfaces.push(surface);
+            }
+        }
+    }
+    let mut cylinders = surfaces
+        .iter()
+        .filter_map(|surface| index.surface_cylinders.get(surface))
+        .flat_map(|rows| rows.iter().copied())
+        .filter(|cylinder| {
+            (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
+        });
+    let Some(cylinder) = cylinders.next() else {
+        let piece = sampled_piece(start, end, interior, closed, axis, normal, tolerance)?;
+        let points = std::iter::once(start)
+            .chain(interior)
+            .chain([end])
+            .collect();
+        return Some((piece, Some(points)));
+    };
+    let center = frame.project(cylinder.origin);
+    let radius = cylinder.radius;
+    if cylinders.any(|other| {
+        distance(frame.project(other.origin), center) > tolerance
+            || (other.radius - radius).abs() > tolerance
+    }) {
+        return None;
+    }
+    let on_circle = |point: Point2| (distance(point, center) - radius).abs() <= tolerance;
+    if radius <= tolerance || !on_circle(start) || !on_circle(end) {
+        return None;
+    }
+    if closed {
+        return Some((full_circle(center, radius, start), None));
+    }
+    let middle = interior?;
+    if !on_circle(middle) {
+        return None;
+    }
+    Some((arc_through(center, radius, start, middle, end), None))
+}
+
 /// Every loop of `face` as a frame polyline drawn from its proven pieces.
 /// `None` when a loop does not close or an edge has no proven carrier.
 pub(super) fn face_cap(
@@ -1136,13 +1601,7 @@ pub(super) fn face_cap_reading(
         .map(|(index, _)| index)?;
     let outer_area = areas.swap_remove(outer);
     let area = outer_area - areas.iter().sum::<f64>();
-    (area > tolerance * tolerance).then_some(Cap {
-        loops,
-        pieces,
-        corners,
-        area,
-        measured,
-    })
+    (area > tolerance * tolerance).then(|| Cap::new(loops, pieces, corners, area, measured))
 }
 
 /// Each loop of `face` as its edges in loop order, each with the positions
@@ -1482,6 +1941,10 @@ fn sample_points(
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
         .collect();
+    let boxes: Vec<Aabb2> = regions
+        .iter()
+        .map(|region| ring_bounds(&region.polyline).unwrap_or(Aabb2::EMPTY))
+        .collect();
     let inside = |inner: &[Point2], outer: &[Point2]| {
         inner
             .iter()
@@ -1492,9 +1955,11 @@ fn sample_points(
     };
     let mut contained: Vec<Vec<usize>> = vec![Vec::new(); regions.len()];
     for (outer, region) in regions.iter().enumerate() {
+        let outer_expanded = boxes[outer].expanded(tolerance);
         for (inner, other) in regions.iter().enumerate() {
             if inner != outer
                 && areas[inner] < areas[outer]
+                && outer_expanded.contains_box(boxes[inner])
                 && inside(&other.polyline, &region.polyline)
             {
                 contained[outer].push(inner);
@@ -1514,14 +1979,9 @@ fn sample_points(
             })
             .collect();
         let area = areas[index] - nested.iter().map(|inner| areas[*inner]).sum::<f64>();
-        let (mut low, mut high) = (
-            Point2::new(f64::INFINITY, f64::INFINITY),
-            Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
-        );
-        for p in &region.polyline {
-            low = Point2::new(low.u.min(p.u), low.v.min(p.v));
-            high = Point2::new(high.u.max(p.u), high.v.max(p.v));
-        }
+        let outer_box = boxes[index];
+        let low = Point2::new(outer_box.min_u, outer_box.min_v);
+        let high = Point2::new(outer_box.max_u, outer_box.max_v);
         let rings: Vec<&[Point2]> = std::iter::once(region.polyline.as_slice())
             .chain(
                 nested
@@ -1529,48 +1989,100 @@ fn sample_points(
                     .map(|inner| regions[*inner].polyline.as_slice()),
             )
             .collect();
+        let ring_boxes: Vec<Aabb2> = std::iter::once(outer_box)
+            .chain(nested.iter().map(|inner| boxes[*inner]))
+            .collect();
         let mut best: Option<(Point2, f64)> = None;
         let mut nearest = 0;
-        let mut consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
-            if !point_in_polygon(point, rings[0])
-                || rings[1..].iter().any(|ring| point_in_polygon(point, ring))
-            {
-                return;
-            }
-            let floor = best.map(|(_, most)| most);
-            let mut room = f64::INFINITY;
-            for (order, ring) in rings.iter().enumerate() {
-                let start = if order == 0 { nearest } else { 0 };
-                for step in 0..ring.len() {
-                    let segment = (start + step) % ring.len();
-                    room = room.min(point_segment_distance(
-                        point,
-                        (ring[segment], ring[(segment + 1) % ring.len()]),
-                    ));
-                    if floor.is_some_and(|most| room <= most) {
-                        if order == 0 {
-                            nearest = segment;
+        let consider_interior =
+            |best: &mut Option<(Point2, f64)>, nearest: &mut usize, point: Point2| {
+                let floor = best.map(|(_, most)| most);
+                let mut room = f64::INFINITY;
+                for (order, (ring, ring_box)) in rings.iter().zip(&ring_boxes).enumerate() {
+                    if order > 0 && ring_box.distance_to_point(point) >= room {
+                        continue;
+                    }
+                    let start = if order == 0 { *nearest } else { 0 };
+                    let ring_len = ring.len();
+                    for step in 0..ring_len {
+                        let segment = (start + step) % ring_len;
+                        let a = ring[segment];
+                        let b = ring[(segment + 1) % ring_len];
+                        // Quick axis-aligned lower bound before projecting onto the segment.
+                        let seg_min_u = a.u.min(b.u);
+                        let seg_max_u = a.u.max(b.u);
+                        if point.u + room <= seg_min_u || point.u - room >= seg_max_u {
+                            continue;
                         }
-                        return;
+                        let seg_min_v = a.v.min(b.v);
+                        let seg_max_v = a.v.max(b.v);
+                        if point.v + room <= seg_min_v || point.v - room >= seg_max_v {
+                            continue;
+                        }
+                        room = room.min(point_segment_distance(point, (a, b)));
+                        if floor.is_some_and(|most| room <= most) {
+                            if order == 0 {
+                                *nearest = segment;
+                            }
+                            return;
+                        }
                     }
                 }
+                *best = Some((point, room));
+            };
+        let mut row_crossings = Vec::new();
+        for j in 1..SAMPLE_GRID {
+            let row_v = low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID);
+            row_crossings.clear();
+            let outer = rings[0];
+            if let Some(&last) = outer.last() {
+                let mut prev = last;
+                for &curr in outer {
+                    if (prev.v > row_v) != (curr.v > row_v) {
+                        row_crossings.push(
+                            prev.u + (row_v - prev.v) * (curr.u - prev.u) / (curr.v - prev.v),
+                        );
+                    }
+                    prev = curr;
+                }
             }
-            *best = Some((point, room));
-        };
-        for i in 1..SAMPLE_GRID {
-            for j in 1..SAMPLE_GRID {
-                consider(
-                    &mut best,
-                    Point2::new(
-                        low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
-                        low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
-                    ),
-                );
+            if row_crossings.is_empty() {
+                continue;
+            }
+            row_crossings.sort_by(f64::total_cmp);
+            for i in 1..SAMPLE_GRID {
+                let col_u = low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID);
+                let greater = row_crossings.len() - row_crossings.partition_point(|&u| u <= col_u);
+                if greater % 2 != 1 {
+                    continue;
+                }
+                let point = Point2::new(col_u, row_v);
+                if rings[1..]
+                    .iter()
+                    .zip(&ring_boxes[1..])
+                    .any(|(ring, hole_box)| {
+                        hole_box.contains(point) && point_in_polygon(point, ring)
+                    })
+                {
+                    continue;
+                }
+                consider_interior(&mut best, &mut nearest, point);
             }
         }
         if best.is_none_or(|(_, room)| room <= SAMPLE_SEARCH_CLEARANCE_FACTOR * tolerance) {
             for point in scanline_midpoints(&rings) {
-                consider(&mut best, point);
+                if !outer_box.contains(point)
+                    || !point_in_polygon(point, rings[0])
+                    || rings[1..]
+                        .iter()
+                        .zip(&ring_boxes[1..])
+                        .any(|(ring, hole_box)| {
+                            hole_box.contains(point) && point_in_polygon(point, ring)
+                        })
+                {
+                    continue;
+                }
+                consider_interior(&mut best, &mut nearest, point);
             }
         }
         let (point, room) = best?;

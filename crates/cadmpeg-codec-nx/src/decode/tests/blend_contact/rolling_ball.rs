@@ -8,19 +8,21 @@ use crate::decode::blend::{
     BlendParameterGrid,
 };
 use crate::decode::pcurves::blend_boundary_parameter_from_support_spine;
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw, CurveGeometry,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_test_support::edit;
 
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
-    use cadmpeg_ir::geometry::{
-        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, ProceduralSurface, Surface,
-    };
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{
         CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
     };
@@ -140,7 +142,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     Some(spine.clone()),
                     BlendRadiusLaw::constant(2.0).unwrap(),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -208,7 +210,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 .unwrap(),
                 discontinuity_flag: false,
                 cache: Some(
-                    cadmpeg_ir::geometry::LegacyCache::try_new(0.75).expect("fit tolerance"),
+                    cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.75)
+                        .expect("fit tolerance"),
                 ),
             },
         );
@@ -348,7 +351,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         (*context_sides)[0].pcurve = Some(
@@ -362,7 +365,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                             .into(),
                         );
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -710,7 +713,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     Some(outer_spine),
                     BlendRadiusLaw::constant(1.5).unwrap(),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -776,10 +779,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     definition_payload.spine().clone(),
                     definition_payload.radius().clone(),
                     definition_payload.cross_section().clone(),
-                    cadmpeg_ir::geometry::CacheContract::from_form(
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                         definition_payload
                             .native()
-                            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                            .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw)
                             .map(Box::new),
                     ),
                 )

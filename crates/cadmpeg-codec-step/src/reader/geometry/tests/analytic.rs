@@ -119,7 +119,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         .iter()
         .any(|surface| matches!(
             surface.definition(),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
 }
 
@@ -516,7 +516,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
     assert!(end.x.abs() < 1.0e-12);
     assert!((end.y - 6.0).abs() < 1.0e-12);
     assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
-        match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if curve.id.as_str() == "step:construction:trimmed_curve#6"
+        match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if curve.id.as_str() == "step:construction:trimmed_curve#6"
                 && (*start + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
                 && end.abs() < 1.0e-12), _ => false }
     }));
@@ -585,7 +585,9 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
             .find(|curve| curve.id == construction_id)
             .expect("trimmed ellipse construction");
         assert!(match construction.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+                matched_payload,
+            ) =>
                 matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if parameter_range
                 .iter()
                 .zip(expected_range.iter())

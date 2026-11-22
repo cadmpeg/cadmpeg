@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::geometry::legacy_cache::FitTolerance;
 use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurfaceAxis};
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
-use crate::geometry::FitTolerance;
 use crate::topology::{CoedgeUseCurve, ParameterInterval};
 
 fn support_curve(miss: f64, fit: Option<f64>) -> CadIr {
@@ -91,7 +91,8 @@ fn assert_support_failure(ir: &CadIr, fails: bool) {
 #[test]
 fn cache_first_spring_support_contract_tracks_the_reversed_cache() {
     use crate::geometry::curve_payloads::SpringCurvePayload;
-    use crate::geometry::{CacheFirstCurveForm, RevisionCacheForm, SpringLayout};
+    use crate::geometry::revision_forms::RevisionCacheForm;
+    use crate::geometry::surface_curves::{CacheFirstCurveForm, SpringLayout};
     use crate::scalar::PositiveI64;
 
     for reversed in [false, true] {
@@ -299,7 +300,7 @@ fn typed_support_definition_supplies_the_cache_fit() {
     let definition = procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:procedural-surface#fit").unwrap(),
         definition: ProceduralSurfaceDefinition::Exact(
-            crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::ExactSpline::Legacy {
+            crate::geometry::surface_payloads::ExactSurfacePayload::try_new(crate::geometry::procedural_surfaces::ExactSpline::Legacy {
                 ranges: [[0.0, 4.0], [0.0, 4.0]],
                 extension: 0,
                 cache: None,
@@ -349,7 +350,7 @@ fn offset_with_reparameterized_base(height: f64) -> CadIr {
             false,
             [[0.0, 1.0], [0.0, 1.0]],
             (base, [0.0, 1.0], [Some(0.0), Some(1.0)]),
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
             25.0,
             [0.0, 1.0],
         )

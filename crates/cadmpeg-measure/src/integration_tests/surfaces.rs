@@ -2,10 +2,9 @@
 //! Surface rows: carrier parameters only, in model space, with expectations
 //! from the stored carriers and body placements.
 
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction;
-use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
