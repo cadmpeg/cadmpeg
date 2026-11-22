@@ -544,6 +544,10 @@ fn a_native_sketch_leaves_out_a_driven_dimension() {
     assert!(names.contains(&"Turn"), "{names:?}");
     assert!(!names.contains(&"Bore"), "{names:?}");
     let driven = loss(&losses, "writer.driven-dimensions-omitted");
+    assert_eq!(
+        driven.code,
+        crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+    );
     assert!(
         driven
             .message
