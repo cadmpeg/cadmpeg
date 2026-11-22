@@ -124,7 +124,10 @@ fn unread_profile_keeps_fixed_form_thickness_and_side() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>(),
-        [F3dLossCode::BaseFlangeProfileUnresolved.kind()]
+        [
+            F3dLossCode::BaseFlangeProfileUnresolved.kind(),
+            F3dLossCode::BaseFlangeSideAssumed.kind()
+        ]
     );
 }
 

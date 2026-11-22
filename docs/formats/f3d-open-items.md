@@ -337,7 +337,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
 
-**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`; its side remains native with `feature.base-flange-side-unresolved`.
+**Note.** A Base Flange with an unread operation frame keeps its readable profile and governing thickness. Its selected region program remains native with `feature.base-flange-profile-unresolved`; its side remains native with `feature.base-flange-side-unresolved`. With a read operation frame the decoder assumes Forward and charges `feature.base-flange-side-assumed`.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 

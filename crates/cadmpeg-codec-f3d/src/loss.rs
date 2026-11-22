@@ -531,6 +531,8 @@ pub(crate) enum F3dLossCode {
     BaseFlangeProfileUnresolved,
     BaseFlangeThicknessUnresolved,
     BaseFlangeSideUnresolved,
+    /// Base flanges with a read operation frame project the Forward material side, which the frame does not store.
+    BaseFlangeSideAssumed,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
     /// A Move scope has no neutral `MoveBody` feature.
@@ -1658,6 +1660,7 @@ impl F3dLossCode {
         Self::BaseFlangeProfileUnresolved,
         Self::BaseFlangeThicknessUnresolved,
         Self::BaseFlangeSideUnresolved,
+        Self::BaseFlangeSideAssumed,
         Self::FeatureScopeUnprojected,
         Self::MoveUnprojected,
         Self::ModifyUnprojected,
@@ -2633,6 +2636,7 @@ impl F3dLossCode {
             Self::BaseFlangeProfileUnresolved => "feature.base-flange-profile-unresolved",
             Self::BaseFlangeThicknessUnresolved => "feature.base-flange-thickness-unresolved",
             Self::BaseFlangeSideUnresolved => "feature.base-flange-side-unresolved",
+            Self::BaseFlangeSideAssumed => "feature.base-flange-side-assumed",
             Self::EmbossControlsNative => "feature.emboss-controls-native",
             Self::FeatureShellAuxiliaryReferencesNative => {
                 "feature.shell-auxiliary-references-native"
@@ -3654,6 +3658,7 @@ impl F3dLossCode {
             | Self::BaseFlangeProfileUnresolved
             | Self::BaseFlangeThicknessUnresolved
             | Self::BaseFlangeSideUnresolved
+            | Self::BaseFlangeSideAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
             | Self::FeaturePointDirectionInputsUnrepresented
@@ -4381,6 +4386,7 @@ impl F3dLossCode {
             | Self::BaseFlangeProfileUnresolved
             | Self::BaseFlangeThicknessUnresolved
             | Self::BaseFlangeSideUnresolved
+            | Self::BaseFlangeSideAssumed
             | Self::WorkPlaneFrameUnbound
             | Self::WorkPlaneInferredAxisAssumed
             | Self::CylinderPlacementUnbound
@@ -5240,6 +5246,7 @@ mod tests {
                 "feature.base-flange-profile-unresolved",
                 "feature.base-flange-thickness-unresolved",
                 "feature.base-flange-side-unresolved",
+                "feature.base-flange-side-assumed",
                 "feature.scope-unprojected",
                 "feature.move-unprojected",
                 "feature.modify-unprojected",

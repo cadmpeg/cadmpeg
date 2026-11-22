@@ -93,7 +93,12 @@ pub(super) fn project(
         )));
     }
     let side = operation.map(|_| SheetMetalThicknessSide::Forward);
-    if side.is_none() {
+    if side.is_some() {
+        losses.push(F3dLossCode::BaseFlangeSideAssumed.note(format!(
+            "Base flange {} assumes the Forward material side; its operation frame stores no readable side (DR-67).",
+            scope.id
+        )));
+    } else {
         losses.push(F3dLossCode::BaseFlangeSideUnresolved.note(format!(
             "Base flange {} retains material-side controls in its unread operation frame (DR-67).",
             scope.id
