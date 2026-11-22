@@ -181,7 +181,7 @@ pub(super) fn to_text<'a, T: Serialize + ?Sized>(
 ) -> Result<String, CanonError> {
     let mut out = Vec::new();
     value
-        .serialize(CanonText::within(ctx, depth, &mut out))?
+        .serialize(CanonText::within(ctx, depth, &mut out, None))?
         .place(&mut out);
     String::from_utf8(out)
         .map_err(|_| <CanonError as ser::Error>::custom("canonical native text is not UTF-8"))
@@ -320,10 +320,17 @@ impl From<serde_json::Error> for CanonError {
 
 /// Enter one container of a value that may enter `depth` containers: the
 /// budget left inside it, or the refusal.
-fn enter<'a>(ctx: &'a DecodeContext<'a>, depth: usize) -> Result<(usize, DepthGuard<'a>), Error> {
+fn enter<'a>(
+    ctx: &'a DecodeContext<'a>,
+    depth: usize,
+    min_remaining: &mut Option<&mut usize>,
+) -> Result<(usize, DepthGuard<'a>), Error> {
     match depth.checked_sub(1) {
         Some(depth) => {
             let nested = ctx.enter_nested(WORK)?;
+            if let Some(min) = min_remaining.as_deref_mut() {
+                *min = (*min).min(depth);
+            }
             Ok((depth, nested))
         }
         None => Err(ser::Error::custom(nests_too_deep_message())),
@@ -335,14 +342,16 @@ fn open_map<'a, 'o>(
     ctx: &'a DecodeContext<'a>,
     depth: usize,
     out: &'o mut Vec<u8>,
+    mut min_remaining: Option<&'o mut usize>,
 ) -> Result<CanonMap<'a, 'o>, Error> {
-    let (depth, nested) = enter(ctx, depth)?;
+    let (depth, nested) = enter(ctx, depth, &mut min_remaining)?;
     let start = out.len();
     out.push(b'{');
     Ok(CanonMap {
         ctx,
         _nested: nested,
         out,
+        min_remaining,
         members: Members {
             start,
             entries: BTreeMap::new(),
@@ -360,6 +369,8 @@ pub(super) struct CanonText<'a, 'o> {
     /// Containers this value may still enter.
     depth: usize,
     out: &'o mut Vec<u8>,
+    /// Smallest remaining container budget observed while writing this value.
+    min_remaining: Option<&'o mut usize>,
 }
 
 type Error = CanonError;
@@ -371,13 +382,36 @@ impl<'a, 'o> CanonText<'a, 'o> {
     /// keeps the members as fields and measures each field on its own. One
     /// container beyond the field bound therefore admits exactly a
     /// [`MAX_NATIVE_NESTING_DEPTH`]-deep field.
+    #[cfg(test)]
     pub(super) fn for_record(ctx: &'a DecodeContext<'a>, out: &'o mut Vec<u8>) -> Self {
-        Self::within(ctx, MAX_NATIVE_NESTING_DEPTH + 1, out)
+        Self::within(ctx, MAX_NATIVE_NESTING_DEPTH + 1, out, None)
+    }
+
+    /// The serializer for one whole typed record, recording the smallest
+    /// remaining container budget in `min_remaining` so callers recover the
+    /// exact JSON container nesting depth without rescanning the output.
+    pub(super) fn for_record_tracking(
+        ctx: &'a DecodeContext<'a>,
+        out: &'o mut Vec<u8>,
+        min_remaining: &'o mut usize,
+    ) -> Self {
+        *min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
+        Self::within(ctx, MAX_NATIVE_NESTING_DEPTH + 1, out, Some(min_remaining))
     }
 
     /// The serializer for a child value that may enter `depth` containers.
-    pub(super) fn within(ctx: &'a DecodeContext<'a>, depth: usize, out: &'o mut Vec<u8>) -> Self {
-        Self { ctx, depth, out }
+    pub(super) fn within(
+        ctx: &'a DecodeContext<'a>,
+        depth: usize,
+        out: &'o mut Vec<u8>,
+        min_remaining: Option<&'o mut usize>,
+    ) -> Self {
+        Self {
+            ctx,
+            depth,
+            out,
+            min_remaining,
+        }
     }
 
     /// Write a value whose text `serde_json` already writes canonically.
@@ -528,29 +562,35 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
     }
 
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        self,
+        mut self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
         value: &T,
     ) -> Result<Written, Error> {
-        let (depth, _nested) = enter(self.ctx, self.depth)?;
+        let (depth, _nested) = enter(self.ctx, self.depth, &mut self.min_remaining)?;
         open_variant(self.out, variant)?;
         value
-            .serialize(CanonText::within(self.ctx, depth, &mut *self.out))
+            .serialize(CanonText::within(
+                self.ctx,
+                depth,
+                &mut *self.out,
+                self.min_remaining,
+            ))
             .map_err(|error| error.within(|| Step::Key(variant.to_owned())))?
             .place(self.out);
         self.out.push(b'}');
         Ok(Written::Text)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq<'a, 'o>, Error> {
-        let (depth, nested) = enter(self.ctx, self.depth)?;
+    fn serialize_seq(mut self, _len: Option<usize>) -> Result<CanonSeq<'a, 'o>, Error> {
+        let (depth, nested) = enter(self.ctx, self.depth, &mut self.min_remaining)?;
         self.out.push(b'[');
         Ok(CanonSeq {
             ctx: self.ctx,
             _nested: nested,
             out: self.out,
+            min_remaining: self.min_remaining,
             len: 0,
             depth,
         })
@@ -569,23 +609,24 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
     }
 
     fn serialize_tuple_variant(
-        self,
+        mut self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
         len: usize,
     ) -> Result<CanonVariantSeq<'a, 'o>, Error> {
-        let (depth, nested) = enter(self.ctx, self.depth)?;
+        let (depth, nested) = enter(self.ctx, self.depth, &mut self.min_remaining)?;
         open_variant(self.out, variant)?;
         Ok(CanonVariantSeq {
             _nested: nested,
             variant,
-            seq: CanonText::within(self.ctx, depth, self.out).serialize_seq(Some(len))?,
+            seq: CanonText::within(self.ctx, depth, self.out, self.min_remaining)
+                .serialize_seq(Some(len))?,
         })
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<CanonMap<'a, 'o>, Error> {
-        open_map(self.ctx, self.depth, self.out)
+        open_map(self.ctx, self.depth, self.out, self.min_remaining)
     }
 
     /// `RawValue`'s struct protocol carries one JSON value and is no container
@@ -600,6 +641,7 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
                 ctx: self.ctx,
                 depth: self.depth,
                 out: self.out,
+                min_remaining: self.min_remaining,
                 parsed: None,
             })
         } else {
@@ -608,18 +650,18 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
     }
 
     fn serialize_struct_variant(
-        self,
+        mut self,
         _name: &'static str,
         _index: u32,
         variant: &'static str,
         _len: usize,
     ) -> Result<CanonVariantMap<'a, 'o>, Error> {
-        let (depth, nested) = enter(self.ctx, self.depth)?;
+        let (depth, nested) = enter(self.ctx, self.depth, &mut self.min_remaining)?;
         open_variant(self.out, variant)?;
         Ok(CanonVariantMap {
             _nested: nested,
             variant,
-            map: open_map(self.ctx, depth, self.out)?,
+            map: open_map(self.ctx, depth, self.out, self.min_remaining)?,
         })
     }
 
@@ -669,6 +711,7 @@ pub(super) struct CanonSeq<'a, 'o> {
     ctx: &'a DecodeContext<'a>,
     _nested: DepthGuard<'a>,
     out: &'o mut Vec<u8>,
+    min_remaining: Option<&'o mut usize>,
     /// Elements written so far.
     len: usize,
     /// Containers each element may still enter.
@@ -694,7 +737,12 @@ impl ser::SerializeSeq for CanonSeq<'_, '_> {
             self.out.push(b',');
         }
         let written = value
-            .serialize(CanonText::within(self.ctx, self.depth, &mut *self.out))
+            .serialize(CanonText::within(
+                self.ctx,
+                self.depth,
+                &mut *self.out,
+                self.min_remaining.as_deref_mut(),
+            ))
             .map(|element| element.place(self.out));
         match written {
             Ok(()) => {
@@ -769,6 +817,7 @@ pub(super) struct CanonMap<'a, 'o> {
     ctx: &'a DecodeContext<'a>,
     _nested: DepthGuard<'a>,
     out: &'o mut Vec<u8>,
+    min_remaining: Option<&'o mut usize>,
     members: Members,
     key: Option<String>,
     /// Containers each member value may still enter.
@@ -793,7 +842,14 @@ impl<'o> CanonMap<'_, 'o> {
             out.push(b',');
         }
         let text = out.len();
-        match write_member(self.ctx, self.depth, out, &key, value) {
+        match write_member(
+            self.ctx,
+            self.depth,
+            out,
+            self.min_remaining.as_deref_mut(),
+            &key,
+            value,
+        ) {
             Ok(value_start) => {
                 let member = Member {
                     text: text..out.len(),
@@ -852,6 +908,7 @@ fn write_member<'a, T: Serialize + ?Sized>(
     ctx: &'a DecodeContext<'a>,
     depth: usize,
     out: &mut Vec<u8>,
+    min_remaining: Option<&mut usize>,
     key: &str,
     value: &T,
 ) -> Result<usize, Error> {
@@ -859,7 +916,7 @@ fn write_member<'a, T: Serialize + ?Sized>(
     out.push(b':');
     let value_start = out.len();
     value
-        .serialize(CanonText::within(ctx, depth, &mut *out))?
+        .serialize(CanonText::within(ctx, depth, &mut *out, min_remaining))?
         .place(out);
     Ok(value_start)
 }
@@ -872,6 +929,7 @@ pub(super) enum CanonStruct<'a, 'o> {
         /// Containers the payload may enter.
         depth: usize,
         out: &'o mut Vec<u8>,
+        min_remaining: Option<&'o mut usize>,
         /// The replayed payload, once its one field has arrived.
         parsed: Option<Written>,
     },
@@ -892,6 +950,7 @@ impl ser::SerializeStruct for CanonStruct<'_, '_> {
                 ctx,
                 depth,
                 out,
+                min_remaining,
                 parsed,
             } => {
                 if key != RAW_VALUE_STRUCT || parsed.is_some() {
@@ -909,7 +968,11 @@ impl ser::SerializeStruct for CanonStruct<'_, '_> {
                 // counts the containers it is driven through, from the same
                 // remaining budget, so both refuse at the same container.
                 let start = out.len();
-                match super::replay::emit(&json, CanonText::within(ctx, *depth, out), *depth) {
+                match super::replay::emit(
+                    &json,
+                    CanonText::within(ctx, *depth, out, min_remaining.as_deref_mut()),
+                    *depth,
+                ) {
                     Ok(replayed) => {
                         *parsed = Some(replayed);
                         Ok(())

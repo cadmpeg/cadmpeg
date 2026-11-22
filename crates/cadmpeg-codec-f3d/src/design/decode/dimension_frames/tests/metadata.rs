@@ -39,6 +39,7 @@ fn parse(bytes: &[u8]) -> Option<crate::records::dimensions::DesignDimensionAnno
     parse_dimension_annotation_frame(
         bytes,
         0,
+        bytes.len(),
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
