@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support contexts of a curve whose solved parameter `t` is replaced by `-t`.
 
+use super::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
 use super::pcurve::{LinePcurve, PcurveGeometry};
-use super::{
-    CacheFirstCurveForm, CacheFirstCurveParameterization, DirectedParameterRange,
-    IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition, RevisionCacheForm,
-    SpringLayout, SupportPcurve, SurfaceCurveFamily, SurfaceCurveTail,
+use super::procedural_curves::{DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve};
+use super::revision_forms::RevisionCacheForm;
+use super::surface_curves::{
+    CacheFirstCurveForm, CacheFirstCurveParameterization, SpringLayout, SurfaceCurveFamily,
+    SurfaceCurveTail,
 };
 use crate::math::Point2;
 use crate::scalar::FiniteReal;

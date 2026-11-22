@@ -321,6 +321,8 @@ pub(crate) enum F3dLossCode {
     DecalTargetUnresolved,
     DecalImageUnresolved,
     DecalDefinitionUnresolved,
+    /// A body-override appearance replaced a different appearance that the body's material assignment names; the override is assumed to take precedence.
+    BodyOverridePrecedenceAssumed,
     /// Source parametric edge references marked lost have no independent proof.
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
@@ -421,6 +423,11 @@ pub(crate) enum F3dLossCode {
     FeatureHistoryBodyBounded,
     FeatureHistoryBodyUndecoded,
     FeatureHistoryBodyConsumedWithheld,
+    /// Later body changes retain a native operation after the linked feature history.
+    FeatureBodyHistoryIncomplete,
+    FeatureBodyHistoryOwnerUnresolved,
+    /// No single decoded history holds a body, so changes after its last feature are not checked.
+    FeatureBodyHistoryUnread,
     FeatureOwnedBodyPairingAssumed,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
@@ -454,8 +461,13 @@ pub(crate) enum F3dLossCode {
     FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
     FeatureCircularPatternPlacementNotTransferred,
+    /// A circular pattern projects with its suppressed instances because their
+    /// instance order is unread.
+    FeatureCircularPatternSuppressionNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
+    /// A circular pattern assumes equal spacing because its spacing control is unread.
+    FeatureCircularPatternControlsAssumed,
     /// A rectangular-pattern payload's seed kind or body references disagree
     /// with its seed group, whose seeds are kept.
     FeaturePatternPayloadSeedUnconfirmed,
@@ -632,6 +644,12 @@ pub(crate) enum F3dLossCode {
     ConfigurationPropertyUnprojected,
     /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
     HistoryRollbackUnread,
+    /// A coordinate frame retains its source construction references and expressions.
+    CoordinateSystemConstructionNative,
+    /// A coordinate frame transfers without its source construction references and expressions.
+    CoordinateSystemConstructionDropped,
+    /// A coordinate-system scope has an unresolved solved frame.
+    CoordinateSystemFrameUnresolved,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -773,6 +791,7 @@ pub(crate) enum F3dLossCode {
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
+    FeatureProfileJoinEnvelopeCapped,
     FeatureProfileCrossingRunsCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
@@ -1528,6 +1547,7 @@ impl F3dLossCode {
         Self::DecalTargetUnresolved,
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
+        Self::BodyOverridePrecedenceAssumed,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureMeshImportTessellationsUnresolved,
@@ -1611,6 +1631,9 @@ impl F3dLossCode {
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyConsumedWithheld,
+        Self::FeatureBodyHistoryIncomplete,
+        Self::FeatureBodyHistoryOwnerUnresolved,
+        Self::FeatureBodyHistoryUnread,
         Self::FeatureOwnedBodyPairingAssumed,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
@@ -1634,7 +1657,9 @@ impl F3dLossCode {
         Self::FeaturePatternFeatureSeedSubstituted,
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
+        Self::FeatureCircularPatternSuppressionNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
+        Self::FeatureCircularPatternControlsAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
@@ -1743,6 +1768,9 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::CoordinateSystemConstructionNative,
+        Self::CoordinateSystemConstructionDropped,
+        Self::CoordinateSystemFrameUnresolved,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -1817,6 +1845,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
+        Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeatureProfileCrossingLoopCapped,
@@ -2388,11 +2417,15 @@ impl F3dLossCode {
             Self::DecalTargetUnresolved => "appearance.decal-target-unresolved",
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
+            Self::BodyOverridePrecedenceAssumed => "appearance.body-override-precedence-assumed",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
             Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
+            Self::FeatureBodyHistoryIncomplete => "feature.body-history-incomplete",
+            Self::FeatureBodyHistoryOwnerUnresolved => "feature.body-history-owner-unresolved",
+            Self::FeatureBodyHistoryUnread => "feature.body-history-unread",
             Self::FeatureOwnedBodyPairingAssumed => "feature.owned-body-pairing-assumed",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
@@ -2446,8 +2479,14 @@ impl F3dLossCode {
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
             }
+            Self::FeatureCircularPatternSuppressionNotTransferred => {
+                "feature.circular-pattern-suppression-not-transferred"
+            }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
+            }
+            Self::FeatureCircularPatternControlsAssumed => {
+                "feature.circular-pattern-controls-assumed"
             }
             Self::FeaturePatternPayloadSeedUnconfirmed => {
                 "feature.pattern-payload-seed-unconfirmed"
@@ -2742,6 +2781,13 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::CoordinateSystemConstructionNative => {
+                "feature.coordinate-system-construction-native"
+            }
+            Self::CoordinateSystemConstructionDropped => {
+                "feature.coordinate-system-construction-dropped"
+            }
+            Self::CoordinateSystemFrameUnresolved => "feature.coordinate-system-frame-unresolved",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -2838,6 +2884,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
+            Self::FeatureProfileJoinEnvelopeCapped => "feature.profile-join-envelope-capped",
             Self::FeatureProfileCrossingRunsCapped => "feature.profile-crossing-runs-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
@@ -3315,6 +3362,9 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::FeatureBodyHistoryIncomplete
+            | Self::FeatureBodyHistoryOwnerUnresolved
+            | Self::FeatureBodyHistoryUnread => Severity::Warning,
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -3588,7 +3638,9 @@ impl F3dLossCode {
             | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -3760,6 +3812,7 @@ impl F3dLossCode {
             | Self::ParameterUnitUntyped
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
+            | Self::BodyOverridePrecedenceAssumed
             | Self::ParameterExpressionUnbound
             | Self::ParameterReferencedDesignUnscoped
             | Self::ParameterOwnerOutsideTimeline
@@ -3771,6 +3824,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -3844,6 +3900,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
@@ -4117,6 +4174,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::FeatureBodyHistoryIncomplete
+            | Self::FeatureBodyHistoryOwnerUnresolved
+            | Self::FeatureBodyHistoryUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -4331,7 +4391,9 @@ impl F3dLossCode {
             | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -4522,6 +4584,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4578,6 +4643,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
+            | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeatureProfileCrossingLoopCapped
@@ -4813,7 +4879,9 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
+            Self::FaceAppearanceAmbiguous | Self::BodyOverridePrecedenceAssumed => {
+                LossTaxonomy::AppearanceReduced
+            }
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
@@ -5183,6 +5251,7 @@ mod tests {
                 "appearance.decal-target-unresolved",
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
+                "appearance.body-override-precedence-assumed",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.mesh-import-tessellations-unresolved",
@@ -5266,6 +5335,9 @@ mod tests {
                 "feature.history-body-bounded",
                 "feature.history-body-undecoded",
                 "feature.history-body-consumed-withheld",
+                "feature.body-history-incomplete",
+                "feature.body-history-owner-unresolved",
+                "feature.body-history-unread",
                 "feature.owned-body-pairing-assumed",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
@@ -5289,7 +5361,9 @@ mod tests {
                 "feature.pattern-feature-seed-substituted",
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
+                "feature.circular-pattern-suppression-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
+                "feature.circular-pattern-controls-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
                 "feature.rectangular-pattern-inactive-symmetric-dropped",
@@ -5398,6 +5472,9 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "feature.coordinate-system-construction-native",
+                "feature.coordinate-system-construction-dropped",
+                "feature.coordinate-system-frame-unresolved",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
@@ -5472,6 +5549,7 @@ mod tests {
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
+                "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",
                 "feature.profile-densification-capped",
                 "feature.profile-crossing-loop-capped",

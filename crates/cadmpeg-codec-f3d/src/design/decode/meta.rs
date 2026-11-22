@@ -355,15 +355,16 @@ pub(crate) fn decode_component_naming_spaces(
             .map(|header| (header.offset, header.record_index))
             .collect::<Vec<_>>();
         let mut by_component = ComponentBindings::new();
+        // Every untyped, linked, and typed inline-GUID component binding
+        // carries a u32 length of 36 (`[36, 0, 0, 0]`): either the 36-char
+        // UTF-16 context UUID or the 36-byte ASCII inline type GUID.
+        let len36_offsets: Vec<usize> = memchr::memmem::find_iter(bytes, &[36, 0, 0, 0]).collect();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
-            for uuid_offset in bytes
-                .len()
-                .checked_sub(4)
-                .into_iter()
-                .flat_map(|last| prefix_len..last)
-            {
-                let marker = uuid_offset - prefix_len;
+            for &uuid_offset in &len36_offsets {
+                let Some(marker) = uuid_offset.checked_sub(prefix_len) else {
+                    continue;
+                };
                 if bytes[marker] != 1
                     || (marker > 0 && bytes[marker - 1] == 1)
                     || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
@@ -423,7 +424,11 @@ pub(crate) fn decode_component_naming_spaces(
                 )
                 .collect(),
         };
-        for marker in 0..bytes.len() {
+        let linked_prefix_len = 2 * (1 + 8 + COMPONENT_BINDING_LINK_RESERVED_LEN);
+        for &uuid_offset in &len36_offsets {
+            let Some(marker) = uuid_offset.checked_sub(linked_prefix_len) else {
+                continue;
+            };
             let Some((component_record_index, context_uuid, uuid_offset)) =
                 linked_component_binding(bytes, marker, &component_entities, &link_entities)
             else {
@@ -442,7 +447,13 @@ pub(crate) fn decode_component_naming_spaces(
                 component_name_after_context_uuid(bytes, uuid_offset),
             )?;
         }
-        for marker in 0..bytes.len() {
+        for &guid_len_offset in &len36_offsets {
+            let Some(marker) = guid_len_offset.checked_sub(9) else {
+                continue;
+            };
+            if bytes[marker] != 1 {
+                continue;
+            }
             let mut uuid_offset = marker;
             let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
                 continue;

@@ -95,6 +95,7 @@ fn read(walk: &mut View<'_>) -> Result<Option<EntryRecord>, CodecError> {
         }),
         utf8_name: flags & 0x800 != 0,
         local_header_error: None,
+        metadata_error: None,
         unreadable_range: None,
     };
     let frame = (|| {
@@ -197,7 +198,7 @@ fn zip64_sizes(extra: &mut View<'_>, record: &mut EntryRecord) -> Result<(), &'s
     Ok(())
 }
 
-fn decode_name(bytes: &[u8], utf8: bool) -> String {
+pub(super) fn decode_name(bytes: &[u8], utf8: bool) -> String {
     // ZIP's legacy filename encoding is IBM code page 437. ASCII controls keep
     // their byte values, as in the directory parser.
     const HIGH: [char; 128] = [

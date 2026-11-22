@@ -827,7 +827,10 @@ fn a_circle_edge_across_two_pi_boxes_its_axis_extreme() {
         nodes: [0, 1],
         boundary: cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
             entity: circle.id().clone(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap(),
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                range,
+            )
+            .unwrap(),
             reversed: false,
         },
         polyline: vec![end(range[0]), end(range[1])],

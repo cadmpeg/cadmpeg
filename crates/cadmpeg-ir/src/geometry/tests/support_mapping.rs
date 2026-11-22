@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    pcurve::PcurveGeometry, DirectedParameterRange, IntcurveSupportSide, SupportPcurve,
-};
+use crate::geometry::intersection_curves::IntcurveSupportSide;
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::{DirectedParameterRange, SupportPcurve};
 use crate::scalar::FiniteReal;
 use crate::test_support::nurbs::pcurve;
 use crate::topology::ParameterInterval;
@@ -118,7 +118,7 @@ fn support_mapping_preserves_endpoints_despite_subtraction_cancellation() {
 
 #[test]
 fn a_support_context_over_an_increasing_interval_matches_its_raw_admission() {
-    use crate::geometry::IntcurveSupportContext;
+    use crate::geometry::intersection_curves::IntcurveSupportContext;
     use crate::topology::IncreasingParameterInterval;
 
     let side = |range| IntcurveSupportSide {
@@ -145,7 +145,7 @@ fn a_support_context_over_an_increasing_interval_matches_its_raw_admission() {
 
 #[test]
 fn a_support_context_holds_its_admitted_interval_and_discontinuities() {
-    use crate::geometry::IntcurveSupportContext;
+    use crate::geometry::intersection_curves::IntcurveSupportContext;
 
     let sides = std::array::from_fn(|_| IntcurveSupportSide {
         surface: None,

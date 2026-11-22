@@ -640,6 +640,39 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
 }
 
 #[test]
+fn history_zlb_stream_that_does_not_inflate_is_unread() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let keywords = container::compound_stream(
+        &ctx,
+        "swXmlContents/KeyWords__ZLB".into(),
+        1,
+        0,
+        b"\x00\x01 not a deflate stream".to_vec(),
+        None,
+    )
+    .unwrap();
+    let scan =
+        container::completed_scan(&ctx, &[], 0, vec![], vec![], vec![], vec![keywords]).unwrap();
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    assert!(histories.is_empty());
+    let unread = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::HistoryUnread.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unread.len(), 1);
+    assert!(
+        unread[0]
+            .message
+            .contains("no XML payload is decoded from it"),
+        "{}",
+        unread[0].message
+    );
+}
+
+#[test]
 fn compound_scan_preserves_malformed_open_error() {
     let error = container::scan(
         &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -648,6 +681,31 @@ fn compound_scan_preserves_malformed_open_error() {
     .err()
     .unwrap();
     assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
+fn xml_text_skips_either_lead_marker() {
+    for marker in [0x85, 0x86] {
+        let mut payload = vec![marker];
+        payload.extend_from_slice(b"<?xml version=\"1.0\"?><Keywords/>");
+        assert_eq!(
+            container::xml_text(&payload).as_deref(),
+            Some("<?xml version=\"1.0\"?><Keywords/>")
+        );
+    }
+    assert_eq!(container::xml_text(&[0x84, b'<', b'a', b'/', b'>']), None);
+}
+
+#[test]
+fn lead_byte_85_is_xml_only_before_a_declaration() {
+    assert_eq!(
+        container::payload_family(b"\x85<?xml version=\"1.0\"?><Keywords/>"),
+        container::PayloadFamily::Xml
+    );
+    assert_eq!(
+        container::payload_family(b"\x85\x00\x01<\x02\x03"),
+        container::PayloadFamily::Unknown
+    );
 }
 
 #[test]
