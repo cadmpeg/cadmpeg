@@ -63,11 +63,11 @@ fn fillet_dimensions_are_lengths() {
         content: Vec::new(),
     };
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "D1", 0.005),
+        scalar_unit_from_feature_parameter(&feature, "D1"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "missing", 0.005),
+        scalar_unit_from_feature_parameter(&feature, "missing"),
         None
     );
     let mut numeric = feature;
@@ -75,21 +75,24 @@ fn fillet_dimensions_are_lengths() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&numeric, "D1", 0.0),
+        scalar_unit_from_feature_parameter(&numeric, "D1"),
         Some(super::ScalarUnit::Length)
     );
 
     let mut cosmetic_thread = numeric.clone();
     cosmetic_thread.kind = "CosmeticThread".into();
-    cosmetic_thread.input_class = Some("CosmeticThread_c".into());
-    cosmetic_thread.parameters.clear();
-    cosmetic_thread
-        .parameters
-        .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
-    assert_eq!(
-        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2", 0.006),
-        None
-    );
+    cosmetic_thread.input_class = Some("moCosmeticThread_c".into());
+    cosmetic_thread.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("D1"), "12".into()),
+        (cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into()),
+    ]);
+    for name in ["D1", "D2"] {
+        assert_eq!(
+            scalar_unit_from_feature_parameter(&cosmetic_thread, name),
+            Some(super::ScalarUnit::Length),
+            "{name}"
+        );
+    }
 
     let mut variable = numeric;
     variable.kind = "VarFillet".into();
@@ -101,15 +104,15 @@ fn fillet_dimensions_are_lengths() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D0", 0.005),
+        scalar_unit_from_feature_parameter(&variable, "D0"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D01", 0.005),
+        scalar_unit_from_feature_parameter(&variable, "D01"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D1", 0.0),
+        scalar_unit_from_feature_parameter(&variable, "D1"),
         Some(super::ScalarUnit::Length)
     );
 }
@@ -140,14 +143,11 @@ fn thin_cut_native_dimensions_are_lengths() {
 
     for name in ["D5", "D6", "D7"] {
         assert_eq!(
-            scalar_unit_from_feature_parameter(&feature, name, 0.0003),
+            scalar_unit_from_feature_parameter(&feature, name),
             Some(ScalarUnit::Length)
         );
     }
-    assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "D8", 0.0003),
-        None
-    );
+    assert_eq!(scalar_unit_from_feature_parameter(&feature, "D8"), None);
 }
 
 #[test]
@@ -178,15 +178,15 @@ fn sketch_source_dimension_establishes_scalar_unit() {
     };
 
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "depth", 0.000_75),
+        scalar_unit_from_feature_parameter(&feature, "depth"),
         Some(ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "angle", 1.5),
+        scalar_unit_from_feature_parameter(&feature, "angle"),
         Some(ScalarUnit::Angle)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "unowned", 1.0),
+        scalar_unit_from_feature_parameter(&feature, "unowned"),
         None
     );
 }
@@ -400,7 +400,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
 
 #[test]
 fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
-    let extrude = |end_condition_2: Option<&str>| crate::records::Feature {
+    let extrude = |end_condition: &str, end_condition_2: Option<&str>| crate::records::Feature {
         id: "feature".into(),
         parent: "history".into(),
         xml_tag: "Extrusion".into(),
@@ -418,7 +418,7 @@ fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("EndCondition"),
-            "Blind".into(),
+            end_condition.to_owned(),
         )])
         .into_iter()
         .chain(end_condition_2.map(|condition| {
@@ -481,58 +481,26 @@ fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let enriched = |end_condition_2| {
+    let enriched = |end_condition, end_condition_2| {
         let mut histories = vec![FeatureHistory {
             id: "history".into(),
             part_name: None,
             properties: BTreeMap::default(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![extrude(end_condition_2)],
+            features: vec![extrude(end_condition, end_condition_2)],
         }];
         enrich_history_parameters(&mut histories, [&lane], true);
         histories.remove(0).features.remove(0).parameters
     };
 
-    let two_sided = enriched(Some("Blind"));
+    let second_blind = enriched("Blind", Some("Blind"));
+    assert_eq!(second_blind["D1"], "38.1mm");
+    assert_eq!(second_blind["D2"], "152.4mm");
+    let two_sided = enriched("TwoSided", None);
     assert_eq!(two_sided["D1"], "38.1mm");
     assert_eq!(two_sided["D2"], "152.4mm");
-    let one_sided = enriched(None);
+    let one_sided = enriched("Blind", None);
     assert_eq!(one_sided["D1"], "38.1mm");
     assert_eq!(one_sided["D2"], "6");
-}
-
-#[test]
-fn extrude_depth_scalar_is_a_length_where_it_can_show_the_display() {
-    let extrude = |display: &str| crate::records::Feature {
-        id: "feature".into(),
-        parent: "history".into(),
-        xml_tag: "Extrusion".into(),
-        tree_parent: None,
-        source_id: None,
-        ordinal: 0,
-        name: "Cut-Extrude1".into(),
-        kind: "Extrusion".into(),
-        input_class: None,
-        suppressed: false,
-        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), display.into())]),
-        dimension_properties: BTreeMap::default(),
-        properties: BTreeMap::default(),
-        text: None,
-        content: vec![FeatureContent::Dimension("D1".into())],
-    };
-    for (display, metres) in [("1.77", 0.044_831), ("10", 0.01), ("1.5in", 0.0381)] {
-        assert_eq!(
-            scalar_unit_from_feature_parameter(&extrude(display), "D1", metres),
-            Some(ScalarUnit::Length),
-            "{display}"
-        );
-    }
-    for (display, metres) in [("19.46667", 0.018_610_666), ("1.5mm", 0.0381)] {
-        assert_eq!(
-            scalar_unit_from_feature_parameter(&extrude(display), "D1", metres),
-            None,
-            "{display}"
-        );
-    }
 }
