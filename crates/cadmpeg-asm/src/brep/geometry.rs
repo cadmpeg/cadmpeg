@@ -554,9 +554,11 @@ pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
 }
 
 pub(super) fn reverse_procedural_curve_definition(
-    definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
+    definition: &mut cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition,
 ) -> Result<(), &'static str> {
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
+    if let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix) =
+        definition
+    {
         helix.try_reverse_parameterization()?;
     }
     let _unreversed = definition.reverse_support_contexts();
@@ -611,11 +613,11 @@ pub(super) fn procedural_surface_definition_is_exact_carrier(
         DecodedProceduralSurfaceDefinition::Sweep(construction) => matches!(
             &construction.layout,
             crate::nurbs::proc_surface::EmbeddedSweepSurfaceLayout::Revision { form, .. }
-                if matches!(form.cache, cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_))
+                if matches!(form.cache, cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(_))
         ),
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
+            cadmpeg_ir::geometry::laws::LawSurfaceTail::Full { .. }
         ),
         DecodedProceduralSurfaceDefinition::ScaledCompoundLoft(construction) => matches!(
             construction.shape,
@@ -628,13 +630,13 @@ pub(super) fn procedural_surface_definition_is_exact_carrier(
             ..
         } => matches!(
             construction.cache,
-            cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(_)
+            cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(_)
         ),
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
             matches!(
                 construction.cache,
-                cadmpeg_ir::geometry::VariableBlendCache::Parameterization { .. }
-                    | cadmpeg_ir::geometry::VariableBlendCache::Stale {}
+                cadmpeg_ir::geometry::revision_forms::VariableBlendCache::Parameterization { .. }
+                    | cadmpeg_ir::geometry::revision_forms::VariableBlendCache::Stale {}
             )
         }
         _ => false,
@@ -668,7 +670,7 @@ pub(super) fn analytic_procedural_surface(
             supports,
             spine: Some(spine),
             radius_offsets: [signed_radius, end_offset],
-            cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+            cross_section: cadmpeg_ir::geometry::blends::BlendCrossSection::Circular,
             native,
         } if signed_radius == end_offset => {
             analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius)

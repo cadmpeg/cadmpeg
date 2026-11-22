@@ -6,6 +6,8 @@ use crate::history_records::{
 use crate::records::topology::face::{DesignFaceOperand, DesignFaceRecipeNode};
 use std::collections::BTreeSet;
 
+mod profile_cap;
+
 fn topology() -> AsmHistoricalTopology {
     let mut topology = AsmHistoricalTopology {
         faces: vec![100, 101, 102, 103],

@@ -107,6 +107,15 @@ pub(crate) enum SldprtLossCode {
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
+    /// A Keywords history member has no XML text that parses, so none of its
+    /// records is read.
+    HistoryUnread,
+    /// A Keywords root holds an `Application` element, which the native history
+    /// keeps and no neutral record holds.
+    HistoryApplicationNotTransferred,
+    /// An `Application` element nests deeper than the levels the native history
+    /// keeps, so the elements below them are not kept.
+    HistoryApplicationNestingCut,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -396,6 +405,9 @@ impl SldprtLossCode {
         Self::HistoryIncompleteReferences,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackMarkClassInferred,
+        Self::HistoryUnread,
+        Self::HistoryApplicationNotTransferred,
+        Self::HistoryApplicationNestingCut,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -539,6 +551,9 @@ impl SldprtLossCode {
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
+            Self::HistoryUnread => "history.unread",
+            Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
+            Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -688,7 +703,11 @@ impl SldprtLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream
             | Self::GeometryMeshBodyNotTransferred
-            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
+            | Self::GeometryImportedBodiesNotTransferred
+            | Self::HistoryUnread => Severity::Error,
+            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
+                Severity::Warning
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -920,7 +939,11 @@ impl SldprtLossCode {
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
-            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
+            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1173,6 +1196,9 @@ mod tests {
                 "history.incomplete-references",
                 "history.rollback-unread",
                 "history.rollback-mark-class-inferred",
+                "history.unread",
+                "history.application-not-transferred",
+                "history.application-nesting-cut",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",

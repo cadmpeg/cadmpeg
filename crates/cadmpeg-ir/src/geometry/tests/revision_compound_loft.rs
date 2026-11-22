@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
+use crate::geometry::legacy_cache::ProceduralGeometryError;
+use crate::geometry::lofts::{
     CompoundLoftDirection, LoftMemberForm, LoftPath, LoftPathCurve, LoftProfileMember,
-    LoftSectionEntry, LoftSubdata, LoftSubdataRow, ProceduralGeometryError,
-    ProceduralSurfaceDefinition, RevisionCacheForm, RevisionCompoundLoftConstruction,
-    RevisionCompoundLoftConstructionWire, RevisionCompoundLoftTail,
-    RevisionSurfaceParameterization,
+    LoftSectionEntry, LoftSubdata, LoftSubdataRow,
+};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::{
+    RevisionCacheForm, RevisionCompoundLoftConstruction, RevisionCompoundLoftConstructionWire,
+    RevisionCompoundLoftTail, RevisionSurfaceParameterization,
 };
 use crate::ids::CurveId;
 use crate::math::Vector3;
