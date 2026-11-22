@@ -284,6 +284,10 @@ jobs:
           swapon --show
           free -m
 
+      - name: Limit full test builds
+        if: needs.changes.outputs.full == 'true'
+        run: echo "CARGO_BUILD_JOBS=3" >> "$GITHUB_ENV"
+
       - name: Hash the Cargo profiles
         id: profiles
         uses: ./.github/actions/cargo-profile-key
