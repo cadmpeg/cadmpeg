@@ -1038,15 +1038,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-109. Legacy external placement control and extended envelopes
 
-**Question.** Which native object does the auxiliary placement UUID and cross-segment metadata reference identify? What does the nonzero control word select, and how do alternate member preludes and change-category lists delimit the placement?
+**Question.** Which native objects do the auxiliary placement UUID and cross-segment metadata reference identify? What does the control word select, and how do change-category lists delimit the placement?
 
-**Known.** The zero-control envelope has an auxiliary metadata UUID, a source occurrence key, a cross-segment reference, equal legacy targets, a stored transform or identity flag, an occurrence role, and a local owner. Other short envelopes have a different sequence between the attribute block and the repeated target. A separate envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
+**Known.** `f3d.md` §1.4 defines the compact and attributed placement envelopes, their occurrence roles, and their local owners. A change-category envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
 
-**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and complete grammars for the alternate member preludes and change-category envelope.
+**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and the complete grammar of the change-category envelope.
 
 **Conflict.** None.
 
-**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes remain `xref.placement-undecoded` losses.
+**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. Extended control and change-category envelopes remain `xref.placement-undecoded` losses.
 
 ### DR-100. Rigid-group operand forms and root identities
 
@@ -2766,14 +2766,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-### DR-642. Circular-pattern compute option
-
-**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
-
-**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
-
 ### DR-818. Targets of rectangular-pattern body references
 
 **Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
@@ -2781,6 +2773,14 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
 
 **Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
+
+### DR-925. Suppressed-instance keys of a symmetric circular pattern
+
+**Question.** Which instance does each suppressed-instance key name in a symmetric circular pattern?
+
+**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the key `k + 1` of instance `k` of a one-sided pattern. In a symmetric pattern of five instances over a partial turn, key `2` names the instance one step from the seed in the negative sense, and key `5` names the instance two steps in the positive sense. The decoder projects a symmetric pattern with suppressed instances with all its instances and charges `feature.circular-pattern-suppression-not-transferred`.
+
+**Need.** Symmetric patterns with other counts, over a partial and a full turn, with suppressed instances on both sides of the seed.
 
 ### DR-644. Atomic regions with holes
 

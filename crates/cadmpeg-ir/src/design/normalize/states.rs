@@ -8,7 +8,8 @@
 //! the rollback, else `Start(c)`. A target into a state that `state: None`
 //! provably reaches has `state: None`; every other target keeps its `state`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::OnceCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::declared_measures::DeclaredTarget;
 use crate::design::container::{Container, Rollback};
@@ -48,10 +49,61 @@ pub(super) struct States {
     selected: BTreeSet<OccurrenceId>,
 }
 
+/// Lazily built index over `occurrences` and `definitions` for path checks.
+struct PlacementIndex<'a> {
+    /// `Some(prototype)` when one occurrence has this id; `None` on duplicate ids.
+    unique_prototype: HashMap<&'a str, Option<&'a ProductDefinitionId>>,
+    /// Definitions that list each occurrence id.
+    owners: HashMap<&'a str, HashSet<&'a str>>,
+}
+
+impl<'a> PlacementIndex<'a> {
+    fn build(occurrences: &'a [Occurrence], definitions: &'a [ProductDefinition]) -> Self {
+        let mut unique_prototype: HashMap<&'a str, Option<&'a ProductDefinitionId>> =
+            HashMap::with_capacity(occurrences.len());
+        for record in occurrences {
+            unique_prototype
+                .entry(record.id.as_str())
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(&record.prototype));
+        }
+        let mut owners: HashMap<&'a str, HashSet<&'a str>> = HashMap::new();
+        for definition in definitions {
+            let def_id = definition.id.as_str();
+            for occurrence in &definition.occurrences {
+                owners
+                    .entry(occurrence.as_str())
+                    .or_default()
+                    .insert(def_id);
+            }
+        }
+        Self {
+            unique_prototype,
+            owners,
+        }
+    }
+}
+
 /// The occurrences and product definitions a target's path names.
 struct Placements<'a> {
     occurrences: &'a [Occurrence],
     definitions: &'a [ProductDefinition],
+    index: OnceCell<PlacementIndex<'a>>,
+}
+
+impl<'a> Placements<'a> {
+    const fn new(occurrences: &'a [Occurrence], definitions: &'a [ProductDefinition]) -> Self {
+        Self {
+            occurrences,
+            definitions,
+            index: OnceCell::new(),
+        }
+    }
+
+    fn index(&self) -> &PlacementIndex<'a> {
+        self.index
+            .get_or_init(|| PlacementIndex::build(self.occurrences, self.definitions))
+    }
 }
 
 impl States {
@@ -204,6 +256,9 @@ impl States {
     /// clears each instance target's `state` that provably names what `None`
     /// names (see [`States::target`]).
     pub(super) fn normalize_model(&self, model: &mut Model) {
+        if self.rollbacks.is_empty() && self.current.is_empty() {
+            return;
+        }
         let Model {
             occurrences,
             product_definitions,
@@ -220,10 +275,7 @@ impl States {
             declared_measures,
             ..
         } = model;
-        let placements = Placements {
-            occurrences,
-            definitions: product_definitions,
-        };
+        let placements = Placements::new(occurrences, product_definitions);
         for binding in appearance_bindings {
             self.target(&placements, &mut binding.target);
         }
@@ -351,6 +403,7 @@ impl States {
         if !self.settled {
             return false;
         }
+        let index = placements.index();
         let mut above: Option<&ProductDefinitionId> = None;
         for step in &path.0 {
             let StepRef::Occurrence(occurrence) = &step.occurrence else {
@@ -359,21 +412,20 @@ impl States {
             if step.configuration.is_some() || self.selected.contains(occurrence) {
                 return false;
             }
-            let mut records = placements
-                .occurrences
-                .iter()
-                .filter(|record| &record.id == occurrence);
-            let (Some(record), None) = (records.next(), records.next()) else {
+            let Some(Some(prototype)) = index.unique_prototype.get(occurrence.as_str()).copied()
+            else {
                 return false;
             };
-            let owned = placements.definitions.iter().any(|definition| {
-                above.is_none_or(|prototype| &definition.id == prototype)
-                    && definition.occurrences.contains(occurrence)
+            let owned = index.owners.get(occurrence.as_str()).is_some_and(|owners| {
+                above.map_or_else(
+                    || !owners.is_empty(),
+                    |parent| owners.contains(parent.as_str()),
+                )
             });
             if !owned {
                 return false;
             }
-            above = Some(&record.prototype);
+            above = Some(prototype);
         }
         above.is_some_and(|prototype| prototype.as_str() == holder)
     }

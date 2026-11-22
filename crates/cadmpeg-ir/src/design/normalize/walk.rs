@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
-use super::constructions::{self, Facts, Kind};
+use super::constructions::{self, ConstructionFacts, Kind};
 use super::selections;
 use crate::design::construction::{
     kinds, AnyConstruction, Construction, ConstructionInput, ConstructionKind, InputReference,
@@ -46,11 +46,11 @@ pub(super) trait Walk {
 /// The state of one normalizing walk.
 pub(super) struct Visit<'f, 'c> {
     ctx: &'c DecodeContext<'c>,
-    facts: &'f Facts,
+    facts: &'f dyn ConstructionFacts,
 }
 
 impl<'f, 'c> Visit<'f, 'c> {
-    pub(super) const fn new(ctx: &'c DecodeContext<'c>, facts: &'f Facts) -> Self {
+    pub(super) fn new(ctx: &'c DecodeContext<'c>, facts: &'f dyn ConstructionFacts) -> Self {
         Self { ctx, facts }
     }
 
