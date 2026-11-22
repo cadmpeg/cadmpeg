@@ -31,6 +31,9 @@ const CIRCLE_ATTACH: f64 = std::f64::consts::FRAC_PI_4;
 const HALF_TURN: f64 = std::f64::consts::PI;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
+/// The decimals of a driven dimension's display text (f3d-open-items.md
+/// DR-917).
+pub(in crate::writer::generate::design) const DRIVEN_DECIMALS: usize = 2;
 
 /// The kind of a written dimension: its frame type and kind mask.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -179,6 +182,31 @@ pub(in crate::writer::generate::design) struct PlannedDimension {
     pub(in crate::writer::generate::design) members: Vec<Entity>,
     pub(in crate::writer::generate::design) measure: Measure,
     pub(in crate::writer::generate::design) parameter: OwnedParameter,
+    /// Whether it is a driven (reference) dimension.
+    pub(in crate::writer::generate::design) driven: bool,
+}
+
+impl PlannedDimension {
+    /// The display text of its frame: the expression of its parameter, or
+    /// for a driven dimension the measured value in the unit of its
+    /// parameter with [`DRIVEN_DECIMALS`] decimals, a space and the unit
+    /// name (f3d.md §3.1, "Sketch dimensions").
+    pub(in crate::writer::generate::design) fn text(&self) -> String {
+        if !self.driven {
+            return self.parameter.expression.clone();
+        }
+        let canonical = match self.kind {
+            DimensionKind::Angle => self.measure.value(),
+            DimensionKind::Diameter => 2.0 * self.measure.value() * MM_PER_CM,
+            _ => self.measure.value() * MM_PER_CM,
+        };
+        let unit = self.parameter.unit;
+        format!(
+            "{:.DRIVEN_DECIMALS$} {}",
+            canonical / unit.canonical().0,
+            unit.name()
+        )
+    }
 }
 
 /// What a dimension's value binds.
@@ -208,9 +236,11 @@ pub(in crate::writer::generate::design) struct Tolerances {
 }
 
 impl Candidate<'_> {
-    /// The written dimension with source ordinal `ordinal`: the parameter it
-    /// binds when the dimension can own it, else a new `d<ordinal>` naming
-    /// it; or the reason it is not written.
+    /// The written dimension with source ordinal `ordinal`: a driven
+    /// parameter it binds, owned with the literal its source record stores,
+    /// else a literal of its value; the parameter
+    /// it binds when the dimension can own it, else a new `d<ordinal>`
+    /// naming it; or the reason it is not written.
     pub(in crate::writer::generate::design) fn plan(
         self,
         parameters: &mut ParameterPlan,
@@ -225,22 +255,32 @@ impl Candidate<'_> {
             ..
         } = self;
         let quantity = kind.quantity();
-        let value = match &binding {
-            Binding::Parameter(parameter) => {
-                parameters.value(parameter, quantity).ok_or(match kind {
+        let driven = match &binding {
+            Binding::Parameter(id) => parameters.driven(id, quantity)?,
+            Binding::Literal(_) => None,
+        };
+        // The stated value in Fusion's database units; a driven parameter
+        // without a cached value is its measurement.
+        let value = match (&binding, &driven) {
+            (_, Some(driven)) => driven.evaluated,
+            (Binding::Parameter(parameter), None) => {
+                Some(parameters.value(parameter, quantity).ok_or(match kind {
                     DimensionKind::Angle => "its parameter is not written as an angle",
                     _ => "its parameter is not written as a length",
-                })?
+                })?)
             }
-            Binding::Literal(value) if kind == DimensionKind::Angle => *value,
-            Binding::Literal(value) => value / MM_PER_CM,
+            (Binding::Literal(value), None) if kind == DimensionKind::Angle => Some(*value),
+            (Binding::Literal(value), None) => Some(value / MM_PER_CM),
         };
-        if kind != DimensionKind::Angle && value < 0.0 {
+        if kind != DimensionKind::Angle && value.is_some_and(|value| value < 0.0) {
             return Err("a Fusion dimension is unsigned");
         }
-        if let Measure::Angle {
-            theta, quadrant, ..
-        } = &mut measure
+        if let (
+            Measure::Angle {
+                theta, quadrant, ..
+            },
+            Some(value),
+        ) = (&mut measure, value)
         {
             *quadrant = u32::from((*theta - value).abs() > (HALF_TURN - *theta - value).abs());
         }
@@ -249,11 +289,30 @@ impl Candidate<'_> {
             DimensionKind::Diameter => (2.0 * measure.value(), tolerances.linear),
             _ => (measure.value(), tolerances.linear),
         };
-        if value.is_nan() || (measured - value).abs() > tolerance {
+        if value.is_some_and(|value| value.is_nan() || (measured - value).abs() > tolerance) {
             return Err("its value disagrees with its written geometry");
         }
-        let parameter = match binding {
-            Binding::Parameter(id) => match parameters.claim(id, quantity, ordinal) {
+        let value = value.unwrap_or(measured);
+        let is_driven = driven.is_some();
+        let parameter = match (binding, driven) {
+            // The record keeps the literal its source record stores, which
+            // can differ from the measured value.
+            (_, Some(driven)) => match driven.literal.clone() {
+                Some(literal) => {
+                    parameters.take_driven(&driven, literal.text, literal.value, ordinal)
+                }
+                None => {
+                    let canonical = if kind == DimensionKind::Angle {
+                        value
+                    } else {
+                        value * MM_PER_CM
+                    };
+                    let expression = expression::quantity_literal(canonical, Some(driven.unit))
+                        .ok_or("its value has no Fusion literal")?;
+                    parameters.take_driven(&driven, expression, value, ordinal)
+                }
+            },
+            (Binding::Parameter(id), None) => match parameters.claim(id, quantity, ordinal) {
                 Some(claimed) => claimed,
                 None => {
                     let name = parameters
@@ -263,7 +322,7 @@ impl Candidate<'_> {
                     parameters.owned(ordinal, name, kind.unit(), value, true)
                 }
             },
-            Binding::Literal(literal) => {
+            (Binding::Literal(literal), None) => {
                 let text = expression::quantity_literal(literal, Some(kind.unit()))
                     .ok_or("its value has no Fusion literal")?;
                 parameters.owned(ordinal, text, kind.unit(), value, false)
@@ -274,6 +333,7 @@ impl Candidate<'_> {
             members,
             measure,
             parameter,
+            driven: is_driven,
         })
     }
 }
