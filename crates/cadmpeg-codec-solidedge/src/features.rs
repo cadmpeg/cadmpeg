@@ -9,7 +9,8 @@ use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::Member;
@@ -19,6 +20,7 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::layout::{folder_object, part_feature_object};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
 
@@ -62,8 +64,9 @@ pub(crate) enum Navigator {
     /// A navigator object exists and does not parse, or names an object the
     /// cluster does not hold.
     Unread,
-    /// The features in feature-tree order.
-    Features(Vec<Listed>),
+    /// The navigator's last-feature identifier and the features in
+    /// feature-tree order.
+    Features { last: u32, listed: Vec<Listed> },
 }
 
 /// One listed feature: its object and what its class states of its kind.
@@ -71,6 +74,18 @@ pub(crate) enum Navigator {
 pub(crate) struct Listed {
     pub(crate) object: u32,
     pub(crate) kind: Kind,
+    /// Whether the feature is suppressed; `None` for a class that states no
+    /// state word and for an unreadable one.
+    pub(crate) suppressed: Option<bool>,
+}
+
+/// The state-word bit of a part function that states it suppressed (§4.3).
+const SUPPRESSED_BIT: u32 = 0x10;
+
+/// The navigator's last-feature identifier and its listed object identifiers.
+struct Entries {
+    last: u32,
+    objects: Vec<u32>,
 }
 
 /// What a feature object states of its kind.
@@ -81,8 +96,9 @@ pub(crate) enum Kind {
     Function(Option<String>),
     /// A mirror copy or pattern.
     Group,
-    /// A feature-tree folder.
-    Folder,
+    /// A feature-tree folder and its member object identifiers; `None` where
+    /// the member list does not read.
+    Folder(Option<Vec<u32>>),
     /// An object of another class.
     Other(String),
 }
@@ -103,7 +119,10 @@ pub(crate) fn navigator(cluster: &Cluster<'_>, types: &TypeTable) -> Navigator {
         }
         candidates = true;
         if let Some(entries) = entries(object.bytes) {
-            return listed(cluster, types, &entries).map_or(Navigator::Unread, Navigator::Features);
+            let last = entries.last;
+            return listed(cluster, types, &entries.objects).map_or(Navigator::Unread, |listed| {
+                Navigator::Features { last, listed }
+            });
         }
     }
     if candidates {
@@ -166,9 +185,9 @@ fn names_navigator(bytes: &[u8]) -> bool {
         })
 }
 
-/// The object identifiers of the navigator's entries after the three base
-/// planes, in feature-tree order (§4.1).
-fn entries(bytes: &[u8]) -> Option<Vec<u32>> {
+/// The last-feature identifier and the object identifiers of the navigator's
+/// entries after the three base planes, in feature-tree order (§4.1).
+fn entries(bytes: &[u8]) -> Option<Entries> {
     let mut at = NAVIGATOR_GUID_AT.checked_add(NAVIGATOR_GUID.len())?;
     skip_list(bytes, &mut at)?;
     skip_list(bytes, &mut at)?;
@@ -181,7 +200,8 @@ fn entries(bytes: &[u8]) -> Option<Vec<u32>> {
     }
     skip(bytes, &mut at, name_len)?;
     skip(bytes, &mut at, BLOCK_AFTER_NAME)?;
-    skip(bytes, &mut at, WORDS_BEFORE_COUNT)?;
+    skip(bytes, &mut at, WORDS_BEFORE_COUNT - 4)?;
+    let last = word(bytes, &mut at)?;
     let count = usize::try_from(word(bytes, &mut at)?).ok()?;
     if count < BASE_PLANES {
         return None;
@@ -201,7 +221,10 @@ fn entries(bytes: &[u8]) -> Option<Vec<u32>> {
     }
     // The final word, then at most one more word.
     word(bytes, &mut at)?;
-    matches!(bytes.len().checked_sub(at)?, 0 | 4).then_some(features)
+    matches!(bytes.len().checked_sub(at)?, 0 | 4).then_some(Entries {
+        last,
+        objects: features,
+    })
 }
 
 /// The kind of each listed object. An identifier the cluster does not hold,
@@ -218,12 +241,39 @@ fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<V
         let kind = match class {
             PART_CLASS => Kind::Function(function_name(&object)),
             GROUP_CLASS => Kind::Group,
-            FOLDER_CLASS => Kind::Folder,
+            FOLDER_CLASS => Kind::Folder(folder_members(&object)),
             other => Kind::Other(other.to_owned()),
         };
-        features.push(Listed { object: id, kind });
+        let suppressed = (class == PART_CLASS)
+            .then(|| View::u32_le_at(object.bytes, part_feature_object::STATE))
+            .flatten()
+            .map(|state| state & SUPPRESSED_BIT != 0);
+        features.push(Listed {
+            object: id,
+            kind,
+            suppressed,
+        });
     }
     Some(features)
+}
+
+/// The member object identifiers of a `CLSID_JMFeatureGroup` object (§4.3): a
+/// `u32` count and that many pairs of the `u32` value 1 and an identifier.
+fn folder_members(object: &Object<'_>) -> Option<Vec<u32>> {
+    let bytes = object.bytes;
+    let count = usize::try_from(View::u32_le_at(bytes, folder_object::MEMBER_COUNT)?).ok()?;
+    let mut at = folder_object::MEMBER_COUNT.checked_add(4)?;
+    if count > bytes.len().checked_sub(at)? / 8 {
+        return None;
+    }
+    let mut members = Vec::new();
+    for _ in 0..count {
+        if word(bytes, &mut at)? != 1 {
+            return None;
+        }
+        members.push(word(bytes, &mut at)?);
+    }
+    Some(members)
 }
 
 /// The function name of a `CLSID_JMPart` object (§4.2): a counted block at
@@ -265,7 +315,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Group => Some(OperationFamily::Pattern),
         Kind::Function(Some(function)) => function_family(function),
         Kind::Function(None) | Kind::Other(_) => None,
-        Kind::Folder => return None,
+        Kind::Folder(_) => return None,
     };
     if let Some(family) = family {
         return Some((FeatureOperation::Unresolved { family }, None));
@@ -274,7 +324,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Function(Some(function)) => function.as_str(),
         Kind::Function(None) => PART_CLASS,
         Kind::Other(class) => class.as_str(),
-        Kind::Group | Kind::Folder => return None,
+        Kind::Group | Kind::Folder(_) => return None,
     };
     let native = FeatureOperation::Native {
         kind: NonBlankString::new(format!("solidedge:{name}"))?,
@@ -298,21 +348,46 @@ fn container_id() -> ContainerId {
     ))
 }
 
-/// The features of `listed` in order, with a loss for each kind no family
-/// covers.
-fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature>> {
-    let mut features = Vec::new();
-    let folders = listed
-        .iter()
-        .filter(|entry| entry.kind == Kind::Folder)
-        .count();
-    if folders > 0 {
-        losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
-            "the feature tree has {folders} folder(s) whose members are not read; the features \
-             are stated without folders"
-        )));
+/// The features of a timeline and the folders over them.
+struct Timeline {
+    features: Vec<Feature>,
+    folders: Vec<Folder>,
+}
+
+/// The index run of a folder's members among the timeline features: every
+/// member is a timeline feature and the indices are consecutive ascending.
+fn folder_run(members: &[u32], index: &BTreeMap<u32, u32>) -> Option<Folder> {
+    let mut first = None;
+    let mut previous: Option<u32> = None;
+    for member in members {
+        let at = *index.get(member)?;
+        if let Some(previous) = previous {
+            if previous.checked_add(1)? != at {
+                return None;
+            }
+        } else {
+            first = Some(at);
+        }
+        previous = Some(at);
     }
-    for entry in listed.iter().filter(|entry| entry.kind != Kind::Folder) {
+    Some(Folder {
+        name: None,
+        first: first?,
+        last: previous?,
+    })
+}
+
+/// The features of `listed` in order, the folders over them, and a loss for
+/// each kind no family covers, each folder that does not state a run of
+/// features and each feature with no readable suppression state.
+fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
+    let mut features = Vec::new();
+    let mut index = BTreeMap::new();
+    let mut unread_state = 0_usize;
+    for entry in listed
+        .iter()
+        .filter(|entry| !matches!(entry.kind, Kind::Folder(_)))
+    {
         let (operation, unmapped) = operation(&entry.kind)?;
         if let Some(name) = unmapped {
             losses.push(SolidEdgeLossCode::FeatureKindUnknown.note(format!(
@@ -321,10 +396,14 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature
                 entry.object
             )));
         }
+        if entry.suppressed.is_none() {
+            unread_state += 1;
+        }
+        index.insert(entry.object, u32::try_from(features.len()).ok()?);
         features.push(Feature {
             id: feature_id(entry.object),
             name: None,
-            suppressed: None,
+            suppressed: entry.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation,
                 refine: None,
@@ -336,7 +415,57 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature
             native_ref: None,
         });
     }
-    Some(features)
+    let mut folders = Vec::new();
+    let mut any_folder = false;
+    for entry in listed {
+        let Kind::Folder(members) = &entry.kind else {
+            continue;
+        };
+        any_folder = true;
+        match members
+            .as_deref()
+            .and_then(|members| folder_run(members, &index))
+        {
+            Some(folder) => folders.push(folder),
+            None => losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
+                "folder object {:#x} does not list a run of consecutive features; it is not stated",
+                entry.object
+            ))),
+        }
+    }
+    if any_folder {
+        losses.push(SolidEdgeLossCode::FeatureFolderNameUnread.note("folder names are not read"));
+    }
+    if unread_state > 0 {
+        losses.push(SolidEdgeLossCode::FeatureSuppressionUnread.note(format!(
+            "the suppressed state of {unread_state} feature(s) is not read"
+        )));
+    }
+    Some(Timeline { features, folders })
+}
+
+/// The rollback position that the navigator's last-feature identifier states
+/// over the timeline `members`. An identifier that names no member states the
+/// end and adds `feature.rollback-unread`.
+fn rollback(
+    last: u32,
+    objects: &[u32],
+    members: &[Member],
+    losses: &mut Vec<LossNote>,
+) -> Rollback {
+    match objects.iter().position(|object| *object == last) {
+        Some(at) => match at.checked_add(1).and_then(|next| members.get(next)) {
+            Some(next) => Rollback::Before(next.clone()),
+            None => Rollback::End,
+        },
+        None => {
+            losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(format!(
+                "the navigator's last feature {last:#x} is not a listed feature; the timeline is \
+                 stated built through its last member"
+            )));
+            Rollback::End
+        }
+    }
 }
 
 /// Read the feature order of the document and state it as one timeline on
@@ -375,8 +504,8 @@ pub(crate) fn project<'a>(
         ));
         return Ok(());
     };
-    let listed = match navigator(&cluster, &types) {
-        Navigator::Features(listed) => listed,
+    let (last, listed) = match navigator(&cluster, &types) {
+        Navigator::Features { last, listed } => (last, listed),
         Navigator::Absent => {
             if has_feature_objects(&cluster, &types) {
                 losses.push(SolidEdgeLossCode::FeatureNavigatorAbsent.note(
@@ -394,7 +523,7 @@ pub(crate) fn project<'a>(
         }
     };
     let mut notes = Vec::new();
-    let Some(features) = timeline(&listed, &mut notes) else {
+    let Some(Timeline { features, folders }) = timeline(&listed, &mut notes) else {
         losses.push(
             SolidEdgeLossCode::FeatureStorageUnread.note(
                 "a listed feature has no readable kind; the feature order is not transferred",
@@ -410,20 +539,23 @@ pub(crate) fn project<'a>(
         "the operands of the features are not decoded; each feature states its operation family \
          only",
     ));
-    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
-        "the rollback position and suppressed state of the features are not read; the timeline \
-         is stated built through its last member",
-    ));
+    let members: Vec<Member> = features
+        .iter()
+        .map(|feature| Member::Feature(feature.id.clone()))
+        .collect();
+    let objects: Vec<u32> = listed
+        .iter()
+        .filter(|entry| !matches!(entry.kind, Kind::Folder(_)))
+        .map(|entry| entry.object)
+        .collect();
+    let rollback = rollback(last, &objects, &members, losses);
     let id = container_id();
     let container = Container::Ordered {
         id: id.clone(),
         kind: OrderedKind::Timeline,
-        members: features
-            .iter()
-            .map(|feature| Member::Feature(feature.id.clone()))
-            .collect(),
-        folders: Vec::new(),
-        rollback: Rollback::End,
+        members,
+        folders,
+        rollback,
         placement: None,
     };
     ir.design.scopes.push(DesignScope {

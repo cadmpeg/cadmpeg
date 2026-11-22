@@ -10,6 +10,13 @@ use crate::test_support::{
     cluster_and_map, feature_document, navigator_body, part_body, type_table, Feature, Object,
 };
 
+fn listed_of(features: &[Feature<'_>]) -> Vec<Listed> {
+    match read(features) {
+        Navigator::Features { listed, .. } => listed,
+        other => panic!("expected features, found {other:?}"),
+    }
+}
+
 /// The PSM streams of a document built by `feature_document`.
 fn streams(file: &[u8]) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     use cadmpeg_container::compound::CompoundSnapshot;
@@ -39,24 +46,34 @@ fn read(features: &[Feature<'_>]) -> Navigator {
 
 fn kinds(navigator: Navigator) -> Vec<Kind> {
     match navigator {
-        Navigator::Features(listed) => listed.into_iter().map(|entry| entry.kind).collect(),
+        Navigator::Features { listed, .. } => listed.into_iter().map(|entry| entry.kind).collect(),
         other => panic!("expected features, found {other:?}"),
     }
 }
 
 #[test]
 fn navigator_with_no_feature_lists_none() {
-    assert_eq!(read(&[]), Navigator::Features(Vec::new()));
+    assert_eq!(
+        read(&[]),
+        Navigator::Features {
+            last: 0,
+            listed: Vec::new()
+        }
+    );
 }
 
 #[test]
 fn navigator_with_one_feature_reads_its_function() {
     assert_eq!(
         read(&[Feature::Part("JMProtrusionFunction")]),
-        Navigator::Features(vec![Listed {
-            object: 10,
-            kind: Kind::Function(Some("JMProtrusionFunction".into())),
-        }])
+        Navigator::Features {
+            last: 10,
+            listed: vec![Listed {
+                object: 10,
+                kind: Kind::Function(Some("JMProtrusionFunction".into())),
+                suppressed: Some(false),
+            }]
+        }
     );
 }
 
@@ -95,7 +112,7 @@ fn folder_entry_reads_as_a_folder() {
         ])),
         vec![
             Kind::Function(Some("JMProtrusionFunction".into())),
-            Kind::Folder,
+            Kind::Folder(Some(Vec::new())),
             Kind::Function(Some("JMCutoutFunction".into())),
         ]
     );
@@ -217,7 +234,7 @@ fn malformed_navigators_are_unread_not_absent() {
     // One more word after the final word is admitted.
     assert!(matches!(
         damaged(|object| object.extend_from_slice(&[0; 4])),
-        Navigator::Features(_)
+        Navigator::Features { .. }
     ));
 }
 
@@ -282,4 +299,89 @@ fn document_without_navigator_is_absent() {
     assert!(has_feature_objects(&cluster, &types));
     let none = TypeTable::parse(&type_table(&classes[..1], &[])).unwrap();
     assert!(!has_feature_objects(&cluster, &none));
+}
+
+#[test]
+fn part_state_bit_0x10_states_suppression() {
+    let states = [(0x10, true), (0x00, false), (0x02, false), (0x12, true)];
+    for (state, suppressed) in states {
+        let listed = listed_of(&[Feature::PartState("JMHoleFunction", state)]);
+        assert_eq!(listed[0].suppressed, Some(suppressed), "{state:#x}");
+    }
+}
+
+#[test]
+fn group_states_no_suppression() {
+    assert_eq!(listed_of(&[Feature::Group])[0].suppressed, None);
+}
+
+#[test]
+fn navigator_reads_the_last_feature_identifier() {
+    let (cluster, map, types) = streams(&crate::test_support::feature_document_last(
+        &[Feature::Group, Feature::Group],
+        Some(10),
+    ));
+    let map = SpaceMap::parse(&map).unwrap();
+    let cluster = Cluster::parse(&cluster, &map).unwrap();
+    let found = navigator(&cluster, &TypeTable::parse(&types).unwrap());
+    assert!(matches!(found, Navigator::Features { last: 10, .. }));
+}
+
+#[test]
+fn folder_lists_its_members() {
+    let listed = listed_of(&[Feature::Folder(&[11, 12]), Feature::Group, Feature::Group]);
+    assert_eq!(listed[0].kind, Kind::Folder(Some(vec![11, 12])));
+}
+
+#[test]
+fn folder_with_a_pair_marker_other_than_one_is_unread() {
+    let listed = listed_of(&[Feature::FolderBadMarker(&[11]), Feature::Group]);
+    assert_eq!(listed[0].kind, Kind::Folder(None));
+}
+
+#[test]
+fn folder_count_beyond_its_bytes_is_unread() {
+    // The count claims two pairs; one pair follows.
+    let mut body = 2_u32.to_le_bytes().to_vec();
+    body.extend_from_slice(&1_u32.to_le_bytes());
+    body.extend_from_slice(&11_u32.to_le_bytes());
+    let object = Object {
+        id: 4,
+        form: 1,
+        flags: 0,
+        body,
+    };
+    let objects = [
+        Object {
+            id: 1,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        },
+        Object {
+            id: 2,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        },
+        Object {
+            id: 3,
+            form: 0,
+            flags: 0,
+            body: vec![0; 8],
+        },
+        object,
+        Object {
+            id: 5,
+            form: 2,
+            flags: 0,
+            body: navigator_body([1, 2, 3], &[4]),
+        },
+    ];
+    let classes = ["ReferencePlaneObject", "CLSID_JMFeatureGroup", "Nav"];
+    let (cluster, map) = cluster_and_map(&objects);
+    let map = SpaceMap::parse(&map).unwrap();
+    let cluster = Cluster::parse(&cluster, &map).unwrap();
+    let types = TypeTable::parse(&type_table(&classes, &[])).unwrap();
+    assert_eq!(kinds(navigator(&cluster, &types)), vec![Kind::Folder(None)]);
 }
