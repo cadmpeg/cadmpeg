@@ -2,7 +2,8 @@
 //! Symbolic-thread witness extraction, neutral projection, and native admission.
 
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
     let mut payload = vec![selector];

@@ -122,7 +122,7 @@ fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
             0.25,
             0.75,
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.25, 0.75, 0.0))
     );
 }
@@ -150,7 +150,7 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
             0.25,
             0.75
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
@@ -189,7 +189,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
             1.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
     assert_eq!(
@@ -255,7 +255,7 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
             1.5,
             -0.75
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
     );
     assert!(result
@@ -561,7 +561,7 @@ fn coefficient_surface_survives_only_missing_unused_trailing_placeholders() {
                 0.25,
                 0.75
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(0.25, 0.75, 0.0))
         );
     }
@@ -609,7 +609,7 @@ fn coefficient_surface_requires_actual_patches_at_their_declared_grid_positions(
                     1.5,
                     0.75
                 )
-                .map(cadmpeg_ir::features::FinitePoint3::get),
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 Ok(Point3::new(1.5, 0.75, 0.0))
             );
         } else {

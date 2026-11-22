@@ -5,7 +5,7 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
@@ -62,7 +62,7 @@ fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
     let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: FaceSelection::Native(native),
         distance: Some(distance),
-        method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+        method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
     }) = evaluation.definition()
     else {
         panic!("SurfaceExtend did not project as a typed feature");
@@ -73,7 +73,7 @@ fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
 
 #[test]
 fn dispatcher_projects_each_surface_extend_method_code() {
-    use cadmpeg_ir::features::SurfaceExtension;
+    use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
     for (code, expected) in [
         (0, SurfaceExtension::Perpendicular),
         (1, SurfaceExtension::Natural),

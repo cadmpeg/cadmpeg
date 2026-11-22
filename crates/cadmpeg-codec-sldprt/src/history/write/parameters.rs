@@ -3,7 +3,8 @@
 
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use std::collections::{BTreeMap, HashMap};
 
 use super::features::generated_feature_record_id;

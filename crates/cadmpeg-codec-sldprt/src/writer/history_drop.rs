@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, ParameterValue};
+use cadmpeg_ir::features::{parameters::ParameterValue, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 use serde_json::Value;
@@ -176,7 +176,7 @@ pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> (DisplayedValues,
             ),
         ));
         parameter.expression = displayed;
-        parameter.dependencies = cadmpeg_ir::features::DistinctMembers::default();
+        parameter.dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     }
     let mut notes = Vec::new();
     if !valueless.is_empty() {
@@ -326,7 +326,10 @@ impl ConstructionDimension {
 fn construction_dimensions(definition: &FeatureDefinition) -> Vec<ConstructionDimension> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     use cadmpeg_ir::features::patterns::PatternTransform;
-    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, FaceMotion, LinearTermination};
+    use cadmpeg_ir::features::{
+        direct_edit::FaceMotion,
+        extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
+    };
     use cadmpeg_ir::scalar::{Angle, Length};
 
     fn length(

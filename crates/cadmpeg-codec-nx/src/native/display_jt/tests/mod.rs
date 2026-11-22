@@ -1280,9 +1280,11 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
 
     // Each node path retains its own copy of the mesh lanes.
     let mesh = &tessellations[0].0;
-    let copy = mesh.vertex_count() * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>()
+    let copy = mesh.vertex_count()
+        * std::mem::size_of::<cadmpeg_ir::features::geometry::FinitePoint3>()
         + mesh.triangle_count() * std::mem::size_of::<[u32; 3]>()
-        + mesh.vertex_normals().len() * std::mem::size_of::<cadmpeg_ir::features::FiniteVector3>()
+        + mesh.vertex_normals().len()
+            * std::mem::size_of::<cadmpeg_ir::features::geometry::FiniteVector3>()
         + mesh
             .channels()
             .iter()

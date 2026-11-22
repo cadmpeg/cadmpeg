@@ -6,7 +6,7 @@ use super::{
     TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
 };
 use crate::design::refs::StateRef;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::NonNegativeReal;

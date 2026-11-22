@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assets::AssetId;
 use crate::design::refs::StateRef;
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;

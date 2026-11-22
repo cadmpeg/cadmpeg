@@ -4,10 +4,8 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
-use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureOperation,
-    InsertedComponents,
-};
+use cadmpeg_ir::features::selections::{DistinctMembers, InsertedComponents};
+use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use std::collections::BTreeMap;
 
 fn scope() -> DesignParameterScope {
@@ -34,7 +32,7 @@ fn feature(scope: &DesignParameterScope) -> Feature {
         source_tag: Some("Component Insert".to_owned()),
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Component Insert".into(),
                 parameters: BTreeMap::default(),

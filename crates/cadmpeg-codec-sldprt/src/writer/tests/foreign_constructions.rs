@@ -3,9 +3,12 @@
 //! record reads back, or a note that names it.
 
 use cadmpeg_ir::features::{
-    DraftAnchor, DraftPull, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection, Feature,
-    FeatureDefinition, FeatureDirection3, FeatureId, FeatureOperation, FinitePoint3,
-    LinearTermination, ParameterValue,
+    direct_edit::{DraftAnchor, DraftPull, FaceMotion},
+    extents::{ExtrudeExtent, ExtrudeSide, LinearTermination},
+    geometry::{FeatureDirection3, FinitePoint3},
+    parameters::ParameterValue,
+    selections::FaceSelection,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length, NonZeroLength, PositiveAngle, SlopeAngle};
@@ -126,7 +129,7 @@ fn a_circular_pattern_decodes_back_with_its_count_and_angle() {
         })
     });
     ir.model.features.last_mut().unwrap().dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss()]).unwrap();
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![boss()]).unwrap();
     push_parameter(
         &mut ir,
         &id,
@@ -424,7 +427,7 @@ fn a_selection_written_by_a_source_token_is_named_as_naming_no_written_record() 
 
 #[test]
 fn a_profile_selection_of_every_profile_of_its_sketch_is_not_named() {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let mut ir = cube_with_foreign_history();
     let sketch = ir.model.sketches[0].id.clone();
@@ -442,7 +445,8 @@ fn a_profile_selection_of_every_profile_of_its_sketch_is_not_named() {
         };
         *profile = ProfileRef::Planar(PlanarProfileRef::SketchProfiles {
             sketch,
-            profiles: cadmpeg_ir::features::SelectionMembers::try_from(vec![0]).unwrap(),
+            profiles: cadmpeg_ir::features::selections::SelectionMembers::try_from(vec![0])
+                .unwrap(),
         });
     });
     let losses = plan_losses(&ir);
@@ -466,7 +470,7 @@ fn cube_with_foreign_pattern(
         })
     });
     ir.model.features.last_mut().unwrap().dependencies =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![boss()]).unwrap();
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![boss()]).unwrap();
     (ir, id)
 }
 
@@ -543,7 +547,7 @@ fn a_curve_driven_pattern_decodes_back_with_its_count_and_spacing_under_d1_and_d
     use cadmpeg_ir::scalar::PositiveLength;
 
     let (mut ir, id) = cube_with_foreign_pattern(PatternTransform::CurveDriven {
-        path: Some(cadmpeg_ir::features::PathRef::Sketch(
+        path: Some(cadmpeg_ir::features::profiles::PathRef::Sketch(
             cadmpeg_ir::sketches::SketchId::mint("other:model:sketch#profile").unwrap(),
         )),
         spacing: PositiveLength::new(2.5).unwrap(),
@@ -660,7 +664,8 @@ fn the_bodies_a_feature_produces_are_named_when_its_record_reads_back_without_th
         .unwrap()
         .evaluation
         .edit(|_, outputs| {
-            *outputs = cadmpeg_ir::features::DistinctMembers::try_from(vec![body]).unwrap();
+            *outputs =
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body]).unwrap();
         });
     let losses = plan_losses(&ir);
     assert!(

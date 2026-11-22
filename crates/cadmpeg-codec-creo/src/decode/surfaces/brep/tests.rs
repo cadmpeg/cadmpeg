@@ -266,7 +266,8 @@ fn ordered_native_parameter_face_loops_service<'a>(
 #[test]
 fn infinite_point_cannot_match_a_finite_point() {
     assert!(
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0)).is_none()
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0))
+            .is_none()
     );
 }
 

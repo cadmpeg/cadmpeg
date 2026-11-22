@@ -1442,7 +1442,7 @@ fn linear_nurbs_is_simple_closed(
             context
                 .transform
                 .apply_point(point)
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         })
         .collect::<Option<Vec<_>>>()
     else {
@@ -1600,7 +1600,7 @@ fn bounded_plane_curve_is_simple(
                     context
                         .transform
                         .apply_point(point.get())
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
                 })
                 .collect::<Option<Vec<_>>>();
             let Some(points) = points else {

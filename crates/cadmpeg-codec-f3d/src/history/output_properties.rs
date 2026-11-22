@@ -2,10 +2,11 @@
 
 use crate::history_records::{AsmHistoricalPlane, AsmHistoricalTopology, AsmHistoricalTransition};
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, BooleanOp, EdgeSelection, FaceSelection, FeatureId,
-    FeatureOperation, SolidSweepOperation, SplitBodyTool, SweepShape,
-};
+use cadmpeg_ir::features::direct_edit::SplitBodyTool;
+use cadmpeg_ir::features::operation_settings::{BooleanKind, BooleanOp};
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepShape};
+use cadmpeg_ir::features::{FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
