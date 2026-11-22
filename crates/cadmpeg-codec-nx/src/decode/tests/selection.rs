@@ -90,8 +90,10 @@ fn decode_emits_both_intersection_support_pcurves() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -113,8 +115,10 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -155,7 +159,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization,
         ..
@@ -215,7 +219,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -260,7 +264,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -282,7 +286,7 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let cross_branch = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(matches!(
         cross_branch.ir().geometry.procedural_curves[0].definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
         }
@@ -316,7 +320,7 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir().geometry.procedural_curves[0];
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         parameterization: None,
         ..
     } = procedural.definition()
@@ -372,7 +376,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             )
             .unwrap();
         let procedural = &result.ir().geometry.procedural_curves[0];
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             parameterization: None,
             ..
         } = procedural.definition()
@@ -405,7 +409,7 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
 
     assert!(matches!(
         result.ir().geometry.procedural_curves[0].definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection { .. }
     ));
     assert!(matches!(
         result

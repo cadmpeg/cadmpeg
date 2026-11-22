@@ -15,21 +15,27 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 mod parameters;
 
-/// Project the decoded design records of `ir` into its v11 design layer.
+/// Project the decoded design records of `ir` into its v11 design layer, and
+/// add to `losses` what the projection drops.
 ///
 /// A part whose decode transfers no parameter states no design record. A
 /// body that no stated member produces is in no current state (interim,
 /// errata A1).
-pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     if ir.model.parameters.is_empty() {
         return Ok(());
     }
     let definition = root_definition(ctx, ir)?;
-    parameters::project(ctx, ir, &definition)?;
+    parameters::project(ctx, ir, &definition, losses)?;
     ctx.charge_entities(1, "project the CATIA v11 scope")?;
     ir.design.scopes.push(DesignScope {
         definition,
@@ -38,6 +44,7 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }

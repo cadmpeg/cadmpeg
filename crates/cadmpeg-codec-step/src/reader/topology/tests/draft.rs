@@ -229,7 +229,7 @@ fn stale_trim_recovery_is_retained_above_step_tolerance() {
         .expect("stale trimmed pcurve use");
     assert_eq!(
         use_.parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
 }

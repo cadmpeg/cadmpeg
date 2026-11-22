@@ -256,6 +256,7 @@ impl SldprtCodec {
             dialect,
             coverage,
             omitted_envelope_bytes,
+            unwritten,
         } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
         let native = ir
             .native
@@ -284,6 +285,7 @@ impl SldprtCodec {
             coverage,
             omitted_envelope_bytes,
             stale_solid,
+            unwritten,
         })
     }
 }
@@ -365,6 +367,8 @@ enum Written {
         /// One loss per construction edit that shapes the solid: the output
         /// keeps the stored solid, which shows the state before the edit.
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The metadata attributes the write did not write.
+        unwritten: writer::UnwrittenAttributes,
     },
 }
 

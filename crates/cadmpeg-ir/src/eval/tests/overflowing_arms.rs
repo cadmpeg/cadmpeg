@@ -6,16 +6,20 @@ use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
+use crate::geometry::intersection_curves::{
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+};
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::pcurve::{
     CirclePcurve, HyperbolaPcurve, LinePcurve, OffsetPcurve, ParabolaPcurve, PcurveGeometry,
     PcurveNurbs, PlacedPcurve, PolarHarmonicPcurve, PolarNurbsPole, PolarPcurveNurbs,
     SphericalGreatCirclePcurve,
 };
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry, TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -1070,7 +1074,8 @@ fn a_tolerant_intersection_has_no_point_where_its_offset_pcurve_point_overflows(
 
 #[test]
 fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows() {
-    use crate::geometry::{RollingBallSide, RollingBallSupportSurface, VariableBlendSupportKind};
+    use crate::geometry::blends::{RollingBallSide, RollingBallSupportSurface};
+    use crate::geometry::variable_blends::VariableBlendSupportKind;
 
     let plane = solved(SolvedSurfaceGeometry::Plane(
         crate::geometry::analytic::PlaneSurface::try_new(

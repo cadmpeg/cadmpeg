@@ -3,12 +3,13 @@
 
 use super::{chart_ending_on_edge_vertices, sample, Approximator, Axis, SEED_PATCHES};
 use crate::eval::admission::EvaluationAdmission;
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry, PlacedPcurve};
+use crate::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+use crate::geometry::surface_curves::SurfaceCurveFamily;
 use crate::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry, SupportPcurve, SurfaceCurveFamily,
-    MAX_GEOMETRY_NESTING,
+    Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, MAX_GEOMETRY_NESTING,
 };
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::{Point2, Point3};
@@ -46,7 +47,7 @@ fn chart_snapping_moves_only_an_end_pole_within_the_fit_tolerance() {
         false,
     )
     .unwrap();
-    let cache = crate::geometry::LegacyCache::try_new(1e-3).unwrap();
+    let cache = crate::geometry::legacy_cache::LegacyCache::try_new(1e-3).unwrap();
 
     let snapped = chart_ending_on_edge_vertices(&ir, &index, curve, &chart, Some(&cache)).unwrap();
 
@@ -284,10 +285,9 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
 #[test]
 fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix() {
     use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::geometry::surface_payloads::LinearSweepSurfaceConstruction;
-    use crate::geometry::{
-        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-    };
+    use crate::geometry::{ProceduralSurface, Surface, SurfaceGeometry};
     use crate::ids::{ProceduralSurfaceId, SurfaceId};
     use crate::math::Vector3;
     use crate::units::FinitePoint2;

@@ -1447,7 +1447,7 @@ fn validate_nurbs_trim(
         .max(
             pcurve
                 .fit_tolerance()
-                .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+                .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         );
     for span in breaks.windows(2) {
         for step in 0..=16 {

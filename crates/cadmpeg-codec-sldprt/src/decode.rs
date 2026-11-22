@@ -3412,6 +3412,7 @@ fn build_geometry_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3862,6 +3863,17 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        &all_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
@@ -4292,6 +4304,7 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -4711,6 +4724,7 @@ fn build_metadata_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -5090,6 +5104,17 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        sketch_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -5185,6 +5210,7 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -5378,7 +5404,8 @@ fn mark_active_configuration(ir: &mut CadIr) {
 /// The position of the active configuration among `configurations`, each
 /// given by its name and partition index, as the document's active
 /// configuration name, else its active Parasolid block, selects it. A lone
-/// configuration is active unless the active partition is unresolved.
+/// configuration is active unless the active partition is unresolved; where
+/// the active block names no configuration, only a lone one without an index.
 pub(crate) fn active_configuration_position(
     source: Option<&cadmpeg_ir::document::SourceMeta>,
     configurations: &[(Option<&str>, Option<u32>)],
@@ -5407,7 +5434,8 @@ pub(crate) fn active_configuration_position(
                 .enumerate()
                 .filter(|(_, (_, candidate))| *candidate == Some(index))
                 .map(|(position, _)| position),
-        );
+        )
+        .or_else(|| matches!(configurations, [(_, None)]).then_some(0));
     }
     if attribute("sldprt_active_partition_unresolved").map(String::as_str) == Some("true") {
         return None;
@@ -5865,46 +5893,39 @@ fn assign_configuration_bodies(
     Ok(())
 }
 
-/// Bind the active configuration's partition identity from the two native
-/// selectors, without inferring body membership.
+/// Bind the active partition to the configuration the document selects as
+/// active, by its name or as the lone configuration without an index, when
+/// no configuration holds that partition, without inferring body membership.
 fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
-    let active_name = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"));
     let active_index = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
         .and_then(|section| crate::container::configuration_index(section))
-        .and_then(|index| u32::try_from(index).ok());
-    let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
-        return None;
-    };
-    let mut matches = ir
+        .and_then(|index| u32::try_from(index).ok())?;
+    if ir
         .model
         .configurations
         .iter()
-        .enumerate()
-        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
-        .map(|(position, _)| position);
-    let position = matches.next()?;
-    let source_identity_available = !ir
-        .model
-        .configurations
-        .iter()
-        .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some()
-        || ir.model.configurations[position].source_index.is_some()
-        || !source_identity_available
+        .any(|configuration| configuration.source_index == Some(active_index))
     {
         return None;
     }
+    let selectors = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_deref(), configuration.source_index))
+        .collect::<Vec<_>>();
+    let position = active_configuration_position(ir.source.as_ref(), &selectors)?;
+    if ir.model.configurations[position].source_index.is_some() {
+        return None;
+    }
 
-    // The container's active block and the native configuration name
-    // establish the partition identity even when that block yielded no
-    // decoded body list. Body membership remains unresolved until a decoded
-    // partition supplies its body identities.
+    // The container's active block and the selected configuration establish
+    // the partition identity even when that block yielded no decoded body
+    // list. Body membership remains unresolved until a decoded partition
+    // supplies its body identities.
     ir.model.configurations[position].source_index = Some(active_index);
     Some((active_index, position))
 }
