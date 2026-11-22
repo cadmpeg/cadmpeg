@@ -1217,7 +1217,7 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** Sketches of either kind whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component reading, the local reading from the frame origin and the local reading from the foot of the model origin, together with the plane reference of each sketch (DI-73).
 
-### DI-81. The side of an offset reference plane that stores no frame of its own
+### DI-81. The side of an offset reference plane that stores no frame of its own, and the u-axis of a frame stored against the source normal
 
 **Question.** Where does an offset reference-plane object that stores no frame of the offset plane record on which side of its source plane the plane lies? Which u-axis does a stored frame of the offset plane give where its normal points against the source plane's normal?
 
