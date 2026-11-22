@@ -251,3 +251,18 @@ fn full_decode_reports_features_without_a_navigator() {
         .iter()
         .any(|code| code.starts_with("feature.")));
 }
+
+#[test]
+fn full_decode_states_folder_members_as_features_and_reports_the_folder() {
+    use test_support::Feature;
+
+    let result = decode(test_support::feature_document(&[
+        Feature::Part("JMProtrusionFunction"),
+        Feature::Other("CLSID_JMFeatureGroup"),
+        Feature::Part("JMCutoutFunction"),
+    ]));
+    assert_eq!(result.ir().design.features.len(), 2);
+    let codes = loss_codes(&result);
+    assert!(codes.iter().any(|code| code == "feature.folder-unread"));
+    assert!(!codes.iter().any(|code| code == "feature.kind-unknown"));
+}

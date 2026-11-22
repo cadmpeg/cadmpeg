@@ -238,9 +238,10 @@ little-endian `u32` values.
 
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
-`ReferencePlaneObject`. The other `M` − 3 entries are the features in
-feature-tree order. Each feature is an object of class `CLSID_JMPart` or
-`CLSID_JMGroup`.
+`ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
+items in order. A feature is an object of class `CLSID_JMPart` or
+`CLSID_JMGroup`. A feature-tree folder is an object of class
+`CLSID_JMFeatureGroup`.
 
 ### 4.2 Feature kind
 
