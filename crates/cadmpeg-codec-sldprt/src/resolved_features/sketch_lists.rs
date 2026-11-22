@@ -4,18 +4,22 @@
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
-//! selector has bit 0 clear, the endpoint and centre fields are zero-based
-//! indices into the point records of its own sketch, and the sense word
-//! selects a line, a counterclockwise arc or a clockwise arc.
+//! selector has bit 0 clear, except the current-prefix 92-byte selector-4
+//! line with locus `05 00 01 00` that §2 reads,
+//! the endpoint and centre fields are zero-based indices into the point
+//! records of its own sketch, and the sense word selects a line, a
+//! counterclockwise arc or a clockwise arc.
 
-use super::SKETCH_ANGLE_TOLERANCE;
+use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::layout::{
     sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
     sketch_record_head as head,
 };
+use crate::loss::SldprtLossCode;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
@@ -47,6 +51,7 @@ const SELECTOR: usize = head::SELECTOR;
 const SELECTOR_OPEN_BIT: u16 = 1;
 /// The selectors of the curve records that [`ListedReading::Roster`] reads.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
 const CONSTRUCTION_SELECTOR_BIT: u16 = 0x08;
 /// Where a current-layout line record stores its trailer u32.
 const LINE_TRAILER: usize = line::TRAILER;
@@ -429,8 +434,9 @@ fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
 }
 
 /// The form of the curve record at `offset`, in either head layout, when its
-/// selector has bit 0 clear: a line when the low half of its sense word is
-/// `0`, and an arc when the word is `1` or `-1` and the centre index is
+/// selector has bit 0 clear:
+/// a line when the low half of its sense word is `0`, and an arc when the
+/// word is `1` or `-1` and the centre index is
 /// followed by i32 `-2`. [`ListedReading::Roster`] also requires the current
 /// layout, a roster selector, and for a line no identifier trailer.
 pub(super) fn curve_form(
@@ -468,8 +474,37 @@ pub(super) fn curve_form(
     }
     (sense & LINE_TYPE_MASK == 0
         && start != end
+        && !(object_index_line(payload, offset, fields, selector)
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
         && !(roster && identifier_trailer_line(payload, offset)?))
     .then_some(CurveForm::Line { start, end })
+}
+
+fn object_index_locus(payload: &[u8], offset: usize) -> bool {
+    offset.checked_add(head::LOCUS).is_some_and(|at| {
+        at.checked_add(OBJECT_INDEX_LOCUS.len())
+            .and_then(|end| payload.get(at..end))
+            == Some(&OBJECT_INDEX_LOCUS)
+    })
+}
+
+fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16) -> bool {
+    let prefix_end = offset.checked_add(SKETCH_MARKER.len());
+    let end = offset.checked_add(line::RECORD_ID + size_of::<u32>());
+    selector == 4
+        && Some(fields) == offset.checked_add(CURRENT_FIELDS)
+        && prefix_end.and_then(|end| payload.get(offset..end)) == Some(SKETCH_MARKER)
+        && object_index_locus(payload, offset)
+        && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
+}
+
+pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
+    curve_form(payload, offset, ListedReading::Complete)?;
+    object_index_locus(payload, offset).then(|| {
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
+            "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
+        ))
+    })
 }
 
 /// Whether the current-layout line record at `offset` stores a trailer u32
