@@ -251,7 +251,7 @@ fn field_search_offset_overflow_refuses_record() {
 
 #[test]
 fn splits_bounded_plain_declaration_with_a_different_owner() {
-    // The first two declarations reproduce the source frame at bison-chuck offset 25771.
+    // The first two declarations reproduce the source frame of one part at offset 25771.
     let mut bytes = Vec::new();
     append_declaration(&mut bytes, b"m_displayMarker", &[0x83, 0x87, 0x80, 0xa5]);
     let plain_start = bytes.len();

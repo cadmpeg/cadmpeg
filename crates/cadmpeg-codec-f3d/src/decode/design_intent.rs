@@ -689,14 +689,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
-    losses.extend(
-        crate::design::decode::operands::sketchless_profile_selection_losses(
-            scan,
-            &design.design_parameter_scopes,
-            &design.design_construction_operand_groups,
-            &design.design_record_headers,
-        )?,
-    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.projection_losses);
     losses.extend(
@@ -1321,6 +1313,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             angular_tolerance: geometry.tolerances.angular.get(),
         },
     ));
+    design.history_body_consumers.tails = crate::history::body_history_tail::collect(
+        &model.features,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+        geometry.primary_brep,
+    );
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
@@ -1516,6 +1514,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &mut model.configurations,
     )?;
+    losses.extend(
+        crate::design::decode::operands::sketchless_profile_selection_losses(
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &model.features,
+        )?,
+    );
     let phase_one_headers = prereqs
         .design_record_headers
         .iter()

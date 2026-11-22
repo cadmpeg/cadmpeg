@@ -1577,6 +1577,18 @@
           "kind": "namespaced",
           "value": {
             "namespace": "f3d",
+            "code": "feature.body-history-unread",
+            "kind": "feature_history_retained"
+          }
+        },
+        "severity": "warning",
+        "message": "No single decoded history holds body f3d:brep:entity#1; changes after feature f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat15:CopyPasteBodies1:1400 are not checked."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
             "code": "feature.edge-reference-lost",
             "kind": "attributes_not_transferred"
           }

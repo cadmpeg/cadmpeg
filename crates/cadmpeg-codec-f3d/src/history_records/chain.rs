@@ -2,8 +2,8 @@
 //! Sorted historical row diffs and lazy chain materialization.
 use super::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalEntityDelta, AsmHistoricalEntityTags,
-    AsmHistoricalPersistentSubentityTag, AsmHistoricalRow, AsmHistoricalRowDelta,
-    AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat, AsmHistoricalTopology,
+    AsmHistoricalEnvelopeCache, AsmHistoricalPersistentSubentityTag, AsmHistoricalRow,
+    AsmHistoricalRowDelta, AsmHistoricalRowsDelta, AsmHistoricalSlotRepeat, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmTopologyScope,
     AsmTransitionError,
 };
@@ -399,6 +399,16 @@ impl AsmHistoricalTransition {
                 pcurves: delta(&new.pcurves, &old_topology.pcurves)?,
             },
             rows: AsmHistoricalRowsDelta {
+                face_envelopes: AsmHistoricalRowDelta::between(
+                    &old_topology.face_envelopes,
+                    &new.face_envelopes,
+                )?
+                .into(),
+                edge_envelopes: AsmHistoricalRowDelta::between(
+                    &old_topology.edge_envelopes,
+                    &new.edge_envelopes,
+                )?
+                .into(),
                 surface_repeats: AsmHistoricalRowDelta::between(&old_surfaces, &new_surfaces)?,
                 curve_repeats: AsmHistoricalRowDelta::between(&old_curves, &new_curves)?,
                 surface_radii: AsmHistoricalRowDelta::between(
@@ -620,6 +630,12 @@ impl AsmHistoricalTransition {
         self.rows
             .body_design_links
             .apply_inner(&mut topology.body_design_links, trusted_sorted)?;
+        self.rows
+            .face_envelopes
+            .apply_inner(&mut topology.face_envelopes, trusted_sorted)?;
+        self.rows
+            .edge_envelopes
+            .apply_inner(&mut topology.edge_envelopes, trusted_sorted)?;
         self.rows
             .face_loops
             .apply_inner(&mut topology.face_loops, trusted_sorted)?;
@@ -910,6 +926,8 @@ fn apply_membership_inner(
 
 impl AsmHistoricalRowsDelta {
     pub(crate) fn retain_projection_rows(&mut self) {
+        self.face_envelopes = AsmHistoricalEnvelopeCache::default();
+        self.edge_envelopes = AsmHistoricalEnvelopeCache::default();
         self.surface_radii = AsmHistoricalRowDelta::default();
         self.surface_axes = AsmHistoricalRowDelta::default();
         self.persistent_subentity_tags = AsmHistoricalRowDelta::default();

@@ -36,8 +36,8 @@ pub(super) fn project_circular_pattern(
     };
     let construction = scope.circular_pattern_construction()?;
     // The separator byte of a 130-byte axis record has no settled meaning
-    // (DR-327); only a full turn, whose instances do not depend on the
-    // direction of travel, projects from it.
+    // (DR-327); a full turn, whose instances do not depend on the direction
+    // of travel, passes this gate and projects once the axis resolves.
     if construction.axis_separator_flag_offset.is_some()
         && (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
     {
@@ -109,6 +109,12 @@ pub(super) fn project_circular_pattern(
         })
         .ok()?
     };
+    losses.push(
+        crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.note(format!(
+            "CircularPattern scope {} is read with equal spacing; its spacing control remains unread (DR-1030).",
+            scope.id,
+        )),
+    );
     if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
         match construction.symmetric.map(|symmetric| symmetric.value) {
             Some(true) => losses.push(

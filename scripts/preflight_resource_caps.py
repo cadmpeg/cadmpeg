@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-"""A new or removed `MAX_*` constant updates the resource-cap census and its totals.
+"""A new or removed `MAX_*` constant updates the resource-cap census.
 
 `docs/decode-resource-caps.md` lists every production `MAX_*` constant with its
-kind, and states the overall, per-kind, and per-crate counts.
-`scripts/check-resource-caps.py` checks them. After a rebase the totals
-include the constants upstream added since the merge base, so they are
-re-added, not taken from either side of a conflict.
+kind. `scripts/check-resource-caps.py` checks the rows against the tree and
+computes the counts, so the document stores none.
 """
 
 from __future__ import annotations
@@ -75,14 +73,13 @@ def run(context):
     if not (context.root / CHECKER).is_file():
         return context.skipped(f"{CHECKER} is not in this tree", *changed)
     checker = load_checker(context.root)
-    findings = checker.check_tree(context.root)
-    total = len(checker.production_constants(context.root))
+    constants, _rows, findings = checker.census(context.root)
+    total = len(constants)
     if findings:
         return context.failed(
             f"resource-cap census disagrees with the tree ({total} production MAX_* constants)",
             *changed, *findings[:20],
-            f"fix: add each new constant to {CENSUS} with its kind, drop each removed one, "
-            f"and set the overall, per-kind, and per-crate totals (overall {total}); "
-            f"then python3 {CHECKER}",
+            f"fix: add a row with its kind to {CENSUS} for each new constant and drop the row "
+            f"of each removed one; then python3 {CHECKER}",
         )
     return context.passed(f"census matches {total} production MAX_* constants", *changed)

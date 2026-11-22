@@ -1,6 +1,6 @@
 # cadmpeg corpus
 
-This directory holds the public specimens. A specimen is a CAD file that a CAD application wrote, checked in with its provenance and SHA-256, so that tests can check the codecs against real producer output. Every specimen in `manifest.toml` must pass `cadmpeg check`; `cargo test -p cadmpeg --test corpus_manifest` enforces it. Two acquisition classes are accepted.
+This directory holds the public specimens. A specimen is a CAD file that a CAD application wrote, checked in with its provenance and SHA-256, so that tests can check the codecs against real producer output. Every specimen in `manifest.toml` must pass `cadmpeg check`; `cargo test -p cadmpeg --test integration corpus_manifest` enforces it. Two acquisition classes are accepted.
 
 1. **Contributor-authored CC0 donations.** You created the file from a blank or default template and dedicate it CC0-1.0. CAD files enter this class only through the donation process below. Donation rules follow the clean-room policy in [LEGAL.md](../LEGAL.md).
 2. **Third-party U.S. government public-domain specimens.** NIST-authored MBE PMI models and similar works that are not subject to U.S. copyright under 17 U.S.C. §105. These are not CC0 dedications by cadmpeg, and cadmpeg does not claim authorship. Stamp them `LicenseRef-NIST-PD`, keep the publisher disclaimer, and record the official download URL, SHA-256, and acquisition date. See [`nist-pmi/README.md`](nist-pmi/README.md). This class is maintainer-curated from the official publisher archives.
@@ -60,9 +60,9 @@ vertices = 8
 One manifest field is not donor-supplied. `dialect` holds the `crates/cadmpeg-registry/docs/dialects.toml` id that the codec's own `inspect()` reads out of the file's bytes, pinned like a golden. Do not write it by hand and do not copy it from the registry: run
 
 ```sh
-UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
+UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test integration corpus_manifest
 ```
 
-and review the diff. `cargo test -p cadmpeg --test corpus_manifest` then compares the pins against a fresh classification, so a codec change that reclassifies a corpus file is a test failure. The test verifies each `sha256` first: a pin describes the exact bytes it was derived from.
+and review the diff. `cargo test -p cadmpeg --test integration corpus_manifest` then compares the pins against a fresh classification, so a codec change that reclassifies a corpus file is a test failure. The test verifies each `sha256` first: a pin describes the exact bytes it was derived from.
 
 `dialect` and `authoring_app_version` are different axes. The first is what the bytes are, the second is what wrote them. Neither is derivable from the other, so the manifest carries both.
