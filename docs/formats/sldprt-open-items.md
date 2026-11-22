@@ -1224,3 +1224,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** A profile body follows little-endian u32 `3` and a zero flag byte (`sldprt.md` §2.3) and belongs to the innermost profile-family object that holds it. Without a complete walk, the feature-name records do not delimit those objects. In 149 parts, 383 profile bodies have curves whose radii or lengths can be compared with the curve records of the `sgSketch` lists of the same stream. For 366 bodies, some list shares a radius or length with the body. The list before the body is that list for 141 bodies. For 99 bodies only one list shares a value with the body. That list is the list before the body for 8 of them, stands one to eight lists earlier for 90, and follows the body for 1. The name span that holds a body binds it to a sketch feature whose own list shares no value with the body for 189 of 349 sketch features in 79 designs.
 
 **Need.** A complete object walk of these streams, or the field of the profile-family object that points to its `sgSketch` object, compared with the faces each consuming feature produces.
+
+### DI-84. Produced bodies of a configuration without a bound partition
+
+**Question.** Which carrier states the bodies a feature produces in a configuration whose `Config-N-Partition` is absent or unbound?
+
+**Known.** The `FACE_ID_2001` producers and the `LAST_BODY_MODIFYING_FEATURE_ID` attributes of a configuration's own partition state the bodies each feature produces in that configuration (`sldprt.md` §2, §5). The decoder gives the feature states of a configuration with unresolved body membership no produced body, and a decode loss counts the configurations with unresolved body membership. The document features name their producers over every decoded partition, so a document feature can name a body that the active configuration's partition does not hold.
+
+**Need.** A `Config-N` or `Config-N-ResolvedFeatures` record that names output bodies by an identity the partition also stores (`ATOM_ID_2001`), compared with a configuration whose partition holds the same bodies.
