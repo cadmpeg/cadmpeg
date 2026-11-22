@@ -160,12 +160,15 @@ pub(super) fn project_full_round_fillet(
         return Ok(None);
     }
     let center_faces = project_face_selection(scope, group, face_operands, histories)?;
-    if matches!(center_faces, cadmpeg_ir::features::FaceSelection::Native(_)) {
+    if matches!(
+        center_faces,
+        cadmpeg_ir::features::selections::FaceSelection::Native(_)
+    ) {
         return Ok(None);
     }
     Ok(Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::FullRoundFillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(or_none!(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(or_none!(
                 cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
                     center_faces,
                     cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
@@ -207,7 +210,7 @@ pub(super) fn project_variable_fillet(
     let (points, tangency_weight) = or_none!(variable_fillet_law(parameters));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                 edges: resolved_edge_treatment_group_with_corners(
                     group,
                     crate::design::edge_resolve::EdgeTreatmentInputs {
@@ -570,7 +573,12 @@ pub(super) fn project_fixed_chamfer(
             ctx,
             losses,
         )?;
-        if shared && matches!(edges, cadmpeg_ir::features::EdgeSelection::Native(_)) {
+        if shared
+            && matches!(
+                edges,
+                cadmpeg_ir::features::selections::EdgeSelection::Native(_)
+            )
+        {
             losses.push(crate::loss::F3dLossCode::ChamferSelectionUnresolved.note(format!(
                 "Chamfer {} retains native selection {} because the group of its shared fixed specification resolves to no input edges.",
                 scope.id, group.id
@@ -591,7 +599,7 @@ pub(super) fn project_fixed_chamfer(
         )));
     }
     let groups = projected.try_into().unwrap_or_else(|_| {
-        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+        cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
             edges: chamfer::unresolved_selection(scope, None, losses),
             spec,
         })

@@ -9,9 +9,8 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedBodyRef,
-};
+use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;

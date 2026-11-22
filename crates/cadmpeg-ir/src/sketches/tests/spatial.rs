@@ -11,7 +11,7 @@ const EPS_SPATIAL_FRAME_BOUNDARY: f64 = 1.0e-9;
 
 #[test]
 fn admitted_spatial_line_checks_only_endpoint_separation() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
 
     let start = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite start");
@@ -32,15 +32,14 @@ fn admitted_spatial_line_checks_only_endpoint_separation() {
 
 #[test]
 fn spatial_sketch_geometry_round_trips_and_validates() {
+    use crate::features::parameters::{DesignParameter, ParameterValue};
+    use crate::features::ParameterId;
+    use crate::scalar::Length;
     use crate::sketches::{
         OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinitionInput, SpatialSketchEntity, SpatialSketchEntityId,
         SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
         SpatialSketchId, SpatialSketchProfile,
-    };
-    use crate::{
-        features::{DesignParameter, ParameterId, ParameterValue},
-        scalar::Length,
     };
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -131,7 +130,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         expression: "2 mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -147,7 +146,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         expression: "sqrt(3) mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(3.0f64.sqrt()).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -548,7 +547,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
 
 #[test]
 fn spatial_sketch_paths_round_trip_through_json() {
-    use crate::features::PathRef;
+    use crate::features::profiles::PathRef;
     use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
     let path = PathRef::spatial_sketch_curves(
@@ -559,15 +558,16 @@ fn spatial_sketch_paths_round_trip_through_json() {
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
-    let native =
-        crate::features::NativeSelections::try_from(vec!["native:path-selection#0".into()])
-            .map(
-                |selections| crate::features::PathRef::SpatialSketchSelection {
-                    sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-                    selections,
-                },
-            )
-            .unwrap();
+    let native = crate::features::selections::NativeSelections::try_from(vec![
+        "native:path-selection#0".into(),
+    ])
+    .map(
+        |selections| crate::features::profiles::PathRef::SpatialSketchSelection {
+            sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+            selections,
+        },
+    )
+    .unwrap();
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
@@ -706,7 +706,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
             if index == 0 {
                 mapped.x = f64::NAN;
             }
-            crate::features::FinitePoint3::new(mapped).ok_or(())
+            crate::features::geometry::FinitePoint3::new(mapped).ok_or(())
         })
         .is_err());
     assert_eq!(curve, before);

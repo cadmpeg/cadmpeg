@@ -1137,8 +1137,10 @@ fn copying_a_revolution_procedure_preserves_it() {
     let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
         crate::families::b5::transfer::ResolvedRevolutionSurface {
             directrix,
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .expect("finite origin"),
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .expect("finite origin"),
             axis_direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("unit axis"),
             angular_interval: [0.0, 1.0],

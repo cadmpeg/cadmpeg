@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `Mirror` scope projection.
 
-use super::pattern_seeds::pattern_group_seeds;
+use super::pattern_seeds::{pattern_feature_seed_substituted_loss, pattern_group_seeds};
 use super::unique_feature_match;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
@@ -22,6 +22,7 @@ pub(super) fn project_mirror(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &std::collections::HashMap<(&str, u32), u64>,
     losses: &mut Vec<LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -53,25 +54,34 @@ pub(super) fn project_mirror(
     let (Some(seed_group), Some(_plane_group)) = (seed_group, plane_group) else {
         return None;
     };
-    let seeds = if let Some(record_index) = construction
+    let seed_scope = construction
         .seed_feature_scope_record_index
-        .map(|reference| reference.value)
-    {
-        let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
-            native_stream(&candidate.id) == Some(stream) && candidate.record_index == record_index
-        }));
-        let seed_scope = seed_scope?;
+        .and_then(|reference| {
+            unique_feature_match(scopes.iter().filter(|candidate| {
+                native_stream(&candidate.id) == Some(stream)
+                    && candidate.record_index == reference.value
+                    && authored_ordinals.contains_key(&(stream, candidate.record_index))
+            }))
+        });
+    let seeds = if let Some(seed_scope) = seed_scope {
         vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
             seed_scope,
         ))]
     } else {
-        pattern_group_seeds(
+        let loss_count = losses.len();
+        let seeds = pattern_group_seeds(
             scope,
             seed_group,
             face_operands,
             entity_selection_operands,
             scopes,
-        )
+            authored_ordinals,
+            losses,
+        );
+        if construction.seed_feature_scope_record_index.is_some() && losses.len() == loss_count {
+            losses.push(pattern_feature_seed_substituted_loss(scope, seed_group));
+        }
+        seeds
     };
     let assumed_plane_scope = match (&construction.plane, &construction.plane_scope_record_index) {
         (None, None) => construction.assumed_plane_scope.as_ref(),
@@ -104,12 +114,12 @@ pub(super) fn project_mirror(
         }
     };
     let origin_scale = if scale_origin { 10.0 } else { 1.0 };
-    let plane_origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+    let plane_origin = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
         plane_origin.x * origin_scale,
         plane_origin.y * origin_scale,
         plane_origin.z * origin_scale,
     ))?;
-    let plane_normal = cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?;
+    let plane_normal = cadmpeg_ir::features::geometry::FeatureDirection3::new(plane_normal)?;
     let pattern = PatternKind::new(PatternTransform::Mirror {
         plane_origin,
         plane_normal,

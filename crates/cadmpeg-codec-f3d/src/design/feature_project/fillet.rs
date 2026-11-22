@@ -22,7 +22,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::edge_treatments::{
     FilletGroup, FullRoundFilletGroup, FullRoundSideSelection, RadiusSpec,
 };
-use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashSet;
 
@@ -191,7 +192,7 @@ pub(super) fn project<'a>(
     };
     Ok(FilletProjection::Existing(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::Native(scope.id.clone()),
                 radius: RadiusSpec::Constant { radius },
                 tangency_weight: None,
@@ -250,7 +251,7 @@ fn project_partial<'a>(
             }
             return Ok(FilletProjection::Promoted {
                 definition: FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-                    groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                         FullRoundFilletGroup::new(
                             center_faces,
                             FullRoundSideSelection::Automatic,

@@ -4,7 +4,8 @@
 use super::super::uniqueness::{unique_feature_definition_for_transform, UniqueById};
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
-use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::revolve::RevolveExtent;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_recipe(

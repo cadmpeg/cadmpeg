@@ -7,9 +7,8 @@ use crate::records::parameters::DesignParameter;
 use cadmpeg_ir::features::mesh::{
     MeshFaceGroupGenerationSettings, MeshFaceGroupMethod, MeshSelection,
 };
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
-};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Fraction, NonNegativeLength};
 

@@ -7,7 +7,7 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::{PointCloudId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::topology::Color;

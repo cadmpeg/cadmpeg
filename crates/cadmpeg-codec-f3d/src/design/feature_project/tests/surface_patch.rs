@@ -15,11 +15,11 @@ use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft;
 use crate::records::topology::construction::DesignConstructionOperandRole;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
-use cadmpeg_ir::features::PathRef;
-use cadmpeg_ir::features::SurfaceBoundary;
 use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:test/Design/BulkStream.dat";

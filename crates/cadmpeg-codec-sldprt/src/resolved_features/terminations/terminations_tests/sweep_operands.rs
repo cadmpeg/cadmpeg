@@ -5,10 +5,10 @@ use super::super::{
 };
 use super::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
 use crate::resolved_features::bindings::bind_sweep_profile_inputs;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
-    SketchFeatureBinding, SolidSweepOperation, SweepMode, SweepSection, SweepShape,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepMode, SweepSection, SweepShape};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::BTreeMap;
 
@@ -39,7 +39,7 @@ fn model(id: &str, ordinal: u64, definition: FeatureDefinition) -> cadmpeg_ir::f
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,

@@ -475,14 +475,18 @@ pub(super) fn append_generated_sketch_markers(
                 ))
             })?;
         let value = match (&parameter.value, class) {
-            (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
+            (Some(cadmpeg_ir::features::parameters::ParameterValue::Length(_)), "sgAnglDim") => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT angular dimension {} has a length value",
                     parameter.id.as_str()
                 )));
             }
-            (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.get(),
-            (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.get() * 0.001,
+            (Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(value)), "sgAnglDim") => {
+                value.get()
+            }
+            (Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)), _) => {
+                value.get() * 0.001
+            }
             _ => {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",

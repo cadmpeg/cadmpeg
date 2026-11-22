@@ -48,7 +48,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         if index == target {
             pole.z = 750.0;
         }
-        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+        cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
             cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                 "control_points contains a non-finite point".into(),
             )
@@ -179,7 +179,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 if index == 1 {
                     point.y = 1_500.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -208,7 +208,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 if index == target {
                     pole.z = 750.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -333,7 +333,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[1].position().get();
     decoded.ir_mut().geometry.points[1].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -406,7 +406,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .contains_key(&point_id));
     let moved = decoded.ir_mut().geometry.points[1].position().get();
     decoded.ir_mut().geometry.points[1].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -506,7 +506,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         let direction = line_curve.direction();
         let mut origin = line_curve.origin().get();
         origin.y = 12.0;
-        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+        let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap();
         *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     }
 
@@ -615,7 +615,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         .insert(
             cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#configuration-only")
                 .expect("identity grammar"),
-            cadmpeg_ir::features::ParameterValue::Integer(3),
+            cadmpeg_ir::features::parameters::ParameterValue::Integer(3),
         );
     {
         let source_fidelity = decoded.source_fidelity_mut();
@@ -744,7 +744,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
 
     let moved = decoded.ir_mut().geometry.points[1].position().get();
     decoded.ir_mut().geometry.points[1].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_500.0, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -833,7 +833,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[1].position().get();
     decoded.ir_mut().geometry.points[1].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             1_250.0, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),

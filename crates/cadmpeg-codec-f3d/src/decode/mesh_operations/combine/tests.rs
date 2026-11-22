@@ -173,7 +173,7 @@ fn combine_missing_scope_still_binds_a_neutral_feature_and_keeps_parameters() {
         source_tag: Some("MeshCombine".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "MeshCombine".into(),
                 parameters: [(cadmpeg_core::nonblank_literal!("d1"), "1 mm".into())].into(),

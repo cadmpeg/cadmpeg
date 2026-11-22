@@ -14,10 +14,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         sheet_metal::{DesignBendPosition, DesignEdgeFlangeOperation, DesignSheetMetalHeightDatum},
     };
 
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
-        SheetMetalFlangeWidth, SheetMetalHeightDatum,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+        SheetMetalHeightDatum,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
@@ -226,7 +227,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     else {
         panic!("expected a sheet-metal edge flange");
     };
-    let cadmpeg_ir::features::SheetMetalFlangeHeight::Distance(height) = height else {
+    let cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeight::Distance(height) = height
+    else {
         panic!("expected a distance flange height");
     };
     assert!((height.get() - 25.0).abs() < 1.0e-12);
@@ -386,7 +388,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     };
     assert_eq!(
         edges,
-        cadmpeg_ir::features::EdgeSelection::Native(multi_scope.id.clone())
+        cadmpeg_ir::features::selections::EdgeSelection::Native(multi_scope.id.clone())
     );
 
     let mut per_edge_parameters = parameters.clone();
@@ -552,7 +554,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     assert_eq!(
         width,
         SheetMetalFlangeWidth::TwoSidesPerEdge {
-            widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(vec![
+            widths: cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeEdgeWidths::new(vec![
                 SheetMetalFlangeTwoSidedWidth::complete(
                     cadmpeg_ir::scalar::PositiveLength::new(30.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(15.0).unwrap()
@@ -837,9 +839,10 @@ fn edge_flange_to_object_fixture(
 
 #[test]
 fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, true, false)
     })
@@ -866,9 +869,10 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 
 #[test]
 fn edge_flange_unresolved_to_object_keeps_native_target() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
         edge_flange_to_object_fixture(decode_ctx, false, false)
@@ -893,10 +897,11 @@ fn edge_flange_unresolved_to_object_keeps_native_target() {
 
 #[test]
 fn edge_flange_two_sided_projects() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
-        SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+    use cadmpeg_ir::features::sheet_metal_forms::{
+        SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeTwoSidedWidth,
+        SheetMetalFlangeWidth,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::PositiveLength;
 
     let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
@@ -1001,7 +1006,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         scope::DesignParameterScope,
         surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
     };
-    use cadmpeg_ir::features::SurfaceContinuity;
+    use cadmpeg_ir::features::surface_inputs::SurfaceContinuity;
 
     let boundary = |continuity: DesignPatchContinuity| DesignSurfacePatchBoundary {
         scope_reference_ordinal: 0,
@@ -1027,17 +1032,21 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         scope
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
-        cadmpeg_ir::features::NonEmptyMembers::try_from(crate::test_support::with_decode_context(
-            |_decode_ctx| {
+        cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
+            crate::test_support::with_decode_context(|_decode_ctx| {
                 crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(
                     scope,
                 )
-            },
-        ))
+            }),
+        )
         .ok()
-        .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
+        .map(
+            |conditions| cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity {
+                conditions,
+            },
+        )
         .and_then(|continuity| continuity.uniform())
-        .map(cadmpeg_ir::features::FilledSurfaceBoundaryCondition::continuity)
+        .map(cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::continuity)
     };
 
     for (code, expected) in [
@@ -1063,10 +1072,10 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
             crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(&mixed)
         }),
         vec![
-            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Tangent {
+            cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Tangent {
                 weight: cadmpeg_ir::scalar::PositiveReal::new(0.5),
             },
-            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+            cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
         ]
     );
     assert!(uniform_continuity(&mixed).is_none());
@@ -1091,7 +1100,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
         scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
         surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
     };
-    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+    use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
     use cadmpeg_ir::scalar::PositiveReal;
 
     let mut scope =
@@ -1306,9 +1315,9 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
                 ][..],
             )
     ));
@@ -1341,9 +1350,9 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
-                    cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
                 ][..],
             )
     ));
@@ -1362,9 +1371,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             construction::DesignConstructionOperandGroupFrame,
         },
     };
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, SheetMetalHemDirection, SheetMetalHemForm,
-    };
+    use cadmpeg_ir::features::sheet_metal_forms::{SheetMetalHemDirection, SheetMetalHemForm};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let owner = |scope_record_index: u32,
@@ -1470,7 +1478,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         .unwrap()
     };
     let operation = |parameter_owners| DesignHemOperation {
-        bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+        bend_position: cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
         flipped: false,
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710_u32.try_into().unwrap(),
@@ -1541,7 +1549,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         reversed,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             direction: SheetMetalHemDirection::Reverse,
-            bend_position: cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent,
+            bend_position:
+                cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemBendPosition::Adjacent,
             ..
         })
     ));

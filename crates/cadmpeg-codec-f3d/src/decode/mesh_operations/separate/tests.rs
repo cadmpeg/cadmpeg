@@ -129,7 +129,7 @@ fn unbound_feature(scope_id: &str) -> Feature {
         source_tag: Some("MeshSeparate".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "MeshSeparate".into(),
                 parameters: [(
@@ -489,7 +489,8 @@ fn separate_preserves_collisions_and_post_process_controls() {
             .set_definition(FeatureDefinition::PostProcess {
                 operation,
                 refine: true,
-                fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Automatic,
+                fuzzy_tolerance:
+                    cadmpeg_ir::features::operation_settings::FuzzyTolerance::Automatic,
             });
     });
     assert_eq!(feature.source_properties["parameter:distance"], "original");
@@ -517,7 +518,7 @@ fn separate_preserves_collisions_and_post_process_controls() {
                 ..
             },
             refine: true,
-            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Automatic,
+            fuzzy_tolerance: cadmpeg_ir::features::operation_settings::FuzzyTolerance::Automatic,
         }
     ));
 }

@@ -21,11 +21,18 @@ use crate::decode::sketch_transfer::recipe::{
 };
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
+};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::patterns::PatternKind;
+use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::revolve::{PartialRevolveConstruction, RevolveConstruction};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    patterns::PatternKind, BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-    FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureOperation as IrFeatureOperation, FeatureTreeNodeRole, LinearTermination,
-    PartialRevolveConstruction, ProfileRef, RevolveConstruction, UnresolvedFamily,
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -176,7 +183,7 @@ fn name_only_feature_definition(
         return Ok(Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::TreeNode {
                 role,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             },
         )));
     }
@@ -278,13 +285,15 @@ pub(super) fn extrude_feature_definition_with_profile(
             ),
             |(extent, direction)| {
                 (
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)).map_or(
-                        ExtrudeDirection::Unresolved {},
-                        |vector| ExtrudeDirection::Explicit {
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::from(
+                        direction,
+                    ))
+                    .map_or(ExtrudeDirection::Unresolved {}, |vector| {
+                        ExtrudeDirection::Explicit {
                             vector,
                             source: None,
-                        },
-                    ),
+                        }
+                    }),
                     extent,
                 )
             },
@@ -293,7 +302,7 @@ pub(super) fn extrude_feature_definition_with_profile(
         IrFeatureOperation::Extrude {
             profile,
             direction,
-            start: cadmpeg_ir::features::ExtrudeStart::default(),
+            start: cadmpeg_ir::features::extents::ExtrudeStart::default(),
             extent,
             op,
             solid: sweep_solid(output_kind),

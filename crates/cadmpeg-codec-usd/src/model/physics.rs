@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::physics::{
     Articulation, Collider, ColliderShape, MassProperties, PhysicalMaterial, PhysicsTarget,

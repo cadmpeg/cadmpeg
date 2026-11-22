@@ -7,7 +7,8 @@ use super::fillet_blends::{
 };
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition};
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 

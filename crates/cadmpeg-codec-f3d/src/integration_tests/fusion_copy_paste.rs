@@ -131,7 +131,8 @@ fn assert_paste_inserts_its_copies(
     native: &crate::native::F3dNative,
     copies: usize,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
+    use cadmpeg_ir::features::selections::InsertedBodies;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let scope = paste_scope(native);
     let mut features = ir
         .model

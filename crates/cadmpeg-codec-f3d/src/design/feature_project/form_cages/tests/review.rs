@@ -191,7 +191,7 @@ fn form_enrichment_upgrades_resource_evidence_in_both_directions() {
         entry: cadmpeg_core::nonblank_literal!("asset/TSplines.BlobParts/cage.tsm"),
     };
     let path = |record| FormInputPath {
-        references: cadmpeg_ir::features::NonEmptyMembers::one(
+        references: cadmpeg_ir::features::selections::NonEmptyMembers::one(
             cadmpeg_ir::ids::NativeId::mint(format!("f3d:scope:record#{record}")).unwrap(),
         ),
     };
