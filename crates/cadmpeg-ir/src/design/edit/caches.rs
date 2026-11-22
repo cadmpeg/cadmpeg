@@ -207,6 +207,7 @@ impl CadIr {
         }
         let own = in_force.len();
         for arrangement in self
+            .design
             .arrangements_in_force(prototype, configuration.as_ref())
             .ok()?
         {
@@ -565,6 +566,7 @@ impl CadIr {
         let mut order: Vec<(usize, usize)> = Vec::new();
         for (at, configuration) in self.design.configurations.iter().enumerate() {
             let depth = self
+                .design
                 .configuration_chain(&configuration.id)
                 .map_or(0, |chain| chain.len());
             order.push((depth, at));

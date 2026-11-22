@@ -481,11 +481,11 @@ fn audit_rolling_ball_jet(
     radius: f64,
     end_knot: f64,
     second_derivative: f64,
-) -> crate::geometry::ProceduralSurfaceDefinition {
-    use crate::geometry::{
-        ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-        RollingBallJetStation, RollingBallJetStations,
+) -> crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition {
+    use crate::geometry::blends::{
+        RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation, RollingBallJetStations,
     };
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::math::Vector3;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     let derivative = RollingBallJetDerivative {
@@ -551,10 +551,10 @@ fn numerical_audit_rolling_ball_keeps_endpoint_when_unused_product_overflows() {
 
 #[test]
 fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
-    use crate::geometry::{
-        ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-        RollingBallJetStation, RollingBallJetStations,
+    use crate::geometry::blends::{
+        RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation, RollingBallJetStations,
     };
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::math::Vector3;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     let derivative = RollingBallJetDerivative {

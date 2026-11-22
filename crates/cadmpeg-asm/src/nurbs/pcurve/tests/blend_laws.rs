@@ -18,8 +18,8 @@ use crate::nurbs::proc_curve::rolling_ball_patch_layout;
 use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
 use crate::nurbs::proc_surface::EmbeddedLawExpression;
 use crate::nurbs::toks::{lex_test_span, test_table, Cur};
+use cadmpeg_ir::geometry::blends::RollingBallSupportCurve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::RollingBallSupportCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -28,7 +28,7 @@ use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind;
 
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for (name, kind) in [
@@ -247,7 +247,7 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
         );
         assert!(matches!(
             construction.tail,
-            cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
+            cadmpeg_ir::geometry::laws::LawSurfaceTail::Full { .. }
         ));
         assert_eq!(cache_fit_tolerance, Some(0.07));
     }
@@ -318,10 +318,12 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
             assert_eq!(cache_fit_tolerance, None);
             assert!(matches!(
                 (&construction.tail, selector),
-                (cadmpeg_ir::geometry::LawSurfaceTail::Summary { .. }, 1)
-                    | (cadmpeg_ir::geometry::LawSurfaceTail::None { .. }, 2)
-                    | (cadmpeg_ir::geometry::LawSurfaceTail::Historical {}, 3)
-                    | (cadmpeg_ir::geometry::LawSurfaceTail::Optimal {}, 4)
+                (
+                    cadmpeg_ir::geometry::laws::LawSurfaceTail::Summary { .. },
+                    1
+                ) | (cadmpeg_ir::geometry::laws::LawSurfaceTail::None { .. }, 2)
+                    | (cadmpeg_ir::geometry::laws::LawSurfaceTail::Historical {}, 3)
+                    | (cadmpeg_ir::geometry::laws::LawSurfaceTail::Optimal {}, 4)
             ));
         }
     }

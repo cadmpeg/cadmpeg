@@ -4,10 +4,9 @@ use super::{ArenaPositions, Builder, Tables};
 use crate::brep::{ShapePayload, ShapePayloadRecord, TextTShapes};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    analytic::PlaneSurface, ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::analytic::PlaneSurface;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;

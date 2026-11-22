@@ -4,7 +4,7 @@ use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
 
 use crate::solve::incidence::incidence_choice_components;
 
-use crate::solve::mesh_quotient::MeshQuotient;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
 
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 
@@ -204,7 +204,7 @@ fn common_boundary_propagation_succeeds_for_a_single_ordered_face() {
     let candidates = vec![Vec::new(), Vec::new()];
     let run = |ctx: &DecodeContext<'_>| {
         let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
-        crate::solve::mesh_quotient::propagate_common_boundary_components(
+        crate::solve::mesh_quotient::common_propagation::propagate_common_boundary_components(
             ctx,
             &domains,
             &candidates,
@@ -232,7 +232,7 @@ fn unordered_cycle_search_closes_a_triangle() {
     );
     let budget = WorkBudget::new(10_000);
     assert!(
-        !crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
+        !crate::solve::mesh_quotient::common_propagation::bounded_unordered_cycle_assignments(
             &[0, 1, 2],
             &quotient,
             16,
