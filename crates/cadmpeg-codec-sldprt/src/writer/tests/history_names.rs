@@ -6,6 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -88,6 +89,7 @@ fn history_charges(losses: &[LossNote]) -> Vec<&LossNote> {
             let code = loss.code.local_code();
             code.starts_with("writer.history-")
                 || code == "writer.keywords-characters-replaced"
+                || code == "writer.keywords-text-trimmed"
                 || code == "writer.feature-fields-omitted"
         })
         .collect()
@@ -400,4 +402,130 @@ fn a_history_the_decoder_reads_from_the_written_file_is_written_and_one_it_does_
     );
     assert_eq!(written.keywords, KEYWORDS.as_bytes());
     assert!(charged(&written.reread, SldprtLossCode::HistoryUnread).is_empty());
+}
+
+#[test]
+fn blank_and_edge_padded_text_items_are_trimmed_or_left_out_and_named() {
+    let texts = |values: &[&str]| {
+        values
+            .iter()
+            .map(|value| HistoryElementContent::Text((*value).into()))
+            .collect::<Vec<_>>()
+    };
+    let mut written = write_edited(KEYWORDS.as_bytes(), |native| {
+        let history = &mut native.feature_histories[0];
+        history
+            .content
+            .insert(1, HistoryContent::Text(" edge ".into()));
+        history.content.insert(2, HistoryContent::Text("  ".into()));
+        history
+            .content
+            .insert(3, HistoryContent::Text("tail".into()));
+        child(application(history), 0).content = texts(&["lead", "", " x\t"]);
+    });
+    assert_regenerated(&written);
+    let trimmed = charged(&written.losses, SldprtLossCode::WriterKeywordsTextTrimmed);
+    assert_eq!(trimmed.len(), 1, "{:?}", written.losses);
+    assert!(
+        trimmed[0].contains("of 2 record(s)")
+            && trimmed[0].contains("Application \"Simulation\" > Keyword \"Analysis type\""),
+        "{}",
+        trimmed[0]
+    );
+    assert!(
+        charged(&written.reread, SldprtLossCode::HistoryXmlNormalised).is_empty(),
+        "{:?}",
+        written.reread
+    );
+    let history = &mut written.history;
+    assert!(matches!(
+        &history.content[1..3],
+        [HistoryContent::Text(a), HistoryContent::Text(b)] if a == "edge" && b == "tail"
+    ));
+    assert_eq!(
+        child(application(history), 0).content,
+        texts(&["lead", "x"])
+    );
+}
+
+/// A Keywords text whose one feature holds 256 attributes and no `Type`:
+/// the reader reads it, and refuses the regenerated text, which adds `Type`.
+fn full_feature() -> String {
+    let attributes = (0..254)
+        .map(|index| format!(" a{index}=\"{index}\""))
+        .collect::<Vec<_>>()
+        .concat();
+    format!(
+        "<Keywords Name=\"Second\"><ReferencePlane id=\"21\" Name=\"Q1\"{attributes}><Dimension Name=\"D1\">3mm</Dimension></ReferencePlane></Keywords>"
+    )
+}
+
+#[test]
+fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_it() {
+    let second = full_feature();
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", KEYWORDS.as_bytes()));
+    source.extend(make_block(0x42, "Contents/Keywords", second.as_bytes()));
+    let mut decoded: cadmpeg_test_support::EditableDecodeResult = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap()
+        .into();
+    assert_eq!(sldprt_native(decoded.ir()).feature_histories.len(), 2);
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let mut bytes = Vec::new();
+    let output = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let refused = charged(
+        &output.losses,
+        SldprtLossCode::WriterHistoryRegenerationRefused,
+    );
+    assert_eq!(refused.len(), 2, "{:?}", output.losses);
+    assert!(
+        refused
+            .iter()
+            .any(|note| note.contains("does not read back")
+                && note.contains(
+                    "the 2 retained source block(s) of the member are written as stored"
+                )),
+        "{refused:?}"
+    );
+    assert!(
+        refused.iter().any(|note| note
+            .contains("another history of the member is not regenerated")
+            && note.contains("the 2 retained source block(s) of the member are written as stored")),
+        "{refused:?}"
+    );
+    assert!(
+        output
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("sldprt:file:block#")),
+        "{:?}",
+        output.losses
+    );
+    let mut stored = crate::test_support::container::scan(&bytes)
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/Keywords"))
+        .map(|block| block.payload.clone())
+        .collect::<Vec<_>>();
+    stored.sort();
+    let mut sources = vec![KEYWORDS.as_bytes().to_vec(), second.into_bytes()];
+    sources.sort();
+    assert_eq!(stored, sources);
+    let reread = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let histories = sldprt_native(reread.ir()).feature_histories;
+    assert_eq!(histories.len(), 2);
+    assert!(histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| feature.name == "Q1" && feature.properties.len() == 254));
 }

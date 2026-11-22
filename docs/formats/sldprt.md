@@ -371,7 +371,7 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 
 An XML payload stores its text as UTF-8, as UTF-16LE after the BOM `ff fe`, or as UTF-8 after one lead byte `85` or `86`. The `swXmlContents/KeyWords` section and a compound-file `KeyWords__ZLB` stream hold the Keywords feature history, a `Keywords` root element. Its first child element can be an `Application` element whose `Keyword` children each hold a `Name` attribute and a text value (CM-18).
 
-A stored Keywords member begins with the XML declaration `<?xml version="1.0" encoding="UTF-8"?>` and CRLF before the `Keywords` root, after lead byte `86` in most members, after lead byte `85` in some and after no lead byte in a few (CM-17).
+A stored Keywords member begins with the XML declaration `<?xml version="1.0" encoding="UTF-8"?>` and CRLF before the `Keywords` root, after lead byte `86`, after lead byte `85`, or with no lead byte (CM-17).
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
 

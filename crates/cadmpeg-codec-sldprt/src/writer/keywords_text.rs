@@ -7,7 +7,9 @@
 //! hold, or that the reader reads as another record, is written under
 //! `Feature` with its kind in `Type`. An element of the history whose tag XML
 //! cannot hold is left out with its subtree. A dimension whose name becomes
-//! the name of another dimension of its record is left out. Each is named.
+//! the name of another dimension of its record is left out. A text item or
+//! dimension value is written without its edge whitespace, and a text item
+//! that holds only whitespace is left out. Each is named.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -34,6 +36,8 @@ const DIMENSION_ATTRIBUTES: &[&str] = &["Name"];
 struct Changes {
     /// Records with a character replaced.
     replaced: BTreeSet<String>,
+    /// Records with a text item or dimension value trimmed or left out.
+    trimmed: BTreeSet<String>,
     /// Records with properties left out, each with the names.
     left_out: Vec<String>,
     /// Dimensions left out.
@@ -87,7 +91,7 @@ pub(crate) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
         history.content.retain_mut(|item| match item {
             HistoryContent::Text(text) => {
                 changed |= replace(text);
-                true
+                readable_text(text, &label, &mut changes.trimmed)
             }
             HistoryContent::Element(element) => readable_element(element, &label, &mut changes),
             HistoryContent::Configuration(_) | HistoryContent::Feature(_) => true,
@@ -139,25 +143,36 @@ pub(crate) fn readable_keywords(ir: &CadIr, native: &mut SldprtNative) -> Vec<Lo
             let mut changed = replace(&mut feature.name);
             changed |= replace(&mut feature.kind);
             changed |= feature.text.as_mut().is_some_and(replace);
+            if let Some(text) = &mut feature.text {
+                if !readable_text(text, owner, &mut changes.trimmed) {
+                    feature.text = None;
+                }
+            }
             changed |= properties(
                 &mut feature.properties,
                 FEATURE_ATTRIBUTES,
                 owner,
                 &mut changes.left_out,
             );
-            for item in &mut feature.content {
-                if let FeatureContent::Text(text) = item {
+            feature.content.retain_mut(|item| match item {
+                FeatureContent::Text(text) => {
                     changed |= replace(text);
+                    readable_text(text, owner, &mut changes.trimmed)
                 }
-            }
+                FeatureContent::Dimension(_) | FeatureContent::Feature(_) => true,
+            });
             if changed {
                 changes.replaced.insert(owner.to_owned());
             }
             for (name, expression) in &mut feature.parameters {
+                let label = || dimension_label(&parameters, owner, name.as_str());
                 if replace(expression) {
-                    changes
-                        .replaced
-                        .insert(dimension_label(&parameters, owner, name.as_str()));
+                    changes.replaced.insert(label());
+                }
+                let kept = expression.trim();
+                if kept.len() != expression.len() {
+                    *expression = kept.to_owned();
+                    changes.trimmed.insert(label());
                 }
             }
             for (name, properties_of) in &mut feature.dimension_properties {
@@ -235,6 +250,15 @@ impl Changes {
                 self.elements.join(", ")
             )));
         }
+        if !self.trimmed.is_empty() {
+            notes.push(SldprtLossCode::WriterKeywordsTextTrimmed.note(format!(
+                "the SLDPRT history writer writes the text items and dimension values of {} \
+                 record(s) without their edge whitespace, and leaves out their text items that \
+                 hold only whitespace, which the reader does not keep: {}",
+                self.trimmed.len(),
+                self.trimmed.into_iter().collect::<Vec<_>>().join(", ")
+            )));
+        }
         if !self.replaced.is_empty() {
             notes.push(
                 SldprtLossCode::WriterKeywordsCharactersReplaced.note(format!(
@@ -265,7 +289,7 @@ fn readable_element(element: &mut HistoryElement, parent: &str, changes: &mut Ch
     element.content.retain_mut(|item| match item {
         HistoryElementContent::Text(text) => {
             changed |= replace(text);
-            true
+            readable_text(text, &label, &mut changes.trimmed)
         }
         HistoryElementContent::Element(child) => readable_element(child, &label, changes),
     });
@@ -273,6 +297,19 @@ fn readable_element(element: &mut HistoryElement, parent: &str, changes: &mut Ch
         changes.replaced.insert(label);
     }
     true
+}
+
+/// Write `text`, a text item of the record `label` names, without its edge
+/// whitespace. Returns false when nothing is left, so the caller leaves the
+/// item out. Records `label` in `trimmed` when the item changes or is left
+/// out.
+fn readable_text(text: &mut String, label: &str, trimmed: &mut BTreeSet<String>) -> bool {
+    let kept = text.trim();
+    if kept.is_empty() || kept.len() != text.len() {
+        *text = kept.to_owned();
+        trimmed.insert(label.to_owned());
+    }
+    !text.is_empty()
 }
 
 fn dimension_label(parameters: &HashMap<(&str, &str), &str>, owner: &str, name: &str) -> String {

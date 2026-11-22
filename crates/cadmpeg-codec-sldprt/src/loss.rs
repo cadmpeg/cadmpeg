@@ -370,6 +370,10 @@ pub(crate) enum SldprtLossCode {
     /// Export writes the named Keywords records with U+FFFD in place of each
     /// character XML 1.0 does not allow.
     WriterKeywordsCharactersReplaced,
+    /// Export writes the text items and dimension values of the named
+    /// Keywords records without their edge whitespace, and leaves out text
+    /// items that hold only whitespace, which the reader does not keep.
+    WriterKeywordsTextTrimmed,
     /// Export writes the named features as Keywords history records without
     /// the feature objects from which `SolidWorks` rebuilds a part.
     WriterHistoryKeywordsOnly,
@@ -378,8 +382,8 @@ pub(crate) enum SldprtLossCode {
     /// cannot hold the tag or the reader reads it as another record.
     WriterHistoryNameNotWritten,
     /// A regenerated Keywords text cannot be built or is refused by the
-    /// reader, so the source member is written in its place or no member is
-    /// written.
+    /// reader, so the source member, or the retained source blocks of the
+    /// member, are written in its place, or no member is written.
     WriterHistoryRegenerationRefused,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
@@ -576,6 +580,7 @@ impl SldprtLossCode {
         Self::WriterFeatureFieldsOmitted,
         Self::WriterParametersRenamed,
         Self::WriterKeywordsCharactersReplaced,
+        Self::WriterKeywordsTextTrimmed,
         Self::WriterHistoryKeywordsOnly,
         Self::WriterHistoryNameNotWritten,
         Self::WriterHistoryRegenerationRefused,
@@ -751,6 +756,7 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
             Self::WriterParametersRenamed => "writer.parameters-renamed",
             Self::WriterKeywordsCharactersReplaced => "writer.keywords-characters-replaced",
+            Self::WriterKeywordsTextTrimmed => "writer.keywords-text-trimmed",
             Self::WriterHistoryKeywordsOnly => "writer.history-keywords-only",
             Self::WriterHistoryNameNotWritten => "writer.history-name-not-written",
             Self::WriterHistoryRegenerationRefused => "writer.history-regeneration-refused",
@@ -817,6 +823,7 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => Severity::Warning,
             Self::WriterParametersRenamed => Severity::Warning,
             Self::WriterKeywordsCharactersReplaced => Severity::Warning,
+            Self::WriterKeywordsTextTrimmed => Severity::Warning,
             Self::WriterHistoryKeywordsOnly => Severity::Warning,
             Self::WriterHistoryNameNotWritten => Severity::Warning,
             Self::WriterHistoryRegenerationRefused => Severity::Error,
@@ -992,6 +999,7 @@ impl SldprtLossCode {
             Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterParametersRenamed => LossTaxonomy::AttributesNotTransferred,
             Self::WriterKeywordsCharactersReplaced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsTextTrimmed => LossTaxonomy::AttributesNotTransferred,
             Self::WriterHistoryKeywordsOnly => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
@@ -1475,6 +1483,7 @@ mod tests {
                 "writer.feature-fields-omitted",
                 "writer.parameters-renamed",
                 "writer.keywords-characters-replaced",
+                "writer.keywords-text-trimmed",
                 "writer.history-keywords-only",
                 "writer.history-name-not-written",
                 "writer.history-regeneration-refused",

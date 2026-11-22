@@ -396,6 +396,8 @@ pub(crate) fn write_semantic_with_records(
     } else {
         Vec::new()
     };
+    let mut history_members = Vec::new();
+    let mut stored_sections = HashMap::<String, usize>::new();
     for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
@@ -406,15 +408,36 @@ pub(crate) fn write_semantic_with_records(
             |provenance| provenance.stream().to_owned(),
         );
         let source_blocks = retained_blocks(retained_records, annotations, &section);
-        if let Some(payload) = crate::history::write::keywords::history_member(
+        match crate::history::write::keywords::history_member(
             history,
             &section,
             &retained_histories,
             &source_blocks,
             &mut losses,
         )? {
-            members.push(&mut sections, &mut unwritten, section, payload);
+            Some(payload) => history_members.push((section, history.id.as_str(), payload)),
+            None => {
+                let stored = source_blocks.iter().flatten().count();
+                if stored != 0 {
+                    stored_sections.insert(section, stored);
+                }
+            }
         }
+    }
+    for (section, history, payload) in history_members {
+        if let Some(stored) = stored_sections.get(&section) {
+            losses.push(
+                crate::loss::SldprtLossCode::WriterHistoryRegenerationRefused.note(format!(
+                    "Keywords member {section}: another history of the member is not \
+                     regenerated, so the {stored} retained source block(s) of the member are \
+                     written as stored in place of every member generated for it; history \
+                     {history} is in the file only as those blocks hold it, so its edits are not \
+                     written"
+                )),
+            );
+            continue;
+        }
+        members.push(&mut sections, &mut unwritten, section, payload);
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
         let section = match &lane.configuration {

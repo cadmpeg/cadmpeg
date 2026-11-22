@@ -20,12 +20,14 @@ use crate::records::{
 pub(crate) type RetainedHistory = (FeatureHistory, String, Vec<u8>);
 
 /// What precedes the root element of a generated Keywords member with no
-/// source member: lead byte `86`, the XML declaration and CRLF, the form of
-/// most stored members (sldprt.md §2).
+/// source member: lead byte `86`, the XML declaration and CRLF, a form of a
+/// stored member (sldprt.md §2).
 const DEFAULT_PREFIX: &[u8] = b"\x86<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n";
 
 /// The bytes of the Keywords member `section` for `history`, or `None` when
-/// no member is generated.
+/// no member is generated. After `None` with a retained block that holds
+/// bytes, the caller writes the retained blocks of `section` as stored and no
+/// generated member of `section`.
 ///
 /// An unchanged history writes its retained source member. A changed one is
 /// regenerated after the lead byte and XML declaration of its source member,

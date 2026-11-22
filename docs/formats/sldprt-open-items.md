@@ -241,9 +241,9 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
 
-**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`. cadmpeg regenerates an edited member after the lead byte and declaration of its source member, and writes a member with no source member after lead byte `86`, the most frequent form (`sldprt.md` §2).
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`. cadmpeg regenerates an edited member after the lead byte and declaration of its source member, and writes a member with no source member after lead byte `86` (`sldprt.md` §2).
 
-**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+**Need.** The producer rule that selects the byte, so that a writer selects it for a Keywords member with no source member.
 
 ### CM-18. Keywords `Application` element
 
