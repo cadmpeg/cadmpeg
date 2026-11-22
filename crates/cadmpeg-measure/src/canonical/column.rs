@@ -3,7 +3,7 @@
 //! one `v`, for inner integrals along the isoline.
 
 use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;

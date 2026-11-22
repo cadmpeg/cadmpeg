@@ -166,7 +166,7 @@ macro_rules! define_model_index {
                 tessellations: Tessellation, model;
                 appearances: Appearance, model;
                 features: crate::features::Feature, model;
-                parameters: crate::features::DesignParameter, model;
+                parameters: crate::features::parameters::DesignParameter, model;
                 sketch_entities: crate::sketches::SketchEntity, model;
             ]
         }
@@ -510,20 +510,22 @@ mod tests {
         );
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:fixture:model#0";
-        ir.model.parameters.push(crate::features::DesignParameter {
-            product_definition: None,
-            id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: "p1".into(),
-            expression: "1".into(),
-            display: None,
-            value: None,
-            dependencies: crate::features::DistinctMembers::default(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        });
+        ir.model
+            .parameters
+            .push(crate::features::parameters::DesignParameter {
+                product_definition: None,
+                id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
+                owner: None,
+                ordinal: 0,
+                name: "p1".into(),
+                expression: "1".into(),
+                display: None,
+                value: None,
+                dependencies: crate::features::selections::DistinctMembers::default(),
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
 
         let full = ModelIndex::build(&ir);
         let model_only = ModelIndex::new_model_only(&ir);
@@ -552,7 +554,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(model_id).unwrap(),
-            crate::features::FinitePoint3::ZERO,
+            crate::features::geometry::FinitePoint3::ZERO,
             None,
         ));
         let mut namespace = NativeNamespace::default();
@@ -598,20 +600,22 @@ mod tests {
         let parameter_id =
             crate::features::ParameterId::mint("test:test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
-            ir.model.parameters.push(crate::features::DesignParameter {
-                product_definition: None,
-                id: parameter_id.clone(),
-                owner: None,
-                ordinal,
-                name: format!("p{ordinal}"),
-                expression: expression.into(),
-                display: None,
-                value: None,
-                dependencies: crate::features::DistinctMembers::default(),
-                properties: std::collections::BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            });
+            ir.model
+                .parameters
+                .push(crate::features::parameters::DesignParameter {
+                    product_definition: None,
+                    id: parameter_id.clone(),
+                    owner: None,
+                    ordinal,
+                    name: format!("p{ordinal}"),
+                    expression: expression.into(),
+                    display: None,
+                    value: None,
+                    dependencies: crate::features::selections::DistinctMembers::default(),
+                    properties: std::collections::BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                });
         }
 
         let index = ModelIndex::new_model_only(&ir);
@@ -714,8 +718,9 @@ mod tests {
         let mut ir = CadIr::empty();
         let id = crate::ids::PointId::mint("test:model:point#duplicate").unwrap();
         for position in [
-            crate::features::FinitePoint3::ZERO,
-            crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            crate::features::geometry::FinitePoint3::ZERO,
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         ] {
             ir.geometry
                 .points

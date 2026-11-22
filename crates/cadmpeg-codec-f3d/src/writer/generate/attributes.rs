@@ -63,6 +63,18 @@ pub(super) struct AttributeOwnerStarts {
 }
 
 impl<'a> AttributeIndex<'a> {
+    /// The index with the ASM body key of each body of `target` set to
+    /// `key` of its ordinal: a Base Feature design keys its history stream's
+    /// bodies from `0` and its snapshot stream's bodies `-1` (f3d.md §3.1,
+    /// "Archive members of a Base Feature design").
+    pub(super) fn with_body_keys(mut self, target: &'a CadIr, key: impl Fn(i64) -> i64) -> Self {
+        self.body_keys = (0..)
+            .zip(&target.geometry.bodies)
+            .map(|(ordinal, body)| (body.id.as_str(), key(ordinal)))
+            .collect();
+        self
+    }
+
     pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let body_keys = emitted_body_keys(target, native);

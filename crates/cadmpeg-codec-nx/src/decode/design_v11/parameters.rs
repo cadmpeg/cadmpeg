@@ -21,7 +21,8 @@ use cadmpeg_ir::design::expr::{
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DesignParameter as LegacyParameter, FeatureId, ParameterId};
+use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 

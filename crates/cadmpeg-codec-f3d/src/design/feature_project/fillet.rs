@@ -1,11 +1,14 @@
-use super::{
-    design_positive_length, full_round_fillet_source, native_scope_definition,
-    project_face_selection, project_full_round_fillet, project_variable_fillet,
-    resolved_fillet_assignments, ProjectInputs,
-};
+use super::design_positive_length;
+use super::full_round_fillet_source;
+use super::native_scope_definition;
+use super::project_face_selection;
+use super::ProjectInputs;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_treatment_group_with_corners,
 };
+use crate::design::feature_project::edge_treatments::project_full_round_fillet;
+use crate::design::feature_project::edge_treatments::project_variable_fillet;
+use crate::design::feature_project::edge_treatments::resolved_fillet_assignments;
 use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand;
@@ -19,7 +22,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::edge_treatments::{
     FilletGroup, FullRoundFilletGroup, FullRoundSideSelection, RadiusSpec,
 };
-use cadmpeg_ir::features::{EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashSet;
 
@@ -188,7 +192,7 @@ pub(super) fn project<'a>(
     };
     Ok(FilletProjection::Existing(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                 edges: EdgeSelection::Native(scope.id.clone()),
                 radius: RadiusSpec::Constant { radius },
                 tangency_weight: None,
@@ -247,7 +251,7 @@ fn project_partial<'a>(
             }
             return Ok(FilletProjection::Promoted {
                 definition: FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-                    groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                         FullRoundFilletGroup::new(
                             center_faces,
                             FullRoundSideSelection::Automatic,

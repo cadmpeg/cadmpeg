@@ -30,9 +30,9 @@ fn extrusion_depth_edit_without_brep_edit_is_refused() {
             else {
                 panic!("typed extrusion feature");
             };
-            *extent = cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
+            *extent = cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Blind {
                         length: cadmpeg_ir::scalar::NonZeroLength::new(50.0).unwrap(),
                     },
                     draft: None,
@@ -67,9 +67,9 @@ fn feature_output_scope_edit_is_refused() {
     } else {
         Vec::new()
     };
-    decoded.ir_mut().model.features[0]
-        .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
+    decoded.ir_mut().model.features[0].evaluation.set_outputs(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(replacement).unwrap(),
+    );
     let error = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -118,9 +118,9 @@ fn feature_output_edit_with_nongeometric_history_edit_is_refused() {
         Vec::new()
     };
     let mut edit = decoded.ir_mut();
-    edit.model.features[modeling]
-        .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(replacement).unwrap());
+    edit.model.features[modeling].evaluation.set_outputs(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(replacement).unwrap(),
+    );
     edit.model.features[nongeometric].source_text = Some("changed".into());
     drop(edit);
     let error = crate::test_support::plan_fixture_write_with_native_envelope(
@@ -149,7 +149,7 @@ fn extrusion_parameter_value_edit_without_brep_edit_is_refused() {
         .unwrap();
     let parameter_id = parameter.id.clone();
     parameter.expression = "50mm".into();
-    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+    parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
         cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
     ));
     drop(edit);

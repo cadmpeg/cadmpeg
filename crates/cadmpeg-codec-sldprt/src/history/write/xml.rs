@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native XML tag and operation-kind helpers for write.
 
-use cadmpeg_ir::features::{
-    patterns::PatternTransform, BodyRetentionMode, FeatureDefinition, FeatureOperation, SweepMode,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::patterns::PatternTransform;
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 use crate::history::classify::extrude_op;
 
@@ -181,8 +181,8 @@ pub(crate) fn valid_xml_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, UnresolvedFamily,
+        evaluation::FeatureEvaluation, selections::DistinctMembers, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
     };
 
     fn datum_plane(id: &str) -> Feature {

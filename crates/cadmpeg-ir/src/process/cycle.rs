@@ -17,7 +17,7 @@ use super::technology::FeedRole;
 use super::toolpath::{Motion, MotionValue};
 use crate::design::construction::FrameAxis;
 use crate::design::units::{Duration, Feed};
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::scalar::{Angle, Length};
 
 /// A drilling or probing cycle at one point.

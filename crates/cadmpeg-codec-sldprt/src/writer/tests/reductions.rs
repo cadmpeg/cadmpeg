@@ -68,8 +68,8 @@ fn a_line_edge_range_is_written_bounded_by_its_vertices_and_named() {
 
 fn sketch_feature(id: &str, ordinal: u64) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, SketchFeatureBinding,
+        evaluation::FeatureEvaluation, selections::DistinctMembers, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
     };
     Feature {
         product_definition: None,
@@ -292,7 +292,7 @@ fn a_validation_error_in_the_written_document_is_record_invalid() {
     let point = &mut ir.geometry.points[0];
     let at = point.position().get();
     point.set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             at.x + 1.0,
             at.y,
             at.z,
@@ -373,7 +373,9 @@ fn pmi_added_to_a_native_part_is_named_on_the_patched_path() {
 
 #[test]
 fn a_native_operation_of_another_format_is_dropped_with_its_dependents_and_named() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
+    use cadmpeg_ir::features::{
+        evaluation::FeatureEvaluation, FeatureDefinition, FeatureOperation,
+    };
     let mut ir = written_cube();
     let mut insert = sketch_feature("other:model:feature#insert", 0);
     insert.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(

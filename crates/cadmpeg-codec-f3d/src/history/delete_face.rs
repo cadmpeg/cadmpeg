@@ -5,7 +5,7 @@ use super::output_chain::OutputChain;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
 };
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use std::collections::HashSet;
 
 /// Faces of the preceding state that a healed `DeleteFace` with `members` selects,

@@ -105,7 +105,7 @@ fn analytic_reprojection_preserves_both_torus_chart_branches() {
             6.1 + 0.4 * t,
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
     };
     let curve = fit_edge_with_error(
         [0.0, 1.0],

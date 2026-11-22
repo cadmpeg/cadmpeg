@@ -34,6 +34,11 @@ pub(super) struct EdgeGeometry {
 }
 
 impl EdgeGeometry {
+    /// The midpoint tangent of the edge.
+    pub(super) fn tangent(self) -> Option<Vector3> {
+        self.tangent
+    }
+
     /// Whether the edge has the finite axis row and the finite nonzero
     /// directions that `BlendSpine::admits` compares.
     pub(super) fn is_classified(self) -> bool {
@@ -284,6 +289,78 @@ impl BlendSpine {
             }
         }
     }
+}
+
+/// Millimetres between two points of one plane, between the radii of two
+/// cylinders of one surface, and between the offsets of two parallel axis
+/// lines of one cylinder.
+const SAME_SURFACE_POSITION_TOLERANCE: f64 = 1.0e-9;
+/// Cross product of the unit directions of two carriers of one surface.
+const SAME_SURFACE_DIRECTION_TOLERANCE: f64 = 1.0e-9;
+
+/// The only plane row of a carrier with no cylinder, axis, or radius row.
+fn only_plane(topology: &AsmHistoricalTopology, surface: i64) -> Option<(Point3, Vector3)> {
+    let mut planes = topology
+        .surface_planes
+        .iter()
+        .filter(|row| row.surface == surface);
+    let plane = planes.next()?;
+    let curved = topology
+        .surface_cylinders
+        .iter()
+        .any(|row| row.surface == surface)
+        || topology
+            .surface_axes
+            .iter()
+            .any(|row| row.surface == surface)
+        || topology
+            .surface_radii
+            .iter()
+            .any(|row| row.surface == surface);
+    (planes.next().is_none() && !curved).then_some((plane.origin, plane.normal.unit()?))
+}
+
+/// The only cylinder row of a carrier with no plane row.
+fn only_cylinder(topology: &AsmHistoricalTopology, surface: i64) -> Option<(Point3, Vector3, f64)> {
+    let mut cylinders = topology
+        .surface_cylinders
+        .iter()
+        .filter(|row| row.surface == surface);
+    let cylinder = cylinders.next()?;
+    let planar = topology
+        .surface_planes
+        .iter()
+        .any(|row| row.surface == surface);
+    (cylinders.next().is_none() && !planar).then_some((
+        cylinder.origin,
+        cylinder.axis.unit()?,
+        cylinder.radius,
+    ))
+}
+
+/// Whether two carriers of different states are one surface: planes through
+/// the same points with parallel normals, or cylinders on one axis line with
+/// one radius.
+pub(super) fn same_surface(
+    (before, before_surface): (&AsmHistoricalTopology, i64),
+    (after, after_surface): (&AsmHistoricalTopology, i64),
+) -> bool {
+    if let (Some((left, left_normal)), Some((right, right_normal))) = (
+        only_plane(before, before_surface),
+        only_plane(after, after_surface),
+    ) {
+        return left_normal.cross(right_normal).norm() <= SAME_SURFACE_DIRECTION_TOLERANCE
+            && left_normal.dot(right.vector_from(left)).abs() <= SAME_SURFACE_POSITION_TOLERANCE;
+    }
+    if let (Some((left, left_axis, left_radius)), Some((right, right_axis, right_radius))) = (
+        only_cylinder(before, before_surface),
+        only_cylinder(after, after_surface),
+    ) {
+        return left_axis.cross(right_axis).norm() <= SAME_SURFACE_DIRECTION_TOLERANCE
+            && right.vector_from(left).cross(left_axis).norm() <= SAME_SURFACE_POSITION_TOLERANCE
+            && (left_radius - right_radius).abs() <= SAME_SURFACE_POSITION_TOLERANCE;
+    }
+    false
 }
 
 #[cfg(test)]
