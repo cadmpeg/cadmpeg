@@ -269,7 +269,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
             Point3::new(2.0, 2.0, 7.0),
         ])),
         radius_offsets: [-2.0, -2.0],
-        cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+        cross_section: cadmpeg_ir::geometry::blends::BlendCrossSection::Circular,
         native: None,
     };
     assert!(
@@ -337,7 +337,7 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         ]),
         spine: Some(circle),
         radius_offsets: [-2.0, -2.0],
-        cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
+        cross_section: cadmpeg_ir::geometry::blends::BlendCrossSection::Circular,
         native: None,
     };
     assert!(

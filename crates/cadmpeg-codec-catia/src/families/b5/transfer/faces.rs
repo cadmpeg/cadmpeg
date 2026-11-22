@@ -569,10 +569,9 @@ pub(super) fn emit_faces(
                 if let Some((pcurve, parameter_range)) = pcurve_uses.get(&(loop_.object_id, member))
                 {
                     let directed = if orientation.members[member].pcurve_reversed {
-                        match cadmpeg_ir::geometry::DirectedParameterRange::new([
-                            parameter_range[1].get(),
-                            parameter_range[0].get(),
-                        ]) {
+                        match cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                            [parameter_range[1].get(), parameter_range[0].get()],
+                        ) {
                             Ok(range) => Some(range),
                             Err(_) => return Ok(false),
                         }

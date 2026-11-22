@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/f3d.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `named_parameter_scope_tail` record.
 ///
@@ -416,26 +416,26 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
-/// Byte offsets for the `design_parameter_wide_discriminated_prefix` record.
+/// Byte offsets for the `design_parameter_discriminated_prefix` record.
 ///
-/// Spec §3.1. Record length 35 B.
+/// Spec §3.1. Record length 31 B.
 ///
 /// ```text
-/// Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+/// Offsets are relative to the indexed header of a discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length. The wide discriminated form stores every field from the zero run on four bytes later.
 /// ```
-pub(crate) mod design_parameter_wide_discriminated_prefix {
+pub(crate) mod design_parameter_discriminated_prefix {
     /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 35;
-    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_15: usize = 11;
+    pub(crate) const LEN: usize = 31;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
     /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const FAMILY_DISCRIMINATOR: usize = 26;
-    /// Offset of `reserved_30` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_30: usize = 30;
-    /// Stated value of `reserved_30` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_30_VALUE: u8 = 0;
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 22;
+    /// Offset of `reserved_26` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_26: usize = 26;
+    /// Stated value of `reserved_26` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_26_VALUE: u8 = 0;
     /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const COMMENT_LENGTH: usize = 31;
+    pub(crate) const COMMENT_LENGTH: usize = 27;
 }
 
 /// Byte offsets for the `design_parameter_comment_discriminated_prefix` record.
@@ -7497,6 +7497,9 @@ pub(crate) mod construction_operand_affine_transform_frame {
 /// Offsets are relative to the reference presence marker. The repeated references carry the same entity, source occurrence identity and type GUID.
 /// ```
 pub(crate) mod legacy_occurrence_target_reference {
+    /// Record length in bytes. Spec §1.4.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 60;
     /// Offset of `target_entity` (`u64`, little-endian). Spec §1.4.
     #[cfg(test)]
     pub(crate) const TARGET_ENTITY: usize = 1;
@@ -7877,6 +7880,18 @@ pub(crate) mod compact_reference_profile_chain_record {
     pub(crate) const CHAIN_MARKER: usize = 25;
     /// Offset of `sketch_scope_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
+}
+
+/// Byte offsets for the `compact_reference_sketchless_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 42 B.
+pub(crate) mod compact_reference_sketchless_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 31;
 }
 
 /// Byte offsets for the `compact_reference_profile_identity_record` record.
@@ -8494,10 +8509,8 @@ pub(crate) mod circular_pattern_payload_distribution {
     pub(crate) const LEN: usize = 25;
     /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO: usize = 8;
-    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COMPUTE_OPTION: usize = 8;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 16;
     /// Offset of `fixed_one` (`u8`). Spec §Assembly operands.
@@ -8584,8 +8597,8 @@ pub(crate) mod rectangular_pattern_payload_suffix {
     pub(crate) const SCOPE: usize = 11;
     /// Offset of `seed_group` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SEED_GROUP: usize = 22;
-    /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
-    pub(crate) const ZERO_TAIL: usize = 33;
+    /// Offset of `suppressed_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SUPPRESSED_COUNT: usize = 33;
 }
 
 /// Byte offsets for the `sketch_geometry_ordinal_collection_reference` record.

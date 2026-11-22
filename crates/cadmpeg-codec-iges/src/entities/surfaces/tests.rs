@@ -848,8 +848,9 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .iter()
         .find(|procedural| procedural.id == *construction)
         .expect("line revolution construction");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected an exact revolution definition");
     };
@@ -970,8 +971,9 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("hyperbola revolution construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            definition_payload_0,
+        ) = procedural.definition()
         else {
             panic!("expected an exact revolution definition");
         };
@@ -1079,8 +1081,9 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
             .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.0), Some(2.0), None, None])
     );
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected bounded trimmed revolution");
     };
@@ -1119,8 +1122,9 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     };
     assert_eq!(surface.poles().first().copied().unwrap().x, 11.0);
     let procedural = &result.ir().geometry.procedural_surfaces[0];
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected a revolution definition");
     };

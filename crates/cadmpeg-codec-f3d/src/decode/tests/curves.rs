@@ -113,7 +113,7 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
     let procedural = result.ir().geometry.procedural_curves.first().unwrap();
     assert!(matches!(
         procedural.definition(),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Unknown {
             native_kind: Some(native_kind),
             record: None,
         ..
@@ -122,7 +122,7 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.005)
     );
     assert_eq!(result.ir().geometry.curves.len(), 1);
@@ -130,7 +130,7 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
 
 #[test]
 fn decode_retains_generated_helix_construction() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::math::Point3;
 
     let result = EditableDecodeResult::from(
@@ -168,15 +168,15 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.005)
     );
 
     let mut edited = result.ir().clone();
     edited.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
-        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+        cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
             [-1.0, 7.0],
-            cadmpeg_ir::geometry::HelixFrame {
+            cadmpeg_ir::geometry::helix::HelixFrame {
                 center: Point3::new(12.0, 23.0, 34.0),
                 major: cadmpeg_ir::math::Vector3::new(30.0, 0.0, 0.0),
                 minor: cadmpeg_ir::math::Vector3::new(0.0, -30.0, 0.0),
@@ -242,7 +242,7 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(
         regenerated.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.012)
     );
     assert!(regenerated
@@ -279,14 +279,15 @@ fn decode_retains_generated_helix_construction() {
     assert_eq!(
         round_trip.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.005)
     );
 }
 
 #[test]
 fn cacheless_helix_construction_is_the_exact_edge_carrier() {
-    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::CurveGeometry;
 
     let result = F3dCodec
         .decode(
@@ -366,7 +367,8 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
 
 #[test]
 fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -394,7 +396,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
     assert_eq!(*extension, 0);
     assert!(
-        matches!(primary.formula(), cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
+        matches!(primary.formula(), cadmpeg_ir::geometry::laws::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
     );
     assert!(matches!(
         primary.formula().variables()[0],
@@ -436,7 +438,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 
 #[test]
 fn generated_vector_offset_curve_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, VectorOffsetRoles};
+    use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, VectorOffsetRoles};
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -475,7 +477,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.008)
     );
     let expected_range = *parameter_range;
@@ -529,7 +531,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     assert_eq!(
         regenerated.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.015)
     );
 
@@ -597,7 +599,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     assert_eq!(
         round_trip.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.008)
     );
     assert!(matches!(
@@ -620,7 +622,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_subset_curve_decodes_edits_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -778,7 +780,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
 
 #[test]
 fn generated_exact_intcurve_preserves_native_construction_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = F3dCodec
         .decode(
@@ -791,13 +793,16 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
     assert_eq!(
         result.ir().geometry.procedural_curves[0].definition(),
         &ProceduralCurveDefinition::Exact {
-            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+            cache: Some(
+                cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.004)
+                    .expect("fit tolerance")
+            )
         }
     );
     assert_eq!(
         result.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.004)
     );
 
@@ -821,13 +826,16 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
     assert_eq!(
         round_trip.ir().geometry.procedural_curves[0].definition(),
         &ProceduralCurveDefinition::Exact {
-            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.004).expect("fit tolerance"))
+            cache: Some(
+                cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.004)
+                    .expect("fit tolerance")
+            )
         }
     );
     assert_eq!(
         round_trip.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.004)
     );
 }
@@ -967,7 +975,7 @@ fn generated_spline_surface_sense_uses_token_adjacent_to_subtype() {
 
 #[test]
 fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let cases = [
         with_legacy_subtype(
@@ -1074,7 +1082,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
 
 #[test]
 fn generated_compound_intcurve_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -1132,13 +1140,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         let mut components = compound
             .components()
             .iter()
-            .map(cadmpeg_ir::geometry::CompoundComponent::to_raw)
+            .map(cadmpeg_ir::geometry::procedural_curves::CompoundComponent::to_raw)
             .collect::<Vec<_>>();
         for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
             component.parameter = parameter;
         }
         let restored_cache = compound.legacy_cache();
-        *compound = cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+        *compound = cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
             vec![-0.25, 0.75, 1.25],
             components,
             None,
@@ -1249,7 +1257,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_two_sided_offset_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -1306,7 +1314,11 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
                 *discontinuity_flag = false;
                 *offsets = [-3.0, 5.0];
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap();
         let restored_cache = definition_payload.legacy_cache();
@@ -1362,9 +1374,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_embedded_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{
-        pcurve::PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -1434,7 +1446,11 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 *discontinuity_flag = false;
                 *offsets = [-2.5, 4.5];
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap();
         let restored_cache = definition_payload.legacy_cache();
@@ -1532,7 +1548,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
 
 #[test]
 fn generated_mixed_offset_supports_write_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = F3dCodec
         .decode(
@@ -1564,7 +1580,7 @@ fn generated_mixed_offset_supports_write_source_less() {
                 let discontinuities =
                     cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 let output = {
-                    let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                    let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                         &mut sides;
 
                     (*context_sides)[1].surface = None;
@@ -1584,7 +1600,7 @@ fn generated_mixed_offset_supports_write_source_less() {
                         .clone()
                         .expect("retained first support id")
                 };
-                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(sides, range, discontinuities)
                     .map(|candidate| (candidate, output))
             })
             .unwrap()
@@ -1661,7 +1677,8 @@ fn generated_mixed_offset_supports_write_source_less() {
 
 #[test]
 fn generated_analytic_offset_supports_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = F3dCodec
         .decode(
@@ -1745,7 +1762,8 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 
 #[test]
 fn generated_surface_intersection_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -1810,7 +1828,11 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
                 (*context_parameter_range) = [-1.0, 2.0];
                 *discontinuity_flag = false;
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap()
     });

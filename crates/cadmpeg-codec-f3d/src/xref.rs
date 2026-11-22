@@ -914,7 +914,7 @@ fn bind_occurrences(
         .iter()
         .flat_map(|(placements, _, _, _)| placements)
         .filter(|placement| {
-            legacy_attributed_placement_details(&placement.frame_bytes).is_some()
+            legacy_external_placement_details(&placement.frame_bytes).is_some()
                 && !table.references.iter().any(|reference| {
                     placement
                         .link_names
@@ -1392,17 +1392,7 @@ fn occurrence_placement(
         return Ok(None);
     };
     if let Some(details) = legacy_attributed_placement_details(body) {
-        return Ok(Some(OccurrencePlacement {
-            frame_bytes: body.to_vec(),
-            occurrence_guid: Some(details.occurrence_guid),
-            carrier_record_index: details.carrier_record_index,
-            owner: Some(XrefLocalOwner {
-                target: details.owner,
-                type_guid: None,
-            }),
-            link_names: vec![details.role.to_string()],
-            transform: details.transform,
-        }));
+        return Ok(Some(legacy_external_placement(body, details)));
     }
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_string();
@@ -1415,6 +1405,9 @@ fn occurrence_placement(
             link_names,
             transform,
         }));
+    }
+    if let Some(details) = compact_legacy_placement_details(body) {
+        return Ok(Some(legacy_external_placement(body, details)));
     }
     if let Some(placement) = repeated_target_occurrence_placement(body)? {
         return Ok(Some(placement));
@@ -1471,7 +1464,7 @@ pub(crate) fn placement_source_matches(reference: &XrefReference) -> Result<bool
     let Some(source) = &reference.placement_source else {
         return Ok(true);
     };
-    if let Some(details) = legacy_attributed_placement_details(&source.frame_bytes) {
+    if let Some(details) = legacy_external_placement_details(&source.frame_bytes) {
         return Ok(
             source.occurrence_guid.as_ref() == Some(&details.occurrence_guid)
                 && details.role.eq_str(reference.neutron_role.as_str())
@@ -1526,10 +1519,10 @@ pub(crate) fn current_pose_matches(reference: &XrefReference) -> bool {
 }
 
 pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> bool {
-    legacy_attributed_placement_details(&source.frame_bytes).is_some()
+    legacy_external_placement_details(&source.frame_bytes).is_some()
 }
 
-struct LegacyAttributedPlacementDetails<'a> {
+struct LegacyExternalPlacementDetails<'a> {
     carrier_record_index: u64,
     occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
     occurrence_guid_offset: usize,
@@ -1540,17 +1533,28 @@ struct LegacyAttributedPlacementDetails<'a> {
     transform_offset: Option<usize>,
 }
 
-fn legacy_attributed_placement_details(
+fn legacy_external_placement(
     body: &[u8],
-) -> Option<LegacyAttributedPlacementDetails<'_>> {
-    legacy_attributed_placement_generation(body, false)
-        .or_else(|| legacy_attributed_placement_generation(body, true))
+    details: LegacyExternalPlacementDetails<'_>,
+) -> OccurrencePlacement {
+    OccurrencePlacement {
+        frame_bytes: body.to_vec(),
+        occurrence_guid: Some(details.occurrence_guid),
+        carrier_record_index: details.carrier_record_index,
+        owner: Some(XrefLocalOwner {
+            target: details.owner,
+            type_guid: None,
+        }),
+        link_names: vec![details.role.to_string()],
+        transform: details.transform,
+    }
 }
 
-fn legacy_attributed_placement_generation(
-    body: &[u8],
-    leading_placement: bool,
-) -> Option<LegacyAttributedPlacementDetails<'_>> {
+fn legacy_external_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
+    legacy_attributed_placement_details(body).or_else(|| compact_legacy_placement_details(body))
+}
+
+fn legacy_external_placement_prefix(body: &[u8]) -> Option<LegacyOccurrenceTarget<'_>> {
     let tag_units = usize::try_from(legacy_prefix::CLASS_TAG_LENGTH_VALUE).ok()?;
     let (tag, _) = lp_ascii_strict(body, legacy_prefix::CLASS_TAG_LENGTH, tag_units..=tag_units)?;
     if !tag.as_bytes().iter().all(u8::is_ascii_digit)
@@ -1573,6 +1577,98 @@ fn legacy_attributed_placement_generation(
         return None;
     }
     View::u32_le_at(body, legacy_prefix::PATH_DISCRIMINATOR)?;
+    Some(first)
+}
+
+fn compact_legacy_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
+    let first = legacy_external_placement_prefix(body)?;
+    let mut at = legacy_prefix::LEN;
+    match *body.get(at)? {
+        0 => at += 1,
+        1 => {
+            if View::u32_le_at(body, at + 1)? != 0 {
+                return None;
+            }
+            at += legacy_empty_attributes::LEN;
+        }
+        _ => return None,
+    }
+    if View::u32_le_at(body, at)? == 0 {
+        return None;
+    }
+    at += 4;
+    let (metadata_guid, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    if !metadata_guid.is_guid_relaxed() {
+        return None;
+    }
+    at = next;
+    let occurrence_guid_offset = at + 4;
+    let (occurrence_guid, next) = lp_utf16_bounded_view(body, at, 36..=36)?;
+    let occurrence_guid = occurrence_guid.to_string().try_into().ok()?;
+    at = next;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let repeated = take_legacy_occurrence_reference(body, &mut at)?;
+    if repeated.entity != first.entity
+        || repeated.source_occurrence_identity != first.source_occurrence_identity
+        || !repeated.type_guid.eq_ignore_ascii_case(first.type_guid)
+    {
+        return None;
+    }
+    let identity = *body.get(at)?;
+    at += 1;
+    let (transform, transform_offset) = match identity {
+        1 => (None, None),
+        0 => {
+            let matrix = decode_rigid_matrix(body, at)?;
+            let offset = at;
+            at += 128;
+            (Some(matrix), Some(offset))
+        }
+        _ => return None,
+    };
+    if View::u32_le_at(body, at)? != 0 {
+        return None;
+    }
+    at += 4;
+    let role_offset = at + 4;
+    let (role, next) = lp_utf16_bounded_view(body, at, 1..=256)?;
+    at = next;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let Reference::Local {
+        target: owner,
+        inline_type_guid: None,
+    } = take_reference(body, &mut at)?
+    else {
+        return None;
+    };
+    (owner != 0 && at == body.len()).then_some(LegacyExternalPlacementDetails {
+        carrier_record_index: View::u64_le_at(body, legacy_prefix::ENTITY)?,
+        occurrence_guid,
+        occurrence_guid_offset,
+        owner,
+        role,
+        role_offset,
+        transform,
+        transform_offset,
+    })
+}
+
+fn legacy_attributed_placement_details(body: &[u8]) -> Option<LegacyExternalPlacementDetails<'_>> {
+    legacy_attributed_placement_generation(body, false)
+        .or_else(|| legacy_attributed_placement_generation(body, true))
+}
+
+fn legacy_attributed_placement_generation(
+    body: &[u8],
+    leading_placement: bool,
+) -> Option<LegacyExternalPlacementDetails<'_>> {
+    let first = legacy_external_placement_prefix(body)?;
     let attributes = body.get(legacy_prefix::LEN..)?;
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
@@ -1689,7 +1785,7 @@ fn legacy_attributed_placement_generation(
         return None;
     }
     let tracking_units = usize::try_from(legacy_members::TRACKING_GUID_LENGTH_VALUE).ok()?;
-    Some(LegacyAttributedPlacementDetails {
+    Some(LegacyExternalPlacementDetails {
         carrier_record_index: View::u64_le_at(body, legacy_prefix::ENTITY)?,
         occurrence_guid: lp_utf16_bounded_view(
             members,
@@ -2382,7 +2478,7 @@ pub(crate) struct ComponentPathPose {
 
 /// Parse a component-path carrier whose path is one cross-document element and
 /// one local element that names an occurrence-placement record, in either order,
-/// or a legacy root-component target and then that local element.
+/// or a legacy root-component target and a local element in either order.
 pub(crate) fn component_path_pose(
     body: &[u8],
     serializer_magic: Option<u32>,
@@ -2430,8 +2526,8 @@ pub(crate) fn component_path_pose(
 }
 
 /// The path of a component-path carrier with exactly two elements: a legacy
-/// target of the root-component type, then a local element that names an
-/// occurrence-placement record. Returns the target's entity and source
+/// target of the root-component type and a local occurrence-placement element
+/// in either order. Returns the target's entity and source
 /// occurrence identity, the placement record, and the offset after the path.
 fn legacy_root_component_path(body: &[u8]) -> Option<((u64, u64), u64, usize)> {
     let (_, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
@@ -2440,6 +2536,24 @@ fn legacy_root_component_path(body: &[u8]) -> Option<((u64, u64), u64, usize)> {
         return None;
     }
     at += 5;
+    [true, false]
+        .into_iter()
+        .find_map(|document_first| legacy_root_component_path_order(body, at, document_first))
+}
+
+fn legacy_root_component_path_order(
+    body: &[u8],
+    mut at: usize,
+    document_first: bool,
+) -> Option<((u64, u64), u64, usize)> {
+    let placement = if document_first {
+        None
+    } else {
+        let placement = typed_local_placement(&take_owned_reference(body, &mut at)?)?;
+        View::u32_le_at(body, at)?;
+        at += 4;
+        Some(placement)
+    };
     let target = take_legacy_occurrence_reference(body, &mut at)?;
     if target.entity == 0
         || target.source_occurrence_identity == 0
@@ -2452,15 +2566,22 @@ fn legacy_root_component_path(body: &[u8]) -> Option<((u64, u64), u64, usize)> {
     let target = (target.entity, target.source_occurrence_identity);
     View::u32_le_at(body, at)?;
     at += 4;
-    let placement_record_index = typed_local_placement(&take_owned_reference(body, &mut at)?)?;
-    View::u32_le_at(body, at)?;
-    Some((target, placement_record_index, at + 4))
+    let placement_record_index = match placement {
+        Some(placement) => placement,
+        None => {
+            let placement = typed_local_placement(&take_owned_reference(body, &mut at)?)?;
+            View::u32_le_at(body, at)?;
+            at += 4;
+            placement
+        }
+    };
+    Some((target, placement_record_index, at))
 }
 
 /// The entity and source occurrence identity of the legacy target that opens a
 /// legacy attributed occurrence-placement record.
 fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
-    legacy_attributed_placement_details(body)?;
+    legacy_external_placement_details(body)?;
     let mut at = legacy_prefix::TARGET_REFERENCE;
     let target = take_legacy_occurrence_reference(body, &mut at)?;
     Some((target.entity, target.source_occurrence_identity))

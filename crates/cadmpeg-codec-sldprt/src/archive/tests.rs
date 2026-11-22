@@ -146,6 +146,7 @@ fn a_resolved_features_stream_that_opens_with_a_declaration_carries_no_count() {
     let mut compound = vec![0x0d, 0x00];
     compound.extend(declaration("moSensorFolder_c"));
     assert_eq!(resolved_count(&compound), None);
+    assert_eq!(resolved_count(&declaration("moSensorFolder_c")), None);
     let mut block = 7_u32.to_le_bytes().to_vec();
     block.extend_from_slice(&[0, 0]);
     block.extend(declaration("moSensorFolder_c"));

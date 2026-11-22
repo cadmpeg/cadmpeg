@@ -526,7 +526,10 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
-                    parameter_range: crate::geometry::DirectedParameterRange::new([0.25, 0.75])
+                    parameter_range:
+                        crate::geometry::procedural_curves::DirectedParameterRange::new([
+                            0.25, 0.75,
+                        ])
                         .unwrap(),
                     reversed: true,
                 }],
