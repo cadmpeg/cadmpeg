@@ -204,6 +204,9 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_BIASED_SIGNIFICAND_EXPONENT`         | `0x7fe - 1`                                             | N    | `f64` exponent-field limit for exact summation.                                                                                                                                                                                                                              |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SIGNIFICAND_BITS`                    | `53`                                                    | N    | `f64` significand width.                                                                                                                                                                                                                                                     |
 | `cadmpeg-ir`             | `src/math/sum.rs`                                  | `MAX_SCALED_EXPONENT`                     | `EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS_I32 * 64 + 1` | N    | Accumulator exponent range.                                                                                                                                                                                                                                                  |
+| `cadmpeg-measure` | `src/canonical/curve/inversion.rs` | `MAX_CACHED_CURVE_POINTS` | `1 << 12` | N | The curve-point cache and the boundary-candidate index each use this point cap. A full cache evaluates each further point. An oversized boundary set uses the linear search. |
+| `cadmpeg-measure` | `src/canonical/curve/inversion.rs` | `MAX_CURVE_PARAMETER_INTERVALS` | `512` | 4 | Knot intervals visited by a prepared curve inversion. Exhaustion returns no witness. |
+| `cadmpeg-measure` | `src/canonical/curve/inversion.rs` | `MAX_CURVE_PARAMETER_NEWTON_ITERATIONS` | `12` | 4 | Newton steps in a prepared curve inversion. Exhaustion continues with the certified interval search. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM`         | `1 << 22`                                              | 4    | Measurement pass allowance per face and edge of the document under `--limits desktop`. The allowance is `max(MEASURE_PASS_WORK_FLOOR, k × (faces + edges))`. An item that finds the pass empty makes its remaining quantities `evaluation.work-exhausted`, and `document.work.exhausted` is true; measurement continues. The `check` findings pass draws the same allowance; an item that finds it empty is not checked, and the pass adds one `measurement_incomplete` info finding. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE` | `1 << 18`                                              | 4    | The same per-item allowance under `--limits service`. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY`         | `1 << 12`                                              | N    | Pair allowance of an ID-free comparison (`diff --geometry`) per body of both documents under `--limits desktop`. The allowance is `max(COMPARE_PAIR_WORK_FLOOR, k × bodies)`, `COMPARE_PAIR_WORK_FLOOR = 1 << 20`. Each evaluation of a body pair that can be compatible charges one unit. Exhaustion refuses the comparison at the `measure` stage; it is not a decode bound. |
@@ -570,21 +573,21 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 348.
+Production `MAX_*` constants: 351.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 78    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 173   |
-| N    | Not a decode bound         | 55    |
-|      | Total                      | 348   |
+| 4    | Local work cap             | 175   |
+| N    | Not a decode bound         | 56    |
+|      | Total                      | 351   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-measure` 24, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,

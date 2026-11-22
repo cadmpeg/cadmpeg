@@ -418,7 +418,7 @@ fn interval(
     let seed = domain.map_or(0.0, |[lower, _]| lower);
     let parameter = |point: Point3, seed: f64| -> Measure<f64> {
         chart
-            .parameter(eval, point, seed, alpha)?
+            .parameter(eval, point, seed, alpha, None)?
             .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
     };
     let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;
