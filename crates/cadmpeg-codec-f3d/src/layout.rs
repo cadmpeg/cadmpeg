@@ -1621,6 +1621,44 @@ pub(crate) mod mesh_convert_output_prefix {
     pub(crate) const GUID_LENGTH: usize = 21;
 }
 
+/// Byte offsets for the `mesh_tessellate_scope_prefix` record.
+///
+/// Spec §3.1. Record length 69 B.
+///
+/// ```text
+/// The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count.
+/// ```
+pub(crate) mod mesh_tessellate_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 69;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG_VALUE: u8 = 0;
+    /// Offset of `edge_length_owner` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_LENGTH_OWNER: usize = 21;
+    /// Offset of `operand_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERAND_COUNT: usize = 65;
+}
+
+/// Byte offsets for the `mesh_tessellate_operand` record.
+///
+/// Spec §3.1. Record length 49 B.
+pub(crate) mod mesh_tessellate_operand {
+    /// Record length in bytes. Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 21;
+    /// Offset of `body_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE: usize = 32;
+}
+
 /// Byte offsets for the `mesh_operation_group_prefix` record.
 ///
 /// Spec §3.1. Record length 25 B.
@@ -7962,6 +8000,44 @@ pub(crate) mod typed_reference_profile_identity_record {
     pub(crate) const SELECTION_REFERENCE: usize = 21;
     /// Offset of `region_group_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REGION_GROUP_COUNT: usize = 72;
+}
+
+/// Byte offsets for the `typed_reference_profile_status_record` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the status record indexed header; the counted typed references begin at offset 29.
+/// ```
+pub(crate) mod typed_reference_profile_status_record {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 20;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 24;
+    /// Offset of `lost_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOST_REFERENCE_COUNT: usize = 25;
+}
+
+/// Byte offsets for the `typed_reference_profile_lost_record` record.
+///
+/// Spec §3.1. Record length 51 B.
+///
+/// ```text
+/// Offsets are relative to the lost profile-reference record indexed header.
+/// ```
+pub(crate) mod typed_reference_profile_lost_record {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `marker_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MARKER_LENGTH: usize = 25;
+    /// Offset of `marker` (`bytes[22]`). Spec §3.1.
+    pub(crate) const MARKER: usize = 29;
 }
 
 /// Byte offsets for the `typed_reference_companion_prefix` record.

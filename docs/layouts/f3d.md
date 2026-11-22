@@ -1935,6 +1935,47 @@ Unstated regions:
 
 - `0..11` (11 B): Indexed header.
 
+## `mesh_tessellate_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 69 B
+
+The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | Its indexed header is followed by nine zero bytes and flag byte `00` at offset 20 |
+| 20 | 1 | `flag` | `u8` | little | spec | flag byte `00` at offset 20 · value `0` |
+| 21 | 11 | `edge_length_owner` | `bytes[11]` | little | spec | the maximum-edge-length owner reference at offset 21 |
+| 32 | 11 | `normal_deviation_owner` | `bytes[11]` | little | spec | the normal-deviation owner reference at offset 32 |
+| 43 | 11 | `aspect_ratio_owner` | `bytes[11]` | little | spec | the aspect-ratio owner reference at offset 43 |
+| 54 | 11 | `surface_deviation_owner` | `bytes[11]` | little | spec | the surface-deviation owner reference at offset 54 |
+| 65 | 4 | `operand_count` | `u32` | little | spec | a u32 operand count at offset 65 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
+## `mesh_tessellate_operand`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes, a marked same-segment reference to a construction-operand group at offset 21 |
+| 21 | 11 | `group_reference` | `bytes[11]` | little | spec | a marked same-segment reference to a construction-operand group at offset 21 |
+| 32 | 11 | `body_reference` | `bytes[11]` | little | spec | a marked same-segment reference to the mesh body that the operation produces at offset 32 |
+| 43 | 6 | `tail` | `bytes[6]` | little | spec | bytes `01 01 00 00 00 00` at offset 43 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+
 ## `mesh_remove_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 108 B
@@ -8901,6 +8942,45 @@ Parsed by:
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 21 | 51 | `selection_reference` | `bytes[51]` | little | spec | The identity record at the record index plus three stores ten zero bytes |
 | 72 | 4 | `region_group_count` | `u32` | little | spec | The identity record at the record index plus three stores ten zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_status_record`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the status record indexed header; the counted typed references begin at offset 29.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 20 | 4 | `constant_one` | `u32` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 24 | 1 | `zero_byte` | `u8` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+| 25 | 4 | `lost_reference_count` | `u32` | little | spec | The status record at the typed-reference profile selection's record index plus two stores nine zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_profile_lost_record`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the lost profile-reference record indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 25 | 4 | `marker_length` | `u32` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 29 | 22 | `marker` | `bytes[22]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
 
 Unstated regions:
 
