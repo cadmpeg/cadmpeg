@@ -467,6 +467,9 @@ pub(super) struct Readings<'a> {
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     /// The parameters a reference dimension binds.
     pub(super) driven: HashSet<ParameterId>,
+    /// The value the active configuration's equation manager stores beside
+    /// each dimension its lines name: metres, radians, or a count.
+    pub(super) manager: HashMap<ParameterId, f64>,
 }
 
 /// The parameters of the timeline's features and of the equations folders,
@@ -741,7 +744,15 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
                 Some(Ok((kind, value))) => (kind, Some(value)),
                 named => {
                     unread = named.and_then(Result::err);
-                    if native_parameter_is_length(feature, name, Some(text)) {
+                    let manager = shown
+                        .filter(|_| !references && bound.is_none_or(|q| q == Quantity::LENGTH))
+                        .zip(readings.manager.get(&entry.id))
+                        .and_then(|(shown, stored)| {
+                            manager_length(shown.number, *stored, readings.length_unit)
+                        });
+                    if let Some(value) = manager {
+                        (ValueKind::Quantity(Quantity::LENGTH), Some(value))
+                    } else if native_parameter_is_length(feature, name, Some(text)) {
                         (ValueKind::Quantity(Quantity::LENGTH), None)
                     } else if let Some(quantity) = bound {
                         (ValueKind::Quantity(quantity), None)
@@ -797,6 +808,19 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         rounded: false,
         unvalued,
     }
+}
+
+/// The length the equation manager's `stored` metres give a dimension whose
+/// text is the bare display `number` and that no record types: the stored
+/// value, where `number` in the part's length unit `unit` is that many
+/// metres and is not the stored number itself, which a count, a ratio, or
+/// radians store (`docs/formats/sldprt.md`).
+fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<ParameterValue> {
+    let metres = number * canonical(unit?)?.1 / MM_PER_M;
+    let same = |a: f64, b: f64| (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs());
+    (number != 0.0 && same(metres, stored) && !same(number, stored))
+        .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
+        .flatten()
 }
 
 /// The literal of a dimension whose text is the bare display `number`, and

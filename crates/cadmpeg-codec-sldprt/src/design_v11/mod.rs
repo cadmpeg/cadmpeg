@@ -119,6 +119,12 @@ pub(crate) fn project(
         bound: typed.bound,
         measured: typed.measured,
         driven: typed.references,
+        manager: equations::stored_values(
+            &managers,
+            active,
+            &timeline.features,
+            |feature, name| entries.owned(feature, name).cloned(),
+        ),
     };
     let (mut parameters, notes) = entries.parameters(&definition, &readings);
     losses.extend(notes);

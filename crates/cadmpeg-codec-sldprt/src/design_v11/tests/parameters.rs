@@ -259,6 +259,7 @@ fn parameters_with_scalars(
                     bound: std::collections::HashMap::new(),
                     measured: std::collections::HashMap::new(),
                     driven: std::collections::HashSet::new(),
+                    manager: std::collections::HashMap::new(),
                 },
             );
     (ir, parameters, notes)
