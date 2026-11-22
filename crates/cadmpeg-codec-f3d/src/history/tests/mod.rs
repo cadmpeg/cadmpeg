@@ -37,3 +37,15 @@ mod recipe_transitions;
 mod projection_reuse;
 
 mod topology_projection;
+
+pub(super) fn bind_feature_body_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    inputs: &super::FeatureBodySelectionInputs<'_>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let (mut losses, refusals) =
+        super::bind_feature_body_selections_with_refusals(features, inputs);
+    losses.extend(super::native_combine_operand_refusal_notes(
+        features, refusals,
+    ));
+    losses
+}

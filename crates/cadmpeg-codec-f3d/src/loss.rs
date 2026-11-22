@@ -994,6 +994,10 @@ pub(crate) enum F3dLossCode {
     /// prologue, and whose lists do not complete that prologue, is read in the
     /// standard prologue.
     FeatureCombinePrologueAssumed,
+    /// An operand-list Combine prologue stores an operation-entry form other
+    /// than one entry or a null-first two-entry pair; its tool list is read
+    /// after the last stored entry.
+    FeatureCombineOperationEntriesAssumed,
     FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
     /// the operand-list prologue or cannot be checked, and which no prologue
@@ -2007,6 +2011,7 @@ impl F3dLossCode {
         Self::FeatureCombineOperandBodyUnbound,
         Self::FeatureCombineToolRecipeReplacementAssumed,
         Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineOperationEntriesAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
@@ -3170,6 +3175,9 @@ impl F3dLossCode {
                 "feature.combine-tool-recipe-replacement-assumed"
             }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineOperationEntriesAssumed => {
+                "feature.combine-operation-entries-assumed"
+            }
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineToolConsumptionAssumed => {
@@ -4106,6 +4114,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperationEntriesAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -4870,6 +4879,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperationEntriesAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -5790,6 +5800,7 @@ mod tests {
                 "feature.combine-operand-body-unbound",
                 "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",
+                "feature.combine-operation-entries-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",

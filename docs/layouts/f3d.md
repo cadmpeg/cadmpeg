@@ -3249,7 +3249,7 @@ Offsets are relative to the class-329 primary indexed scope header. The variable
 
 Spec §3.1 · layout: byte offsets · size: 58 B
 
-Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
+Offsets are relative to the primary indexed scope header, without a property block or companion references, and with one operation entry whose ordinary local reference is present. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3260,7 +3260,7 @@ Offsets are relative to the primary indexed scope header, without a property blo
 | 25 | 4 | `companion_count` | `u32` | little | spec | the companion count u32 at offset 25 |
 | 29 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 29 |
 | 30 | 1 | `new_component` | `u8` | little | spec | the new-component Boolean at offset 30 |
-| 31 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 31, a marked nonzero |
+| 31 | 4 | `entry_count` | `u32` | little | spec | the operation-entry count u32 at offset 31 |
 | 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
 | 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 with a two-byte zero trailing field, a u64 |
 | 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field, a u64 |
