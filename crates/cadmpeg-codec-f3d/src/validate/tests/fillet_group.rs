@@ -201,7 +201,7 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
             .push(wire.try_into().unwrap());
     }
     native.design_fillet_radius_groups =
-        crate::design::decode::operands::decode_fillet_radius_groups(
+        crate::design::decode::operands::fillets::decode_fillet_radius_groups(
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
@@ -232,7 +232,7 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
     });
     native.design_parameters.pop();
     assert!(
-        crate::design::decode::operands::decode_fillet_radius_groups(
+        crate::design::decode::operands::fillets::decode_fillet_radius_groups(
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
@@ -260,7 +260,7 @@ fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
     second.id.push_str("-second");
     native.design_construction_operand_groups.push(second);
     assert!(
-        crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+        crate::design::decode::operands::fillets::fixed_fillet_assignment_is_unresolved(
             &native.design_parameter_scopes[0],
             &native.design_construction_operand_groups,
         )
