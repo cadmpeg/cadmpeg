@@ -461,3 +461,47 @@ object identifiers after the end of its function name:
 Chamfer type `41` has one setback on both faces. Type `43` has two setbacks.
 Type `42` has a setback and an angle.
 
+## 8. Patterns and mirrors
+
+### 8.1 Pattern features
+
+A pattern is a `CLSID_JMGroup` entry of the navigator (§4.1). The `u32` at
+object offset 106 of the group object is the identifier of a `CLSID_JMPart`
+object with function `JMFastPatternFunction`. The `u32` at object offset
+337 is the identifier of the seed feature. The profile of the
+`JMFastPatternFunction` object (§5.3) has one `CLSID_JPattern2d` member.
+
+A `CLSID_JPattern2d` object holds the pattern parameters after the last
+occurrence of the GUID `{0145EEC0-1602-11CE-B7EE-08003601E53B}` in it. With
+`E` the offset after that GUID:
+
+| Offset | Field |
+| ---: | --- |
+| `E` + 14 | `u32` pattern kind: `1` rectangular, `2` circular |
+| `E` + 26 | `u32` first count |
+| `E` + 30 | `u32` second count |
+| `E` + 34 | `f64` first spacing, or the angle between instances |
+| `E` + 42 | `f64` second spacing |
+
+The `CLSID_JPattern2d` object references its sketch geometry by
+`u32` triples of `0x10`, `0x80000000` and an object identifier. A
+rectangular pattern references four `CLSID_JLine2d` objects that run round
+the rectangle from the first instance to the last. The first line runs from
+the seed position along the first direction. The second line runs along the
+second direction. The first count and spacing apply along the first
+direction, and the second count and spacing along the second direction.
+
+A circular pattern references one `CLSID_JArc2d` object. Its centre is on
+the pattern axis, which is normal to the profile plane. The first count is
+the number of instances, and the angle between instances is the
+`f64` at `E` + 34.
+
+All values are in profile coordinates, metres and radians.
+
+### 8.2 Mirror features
+
+A mirror is a `CLSID_JMGroup` entry of the navigator whose `u32` at object
+offset 92 is the seed count `c`. `c` seed feature identifiers follow from
+offset 96. For `c` = 1, the `u32` at object offset 329 is the identifier of
+the `ReferencePlaneObject` about which the seed is mirrored.
+
