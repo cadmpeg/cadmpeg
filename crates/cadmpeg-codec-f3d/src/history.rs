@@ -2754,7 +2754,8 @@ pub(crate) fn native_combine_operand_refusal_notes(
     features: &[cadmpeg_ir::features::Feature],
     refusals: Vec<CombineOperandRefusal>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let native = |selection: &BodySelection| {
         matches!(
             selection,

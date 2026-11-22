@@ -1067,7 +1067,10 @@ fn operand_list_prologue_reads_every_operation_entry_before_the_tool_list() {
         fixture.further_operation_entries = further;
         let operation = fixture.decode().expect("operand-list Combine");
         assert_eq!(operation.form, DesignCombineForm::OperandLists);
-        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+        assert_eq!(
+            operation.operation,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+        );
         assert_eq!(operation.target_record_index, 96);
         assert_eq!(operation.tools.iter().count(), 2);
     }
