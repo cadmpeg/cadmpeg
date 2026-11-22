@@ -814,7 +814,8 @@ mod tests {
     }
     /// An added feature takes an identifier past every identifier the part's
     /// objects hold: past the parameter `D1`, whose trailer identifier `133`
-    /// is above the history's largest, `132`, which `KeyWords` does not list.
+    /// is above the history's largest, `132`, which `KeyWords` does not list,
+    /// and past no value a scalar without a parameter trailer holds.
     #[test]
     fn an_added_feature_takes_an_identifier_past_every_identifier_the_part_holds() {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -829,6 +830,17 @@ mod tests {
         let mut trailer = [0_u8; 35];
         trailer[3..7].copy_from_slice(&133_u32.to_le_bytes());
         resolved.extend(trailer);
+        // A named scalar whose value a class declaration follows: the bytes
+        // at +3 are no identifier.
+        resolved.extend([0x04, 0x80, 0xff, 0xfe, 0xff, 2]);
+        resolved.extend("D2".encode_utf16().flat_map(u16::to_le_bytes));
+        resolved.extend([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+            0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+        ]);
+        resolved.extend(0.02_f64.to_le_bytes());
+        resolved.extend([0x00, 0xff, 0xff, 0x01, 0x00, 0x10, 0x00]);
+        resolved.extend(b"moDimTolerance_c");
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
@@ -853,7 +865,7 @@ mod tests {
             .iter()
             .map(|scalar| scalar.object_id)
             .collect::<Vec<_>>();
-        assert_eq!(parameters, [133]);
+        assert_eq!(parameters, [133, 0x0010_0001]);
 
         let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
         let ordinal = u64::try_from(decoded.ir().model.features.len()).expect("ordinal");

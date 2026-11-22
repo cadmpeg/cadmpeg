@@ -325,9 +325,7 @@ impl SldprtNative {
                 crate::resolved_features::names::header_object_id(&lane.native_payload, name)
             });
             let parameters = lane.scalars.iter().filter_map(|scalar| {
-                crate::brep::feature_source::FeatureSourceId::try_from(scalar.object_id)
-                    .ok()
-                    .map(crate::brep::feature_source::FeatureSourceId::value)
+                crate::resolved_features::scalars::parameter_object_id(&lane.native_payload, scalar)
             });
             named.chain(parameters)
         });

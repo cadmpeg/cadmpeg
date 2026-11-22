@@ -12331,6 +12331,54 @@ source = "spec"
 anchor = "| +12 | little-endian u32 |"
 
 [[record]]
+name = "parameter_scalar_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/native.rs"
+kind = "byte"
+section = "2.3"
+anchor = "and a 35-byte trailer: three zero bytes"
+size = 35
+endianness = "little"
+note = "Offsets from the end of a moLengthParameter_c, moAngleParameter_c or moScalerParameter_c object's f64 value. That many operand objects follow the trailer."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "object_id"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "the little-endian u32 object identifier at trailer +3"
+
+[[record.field]]
+name = "operand_count"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "a little-endian u16 operand count at trailer +27"
+
+[[record.field]]
+name = "role"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 role at trailer +29"
+
+[[record.gap]]
+offset = 7
+size = 20
+note = "§2.3 states no field between the object identifier and the operand count."
+
+[[record.gap]]
+offset = 33
+size = 2
+note = "§2.3 names no field between the role and the operand objects."
+
+[[record]]
 name = "feature_object_block_head"
 kind = "byte"
 section = "2.3"

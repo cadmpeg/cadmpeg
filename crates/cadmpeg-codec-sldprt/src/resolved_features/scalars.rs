@@ -14,7 +14,22 @@ use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
+use crate::layout::parameter_scalar_trailer as parameter_trailer;
 use crate::records::ObjectId;
+
+/// The object identifier at parameter-trailer +3 of `scalar` (sldprt.md
+/// §2.3), when the trailer opens with its three zero bytes. Other bytes can
+/// follow a named scalar's value, a class declaration among them.
+pub(crate) fn parameter_object_id(payload: &[u8], scalar: &FeatureInputScalar) -> Option<u32> {
+    let trailer = usize::try_from(scalar.offset).ok()?.checked_add(8)?;
+    let prefix = trailer.checked_add(parameter_trailer::ZERO_PREFIX)?;
+    if payload.get(prefix..prefix.checked_add(3)?)? != [0; 3] {
+        return None;
+    }
+    crate::brep::feature_source::FeatureSourceId::try_from(scalar.object_id)
+        .ok()
+        .map(crate::brep::feature_source::FeatureSourceId::value)
+}
 
 pub(crate) fn named_scalars(
     payload: &[u8],

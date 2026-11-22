@@ -3230,6 +3230,27 @@ Offsets from the end of the name object's string. A Unicode CString follows at +
 | 8 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier; `ff ff ff ff` when the object has none |
 | 12 | 4 | `word_12` | `u32` | little | spec | \| +12 \| little-endian u32 \| |
 
+## `parameter_scalar_trailer`
+
+Spec §2.3 · layout: byte offsets · size: 35 B
+
+Offsets from the end of a moLengthParameter_c, moAngleParameter_c or moScalerParameter_c object's f64 value. That many operand objects follow the trailer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/native.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `zero_prefix` | `bytes[3]` | little | spec | three zero bytes |
+| 3 | 4 | `object_id` | `u32` | little | spec | the little-endian u32 object identifier at trailer +3 |
+| 27 | 2 | `operand_count` | `u16` | little | spec | a little-endian u16 operand count at trailer +27 |
+| 29 | 4 | `role` | `u32` | little | spec | a little-endian u32 role at trailer +29 |
+
+Unstated regions:
+
+- `7..27` (20 B): §2.3 states no field between the object identifier and the operand count.
+- `33..35` (2 B): §2.3 names no field between the role and the operand objects.
+
 ## `feature_object_block_head`
 
 Spec §2.3 · layout: byte offsets · size: 55 B
