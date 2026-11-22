@@ -533,10 +533,11 @@ fn cube_with_unknown_surfaces(kept: &[&str]) -> CadIr {
 /// Face `face` of the unit cube on a rolling-ball blend with no solved cache,
 /// whose construction F3D cannot write without one.
 fn cube_with_cacheless_blend(face: usize) -> CadIr {
-    use cadmpeg_ir::geometry::{
-        surface_payloads::BlendSurfacePayload, BlendCrossSection, BlendRadiusLaw, BlendSupport,
-        CacheContract, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw, BlendSupport};
+    use cadmpeg_ir::geometry::legacy_cache::CacheContract;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload;
+    use cadmpeg_ir::geometry::{ProceduralSurface, SurfaceGeometry};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
     let construction =

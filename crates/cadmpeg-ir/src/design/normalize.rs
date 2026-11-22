@@ -44,7 +44,7 @@ use cadmpeg_core::CodecError;
 use self::constructions::Facts;
 use self::states::States;
 use self::walk::{Visit, Walk};
-use crate::document::{CadIr, Design, Process};
+use crate::document::CadIr;
 use crate::schema::ArenaRecord;
 
 /// Puts every one-spelling rule the normalizer covers into its canonical
@@ -56,6 +56,12 @@ use crate::schema::ArenaRecord;
 /// A refusal that stops the session (a `ResourceLimit` of `scope:
 /// Session`); every other refusal gives up one record.
 pub(crate) fn normalize(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecError> {
+    if ir.design.is_empty() && ir.process.is_empty() {
+        if !ir.model.pmi.is_empty() {
+            pmi::normalize_model(&mut ir.model);
+        }
+        return Ok(Vec::new());
+    }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let normalized = normalize_in(&ctx, ir);
@@ -68,17 +74,53 @@ fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, 
     states.normalize_design(&mut ir.design);
     states.normalize_model(&mut ir.model);
     states.normalize_process(&mut ir.process);
-    let facts = Facts::new(ir);
+    let CadIr {
+        geometry,
+        design,
+        process,
+        model,
+        ..
+    } = ir;
+    let facts = Facts::new(
+        geometry,
+        &design.features,
+        &design.sketch_entities,
+        &design.spatial_sketch_entities,
+        &design.evaluations,
+        &process.states,
+    );
     let mut records = Records {
         ctx,
         visit: Visit::new(ctx, &facts),
         given_up: Vec::new(),
     };
-    walk_design(&mut ir.design, &mut records)?;
-    walk_process(&mut ir.process, &mut records)?;
-    pmi::normalize_design(&mut ir.design);
-    pmi::normalize_model(&mut ir.model);
-    Ok(records.given_up)
+    records.arena(&mut design.scopes)?;
+    records.arena(&mut design.containers)?;
+    records.arena(&mut design.features)?;
+    records.arena(&mut design.sketches)?;
+    records.arena(&mut design.sketch_entities)?;
+    records.arena(&mut design.sketch_constraints)?;
+    records.arena(&mut design.spatial_sketches)?;
+    records.arena(&mut design.spatial_sketch_entities)?;
+    records.arena(&mut design.spatial_sketch_constraints)?;
+    records.arena(&mut design.parameters)?;
+    records.arena(&mut design.sheet_metal_rules)?;
+    records.arena(&mut design.programs)?;
+    records.arena(&mut design.configurations)?;
+    records.arena(&mut design.arrangements)?;
+    records.arena(&mut design.publications)?;
+    records.arena(&mut process.setups)?;
+    records.arena(&mut process.operations)?;
+    records.arena(&mut process.features)?;
+    records.arena(&mut process.groups)?;
+    records.arena(&mut process.presets)?;
+    records.arena(&mut process.parameters)?;
+    let given_up = records.given_up;
+    pmi::normalize_design(design);
+    if !model.pmi.is_empty() {
+        pmi::normalize_model(model);
+    }
+    Ok(given_up)
 }
 
 /// The walk over arena records, each one a part.
@@ -101,36 +143,4 @@ impl Records<'_, '_> {
         }
         Ok(())
     }
-}
-
-/// Walks every design record that can hold a selection or a construction.
-fn walk_design(design: &mut Design, records: &mut Records<'_, '_>) -> Result<(), CodecError> {
-    records.arena(&mut design.scopes)?;
-    records.arena(&mut design.containers)?;
-    records.arena(&mut design.features)?;
-    records.arena(&mut design.sketches)?;
-    records.arena(&mut design.sketch_entities)?;
-    records.arena(&mut design.sketch_constraints)?;
-    records.arena(&mut design.spatial_sketches)?;
-    records.arena(&mut design.spatial_sketch_entities)?;
-    records.arena(&mut design.spatial_sketch_constraints)?;
-    records.arena(&mut design.parameters)?;
-    records.arena(&mut design.sheet_metal_rules)?;
-    records.arena(&mut design.programs)?;
-    records.arena(&mut design.configurations)?;
-    records.arena(&mut design.arrangements)?;
-    records.arena(&mut design.publications)
-}
-
-/// Walks every process record that can hold a selection, a construction,
-/// or an expression. Tools, machines, programs, toolpaths, and process
-/// states hold none; a process state's design base is a position, spelled
-/// with the design's positions.
-fn walk_process(process: &mut Process, records: &mut Records<'_, '_>) -> Result<(), CodecError> {
-    records.arena(&mut process.setups)?;
-    records.arena(&mut process.operations)?;
-    records.arena(&mut process.features)?;
-    records.arena(&mut process.groups)?;
-    records.arena(&mut process.presets)?;
-    records.arena(&mut process.parameters)
 }

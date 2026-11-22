@@ -15,10 +15,9 @@ use crate::features::extents::ExtrudeStart;
 use crate::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use crate::features::selections::{BodySelection, FaceSelection};
 use crate::features::{Feature, FeatureSourceContent, UnresolvedFamily};
-use crate::geometry::{
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -179,14 +178,14 @@ fn validate_input_edge_geometry(
 
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
-    expression: &crate::geometry::LawExpression<R, V, P>,
+    expression: &crate::geometry::laws::LawExpression<R, V, P>,
     ids: &ModelIndex<'_>,
     procedural: &crate::geometry::ProceduralSurface,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("law reference depth")?;
     match expression {
-        crate::geometry::LawExpression::Edge { curve, .. } => {
+        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
             if ids
                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -194,7 +193,7 @@ fn check_law_curves<R, V, P>(
                 ref_error(findings, procedural.id.as_str(), "curve", curve.id.as_str());
             }
         }
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
             for operand in operands {
                 check_law_curves(ctx, operand, ids, procedural, findings)?;
             }
@@ -834,11 +833,11 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.tail {
-                    crate::geometry::CompoundLoftTail::Six { scale, curve, .. } => {
+                    crate::geometry::lofts::CompoundLoftTail::Six { scale, curve, .. } => {
                         scales.push(scale.as_ref());
                         check_curve(curve, findings);
                     }
-                    crate::geometry::CompoundLoftTail::Seven {
+                    crate::geometry::lofts::CompoundLoftTail::Seven {
                         first_scale,
                         second_scale,
                         ..
@@ -846,9 +845,10 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::CompoundLoftTail::Zero { direction, .. } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -889,7 +889,7 @@ pub(super) fn check_references(
                 };
                 let mut scales = (construction.scales.as_slice().iter()).collect::<Vec<_>>();
                 match &construction.branch {
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedVector {
                         first_scale,
                         second_scale,
                         ..
@@ -897,7 +897,7 @@ pub(super) fn check_references(
                         scales.extend(first_scale.iter().map(Box::as_ref));
                         scales.push(second_scale.as_ref());
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve {
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::ExtendedCurve {
                         scale,
                         curve,
                         ..
@@ -905,9 +905,12 @@ pub(super) fn check_references(
                         scales.extend(scale.iter().map(Box::as_ref));
                         check_curve(curve, findings);
                     }
-                    crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                        if let crate::geometry::CompoundLoftDirection::Curve { curve, .. } =
-                            direction
+                    crate::geometry::lofts::ScaledCompoundLoftBranch::Direct {
+                        direction, ..
+                    } => {
+                        if let crate::geometry::lofts::CompoundLoftDirection::Curve {
+                            curve, ..
+                        } = direction
                         {
                             check_curve(curve, findings);
                         }
@@ -947,7 +950,11 @@ pub(super) fn check_references(
                     }
                 };
                 match &construction.layout {
-                    crate::geometry::SkinSurfaceLayout::Profiles { profiles, path, .. } => {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Profiles {
+                        profiles,
+                        path,
+                        ..
+                    } => {
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
@@ -965,7 +972,7 @@ pub(super) fn check_references(
                             }
                         }
                     }
-                    crate::geometry::SkinSurfaceLayout::Compact {
+                    crate::geometry::skin_surfaces::SkinSurfaceLayout::Compact {
                         curve,
                         secondary_curve,
                         ..
@@ -1053,7 +1060,7 @@ pub(super) fn check_references(
                         );
                     }
                 }
-                if let crate::geometry::G2BlendFirstShape::Full {
+                if let crate::geometry::blends::G2BlendFirstShape::Full {
                     support: Some(support),
                 } = &construction.first_shape
                 {
@@ -1174,8 +1181,10 @@ pub(super) fn check_references(
                             .chain(path.auxiliaries.iter())
                     })
                     .chain(match construction.direction() {
-                        crate::geometry::CompoundLoftDirection::Vector { .. } => None,
-                        crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
+                        crate::geometry::lofts::CompoundLoftDirection::Vector { .. } => None,
+                        crate::geometry::lofts::CompoundLoftDirection::Curve { curve, .. } => {
+                            Some(curve)
+                        }
                     })
                     .chain(construction.tail().curve())
                 {
@@ -1233,8 +1242,14 @@ pub(super) fn check_references(
 
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {
-                        crate::geometry::VertexBlendBoundaryGeometry::Circle { curve, .. }
-                        | crate::geometry::VertexBlendBoundaryGeometry::Plane { curve, .. } => {
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Circle {
+                            curve,
+                            ..
+                        }
+                        | crate::geometry::blends::VertexBlendBoundaryGeometry::Plane {
+                            curve,
+                            ..
+                        } => {
                             if ids
                                 .curves(curve.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1247,8 +1262,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
-                            surface, ..
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Pcurve {
+                            surface,
+                            ..
                         } => {
                             if ids
                                 .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1262,7 +1278,9 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::VertexBlendBoundaryGeometry::Degenerate { .. } => {}
+                        crate::geometry::blends::VertexBlendBoundaryGeometry::Degenerate {
+                            ..
+                        } => {}
                     }
                 }
             }
@@ -1340,14 +1358,17 @@ pub(super) fn check_references(
                 }
                 if let Some(native) = native {
                     let formulas = match &native.layout {
-                        crate::geometry::SweepSurfaceLayout::ProfileFirst { formulas, .. } => {
-                            (formulas.iter()).collect::<Vec<_>>()
-                        }
-                        crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                            formula, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ProfileFirst {
+                            formulas,
+                            ..
+                        } => (formulas.iter()).collect::<Vec<_>>(),
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitFormula {
+                            formula,
+                            ..
                         } => ([formula]).into_iter().collect::<Vec<_>>(),
-                        crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                            guide_curve, ..
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitGuide {
+                            guide_curve,
+                            ..
                         } => {
                             if ids
                                 .curves(guide_curve.as_str(), crate::index::StandardIndex)
@@ -1362,7 +1383,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::ExplicitSurface {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::ExplicitSurface {
                             support_surface,
                             auxiliary_curve,
                             ..
@@ -1393,7 +1414,7 @@ pub(super) fn check_references(
                             }
                             Vec::new()
                         }
-                        crate::geometry::SweepSurfaceLayout::LawDriven {
+                        crate::geometry::sweep_surfaces::SweepSurfaceLayout::LawDriven {
                             first_law,
                             second_law,
                             formula,
@@ -1614,11 +1635,16 @@ pub(super) fn check_references(
                         construction.support.as_str(),
                     );
                 }
-                if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                    surface, curve, ..
+                if let crate::geometry::deformable_surfaces::DeformableSurfaceData::SurfaceCurve {
+                    surface,
+                    curve,
+                    ..
                 }
-                | crate::geometry::DeformableSurfaceData::Full { surface, curve, .. } =
-                    &construction.data
+                | crate::geometry::deformable_surfaces::DeformableSurfaceData::Full {
+                    surface,
+                    curve,
+                    ..
+                } = &construction.data
                 {
                     if ids
                         .surfaces(surface.as_str(), crate::index::StandardIndex)
@@ -1652,14 +1678,14 @@ pub(super) fn check_references(
             } => {
                 fn check<R, V, P>(
                     ctx: &DecodeContext<'_>,
-                    expression: &crate::geometry::LawExpression<R, V, P>,
+                    expression: &crate::geometry::laws::LawExpression<R, V, P>,
                     ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,
                 ) -> Result<(), CodecError> {
                     let _depth = ctx.enter_nested("law reference depth")?;
                     match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
+                        crate::geometry::laws::LawExpression::Edge { curve, .. } => {
                             if ids
                                 .curves(curve.id.as_str(), crate::index::StandardIndex)
                                 .is_none()
@@ -1672,7 +1698,7 @@ pub(super) fn check_references(
                                 );
                             }
                         }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
+                        crate::geometry::laws::LawExpression::Algebraic { operands, .. } => {
                             for operand in operands {
                                 check(ctx, operand, ids, procedural, findings)?;
                             }
@@ -1872,7 +1898,10 @@ pub(super) fn check_references(
                 let context = definition_payload.context();
                 let source = definition_payload.source();
                 {
-                    if let crate::geometry::DeformableCurveSource::Curve { curve } = source {
+                    if let crate::geometry::procedural_curves::DeformableCurveSource::Curve {
+                        curve,
+                    } = source
+                    {
                         if ids
                             .curves(curve.as_str(), crate::index::StandardIndex)
                             .is_none()
@@ -1934,7 +1963,7 @@ pub(super) fn check_references(
                     {
                         ref_error(findings, procedural.id.as_str(), "curve", source.as_str());
                     }
-                    if let crate::geometry::OffsetSide::Direction {
+                    if let crate::geometry::curve_offsets::OffsetSide::Direction {
                         support: Some(support),
                         ..
                     } = side
@@ -1951,9 +1980,12 @@ pub(super) fn check_references(
                             );
                         }
                     }
-                    if let Some(crate::geometry::CurveOffsetRange::Variable {
+                    if let Some(crate::geometry::curve_offsets::CurveOffsetRange::Variable {
                         distance_law:
-                            crate::geometry::CurveOffsetDistanceLaw::Coordinate { function, .. },
+                            crate::geometry::curve_offsets::CurveOffsetDistanceLaw::Coordinate {
+                                function,
+                                ..
+                            },
                         ..
                     }) = range
                     {
