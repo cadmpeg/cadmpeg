@@ -8,6 +8,9 @@ use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.model.pmi.is_empty() {
+        return;
+    }
     let definitions = BorrowedIdentities::build(|add| {
         for annotation in &ir.model.pmi {
             add(annotation.id.as_str(), &annotation.definition);

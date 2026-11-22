@@ -52,3 +52,40 @@ pub(crate) fn fixture(count: u32, wide_marker: bool, form: TailForm) -> (Vec<u8>
     bytes[3..7].copy_from_slice(&size.to_le_bytes());
     (bytes, tail_start)
 }
+
+#[derive(Clone, Copy)]
+pub(crate) enum SheetTailForm {
+    Absent,
+    Doubled,
+    Explicit,
+}
+
+pub(crate) fn sheet_fixture(form: SheetTailForm, wide_marker: bool) -> (Vec<u8>, usize) {
+    let tail_form = if matches!(form, SheetTailForm::Explicit) {
+        TailForm::Explicit
+    } else {
+        TailForm::Absent87
+    };
+    let (mut bytes, tail) = fixture(2, wide_marker, tail_form);
+    let upper = if matches!(form, SheetTailForm::Doubled) {
+        4.0_f64
+    } else {
+        1.0
+    };
+    bytes[tail + 24..tail + 32].copy_from_slice(&upper.to_le_bytes());
+    if matches!(form, SheetTailForm::Doubled) {
+        bytes[tail + 49..tail + 57].copy_from_slice(&4.1_f64.to_le_bytes());
+        bytes[tail + 57] = 1;
+    }
+    let terminal = match form {
+        SheetTailForm::Absent => 3.0_f64,
+        SheetTailForm::Doubled => 2.0,
+        SheetTailForm::Explicit => 1.0,
+    };
+    let last_word = bytes.len() - 8;
+    bytes[last_word..].copy_from_slice(&terminal.to_le_bytes());
+    bytes.extend([0, 0]);
+    let size = u32::try_from(bytes.len() - 8).expect("short fixture");
+    bytes[3..7].copy_from_slice(&size.to_le_bytes());
+    (bytes, tail)
+}

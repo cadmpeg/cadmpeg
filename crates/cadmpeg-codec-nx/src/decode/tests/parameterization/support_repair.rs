@@ -9,7 +9,8 @@ use crate::test_support::test_streams::{
 };
 use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 use std::io::Cursor;
@@ -36,7 +37,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
@@ -59,7 +60,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                             })
                             .unwrap();
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -134,7 +135,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
@@ -154,7 +155,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                             })
                             .unwrap();
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,

@@ -46,16 +46,19 @@ impl From<Point3> for [f64; 3] {
 
 impl Point3 {
     /// Construct a point.
+    #[inline]
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Point3 { x, y, z }
     }
 
     /// Whether every coordinate is finite.
+    #[inline]
     pub const fn is_finite(&self) -> bool {
         self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 
     /// Euclidean distance to another point.
+    #[inline]
     pub fn distance(self, other: Point3) -> f64 {
         (self.x - other.x)
             .portable_hypot(self.y - other.y)
@@ -63,6 +66,7 @@ impl Point3 {
     }
 
     /// Squared Euclidean distance to another point (no square root).
+    #[inline]
     pub fn distance_squared(self, other: Point3) -> f64 {
         let delta = [self.x - other.x, self.y - other.y, self.z - other.z];
         sum::finite_dot(delta, delta).map_or_else(
@@ -72,11 +76,13 @@ impl Point3 {
     }
 
     /// Displacement from `origin` to `self`, i.e. `self - origin`.
+    #[inline]
     pub fn vector_from(self, origin: Point3) -> Vector3 {
         Vector3::new(self.x - origin.x, self.y - origin.y, self.z - origin.z)
     }
 
     /// Point translated by `scale * vector`.
+    #[inline]
     #[must_use]
     pub fn translated(self, vector: Vector3, scale: f64) -> Point3 {
         Point3::new(
@@ -115,21 +121,25 @@ impl From<Vector3> for [f64; 3] {
 
 impl Vector3 {
     /// Construct a vector.
+    #[inline]
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Vector3 { x, y, z }
     }
 
     /// Whether every component is finite.
+    #[inline]
     pub const fn is_finite(&self) -> bool {
         self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
     }
 
     /// Euclidean length.
+    #[inline]
     pub fn norm(&self) -> f64 {
         self.x.portable_hypot(self.y).portable_hypot(self.z)
     }
 
     /// Dot product with another vector.
+    #[inline]
     pub fn dot(self, other: Vector3) -> f64 {
         // A dot product that is not finite is the plain sum of the products.
         sum::finite_dot([self.x, self.y, self.z], [other.x, other.y, other.z])
@@ -137,6 +147,7 @@ impl Vector3 {
     }
 
     /// Cross product with another vector.
+    #[inline]
     #[must_use]
     pub fn cross(self, other: Vector3) -> Vector3 {
         // A component that is not finite is the plain `a * c - b * d`.
@@ -151,6 +162,7 @@ impl Vector3 {
     }
 
     /// Vector scaled by a factor.
+    #[inline]
     #[must_use]
     pub fn scale(self, factor: f64) -> Vector3 {
         Vector3::new(self.x * factor, self.y * factor, self.z * factor)

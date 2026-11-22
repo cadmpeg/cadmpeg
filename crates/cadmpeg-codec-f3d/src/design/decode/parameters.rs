@@ -16,6 +16,7 @@ use crate::layout::design_parameter_comment_expression_trailer as comment_traile
 use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_discriminated_expression_trailer as nine_trailer;
+use crate::layout::design_parameter_discriminated_prefix as prefix;
 use crate::layout::design_parameter_discriminated_text_expression_trailer as ten_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -23,7 +24,6 @@ use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::design_parameter_tail as parameter_tail;
 use crate::layout::design_parameter_typed_compact_owned_prefix as typed;
-use crate::layout::design_parameter_wide_discriminated_prefix as wide_prefix;
 use crate::layout::design_parameter_wide_expression_trailer as wide_trailer;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -291,8 +291,6 @@ impl ParsedDesignParameter {
     }
 }
 
-/// Frame-relative offset of the parameter family discriminator.
-const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: usize = 22;
 /// Further zero bytes before the discriminator in the wide discriminated form.
 const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
@@ -328,7 +326,9 @@ pub(in crate::design) fn parse_design_parameter(
     payload: &[u8],
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
-        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
+        if View::u32_le_at(payload, 0) != Some(3)
+            || payload.get(prefix::ZERO_RUN_11..prefix::FAMILY_DISCRIMINATOR) != Some(&[0; 11])
+        {
             return None;
         }
         let raw_tag = payload.get(4..7)?;
@@ -520,23 +520,16 @@ fn parse_header_form(
     shift: usize,
     trailer: DiscriminatedTrailerLength,
 ) -> Option<Result<ParsedDesignParameter, CodecError>> {
-    let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
-    let comment = if discriminated && shift == WIDE_DISCRIMINATED_SHIFT {
-        Some(wide_parameter_comment(payload)?)
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + shift;
+    let comment = if discriminated {
+        Some(parameter_comment(payload, shift)?)
     } else {
         None
     };
-    let field_shift = shift
-        + comment
-            .as_ref()
-            .map_or(0, |(_, end)| end - wide_prefix::LEN);
+    let field_shift = comment.as_ref().map_or(shift, |(_, end)| end - prefix::LEN);
     let (family_discriminator, source_ordinal, owner_record_index, expression_at) = if discriminated
     {
-        let discriminator = if comment.is_some() {
-            u64::from(View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR)?)
-        } else {
-            View::u64_le_at(payload, discriminator_at)?
-        };
+        let discriminator = u64::from(View::u32_le_at(payload, discriminator_at)?);
         let discriminator =
             crate::records::parameters::DesignParameterDiscriminator::try_from(discriminator)
                 .ok()?;
@@ -677,7 +670,7 @@ fn parse_header_form(
             .filter(|(text, _)| !text.is_empty())
             .map(|(value, _)| ParsedParameterUnit {
                 value,
-                offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
+                offset: FrameRelative(i128::from(u64_from_index(prefix::LEN + shift))),
             }),
         flags,
         text_value: text.then(|| ParsedParameterUnit {
@@ -796,20 +789,22 @@ fn parse_comment_discriminated_parameter(
 /// at offset 26, and a parameter comment follows. Discriminator 0 leaves offsets
 /// 22 through 29 zero, which also read as a discriminator at offset 22.
 fn wide_discriminated_parameter(payload: &[u8]) -> bool {
-    payload.get(wide_prefix::ZERO_RUN_15..wide_prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 15])
-        && View::u32_le_at(payload, wide_prefix::FAMILY_DISCRIMINATOR).is_some_and(|value| {
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + WIDE_DISCRIMINATED_SHIFT;
+    payload.get(prefix::ZERO_RUN_11..discriminator_at) == Some(&[0; 15])
+        && View::u32_le_at(payload, discriminator_at).is_some_and(|value| {
             crate::records::parameters::DesignParameterDiscriminator::try_from(u64::from(value))
                 .is_ok()
         })
-        && wide_parameter_comment(payload).is_some()
+        && parameter_comment(payload, WIDE_DISCRIMINATED_SHIFT).is_some()
 }
 
-/// The LP-UTF16 comment of a wide discriminated parameter and the offset after it.
-fn wide_parameter_comment(payload: &[u8]) -> Option<(String, usize)> {
-    if *payload.get(wide_prefix::RESERVED_30)? != wide_prefix::RESERVED_30_VALUE {
+/// The LP-UTF16 comment of a discriminated parameter whose prefix starts
+/// `shift` further zero bytes on, and the offset after it.
+fn parameter_comment(payload: &[u8], shift: usize) -> Option<(String, usize)> {
+    if *payload.get(prefix::RESERVED_26 + shift)? != prefix::RESERVED_26_VALUE {
         return None;
     }
-    lp_utf16_bounded(payload, wide_prefix::COMMENT_LENGTH, 0..=4096)
+    lp_utf16_bounded(payload, prefix::COMMENT_LENGTH + shift, 0..=4096)
 }
 
 /// Parse the class-287 owned parameter family.
@@ -959,8 +954,7 @@ impl ParameterTailTargets {
         parameter_tail_collection(frame).is_some_and(|target| {
             let target = u64::from(target);
             if self.collections.is_empty() {
-                frame.get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
-                    == Some(&[0; 11])
+                frame.get(prefix::ZERO_RUN_11..prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 11])
                     && !self.others.contains(&target)
             } else {
                 self.collections.contains(&target)

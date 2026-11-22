@@ -713,7 +713,7 @@ pub struct NurbsSurface {
     v_periodic: bool,
     /// Fit tolerance of the source approximation cache, in model length units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    cache_fit_tolerance: Option<super::FitTolerance>,
+    cache_fit_tolerance: Option<super::legacy_cache::FitTolerance>,
 }
 
 /// Polynomial tensor-product B-spline surface with a rectangular control grid.
@@ -1147,12 +1147,15 @@ impl NurbsSurface {
     }
 
     /// Fit tolerance of the source approximation cache.
-    pub const fn cache_fit_tolerance(&self) -> Option<super::FitTolerance> {
+    pub const fn cache_fit_tolerance(&self) -> Option<super::legacy_cache::FitTolerance> {
         self.cache_fit_tolerance
     }
 
     /// Retain the fit tolerance of the source approximation cache.
-    pub fn set_cache_fit_tolerance(&mut self, tolerance: Option<super::FitTolerance>) {
+    pub fn set_cache_fit_tolerance(
+        &mut self,
+        tolerance: Option<super::legacy_cache::FitTolerance>,
+    ) {
         self.cache_fit_tolerance = tolerance;
     }
 
@@ -1353,7 +1356,7 @@ impl NurbsSurface {
 #[serde(deny_unknown_fields)]
 struct NurbsSurfaceWire {
     #[serde(default, deserialize_with = "deserialize_cache_fit_tolerance")]
-    cache_fit_tolerance: Option<super::FitTolerance>,
+    cache_fit_tolerance: Option<super::legacy_cache::FitTolerance>,
     u_degree: u32,
     v_degree: u32,
     u_knots: Vec<f64>,
@@ -1684,6 +1687,6 @@ mod identity_rewrite;
 
 cadmpeg_core::named_optional_field!(
     deserialize_cache_fit_tolerance,
-    super::FitTolerance,
+    super::legacy_cache::FitTolerance,
     "cache_fit_tolerance"
 );

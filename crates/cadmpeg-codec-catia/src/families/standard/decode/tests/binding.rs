@@ -48,9 +48,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -1365,7 +1365,7 @@ fn standard_emission_reverses_face_pcurve_range() {
         assert_eq!(
             pcurve
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
             reversed.then_some([1.0, 0.0])
         );
     }

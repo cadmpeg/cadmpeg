@@ -194,7 +194,7 @@ fn surface_cache_with_fit(tokens: &[Token], marker: usize) -> Option<NurbsSurfac
     let (mut surface, end) = surface_block(tokens, marker)?;
     if let Some(Token::Double(value)) = tokens.get(end) {
         surface.set_cache_fit_tolerance(Some(
-            cadmpeg_ir::geometry::FitTolerance::try_new(value * LEN_TO_MM).ok()?,
+            cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(value * LEN_TO_MM).ok()?,
         ));
     }
     Some(surface)
