@@ -76,7 +76,7 @@ fn decoded(
     let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
     let operands = crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            crate::design::decode::operands::decode_face_operands(
+            crate::design::decode::operands::face_operands::decode_face_operands(
                 ctx,
                 scan,
                 std::slice::from_ref(&scope),

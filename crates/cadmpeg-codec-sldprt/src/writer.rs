@@ -215,9 +215,10 @@ pub(crate) fn write_semantic_with_records(
             retained_records,
             &mut attempt_cut,
         ) {
-            Ok(renames) => {
+            Ok(prepared) => {
                 cut.extend(attempt_cut);
-                break renames;
+                losses.extend(prepared.losses);
+                break prepared.renames;
             }
             Err(error) => {
                 let Some((parameters, source_native)) = snapshot else {
@@ -332,6 +333,17 @@ pub(crate) fn write_semantic_with_records(
                 length_scale,
                 &mut unwritten,
             );
+        }
+        if !materials.omitted.is_empty() {
+            // A source that does not decode leaves the note saying the write
+            // cannot tell; it does not refuse the write.
+            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+                .ok()
+                .flatten();
+            losses.extend(materials::retained_materials_omitted(
+                ir,
+                baseline.map(|baseline| &baseline.ir),
+            ));
         }
         for attribute in metadata_attributes(ir) {
             if attribute.name != "source_linear_unit_code"
@@ -1784,11 +1796,12 @@ fn patch_retained_swobjects_metadata(
         }
         let provenance = annotations.provenance.get(attribute.id.as_str());
         if let Some(reason) = unwritable(attribute) {
-            let held = if provenance.is_some() {
-                Held::Source
-            } else {
-                Held::Nothing
-            };
+            // The retained bytes stay only where the output holds the member.
+            let held = provenance.map_or(Held::Nothing, |provenance| {
+                owners
+                    .unpatched(provenance.stream())
+                    .map_or(Held::Source, |(_, held)| held)
+            });
             unwritten.record(attribute.id.as_str(), reason, held);
             continue;
         }
@@ -2137,14 +2150,15 @@ pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
 ];
 
 /// Synchronize the native history, sketches, parameters and configuration
-/// states with the document, and return the feature-input renames to write.
+/// states with the document, and return the feature-input renames to write
+/// and the losses of the prepared features.
 fn prepare_history(
     normalized: &mut CadIr,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     cut: &mut Vec<String>,
-) -> Result<Vec<crate::history::write::features::FeatureInputRename>, CodecError> {
+) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -2154,8 +2168,8 @@ fn prepare_history(
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut feature_input_renames = crate::history::write::prepare_features_for_write(ir, native)?;
-    fit_feature_input_renames(&mut feature_input_renames, cut);
+    let mut prepared = crate::history::write::prepare_features_for_write(ir, native)?;
+    fit_feature_input_renames(&mut prepared.renames, cut);
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, cut)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
@@ -2176,7 +2190,7 @@ fn prepare_history(
                 .transpose()
         },
     )?;
-    Ok(feature_input_renames)
+    Ok(prepared)
 }
 
 /// Cut each rename to [`FEATURE_INPUT_OBJECT_NAME`]. A rename whose cut is
@@ -2689,7 +2703,7 @@ impl MetadataRecord {
                 }
                 let units = fitted.text.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| invalid)?;
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| Unwritten::TooWide)?;
                 Self::SourceLinearUnitName {
                     units,
                     byte_len,

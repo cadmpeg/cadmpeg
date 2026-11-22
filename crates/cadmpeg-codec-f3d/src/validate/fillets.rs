@@ -473,8 +473,8 @@ pub(super) fn validate_fillet_operand_groups<'a>(
                 })
                 .collect::<Vec<_>>();
             scope_groups.sort_by_key(|candidate| candidate.scope_reference_ordinal);
-            design::decode::operands::fillet_edge_and_face_groups(&scope_groups).is_some_and(
-                |pair| {
+            design::decode::operands::fillets::fillet_edge_and_face_groups(&scope_groups)
+                .is_some_and(|pair| {
                     let face_backed = pair
                         .iter()
                         .filter(|candidate| candidate.role() == DesignOperandRole::ROLE_0X10)
@@ -498,8 +498,7 @@ pub(super) fn validate_fillet_operand_groups<'a>(
                         && pair
                             .iter()
                             .any(|candidate| candidate.record_index == group.record_index)
-                },
-            )
+                })
         });
         let has_fixed_assignment = scope
             .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
@@ -538,7 +537,7 @@ pub(super) fn validate_fillet_operand_groups<'a>(
             });
         let retained_fixed_assignment = !has_parameter_owner
             && scope.is_some_and(|scope| {
-                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                design::decode::operands::fillets::fixed_fillet_assignment_is_unresolved(
                     scope,
                     &native.design_construction_operand_groups,
                 ) && ctx
@@ -557,7 +556,7 @@ pub(super) fn validate_fillet_operand_groups<'a>(
                     })
             });
         let retained_set_list = scope.is_some_and(|scope| {
-            design::decode::operands::fillet_set_list_is_unadmitted(
+            design::decode::operands::fillets::fillet_set_list_is_unadmitted(
                 scope,
                 &native.design_construction_operand_groups,
                 &native.design_fillet_radius_groups,

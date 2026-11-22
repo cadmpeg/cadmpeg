@@ -15175,6 +15175,73 @@ source = "spec"
 anchor = "four zero tail bytes"
 
 [[record]]
+name = "extrusion_end_spec_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs"
+kind = "byte"
+section = "2"
+anchor = "A compact extrusion end-spec child carries its class"
+size = 26
+endianness = "little"
+note = "Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26."
+
+[[record.field]]
+name = "class"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "The direct form uses the declaration's final `_c` bytes as its anchor"
+
+[[record.field]]
+name = "zero_after_class"
+offset = 2
+type = "bytes[2]"
+source = "spec"
+anchor = "Anchor +2 is zero"
+
+[[record.field]]
+name = "direction_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The little-endian u32 at anchor +4 is the direction count"
+
+[[record.field]]
+name = "boolean_word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Anchor +8 is a little-endian u32 Boolean word"
+
+[[record.field]]
+name = "reversal"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "anchor +12 is the little-endian u32 reversal flag"
+
+[[record.field]]
+name = "zero_before_codes"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "anchor +16 is a zero u16"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The little-endian u32 first-direction termination code is at anchor +18"
+
+[[record.field]]
+name = "second_code"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the little-endian u32 second-direction termination code is at anchor +22"
+
+[[record]]
 name = "pmark_record_head"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/rollback.rs"
 kind = "byte"

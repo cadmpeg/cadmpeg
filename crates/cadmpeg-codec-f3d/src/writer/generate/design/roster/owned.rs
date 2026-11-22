@@ -12,13 +12,9 @@ use super::super::frames::DesignRecords;
 use super::super::parameters::OwnedParameter;
 use super::super::types;
 use super::sketches::OWNER_COLLECTION;
-use super::{Context, PARAMETER_COLLECTION};
+use super::{Context, PARAMETER_COLLECTION, PARAMETER_DISCRIMINATOR};
 use crate::design::decode::parameters::DRIVEN_FLAG;
 use crate::layout::design_parameter_discriminated_text_expression_trailer as trailer;
-
-/// The family discriminator of an owned parameter (f3d-open-items.md
-/// DR-911, DR-917).
-pub(super) const DISCRIMINATOR: u32 = 6;
 
 /// The expression trailer of a parameter of the written type version 8
 /// (f3d.md §3.1): zero bytes, with the second flag byte, the driven flag,
@@ -81,7 +77,7 @@ pub(super) fn write(
         .reference(OWNER_COLLECTION);
     out.record(&ctx.class(types::PARAMETER.guid)?, parameter)
         .zeros(11)
-        .u32(DISCRIMINATOR)
+        .u32(PARAMETER_DISCRIMINATOR.code())
         .byte(0)
         .lp_utf16(value.comment.as_deref().unwrap_or_default())?
         .u32(value.ordinal)
