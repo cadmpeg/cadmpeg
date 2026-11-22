@@ -21,7 +21,8 @@ use super::names::{CodecId, NativeNameValue};
 use super::options::NativeOptions;
 use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
-use crate::features::{ConfigurationId, FinitePoint3};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ConfigurationId;
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength};
 use crate::transform::Transform;
 use crate::units::UnitVector3;
@@ -40,7 +41,7 @@ pub mod kinds {
     use schemars::JsonSchema;
 
     use super::{AxisValue, ConstructionKind, CurveValue, FrameValue, PlaneValue};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::units::UnitVector3;
 
     macro_rules! kinds {

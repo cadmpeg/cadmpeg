@@ -399,7 +399,7 @@ fn swept_surface_face_rests_on_a_linear_sweep_of_its_section() {
         .iter()
         .find(|candidate| &candidate.id == construction)
         .unwrap();
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(sweep) =
         procedural.definition()
     else {
         panic!("a swept surface is a linear sweep");
@@ -622,7 +622,7 @@ fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::ExtractBody {
-            source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
+            source: cadmpeg_ir::features::selections::BodySelection::Local { bodies, native },
         }) if bodies.len() == 1
             && bodies[0].ends_with(":block#1")
             && native == "nx:om-object-index#1"

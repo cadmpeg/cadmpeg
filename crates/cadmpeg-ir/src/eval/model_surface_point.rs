@@ -34,8 +34,9 @@ use super::EvaluationFailure;
 use super::ModelEvaluationDepthGuard;
 use super::ModelEvaluationIdentity;
 use super::UNREACHED_POINT;
-use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 
 pub(super) fn model_surface_point_by_id_inner(
@@ -628,9 +629,9 @@ pub(super) fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
                 let support = definition_payload.support();
-                let parameter_ranges = definition_payload
-                    .parameter_ranges()
-                    .map(crate::geometry::DirectedParameterRange::finite_endpoints);
+                let parameter_ranges = definition_payload.parameter_ranges().map(
+                    crate::geometry::procedural_curves::DirectedParameterRange::finite_endpoints,
+                );
                 let u_sense = definition_payload.u_sense();
                 let v_sense = definition_payload.v_sense();
                 {

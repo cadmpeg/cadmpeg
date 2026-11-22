@@ -13,7 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::{finite_or_refusal, EvaluationFailure};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
@@ -307,18 +307,19 @@ fn project_pcurve_uses(
         let use_range = match traversal {
             Sense::Forward => None,
             Sense::Reversed => Some(
-                cadmpeg_ir::geometry::DirectedParameterRange::new([range[1], range[0]]).map_err(
-                    |_| {
-                        PcurveProjectionError::Invalid(
-                            "a parameter curve has no interval whose reversal a use can state",
-                        )
-                    },
-                )?,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                    range[1], range[0],
+                ])
+                .map_err(|_| {
+                    PcurveProjectionError::Invalid(
+                        "a parameter curve has no interval whose reversal a use can state",
+                    )
+                })?,
             ),
         };
         let checked_tolerance = fit_tolerance
             .map(|value| {
-                cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(value).map_err(|_| {
                     PcurveProjectionError::Invalid(PcurveMetadata::INVALID_FIT_TOLERANCE)
                 })
             })

@@ -409,6 +409,32 @@ pub(crate) enum HistoryContent {
     Feature(String),
     /// Non-whitespace root text content.
     Text(String),
+    /// A root child element that is neither a configuration nor a feature: an
+    /// `Application` element with its `Keyword` children.
+    Element(HistoryElement),
+}
+
+/// One XML element of a Keywords root and its subtree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HistoryElement {
+    /// Element name.
+    pub(crate) tag: String,
+    /// Source attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attributes: BTreeMap<NonBlankString, String>,
+    /// Child elements and non-whitespace text, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) content: Vec<HistoryElementContent>,
+}
+
+/// One ordered item inside a [`HistoryElement`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum HistoryElementContent {
+    /// Child element.
+    Element(HistoryElement),
+    /// Non-whitespace text content.
+    Text(String),
 }
 
 /// The full parametric construction-history timeline for a part.
@@ -656,7 +682,7 @@ pub(crate) struct FeatureInputBodySelection {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mode"
     )]
-    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
@@ -2874,7 +2900,7 @@ cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
 cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
 cadmpeg_core::named_optional_field!(
     deserialize_mode,
-    cadmpeg_ir::features::BodyRetentionMode,
+    cadmpeg_ir::features::operation_settings::BodyRetentionMode,
     "mode"
 );
 cadmpeg_core::named_optional_field!(

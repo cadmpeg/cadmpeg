@@ -159,7 +159,7 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -193,7 +193,7 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -345,7 +345,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#1").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -390,7 +390,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     let (mut ir, _, fidelity) = decoded.into_parts();
     let moved = ir.geometry.points[0].position().get();
     ir.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -922,7 +922,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     for (index, position) in positions.into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));

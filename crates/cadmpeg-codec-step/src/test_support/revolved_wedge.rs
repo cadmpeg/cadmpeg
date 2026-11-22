@@ -2,7 +2,7 @@
 //! A solid revolved about `+z` over a finite angle, for tests of analytic
 //! faces with closed parameter directions.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, CylinderSurface, LineCurve, PlaneSurface, SphereSurface, TorusSurface,
 };

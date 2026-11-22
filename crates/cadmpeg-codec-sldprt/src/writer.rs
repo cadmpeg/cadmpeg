@@ -21,7 +21,7 @@ use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -514,7 +514,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
 }
 
 fn assign_configuration_indices(
-    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<(), CodecError> {
     let mut used = HashSet::new();
     let mut names = HashSet::new();
@@ -588,7 +588,7 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
 pub(crate) fn configurations_without_synthesized_snapshot(
     ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let mut configurations = ir.model.configurations.clone();
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
@@ -2422,6 +2422,9 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
                 }
             }
             crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
+            crate::records::HistoryContent::Element(element) => {
+                write_history_element(&mut out, element)?;
+            }
         }
     }
     for configuration in &history.configurations {
@@ -2581,6 +2584,39 @@ fn write_feature_xml(
     out.push_str("</");
     out.push_str(&feature.xml_tag);
     out.push('>');
+}
+
+fn write_history_element(
+    out: &mut String,
+    element: &crate::records::HistoryElement,
+) -> Result<(), CodecError> {
+    if !valid_xml_name(&element.tag) {
+        return Err(CodecError::Malformed(
+            "invalid history XML element name".into(),
+        ));
+    }
+    out.push('<');
+    out.push_str(&element.tag);
+    for (name, value) in &element.attributes {
+        xml_attribute(out, name.as_str(), value);
+    }
+    if element.content.is_empty() {
+        out.push_str("/>");
+        return Ok(());
+    }
+    out.push('>');
+    for item in &element.content {
+        match item {
+            crate::records::HistoryElementContent::Element(child) => {
+                write_history_element(out, child)?;
+            }
+            crate::records::HistoryElementContent::Text(text) => xml_text(out, text),
+        }
+    }
+    out.push_str("</");
+    out.push_str(&element.tag);
+    out.push('>');
+    Ok(())
 }
 
 fn xml_attribute(out: &mut String, name: &str, value: &str) {

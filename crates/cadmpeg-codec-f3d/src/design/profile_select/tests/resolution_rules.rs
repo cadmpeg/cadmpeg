@@ -18,10 +18,12 @@ use crate::records::sketch_relations::SketchRelationOperand;
 use crate::records::topology::extrude_selection::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionGroupWire, DesignExtrudeSelectionMember,
 };
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FaceSelection, LinearTermination, PlanarProfileRef, ProfileRef,
-    SketchProfileBoundaryUse, SketchProfileRegion, SketchProfileRegions,
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+    SketchProfileRegions,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
@@ -340,7 +342,10 @@ fn explicit_precedence_when_merged_region_trimmed() {
     let trimmed = SketchProfileRegion::trimmed(
         vec![SketchProfileBoundaryUse {
             entity: SketchEntityId::mint("synthetic:test:id#entity1").unwrap(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                [0.0, 1.0],
+            )
+            .unwrap(),
             reversed: false,
         }],
         Vec::new(),
@@ -452,14 +457,14 @@ fn has_to_termination_detects_one_sided_and_two_sided() {
     let to_plane = ExtrudeExtent::OneSided {
         side: ExtrudeSide {
             termination: LinearTermination::ToPlane {
-                plane: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                plane: cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
                     Point3::new(0.0, 0.0, 30.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
                 .unwrap(),
                 native: cadmpeg_core::text::NonBlankString::new("f3d:group#1".to_owned()).unwrap(),
-                source: Some(cadmpeg_ir::features::PlaneTargetSource::WorkPlane),
+                source: Some(cadmpeg_ir::features::extents::PlaneTargetSource::WorkPlane),
             },
             draft: None,
         },
@@ -1319,7 +1324,7 @@ fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreein
 
 #[test]
 fn unresolved_explicit_region_requires_hole_agreement() {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
     use serde_json::json;
 
     let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(None);

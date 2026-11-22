@@ -759,13 +759,12 @@ mod subset_carriers {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::eval::admission::EvaluationAdmission;
     use cadmpeg_ir::eval::decode::curve_point;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{EllipseCurve, ParabolaCurve};
     use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
     use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
-    use cadmpeg_ir::geometry::{
-        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
     use cadmpeg_ir::ids::ProceduralCurveId;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::ParameterInterval;
@@ -982,8 +981,8 @@ mod subset_carriers {
             let mut definition = ProceduralCurveDefinition::Subset(subset);
             if cache.is_some() {
                 definition
-                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
-                        cadmpeg_ir::geometry::FitTolerance::ZERO,
+                    .set_legacy_cache(cadmpeg_ir::geometry::legacy_cache::LegacyCache::new(
+                        cadmpeg_ir::geometry::legacy_cache::FitTolerance::ZERO,
                     ))
                     .unwrap();
             }

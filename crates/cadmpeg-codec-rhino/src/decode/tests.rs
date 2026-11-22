@@ -160,7 +160,7 @@ fn point_cloud_commits_one_vertex() {
     let cloud = || {
         crate::curves::DecodedGeometry::PointCloud(crate::curves::PointCloud {
             points: vec![
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .expect("finite point"),
             ],
             scaled: false,
@@ -185,7 +185,7 @@ fn candidate_validation_propagates_entity_limit() {
             .validate_candidate(|candidate, _| {
                 candidate.geometry.points.push(Point::new(
                     "rhino:test:point#limited".try_into().expect("valid id"),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
                         geometry_role: None,
@@ -304,7 +304,7 @@ fn hatch_plane_places_and_scales_plane_space_loops_once() {
 
 #[test]
 fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::units::UnitVector3;
@@ -372,7 +372,7 @@ fn instance_line_transform_keeps_component_division_and_collapse_refusal() {
 
 #[test]
 fn instance_plane_transform_keeps_component_division() {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::PlaneSurface;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::transform::Transform;
@@ -702,7 +702,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         crate::brep::BrepTolerance::new(0.5)
             .and_then(crate::brep::BrepTolerance::fit)
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.5)
     );
     assert_eq!(crate::brep::BrepTolerance::new(-1.0), None);
@@ -1106,7 +1106,7 @@ fn candidate_rejections_distinguish_admission_from_validation() {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("point identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             );
@@ -1157,7 +1157,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 }
                 let point = Point::new(
                     "rhino:test:point#duplicate".try_into().unwrap(),
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("a finite position is a point"),
                     None,
                 );
@@ -1205,7 +1205,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
         let point = |key| {
             Point::new(
                 format!("rhino:test:point#{key}").try_into().unwrap(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     geometry_role: None,

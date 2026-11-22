@@ -561,8 +561,10 @@ fn source_less_ir_exports_to_decodable_rhino() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
         None,
     ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
@@ -603,8 +605,10 @@ fn rhino_output_version_is_selected_explicitly() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
         None,
     ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
@@ -959,6 +963,68 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
 
 #[cfg(all(feature = "f3d", feature = "sldprt"))]
 #[test]
+fn a_write_to_another_format_names_the_solidworks_application_element() {
+    let keywords: &[u8] = br#"<Keywords Name="Part"><Application Name="Simulation"><Keyword Name="Analysis type">Static</Keyword></Application><Feature id="1" Name="Sketch1" Type="ProfileFeature"/></Keywords>"#;
+    let length = u16::try_from(keywords.len()).unwrap();
+    let mut stored = vec![1];
+    stored.extend(length.to_le_bytes());
+    stored.extend((!length).to_le_bytes());
+    stored.extend(keywords);
+    let name = b"Contents/Keywords"
+        .iter()
+        .map(|byte| byte.rotate_left(4))
+        .collect::<Vec<_>>();
+    let mut source = 1_u32.to_le_bytes().to_vec();
+    source.extend(4_u32.to_be_bytes());
+    source.extend([0x14, 0x00, 0x06, 0x00, 0x08, 0x00]);
+    for word in [
+        0x42,
+        crc32fast::hash(keywords),
+        u32::try_from(stored.len()).unwrap(),
+        u32::from(length),
+        u32::try_from(name.len()).unwrap(),
+    ] {
+        source.extend(word.to_le_bytes());
+    }
+    source.extend(name);
+    source.extend(stored);
+
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("history.sldprt");
+    let output = dir.path().join("history.f3d");
+    let report = dir.path().join("history.report.json");
+    fs::write(&input, source).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let named = report["decode_report"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|loss| loss["code"]["value"]["code"] == "history.application-not-transferred")
+        .map(|loss| loss["message"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(named.len(), 1, "{report}");
+    assert!(
+        named[0].contains(r#"Application element "Simulation""#)
+            && named[0].contains("a write to another format omits it"),
+        "{}",
+        named[0]
+    );
+}
+
+#[cfg(all(feature = "f3d", feature = "sldprt"))]
+#[test]
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
     use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
@@ -1113,8 +1179,10 @@ fn convert_refuses_binary_output_to_stdout() {
         .points
         .push(cadmpeg_ir::topology::Point::new(
             cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-                .expect("a finite position is a point"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.0, 2.0, 3.0,
+            ))
+            .expect("a finite position is a point"),
             None,
         ));
     let point = fixture(dir.path(), "point.cadir.json", &point_ir);
@@ -1204,8 +1272,10 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
         None,
     ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
@@ -1270,8 +1340,10 @@ fn a_to_that_names_only_the_format_still_inherits() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
         None,
     ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);

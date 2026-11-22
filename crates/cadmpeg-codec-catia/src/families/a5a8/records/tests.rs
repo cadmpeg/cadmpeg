@@ -1281,7 +1281,9 @@ fn rolling_ball_radius_reports_only_actual_rail_movement() {
         .definition_at_radius(radius)
         .expect("nearby radius");
     assert_eq!(moved, radius - 1.0);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(stations) = definition
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(
+        stations,
+    ) = definition
     else {
         panic!("rolling-ball definition");
     };
@@ -1516,7 +1518,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[0]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[0])
         );
         assert_eq!(
@@ -1525,7 +1527,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[1]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[1])
         );
     }

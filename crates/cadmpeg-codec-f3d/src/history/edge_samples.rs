@@ -82,7 +82,8 @@ fn helix_sample(
     let Some((_, definition)) = definitions.next().filter(|_| definitions.next().is_none()) else {
         return Ok(None);
     };
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix) =
+        definition.definition()
     else {
         return Ok(None);
     };
@@ -119,9 +120,9 @@ fn carrier(
     geometry: &SolvedCurveGeometry,
     start: f64,
     end: f64,
-) -> Option<cadmpeg_ir::features::HistoricalEdgeCarrier> {
-    Some(cadmpeg_ir::features::HistoricalEdgeCarrier {
-        curve: cadmpeg_ir::features::HistoricalEdgeCurve::from_solved(geometry)?,
+) -> Option<cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier> {
+    Some(cadmpeg_ir::features::evaluation::HistoricalEdgeCarrier {
+        curve: cadmpeg_ir::features::evaluation::HistoricalEdgeCurve::from_solved(geometry)?,
         range: cadmpeg_ir::topology::ParameterInterval::new([start.min(end), start.max(end)])
             .ok()?,
     })
@@ -251,7 +252,7 @@ mod tests {
 
     #[test]
     fn a_free_form_edge_keeps_its_carrier_and_interval() {
-        use cadmpeg_ir::features::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
+        use cadmpeg_ir::features::evaluation::{HistoricalEdgeCarrier, HistoricalEdgeCurve};
         use cadmpeg_ir::geometry::{Curve, CurveGeometry};
         use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
         use cadmpeg_ir::topology::{Edge, EdgeCarrier, ParameterInterval};
@@ -293,10 +294,9 @@ mod tests {
 
     #[test]
     fn cacheless_helix_samples_use_the_stored_edge_interval() {
-        use cadmpeg_ir::geometry::{
-            Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-            ProceduralCurveDefinition,
-        };
+        use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+        use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, VertexId};
         use cadmpeg_ir::math::Vector3;
         use cadmpeg_ir::topology::{Edge, EdgeCarrier};

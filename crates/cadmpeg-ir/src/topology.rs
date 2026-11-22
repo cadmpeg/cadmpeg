@@ -8,7 +8,8 @@
 //! order carries no meaning (a shell's faces, a body's regions) is derived
 //! from those parent pointers and is not stored.
 
-use crate::features::{FinitePoint3, NonEmptyMembers};
+use crate::features::geometry::FinitePoint3;
+use crate::features::selections::NonEmptyMembers;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -603,7 +604,7 @@ pub struct PcurveUse {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_parameter_range"
     )]
-    pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
+    pub parameter_range: Option<crate::geometry::procedural_curves::DirectedParameterRange>,
 }
 
 /// The mutually exclusive forms of a loop boundary.
@@ -1641,7 +1642,7 @@ mod tests {
     #[test]
     fn parameter_interval_admission_preserves_direction_contracts() {
         use super::{EdgeCarrier, ParameterInterval};
-        use crate::geometry::DirectedParameterRange;
+        use crate::geometry::procedural_curves::DirectedParameterRange;
         assert!(ParameterInterval::new([2.0, 1.0]).is_err());
         assert!(ParameterInterval::new([f64::INFINITY, 1.0]).is_err());
         assert_eq!(
@@ -1828,7 +1829,7 @@ mod tests {
         coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
         LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
     };
-    use crate::features::NonEmptyMembers;
+    use crate::features::selections::NonEmptyMembers;
 
     #[test]
     fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
@@ -2289,7 +2290,7 @@ mod tests {
     #[test]
     fn a_point_position_must_be_finite() {
         use super::{Point, PointWire};
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -2361,7 +2362,7 @@ mod tests {
     #[test]
     fn a_point_hands_back_and_takes_its_admitted_position() {
         use super::Point;
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -2420,7 +2421,7 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_isoparametric, bool, "isoparametric");
 cadmpeg_core::named_optional_field!(
     deserialize_parameter_range,
-    crate::geometry::DirectedParameterRange,
+    crate::geometry::procedural_curves::DirectedParameterRange,
     "parameter_range"
 );
 cadmpeg_core::named_optional_field!(deserialize_use_curve, CoedgeUseCurve, "use_curve");

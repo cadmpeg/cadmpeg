@@ -3,7 +3,7 @@
 
 /// A component-path carrier whose path is a legacy target and then a local
 /// element that names placement record 10.
-fn legacy_root_component_path_carrier(
+pub(super) fn legacy_root_component_path_carrier(
     type_guid: &str,
     identity: u64,
     transform: [[f64; 4]; 4],

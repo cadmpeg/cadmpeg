@@ -66,13 +66,13 @@ const EPS_DISPLAY_READING: f64 = 1.0e-12;
 /// id, and the archive class of each `ResolvedFeatures` scalar by id (`None`
 /// where two lanes give one id two classes).
 pub(super) struct Decoded<'a> {
-    pub(super) parameters: HashMap<&'a str, &'a cadmpeg_ir::features::DesignParameter>,
+    pub(super) parameters: HashMap<&'a str, &'a cadmpeg_ir::features::parameters::DesignParameter>,
     pub(super) classes: HashMap<&'a str, Option<ArchiveParameterClass>>,
 }
 
 impl<'a> Decoded<'a> {
     pub(super) fn new(
-        parameters: &'a [cadmpeg_ir::features::DesignParameter],
+        parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
         lanes: &'a [FeatureInputLane],
     ) -> Self {
         let mut classes = HashMap::new();
@@ -110,7 +110,7 @@ impl<'a> Decoded<'a> {
         name: &str,
         display: Option<f64>,
     ) -> Option<(ValueKind, Option<ParameterValue>)> {
-        use cadmpeg_ir::features::ParameterValue as V10;
+        use cadmpeg_ir::features::parameters::ParameterValue as V10;
         let parameter = self
             .parameters
             .get(id.as_str())
@@ -148,8 +148,8 @@ impl<'a> Decoded<'a> {
 
 /// Whether the decoder's `value` is the display's number read in a unit the
 /// display does not state: as millimetres, metres, or radians, or as itself.
-fn reads_display(value: &cadmpeg_ir::features::ParameterValue, display: f64) -> bool {
-    use cadmpeg_ir::features::ParameterValue as V10;
+fn reads_display(value: &cadmpeg_ir::features::parameters::ParameterValue, display: f64) -> bool {
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     let number = match value {
         V10::Length(length) => length.get(),
         V10::Angle(angle) => angle.get(),
@@ -170,9 +170,9 @@ fn reads_display(value: &cadmpeg_ir::features::ParameterValue, display: f64) -> 
 /// where the value is not of that kind.
 fn typed_cache(
     kind: &ValueKind,
-    value: cadmpeg_ir::features::ParameterValue,
+    value: cadmpeg_ir::features::parameters::ParameterValue,
 ) -> Option<ParameterValue> {
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     let number = |value: f64| FiniteReal::new(value).map(ParameterValue::Number);
     match (kind, value) {
         (ValueKind::Quantity(Quantity::LENGTH), V10::Length(length)) => number(length.get()),
@@ -430,8 +430,8 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
     let parsed = parsed.filter(|value| {
         user || !matches!(
             value,
-            cadmpeg_ir::features::ParameterValue::Integer(_)
-                | cadmpeg_ir::features::ParameterValue::Real(_)
+            cadmpeg_ir::features::parameters::ParameterValue::Integer(_)
+                | cadmpeg_ir::features::parameters::ParameterValue::Real(_)
         )
     });
     let bound = readings.bound.get(&entry.id).copied();
@@ -455,8 +455,10 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
     let display = display
         .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
         .map(|display| match display {
-            cadmpeg_ir::features::DimensionDisplay::Diameter => DimensionDisplay::Diameter,
-            cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
+            cadmpeg_ir::features::parameters::DimensionDisplay::Diameter => {
+                DimensionDisplay::Diameter
+            }
+            cadmpeg_ir::features::parameters::DimensionDisplay::Radius => DimensionDisplay::Radius,
         })
         .filter(|display| readings.measured.get(&entry.id) != Some(display));
     if let Some(number) = bare.filter(|_| !user && !references) {
@@ -549,8 +551,10 @@ pub(super) fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Nod
 /// The kind and canonical cache of a value the v10 literal reader parsed. A
 /// bare number reaches here only for a global variable, which has no
 /// declared quantity, so a whole number is a dimensionless real.
-fn cache(value: cadmpeg_ir::features::ParameterValue) -> Option<(ValueKind, ParameterValue)> {
-    use cadmpeg_ir::features::ParameterValue as Parsed;
+fn cache(
+    value: cadmpeg_ir::features::parameters::ParameterValue,
+) -> Option<(ValueKind, ParameterValue)> {
+    use cadmpeg_ir::features::parameters::ParameterValue as Parsed;
     let number = |quantity, value: f64| {
         Some((
             ValueKind::Quantity(quantity),

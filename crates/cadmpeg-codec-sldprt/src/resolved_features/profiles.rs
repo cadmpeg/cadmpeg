@@ -49,8 +49,8 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
     chord_record, construction_record, identifier_trailer_line_record, listed_record_geometry,
-    unchecked_record_conflict, ChordConflict, ChordRecord, FramedCurve, ListedReading,
-    SketchRecordLists,
+    point_record_index_basis_loss, unchecked_record_conflict, ChordConflict, ChordRecord,
+    FramedCurve, ListedReading, SketchRecordLists,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -296,7 +296,7 @@ fn enclosed_general_curve_profile(
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     arenas: SketchArenas<'_>,
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     exact: &ExactProfiles,
@@ -373,12 +373,12 @@ pub(crate) fn bind_sketch_profiles(
                     lanes.iter().all(|candidate| candidate.id == lane.id)
                         && (shape.section_is_unresolved()
                             || matches!(shape.referenced_profile(),
-                                Some(cadmpeg_ir::features::PlanarProfileRef::Native(native))
+                                Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(native))
                                     if enclosed_general_curve_profile(native, lane, start, end)))
                 }
                 FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     matches!(profile,
-                    cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
+                    cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(owner))
                         if owner == &native_feature.id)
                 }
                 _ => false,
@@ -403,8 +403,8 @@ pub(crate) fn bind_sketch_profiles(
                             cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                     }
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                        *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id),
+                        *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                            cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch_id),
                         );
                     }
                     FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
@@ -449,7 +449,7 @@ pub(super) struct CircleCarrier(pub [f64; 2], pub f64);
 
 fn declared_entity_handle_circular_carriers(
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<CircleCarrier>> {
     let ownership = owned_relation_parameters(features, parameters, lanes);
@@ -474,12 +474,16 @@ fn declared_entity_handle_circular_carriers(
             else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+                &parameter.value
+            else {
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                    value.get() * 0.5
+                }
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
@@ -1094,6 +1098,8 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
+    index_basis_assumptions:
+        HashMap<(SketchId, String), (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1124,6 +1130,7 @@ struct ListedGeometry {
     geometry: SketchGeometry,
     /// The record is a line with an identifier trailer (open item EV-29).
     identifier_trailer: bool,
+    index_basis_loss: Option<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
@@ -1145,6 +1152,7 @@ pub(crate) fn finalize_unread_marker_entities(
         chord_conflicts,
         unchecked,
         finalized,
+        mut index_basis_assumptions,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1177,6 +1185,9 @@ pub(crate) fn finalize_unread_marker_entities(
                     entity.native_ref.as_deref().unwrap_or("without a native reference"),
                 )));
             }
+            if let Some(loss) = read.index_basis_loss {
+                losses.push(loss);
+            }
             entity.geometry = read.geometry;
             continue;
         }
@@ -1208,6 +1219,13 @@ pub(crate) fn finalize_unread_marker_entities(
             SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
     }
     for entity in sketch_entities.iter() {
+        if let Some((geometry, loss)) = entity.native_ref.as_ref().and_then(|marker| {
+            index_basis_assumptions.remove(&(entity.sketch.clone(), marker.clone()))
+        }) {
+            if geometry == entity.geometry {
+                losses.push(loss);
+            }
+        }
         if !matches!(
             entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -1645,6 +1663,7 @@ pub(crate) fn project_marker_backed_sketches(
             let mut held = Vec::new();
             let mut listed = Vec::new();
             let mut chord_conflicts = Vec::new();
+            let mut index_basis_assumptions = Vec::new();
             for marker in markers.iter().copied() {
                 if let Some((form, code)) = marker.listed_curve_relation_drop {
                     losses.push(
@@ -1699,6 +1718,12 @@ pub(crate) fn project_marker_backed_sketches(
                                 offset,
                                 &geometry,
                             );
+                            if let Some(loss) =
+                                point_record_index_basis_loss(&lane.native_payload, offset)
+                            {
+                                index_basis_assumptions
+                                    .push((marker.id().to_owned(), (geometry.clone(), loss)));
+                            }
                             Some((geometry, construction))
                         })
                     {
@@ -2329,6 +2354,7 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         return Err(MarkerGeometryFailure::Absent);
                     }
+                    let mut point_record_read = false;
                     let geometry = if matches!(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
@@ -2345,6 +2371,7 @@ pub(crate) fn project_marker_backed_sketches(
                             })
                         };
                         if let Some(roster) = read(ListedReading::Roster) {
+                            point_record_read = true;
                             roster
                         } else {
                             if let Some(complete) = read(ListedReading::Complete) {
@@ -2357,6 +2384,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     ListedGeometry {
                                         geometry: complete,
                                         identifier_trailer,
+                                        index_basis_loss: index_from_u64(marker.offset()).and_then(
+                                            |offset| {
+                                                point_record_index_basis_loss(
+                                                    &lane.native_payload,
+                                                    offset,
+                                                )
+                                            },
+                                        ),
                                     },
                                 ));
                             }
@@ -2374,7 +2409,10 @@ pub(crate) fn project_marker_backed_sketches(
                                 &project_coordinates,
                             )
                         }) {
-                            Some(ChordRecord::Arc(arc)) => arc,
+                            Some(ChordRecord::Arc(arc)) => {
+                                point_record_read = true;
+                                arc
+                            }
                             Some(ChordRecord::Conflict(conflict)) => {
                                 chord_conflicts.push((marker.id().to_owned(), conflict));
                                 geometry
@@ -2384,6 +2422,14 @@ pub(crate) fn project_marker_backed_sketches(
                     } else {
                         geometry
                     };
+                    if point_record_read {
+                        if let Some(loss) = index_from_u64(marker.offset()).and_then(|offset| {
+                            point_record_index_basis_loss(&lane.native_payload, offset)
+                        }) {
+                            index_basis_assumptions
+                                .push((marker.id().to_owned(), (geometry.clone(), loss)));
+                        }
+                    }
                     let construction =
                         index_from_u64(marker.offset()).map_or((false, false), |offset| {
                             marker_is_construction(
@@ -2664,6 +2710,11 @@ pub(crate) fn project_marker_backed_sketches(
                 listed
                     .into_iter()
                     .map(|(marker, geometry)| ((sketch_id.clone(), marker), geometry)),
+            );
+            held_geometry.index_basis_assumptions.extend(
+                index_basis_assumptions
+                    .into_iter()
+                    .map(|(marker, reading)| ((sketch_id.clone(), marker), reading)),
             );
             held_geometry.chord_conflicts.extend(
                 chord_conflicts
@@ -3937,13 +3988,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -4024,13 +4075,13 @@ mod detached_legacy_sketch_tests {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
                 native_ref: Some(native.id.clone()),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                     }),
@@ -4151,13 +4202,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -4591,12 +4642,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4695,12 +4746,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4796,12 +4847,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: Some("point".into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),

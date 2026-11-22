@@ -4,7 +4,7 @@ use super::{attach, replaceable};
 use crate::families::FamilyEntityAdmission;
 use crate::wire::records::consolidated_records;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, PlaneSurface, SphereSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
@@ -638,10 +638,13 @@ fn a_multi_use_chain_is_preserved_and_counted_as_an_unsupported_replacement() {
         super::GENERATED_TAG,
     );
     let mut second = ir.geometry.coedges[0].pcurves[0].clone();
-    ir.geometry.coedges[0].pcurves[0].parameter_range =
-        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 0.5]).expect("first segment"));
+    ir.geometry.coedges[0].pcurves[0].parameter_range = Some(
+        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([0.0, 0.5])
+            .expect("first segment"),
+    );
     second.parameter_range = Some(
-        cadmpeg_ir::geometry::DirectedParameterRange::new([0.5, 1.0]).expect("second segment"),
+        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([0.5, 1.0])
+            .expect("second segment"),
     );
     ir.geometry.coedges[0].pcurves.push(second);
     let before = ir.clone();
