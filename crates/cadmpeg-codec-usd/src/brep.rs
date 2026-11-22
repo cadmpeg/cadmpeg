@@ -3,7 +3,9 @@
 //! to the IR, and encoded as a `BrepArray` (spec §17).
 
 pub(crate) mod convert;
+pub(crate) mod lift;
 pub(crate) mod nurbs;
+pub(crate) mod patch;
 pub(crate) mod primitive;
 mod scale;
 pub(crate) mod solid;
@@ -51,6 +53,19 @@ pub(crate) struct LoopRecord {
     pub(crate) oriented_edges: Vec<usize>,
     /// The vertex of a vertex loop.
     pub(crate) vertex: Option<usize>,
+    /// The pole vertices that the loop passes through.
+    pub(crate) poles: Vec<PoleRecord>,
+}
+
+/// A pole of a loop: a side of the surface domain that collapses to one
+/// vertex.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PoleRecord {
+    /// The position in the loop of the oriented edge that precedes the pole.
+    pub(crate) after: usize,
+    pub(crate) vertex: usize,
+    /// The collapsed side in the parameter space of the face surface.
+    pub(crate) pcurve: Option<Reference>,
 }
 
 /// One face of `brep:face:`.

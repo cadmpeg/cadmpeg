@@ -2084,6 +2084,18 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
 
+### DR-1018. Flag byte before the Base Feature metadata record
+
+**Question.** What does the flag byte before the shared metadata record of an ordinary `Base Feature` result-body frame state, and does flag `1` with empty modern body maps always identify the snapshot body as the model body?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" places the byte after the repeated run. One design stores `0` there while its `Base Feature` is as created. The same design saved after an Edit Feature on that `Base Feature` stores `1`, has no history-bearing BREP, empty modern body maps, and a snapshot body map whose one pair names the body entity suffix of the frame. The decoder selects the snapshot `.smb` set as the model body set in a stream whose modern maps all have zero pairs and empty basenames, that holds a `Base Feature` ordinary result-body frame with flag byte `1`, and whose snapshot maps hold at least one pair with every pair naming a body entity suffix of such a frame. A flagged frame with populated modern body maps keeps its modern selection.
+
+**Need.** Further saves of designs whose `Base Feature` was edited after creation, with their modern and snapshot body maps, and saves of designs with a flagged frame and a populated modern body map.
+
+**Conflict.** None.
+
+**Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
+
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
 **Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
