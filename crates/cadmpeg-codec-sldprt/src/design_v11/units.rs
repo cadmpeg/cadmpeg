@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The part's length unit: the length unit object of the `moUnitsTable_c`
-//! each configuration's `moPart_c` writes in `Contents/Config-N`
-//! (`docs/formats/sldprt.md`).
+//! The part's length unit and length precision: the length unit object of
+//! the `moUnitsTable_c` each configuration's `moPart_c` writes in
+//! `Contents/Config-N` (`docs/formats/sldprt.md`).
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::units::UnitSymbol;
@@ -32,6 +32,23 @@ const LAST_WORD_VALUE: u32 = 1;
 /// The length unit every configuration's units table states, or `None`
 /// where a configuration states none or two state different ones.
 pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
+    agreed(scan, configuration_length_unit)
+}
+
+/// The number of decimal places at which every configuration's units table
+/// shows lengths: the first u32 of the length unit object's base. `None`
+/// where a configuration states none or two state different ones.
+pub(crate) fn length_places(scan: &ContainerScan) -> Option<u32> {
+    agreed(scan, |payload, _| configuration_length_places(payload))
+}
+
+/// The value `read` takes from every configuration's stream, given the size
+/// of a unit object's base in its container: `None` where a configuration
+/// states none, or two configurations state different values.
+fn agreed<T: Copy + PartialEq>(
+    scan: &ContainerScan,
+    read: impl Fn(&[u8], usize) -> Option<T>,
+) -> Option<T> {
     let mut found = None;
     for section in scan.sections() {
         if !section.name().is_some_and(is_configuration) {
@@ -41,11 +58,11 @@ pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
             Section::Compound(_) => COMPOUND_BASE,
             Section::Block(_) => BLOCK_BASE,
         };
-        let unit = configuration_length_unit(section.payload(), base)?;
-        if found.is_some_and(|known| known != unit) {
+        let value = read(section.payload(), base)?;
+        if found.is_some_and(|known| known != value) {
             return None;
         }
-        found = Some(unit);
+        found = Some(value);
     }
     found
 }
@@ -63,24 +80,37 @@ fn is_configuration(stream: &str) -> bool {
             .all(|byte| byte.is_ascii_digit())
 }
 
-/// The length unit of one configuration's units table: after the table's
-/// u16 object count, the object that declares the length unit class, whose
-/// u16 unit code follows its `base`-byte base. The table writes it first, or
-/// after the other unit classes it declares; a class declared before it that
-/// is not a unit class, or that holds a length unit pointer itself, leaves
-/// the object unplaced and states no unit. A base whose four u32 words do
-/// not end in [`LAST_WORD_VALUE`] is another form, which states no unit.
-fn configuration_length_unit(payload: &[u8], base: usize) -> Option<UnitSymbol> {
+/// The offset of the fields of one configuration's length unit object:
+/// after the units table's u16 object count, the object that declares the
+/// length unit class. The table writes it first, or after the other unit
+/// classes it declares; a class declared before it that is not a unit class,
+/// or that holds a length unit pointer itself, leaves the object unplaced. A
+/// base whose four u32 words do not end in [`LAST_WORD_VALUE`] is another
+/// form, which is not read.
+fn length_fields(payload: &[u8]) -> Option<usize> {
     let table = find(payload, TABLE_CLASS)?.checked_add(TABLE_CLASS.len())?;
     let objects = table.checked_add(2)?;
     let object = objects.checked_add(find(payload.get(objects..)?, LENGTH_DECLARATION)?)?;
     let fields = object.checked_add(LENGTH_DECLARATION.len())?;
-    if !declares_other_units(payload.get(objects..object)?)
-        || View::u32_le_at(payload, fields.checked_add(LAST_WORD)?) != Some(LAST_WORD_VALUE)
-    {
-        return None;
-    }
-    unit(View::u16_le_at(payload, fields.checked_add(base)?)?)
+    (declares_other_units(payload.get(objects..object)?)
+        && View::u32_le_at(payload, fields.checked_add(LAST_WORD)?) == Some(LAST_WORD_VALUE))
+    .then_some(fields)
+}
+
+/// The length unit of one configuration's units table: the u16 unit code
+/// that follows the length unit object's `base`-byte base.
+fn configuration_length_unit(payload: &[u8], base: usize) -> Option<UnitSymbol> {
+    unit(View::u16_le_at(
+        payload,
+        length_fields(payload)?.checked_add(base)?,
+    )?)
+}
+
+/// The length precision of one configuration's units table: the first u32
+/// of the length unit object's base, the number of decimal places at which
+/// the document shows lengths.
+fn configuration_length_places(payload: &[u8]) -> Option<u32> {
+    View::u32_le_at(payload, length_fields(payload)?)
 }
 
 /// Whether every class that `objects`, the table's objects before its length

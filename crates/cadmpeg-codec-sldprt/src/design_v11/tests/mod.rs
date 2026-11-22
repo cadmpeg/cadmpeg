@@ -878,6 +878,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
@@ -1079,6 +1080,7 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,

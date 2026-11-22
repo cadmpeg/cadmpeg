@@ -25,8 +25,10 @@
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
 //! its feature holds under its name, where that value shows the display
-//! (Rule H1). A dimension whose kind no record states keeps the number its bound
-//! scalar stores, as a `Native` kind holds it (§5.12). The
+//! (Rule H1): a length at the part's length precision, where its units table
+//! states one, as Keywords drops trailing zeros. A dimension whose kind no
+//! record states keeps the number its bound scalar stores, as a `Native` kind
+//! holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
 
@@ -155,9 +157,10 @@ impl<'a> Decoded<'a> {
     /// the same id and name: the archive class of the scalar it is bound to,
     /// else the parameter that scalar's record states where it agrees with
     /// the dimension's bare display `display` in the part's length unit
-    /// `unit` (Rule H1), else the quantity of its value. The cache is that
-    /// value only where a stored record gave it: a bound scalar, or a value
-    /// that is no reading of the display; else the stated parameter's value.
+    /// `unit` and length precision `places` (Rule H1), else the quantity of
+    /// its value. The cache is that value only where a stored record gave it:
+    /// a bound scalar, or a value that is no reading of the display; else the
+    /// stated parameter's value.
     /// `None` where none of these states a kind.
     fn dimension(
         &self,
@@ -165,6 +168,7 @@ impl<'a> Decoded<'a> {
         name: &str,
         display: Option<Shown>,
         unit: Option<UnitSymbol>,
+        places: Option<u32>,
     ) -> Option<(ValueKind, Option<ParameterValue>)> {
         use cadmpeg_ir::features::parameters::ParameterValue as V10;
         let parameter = self.parameter(id, name)?;
@@ -172,7 +176,7 @@ impl<'a> Decoded<'a> {
         let stated = scalar
             .and_then(|scalar| self.stated.get(scalar).copied())
             .filter(|stated| {
-                display.is_none_or(|display| agrees(*stated, display, unit) != Some(false))
+                display.is_none_or(|display| agrees(*stated, display, unit, places) != Some(false))
             });
         let class = scalar
             .and_then(|scalar| self.classes.get(scalar).copied().flatten())
@@ -205,19 +209,20 @@ impl<'a> Decoded<'a> {
     /// The kind and value of a dimension of the history feature `feature`
     /// named `name` whose text is the bare display `display`, from the
     /// scalars the feature holds under that name, under Rule H1: a scalar
-    /// counts where the parameter its record states shows `display` (see
-    /// [`agrees`]), and, for a length in a part whose length unit `unit` is
-    /// not read, where it drives the model, a reading that holds on the
-    /// stored results of typed dimensions. A driving scalar outranks the
-    /// others. The scalars that count state one parameter, whose class is the
-    /// kind and whose stored value the value; otherwise the reason the
-    /// dimension has no value.
+    /// counts where the parameter its record states shows `display` at the
+    /// part's length precision `places` (see [`agrees`]), and, for a length
+    /// in a part whose length unit `unit` is not read, where it drives the
+    /// model, a reading that holds on the stored results of typed
+    /// dimensions. A driving scalar outranks the others. The scalars that
+    /// count state one parameter, whose class is the kind and whose stored
+    /// value the value; otherwise the reason the dimension has no value.
     fn named_dimension(
         &self,
         feature: &str,
         name: &str,
         display: Shown,
         unit: Option<UnitSymbol>,
+        places: Option<u32>,
     ) -> Result<(ValueKind, ParameterValue), Unvalued> {
         let scalars = self.named.get(&(feature, name)).ok_or(Unvalued::NoScalar)?;
         let mut counted = Vec::new();
@@ -227,7 +232,7 @@ impl<'a> Decoded<'a> {
                 reason = reason.max(Unvalued::ClassUnread);
                 continue;
             };
-            match agrees(stated, display, unit) {
+            match agrees(stated, display, unit, places) {
                 Some(true) => counted.push(*scalar),
                 None if scalar.driving => counted.push(*scalar),
                 None => reason = reason.max(Unvalued::LengthUnit),
@@ -325,6 +330,21 @@ impl Shown {
         Some(Self { number, rounding })
     }
 
+    /// This display as a length the part shows at `places` decimal places,
+    /// trailing zeros dropped (`docs/formats/sldprt.md`): the value is within
+    /// half a unit in the last of those places, or in the display's own last
+    /// place where that is finer. `None` keeps the display's own place.
+    fn at_places(self, places: Option<u32>) -> Self {
+        let Some(places) = places else {
+            return self;
+        };
+        let rounding = i32::try_from(places).map_or(0.0, |places| 0.5 * 10f64.powi(-places));
+        Self {
+            rounding: self.rounding.min(rounding),
+            ..self
+        }
+    }
+
     /// Whether `value` is a number this display shows.
     fn shows(self, value: f64) -> bool {
         (value - self.number).abs()
@@ -333,14 +353,23 @@ impl Shown {
 }
 
 /// Whether the value of `stated` is what `display` shows: a length in the
-/// part's length unit `unit`, an angle in degrees, a count or a real as
-/// itself. `None` for a length in a part whose length unit is not read.
-fn agrees(stated: StatedParameter, display: Shown, unit: Option<UnitSymbol>) -> Option<bool> {
-    let shown = match stated {
-        StatedParameter::Length(metres) => metres * MM_PER_M / canonical(unit?)?.1,
-        StatedParameter::Angle(radians) => radians.to_degrees(),
-        StatedParameter::Count(count) => f64::from(count),
-        StatedParameter::Scaler(real) => real,
+/// part's length unit `unit` at its length precision `places`, an angle in
+/// degrees, a count or a real as itself. `None` for a length in a part whose
+/// length unit is not read.
+fn agrees(
+    stated: StatedParameter,
+    display: Shown,
+    unit: Option<UnitSymbol>,
+    places: Option<u32>,
+) -> Option<bool> {
+    let (shown, display) = match stated {
+        StatedParameter::Length(metres) => (
+            metres * MM_PER_M / canonical(unit?)?.1,
+            display.at_places(places),
+        ),
+        StatedParameter::Angle(radians) => (radians.to_degrees(), display),
+        StatedParameter::Count(count) => (f64::from(count), display),
+        StatedParameter::Scaler(real) => (real, display),
     };
     Some(display.shows(shown))
 }
@@ -461,6 +490,9 @@ struct Entry<'a> {
 pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
     pub(super) length_unit: Option<UnitSymbol>,
+    /// The number of decimal places at which the part shows lengths, where
+    /// its units table states one.
+    pub(super) length_places: Option<u32>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it
     /// measures: such a parameter states no display of that measure.
@@ -733,10 +765,22 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
-        None => match decoded.dimension(&entry.id, name, shown, readings.length_unit) {
+        None => match decoded.dimension(
+            &entry.id,
+            name,
+            shown,
+            readings.length_unit,
+            readings.length_places,
+        ) {
             Some(reading) => reading,
             None => match shown.filter(|_| !references).map(|shown| {
-                decoded.named_dimension(&feature.id, name, shown, readings.length_unit)
+                decoded.named_dimension(
+                    &feature.id,
+                    name,
+                    shown,
+                    readings.length_unit,
+                    readings.length_places,
+                )
             }) {
                 Some(Ok((kind, value))) => (kind, Some(value)),
                 named => {

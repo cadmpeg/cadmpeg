@@ -2,8 +2,8 @@
 use cadmpeg_ir::design::units::UnitSymbol;
 
 use super::{
-    configuration_length_unit, BLOCK_BASE, COMPOUND_BASE, DENSITY_CLASS, LAST_WORD,
-    LAST_WORD_VALUE, LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
+    configuration_length_places, configuration_length_unit, BLOCK_BASE, COMPOUND_BASE,
+    DENSITY_CLASS, LAST_WORD, LAST_WORD_VALUE, LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
 };
 
 /// A configuration stream whose units table opens with a length unit of
@@ -111,4 +111,20 @@ fn a_length_unit_after_another_class_or_a_density_unit_states_no_unit() {
     let length = NEW_CLASS.len() + TABLE_CLASS.len() + 2 + 2 + NEW_CLASS.len();
     cut[length..length + 2].copy_from_slice(&u16::MAX.to_le_bytes());
     assert_eq!(configuration_length_unit(&cut, BLOCK_BASE), None);
+}
+
+#[test]
+fn the_length_precision_is_the_first_word_of_the_length_unit_base() {
+    for base in [COMPOUND_BASE, BLOCK_BASE] {
+        for before in [&[][..], &[&b"moAngleUserUnits_c"[..]][..]] {
+            let mut payload = table_after(before, base, 0);
+            let fields = payload.len() - 4 - base;
+            payload[fields..fields + 4].copy_from_slice(&2u32.to_le_bytes());
+            assert_eq!(configuration_length_places(&payload), Some(2));
+            payload[fields + LAST_WORD] = 0;
+            assert_eq!(configuration_length_places(&payload), None);
+        }
+    }
+    let after_density = table_after(&[DENSITY_CLASS], BLOCK_BASE, 0);
+    assert_eq!(configuration_length_places(&after_density), None);
 }
