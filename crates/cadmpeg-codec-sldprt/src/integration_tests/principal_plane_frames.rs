@@ -225,10 +225,11 @@ fn serialized_support_offset_preserves_model_frame_and_polarity() {
     }
 }
 
-/// An offset plane whose only stored frame is its source plane's frame states
-/// no side: the projection keeps its `D1` and reports the assumption.
-#[test]
-fn offset_plane_without_a_side_stating_frame_reports_its_side() {
+/// Projects a Front offset plane at `D1 = 6mm` whose single stored frame lies
+/// at `stored_origin`, and returns its distance and the loss codes installed.
+fn offset_plane_with_stored_origin(
+    stored_origin: &str,
+) -> (f64, Vec<cadmpeg_ir::report::loss::LossKind>) {
     let native = |id: &str, source, ordinal| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -252,7 +253,7 @@ fn offset_plane_without_a_side_stating_frame_reports_its_side() {
         .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
     for (key, value) in [
         (cadmpeg_core::nonblank_literal!("Reference"), "2"),
-        (cadmpeg_core::nonblank_literal!("Origin"), "0mm,0mm,0mm"),
+        (cadmpeg_core::nonblank_literal!("Origin"), stored_origin),
         (cadmpeg_core::nonblank_literal!("Normal"), "0,0,1"),
         (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
     ] {
@@ -277,15 +278,44 @@ fn offset_plane_without_a_side_stating_frame_reports_its_side() {
         .expect("synthetic offset plane")
         .install(&mut model, &mut losses)
         .expect("installed");
-    assert!(matches!(
-        model.features[3].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. })
-            if distance.get() == 6.0
-    ));
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. }) =
+        model.features[3].evaluation.definition()
+    else {
+        panic!("offset plane");
+    };
+    (
+        distance.get(),
+        losses.iter().map(|loss| loss.code.clone()).collect(),
+    )
+}
+
+/// An offset plane whose only stored frame is its source plane's frame states
+/// no side: the projection keeps its `D1` and reports the assumption.
+#[test]
+fn offset_plane_without_a_side_stating_frame_reports_its_side() {
+    let (distance, codes) = offset_plane_with_stored_origin("0mm,0mm,0mm");
+    assert_eq!(distance, 6.0);
     let kind = crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind();
     assert_eq!(
-        losses.iter().filter(|loss| loss.code == kind).count(),
+        codes.iter().filter(|code| **code == kind).count(),
         1,
-        "{losses:?}"
+        "{codes:?}"
     );
+}
+
+/// An offset plane whose stored frame lies parallel to its source plane at
+/// another distance than `D1` keeps its `D1`, and the projection names the
+/// disagreement instead of a side assumption.
+#[test]
+fn offset_plane_whose_stored_frame_contradicts_it_reports_the_conflict() {
+    let (distance, codes) = offset_plane_with_stored_origin("0mm,0mm,9mm");
+    assert_eq!(distance, 6.0);
+    let conflict = crate::loss::SldprtLossCode::FeatureOffsetPlaneFrameConflict.kind();
+    let side = crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind();
+    assert_eq!(
+        codes.iter().filter(|code| **code == conflict).count(),
+        1,
+        "{codes:?}"
+    );
+    assert!(!codes.contains(&side), "{codes:?}");
 }

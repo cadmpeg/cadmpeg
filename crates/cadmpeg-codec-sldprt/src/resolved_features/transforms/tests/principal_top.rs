@@ -103,3 +103,46 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
         Some((2, -3))
     );
 }
+
+/// A profile sketch on the Top frame is named as placed on an assumed Top
+/// plane unless a principal-plane component record placed it; a bore sketch
+/// on the same frame is not a profile sketch on its support plane.
+#[test]
+fn top_plane_binding_is_named_unless_a_component_record_placed_the_sketch() {
+    use crate::resolved_features::compact_reference_planes::top_plane_binding_note;
+    let with_id = |id: &str| Sketch {
+        id: SketchId::mint(id).unwrap(),
+        ..sketch()
+    };
+    let marker = with_id("sldprt:model:sketch#markers:1:7");
+    let note = top_plane_binding_note(&[], std::slice::from_ref(&marker)).expect("named");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.kind()
+    );
+    assert!(note.message.contains("Top plane"), "{}", note.message);
+
+    let mut feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:id#top-feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        native_ref: None,
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(marker.id.clone())),
+            },
+        )),
+    };
+    record_top_marker_coordinates(&mut feature, true);
+    assert!(top_plane_binding_note(&[feature], std::slice::from_ref(&marker)).is_none());
+
+    let bore = with_id("sldprt:model:sketch#bore:1:7");
+    assert!(top_plane_binding_note(&[], &[bore]).is_none());
+}
