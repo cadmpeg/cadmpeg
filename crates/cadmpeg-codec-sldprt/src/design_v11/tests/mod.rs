@@ -883,6 +883,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             measured: typed.measured,
             driven: typed.references,
             manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     for parameter in &parameters {
@@ -1086,6 +1087,7 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
             measured: typed.measured,
             driven: typed.references,
             manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     let diameter = parameters

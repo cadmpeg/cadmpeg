@@ -262,6 +262,7 @@ fn parameters_with_scalars(
                     measured: std::collections::HashMap::new(),
                     driven: std::collections::HashSet::new(),
                     manager: std::collections::HashMap::new(),
+                    confirmed: std::collections::HashSet::new(),
                 },
             );
     (ir, parameters, notes)
@@ -886,4 +887,192 @@ fn a_bare_display_number_states_no_unit() {
     assert_eq!(bare_display_number("<MOD-DIAM>12.7mm"), None);
     assert_eq!(bare_display_number("\"wall\" * 2"), None);
     assert_eq!(bare_display_number("17/32\""), None);
+}
+
+/// The v11 parameters and notes of a part in millimetres, whose units table
+/// states the length precision `places`, whose equation manager stores the metres of `manager` (feature, dimension, metres) beside
+/// those dimensions, each confirmed by the line that drives it where
+/// `confirmed`, and whose decoder bound the dimensions `pmi` (feature,
+/// dimension) to a PMI record.
+fn parameters_with_manager(
+    keywords: &[u8],
+    manager: &[(&str, &str, f64)],
+    confirmed: bool,
+    pmi: &[(&str, &str)],
+    places: Option<u32>,
+) -> (
+    Vec<cadmpeg_ir::design::parameter::DesignParameter>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::features::parameters::{ParameterPmi, PmiDimensionSubtype};
+
+    let ir = part_with_history(keywords, &[]);
+    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let position = |feature: &str, name: &str| {
+        let owner = &ir
+            .model
+            .features
+            .iter()
+            .find(|candidate| candidate.name.as_deref() == Some(feature))
+            .unwrap()
+            .id;
+        ir.model
+            .parameters
+            .iter()
+            .position(|parameter| parameter.owner.as_ref() == Some(owner) && parameter.name == name)
+            .unwrap()
+    };
+    let mut v10 = ir.model.parameters.clone();
+    for (feature, name) in pmi {
+        v10[position(feature, name)].pmi = Some(ParameterPmi {
+            subtype: PmiDimensionSubtype::Linear,
+            precision: 2,
+            display_text: None,
+            basic: false,
+            inspection: false,
+            reference_only: false,
+            native_ref: "pmi-record".to_owned(),
+        });
+    }
+    let manager = manager
+        .iter()
+        .map(|(feature, name, metres)| (v10[position(feature, name)].id.clone(), *metres))
+        .collect::<std::collections::HashMap<_, _>>();
+    let confirmed = if confirmed {
+        manager.keys().cloned().collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+    let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
+    super::super::parameters::Entries::new(&native.feature_histories, &timeline)
+        .unwrap()
+        .parameters(
+            &ir.design.scopes[0].definition,
+            &super::super::parameters::Readings {
+                decoded: super::super::parameters::Decoded::new(&v10, &[]),
+                length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+                length_places: places,
+                bound: std::collections::HashMap::new(),
+                measured: std::collections::HashMap::new(),
+                driven: std::collections::HashSet::new(),
+                manager,
+                confirmed,
+            },
+        )
+}
+
+/// The kind and number of the parameter named `name` among `parameters`.
+fn kind_and_number(
+    parameters: &[cadmpeg_ir::design::parameter::DesignParameter],
+    name: &str,
+) -> (cadmpeg_ir::design::units::ValueKind, Option<f64>) {
+    let parameter = parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some(name)
+        })
+        .unwrap_or_else(|| panic!("{name}: {parameters:#?}"));
+    let number = match &parameter.value {
+        Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value)) => Some(value.get()),
+        _ => None,
+    };
+    (parameter.kind.clone(), number)
+}
+
+#[test]
+fn a_pmi_bound_dimension_takes_no_length_the_manager_stores_beside_its_display() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">44</Dimension>
+                <Dimension Name="D2">44</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let (parameters, _) = parameters_with_manager(
+        keywords,
+        &[("Sketch1", "D1", 0.044), ("Sketch1", "D2", 0.044)],
+        false,
+        &[("Sketch1", "D2")],
+        None,
+    );
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 44.0).abs() < 1e-9, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D2");
+    assert!(
+        matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && number.is_none(),
+        "{kind:?} {number:?}"
+    );
+}
+
+#[test]
+fn a_pmi_bound_dimension_takes_no_length_its_line_gives() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">0.43</Dimension>
+                <Dimension Name="D2">0.43</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let third = 0.0013 / 3.0;
+    let (parameters, _) = parameters_with_manager(
+        keywords,
+        &[("Sketch1", "D1", third), ("Sketch1", "D2", third)],
+        true,
+        &[("Sketch1", "D2")],
+        Some(2),
+    );
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 1.3 / 3.0).abs() < 1e-12, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D2");
+    assert!(
+        matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && number.is_none(),
+        "{kind:?} {number:?}"
+    );
+}
+
+#[test]
+fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    // Every length display is a whole number, so a precision estimated from
+    // the displays would allow half a millimetre. `8` shows the 7.823 mm that
+    // D1's line gives at no decimal places; at two it shows 8.00.
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">8</Dimension>
+                <Dimension Name="D2">20</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let manager = [("Sketch1", "D1", 0.007_823), ("Sketch1", "D2", 0.02)];
+    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], Some(0));
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 7.823).abs() < 1e-9, "{number:?}");
+
+    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], Some(2));
+    let (kind, number) = kind_and_number(&parameters, "D2");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 20.0).abs() < 1e-9, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert!(
+        matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && number.is_none(),
+        "{kind:?} {number:?}"
+    );
+    assert!(
+        notes.iter().any(|note| note
+            .message
+            .contains("than the document's length precision")),
+        "{notes:#?}"
+    );
 }

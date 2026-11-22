@@ -212,7 +212,7 @@ fn sides(first: &mut bool, assigned: (&str, f64), tokens: &[Token<'_>]) -> Vec<u
     let mut bytes = 1u16.to_le_bytes().to_vec();
     bytes.extend(dimension_reference(first, assigned.0, assigned.1));
     bytes.extend(counted_utf16(&format!("\"{}\"", assigned.0)));
-    bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, 0x4d, 0x02]);
+    bytes.extend([0, 0, 0, 0, 1, 0, 0, 0, 0x5a, 0xa5]);
     bytes.extend(EXPRESSION_SIDE_TOKEN.to_le_bytes());
     bytes.extend(u16::try_from(tokens.len() + 1).unwrap().to_le_bytes());
     let plain = |bytes: &mut Vec<u8>, declare: &mut bool, text: &str, kind: u32| {
@@ -1015,13 +1015,17 @@ const UNREAD_KIND_KEYWORDS: &[u8] = br#"<Keywords Name="Bracket">
 const MILLIMETRE: u16 = 0;
 const INCH: u16 = 3;
 
-/// A configuration stream's units table stating the length unit `code`, in
-/// the block container's layout.
-fn units_table(code: u16) -> Vec<u8> {
+/// The length precision of a part whose displays the tests take as exact.
+const EXACT_PLACES: u32 = 8;
+
+/// A configuration stream's units table stating the length unit `code` and
+/// the length precision `places`, in the block container's layout.
+fn units_table(code: u16, places: u32) -> Vec<u8> {
     let mut bytes = b"\xff\xff\x01\x00\x0e\x00moUnitsTable_c".to_vec();
     bytes.extend(16u16.to_le_bytes());
     bytes.extend(b"\xff\xff\x01\x00\x13\x00moLengthUserUnits_c");
     let mut fields = vec![0xaa; 62];
+    fields[..4].copy_from_slice(&places.to_le_bytes());
     fields[44..48].copy_from_slice(&1u32.to_le_bytes());
     bytes.extend(fields);
     bytes.extend(code.to_le_bytes());
@@ -1054,7 +1058,7 @@ fn decode_unread_kinds(after_text: [u8; 6]) -> (CadIr, Vec<LossNote>) {
             Token::Plain("1", 2),
         ],
     );
-    let mut stream = units_table(MILLIMETRE);
+    let mut stream = units_table(MILLIMETRE, EXACT_PLACES);
     stream.extend(manager_owning(
         &[
             ("\"Half@Boss\" = \"Width@Boss\" / 2", half),
@@ -1139,14 +1143,16 @@ fn a_global_variable_in_the_expression_stores_no_value_beside_it() {
     );
 }
 
-/// A part of `keywords` whose length unit is `unit`, with a manager of
-/// `relations` in the layout that stores values.
+/// A part of `keywords` whose length unit is `unit` and whose length
+/// precision is `places`, with a manager of `relations` in the layout that
+/// stores values.
 fn decode_relations(
     keywords: &[u8],
     unit: u16,
+    places: u32,
     relations: &[(&str, Vec<u8>)],
 ) -> (CadIr, Vec<LossNote>) {
-    let mut stream = units_table(unit);
+    let mut stream = units_table(unit, places);
     stream.extend(manager_owning(relations, [0, 2, 0, 0, 0, 0]));
     decode_keywords(keywords, &[("Contents/Config-0", stream)])
 }
@@ -1193,6 +1199,7 @@ fn an_angle_the_manager_stores_in_radians_stays_untyped() {
     let (ir, _) = decode_relations(
         &boss_keywords("30", "15", "1"),
         MILLIMETRE,
+        EXACT_PLACES,
         &[half_of_lead(&mut first, 30.0 * degree, 15.0 * degree)],
     );
     for name in ["Lead", "Half"] {
@@ -1210,6 +1217,7 @@ fn the_manager_types_a_length_in_a_part_in_inches() {
     let (ir, _) = decode_relations(
         &boss_keywords("1.75", "0.875", "1"),
         INCH,
+        EXACT_PLACES,
         &[half_of_lead(&mut first, 0.044_45, 0.022_225)],
     );
     let length = ValueKind::Quantity(Quantity::LENGTH);
@@ -1243,17 +1251,40 @@ fn reading_lines_that_store_different_values_give_none() {
             Token::Plain("4", 2),
         ],
     );
+    let eighth = sides(
+        &mut first,
+        ("Eighth@Boss", 0.0055),
+        &[
+            Token::Dimension("Lead@Boss", 0.044),
+            Token::Plain("/", 3),
+            Token::Plain("8", 2),
+        ],
+    );
+    let keywords = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">44</Dimension>
+        <Dimension Name="Half">22</Dimension>
+        <Dimension Name="Quarter">11</Dimension>
+        <Dimension Name="Eighth">5.5</Dimension>
+    </Extrusion>
+</Keywords>"#;
     let (ir, _) = decode_relations(
-        &boss_keywords("44", "22", "11"),
+        keywords,
         MILLIMETRE,
-        &[half, ("\"Quarter@Boss\" = \"Lead@Boss\" / 4", quarter)],
+        EXACT_PLACES,
+        &[
+            half,
+            ("\"Quarter@Boss\" = \"Lead@Boss\" / 4", quarter),
+            ("\"Eighth@Boss\" = \"Lead@Boss\" / 8", eighth),
+        ],
     );
     assert!(
         is_untyped(&ir, "Lead"),
-        "lines that store different values beside Lead type it with neither: {:?}",
+        "lines that store different values beside Lead type it with none of them, the first \
+         or the last: {:?}",
         parameter(&ir, "Lead")
     );
-    for name in ["Half", "Quarter"] {
+    for name in ["Half", "Quarter", "Eighth"] {
         assert!(
             matches!(
                 parameter(&ir, name).definition,
@@ -1262,4 +1293,163 @@ fn reading_lines_that_store_different_values_give_none() {
             "{name}"
         );
     }
+}
+
+/// A part in the length unit `unit` at the length precision `places`, whose
+/// boss shows `lead.0` as `Lead`,
+/// `target.1` as the dimension named `target.0`, and `quarter` as `Quarter`,
+/// the target driven by `"<target>@Boss" = "Lead@Boss" / 3`, the relation
+/// storing `lead.1` metres beside `Lead` and `third` metres beside the target.
+fn decode_third(
+    unit: u16,
+    places: u32,
+    lead: (&str, f64),
+    target: (&str, &str),
+    quarter: &str,
+    third: f64,
+) -> (CadIr, Vec<LossNote>) {
+    let mut first = true;
+    let assigned = format!("{}@Boss", target.0);
+    let owned = sides(
+        &mut first,
+        (&assigned, third),
+        &[
+            Token::Dimension("Lead@Boss", lead.1),
+            Token::Plain("/", 3),
+            Token::Plain("3", 2),
+        ],
+    );
+    let keywords = format!(
+        r#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Dimension Name="Lead">{}</Dimension>
+        <Dimension Name="{}">{}</Dimension>
+        <Dimension Name="Quarter">{quarter}</Dimension>
+    </Extrusion>
+</Keywords>"#,
+        lead.0, target.0, target.1
+    );
+    let line = format!("\"{assigned}\" = \"Lead@Boss\" / 3");
+    decode_relations(keywords.as_bytes(), unit, places, &[(&line, owned)])
+}
+
+/// Asserts that `name` is the length `millimetres` with the formula
+/// `Lead / 3`, and that no note names it.
+fn assert_takes_its_line(ir: &CadIr, losses: &[LossNote], name: &str, millimetres: f64) {
+    let target = parameter(ir, name);
+    assert_eq!(target.kind, ValueKind::Quantity(Quantity::LENGTH));
+    match &target.value {
+        Some(ParameterValue::Number(value)) => {
+            assert!((value.get() - millimetres).abs() < 1e-9, "{value:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        neutral_text(target),
+        (
+            "$0 / 3".to_owned(),
+            vec![reference_to(parameter(ir, "Lead"))]
+        )
+    );
+    assert!(messages(losses, SldprtLossCode::DesignEquationSource).is_empty());
+    for code in [
+        SldprtLossCode::DesignParameterValueUnread,
+        SldprtLossCode::DesignParameterDisplayRounded,
+    ] {
+        let named = messages(losses, code);
+        assert!(
+            named
+                .iter()
+                .all(|message| !message.contains(target.id.as_str())),
+            "{named:?}"
+        );
+    }
+    assert_no_design_findings(ir);
+}
+
+#[test]
+fn a_display_that_rounds_the_length_its_line_gives_takes_the_stored_length() {
+    let lead = ("1.3", 0.0013);
+    let third = 0.0013 / 3.0;
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("Half", "0.43"), "2.5", third);
+    assert_takes_its_line(&ir, &losses, "Half", 1.3 / 3.0);
+
+    let (ir, losses) = decode_third(
+        MILLIMETRE,
+        3,
+        ("1.315", 0.001_315),
+        ("Half", "0.44"),
+        "2.5",
+        0.001_315 / 3.0,
+    );
+    assert_eq!(
+        parameter(&ir, "Lead").kind,
+        ValueKind::Quantity(Quantity::LENGTH)
+    );
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a display coarser than the length precision: {half:?}"
+    );
+    assert!(matches!(
+        half.definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued.len() == 1
+            && unvalued[0].contains("than the document's length precision")
+            && unvalued[0].contains(half.id.as_str()),
+        "{unvalued:?}"
+    );
+
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("Half", "0.43"), "2.5", 0.000_432);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a stored value the line does not give: {half:?}"
+    );
+    let unvalued = messages(&losses, SldprtLossCode::DesignParameterValueUnread);
+    assert!(
+        unvalued
+            .iter()
+            .all(|message| !message.contains("length precision")),
+        "{unvalued:?}"
+    );
+}
+
+#[test]
+fn a_length_that_holds_its_rounded_display_takes_the_length_its_line_gives() {
+    let lead = ("1.3", 0.0013);
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("D1", "0.43"), "2.5", 0.0013 / 3.0);
+    assert_takes_its_line(&ir, &losses, "D1", 1.3 / 3.0);
+
+    let (ir, losses) = decode_third(MILLIMETRE, 2, lead, ("D1", "0.43"), "2.5", 0.000_432);
+    let depth = parameter(&ir, "D1");
+    assert_eq!(depth.kind, ValueKind::Quantity(Quantity::LENGTH));
+    match &depth.value {
+        Some(ParameterValue::Number(value)) => assert!((value.get() - 0.43).abs() < 1e-12),
+        other => panic!("a stored value the line does not give: {other:?}"),
+    }
+    let rounded = messages(&losses, SldprtLossCode::DesignParameterDisplayRounded);
+    assert!(
+        rounded
+            .iter()
+            .any(|message| message.contains(depth.id.as_str())),
+        "{rounded:?}"
+    );
+}
+
+#[test]
+fn a_part_in_inches_takes_the_length_its_line_gives_where_the_display_rounds_inches() {
+    let lead = 1.3 * 0.0254;
+    let (ir, losses) = decode_third(INCH, 2, ("1.3", lead), ("Half", "0.43"), "2.5", lead / 3.0);
+    assert_takes_its_line(&ir, &losses, "Half", 1.3 * 25.4 / 3.0);
+
+    let (ir, _) = decode_third(INCH, 2, ("1.3", lead), ("Half", "11.01"), "2.5", lead / 3.0);
+    let half = parameter(&ir, "Half");
+    assert!(
+        is_untyped(&ir, "Half"),
+        "a display of the millimetres in a part in inches: {half:?}"
+    );
 }

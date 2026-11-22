@@ -27,7 +27,7 @@ mod tree;
 mod typed;
 mod units;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -117,7 +117,7 @@ pub(crate) fn project(
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
-    let readings = parameters::Readings {
+    let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
         length_places,
@@ -130,22 +130,28 @@ pub(crate) fn project(
             &timeline.features,
             |feature, name| entries.owned(feature, name).cloned(),
         ),
+        confirmed: HashSet::new(),
     };
-    let (mut parameters, notes) = entries.parameters(&definition, &readings);
-    losses.extend(notes);
+    let linking = equations::Linking {
+        managers: &managers,
+        scope: &definition,
+        active,
+        features: &timeline.features,
+        length_unit: length,
+        tolerances: &ir.tolerances,
+    };
+    let (mut parameters, mut notes) = entries.parameters(&definition, &readings);
+    let entered = parameters.len();
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
-    losses.extend(equations::link(
-        &mut parameters,
-        &equations::Linking {
-            managers: &managers,
-            scope: &definition,
-            active,
-            features: &timeline.features,
-            length_unit: length,
-            tolerances: &ir.tolerances,
-        },
-    ));
+    readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
+    if !readings.confirmed.is_empty() {
+        let driven = parameters.split_off(entered);
+        (parameters, notes) = entries.parameters(&definition, &readings);
+        parameters.extend(driven);
+    }
+    losses.extend(notes);
+    losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));

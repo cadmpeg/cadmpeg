@@ -350,6 +350,72 @@ pub(super) fn stored_values(
         .collect()
 }
 
+/// The dimensions whose value in `manager`, in metres, the line that drives
+/// them gives: every name the line reads resolves, the relation stores a
+/// value beside each, and that value is the parameter's cache; the line's
+/// tree with a length target, evaluated over those caches, is that length to
+/// one part in 10⁹.
+pub(super) fn results(
+    parameters: &[DesignParameter],
+    manager: &HashMap<ParameterId, f64>,
+    linking: &Linking<'_>,
+) -> HashSet<ParameterId> {
+    let Ok(lines) = active_lines(linking.managers, linking.active) else {
+        return HashSet::new();
+    };
+    let names = Names::new(parameters, linking.features);
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    lines
+        .iter()
+        .flatten()
+        .filter_map(|(line, stored)| {
+            let target = &parameters[names.resolve(&line.name)?];
+            if matches!(target.definition, ParameterDefinition::Driven) {
+                return None;
+            }
+            let metres = *manager.get(&target.id)?;
+            let stored = stored.as_ref()?;
+            let reads = line
+                .segments
+                .iter()
+                .filter_map(|segment| match segment {
+                    Segment::Name(name) => Some(names.resolve(name)),
+                    Segment::Text(_) => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if reads.is_empty() || reads.len() != stored.reads.len() {
+                return None;
+            }
+            let confirmed = reads
+                .iter()
+                .zip(&stored.reads)
+                .all(|(&read, value)| value.is_some_and(|value| stores(&parameters[read], value)));
+            if !confirmed {
+                return None;
+            }
+            let tree = translate::tree(
+                &line.expression,
+                &translate::Typing {
+                    parameters,
+                    names: &names,
+                    target: &length,
+                    length_unit: linking.length_unit,
+                },
+            )?;
+            let Value::Number {
+                value: millimetres,
+                quantity: Quantity::LENGTH,
+            } = evaluated(parameters, &tree, &reads)?
+            else {
+                return None;
+            };
+            let gives = millimetres / MM_PER_M;
+            ((gives - metres).abs() <= STORED_RELATIVE * gives.abs().max(metres.abs()))
+                .then(|| target.id.clone())
+        })
+        .collect()
+}
+
 /// What the lines are read against.
 pub(super) struct Linking<'a> {
     pub(super) managers: &'a Managers,
@@ -820,6 +886,18 @@ fn test(
     }) {
         return Test::Unconfirmed;
     }
+    match evaluated(parameters, tree, reads) {
+        Some(evaluated) if agree(&evaluated, &target_cache, tolerances) => Test::Agrees,
+        Some(_) | None => Test::Disagrees,
+    }
+}
+
+/// The tree's evaluation over the caches of the parameters `reads`.
+fn evaluated(
+    parameters: &[DesignParameter],
+    tree: &Node<ParameterRef>,
+    reads: &[usize],
+) -> Option<Value> {
     let by_id = reads
         .iter()
         .map(|&read| (parameters[read].id.as_str(), read))
@@ -830,10 +908,7 @@ fn test(
             .and_then(|&read| cached(&parameters[read])),
         RefTarget::External { .. } => None,
     };
-    match evaluate(tree, &mut value_of) {
-        Ok(evaluated) if agree(&evaluated, &target_cache, tolerances) => Test::Agrees,
-        Ok(_) | Err(_) => Test::Disagrees,
-    }
+    evaluate(tree, &mut value_of).ok()
 }
 
 /// Whether the manager's stored `value` (metres, radians, or a count) is the
