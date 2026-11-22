@@ -576,8 +576,16 @@ pub(super) fn check_resolved_states(
         return Ok(());
     }
     let geometry = locate(&ir.geometry);
-    if !has_evaluations {
+    if has_names {
         check_current_names(ir, &geometry, findings);
+    }
+    let unproduced: BTreeSet<&BodyId> = ir
+        .design
+        .scopes
+        .iter()
+        .flat_map(|scope| &scope.unproduced)
+        .collect();
+    if !has_evaluations && unproduced.is_empty() {
         return Ok(());
     }
     let resolver = Resolver {
@@ -586,14 +594,7 @@ pub(super) fn check_resolved_states(
         geometry,
         children: ir.geometry.child_lists(),
     };
-    let unproduced: BTreeSet<&BodyId> = ir
-        .design
-        .scopes
-        .iter()
-        .flat_map(|scope| &scope.unproduced)
-        .collect();
-    if has_names {
-        check_current_names(ir, &resolver.geometry, findings);
+    if has_names && !unproduced.is_empty() {
         let extent = resolver.geometry_extent(unproduced.iter().copied())?;
         for (entity, entry) in &extent.names {
             if entry.name.is_some() {
@@ -604,6 +605,9 @@ pub(super) fn check_resolved_states(
                 );
             }
         }
+    }
+    if !has_evaluations {
+        return Ok(());
     }
     let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
     for evaluation in &ir.design.evaluations {

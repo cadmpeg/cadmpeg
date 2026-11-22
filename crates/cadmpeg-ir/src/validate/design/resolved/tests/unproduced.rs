@@ -52,6 +52,11 @@ fn names_on_an_unproduced_extent_are_native() {
         &ir,
         "an entity of an unproduced body must have no structured name",
     );
+    ir.design.evaluations.clear();
+    assert_finding(
+        &ir,
+        "an entity of an unproduced body must have no structured name",
+    );
 }
 
 #[test]
