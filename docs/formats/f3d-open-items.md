@@ -1830,7 +1830,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Conflict.** None.
 
-**Note.** Result body links outside the scope's product definition remain native with `scope.output-owner-mismatch`.
+**Note.** Result body links outside the scope's product definition remain native with `scope.output-owner-mismatch`. A body with changes after its last linked feature receives a native operation and `feature.body-history-incomplete`. A last feature without a readable history state, a history without a state order, and a body whose slot is unread receive them too, and the note names an unread state. A body that no single decoded history holds receives no interval; it receives `feature.body-history-unread`, and the note states that changes after its last feature are not checked. When exactly one product definition lists the body, that definition owns the operation; the note names it. Zero or several such definitions retain the unowned operation and imported final shape with `feature.body-history-owner-unresolved`; its note states no owner or several owners. A tail made of geometry-unchanged transitions preserves the linked history. An interval to the bound head with unresolved body incidence or transition links retains the native operation.
 
 ### DR-162. Component paths with two nested occurrence placements
 

@@ -205,6 +205,7 @@ pub(crate) fn derived_base_snapshots(
 pub(crate) struct ConsumerContext {
     pub(crate) bindings: HashMap<String, String>,
     pub(crate) remaining_work: usize,
+    pub(crate) tails: super::body_history_tail::BodyHistoryTails,
 }
 
 pub(crate) fn fill(
@@ -517,7 +518,8 @@ pub(crate) fn fill_consumed(
         &work,
         losses,
     );
-    contain_consumed_failure(ctx, result, losses)
+    contain_consumed_failure(ctx, result, losses)?;
+    super::body_history_tail::append(model, &context.tails, losses)
 }
 
 fn contain_consumed_failure(
@@ -858,7 +860,7 @@ fn identity_slot(
     Ok(slot.filter(|slot| carriers.next().is_none() && identity.revised.contains(slot)))
 }
 
-fn output_history<'a>(
+pub(super) fn output_history<'a>(
     bodies: impl Iterator<Item = &'a str>,
     histories: &'a [AsmHistory],
     primary_brep: Option<&str>,

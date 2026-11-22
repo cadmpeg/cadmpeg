@@ -423,6 +423,11 @@ pub(crate) enum F3dLossCode {
     FeatureHistoryBodyBounded,
     FeatureHistoryBodyUndecoded,
     FeatureHistoryBodyConsumedWithheld,
+    /// Later body changes retain a native operation after the linked feature history.
+    FeatureBodyHistoryIncomplete,
+    FeatureBodyHistoryOwnerUnresolved,
+    /// No single decoded history holds a body, so changes after its last feature are not checked.
+    FeatureBodyHistoryUnread,
     FeatureOwnedBodyPairingAssumed,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
@@ -1592,6 +1597,9 @@ impl F3dLossCode {
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUndecoded,
         Self::FeatureHistoryBodyConsumedWithheld,
+        Self::FeatureBodyHistoryIncomplete,
+        Self::FeatureBodyHistoryOwnerUnresolved,
+        Self::FeatureBodyHistoryUnread,
         Self::FeatureOwnedBodyPairingAssumed,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
@@ -2364,6 +2372,9 @@ impl F3dLossCode {
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
             Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
+            Self::FeatureBodyHistoryIncomplete => "feature.body-history-incomplete",
+            Self::FeatureBodyHistoryOwnerUnresolved => "feature.body-history-owner-unresolved",
+            Self::FeatureBodyHistoryUnread => "feature.body-history-unread",
             Self::FeatureOwnedBodyPairingAssumed => "feature.owned-body-pairing-assumed",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
@@ -3281,6 +3292,9 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::FeatureBodyHistoryIncomplete
+            | Self::FeatureBodyHistoryOwnerUnresolved
+            | Self::FeatureBodyHistoryUnread => Severity::Warning,
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -4073,6 +4087,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::FeatureBodyHistoryIncomplete
+            | Self::FeatureBodyHistoryOwnerUnresolved
+            | Self::FeatureBodyHistoryUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -5189,6 +5206,9 @@ mod tests {
                 "feature.history-body-bounded",
                 "feature.history-body-undecoded",
                 "feature.history-body-consumed-withheld",
+                "feature.body-history-incomplete",
+                "feature.body-history-owner-unresolved",
+                "feature.body-history-unread",
                 "feature.owned-body-pairing-assumed",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
