@@ -12682,6 +12682,30 @@ Unstated regions:
 
 - `48..126` (78 B): The common native tail precedes the same-index paired header.
 
+## `move_transform_omitted_matrix_frame_128`
+
+Spec §3.1 · layout: byte offsets · size: 128 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | With four null reference slots, form five, and an omitted matrix |
+| 11 | 20 | `header_zero` | `bytes[20]` | little | spec | With four null reference slots, form five, and an omitted matrix · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 31 | 1 | `first_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 32 | 1 | `second_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 33 | 1 | `third_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 34 | 4 | `first_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 38 | 1 | `fourth_reference` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 39 | 4 | `second_code` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `0` |
+| 43 | 4 | `form` | `u32` | little | spec | With four null reference slots, form five, and an omitted matrix · value `5` |
+| 47 | 1 | `matrix_omitted` | `u8` | little | spec | With four null reference slots, form five, and an omitted matrix · value `1` |
+
+Unstated regions:
+
+- `48..128` (80 B): The common native tail precedes the same-index paired header.
+
 ## `rigid_transform_leading_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 29 B
