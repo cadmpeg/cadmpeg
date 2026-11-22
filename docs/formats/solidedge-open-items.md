@@ -48,15 +48,6 @@
 
 **Need.** Documents that differ in one feature of each kind.
 
-### DR-1017. Group feature kind and feature operands
-
-**Question.** Which field separates a mirror copy from a pattern in a `CLSID_JMGroup` feature, and where do swept, lofted, hole, round, chamfer and thin-wall features store their operands?
-
-**Known.** A `CLSID_JMGroup` object has a different layout from a `CLSID_JMPart` object after its frame. Extruded and revolved features store their parameters in the slots of §6.1. Swept and lofted features store their first profile at the §5.3 position.
-
-**Need.** Mirror and pattern documents that differ in one parameter, and documents of each other feature kind that differ in one parameter.
-
-
 ### DR-1020. Second side word of extruded features
 
 **Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
@@ -81,6 +72,22 @@
 
 **Need.** Tapped holes of two thread sizes, with and without a counterbore.
 
+### DR-1023. Swept, lofted and thin-wall operands
+
+**Question.** Where do swept, lofted and thin-wall features store their paths, sections, thicknesses and open faces?
+
+**Known.** Swept and lofted features store their first profile at the §5.3 position. Extruded, revolved, hole, round, chamfer, pattern and mirror features store their parameters as §6 to §8 state.
+
+**Need.** Documents of each of these feature kinds that differ in one parameter.
+
+### DR-1024. Circular pattern sense and mirrors of several seeds
+
+**Question.** Which sense does a circular pattern turn about its axis, and where does a mirror of more than one seed store its plane?
+
+**Known.** Every read circular pattern fills a full turn. Every read mirror has one seed and stores its plane at object offset 329 (§8.2).
+
+**Need.** A circular pattern of three instances 30 degrees apart, and a mirror of two features.
+
 ### DR-1025. Round set kinds
 
 **Question.** What does round set kind `2` state, and where does such a set store its size?
@@ -88,4 +95,3 @@
 **Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
-
