@@ -292,6 +292,8 @@ The origin, `A` and `B` of the profile equal those of its plane.
 A `CLSID_JProfile2d` object lists the profile members. The `u32` at object
 offset 8 is the member count `n`, and `n` `u32` member identifiers follow
 it.
+A member identifier `0xFFFFFFFF` names no object; the profile of a revolved
+protrusion lists one.
 
 ### 5.2 Profile curves
 
