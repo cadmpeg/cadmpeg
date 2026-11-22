@@ -196,7 +196,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let first_depth_name = if positional_depth {
                 Some(cadmpeg_core::nonblank_literal!("D1"))
             } else {
-                existing.and_then(sole_length_parameter)
+                existing
+                    .and_then(|record| {
+                        crate::history::literals::sole_length_parameter(&record.parameters)
+                    })
+                    .map(|(name, _)| name.clone())
             };
             // A depth goes under the record's name for it when the record has
             // one, so the record never states a depth twice.
@@ -751,18 +755,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     }
 }
 
-/// The one parameter of an extrusion record, when it holds a length: the
-/// projection reads it as the first depth.
-fn sole_length_parameter(
-    record: &crate::records::Feature,
-) -> Option<cadmpeg_core::text::NonBlankString> {
-    let mut parameters = record.parameters.iter();
-    let (name, value) = parameters.next()?;
-    let length = crate::history::literals::parse_positive_length_mm(value)
-        .or_else(|| crate::history::literals::parse_positive_dimension_length_mm(value));
-    (parameters.next().is_none() && length.is_some()).then(|| name.clone())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -823,5 +815,71 @@ mod tests {
                 assert!(!encoded.properties.contains_key("Direction"));
             }
         }
+    }
+
+    /// The first `length` leaf of `value`.
+    fn first_length(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if fields
+                    .get("length")
+                    .is_some_and(serde_json::Value::is_number)
+                {
+                    return fields.get_mut("length");
+                }
+                fields.values_mut().find_map(first_length)
+            }
+            serde_json::Value::Array(items) => items.iter_mut().find_map(first_length),
+            _ => None,
+        }
+    }
+
+    /// A record that holds one user-named length and no `Depth` or `D1` is
+    /// read with that length as its depth. A depth edit is written to it,
+    /// and the record gains no `Depth`.
+    #[test]
+    fn a_depth_edit_is_written_to_the_records_one_length_parameter() {
+        let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
+            "id":"native", "parent":"history", "ordinal":0,
+            "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+            "input_class":"moExtrusion_c", "parameters":{"Plate thickness":"10mm"},
+            "properties":{"EndCondition":"Blind", "Operation":"Join"}
+        }))
+        .expect("synthetic feature record");
+        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+            "id":"history", "features":[record.clone()]
+        }))
+        .expect("synthetic history");
+        let mut feature = crate::history::project::project_features(&[history])
+            .expect("feature projection")
+            .into_iter()
+            .next()
+            .expect("extrusion");
+        let mut wire =
+            serde_json::to_value(feature.evaluation.definition()).expect("definition wire form");
+        let length = first_length(&mut wire).expect("the record's length is the depth");
+        assert_eq!(length.as_f64(), Some(10.0));
+        *length = serde_json::json!(11.0);
+        feature
+            .evaluation
+            .set_definition(serde_json::from_value(wire).expect("edited definition"));
+        let encoded = NeutralFeatureEncoder {
+            contradicted_travel: false,
+            feature: &feature,
+            existing: Some(&record),
+            principal_planes_by_record: &HashMap::new(),
+            record_sources: &HashMap::new(),
+            retained_tree_node_roles: &HashMap::new(),
+            feature_sources: &HashMap::new(),
+            sketch_sources: &HashMap::new(),
+            parent_sources: &HashMap::new(),
+            resolved_parameter_names: &HashMap::new(),
+        }
+        .encode()
+        .expect("a blind depth edit encodes");
+        let (name, depth) = crate::history::literals::sole_length_parameter(&encoded.parameters)
+            .expect("the record holds one length");
+        assert_eq!(name.as_str(), "Plate thickness");
+        assert_eq!(depth.get().to_string(), "11", "{:?}", encoded.parameters);
     }
 }
