@@ -6,8 +6,8 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point_at_with_basis};
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
@@ -558,7 +558,7 @@ fn evaluate_profile_point(
     basis: &mut [f64],
 ) -> Result<Point3, GeometryError> {
     nurbs_curve_point_at_with_basis(ctx, curve, parameter, basis)
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         .map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
                 GeometryError::Codec(limit.into())
@@ -1550,7 +1550,7 @@ pub(crate) mod tests {
                 if index == 1 {
                     point.z = 1.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )

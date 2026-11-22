@@ -37,7 +37,7 @@ fn helix_edge_doc(cache: bool) -> CadIr {
     .unwrap();
     ir.geometry.points[0] = Point::new(
         ir.geometry.points[0].id.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
         None,
     );
     ir.geometry.edges[0].ends.as_mut().unwrap().end =

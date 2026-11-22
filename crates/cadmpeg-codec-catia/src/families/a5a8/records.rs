@@ -10,7 +10,7 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -201,7 +201,19 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
+struct SurfaceTail {
+    parameters: [f64; 8],
+    descriptors: Option<[(u32, Option<u32>); 2]>,
+    continuation: Vec<f64>,
+    flags: [u8; 3],
+    fixed_suffix: bool,
+}
+
 fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
+    surface_tail(data, at, end, owned).map(|_| end)
+}
+
+fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<SurfaceTail> {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let tail = data.get(at..end)?;
@@ -220,14 +232,16 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
+        _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
+    let flags: [u8; 3] = tail
+        .get(layout::FLAGS + extra..layout::CONTINUATION + extra)?
+        .try_into()
+        .ok()?;
     if controls[0] != 1
         || !(controls[2] == 1 || owned && tail_len == 142 && controls[2] == 0)
-        || !matches!(
-            tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-            [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
-        )
+        || !matches!(flags, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
     {
         return None;
     }
@@ -245,18 +259,35 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     }
     let continuation_start = layout::CONTINUATION + extra;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = tail.get(continuation_start..continuation_end)?;
+    let bytes = tail.get(continuation_start..continuation_end)?;
+    let mut continuation = Vec::new();
     for index in 0..continuation_bytes / 8 {
-        let value = f64_le(continuation, index * 8)?;
-        if tail_len == 133 && value.get() != 0.0 {
+        let value = f64_le(bytes, index * 8)?.get();
+        if tail_len == 133 && value != 0.0 {
             return None;
         }
+        continuation.push(value);
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (
-        tail_len,
-        &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-    ) {
+    let fixed_suffix = fixed_surface_suffix(tail_len, flags, suffix, owned);
+    let descriptors = if owned {
+        Some(owned_surface_suffix(suffix)?)
+    } else {
+        None
+    };
+    (fixed_suffix || owned && tail_len >= layout::LEN && descriptors.is_some()).then_some(
+        SurfaceTail {
+            parameters,
+            descriptors,
+            continuation,
+            flags,
+            fixed_suffix,
+        },
+    )
+}
+
+fn fixed_surface_suffix(length: usize, flags: [u8; 3], suffix: &[u8], owned: bool) -> bool {
+    match (length, flags) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             matches!(
@@ -280,8 +311,24 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
                 && suffix[5..] == [0x07, 0x07]
         }
         _ => false,
-    };
-    valid_suffix.then_some(end)
+    }
+}
+
+fn owned_surface_suffix(bytes: &[u8]) -> Option<[(u32, Option<u32>); 2]> {
+    let mut at = 0;
+    let mut descriptors = [(0, None); 2];
+    for descriptor in &mut descriptors {
+        let control = compact_int(bytes, &mut at)?;
+        let present = View::over_retained(bytes.get(at..)?).u8()?;
+        at += 1;
+        let extra = match present {
+            0x00 => None,
+            0x01 => Some(compact_int(bytes, &mut at)?),
+            _ => return None,
+        };
+        *descriptor = (control, extra);
+    }
+    (bytes.get(at..) == Some([0x07, 0x07].as_slice())).then_some(descriptors)
 }
 
 fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
@@ -1735,7 +1782,7 @@ fn a5_surface(
     let Some(u_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, u_degree, u_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1749,7 +1796,7 @@ fn a5_surface(
     let Some(v_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, v_degree, v_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1805,7 +1852,19 @@ fn a5_surface(
         }
         _ => return Ok(None),
     };
-    if parse_surface_tail(data, at, end, owned).is_none() {
+    let Some(tail) = surface_tail(data, at, end, owned) else {
+        return Ok(None);
+    };
+    let parameters = tail.parameters;
+    let full_limits = [
+        u_distinct[0],
+        u_distinct[u_distinct.len() - 1],
+        v_distinct[0],
+        v_distinct[v_distinct.len() - 1],
+    ];
+    if !tail.fixed_suffix
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
         return Ok(None);
     }
     let control_points = grid_rows(control_points, v_count)?;
@@ -1822,6 +1881,24 @@ fn a5_surface(
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
     );
+    if geometry.is_some()
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
+        refusal.push_surface_parameters_not_transferred(pos, parameters);
+    }
+    let extrapolation = tail.descriptors.filter(|descriptors| {
+        *descriptors != [(0, None); 2]
+            || tail.flags != [1, 1, 1]
+            || tail.continuation.iter().any(|value| *value != 0.0)
+    });
+    if let (true, Some(descriptors)) = (geometry.is_some(), extrapolation) {
+        refusal.push_surface_extrapolation_not_transferred(
+            pos,
+            descriptors,
+            tail.flags,
+            &tail.continuation,
+        );
+    }
     if geometry.is_some() && inferred_weights {
         refusal.push_surface_weights_inferred(pos);
     }
@@ -2150,9 +2227,16 @@ fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize>
     Some(count)
 }
 
-fn a5_array_marker(bytes: &[u8], at: usize, owned: bool) -> Option<usize> {
+fn a5_array_marker(
+    bytes: &[u8],
+    at: usize,
+    owned: bool,
+    degree: u32,
+    distinct_count: usize,
+) -> Option<usize> {
     match bytes.get(at..at + 2) {
         Some([0x0c, ..]) => Some(at + 1),
+        Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
         Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,

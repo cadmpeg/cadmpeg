@@ -3,7 +3,7 @@
 
 use super::patterns::DesignPlane;
 use crate::records::identity::Located;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 

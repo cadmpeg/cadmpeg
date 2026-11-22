@@ -249,7 +249,7 @@ fn edge_attached_loss_names_the_decoded_edge_count() {
 #[test]
 fn native_contour_retains_unique_item_matched_brep_revisions() {
     use crate::feature::edge_selection::{geometry::EdgeGeometry, historical::SelectedEdge};
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
 
     context_run(|ctx| {
         for invalid in [None, Some("item"), Some("owners")] {

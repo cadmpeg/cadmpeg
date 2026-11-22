@@ -26,6 +26,7 @@
 //! reports `feature.profile-cap-outline-assumed`.
 
 pub(super) mod compact;
+pub(super) mod overlap;
 pub(super) mod spatial;
 
 use std::collections::HashSet;
@@ -48,6 +49,7 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 const ARC_SEGMENTS: u32 = 64;
 /// Grid lines per axis searched for a point well inside a region.
 const SAMPLE_GRID: u32 = 24;
+const SAMPLE_SEARCH_CLEARANCE_FACTOR: f64 = 10.0;
 /// Relative difference allowed between the cap area and the selected area.
 /// Both sides are polylines of the same circles and arcs.
 pub(super) const AREA_AGREEMENT: f64 = 1e-3;
@@ -456,7 +458,7 @@ pub(super) fn cap_profile_selection(
             }
         }
     }
-    let selection = trimmed_selection(&sampled, &selected);
+    let selection = trimmed_selection(&sampled, &selected, tolerance);
     if selection.is_some() {
         if outline_assumed {
             work.note_cap_outline_assumed();
@@ -595,7 +597,8 @@ fn stored_profile_loops(current: &ResolvedProfileSelection) -> Option<Vec<u32>> 
         ResolvedProfileSelection::Regions(regions) => {
             let mut indices = Vec::new();
             for region in regions {
-                let cadmpeg_ir::features::SketchProfileRegion::Loops { loops } = region else {
+                let cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } = region
+                else {
                     return None;
                 };
                 indices.push(loops.outer());
@@ -715,7 +718,7 @@ fn removed_regions(
     {
         return Ok(None);
     }
-    let selection = trimmed_selection(&sampled, &selected);
+    let selection = trimmed_selection(&sampled, &selected, tolerance);
     if selection.is_some() {
         if beyond_profile {
             work.note_cut_regions_beyond_profile();
@@ -732,7 +735,25 @@ fn removed_regions(
 fn trimmed_selection(
     sampled: &[Sampled<'_>],
     selected: &[usize],
+    tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
+    let rings: Vec<Vec<&[Point2]>> = selected
+        .iter()
+        .map(|index| {
+            std::iter::once(sampled[*index].region.polyline.as_slice())
+                .chain(
+                    sampled[*index]
+                        .nested
+                        .iter()
+                        .map(|nested| sampled[*nested].region.polyline.as_slice()),
+                )
+                .collect()
+        })
+        .collect();
+    let points: Vec<_> = selected.iter().map(|index| sampled[*index].point).collect();
+    if !overlap::interiors_are_disjoint(&rings, &points, tolerance) {
+        return None;
+    }
     let mut out = Vec::new();
     for &index in selected {
         let region = &sampled[index];
@@ -753,7 +774,7 @@ fn trimmed_selection(
                     .collect()
             })
             .collect();
-        let Ok(region) = cadmpeg_ir::features::SketchProfileRegion::trimmed(
+        let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::trimmed(
             region.region.boundary.clone(),
             holes,
         ) else {
@@ -1424,6 +1445,12 @@ fn polygon_area(ring: &[Point2]) -> f64 {
         * 0.5
 }
 
+fn clearance(point: Point2, ring: &[Point2]) -> f64 {
+    (0..ring.len())
+        .map(|i| point_segment_distance(point, (ring[i], ring[(i + 1) % ring.len()])))
+        .fold(f64::INFINITY, f64::min)
+}
+
 /// Each region with a point well inside it, outside the regions nested in it.
 /// `None` when a region has no such point.
 fn sample_regions<'a>(
@@ -1455,11 +1482,6 @@ fn sample_points(
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
         .collect();
-    let clearance = |point: Point2, ring: &[Point2]| -> f64 {
-        (0..ring.len())
-            .map(|i| point_segment_distance(point, (ring[i], ring[(i + 1) % ring.len()])))
-            .fold(f64::INFINITY, f64::min)
-    };
     let inside = |inner: &[Point2], outer: &[Point2]| {
         inner
             .iter()
@@ -1500,56 +1522,105 @@ fn sample_points(
             low = Point2::new(low.u.min(p.u), low.v.min(p.v));
             high = Point2::new(high.u.max(p.u), high.v.max(p.v));
         }
+        let rings: Vec<&[Point2]> = std::iter::once(region.polyline.as_slice())
+            .chain(
+                nested
+                    .iter()
+                    .map(|inner| regions[*inner].polyline.as_slice()),
+            )
+            .collect();
         let mut best: Option<(Point2, f64)> = None;
-        // The boundary segment that stopped the previous scan. A neighbouring
-        // grid point starts its scan there.
         let mut nearest = 0;
-        for i in 1..SAMPLE_GRID {
-            'grid: for j in 1..SAMPLE_GRID {
-                let point = Point2::new(
-                    low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
-                    low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
-                );
-                if !point_in_polygon(point, &region.polyline)
-                    || nested
-                        .iter()
-                        .any(|inner| point_in_polygon(point, &regions[*inner].polyline))
-                {
-                    continue;
-                }
-                // A point whose clearance falls to the best clearance cannot
-                // replace the best point, so its scan stops there.
-                let floor = best.map(|(_, most)| most);
-                let mut room = f64::INFINITY;
-                let rings = std::iter::once(index)
-                    .chain(nested.iter().copied())
-                    .map(|ring| &regions[ring].polyline);
-                for (order, ring) in rings.enumerate() {
-                    let start = if order == 0 { nearest } else { 0 };
-                    for step in 0..ring.len() {
-                        let segment = (start + step) % ring.len();
-                        room = room.min(point_segment_distance(
-                            point,
-                            (ring[segment], ring[(segment + 1) % ring.len()]),
-                        ));
-                        if floor.is_some_and(|most| room <= most) {
-                            if order == 0 {
-                                nearest = segment;
-                            }
-                            continue 'grid;
+        let mut consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
+            if !point_in_polygon(point, rings[0])
+                || rings[1..].iter().any(|ring| point_in_polygon(point, ring))
+            {
+                return;
+            }
+            let floor = best.map(|(_, most)| most);
+            let mut room = f64::INFINITY;
+            for (order, ring) in rings.iter().enumerate() {
+                let start = if order == 0 { nearest } else { 0 };
+                for step in 0..ring.len() {
+                    let segment = (start + step) % ring.len();
+                    room = room.min(point_segment_distance(
+                        point,
+                        (ring[segment], ring[(segment + 1) % ring.len()]),
+                    ));
+                    if floor.is_some_and(|most| room <= most) {
+                        if order == 0 {
+                            nearest = segment;
                         }
+                        return;
                     }
                 }
-                best = Some((point, room));
+            }
+            *best = Some((point, room));
+        };
+        for i in 1..SAMPLE_GRID {
+            for j in 1..SAMPLE_GRID {
+                consider(
+                    &mut best,
+                    Point2::new(
+                        low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
+                        low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
+                    ),
+                );
+            }
+        }
+        if best.is_none_or(|(_, room)| room <= SAMPLE_SEARCH_CLEARANCE_FACTOR * tolerance) {
+            for point in scanline_midpoints(&rings) {
+                consider(&mut best, point);
             }
         }
         let (point, room) = best?;
-        if room <= 10.0 * tolerance || area <= tolerance * tolerance {
+        if room <= tolerance || area <= tolerance * tolerance {
             return None;
         }
         out.push((point, nested));
     }
     Some(out)
+}
+
+/// The most rows a region scan reads.
+const MAX_SCANLINES: usize = 512;
+
+/// The midpoints of the intervals that horizontal rows cut from `rings`. A row
+/// runs halfway between each two adjacent vertex heights, so it crosses every
+/// band of the region that the grid misses.
+fn scanline_midpoints(rings: &[&[Point2]]) -> Vec<Point2> {
+    let mut heights: Vec<f64> = rings
+        .iter()
+        .flat_map(|ring| ring.iter().map(|point| point.v))
+        .collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup();
+    let rows: Vec<f64> = heights
+        .windows(2)
+        .map(|pair| 0.5 * (pair[0] + pair[1]))
+        .collect();
+    let step = rows.len().div_ceil(MAX_SCANLINES).max(1);
+    let mut out = Vec::new();
+    for row in rows.into_iter().step_by(step) {
+        let mut crossings: Vec<f64> = rings
+            .iter()
+            .flat_map(|ring| {
+                (0..ring.len()).filter_map(move |index| {
+                    let start = ring[index];
+                    let end = ring[(index + 1) % ring.len()];
+                    ((start.v - row) * (end.v - row) < 0.0)
+                        .then(|| start.u + (end.u - start.u) * (row - start.v) / (end.v - start.v))
+                })
+            })
+            .collect();
+        crossings.sort_by(f64::total_cmp);
+        out.extend(
+            crossings
+                .windows(2)
+                .map(|pair| Point2::new(0.5 * (pair[0] + pair[1]), row)),
+        );
+    }
+    out
 }
 
 /// The indices of the regions whose points `current` covers, in order;
@@ -1586,7 +1657,8 @@ fn covered_regions(
         }
         ResolvedProfileSelection::Regions(regions) => {
             for region in regions {
-                let cadmpeg_ir::features::SketchProfileRegion::Loops { loops } = region else {
+                let cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } = region
+                else {
                     return Ok(None);
                 };
                 let Some(outer) = contains(loops.outer())? else {

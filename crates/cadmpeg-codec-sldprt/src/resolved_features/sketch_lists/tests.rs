@@ -516,37 +516,47 @@ fn a_curve_without_the_eight_zero_bytes_reads_point_positions() {
     ));
 }
 
-/// A record projected from outside the sketch ends a curve list; the curve
-/// records after it still index the sketch's point records.
 #[test]
-fn a_curve_after_a_projected_record_belongs_to_the_preceding_sketch() {
-    let mut payload = vec![0; 7];
-    header(&mut payload, 2);
-    point(&mut payload, 0.0, 0.0);
-    point(&mut payload, 0.01, 0.0);
-    payload.extend_from_slice(&0u32.to_le_bytes());
-    curve(&mut payload, 0, 1, 0, None);
-    let projected = payload.len();
-    head(&mut payload);
-    payload[projected + 35] = 1;
-    payload.extend_from_slice(&[0; 24]);
-    let later = curve(&mut payload, 1, 0, 0, None);
-    let lists = SketchRecordLists::new(&payload);
-    assert_eq!(lists.record(projected), None);
-    assert_eq!(roster_geometry(&payload, later), None);
-    assert_eq!(
-        listed_record_geometry(
-            &payload,
-            &lists,
-            later,
-            &millimetres,
-            ListedReading::Complete
-        ),
-        expected(SketchGeometryDefinition::Line {
+fn a_curve_after_a_projected_or_unread_record_belongs_to_the_preceding_sketch() {
+    for external in [false, true] {
+        let mut payload = vec![0; 7];
+        header(&mut payload, 2);
+        point(&mut payload, 0.0, 0.0);
+        point(&mut payload, 0.01, 0.0);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        curve(&mut payload, 0, 1, 0, None);
+        let separator = payload.len();
+        head(&mut payload);
+        payload[separator + head::OBJECT_POINTER] = u8::from(external);
+        payload.extend_from_slice(&[0; 24]);
+        let later = curve(&mut payload, 1, 0, 0, None);
+        let lists = SketchRecordLists::new(&payload);
+        assert_eq!(
+            matches!(
+                lists.record(separator),
+                Some(ListedRecord::Curve { later: false, .. })
+            ),
+            external
+        );
+        let line = expected(SketchGeometryDefinition::Line {
             start: Point2::new(10.0, 0.0),
             end: Point2::new(0.0, 0.0),
-        })
-    );
+        });
+        assert_eq!(
+            roster_geometry(&payload, later),
+            if external { line.clone() } else { None }
+        );
+        assert_eq!(
+            listed_record_geometry(
+                &payload,
+                &lists,
+                later,
+                &millimetres,
+                ListedReading::Complete
+            ),
+            line
+        );
+    }
 }
 
 /// The reading of the record at `offset` against the chord from `start` to
@@ -708,4 +718,242 @@ fn an_arc_record_conflicts_with_a_line_no_chord_test_compared() {
     assert!(ChordConflict::Unchecked
         .to_string()
         .contains("does not compare the record"));
+}
+
+#[test]
+fn geometry_locus_arcs_and_circles_keep_point_record_readings_with_a_loss() {
+    let mut sample = sample();
+    for (offset, end) in [(sample.arc, 2), (sample.circle, 1)] {
+        sample.payload[offset + head::LOCUS..offset + head::LOCUS + 4]
+            .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        for reading in [ListedReading::Roster, ListedReading::Complete] {
+            assert_eq!(
+                curve_form(&sample.payload, offset, reading),
+                Some(CurveForm::Arc {
+                    start: 1,
+                    end,
+                    center: 0,
+                    counterclockwise: true,
+                })
+            );
+        }
+        let loss = point_record_index_basis_loss(&sample.payload, offset).unwrap();
+        assert_eq!(
+            loss.code,
+            SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+        );
+        assert!(loss.message.contains("zero-based point-record positions"));
+    }
+    let (center, radius, start, end) = arc_parts(roster_geometry(&sample.payload, sample.arc));
+    assert_eq!(center, Point2::new(0.0, 0.0));
+    assert!((radius - 10.0).abs() < EPS_TEST);
+    assert!(start.abs() < EPS_TEST);
+    assert!((end - FRAC_PI_2).abs() < EPS_TEST);
+    assert_eq!(
+        roster_geometry(&sample.payload, sample.circle),
+        expected(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(10.0).unwrap()
+        })
+    );
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+}
+
+#[test]
+fn current_prefix_92_byte_selector_four_geometry_locus_line_uses_object_indices() {
+    let mut sample = sample();
+    sample.payload.drain(sample.line + 92..sample.line + 94);
+    sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+        .copy_from_slice(&OBJECT_INDEX_LOCUS);
+    assert!(
+        super::super::endpoints::wide_indexed_curve_endpoint_indices(&sample.payload, sample.line)
+            .is_some()
+    );
+    assert!(curve_stays_unresolved(&sample.payload, sample.line));
+    assert!(roster_geometry(&sample.payload, sample.line).is_none());
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+    sample.payload.truncate(sample.line + 92);
+    assert_eq!(
+        curve_form(&sample.payload, sample.line, ListedReading::Complete),
+        Some(CurveForm::Line { start: 1, end: 2 })
+    );
+    assert_eq!(
+        point_record_index_basis_loss(&sample.payload, sample.line)
+            .unwrap()
+            .code,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+    );
+}
+
+#[test]
+fn geometry_locus_lines_rejected_by_object_index_gate_keep_point_record_readings() {
+    for (field, value) in [
+        (48, 2.0f64.to_le_bytes().to_vec()),
+        (27, 2u16.to_le_bytes().to_vec()),
+        (68, 2u32.to_le_bytes().to_vec()),
+    ] {
+        let mut sample = sample();
+        sample.payload.drain(sample.line + 92..sample.line + 94);
+        sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+            .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        sample.payload[sample.line + field..sample.line + field + value.len()]
+            .copy_from_slice(&value);
+        assert!(
+            super::super::endpoints::wide_indexed_curve_endpoint_indices(
+                &sample.payload,
+                sample.line
+            )
+            .is_none()
+        );
+        for reading in [ListedReading::Roster, ListedReading::Complete] {
+            assert_eq!(
+                curve_form(&sample.payload, sample.line, reading),
+                Some(CurveForm::Line { start: 1, end: 2 })
+            );
+        }
+        assert_eq!(
+            roster_geometry(&sample.payload, sample.line),
+            expected(SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            })
+        );
+        assert_eq!(
+            point_record_index_basis_loss(&sample.payload, sample.line)
+                .unwrap()
+                .code,
+            SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+        );
+    }
+}
+
+#[test]
+fn geometry_locus_lines_of_other_sizes_selectors_and_prefixes_keep_their_reading() {
+    for (short, selector, slot) in [(false, 4u16, 3), (true, 12, 3), (true, 4, 1)] {
+        let mut sample = sample();
+        if short {
+            sample.payload.drain(sample.line + 92..sample.line + 94);
+        }
+        sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+            .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        sample.payload[sample.line + SELECTOR..sample.line + SELECTOR + 2]
+            .copy_from_slice(&selector.to_le_bytes());
+        sample.payload[sample.line + 4] = slot;
+        assert_eq!(
+            curve_form(&sample.payload, sample.line, ListedReading::Complete),
+            Some(CurveForm::Line { start: 1, end: 2 })
+        );
+        assert_eq!(
+            geometry(&sample, sample.line),
+            expected(SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            })
+        );
+        assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_some());
+    }
+}
+
+#[test]
+fn listed_lines_and_arcs_are_readable_curves_and_points_are_not() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    for offset in [sample.line, sample.arc, sample.circle] {
+        assert!(lists.readable_curve(&sample.payload, offset));
+    }
+    for offset in sample.points {
+        assert!(!lists.readable_curve(&sample.payload, offset));
+    }
+}
+
+#[test]
+fn an_unread_curve_form_or_an_unlisted_record_is_not_a_readable_curve() {
+    let mut sample = sample();
+    sample.payload[sample.line + SELECTOR] = 5;
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert!(!lists.readable_curve(&sample.payload, sample.line));
+    assert!(lists.readable_curve(&sample.payload, sample.arc));
+
+    let mut payload = vec![0; 7];
+    let unlisted = curve(&mut payload, 0, 1, 0, None);
+    let lists = SketchRecordLists::new(&payload);
+    assert!(!lists.readable_curve(&payload, unlisted));
+}
+
+#[test]
+fn selector_bit_three_marks_a_construction_record() {
+    let mut sample = sample();
+    sample.payload[sample.line + SELECTOR] = 12;
+    assert!(construction_record(&sample.payload, sample.line));
+    assert!(!construction_record(&sample.payload, sample.arc));
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert!(lists.readable_curve(&sample.payload, sample.line));
+}
+
+#[test]
+fn a_listed_line_or_arc_ends_at_the_point_records_of_its_indices() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    let ends = Some([sample.points[1], sample.points[2]]);
+    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.line), ends);
+    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.arc), ends);
+}
+
+#[test]
+fn a_full_circle_and_a_point_record_have_no_listed_ends() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert_eq!(
+        lists.listed_curve_ends(&sample.payload, sample.circle),
+        None
+    );
+    assert_eq!(
+        lists.listed_curve_ends(&sample.payload, sample.points[0]),
+        None
+    );
+}
+
+/// A record projected from outside the sketch: an object pointer at +35.
+fn projected(out: &mut Vec<u8>) -> usize {
+    let at = out.len();
+    head(out);
+    out[at + 35..at + 37].copy_from_slice(&0x8001u16.to_le_bytes());
+    out.extend_from_slice(&[0; 40]);
+    at
+}
+
+#[test]
+fn a_projected_record_leading_the_curve_run_keeps_the_list() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 2);
+    let first = point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let outside = projected(&mut payload);
+    let line = curve(&mut payload, 0, 1, 0, None);
+    let trailing = projected(&mut payload);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.record(first), Some(ListedRecord::Point));
+    assert!(lists.readable_curve(&payload, line));
+    assert!(!lists.readable_curve(&payload, outside));
+    assert_eq!(lists.record(trailing), None);
+    assert_eq!(
+        listed_record_geometry(&payload, &lists, line, &millimetres, ListedReading::Roster),
+        expected(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        })
+    );
+}
+
+#[test]
+fn projected_records_alone_frame_no_list() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 1);
+    let first = point(&mut payload, 0.0, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    projected(&mut payload);
+    projected(&mut payload);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.record(first), None);
 }

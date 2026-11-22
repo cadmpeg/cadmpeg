@@ -4,7 +4,8 @@ use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
-use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -63,7 +64,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),
@@ -137,7 +138,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -196,7 +197,7 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         expression: "<MOD-DIAM>5".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("driver".into()),

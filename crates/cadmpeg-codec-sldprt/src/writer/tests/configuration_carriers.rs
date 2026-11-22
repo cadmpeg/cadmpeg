@@ -2,6 +2,14 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+};
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -54,7 +62,6 @@ fn unnamed_cube() -> cadmpeg_ir::CadIr {
 
 #[test]
 fn geometry_edit_replaces_each_generated_configuration_partition() {
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
     let mut ir = SldprtCodec
@@ -78,9 +85,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
             name: Some(format!("Config {index}")),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
-            ),
+            bodies: Some(DistinctMembers::try_from(vec![body.clone()]).unwrap()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -100,7 +105,7 @@ fn geometry_edit_replaces_each_generated_configuration_partition() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let point = decoded.ir().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             point.x,
             point.y,
             point.z + 1.0,
@@ -164,13 +169,12 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = unnamed_cube();
     let definitions = [
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -178,11 +182,12 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
             .unwrap(),
         }),
         FeatureDefinition::Operation(FeatureOperation::datum_axis(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
-            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
+                .unwrap(),
         )),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
+            position: FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap(),
             construction: None,
         }),
     ];
@@ -194,12 +199,12 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
     }
@@ -230,7 +235,6 @@ fn encoder_writes_authored_with_retained_native_envelope_datum_features() {
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations() {
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use std::collections::BTreeMap;
 
     let mut ir = unnamed_cube();
@@ -243,10 +247,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         name: Some("Metric".to_string()),
         material: Some("Steel".into()),
         properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
-        bodies: Some(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()])
-                .unwrap(),
-        ),
+        bodies: Some(DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()]).unwrap()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -261,7 +262,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         name: Some("Empty".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -402,7 +403,6 @@ fn semantic_writer_round_trips_active_configuration() {
 
 #[test]
 fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configuration() {
-    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::tessellation::Tessellation;
     use cadmpeg_ir::transform::Transform;
@@ -483,9 +483,7 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
             name: format!("Config {index}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
-            ),
+            bodies: Some(DistinctMembers::try_from(vec![body.clone()]).unwrap()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -776,9 +774,8 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
 
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
-    use cadmpeg_ir::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-    };
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::ParameterId;
     use std::collections::BTreeMap;
 
     let mut ir = unnamed_cube();
@@ -790,7 +787,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         ordinal: 0,
         name: Some("Equation".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("EquationSet"),
             "Global".into(),
@@ -798,15 +795,15 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::Native {
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
                 kind: "EquationDriven".into(),
                 parameters: BTreeMap::from([(
                     cadmpeg_core::nonblank_literal!("Pitch"),
                     "D1@Sketch1 * 2".into(),
                 )]),
-            }),
-        ),
+            },
+        )),
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
@@ -819,7 +816,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         expression: "D1@Sketch1 * 2".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -930,7 +927,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
     let mut result = EditableDecodeResult::from(result);
     let moved = result.ir_mut().geometry.points[0].position().get();
     result.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -967,7 +964,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     let mut solid = EditableDecodeResult::from(solid);
     let moved = solid.ir_mut().geometry.points[0].position().get();
     solid.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -996,7 +993,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     let mut sheet = EditableDecodeResult::from(sheet);
     let moved = sheet.ir_mut().geometry.points[0].position().get();
     sheet.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1027,7 +1024,7 @@ fn semantic_writer_preserves_outer_header() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1110,7 +1107,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1353,10 +1350,8 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-            50.8, moved.y, moved.z,
-        ))
-        .expect("a finite position is a point"),
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(50.8, moved.y, moved.z))
+            .expect("a finite position is a point"),
     );
 
     let mut encoded = Vec::new();
@@ -1394,7 +1389,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1465,7 +1460,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                 if index == 1 {
                     point.y += 250.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                FinitePoint3::new(point).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1485,7 +1480,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                 if index == target {
                     pole.z += 500.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                FinitePoint3::new(pole).ok_or_else(|| {
                     cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                         "control_points contains a non-finite point".into(),
                     )
@@ -1530,7 +1525,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1624,7 +1619,7 @@ fn semantic_writer_preserves_face_appearance() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1846,7 +1841,7 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
 
 #[test]
 fn semantic_writer_applies_neutral_parameter_edits() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::scalar::Length;
 
     let decoded = SldprtCodec
         .decode(
@@ -1896,7 +1891,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 
 #[test]
 fn semantic_writer_preserves_dimension_attributes() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1938,7 +1933,7 @@ fn semantic_writer_preserves_dimension_attributes() {
 
 #[test]
 fn semantic_writer_preserves_evaluated_equation_values() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

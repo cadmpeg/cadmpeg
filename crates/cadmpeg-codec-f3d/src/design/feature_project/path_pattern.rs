@@ -10,10 +10,10 @@ use crate::records::{
     topology::extrude_selection::DesignOperandRole,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 

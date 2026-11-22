@@ -34,7 +34,7 @@ use super::walk::{ConstructionView, Kind};
 use super::{native_text, Held, Holder};
 
 /// Checks every construction of the design.
-pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut Vec<Finding>) {
+pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &mut Vec<Finding>) {
     let tolerances = &index.records.ir.tolerances;
     let geometry = Geometry {
         linear: tolerances.linear.get(),
@@ -689,6 +689,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
     }
     let restated: BTreeSet<(&str, PrincipalEntity, Option<&str>)> =
         restating.keys().copied().collect();
+    let own: BTreeSet<&str> = restating.values().flatten().copied().collect();
     for record in held {
         let Some(feature) = record.holder.feature() else {
             continue;
@@ -696,7 +697,6 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
         let Some(definition) = index.owner_definition(feature) else {
             continue;
         };
-        let own: BTreeSet<&str> = restating.values().flatten().copied().collect();
         if own.contains(feature) {
             continue;
         }

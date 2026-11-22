@@ -9,7 +9,9 @@ use crate::design::selection::{
     MemberOrder, Members, PickDomain, Picked, Picks, Propagation, RuleTerm, Selection,
     SelectionRule,
 };
-use crate::features::{datums::DatumAxis, Feature, ParameterValue};
+use crate::features::datums::DatumAxis;
+use crate::features::parameters::ParameterValue;
+use crate::features::Feature;
 use crate::index::ModelIndex;
 use crate::math::portable::Portable;
 use crate::report::{
@@ -249,7 +251,7 @@ impl Walk<'_, '_, '_> {
         }
     }
     fn frame(&mut self, value: &FrameValue) {
-        if crate::features::FeatureCoordinateFrame::new(
+        if crate::features::geometry::FeatureCoordinateFrame::new(
             value.origin.get(),
             *value.x_axis.as_raw(),
             *value.y_axis.as_raw(),
@@ -447,7 +449,7 @@ impl Walk<'_, '_, '_> {
                         AnyConstruction::Plane(v) => {
                             self.construction(v, Kind::Plane)?;
                             for value in v.resolved.iter().chain(v.resolved_in.values()) {
-                                if crate::features::FeatureUnitPlaneFrame::from_parts(
+                                if crate::features::geometry::FeatureUnitPlaneFrame::from_parts(
                                     value.origin,
                                     value.normal,
                                     value.x_axis,

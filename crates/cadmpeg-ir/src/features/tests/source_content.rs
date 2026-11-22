@@ -1,6 +1,7 @@
+use crate::features::geometry::FinitePoint3;
 use crate::features::{
     Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-    FinitePoint3, ParameterId,
+    ParameterId,
 };
 use crate::math::Point3;
 
@@ -57,12 +58,12 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
                 construction: None,
