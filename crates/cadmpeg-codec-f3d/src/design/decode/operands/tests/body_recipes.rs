@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::operands::body_recipe_operand_end;
-use crate::design::decode::operands::body_recipe_prologue_end;
-use crate::design::decode::operands::parse_body_recipe_operand;
-use crate::design::decode::operands::unique_body_recipe;
+use crate::design::decode::operands::body_recipes::body_recipe_operand_end;
+use crate::design::decode::operands::body_recipes::body_recipe_prologue_end;
+use crate::design::decode::operands::body_recipes::parse_body_recipe_operand;
+use crate::design::decode::operands::body_recipes::unique_body_recipe;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::recipes::ConstructionRecipe;
@@ -194,7 +194,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ordinal: 0,
         },
     ];
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+    crate::design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&recipe),
         &candidate_tags,
@@ -264,7 +264,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             byte_offset: 0,
         });
     let mut combine_operand = operand.clone();
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+    crate::design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut combine_operand),
         std::slice::from_ref(&combine_recipe),
         &[
@@ -320,7 +320,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);
     let output_id = crate::ids::native_scoped_id(stream_name, "design-body-recipe-operand", 0);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let decoded = crate::design::decode::operands::decode_body_recipe_operands(
+        let decoded = crate::design::decode::operands::body_recipes::decode_body_recipe_operands(
             scan,
             &[],
             std::slice::from_ref(&group),
@@ -464,8 +464,9 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             assert_eq!(decoded.serialization_form(), Some(form));
             assert_eq!(decoded.references()[0].design_reference, 301);
             assert_eq!(decoded.nested_record_index(), 103);
-            let losses =
-                super::super::body_recipe_serialization_form_losses(std::slice::from_ref(&decoded));
+            let losses = super::super::body_recipes::body_recipe_serialization_form_losses(
+                std::slice::from_ref(&decoded),
+            );
             let codes: Vec<_> = losses.iter().map(|loss| loss.code.local_code()).collect();
             let expected: &[&str] = if form > 1 {
                 &["body-recipe.serialization-form-assumed"]
@@ -689,7 +690,7 @@ fn body_recipe_operand_without_a_successor_record_refuses_another_frame() {
 
 #[test]
 fn legacy_cut_body_recipe_closes_at_its_profile_group() {
-    use crate::design::decode::operands::{
+    use crate::design::decode::operands::body_recipes::{
         parse_body_recipe_operand_frame_with_index, unique_body_recipe_with_index, BodyRecipeFrame,
     };
     use crate::records::recipes::{ConstructionRecipeDesign, ConstructionRecipeSelector};

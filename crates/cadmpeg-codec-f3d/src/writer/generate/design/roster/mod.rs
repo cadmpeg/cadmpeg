@@ -25,6 +25,7 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::frames::DesignRecords;
+use crate::records::parameters::DesignParameterDiscriminator;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 use extrude::ExtrudeRecords;
@@ -43,6 +44,11 @@ const ZERO_RECORD: u32 = 2;
 pub(super) const AGGREGATE: u32 = 3;
 /// The component naming space.
 pub(super) const NAMING_SPACE: u32 = 6;
+/// The family discriminator of every parameter record the roster writes: the
+/// value of every parameter record in a Design stream whose component naming
+/// space is record [`NAMING_SPACE`] (f3d-open-items.md DR-911, DR-917).
+pub(super) const PARAMETER_DISCRIMINATOR: DesignParameterDiscriminator =
+    DesignParameterDiscriminator::Code6;
 /// The design `Body` owner.
 const DESIGN_OWNER: u32 = 7;
 /// The sketch collection.
@@ -536,6 +542,17 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
             [format!("record {CONTEXT} (timeline context: context value {value}, the largest source ordinal of an owned parameter; {outside})")],
         ));
     }
+    notes.extend(record_residual_unavailable(
+        "F3D",
+        &format!(
+            "writes these user parameters with family discriminator {}, the value of every parameter record in a Design stream whose component naming space is record {NAMING_SPACE} (f3d-open-items.md DR-911)",
+            PARAMETER_DISCRIMINATOR.code()
+        ),
+        ctx.roster
+            .parameters
+            .iter()
+            .map(|record| format!("record {record} (user parameter)")),
+    ));
     notes.extend(record_residual_unavailable(
         "F3D",
         FIXED_CLOCK,

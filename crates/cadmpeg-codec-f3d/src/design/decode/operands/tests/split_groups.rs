@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
+use super::super::construction_groups::{
     parse_construction_operand_group_in_stream, ConstructionOperandGroupParse, RecordFrame,
 };
 use crate::metastream::{MetaStream, RecordIndexEntry};
