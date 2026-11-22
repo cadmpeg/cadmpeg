@@ -61,6 +61,7 @@ const MAX_SUBDIVISIONS: f64 = 100_000.0;
 /// Local work caps of the sketch-profile geometry that binds extrude profile
 /// selections, and the selections that skipped a search at each cap.
 pub(crate) struct ProfileGeometryWork {
+    join_envelope_limit: Cell<Option<usize>>,
     arrangement: WorkBudget,
     crossing_run_matches: WorkBudget,
     crossing_run_skipped: Cell<bool>,
@@ -150,12 +151,17 @@ struct RegionSampleEntry {
 }
 
 impl ProfileGeometryWork {
+    pub(crate) fn note_join_envelope_capped(&self, limit: usize) {
+        self.join_envelope_limit.set(Some(limit));
+    }
+
     pub(crate) fn new() -> Self {
         Self::with_arrangement_work(MAX_ARRANGEMENT_WALK_WORK)
     }
 
     pub(crate) fn with_arrangement_work(limit: usize) -> Self {
         Self {
+            join_envelope_limit: Cell::new(None),
             arrangement: WorkBudget::new(limit),
             crossing_run_matches: WorkBudget::new(MAX_CROSSING_RUN_MATCH_WORK),
             crossing_run_skipped: Cell::new(false),
@@ -601,6 +607,11 @@ impl ProfileGeometryWork {
     /// One loss for each cap that made a closed selection skip a search.
     pub(crate) fn losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();
+        if let Some(limit) = self.join_envelope_limit.get() {
+            losses.push(F3dLossCode::FeatureProfileJoinEnvelopeCapped.note(format!(
+                "Join profile envelope searches exceeded MAX_JOIN_ENVELOPE_COMPARISONS ({limit}); their selections retain native identities.",
+            )));
+        }
         let arrangement = self.arrangement_skipped_selections.get();
         if arrangement != 0 {
             losses.push(F3dLossCode::FeatureProfileArrangementCapped.note(format!(
