@@ -49,6 +49,13 @@ const SELECTOR: u16 = 4;
 /// The coordinate mask of a two-coordinate point record.
 const TWO_COORDINATES: u16 = 0x1e;
 
+/// The byte runs of native sketches and extrusions written as zero bytes,
+/// whose fields `sldprt.md` does not lay out.
+pub(in crate::writer) const FEATURE_ZERO_RUNS: &str = "each native sketch's 76-byte and \
+     42-byte settings runs; each extrusion's display dimension (151, 261 and 132 bytes), its \
+     dimension handle (42, 20 and 14 bytes), its depth parameter's placement block (84, 262 and \
+     40 bytes) and its favourite handle (206, 92, 12, 40 and 50 bytes)";
+
 /// The slot of a placeholder entity handle.
 const PLACEHOLDER_SLOT: u16 = 0x777f;
 

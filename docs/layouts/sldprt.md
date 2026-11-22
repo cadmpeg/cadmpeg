@@ -4052,6 +4052,27 @@ Parsed by:
 | 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
 | 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
 
+## `sketch_dimension_parameter_trailer`
+
+Spec §Sketch objects · layout: byte offsets · size: 32 B
+
+The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `object_id` | `u32` | little | spec | the parameter's object identifier as a little-endian u32 at trailer +0 |
+| 20 | 4 | `measure` | `u32` | little | spec | the relation code of the dimension's measure as a little-endian u32 at trailer +20 |
+| 24 | 2 | `operand_count` | `u16` | little | spec | the operand count as a little-endian u16 at trailer +24 |
+| 26 | 4 | `word` | `u32` | little | spec | a little-endian u32 at trailer +26 |
+
+Unstated regions:
+
+- `4..20` (16 B): Sixteen bytes.
+- `30..32` (2 B): Two bytes.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

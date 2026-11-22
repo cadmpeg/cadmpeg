@@ -15002,3 +15002,51 @@ offset = 8
 type = "u32"
 source = "spec"
 anchor = "the form word, a little-endian u32 at +8"
+
+[[record]]
+name = "sketch_dimension_parameter_trailer"
+kind = "byte"
+section = "Sketch objects"
+anchor = "The parameter of a sketch dimension writes, after its tolerance pointer, a 32-byte trailer"
+size = 32
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs"
+note = "The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer."
+
+[[record.field]]
+name = "object_id"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the parameter's object identifier as a little-endian u32 at trailer +0"
+
+[[record.gap]]
+offset = 4
+size = 16
+note = "Sixteen bytes."
+
+[[record.field]]
+name = "measure"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the relation code of the dimension's measure as a little-endian u32 at trailer +20"
+
+[[record.field]]
+name = "operand_count"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "the operand count as a little-endian u16 at trailer +24"
+
+[[record.field]]
+name = "word"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 at trailer +26"
+
+[[record.gap]]
+offset = 30
+size = 2
+note = "Two bytes."

@@ -666,6 +666,7 @@ fn native_skeleton(
     Ok(native_skeleton_losses(
         summarized,
         lane_reason.filter(|_| lane_merged),
+        !features.is_empty(),
     ))
 }
 
@@ -706,6 +707,7 @@ fn native_part_name(name: &str) -> String {
 fn native_skeleton_losses(
     summarized: Option<(String, Vec<String>)>,
     lane_follows: Option<String>,
+    features: bool,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
     let mut losses = Vec::new();
@@ -724,10 +726,15 @@ fn native_skeleton_losses(
         SldprtLossCode::WriterNativeSkeletonUnlaidRuns.note(format!(
             "the native skeleton writes as zero bytes the byte runs whose fields sldprt.md does \
              not lay out, and native parts of swVersion 14000 hold values in most of them: {runs} \
-             runs ({bytes} bytes) of the moRelMgr_c detailing settings (EV-19), {}; \
+             runs ({bytes} bytes) of the moRelMgr_c detailing settings (EV-19), {}{}; \
              swXmlContents/Features declares no swVersion, so the part names 14000 only in the \
              _MO_VERSION_14000 storage name and in moPart_c's version word",
-            native::OTHER_ZERO_RUNS
+            native::OTHER_ZERO_RUNS,
+            if features {
+                format!("; {}", native::sketch::FEATURE_ZERO_RUNS)
+            } else {
+                String::new()
+            }
         )),
         SldprtLossCode::WriterNativeStreamsOmitted.note(format!(
             "the native skeleton leaves out these streams, which every native part of \

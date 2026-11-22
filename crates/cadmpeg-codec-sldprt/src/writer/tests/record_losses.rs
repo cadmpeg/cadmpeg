@@ -287,7 +287,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>()
     };
-    let bare = crate::writer::native_skeleton_losses(None, None);
+    let bare = crate::writer::native_skeleton_losses(None, None, false);
     assert_eq!(
         codes(&bare),
         [
@@ -301,6 +301,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
             vec!["feature#a".to_owned(), "feature#b".to_owned()],
         )),
         Some("sketch#c holds an ellipse".to_owned()),
+        true,
     );
     assert_eq!(
         codes(&full),
@@ -321,4 +322,6 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
     )));
     assert!(full[2].message.contains("Contents/3DExperienceExchange2"));
     assert!(full[3].message.ends_with("sketch#c holds an ellipse"));
+    assert!(full[1].message.contains("each native sketch's 76-byte"));
+    assert!(!bare[0].message.contains("each native sketch's 76-byte"));
 }
