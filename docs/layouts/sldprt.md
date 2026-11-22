@@ -2733,6 +2733,20 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_line_reference_axis_line`
+
+Spec §2 · layout: byte offsets · size: 48 B
+
+Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at line offset `+0` |
+| 24 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at line offset `+24` |
+
 ## `cosmetic_thread_component_edge_wrapper_prefix`
 
 Spec §2 · layout: byte offsets · size: 17 B

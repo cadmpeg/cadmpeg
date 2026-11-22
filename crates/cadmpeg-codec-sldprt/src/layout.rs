@@ -2424,6 +2424,22 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const NAME_LENGTH: usize = 5;
 }
 
+/// Byte offsets for the `revolution_line_reference_axis_line` record.
+///
+/// Spec §2. Record length 48 B.
+///
+/// ```text
+/// Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values.
+/// ```
+pub(crate) mod revolution_line_reference_axis_line {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 0;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const DIRECTION: usize = 24;
+}
+
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
 ///
 /// Spec §2. Record length 17 B.

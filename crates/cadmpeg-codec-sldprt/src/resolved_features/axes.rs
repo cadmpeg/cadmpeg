@@ -12,6 +12,7 @@ use super::grid::quantize;
 use super::scalars::FeatureObjectNames;
 use super::transforms::{feature_sketch_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
+use crate::layout::revolution_line_reference_axis_line as axis_line;
 use crate::layout::temporary_axis_compact_boundary as axis_compact_end;
 use crate::layout::temporary_axis_declared_boundary_prefix as axis_declared_end;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
@@ -41,6 +42,17 @@ const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     let [x, y, z] = values;
     SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
+}
+
+/// A stored unit direction: the triple's squared length is one. Normalising
+/// any nonzero triple would turn subnormal or unrelated values into an axis.
+fn stored_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
+    const UNIT_TOLERANCE: f64 = 1e-9;
+    let [x, y, z] = values;
+    if ((x * x + y * y + z * z) - 1.0).abs() > UNIT_TOLERANCE {
+        return None;
+    }
+    square_sum_unit_direction(values)
 }
 
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
@@ -459,21 +471,31 @@ fn revolution_line_reference_inputs(
             && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
         .then_some(source)
     };
+    // The scalar record ends with the axis line: a point in metres and the
+    // unit direction. Values before the line (zero values and one scalar) are
+    // not the point.
     let axis_record = |frame: usize, scalar_count: usize| {
-        let x = scalar(frame)?;
-        let y = scalar(frame + 8)?;
-        let z = scalar(frame + 16)?;
-        let direction_offset = frame + (scalar_count.checked_sub(3)?) * 8;
-        let dx = scalar(direction_offset)?;
-        let dy = scalar(direction_offset + 8)?;
-        let dz = scalar(direction_offset + 16)?;
+        let record_end = frame.checked_add(scalar_count.checked_mul(8)?)?;
+        let line = record_end.checked_sub(axis_line::LEN)?;
+        if line < frame {
+            return None;
+        }
+        for offset in (frame..line).step_by(8) {
+            scalar(offset)?;
+        }
+        let point = line + axis_line::POINT;
+        let direction = line + axis_line::DIRECTION;
         Some((
             cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
-                x * NATIVE_TO_IR,
-                y * NATIVE_TO_IR,
-                z * NATIVE_TO_IR,
+                scalar(point)? * NATIVE_TO_IR,
+                scalar(point + 8)? * NATIVE_TO_IR,
+                scalar(point + 16)? * NATIVE_TO_IR,
             ))?,
-            square_sum_unit_direction([dx, dy, dz])?,
+            stored_unit_direction([
+                scalar(direction)?,
+                scalar(direction + 8)?,
+                scalar(direction + 16)?,
+            ])?,
         ))
     };
     let next_class_after_zeros = |record_end: usize, maximum_padding: usize| {
@@ -504,37 +526,29 @@ fn revolution_line_reference_inputs(
                 let handles_end = handle_start + 8;
                 let frame_gap = 16;
                 let frame = handles_end + frame_gap;
-                let Some((x, y, z, dx, dy, dz)) = scalar(frame)
-                    .zip(scalar(frame + 8))
-                    .zip(scalar(frame + 16))
-                    .zip(scalar(frame + 24))
-                    .zip(scalar(frame + 32))
-                    .zip(scalar(frame + 40))
-                    .map(|(((((x, y), z), dx), dy), dz)| (x, y, z, dx, dy, dz))
-                else {
-                    continue;
-                };
-                let record_end = frame + 48;
-                let Some(next_record) = (record_end..=record_end + 24)
-                    .find(|offset| payload.get(*offset..*offset + 4) == Some(CLASS_MARKER))
-                else {
-                    continue;
-                };
-                if payload
-                    .get(record_end..next_record)
-                    .is_some_and(|bytes| bytes.iter().any(|byte| *byte != 0))
-                {
-                    continue;
+                // The longest structurally terminated record is the record:
+                // a seven-value record whose last value is zero also ends a
+                // six-value read with zero padding.
+                let mut placed = None;
+                for scalar_count in [6usize, 7] {
+                    let record_end = frame + scalar_count * 8;
+                    let Some(next_record) = (record_end..=record_end + 24)
+                        .find(|offset| payload.get(*offset..*offset + 4) == Some(CLASS_MARKER))
+                    else {
+                        continue;
+                    };
+                    if payload
+                        .get(record_end..next_record)
+                        .is_some_and(|bytes| bytes.iter().any(|byte| *byte != 0))
+                    {
+                        continue;
+                    }
+                    if let Some(axis) = axis_record(frame, scalar_count) {
+                        placed = Some((scalar_count, axis));
+                    }
                 }
-                if let (Some(origin), Some(direction)) = (
-                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
-                        x * NATIVE_TO_IR,
-                        y * NATIVE_TO_IR,
-                        z * NATIVE_TO_IR,
-                    )),
-                    square_sum_unit_direction([dx, dy, dz]),
-                ) {
-                    candidates.push((handle_start, 6, (source, origin, direction)));
+                if let Some((scalar_count, (origin, direction))) = placed {
+                    candidates.push((handle_start, scalar_count, (source, origin, direction)));
                 }
             }
         }
@@ -642,20 +656,24 @@ fn revolution_line_reference_inputs(
                     && View::u32_le_at(payload, handle_start + 16)
                         .is_some_and(|address| address != 0)
                     && payload.get(handle_start + 20..handle_start + 24) == Some(&[0; 4]);
-                let layout = if two_handles {
-                    Some((handle_start + 16, 8))
+                // A two-handle record holds eight or nine values; a nine-value
+                // record whose last value is zero also ends an eight-value
+                // read with zero padding, so the longest terminated read wins.
+                let layout: Option<(usize, &[usize])> = if two_handles {
+                    Some((handle_start + 16, &[9, 8]))
                 } else if three_handles {
-                    Some((handle_start + 24, 9))
+                    Some((handle_start + 24, &[9]))
                 } else {
                     None
                 };
-                if let Some((frame, scalar_count)) = layout {
-                    let record_end = frame + scalar_count * 8;
-                    if next_class_after_zeros(record_end, 24).is_some() {
-                        if let Some(axis) = axis_record(frame, scalar_count) {
-                            candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
-                            continue;
-                        }
+                if let Some((frame, scalar_counts)) = layout {
+                    let placed = scalar_counts.iter().find_map(|&scalar_count| {
+                        next_class_after_zeros(frame + scalar_count * 8, 24)?;
+                        Some((scalar_count, axis_record(frame, scalar_count)?))
+                    });
+                    if let Some((scalar_count, axis)) = placed {
+                        candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
+                        continue;
                     }
                 }
             }
@@ -703,22 +721,7 @@ fn revolution_line_reference_inputs(
                     continue;
                 }
                 let frame = handles_end + 8 + frame_gap;
-                let Some((x, y, z)) = scalar(frame)
-                    .zip(scalar(frame + 8))
-                    .zip(scalar(frame + 16))
-                    .map(|((x, y), z)| (x, y, z))
-                else {
-                    continue;
-                };
                 for scalar_count in [6usize, 8, 9] {
-                    let direction_offset = frame + (scalar_count - 3) * 8;
-                    let Some((dx, dy, dz)) = scalar(direction_offset)
-                        .zip(scalar(direction_offset + 8))
-                        .zip(scalar(direction_offset + 16))
-                        .map(|((x, y), z)| (x, y, z))
-                    else {
-                        continue;
-                    };
                     let record_end = frame + scalar_count * 8;
                     let Some(next_record) = (record_end..=record_end + 24).find(|offset| {
                         payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
@@ -732,12 +735,7 @@ fn revolution_line_reference_inputs(
                     {
                         continue;
                     }
-                    let Some(direction) = square_sum_unit_direction([dx, dy, dz]) else {
-                        continue;
-                    };
-                    let Some(origin) = cadmpeg_ir::features::geometry::FinitePoint3::new(
-                        Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-                    ) else {
+                    let Some((origin, direction)) = axis_record(frame, scalar_count) else {
                         continue;
                     };
                     let candidate = (source, origin, direction);
@@ -1190,6 +1188,91 @@ pub(crate) fn bind_profile_revolution_axes(
             }
         });
     }
+}
+
+/// Name the revolutions whose axis lies outside the plane of their profile
+/// sketch (open item DI-85). The axis is kept: the stored record is the only
+/// axis the revolution states.
+pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
+    features: &'a [cadmpeg_ir::features::Feature],
+    configuration_states: impl IntoIterator<
+        Item = (&'a cadmpeg_ir::features::FeatureId, &'a FeatureDefinition),
+    >,
+    sketches: &[Sketch],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    const DIRECTION_TOLERANCE: f64 = 1e-9;
+    const DISTANCE_TOLERANCE: f64 = 1e-6;
+    let mut by_id = HashMap::new();
+    for feature in features {
+        by_id.insert(&feature.id, feature);
+    }
+    let mut sketch_by_id = HashMap::new();
+    for sketch in sketches {
+        sketch_by_id.insert(&sketch.id, sketch);
+    }
+    let profile_sketch = |profile: &PlanarProfileRef| {
+        let sketch_id = match profile {
+            PlanarProfileRef::Sketch(sketch_id) => sketch_id,
+            PlanarProfileRef::Feature(profile_id) => {
+                let FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                }) = by_id.get(profile_id)?.evaluation.definition()
+                else {
+                    return None;
+                };
+                sketch_id
+            }
+            _ => return None,
+        };
+        sketch_by_id.get(sketch_id).copied()
+    };
+    let mut seen = HashSet::new();
+    let mut named = crate::loss::NamedCount::default();
+    let definitions = features
+        .iter()
+        .map(|feature| (&feature.id, feature.evaluation.definition()))
+        .chain(configuration_states);
+    for (id, definition) in definitions {
+        let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
+            definition
+        else {
+            continue;
+        };
+        let (Some(axis), Some(profile)) = (construction.axis(), construction.profile()) else {
+            continue;
+        };
+        let Some((origin, normal, _)) =
+            profile_sketch(profile).and_then(Sketch::resolved_placement)
+        else {
+            continue;
+        };
+        let normal = normal.get();
+        let length = normal.norm();
+        if !length.is_finite() || length <= 0.0 {
+            continue;
+        }
+        let offset = Vector3::new(
+            axis.origin.x - origin.x,
+            axis.origin.y - origin.y,
+            axis.origin.z - origin.z,
+        );
+        let in_plane = (axis.direction.dot(normal) / length).abs() <= DIRECTION_TOLERANCE
+            && (offset.dot(normal) / length).abs() <= DISTANCE_TOLERANCE;
+        if !in_plane && seen.insert(id) {
+            let name = by_id
+                .get(id)
+                .and_then(|feature| feature.name.as_deref())
+                .unwrap_or(id.as_str());
+            named.push(name);
+        }
+    }
+    (!named.is_empty()).then(|| {
+        crate::loss::SldprtLossCode::FeatureRevolveAxisOffProfilePlane.note(format!(
+            "{} revolution(s) keep a stored axis that lies outside the plane of their \
+             profile sketch (sldprt-open-items.md DI-85): {named}.",
+            named.count(),
+        ))
+    })
 }
 
 fn profile_roster_construction_axis(

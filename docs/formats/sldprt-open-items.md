@@ -1234,3 +1234,11 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** A reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement, and the 121-byte angular frame stores a u-axis, a normal and a v-axis (`sldprt.md` §2). In one part, an angled plane reads u-axis `(0,1,0)`, while the dual-frame offset planes whose source it is store its frame with u-axis `(0.707,0,-0.707)` and the same normal: the Front frame turned about `Y` by the plane's angle. A sibling angled plane turned the other way reads the u-axis its offset planes store. No sketch lies on the angled plane; the sketches on its offset planes take the u-axis those planes store.
 
 **Need.** Angled planes whose offset planes store their source frame, compared field by field with the angular frame, and the B-rep of features sketched on an angled plane itself.
+
+### DI-85. Revolution axes that lie outside the profile plane
+
+**Question.** Which reading of a revolution's stored axis, or of its profile sketch's plane, is wrong where the axis read from the `moLineRef_w` record does not lie in the plane of the profile sketch?
+
+**Known.** The record ends with the axis line, a point and a unit direction, and the values before the line are not the point (`sldprt.md` §2). Read that way, most axes lie in their profile plane and coincide with the axis of a B-rep cylinder, cone or torus; read from the first triple, most do not. The decoder keeps an axis that still lies outside the plane, and names the revolution under `feature.revolve-axis-off-profile-plane`. Where the B-rep has a surface of revolution about the axis, the profile plane is the doubtful reading (open item DI-73); where it has none, the axis is.
+
+**Need.** For each revolution named, the B-rep surfaces of revolution the feature produced compared with the stored axis and with each line of its profile sketch, the plane record that binds the sketch, and the record bytes around the scalar record where its width is not structurally fixed.

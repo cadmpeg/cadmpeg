@@ -10720,6 +10720,30 @@ source = "spec"
 anchor = "name length at `+5`"
 
 [[record]]
+name = "revolution_line_reference_axis_line"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
+kind = "byte"
+section = "2"
+anchor = "The record ends with the axis line"
+size = 48
+endianness = "little"
+note = "Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to nine values."
+
+[[record.field]]
+name = "point"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "a point on the axis in metres at line offset `+0`"
+
+[[record.field]]
+name = "direction"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "the unit axis direction at line offset `+24`"
+
+[[record]]
 name = "cosmetic_thread_component_edge_wrapper_prefix"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs"
 kind = "byte"

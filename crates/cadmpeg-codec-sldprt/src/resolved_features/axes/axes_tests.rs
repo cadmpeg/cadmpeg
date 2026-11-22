@@ -9,7 +9,7 @@ use super::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
     compact_line_reference_directions, enrich_history_revolution_inputs,
     profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
-    profile_roster_principal_axis_endpoints,
+    profile_roster_principal_axis_endpoints, revolution_axis_off_profile_plane_note,
     revolution_line_reference_inputs as typed_revolution_line_reference_inputs,
     temporary_axis_reference as typed_temporary_axis_reference,
 };
@@ -147,7 +147,9 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     payload[handles + 12..handles + 16].copy_from_slice(&[0; 4]);
     payload[handles + 16..handles + 20].copy_from_slice(&7000u32.to_le_bytes());
     payload[handles + 64..handles + 68].copy_from_slice(&[0; 4]);
-    for (index, value) in [0.012, -0.034, 0.056, 0.1, 0.2, 0.3, 0.0, 0.0, -1.0]
+    // Nine values: two zero values and a scalar, then the axis line. The
+    // first triple (0, 0, 0.025) is not a point on the axis.
+    for (index, value) in [0.0, 0.0, 0.025, 0.012, -0.034, 0.056, 0.0, 0.0, -1.0]
         .into_iter()
         .enumerate()
     {
@@ -172,7 +174,8 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.012, -0.034, 0.056, 0.1, 0.2, 0.0, 1.0, 0.0]
+    // Eight values: one zero value and a scalar, then the axis line.
+    for (index, value) in [0.0, 0.025, 0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
         .into_iter()
         .enumerate()
     {
@@ -234,7 +237,30 @@ fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
     payload[source + 28..source + 32].copy_from_slice(&122u32.to_le_bytes());
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    for (index, value) in [1.0, 0.0, 0.060_285_851_239_7, 0.0, 0.0, -1.0]
+    let six_values = payload.clone();
+
+    // Seven values, a scalar and the axis line, end one zero byte before the
+    // class declaration. Read as six values, the record would also end with
+    // zero padding and give the point (1000, 0, 60.3) and direction -Z.
+    for (index, value) in [1.0, 0.0, 0.060_285_851_239_7, 0.0, 0.0, -1.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = handles + 24 + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+    }
+    payload[handles + 81..handles + 85].copy_from_slice(CLASS_MARKER);
+    assert_eq!(
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        Some((
+            42,
+            Point3::new(0.0, 0.060_285_851_239_7 * 1000.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0)
+        ))
+    );
+
+    let mut payload = six_values;
+    for (index, value) in [0.012, -0.034, 0.056, 0.0, 0.0, -1.0]
         .into_iter()
         .enumerate()
     {
@@ -242,12 +268,11 @@ fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
         payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
     }
     payload[handles + 72..handles + 76].copy_from_slice(CLASS_MARKER);
-
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
         Some((
             42,
-            Point3::new(1000.0, 0.0, 0.060_285_851_239_7 * 1000.0),
+            Point3::new(12.0, -34.0, 56.0),
             Vector3::new(0.0, 0.0, -1.0)
         ))
     );
@@ -276,13 +301,13 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
             payload[handles_end + 20..handles_end + 24].copy_from_slice(&[0xff; 4]);
             (
                 handles_end + 24,
-                vec![0.0, 0.015, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.015, 0.0, 0.021, 0.0, 0.0, 0.0, 1.0],
                 handles_end + 89,
             )
         } else {
             (
                 handles_end + 4,
-                vec![0.0, 0.0, 0.0, 0.052, 0.0, 0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.03, 0.052, 0.0, 0.0, 0.0, 0.0, 1.0],
                 handles_end + 85,
             )
         };
@@ -296,11 +321,11 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
 
     assert_eq!(
         revolution_line_reference_inputs(&make_payload(true), 32, 320, &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 15.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        Some((42, Point3::new(0.0, 21.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
     );
     assert_eq!(
         revolution_line_reference_inputs(&make_payload(false), 32, 320, &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        Some((42, Point3::new(52.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
     );
 }
 
@@ -319,7 +344,7 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     for offset in [handles, handles + 4] {
         declared[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    for (index, value) in [0.0, 0.0, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
+    for (index, value) in [0.0, 0.03, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
         .into_iter()
         .enumerate()
     {
@@ -329,7 +354,7 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     declared[handles + 89..handles + 93].copy_from_slice(CLASS_MARKER);
     assert_eq!(
         revolution_line_reference_inputs(&declared, 32, declared.len(), &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        Some((42, Point3::new(0.0, 64.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
     );
 
     let mut nested = vec![0; 300];
@@ -358,7 +383,7 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
         revolution_line_reference_inputs(&nested, 32, nested.len(), &HashSet::from([42])),
         Some((
             42,
-            Point3::new(56.0, -51.0, -8.0),
+            Point3::new(-51.0, -8.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0)
         ))
     );
@@ -391,7 +416,66 @@ fn revolution_line_reference_inputs_decode_declared_post_handle_address() {
 
     assert_eq!(
         revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 0.0, 6.0), Vector3::new(-1.0, 0.0, 0.0)))
+        Some((42, Point3::new(6.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)))
+    );
+}
+
+/// A two-handle record with the pre-handle words `0`, `1`, `1`: its scalar
+/// record at handle `+16` holds `[source cell ... handles, 0, address]`
+/// followed by eight or nine values and one zero byte before the next class.
+fn two_handle_axis_payload(values: &[f64]) -> Vec<u8> {
+    let mut payload = vec![0; 320];
+    let handles = 128;
+    let source = handles - 48;
+    payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&0x5976_e99cu32.to_le_bytes());
+    payload[source + 8..source + 10].copy_from_slice(&0x81e4u16.to_le_bytes());
+    payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+    payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
+    payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
+    payload[source + 32..source + 36].copy_from_slice(&141u32.to_le_bytes());
+    for offset in [handles, handles + 4] {
+        payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+    }
+    payload[handles + 12..handles + 16].copy_from_slice(&5000u32.to_le_bytes());
+    for (index, value) in values.iter().enumerate() {
+        let offset = handles + 16 + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let class = handles + 16 + values.len() * 8 + 1;
+    payload[class..class + 4].copy_from_slice(CLASS_MARKER);
+    payload
+}
+
+#[test]
+fn two_handle_axis_record_takes_nine_values_over_eight() {
+    // Nine values whose last is zero: an eight-value read also ends with zero
+    // padding and would give the direction -Y.
+    let nine = two_handle_axis_payload(&[0.0, 0.0, 0.0215, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+    assert_eq!(
+        revolution_line_reference_inputs(&nine, 32, nine.len(), &HashSet::from([42])),
+        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)))
+    );
+
+    let eight = two_handle_axis_payload(&[0.0, 0.041, 0.0, -0.0205, 0.0, 0.0, 1.0, 0.0]);
+    assert_eq!(
+        revolution_line_reference_inputs(&eight, 32, eight.len(), &HashSet::from([42])),
+        Some((
+            42,
+            Point3::new(0.0, -20.5, 0.0),
+            Vector3::new(0.0, 1.0, 0.0)
+        ))
+    );
+}
+
+#[test]
+fn axis_record_direction_must_be_stored_with_unit_length() {
+    let subnormal = f64::from_bits(1);
+    let payload =
+        two_handle_axis_payload(&[0.0, 0.0, 0.0215, 0.0, 0.0, 0.0, subnormal, 0.0, subnormal]);
+    assert_eq!(
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        None
     );
 }
 
@@ -1196,4 +1280,93 @@ fn revolution_consumes_the_preceding_profile_object() {
         histories[0].features[3].properties.get("Profile"),
         Some(&"29".into())
     );
+}
+
+#[test]
+fn revolution_axis_outside_the_profile_plane_is_named_and_kept() {
+    use cadmpeg_ir::features::extents::AngularTermination;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    let feature = |id: &str, name: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
+        ordinal: 0,
+        name: Some(name.into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
+        native_ref: None,
+    };
+    let profile = feature(
+        "synthetic:test:id#profile",
+        "Sketch1",
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+        }),
+    );
+    let revolve = |origin: Point3| {
+        feature(
+            "synthetic:test:id#revolve",
+            "Revolve1",
+            FeatureDefinition::Operation(FeatureOperation::Revolve {
+                construction: RevolveConstruction::Resolved {
+                    profile: PlanarProfileRef::Feature(profile.id.clone()),
+                    axis: RevolutionAxis {
+                        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(origin).unwrap(),
+                        direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                            Vector3::new(0.0, 1.0, 0.0),
+                        )
+                        .unwrap(),
+                        reference: None,
+                    },
+                    extent: RevolveExtent::OneSided {
+                        termination: AngularTermination::ThroughAll {},
+                    },
+                    solid: Some(true),
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
+            }),
+        )
+    };
+    let sketches = [sketch];
+
+    let in_plane = [profile.clone(), revolve(Point3::new(6.0, 0.0, 0.0))];
+    assert!(revolution_axis_off_profile_plane_note(&in_plane, [], &sketches).is_none());
+
+    // The first triple of a nine-value record, (0, 0, t), read as the point.
+    let off_plane = [profile.clone(), revolve(Point3::new(0.0, 0.0, 6.0))];
+    let note = revolution_axis_off_profile_plane_note(&off_plane, [], &sketches)
+        .expect("an axis outside the profile plane is named");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::FeatureRevolveAxisOffProfilePlane.kind()
+    );
+    assert!(note.message.starts_with("1 revolution(s) "));
+    assert!(note.message.ends_with("DI-85): Revolve1."));
 }
