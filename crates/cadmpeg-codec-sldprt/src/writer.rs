@@ -1634,11 +1634,12 @@ fn patch_retained_swobjects_metadata(
         }
         let provenance = annotations.provenance.get(attribute.id.as_str());
         if let Some(reason) = unwritable(attribute) {
-            let held = if provenance.is_some() {
-                Held::Source
-            } else {
-                Held::Nothing
-            };
+            // The retained bytes stay only where the output holds the member.
+            let held = provenance.map_or(Held::Nothing, |provenance| {
+                owners
+                    .unpatched(provenance.stream())
+                    .map_or(Held::Source, |(_, held)| held)
+            });
             unwritten.record(attribute.id.as_str(), reason, held);
             continue;
         }
