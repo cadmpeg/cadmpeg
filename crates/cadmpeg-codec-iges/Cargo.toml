@@ -32,10 +32,5 @@ toml = "1.1"
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
 cadmpeg-test-support = { workspace = true }
 
-
-# Local stress-input generator. cargo-dist would otherwise ship it as a release app.
-[package.metadata.dist]
-dist = false
-
 [lints]
 workspace = true
