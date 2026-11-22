@@ -237,14 +237,10 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
                 dimensions: Vec::new(),
             },
             Feature::Extrusion(extrusion) => Record {
-                tag: if extrusion.cut { "Cut" } else { "Extrusion" },
+                tag: "Extrusion",
                 id: extrusion.feature_id,
                 name: &extrusion.name,
-                label: if extrusion.cut {
-                    "Cut-Extrude"
-                } else {
-                    "Boss-Extrude"
-                },
+                label: "Boss-Extrude",
                 dissectable: false,
                 dimensions: vec![("D1", format!("{}", extrusion.depth * MILLIMETRES_PER_METRE))],
             },

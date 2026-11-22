@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A blind extrusion as native objects: `moExtrusion_c` or `moCut_c`
-//! (`docs/formats/sldprt.md` §2.3 "Extrusion feature objects" and "Dimension
-//! display objects"). Byte runs `sldprt.md` gives as lengths only are zero.
+//! A blind extrusion that makes a part's body as native objects:
+//! `moExtrusion_c` (`docs/formats/sldprt.md` §2.3 "Extrusion feature objects"
+//! and "Dimension display objects"). Byte runs `sldprt.md` gives as lengths
+//! only are zero.
 
 use super::archive::Archive;
 use super::block::{block_close, block_open, named, named_operation, Oid, Schema, Tail, TAIL};
@@ -17,19 +18,14 @@ pub(in crate::writer) struct Extrusion {
     /// The position, among the part's user features, of the sketch it
     /// extrudes.
     pub(in crate::writer) profile: usize,
-    /// Whether the extrusion removes material (`moCut_c`).
-    pub(in crate::writer) cut: bool,
     /// The depth in metres.
     pub(in crate::writer) depth: f64,
     /// Whether it travels against the sketch plane's normal.
     pub(in crate::writer) reversed: bool,
 }
 
-/// The named-head family word of an extrusion that joins its result.
-const JOIN_FAMILY: u16 = 0x0140;
-
-/// The named-head family word of an extrusion that cuts its result.
-const CUT_FAMILY: u16 = 0x01ca;
+/// The named-head family word of a `moExtrusion_c`.
+const EXTRUSION_FAMILY: u16 = 0x0140;
 
 /// The block word of an extrusion.
 const EXTRUSION_BLOCK_WORD: u32 = 104;
@@ -67,20 +63,12 @@ pub(super) fn extrusion(
     atom: u32,
     parameter_id: u32,
 ) {
-    archive.object(if extrusion.cut {
-        "moCut_c"
-    } else {
-        "moExtrusion_c"
-    });
+    archive.object("moExtrusion_c");
     named_operation(
         archive,
         &extrusion.name,
         extrusion.feature_id,
-        if extrusion.cut {
-            CUT_FAMILY
-        } else {
-            JOIN_FAMILY
-        },
+        EXTRUSION_FAMILY,
     );
     block_open(archive, 1);
     archive.reference(profile);

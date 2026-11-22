@@ -299,6 +299,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
         Some((
             "Contents/Keywords-0".to_owned(),
             vec!["feature#a".to_owned(), "feature#b".to_owned()],
+            None,
         )),
         Some("sketch#c holds an ellipse".to_owned()),
         true,
@@ -325,6 +326,9 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
     assert!(full[2].message.contains("Contents/3DExperienceExchange2"));
     assert!(full[3].message.ends_with("sketch#c holds an ellipse"));
     assert!(full[4].message.contains("FACE_ID_2001"));
+    assert!(full[4]
+        .message
+        .contains("moBBoxCenterData_c writes a zero point, a zero length and identifier 0"));
     assert!(full[1].message.contains("each native sketch's 76-byte"));
     assert!(!bare[0].message.contains("each native sketch's 76-byte"));
 }

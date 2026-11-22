@@ -315,6 +315,27 @@ impl Plane {
         }
     }
 
+    /// The u16 a sketch's `moCompRefPlane_c` writes after this plane's feature
+    /// number.
+    pub(super) fn reference_word(self) -> u16 {
+        match self {
+            Self::Front => 3,
+            Self::Top => 2,
+            Self::Right => 1,
+        }
+    }
+
+    /// The rotation a sketch's `moCompRefPlane_c` writes for this plane, row
+    /// by row, or none for Front; its columns are [`Self::axes`]. The zeros
+    /// carry the signs native parts write.
+    pub(super) fn reference_rotation(self) -> Option<[f64; 9]> {
+        match self {
+            Self::Front => None,
+            Self::Top => Some([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0]),
+            Self::Right => Some([-0.0, 0.0, 1.0, -0.0, 1.0, 0.0, -1.0, 0.0, 0.0]),
+        }
+    }
+
     /// The plane's first and second in-plane axes and its normal in model
     /// space: the columns of its rotation.
     pub(in crate::writer) fn axes(self) -> [[f64; 3]; 3] {

@@ -105,6 +105,12 @@ pub(crate) fn write_semantic_with_records(
         !native.feature_histories.is_empty() || !native.feature_input_lanes.is_empty()
     });
     let input_active_configuration = active_configuration_intent(ir);
+    let source_features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str().to_owned())
+        .collect::<Vec<_>>();
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
@@ -454,7 +460,24 @@ pub(crate) fn write_semantic_with_records(
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
     let skeleton = retained_records.is_empty() && {
-        let written = native_skeleton(ir, native.as_ref(), solidworks_history, &mut sections);
+        let kept = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .collect::<HashSet<_>>();
+        let left_out = source_features
+            .iter()
+            .filter(|feature| !kept.contains(feature.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let written = native_skeleton(
+            ir,
+            native.as_ref(),
+            solidworks_history,
+            &left_out,
+            &mut sections,
+        );
         let skeleton = written.is_ok();
         losses.extend(written.unwrap_or_else(|reason| {
             vec![crate::loss::SldprtLossCode::WriterNativeSkeletonOmitted
@@ -543,6 +566,7 @@ const SKELETON_RESOLVED: &str = "Contents/Config-0-ResolvedFeatures";
 /// the skeleton states, or why it is not written; `sections` is then
 /// unchanged.
 ///
+/// `left_out` names the source features the write leaves out.
 /// `solidworks_history` states that the input holds a feature history or
 /// lane of a `SolidWorks` part. Its lane's class tags index the class map of
 /// that part's `Contents/Config-0`, which a write without the source's
@@ -552,6 +576,7 @@ fn native_skeleton(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     solidworks_history: bool,
+    left_out: &[String],
     sections: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, String> {
     if solidworks_history {
@@ -585,10 +610,13 @@ fn native_skeleton(
         .filter_map(crate::records::Feature::source_value)
         .max()
         .unwrap_or_default();
-    let (features, lane_reason) =
-        match native::from_ir::features(ir, native).map_err(|error| error.to_string())? {
-            native::from_ir::Features::Native(features) => (features, None),
-            native::from_ir::Features::Lane(reason) => (Vec::new(), Some(reason)),
+    let (features, unwritten_extrusion, lane_reason) =
+        match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
+            native::from_ir::Features::Native {
+                features,
+                unwritten_extrusion,
+            } => (features, unwritten_extrusion, None),
+            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Some(reason)),
         };
     // A body the native extrusions make is not also written as a stored body.
     let extruded = features
@@ -661,8 +689,13 @@ fn native_skeleton(
         .filter(|feature| !native_feature_written(native, feature, &native_features))
         .map(|feature| feature.id.as_str().to_owned())
         .collect::<Vec<_>>();
-    let summarized = (!summaries.is_empty() && !summarized_features.is_empty())
-        .then(|| (summaries.join(", "), summarized_features));
+    let summarized = (!summaries.is_empty() && !summarized_features.is_empty()).then(|| {
+        (
+            summaries.join(", "),
+            summarized_features,
+            unwritten_extrusion,
+        )
+    });
     Ok(native_skeleton_losses(
         summarized,
         lane_reason.filter(|_| lane_merged),
@@ -706,21 +739,24 @@ fn native_part_name(name: &str) -> String {
 /// summary streams and the features written only in them, when the write
 /// holds one.
 fn native_skeleton_losses(
-    summarized: Option<(String, Vec<String>)>,
+    summarized: Option<(String, Vec<String>, Option<String>)>,
     lane_follows: Option<String>,
     features: bool,
     extruded: bool,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
     let mut losses = Vec::new();
-    if let Some((streams, features)) = summarized {
+    if let Some((streams, features, unwritten_extrusion)) = summarized {
         losses.push(SldprtLossCode::WriterNativeHistorySummary.note(format!(
             "{} source feature(s) are written only in the cadmpeg history summary {streams}, \
              a stream SolidWorks parts do not hold; the native feature tree holds the default \
              tree, the features it writes natively and one moBaseBody_c stored body per body it \
-             makes no extrusion of: {}",
+             makes no extrusion of: {}{}",
             features.len(),
-            features.join(", ")
+            features.join(", "),
+            unwritten_extrusion
+                .map(|reason| format!("; the tree writes no extrusion natively because {reason}"))
+                .unwrap_or_default()
         )));
     }
     let (runs, bytes) = native::detailing_zero_runs();
@@ -757,10 +793,13 @@ fn native_skeleton_losses(
     }
     if extruded {
         losses.push(SldprtLossCode::WriterNativeBodyIdentityOmitted.note(
-            "the native extrusions name no face of the body they make: each \
+            "the native extrusion names no face of the body it makes: its \
              moPerBodyChooserData_c holds no face reference, where native parts of swVersion \
              14000 hold two whose hops name the extrusion and a sketch entity, and the \
-             partition's faces carry no FACE_ID_2001 attribute naming the feature that made them",
+             partition's faces carry no FACE_ID_2001 attribute naming the feature that made them; \
+             its moBBoxCenterData_c writes a zero point, a zero length and identifier 0, where \
+             native parts hold the centre of the body's box, a non-zero length and a non-zero \
+             identifier",
         ));
     }
     losses

@@ -9,7 +9,7 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::extrude::Extrusion;
-use super::sketch::{Curve, Dimension, Operand, Point, Relation, Sketch};
+use super::sketch::{Curve, Dimension, DimensionClass, Operand, Point, Relation, Sketch};
 use super::tree::Plane;
 use super::Feature;
 use crate::records::SketchRelationKind;
@@ -38,9 +38,13 @@ const METRES_PER_MILLIMETRE: f64 = 0.001;
 /// them.
 #[derive(Debug)]
 pub(in crate::writer) enum Features {
-    /// Every sketch and, in a part whose every feature the tree writes, every
-    /// extrusion, in source order.
-    Native(Vec<Feature>),
+    /// Every sketch and, when the part's body comes from its one extrusion,
+    /// that extrusion, in source order; `unwritten_extrusion` names why the
+    /// tree writes no extrusion of a part that holds one.
+    Native {
+        features: Vec<Feature>,
+        unwritten_extrusion: Option<String>,
+    },
     /// The sketches stay in the generated lane; the text names the first
     /// sketch the tree cannot write and why.
     Lane(String),
@@ -49,20 +53,25 @@ pub(in crate::writer) enum Features {
 /// The user features of `ir`: every planar sketch of the first configuration
 /// as a native sketch, when each lies on a default plane and holds only
 /// points, lines, arcs and circles that are not construction geometry, and
-/// the part holds no spatial sketch; and every extrusion, when the part's one
-/// body comes from its sketches and one-sided blind extrusions alone.
+/// the part holds no spatial sketch; and the extrusion that makes the part's
+/// body (see [`extrusion`]). `left_out` names the source features the write
+/// leaves out.
 pub(in crate::writer) fn features(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
+    left_out: &[String],
 ) -> Result<Features, CodecError> {
-    if ir.model.sketches.is_empty() {
-        return Ok(Features::Native(Vec::new()));
-    }
     if let Some(spatial) = ir.model.spatial_sketches.first() {
         return Ok(Features::Lane(format!(
             "spatial sketch {} has no native sketch form here",
             spatial.id.as_str()
         )));
+    }
+    if ir.model.sketches.is_empty() {
+        return Ok(Features::Native {
+            features: Vec::new(),
+            unwritten_extrusion: None,
+        });
     }
     let Some(native) = native else {
         return Ok(Features::Lane("the write holds no history summary".into()));
@@ -124,9 +133,13 @@ pub(in crate::writer) fn features(
             }),
         ));
     }
-    if let Some(extrusions) = extrusions(ir, native, &sketch_sides) {
-        out.extend(extrusions);
-    }
+    let unwritten_extrusion = match extrusion(ir, native, &sketch_sides, left_out) {
+        Ok(extrusion) => {
+            out.extend(extrusion);
+            None
+        }
+        Err(reason) => Some(reason),
+    };
     out.sort_by_key(|(ordinal, ..)| *ordinal);
     // An extrusion's profile is the position, among the features, of the
     // sketch it extrudes.
@@ -147,119 +160,163 @@ pub(in crate::writer) fn features(
         }
         features.push(feature);
     }
-    Ok(Features::Native(features))
+    Ok(Features::Native {
+        features,
+        unwritten_extrusion,
+    })
 }
 
 /// A user feature with its ordinal and the sketch it is or extrudes.
 type Ordered = (u64, cadmpeg_ir::sketches::SketchId, Feature);
 
-/// The one-sided blind extrusions of `ir`, each with its ordinal and the
-/// sketch it extrudes, when the part's one body comes from its written
-/// sketches and such extrusions alone: the first extrusion makes the body,
-/// later ones join to it or cut it, each extrudes every profile of one
-/// written sketch from the sketch plane, without draft.
-fn extrusions(
+/// The extrusion of `ir` with its ordinal and the sketch it extrudes, none
+/// when `ir` holds no extrusion, or why the tree writes none: the tree writes
+/// an extrusion when the write keeps every source feature, the part holds one
+/// body, and its features are written sketches and one extrusion that makes
+/// that body, one-sided and blind, from the plane of every profile of one
+/// written sketch along its normal, without draft. A second extrusion would
+/// take the part's one `moAtom_c` as its input too, which no native part
+/// does.
+fn extrusion(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
     sketches: &[(cadmpeg_ir::sketches::SketchId, bool)],
-) -> Option<Vec<Ordered>> {
+    left_out: &[String],
+) -> Result<Option<Ordered>, String> {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FeatureDefinition,
         FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
-    if ir.geometry.bodies.len() != 1 {
-        return None;
-    }
-    let mut out = Vec::new();
-    for feature in &ir.model.features {
-        let FeatureDefinition::Operation(operation) = feature.evaluation.definition() else {
-            return None;
-        };
-        let (profile, direction, start, extent, op, solid) = match operation {
-            FeatureOperation::Sketch { .. } => continue,
-            FeatureOperation::Extrude {
-                profile,
-                direction,
-                start,
-                extent,
-                op,
-                solid,
-                ..
-            } => (profile, direction, start, extent, op, solid),
-            _ => return None,
-        };
-        let sketch = match profile {
-            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
-            ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
-                let count = ir
-                    .model
-                    .sketches
-                    .iter()
-                    .find(|candidate| candidate.id == *sketch)
-                    .map_or(0, |candidate| candidate.profiles.len());
-                let every = (0..count)
-                    .all(|index| u32::try_from(index).is_ok_and(|index| profiles.contains(&index)));
-                if count == 0 || !every || profiles.len() != count {
-                    return None;
-                }
-                sketch
-            }
-            _ => return None,
-        };
-        let &(_, flipped) = sketches.iter().find(|(candidate, _)| candidate == sketch)?;
-        let ExtrudeExtent::OneSided { side } = extent else {
-            return None;
-        };
-        let LinearTermination::Blind { length } = side.termination else {
-            return None;
-        };
-        let against = match direction {
-            ExtrudeDirection::ProfileNormal {} => false,
-            ExtrudeDirection::ReversedProfileNormal {} => true,
-            _ => return None,
-        };
-        let first = out.is_empty();
-        let cut = match op {
-            BooleanOp::NewBody if first => false,
-            BooleanOp::Join if !first => false,
-            BooleanOp::Cut if !first => true,
-            _ => return None,
-        };
-        if side.draft.is_some()
-            || !matches!(start, ExtrudeStart::ProfilePlane {})
-            || *solid == Some(false)
-        {
-            return None;
-        }
-        let record_id = feature.native_ref.clone().unwrap_or_else(|| {
-            crate::history::write::features::generated_feature_record_id(&feature.id)
-        });
-        let record = native
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .find(|record| record.id == record_id)?;
-        let feature_id = record.source_value()?;
-        let name = if record.name.is_empty() {
-            feature.name.as_deref().unwrap_or(feature.id.as_str())
-        } else {
-            record.name.as_str()
-        };
-        let depth = length.get();
-        out.push((
-            feature.ordinal,
-            sketch.clone(),
-            Feature::Extrusion(Extrusion {
-                name: GENERATED_NAME.fit(name).text.to_owned(),
-                feature_id,
-                profile: 0,
-                cut,
-                depth: depth.abs() * METRES_PER_MILLIMETRE,
-                reversed: against ^ flipped ^ (depth < 0.0),
-            }),
+    let extrudes = |feature: &&cadmpeg_ir::features::Feature| {
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+        )
+    };
+    let mut extrusions = ir.model.features.iter().filter(extrudes);
+    let Some(feature) = extrusions.next() else {
+        return Ok(None);
+    };
+    let id = feature.id.as_str();
+    if !left_out.is_empty() {
+        return Err(format!(
+            "the write leaves out source feature(s) {}, so the native features would not make \
+             the part's current body",
+            left_out.join(", ")
         ));
     }
-    (!out.is_empty()).then_some(out)
+    if let Some(second) = extrusions.next() {
+        return Err(format!(
+            "extrusion {} follows extrusion {id}, and the part's one moAtom_c can be the input \
+             of one extrusion",
+            second.id.as_str()
+        ));
+    }
+    if ir.geometry.bodies.len() != 1 {
+        return Err(format!(
+            "the part holds {} bodies",
+            ir.geometry.bodies.len()
+        ));
+    }
+    if let Some(other) = ir.model.features.iter().find(|candidate| {
+        !extrudes(candidate)
+            && !matches!(
+                candidate.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+            )
+    }) {
+        return Err(format!(
+            "feature {} is neither a sketch nor an extrusion",
+            other.id.as_str()
+        ));
+    }
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile,
+        direction,
+        start,
+        extent,
+        op,
+        solid,
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        return Ok(None);
+    };
+    let sketch = match profile {
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
+        ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
+            let count = ir
+                .model
+                .sketches
+                .iter()
+                .find(|candidate| candidate.id == *sketch)
+                .map_or(0, |candidate| candidate.profiles.len());
+            let every = (0..count)
+                .all(|index| u32::try_from(index).is_ok_and(|index| profiles.contains(&index)));
+            if count == 0 || !every || profiles.len() != count {
+                return Err(format!(
+                    "extrusion {id} extrudes some of its sketch's profiles"
+                ));
+            }
+            sketch
+        }
+        _ => return Err(format!("extrusion {id} extrudes no planar sketch")),
+    };
+    let &(_, flipped) = sketches
+        .iter()
+        .find(|(candidate, _)| candidate == sketch)
+        .ok_or_else(|| format!("extrusion {id} extrudes a sketch the tree does not write"))?;
+    let ExtrudeExtent::OneSided { side } = extent else {
+        return Err(format!("extrusion {id} is not one-sided"));
+    };
+    let LinearTermination::Blind { length } = side.termination else {
+        return Err(format!("extrusion {id} is not blind"));
+    };
+    let against = match direction {
+        ExtrudeDirection::ProfileNormal {} => false,
+        ExtrudeDirection::ReversedProfileNormal {} => true,
+        _ => return Err(format!("extrusion {id} runs along no profile normal")),
+    };
+    if !matches!(op, BooleanOp::NewBody) {
+        return Err(format!("extrusion {id} makes no new body"));
+    }
+    if side.draft.is_some()
+        || !matches!(start, ExtrudeStart::ProfilePlane {})
+        || *solid == Some(false)
+    {
+        return Err(format!(
+            "extrusion {id} has a draft, a start off the sketch plane or a surface result"
+        ));
+    }
+    let record_id = feature.native_ref.clone().unwrap_or_else(|| {
+        crate::history::write::features::generated_feature_record_id(&feature.id)
+    });
+    let record = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|record| record.id == record_id)
+        .ok_or_else(|| format!("extrusion {id} has no history summary record"))?;
+    let feature_id = record
+        .source_value()
+        .ok_or_else(|| format!("extrusion {id} has no history summary source id"))?;
+    let name = if record.name.is_empty() {
+        feature.name.as_deref().unwrap_or(id)
+    } else {
+        record.name.as_str()
+    };
+    let depth = length.get();
+    Ok(Some((
+        feature.ordinal,
+        sketch.clone(),
+        Feature::Extrusion(Extrusion {
+            name: GENERATED_NAME.fit(name).text.to_owned(),
+            feature_id,
+            profile: 0,
+            depth: depth.abs() * METRES_PER_MILLIMETRE,
+            reversed: against ^ flipped ^ (depth < 0.0),
+        }),
+    )))
 }
 
 /// The operand handle of each entity and of each locus that is a point.
@@ -509,43 +566,38 @@ fn constraints(
         );
         let (class, code, operands, parameter) = match dimension {
             GeneratedDimension::PointPoint(first, second, parameter) => (
-                "sgPntPntDist",
+                DimensionClass::PointPoint,
                 SketchRelationKind::Distance,
                 vec![handles.locus(first)?, handles.locus(second)?],
                 parameter,
             ),
             GeneratedDimension::PointLine(point, line, parameter) => (
-                "sgPntLineDist",
+                DimensionClass::PointLine,
                 SketchRelationKind::Distance,
                 vec![handles.locus(point)?, handles.entity(line)?],
                 parameter,
             ),
             GeneratedDimension::LineLine(first, second, parameter) => (
-                "sgLLDist",
+                DimensionClass::LineLine,
                 SketchRelationKind::Distance,
                 vec![handles.entity(first)?, handles.entity(second)?],
                 parameter,
             ),
             GeneratedDimension::Horizontal(first, second, parameter) => (
-                "sgPntPntHorDist",
+                DimensionClass::Horizontal,
                 SketchRelationKind::Distance,
                 vec![handles.locus(first)?, handles.locus(second)?],
                 parameter,
             ),
-            GeneratedDimension::Vertical(first, second, parameter) => (
-                "sgPntPntVertDist",
-                SketchRelationKind::Distance,
-                vec![handles.locus(first)?, handles.locus(second)?],
-                parameter,
-            ),
-            GeneratedDimension::Angle(first, second, parameter) => (
-                "sgAnglDim",
-                SketchRelationKind::Angle,
-                vec![handles.entity(first)?, handles.entity(second)?],
-                parameter,
-            ),
+            GeneratedDimension::Vertical(..) | GeneratedDimension::Angle(..) => {
+                return Err(format!(
+                    "constraint {} is a vertical or angular dimension, whose bytes after the \
+                     parameter sldprt.md does not state",
+                    constraint.id.as_str()
+                ))
+            }
             GeneratedDimension::Circle(entity, parameter) => (
-                "sgCircleDim",
+                DimensionClass::Circle,
                 if radius {
                     SketchRelationKind::Radius
                 } else {
@@ -561,25 +613,16 @@ fn constraints(
             .iter()
             .find(|candidate| candidate.id == *parameter)
             .ok_or_else(|| format!("dimension parameter {} is missing", parameter.as_str()))?;
-        let (value, angle) = match &parameter.value {
-            Some(cadmpeg_ir::features::ParameterValue::Length(value)) if class != "sgAnglDim" => {
-                (value.get() * METRES_PER_MILLIMETRE, false)
-            }
-            Some(cadmpeg_ir::features::ParameterValue::Angle(value)) if class == "sgAnglDim" => {
-                (value.get(), true)
-            }
-            _ => {
-                return Err(format!(
-                    "dimension parameter {} has no value of its measure",
-                    parameter.id.as_str()
-                ))
-            }
+        let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+            return Err(format!(
+                "dimension parameter {} has no length value",
+                parameter.id.as_str()
+            ));
         };
         dimensions.push(Dimension {
             class,
             name: GENERATED_NAME.fit(&parameter.name).text.to_owned(),
-            value,
-            angle,
+            value: value.get() * METRES_PER_MILLIMETRE,
             code: code.native_code(),
             operands,
         });

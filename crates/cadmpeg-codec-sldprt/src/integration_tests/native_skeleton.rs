@@ -194,12 +194,52 @@ fn cube_with_sketches() -> cadmpeg_ir::CadIr {
 }
 
 fn write(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
+    write_with_losses(ir).0
+}
+
+fn write_with_losses(ir: &cadmpeg_ir::CadIr) -> (Vec<u8>, Vec<cadmpeg_ir::report::loss::LossNote>) {
     let plan = SldprtCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .expect("the part plans");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).expect("the part writes");
-    bytes
+    let report = plan.write_to(&mut bytes).expect("the part writes");
+    (bytes, report.losses)
+}
+
+/// The decoder's exact walk of the written part's `Config-0` and
+/// `ResolvedFeatures`, and the `ResolvedFeatures` payload.
+fn walk(bytes: &[u8]) -> (crate::carchive::Walk, Vec<u8>) {
+    let scan = crate::test_support::container::scan(bytes);
+    let payload = |name: &str| {
+        scan.sections()
+            .find(|section| section.name() == Some(name))
+            .map_or_else(
+                || panic!("{name} is written"),
+                crate::container::Section::payload,
+            )
+    };
+    let config = payload("Contents/Config-0");
+    let resolved = payload("Contents/Config-0-ResolvedFeatures");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, Some(14000))
+        .expect("walk")
+        .expect("the class map reconciles");
+    assert_eq!(walk.status, crate::carchive::Status::End);
+    (walk, resolved.to_vec())
+}
+
+fn classes(walk: &crate::carchive::Walk) -> Vec<&str> {
+    walk.trace.iter().map(|object| &*object.class).collect()
+}
+
+fn loss<'a>(
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    code: &str,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
+    losses
+        .iter()
+        .find(|loss| loss.code.local_code() == code)
+        .unwrap_or_else(|| panic!("{code} in {losses:#?}"))
 }
 
 /// The model-space points of a decoded sketch entity's loci.
@@ -481,19 +521,66 @@ fn native_sketch_relations_and_dimensions_decode_back() {
     }
 }
 
-/// `cube_with_sketches` with the rectangle extruded 5 into a new body.
+/// `cube_with_sketches` with the rectangle made the cube's 10 by 10 base
+/// and extruded 10 into a new body, which is the cube.
 fn cube_with_extrusion() -> cadmpeg_ir::CadIr {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, FeatureId,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
     let mut ir = cube_with_sketches();
+    let corners = [
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+        Point2::new(10.0, 10.0),
+        Point2::new(0.0, 10.0),
+    ];
+    for (index, entity) in ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .filter(|entity| {
+            entity
+                .id()
+                .as_str()
+                .starts_with("synthetic:test:sketch-entity#Rectangle-")
+        })
+        .enumerate()
+    {
+        entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: corners[index],
+            end: corners[(index + 1) % 4],
+        })
+        .expect("geometry");
+    }
+    push_extrusion(
+        &mut ir,
+        "Boss",
+        "Rectangle",
+        cadmpeg_ir::features::BooleanOp::NewBody,
+        cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        10.0,
+    );
+    ir
+}
+
+/// Append a one-sided blind extrusion of `sketch` by `depth` millimetres.
+fn push_extrusion(
+    ir: &mut cadmpeg_ir::CadIr,
+    key: &str,
+    sketch: &str,
+    op: cadmpeg_ir::features::BooleanOp,
+    direction: cadmpeg_ir::features::ExtrudeDirection,
+    depth: f64,
+) {
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, FeatureId, LinearTermination,
+        PlanarProfileRef, ProfileRef,
+    };
     let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
     ir.model.features.push(Feature {
         product_definition: None,
-        id: FeatureId::mint("synthetic:test:feature#Boss").expect("id"),
+        id: FeatureId::mint(format!("synthetic:test:feature#{key}")).expect("id"),
         ordinal,
-        name: Some("Boss".into()),
+        name: Some(key.into()),
         suppressed: Some(false),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
@@ -503,20 +590,20 @@ fn cube_with_extrusion() -> cadmpeg_ir::CadIr {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
-                    cadmpeg_ir::sketches::SketchId::mint("synthetic:test:sketch#Rectangle")
+                    cadmpeg_ir::sketches::SketchId::mint(format!("synthetic:test:sketch#{sketch}"))
                         .expect("id"),
                 )),
-                direction: ExtrudeDirection::ProfileNormal {},
+                direction,
                 start: ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).expect("length"),
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(depth).expect("length"),
                         },
                         draft: None,
                     },
                 },
-                op: BooleanOp::NewBody,
+                op,
                 solid: Some(true),
                 face_maker: None,
                 inner_wire_taper: None,
@@ -526,7 +613,6 @@ fn cube_with_extrusion() -> cadmpeg_ir::CadIr {
         ),
         native_ref: None,
     });
-    ir
 }
 
 #[test]
@@ -566,7 +652,18 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
         .filter(|parameter| parameter.name.as_str() == Some("D1"))
         .map(|parameter| parameter.value)
         .collect::<Vec<_>>();
-    assert_eq!(depths, [0.005]);
+    assert_eq!(depths, [0.01]);
+    let end_spec = walk
+        .trace
+        .iter()
+        .find(|object| &*object.class == "moEndSpec_c")
+        .expect("the end specification is written");
+    let direction = u32::from_le_bytes(
+        resolved[end_spec.body + 10..end_spec.body + 14]
+            .try_into()
+            .expect("four bytes"),
+    );
+    assert_eq!(direction, 0, "the extrusion runs along the sketch normal");
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the part decodes");
@@ -602,9 +699,201 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
                 cadmpeg_ir::features::ProfileRef::Planar(
                     cadmpeg_ir::features::PlanarProfileRef::Sketch(_)
                 ),
-            ) if (length.get() - 5.0).abs() < 1.0e-9
+            ) if (length.get() - 10.0).abs() < 1.0e-9
         ),
         "{extrude:?}"
     );
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+}
+
+#[test]
+fn a_part_whose_write_leaves_out_a_feature_keeps_its_stored_body() {
+    use cadmpeg_ir::features::{Feature, FeatureId};
+    let mut ir = cube_with_extrusion();
+    let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("other:model:feature#insert").expect("id"),
+        ordinal,
+        name: Some("Insert".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Component Insert".into(),
+                parameters: std::collections::BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let (bytes, losses) = write_with_losses(&ir);
+    let (walk, _) = walk(&bytes);
+    let classes = classes(&walk);
+    assert!(classes.contains(&"moBaseBody_c"), "{classes:?}");
+    assert!(!classes.contains(&"moExtrusion_c"), "{classes:?}");
+    let summary = loss(&losses, "writer.native-history-summary");
+    assert!(
+        summary.message.contains(
+            "the tree writes no extrusion natively because the write leaves out source \
+             feature(s) other:model:feature#insert"
+        ),
+        "{}",
+        summary.message
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "writer.native-body-identity-omitted"));
+}
+
+#[test]
+fn a_second_extrusion_keeps_the_stored_body() {
+    use cadmpeg_ir::features::{BooleanOp, ExtrudeDirection};
+    for op in [BooleanOp::Join, BooleanOp::Cut] {
+        let mut ir = cube_with_extrusion();
+        push_extrusion(
+            &mut ir,
+            "Second",
+            "Arcs",
+            op,
+            ExtrudeDirection::ProfileNormal {},
+            2.0,
+        );
+        let (bytes, losses) = write_with_losses(&ir);
+        let (walk, _) = walk(&bytes);
+        let classes = classes(&walk);
+        assert!(classes.contains(&"moBaseBody_c"), "{op:?}: {classes:?}");
+        assert!(
+            !classes.contains(&"moExtrusion_c") && !classes.contains(&"moCut_c"),
+            "{op:?}: {classes:?}"
+        );
+        assert_eq!(
+            walk.sketch_profiles.len(),
+            2,
+            "{op:?}: both sketches stay native"
+        );
+        let summary = loss(&losses, "writer.native-history-summary");
+        assert!(
+            summary.message.contains(
+                "extrusion synthetic:test:feature#Second follows extrusion \
+                 synthetic:test:feature#Boss"
+            ),
+            "{op:?}: {}",
+            summary.message
+        );
+    }
+}
+
+/// An extrusion along the normal of a sketch whose normal opposes its
+/// plane's runs against the plane's normal.
+#[test]
+fn an_extrusion_against_its_plane_normal_writes_the_reversed_direction_flag() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut ir = cube_with_sketches();
+    let rectangle = ir
+        .model
+        .sketches
+        .iter_mut()
+        .find(|sketch| sketch.name.as_deref() == Some("Rectangle"))
+        .expect("the rectangle sketch");
+    rectangle.placement = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, -1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("placement");
+    push_extrusion(
+        &mut ir,
+        "Boss",
+        "Rectangle",
+        cadmpeg_ir::features::BooleanOp::NewBody,
+        cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        5.0,
+    );
+    let (bytes, losses) = write_with_losses(&ir);
+    let (walk, resolved) = walk(&bytes);
+    assert!(classes(&walk).contains(&"moExtrusion_c"), "{losses:#?}");
+    let end_spec = walk
+        .trace
+        .iter()
+        .find(|object| &*object.class == "moEndSpec_c")
+        .expect("the end specification is written");
+    let direction = u32::from_le_bytes(
+        resolved[end_spec.body + 10..end_spec.body + 14]
+            .try_into()
+            .expect("four bytes"),
+    );
+    assert_eq!(direction, 1, "the extrusion runs against the sketch normal");
+}
+
+#[test]
+fn a_part_whose_only_sketch_is_spatial_keeps_the_generated_lane() {
+    use cadmpeg_ir::features::{Feature, FeatureId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").expect("id");
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch.clone(),
+        name: Some("Path".into()),
+        configuration: Some("0".into()),
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let (start, end) = (Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0));
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").expect("id"),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .expect("geometry"),
+        ));
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:feature#path").expect("id"),
+        ordinal: 0,
+        name: Some("Path".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                sketch: Some(sketch),
+            }),
+        ),
+        native_ref: None,
+    });
+    let (bytes, losses) = write_with_losses(&ir);
+    let lane = loss(&losses, "writer.native-sketch-lane-orphan");
+    assert!(
+        lane.message
+            .contains("spatial sketch synthetic:test:spatial-sketch#path"),
+        "{}",
+        lane.message
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    let entities = &decoded.ir().model.spatial_sketch_entities;
+    assert_eq!(entities.len(), 1, "{entities:?}");
+    assert!(
+        matches!(
+            *entities[0].geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { start: read_start, end: read_end }
+                if cadmpeg_ir::compare::floats_agree(read_start.x, start.x)
+                    && cadmpeg_ir::compare::floats_agree(read_end.z, end.z)
+        ),
+        "{entities:?}"
+    );
 }

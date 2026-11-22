@@ -49,8 +49,7 @@ pub(super) fn named_with(
     head(archive, name, schema, id, 0, after_id);
 }
 
-/// [`named`] with an operation family word: `0x0140` for an extrusion that
-/// joins its result, `0x01ca` for one that cuts it (§2.3).
+/// [`named`] with an operation family word (§2.3).
 pub(super) fn named_operation(archive: &mut Archive, name: &str, id: u32, family: u16) {
     head(
         archive,

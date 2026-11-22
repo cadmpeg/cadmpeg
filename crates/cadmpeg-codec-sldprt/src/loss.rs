@@ -320,7 +320,7 @@ pub(crate) enum SldprtLossCode {
     WriterNativeStreamsOmitted,
     /// Export writes generated sketch marker records with no owning native object.
     WriterNativeSketchLaneOrphan,
-    /// Export writes native extrusions that name the faces of their body by no reference.
+    /// Export writes a native extrusion with no face references and a zero bounding box.
     WriterNativeBodyIdentityOmitted,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
