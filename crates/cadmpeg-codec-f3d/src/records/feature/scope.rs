@@ -94,6 +94,12 @@ cadmpeg_core::named_optional_field!(
     "label"
 );
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
+cadmpeg_core::named_optional_field!(deserialize_tail_flags, DesignScopeTailFlags, "tail_flags");
+cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_envelope_offset,
+    u64,
+    "envelope_offset"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -535,6 +541,45 @@ impl ScopePayloadCompleteness for super::boundary_fill::DesignBoundaryFillScope 
 impl ScopePayloadCompleteness for DesignCombineScope {
     fn is_uninterpreted(&self) -> bool {
         self.operation.is_none() && self.named_tail.is_none()
+    }
+}
+
+/// The suppressed and rolled-back flags of a parameter-scope tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignScopeTailFlags {
+    /// The feature is suppressed.
+    pub(crate) suppressed: bool,
+    /// The feature stands after the saved rollback marker of its timeline.
+    pub(crate) rolled_back: bool,
+    /// Byte offset of the suppressed flag; the rolled-back flag follows it.
+    pub(crate) suppressed_offset: u64,
+    /// Byte offset of the earlier same-index envelope that stores the flags,
+    /// where this envelope stores none. The flags then lie after the start of
+    /// that envelope and before the start of this one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_envelope_offset"
+    )]
+    pub(crate) envelope_offset: Option<u64>,
+}
+
+impl DesignScopeTailFlags {
+    /// Whether `scope` can hold these flags: in its own tail before its paired
+    /// header or, from the earlier envelope at `envelope_offset`, after that
+    /// envelope's start and before `scope`'s start.
+    pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
+        let Some(end) = self.suppressed_offset.checked_add(1) else {
+            return false;
+        };
+        match self.envelope_offset {
+            None => {
+                self.suppressed_offset >= scope.feature_ordinal_offset
+                    && end < scope.paired_byte_offset
+            }
+            Some(envelope) => envelope < self.suppressed_offset && end < scope.byte_offset,
+        }
     }
 }
 
@@ -985,6 +1030,9 @@ pub(crate) struct DesignParameterScope {
     /// Display name bound from a companion `WorkPlane` entity record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
+    /// Suppressed and rolled-back flags of the tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tail_flags: Option<DesignScopeTailFlags>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1141,6 +1189,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_display_name"
     )]
     display_name: Option<String>,
+    /// Suppressed and rolled-back flags of the tail.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags"
+    )]
+    tail_flags: Option<DesignScopeTailFlags>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2729,8 +2784,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 ));
             }
         }
+        if wire
+            .tail_flags
+            .is_some_and(|flags| !flags.lie_within(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "tail_flags outside the scope tail".into(),
+            ));
+        }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        admitted.tail_flags = wire.tail_flags;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2780,6 +2844,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
             display_name: scope.display_name,
+            tail_flags: scope.tail_flags,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3368,6 +3433,7 @@ impl DesignParameterScope {
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
             display_name: None,
+            tail_flags: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

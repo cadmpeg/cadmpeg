@@ -80,7 +80,7 @@ Parsed by:
 | 4 | 4 | `zero_word` | `bytes[4]` | little | spec | begins with the ordinal, zero word and LP-UTF16 label |
 | 8 | 4 | `label_length` | `u32` | little | spec | begins with the ordinal, zero word and LP-UTF16 label |
 | 12 | 4 | `associated_count` | `u32` | little | spec | the associated count is at offset 12 |
-| 16 | 3 | `padding` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three zero bytes |
+| 16 | 3 | `state_bytes` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three state bytes |
 | 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
 | 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 31 |
@@ -426,10 +426,11 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The discriminated form extends the indexed header with eleven zero bytes |
-| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The discriminated form extends the indexed header with eleven zero bytes |
-| 22 | 4 | `family_discriminator` | `u32` | little | spec | eleven zero bytes, a u32 family discriminator, a zero byte |
-| 26 | 1 | `reserved_26` | `u8` | little | spec | eleven zero bytes, a u32 family discriminator, a zero byte · value `0` |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The discriminated form extends the indexed header with ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The discriminated form extends the indexed header with ten zero bytes |
+| 21 | 1 | `header_flag` | `u8` | little | spec | the header flag at offset 21 |
+| 22 | 4 | `family_discriminator` | `u32` | little | spec | the header flag at offset 21, a u32 family discriminator, a zero byte |
+| 26 | 1 | `reserved_26` | `u8` | little | spec | the header flag at offset 21, a u32 family discriminator, a zero byte · value `0` |
 | 27 | 4 | `comment_length` | `u32` | little | spec | the u32 code-unit count of the LP-UTF16 parameter comment at offset 27 |
 
 ## `design_parameter_comment_discriminated_prefix`
@@ -5584,6 +5585,29 @@ Offsets are relative to the `Body` owner's primary indexed header.
 | 81 | 11 | `presentation_owner_repeat` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 | 92 | 11 | `component_aggregate` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 
+## `sketch_extrude_circle_curve_record`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 81 B
+
+Offsets are relative to the curve record's primary indexed header. The record ends at offset 81. The sense is `0xffffffff` for a hole circle and `1` for an exterior circle.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
+| 25 | 4 | `zero_word` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `0` |
+| 29 | 4 | `curve_count` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
+| 33 | 4 | `entry_kind` | `u32` | little | spec | it stores one entry of kind `3` with the primary identity of the circle · value `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | it stores one entry of kind `3` with the primary identity of the circle |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `0` |
+| 53 | 4 | `sense` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 57 | 4 | `first_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 73 | 4 | `first_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+| 77 | 4 | `second_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+
 ## `early_distance_extrude_absent_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 34 B
@@ -8726,14 +8750,18 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `ordinal` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
-| 4 | 15 | `zero_run_15` | `bytes[15]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 4 | 4 | `zero_word` | `bytes[4]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 8 | 4 | `label_length` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 12 | 4 | `zero_count` | `bytes[4]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 16 | 3 | `state_bytes` | `bytes[3]` | little | spec | three state bytes, a 51-byte typed reference at tail offset 19 |
 | 19 | 51 | `first_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 70 | 4 | `previous_history_state_id` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 74 | 4 | `lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 78 | 8 | `scalar` | `f64` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 86 | 4 | `repeated_lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 90 | 51 | `second_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
-| 141 | 2 | `second_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
+| 141 | 1 | `suppressed_flag` | `u8` | little | spec | the suppressed flag at tail offset 141 |
+| 142 | 1 | `rolled_back_flag` | `u8` | little | spec | the rolled-back flag at tail offset 142 |
 | 143 | 51 | `third_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 194 | 2 | `third_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 
@@ -8794,7 +8822,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-The entry kind is 2 with typed references and 3 with compact references.
+The entry kind is 2 with typed references and 3 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -8804,7 +8832,9 @@ Parsed by:
 | 0 | 4 | `kind` | `u32` | little | spec | Each entry is u32 `2`, the u64 sketch-curve primary identity |
 | 4 | 8 | `primary_id` | `u64` | little | spec | the u64 sketch-curve primary identity |
 | 12 | 8 | `secondary_id` | `u64` | little | spec | the u64 sketch-curve secondary identity |
-| 20 | 12 | `entry_fields` | `u32[3]` | little | spec | three u32 operands, and eight zero bytes |
+| 20 | 4 | `traversal_flag` | `u32` | little | spec | The first operand of a compact entry is its traversal flag. |
+| 24 | 4 | `second_operand` | `u32` | little | spec | three u32 operands, and eight zero bytes |
+| 28 | 4 | `third_operand` | `u32` | little | spec | three u32 operands, and eight zero bytes |
 | 32 | 8 | `zero_tail` | `bytes[8]` | little | spec | three u32 operands, and eight zero bytes |
 
 ## `compact_reference_profile_selection_prefix`
