@@ -4297,6 +4297,12 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(
+        crate::resolved_features::compact_reference_planes::top_plane_binding_note(
+            &ir.model.features,
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -5190,6 +5196,12 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(
+        crate::resolved_features::compact_reference_planes::top_plane_binding_note(
+            &ir.model.features,
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

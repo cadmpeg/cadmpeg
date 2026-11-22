@@ -457,7 +457,7 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
 
 /// The frame the decoder keeps for a Front reference with a deferred principal
 /// component record (`sldprt-open-items.md` SF-01). No support plane stores it.
-pub(super) fn front_lane_fallback_frame() -> PlaneFrame {
+fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, -1.0, 0.0),
@@ -489,6 +489,39 @@ pub(crate) fn principal_sketch_frame(
             Vector3::new(0.0, 0.0, -1.0),
         ),
     }
+}
+
+/// The loss naming the profile sketches placed on the Top frame through the
+/// plane their feature-input reference names, rather than through a
+/// principal-plane component record that stores the Top frame (`sldprt.md`
+/// §3.3). Which plane that reference gives a sketch is open item DI-73: the
+/// B-rep of some sketches bound this way lies on another principal plane.
+pub(crate) fn top_plane_binding_note(
+    features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let top = principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top);
+    let mut assumed = crate::loss::NamedCount::default();
+    for sketch in sketches {
+        if super::transforms::support_plane_sketch_kind(sketch)
+            && sketch
+                .resolved_placement()
+                .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+                == Some(top)
+            && !super::transforms::top_component_marked(sketch, features)
+        {
+            assumed.push(sketch.name.as_deref().unwrap_or(sketch.id.as_str()));
+        }
+    }
+    (!assumed.is_empty()).then(|| {
+        crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.note(format!(
+            "{} profile sketch(es) ({assumed}) are placed on the Top plane (origin 0,0,0, \
+             normal +Y, u-axis +X) that their feature-input plane reference names; the plane \
+             is assumed, because the B-rep of some sketches bound this way lies on another \
+             principal plane (sldprt-open-items.md DI-73).",
+            assumed.count(),
+        ))
+    })
 }
 
 #[cfg(test)]
