@@ -2676,8 +2676,7 @@ fn scope_timeline_state(
             return None;
         }
         first
-    } else if reference(null_middle_first)? && bytes.get(previous.checked_sub(1)?) == Some(&0)
-    {
+    } else if reference(null_middle_first)? && bytes.get(previous.checked_sub(1)?) == Some(&0) {
         null_middle_first
     } else {
         let middle = null_middle_first.checked_add(1)?;
