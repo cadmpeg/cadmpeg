@@ -219,35 +219,40 @@ fn a_formula_whose_tree_disagrees_with_its_stored_value_keeps_its_source_text() 
 }
 
 #[test]
-fn a_formula_that_is_one_text_input_is_its_reference() {
-    let result = decode(
-        standard_catpart_with_typed_formula_inputs_and_object_payload(
-            4,
-            false,
-            &[("#1_", "String", "Value", "#1_", 1.0)],
-            "String",
-            None,
-            "#1_",
-            (&[0xfe], Some(0)),
-        ),
+fn a_formula_that_is_one_text_or_integer_input_is_its_reference() {
+    let text = standard_catpart_with_typed_formula_inputs_and_object_payload(
+        4,
+        false,
+        &[("#1_", "String", "Value", "#1_", 1.0)],
+        "String",
+        None,
+        "#1_",
+        (&[0xfe], Some(0)),
     );
-    let [input, formula] = result.ir().model.parameters.as_slice() else {
-        panic!("an input and a formula");
-    };
-    let output = result
-        .ir()
-        .design
-        .parameters
-        .iter()
-        .find(|parameter| parameter.id == formula.id)
-        .unwrap();
-    assert_eq!(output.kind, ValueKind::Text);
-    assert_eq!(
-        output.definition,
-        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(reference(
-            &input.id
-        )))))
+    let integer = standard_catpart_with_typed_formula_relation(
+        4, false, "Integer", "Integer", 2.0, 2.0, "#1_ /2",
     );
+    for (bytes, kind) in [(text, ValueKind::Text), (integer, ValueKind::Integer)] {
+        let result = decode(bytes);
+        let [input, formula] = result.ir().model.parameters.as_slice() else {
+            panic!("an input and a formula");
+        };
+        let output = result
+            .ir()
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == formula.id)
+            .unwrap();
+        assert_eq!(output.kind, kind);
+        assert_eq!(
+            output.definition,
+            ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(
+                reference(&input.id)
+            ))))
+        );
+        assert!(dropped_input_notes(&result).is_empty(), "{kind:?}");
+    }
 }
 
 #[test]
@@ -274,6 +279,102 @@ fn a_formula_that_is_one_input_of_another_kind_keeps_its_text() {
                 dialect: ExpressionDialect::Catia,
                 tokens: vec![ExpressionToken::Text("#1_".into())],
             }
+        );
+    }
+}
+
+fn dropped_input_notes(result: &EditableDecodeResult) -> Vec<&cadmpeg_ir::report::loss::LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::CatiaLossCode::DesignParameterReferenceAsText.kind()
+        })
+        .collect()
+}
+
+#[test]
+fn a_formula_that_is_one_input_with_no_neutral_reading_is_named_as_dropping_it() {
+    let result = decode(standard_catpart_with_typed_formula_relation(
+        4, false, "Real", "Integer", 2.0, 2.0, "#1_ /2",
+    ));
+    let output = parameter(&result, "Result");
+    assert_eq!(
+        output.definition,
+        ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Catia,
+            tokens: vec![ExpressionToken::Text("#1_ /2".into())],
+        })
+    );
+    let input = &parameter(&result, "Thickness").id;
+    let notes = dropped_input_notes(&result);
+    let [note] = notes.as_slice() else {
+        panic!("one note: {:?}", result.report().losses);
+    };
+    assert_eq!(
+        note.message,
+        format!(
+            "1 parameters hold an input parameter the decoder resolved as text, or omit it, and \
+             state no dependency on that parameter (each with the inputs it loses): \
+             {} ({input})",
+            output.id
+        )
+    );
+}
+
+#[test]
+fn an_expression_drops_an_input_where_it_holds_no_reference_to_it() {
+    let result = decode(
+        standard_catpart_with_typed_formula_inputs_and_object_payload(
+            4,
+            false,
+            &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+            "LENGTH",
+            None,
+            "#1_ /2+1mm",
+            (&[0xfe], Some(0)),
+        ),
+    );
+    assert!(dropped_input_notes(&result).is_empty());
+    let formula = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| !parameter.dependencies.is_empty())
+        .unwrap();
+    let width_id = &parameter(&result, "Width").id;
+    let width = reference(width_id);
+    let source = |tokens| Expression::Source {
+        dialect: ExpressionDialect::Catia,
+        tokens,
+    };
+    let tree = |text: &str, refs: &[ParameterRef]| {
+        Expression::Neutral(Neutral(expr::parse(text, refs, &[]).unwrap()))
+    };
+    let held = [
+        source(vec![
+            ExpressionToken::Reference(width.clone()),
+            ExpressionToken::Text("+1mm".into()),
+        ]),
+        tree("$0 + 1[mm]", &[width]),
+    ];
+    for expression in &held {
+        assert!(
+            super::dropped_inputs(formula, expression).is_empty(),
+            "{expression:?}"
+        );
+    }
+    let dropped = [
+        source(vec![ExpressionToken::Text("#1_ /2+1mm".into())]),
+        tree("13[mm]", &[]),
+    ];
+    for expression in &dropped {
+        assert_eq!(
+            super::dropped_inputs(formula, expression),
+            [width_id],
+            "{expression:?}"
         );
     }
 }

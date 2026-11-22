@@ -136,6 +136,15 @@ pub(super) fn check_design(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    if ir.design.is_empty() {
+        linkage::check_scope(ir, findings);
+        tolerances::check_definition_general_tolerances(ir, findings);
+        if !ir.process.parameters.is_empty() {
+            let records = records::DesignRecords::new(ir);
+            expressions::check_process_parameters(&records, findings);
+        }
+        return Ok(());
+    }
     let mut index = DesignIndex::new(ir);
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
@@ -146,7 +155,7 @@ pub(super) fn check_design(
     configurations::check_configurations(records, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
-    expressions::check_expressions(records, findings);
+    expressions::check_expressions(ctx, records, findings)?;
     dimensions::check_dimensions(records, findings);
     tolerances::check_tolerances(records, findings);
     caches::check_caches(records, findings);

@@ -9202,14 +9202,16 @@ fn historical_topology(
         .collect::<Vec<_>>();
     let mut blend_radii = HashMap::new();
     for (owner, procedural) in &brep.procedural_surfaces {
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) = procedural.definition()
         else {
             continue;
         };
         let radius = definition_payload.radius();
 
-        let cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+        let cadmpeg_ir::geometry::blends::BlendRadiusLaw::Constant { signed_radius } = radius
+        else {
             continue;
         };
         let Some(surface) = stable_ref(owner.as_str()) else {

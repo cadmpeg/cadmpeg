@@ -79,7 +79,9 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert_thread_construction(exact_thread_construction(&bytes, &scope, &[]), &expected);
+    let decoded = exact_thread_construction(&bytes, &scope, &[]).unwrap();
+    assert_eq!(decoded.class(), Some("6g"));
+    assert_thread_construction(Some(decoded), &expected);
 
     let mut owner_marked = bytes;
     owner_marked.splice(20..20, [1, 0, 0, 0]);
@@ -233,10 +235,9 @@ fn thread_scope_decodes_standard_prefix_compact_marker_form() {
     };
     for zero_run in [2, 3] {
         let bytes = standard_compact_thread_bytes(zero_run, 612);
-        assert_thread_construction(
-            parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612]),
-            &expected(38),
-        );
+        let decoded = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![612]).unwrap();
+        assert_eq!(decoded.class(), Some("6g"));
+        assert_thread_construction(Some(decoded), &expected(38));
     }
 
     // The scope-level entry point admits the owner-marked prefix with the same payload.
