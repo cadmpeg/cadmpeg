@@ -371,7 +371,7 @@ mod tests {
         let sphere = serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
         assert_eq!(sphere.placement_record_index, None);
         assert_eq!(sphere.transform_offset, None);
-        let encoded = serde_json::to_value(sphere).unwrap();
+        let encoded = crate::json_value(sphere).unwrap();
         assert!(encoded.get("placement_record_index").is_none());
         assert!(encoded.get("transform_offset").is_none());
         for (key, value) in [
@@ -381,7 +381,7 @@ mod tests {
             let mut stated = wire.clone();
             stated[key] = serde_json::json!(value);
             let sphere = serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
-            assert_eq!(serde_json::to_value(sphere).unwrap()[key], value);
+            assert_eq!(crate::json_value(sphere).unwrap()[key], value);
             for invalid in [
                 serde_json::Value::Null,
                 serde_json::json!(-1),
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(sphere.support_transform, None);
         assert_eq!(sphere.local_frame_assumption, None);
         assert!(!sphere.prefix_framing_assumed);
-        let encoded = serde_json::to_value(sphere).unwrap();
+        let encoded = crate::json_value(sphere).unwrap();
         assert!(encoded.get("support_transform").is_none());
         assert!(encoded.get("local_frame_assumption").is_none());
         assert!(encoded.get("prefix_framing_assumed").is_none());
@@ -419,7 +419,7 @@ mod tests {
         let sphere = serde_json::from_value::<DesignSpherePrimitive>(assumed_prefix).unwrap();
         assert!(sphere.prefix_framing_assumed);
         assert_eq!(
-            serde_json::to_value(sphere).unwrap()["prefix_framing_assumed"],
+            crate::json_value(sphere).unwrap()["prefix_framing_assumed"],
             true
         );
         for (key, value) in [
@@ -433,7 +433,7 @@ mod tests {
             let mut stated = wire.clone();
             stated[key] = value.clone();
             let sphere = serde_json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
-            assert_eq!(serde_json::to_value(sphere).unwrap()[key], value);
+            assert_eq!(crate::json_value(sphere).unwrap()[key], value);
             for invalid in [
                 serde_json::Value::Null,
                 serde_json::json!(7),

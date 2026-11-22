@@ -1121,7 +1121,7 @@ fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
         let reference = &mut references[0];
         assert_eq!(reference.token_integer, token_integer);
         assert_eq!(reference.design_reference, -73);
-        let wire = serde_json::to_value(&*reference).unwrap();
+        let wire = crate::json_value(&*reference).unwrap();
         assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
         assert_eq!(
             serde_json::from_value::<crate::records::dimensions::DesignRecipeReference>(wire)
@@ -1139,7 +1139,7 @@ fn recipe_reference_retains_token_integer_and_joins_equal_pair() {
             ordinal: 0,
         };
 
-        let wire = serde_json::to_value(&tag).unwrap();
+        let wire = crate::json_value(&tag).unwrap();
         assert_eq!(wire.get("token_integer").is_none(), token_integer == 0);
         assert_eq!(
             serde_json::from_value::<PersistentSubentityTag>(wire).unwrap(),

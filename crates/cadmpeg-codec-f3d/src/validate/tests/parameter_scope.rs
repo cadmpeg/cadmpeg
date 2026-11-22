@@ -246,7 +246,7 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
             prefix: prefix.into(),
             scope_backlink: scope_backlink.as_slice().try_into().unwrap(),
         });
-        let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
+        let encoded = crate::json_value(&native.design_parameter_scopes[1]).unwrap();
         native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
         let valid = findings(&native);
         assert!(valid.is_empty(), "{valid:?}");
@@ -610,9 +610,9 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = Some(operation).into();
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    assert_eq!(crate::json_value(&decoded).unwrap(), wire);
     let findings = |scope: DesignParameterScope| {
         crate::test_support::with_decode_context(|service_ctx| {
             let ir = cadmpeg_ir::document::CadIr::empty();

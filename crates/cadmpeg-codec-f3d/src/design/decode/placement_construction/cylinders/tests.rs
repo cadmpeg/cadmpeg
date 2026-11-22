@@ -94,7 +94,7 @@ fn named_cylinder_binds_decoded_version_nine_frame() {
         ]
     );
     let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
     assert!(super::bind(std::slice::from_mut(&mut scope), &[]).is_empty());
     assert_eq!(scope, restored);
@@ -279,7 +279,7 @@ fn extended_cylinder_composes_the_explicit_same_stream_support_on_the_left() {
         ],
     );
     let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 

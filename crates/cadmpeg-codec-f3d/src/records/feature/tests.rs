@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use super::scope::{DesignFeatureKind, DesignParameterScope};
 
 fn empty_scope(kind: DesignFeatureKind) -> serde_json::Value {
-    serde_json::to_value(DesignParameterScope::empty("scope", kind, 1)).expect("serialize scope")
+    crate::json_value(DesignParameterScope::empty("scope", kind, 1)).expect("serialize scope")
 }
 
 #[test]
@@ -54,10 +54,7 @@ fn flattened_scope_frames_reject_partial_value_offset_pairs() {
         wire[format!("{prefix}_reference_offset")] = serde_json::json!(20);
         let decoded: DesignParameterScope =
             serde_json::from_value(wire.clone()).expect("complete frame");
-        assert_eq!(
-            serde_json::to_value(decoded).expect("serialize frame"),
-            wire
-        );
+        assert_eq!(crate::json_value(decoded).expect("serialize frame"), wire);
     }
 }
 
@@ -394,7 +391,7 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                         >(mode_wire.clone());
                         if mode == 1 {
                             assert_eq!(
-                                serde_json::to_value(decoded.expect("mode one")).unwrap(),
+                                crate::json_value(decoded.expect("mode one")).unwrap(),
                                 mode_wire
                             );
                         } else {
@@ -923,7 +920,7 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
             "edge_operand_record_indices",
             "aggregate_operand_record_indices",
         ] {
-            let mut invalid = serde_json::to_value(&wire).unwrap();
+            let mut invalid = crate::json_value(&wire).unwrap();
             invalid[field]
                 .as_array_mut()
                 .unwrap()
@@ -1051,7 +1048,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
                 group.law().intermediate().len(),
                 index_from_u32(intermediate_count)
             );
-            assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+            assert_eq!(crate::json_value(&group).unwrap(), wire);
             for field in [
                 "radii",
                 "radius_record_indexes",
@@ -1109,7 +1106,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
     });
     let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
         serde_json::from_value(inline.clone()).unwrap();
-    assert_eq!(serde_json::to_value(axis).unwrap(), inline);
+    assert_eq!(crate::json_value(axis).unwrap(), inline);
     for count in [1_u32, 2] {
         for resolved in [false, true] {
             let mut wire = serde_json::json!({
@@ -1120,13 +1117,13 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
             });
             if resolved {
                 wire["resolved_origin"] =
-                    serde_json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+                    crate::json_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
                 wire["resolved_direction"] =
-                    serde_json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+                    crate::json_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
             }
             let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(axis).unwrap(), wire);
+            assert_eq!(crate::json_value(axis).unwrap(), wire);
             for field in [
                 "wrapper_record_indices",
                 "identity_offsets",
@@ -1160,7 +1157,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
                     .unwrap()
                     .remove("resolved_direction");
                 invalid[field] =
-                    serde_json::to_value(cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)).unwrap();
+                    crate::json_value(cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)).unwrap();
                 let error = serde_json::from_value::<
                     crate::records::feature::patterns::DesignCircularPatternAxis,
                 >(invalid)
@@ -1586,10 +1583,7 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         }
         let decoded: DesignVertexRecipe =
             serde_json::from_value(wire.clone()).expect("valid recipe");
-        assert_eq!(
-            serde_json::to_value(&decoded).expect("serialize recipe"),
-            wire
-        );
+        assert_eq!(crate::json_value(&decoded).expect("serialize recipe"), wire);
         assert_eq!(
             decoded
                 .resolution
@@ -1614,7 +1608,7 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         let plane: DesignWorkPlaneConstruction =
             serde_json::from_value(plane_wire.clone()).expect("three-point plane");
         assert_eq!(
-            serde_json::to_value(&plane).expect("serialize plane"),
+            crate::json_value(&plane).expect("serialize plane"),
             plane_wire
         );
         let mut wrong_kind = plane_wire.clone();
@@ -1653,7 +1647,7 @@ fn feature_kind_classifies_nonempty_native_names_at_construction() {
         let kind = DesignFeatureKind::try_from(name.to_owned()).expect("nonempty name");
         assert_eq!(kind.as_str(), name);
         assert_eq!(
-            serde_json::to_value(&kind).expect("serialize kind"),
+            crate::json_value(&kind).expect("serialize kind"),
             serde_json::json!(name)
         );
         let decoded: DesignFeatureKind =
@@ -1679,7 +1673,7 @@ fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
         let scope: DesignParameterScope =
             serde_json::from_value(wire.clone()).expect("positive ordinal");
         assert_eq!(scope.feature_ordinal.get(), ordinal);
-        assert_eq!(serde_json::to_value(scope).expect("serialize scope"), wire);
+        assert_eq!(crate::json_value(scope).expect("serialize scope"), wire);
     }
     let mut wire = base;
     wire["feature_ordinal"] = 0.into();
@@ -1703,7 +1697,7 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
                 draft.feature_ordinal_offset = kind_offset + 16;
             })
             .unwrap();
-        let wire = serde_json::to_value(&scope).expect("serialize scope");
+        let wire = crate::json_value(&scope).expect("serialize scope");
         assert_eq!(
             wire["history_state_id_offset"],
             kind_offset.saturating_sub(8)
@@ -1711,10 +1705,7 @@ fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
         let decoded: DesignParameterScope =
             serde_json::from_value(wire.clone()).expect("valid derived offset");
         assert_eq!(decoded, scope);
-        assert_eq!(
-            serde_json::to_value(decoded).expect("serialize scope"),
-            wire
-        );
+        assert_eq!(crate::json_value(decoded).expect("serialize scope"), wire);
         let mut bad = wire;
         bad["history_state_id_offset"] = (kind_offset.saturating_sub(8) + 1).into();
         let error = serde_json::from_value::<DesignParameterScope>(bad)
@@ -1742,10 +1733,7 @@ fn bend_radius_requires_a_positive_finite_value() {
         let operation: crate::records::feature::sheet_metal::DesignHemOperation =
             serde_json::from_value(wire.clone()).expect("valid radius");
         assert_eq!(operation.bend_radius.get(), radius);
-        assert_eq!(
-            serde_json::to_value(operation).expect("serialize hem"),
-            wire
-        );
+        assert_eq!(crate::json_value(operation).expect("serialize hem"), wire);
         for invalid in [0.0, -1.0] {
             let mut bad = wire.clone();
             bad["bend_radius"] = invalid.into();
@@ -1792,7 +1780,7 @@ fn rectangular_pattern_sidecar_preserves_signed_spans() {
         });
         let record: super::patterns::DesignRectangularPatternConstruction =
             serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(crate::json_value(record).unwrap(), wire);
     }
 }
 
@@ -1811,7 +1799,7 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
         "trailing_value": 1, "trailing_value_offset": 0, "trailing_zero_offset": 0});
     let record: super::surface_ops::DesignSurfaceTrimOperation =
         serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(record).unwrap(), wire);
+    assert_eq!(crate::json_value(record).unwrap(), wire);
     for count in [0, 1, 3] {
         let mut invalid_chain = wire.clone();
         invalid_chain["chain_records"] =
@@ -1905,16 +1893,16 @@ fn parameter_scope_layout_rejects_invalid_admission_and_preserves_failed_edits()
         ("reference_count_offset", serde_json::json!(0)),
         ("reference_member_offsets", serde_json::json!([15])),
     ] {
-        let mut wire = serde_json::to_value(&scope).unwrap();
+        let mut wire = crate::json_value(&scope).unwrap();
         wire[field] = value;
         assert!(
             serde_json::from_value::<DesignParameterScope>(wire).is_err(),
             "{field}"
         );
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    assert_eq!(crate::json_value(decoded).unwrap(), wire);
 }
 
 #[test]
@@ -1927,10 +1915,10 @@ fn parameter_scope_located_absent_history_states_remain_legal() {
             draft.previous_history_state_id_offset = Some(79);
         })
         .unwrap();
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded, scope);
-    assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+    assert_eq!(crate::json_value(decoded).unwrap(), wire);
 }
 
 #[test]
@@ -1993,7 +1981,7 @@ fn a_path_pattern_scope_keeps_its_kind_through_serialization() {
     ] {
         let original = scope(kind.clone(), source_kind);
         let reloaded: DesignParameterScope =
-            serde_json::from_value(serde_json::to_value(&original).unwrap()).unwrap();
+            serde_json::from_value(crate::json_value(&original).unwrap()).unwrap();
         assert_eq!(reloaded.kind(), kind);
         assert_eq!(reloaded.source_kind.as_deref(), source_kind);
     }

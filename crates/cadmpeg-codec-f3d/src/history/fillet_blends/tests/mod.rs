@@ -1808,7 +1808,7 @@ fn a_group_of_another_stream_keeps_its_selection() {
     const OTHER: &str = "f3d:Design/Other.dat:group#43";
     let mut other = group(42, &[7]);
     other = serde_json::from_value({
-        let mut value = serde_json::to_value(&other).unwrap();
+        let mut value = crate::json_value(&other).unwrap();
         value["id"] = OTHER.into();
         value
     })

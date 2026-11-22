@@ -90,7 +90,7 @@ fn leading_flag_frames_state_the_occurrence_and_its_offsets() {
             .unwrap();
             assert_eq!(transform.value, expected);
         }
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = crate::json_value(&record).unwrap();
         assert_eq!(wire["component_guid_offset"], 55 + extra);
         assert_eq!(wire["occurrence_guid_offset"], 131 + extra);
         assert_eq!(wire["owner_entity_offset"], 241 + 2 * extra);
@@ -405,7 +405,7 @@ fn closing_placement_can_differ_from_the_saved_source_frame() {
     let record = parse(&bytes).unwrap();
     assert_eq!(record.transform().unwrap().offset, 359);
     assert_eq!(record.transform().unwrap().value.rows()[0][3], 6.0);
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = crate::json_value(&record).unwrap();
     let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
     assert_eq!(record, reread);
 
@@ -415,7 +415,7 @@ fn closing_placement_can_differ_from_the_saved_source_frame() {
     let record = parse(&bytes).unwrap();
     assert_eq!(record.transform().unwrap().offset, 231);
     assert_eq!(record.transform().unwrap().value.rows()[0][3], 5.0);
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = crate::json_value(&record).unwrap();
     let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
     assert_eq!(record, reread);
 }
@@ -427,7 +427,7 @@ fn a_source_matrix_can_close_with_current_identity() {
     bytes.drain(359..487);
     let record = parse(&bytes).unwrap();
     assert!(record.transform().is_none());
-    let wire = serde_json::to_value(&record).unwrap();
+    let wire = crate::json_value(&record).unwrap();
     assert_eq!(wire["owner_entity_offset"], 369);
     let reread: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
     assert_eq!(record, reread);

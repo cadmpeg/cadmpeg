@@ -1136,7 +1136,7 @@ fn split_body_projects_tool_extension_independently_of_native_tool_selection() {
                 groups[0].id.clone()
             )),
         );
-        let wire = serde_json::to_value(&definition).unwrap();
+        let wire = crate::json_value(&definition).unwrap();
         let operation = &wire["value"];
         assert_eq!(
             operation["value"].get("extend_tool"),

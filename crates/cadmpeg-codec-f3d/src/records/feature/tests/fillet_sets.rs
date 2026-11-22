@@ -21,7 +21,7 @@ fn set() -> serde_json::Value {
 fn fillet_set_list_round_trips() {
     let value = wire(&serde_json::json!([set()]));
     let list: DesignFilletSetList = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&list).unwrap(), value);
+    assert_eq!(crate::json_value(&list).unwrap(), value);
 }
 
 #[test]

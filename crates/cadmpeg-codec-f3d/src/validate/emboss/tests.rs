@@ -452,7 +452,7 @@ fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
         (false, 5),
     ] {
         let scope = counted_scope(one_word, pair_count, 13);
-        let source = serde_json::to_value(&scope).unwrap();
+        let source = crate::json_value(&scope).unwrap();
         let decoded: DesignParameterScope = serde_json::from_value(source.clone()).unwrap();
         assert_eq!(decoded, scope);
         for field in [

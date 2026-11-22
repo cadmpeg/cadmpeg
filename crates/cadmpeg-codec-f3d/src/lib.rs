@@ -85,6 +85,10 @@
 //! carrier bytes needed for passthrough remain available as
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
+fn json_value<T: serde::Serialize>(value: T) -> Result<serde_json::Value, serde_json::Error> {
+    cadmpeg_ir::hash::finite_json::to_json_value(&value)
+}
+
 mod act;
 mod brep;
 mod bytes;

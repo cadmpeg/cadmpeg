@@ -202,7 +202,7 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     assert_eq!(result.offset, 40);
     let mut bound_scope = scope.clone();
     bound_scope.derived_base_owner = Some(binding);
-    let wire = serde_json::to_value(&bound_scope).unwrap();
+    let wire = crate::json_value(&bound_scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded.derived_base_owner, Some(binding));
     let mut missing_result = bytes;

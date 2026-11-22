@@ -33,7 +33,7 @@ fn null_reference_head_wire_preserves_its_matrix_and_extent() {
         [0.0, -1.0, 0.0, 3.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let mut wire = serde_json::to_value(placement(true)).unwrap();
+    let mut wire = crate::json_value(placement(true)).unwrap();
     wire["frame_length"] = serde_json::json!(152);
     wire["transform"] = serde_json::json!(transform);
     wire["transform_offset"] = serde_json::json!(122);
@@ -41,7 +41,7 @@ fn null_reference_head_wire_preserves_its_matrix_and_extent() {
     let record: DesignSketchPlacement = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(record.frame_length(), 152);
     assert_eq!(*record.transform(), transform);
-    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    assert_eq!(crate::json_value(&record).unwrap(), wire);
     assert_eq!(
         serde_json::to_vec(&record).unwrap(),
         serde_json::to_vec(&DesignSketchPlacementWire::from(record)).unwrap()
@@ -65,7 +65,7 @@ fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() 
         super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
             .unwrap();
     visibility.ordinal_collection = std::num::NonZeroU64::new(300);
-    let wire = serde_json::to_value(visibility).unwrap();
+    let wire = crate::json_value(visibility).unwrap();
     assert_eq!(
         serde_json::from_value::<super::DesignSketchVisibility>(wire.clone()).unwrap(),
         visibility
@@ -93,7 +93,7 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
     let mut visibility =
         super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
             .unwrap();
-    let cleared = serde_json::to_value(visibility).unwrap();
+    let cleared = crate::json_value(visibility).unwrap();
     assert!(cleared.get("sketch_flag").is_none());
     assert!(
         !serde_json::from_value::<super::DesignSketchVisibility>(cleared)
@@ -101,7 +101,7 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
             .sketch_flag
     );
     visibility.sketch_flag = true;
-    let wire = serde_json::to_value(visibility).unwrap();
+    let wire = crate::json_value(visibility).unwrap();
     assert_eq!(wire["sketch_flag"], serde_json::json!(true));
     let read = serde_json::from_value::<super::DesignSketchVisibility>(wire).unwrap();
     assert!(read.sketch_flag);
@@ -112,7 +112,7 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
 fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
     let mut record = placement(false);
     record.display_name = Some("MountingHoles".into());
-    let valid = serde_json::to_value(&record).unwrap();
+    let valid = crate::json_value(&record).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignSketchPlacement>(valid.clone())
             .unwrap()

@@ -24,7 +24,7 @@ fn reference_edge_wire_retains_independent_controls() {
         0.25
     );
     assert_eq!(
-        serde_json::to_value(construction).expect("source controls wire"),
+        crate::json_value(construction).expect("source controls wire"),
         wire
     );
     for key in [
@@ -57,13 +57,13 @@ fn reference_edge_scope_wire_keeps_one_source_form() {
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = DesignEdgeFlangeScope::ReferenceFramed(DesignReferenceEdgeFlange::default());
     }
-    let wire = serde_json::to_value(&scope).expect("reference edge scope wire");
+    let wire = crate::json_value(&scope).expect("reference edge scope wire");
     assert_eq!(wire["edge_flange_construction"], json!({}));
     assert!(wire.get("edge_flange_operation").is_none());
     let decoded: DesignParameterScope =
         serde_json::from_value(wire.clone()).expect("reference scope");
     assert_eq!(
-        serde_json::to_value(decoded).expect("reference scope wire"),
+        crate::json_value(decoded).expect("reference scope wire"),
         wire
     );
     let mut both = wire;

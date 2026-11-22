@@ -7,7 +7,7 @@ fn native_placement_frames_retain_source_references_and_reject_inconsistent_loca
         let fixture: serde_json::Value = serde_json::from_str(&frame).unwrap();
         let native = fixture["native"].clone();
         let record: DesignPlacementConstruction = serde_json::from_value(native.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), native);
+        assert_eq!(crate::json_value(&record).unwrap(), native);
         for field in ["member_offset", "paired_byte_offset"] {
             let mut invalid = native.clone();
             invalid[field] = serde_json::json!(invalid[field].as_u64().unwrap() + 1);
@@ -31,7 +31,7 @@ fn placement_references_keep_complete_inline_guid_and_cross_segment_encodings() 
     raw.extend_from_slice(&[0, 0]);
     let local = PlacementReference::new(38, raw.clone()).unwrap();
     assert_eq!(local.local_target(), Some(34390));
-    let wire = serde_json::to_value(&local).unwrap();
+    let wire = crate::json_value(&local).unwrap();
     assert_eq!(
         serde_json::from_value::<PlacementReference>(wire).unwrap(),
         local

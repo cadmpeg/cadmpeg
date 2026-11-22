@@ -139,7 +139,7 @@ fn parameter_scope_keeps_nonempty_label_and_excludes_it_from_payload_length() {
         super::super::parameter_scope::parameter_scope_payload_length(&scope),
         Some(122)
     );
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(wire["label"]["value"], "A😀");
     assert_eq!(wire["label"]["offset"], u64_from_index(label_offset));
     let restored: crate::records::feature::scope::DesignParameterScope =

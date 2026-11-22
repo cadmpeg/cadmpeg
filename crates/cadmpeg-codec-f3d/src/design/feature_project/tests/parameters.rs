@@ -542,7 +542,7 @@ fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
             parameter
         })
         .collect::<Vec<_>>();
-    let source = serde_json::to_value(&native).unwrap();
+    let source = crate::json_value(&native).unwrap();
     let project = |native: &[_]| {
         crate::test_support::with_decode_context(|ctx| {
             crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -593,7 +593,7 @@ fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
             owner.map(|index| index.to_string()).as_ref()
         );
     }
-    assert_eq!(serde_json::to_value(&native).unwrap(), source);
+    assert_eq!(crate::json_value(&native).unwrap(), source);
 
     let mut native = native;
     native[0].source_ordinal = u32::MAX - 1;

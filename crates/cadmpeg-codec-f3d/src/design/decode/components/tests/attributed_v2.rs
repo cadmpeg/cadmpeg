@@ -50,7 +50,7 @@ fn empty_attributes_retain_the_identity_namespace_and_closing_pose() {
     assert_eq!(occurrence.owner_entity, 6);
     assert_eq!(occurrence.occurrence_ordinal(), 1);
     assert_eq!(occurrence.transform().unwrap().value.rows()[0][3], 2.0);
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["attributes"], serde_json::json!([]));
     assert_eq!(wire["attributed"]["key_record_index"], 139);
     assert_eq!(wire["attributed"]["key_segment_index"], 1);
@@ -71,7 +71,7 @@ fn three_attributes_and_guid_separator_retain_the_component_pose() {
     assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
     assert_eq!(occurrence.occurrence_ordinal(), 1);
     assert_eq!(occurrence.transform().unwrap().value.rows()[2][3], 4.0);
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["guid_marker"], 1);
     assert_eq!(
         wire["attributed"]["attributes"].as_array().unwrap().len(),
@@ -92,10 +92,10 @@ fn interned_text_keeps_its_type_and_full_record_extent() {
         false,
     );
     let occurrence = decode(&bytes).unwrap();
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(
         wire["attributed"]["attributes"][0]["value"],
-        serde_json::to_value(DesignOccurrenceAttributeValue::InternedText(text)).unwrap()
+        crate::json_value(DesignOccurrenceAttributeValue::InternedText(text)).unwrap()
     );
     let restored: DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
     assert_eq!(restored, occurrence);
@@ -126,7 +126,7 @@ fn a_single_prefix_byte_and_null_identity_reference_close_exactly() {
     assert_eq!(occurrence.occurrence_ordinal(), 1);
     assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
     assert_eq!(occurrence.transform().unwrap().value.rows()[1][3], 3.0);
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["ordinal_prefix"], 0);
     assert_eq!(wire["attributed"]["key_record_index"], 0);
     assert_eq!(wire["attributed"]["key_segment_index"], 0);
@@ -162,7 +162,7 @@ fn property_prelude_retains_names_key_and_equal_component_references() {
     push_utf16(&mut prelude, "1_20");
     bytes.splice(44..44, prelude);
     let occurrence = decode(&bytes).unwrap();
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(
         wire["attributed"]["property_names"],
         serde_json::json!(names)

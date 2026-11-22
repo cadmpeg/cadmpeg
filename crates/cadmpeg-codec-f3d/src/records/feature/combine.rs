@@ -754,7 +754,7 @@ mod tests {
             value.destination = super::DesignCombineDestination::NewComponent {
                 browser_node_record_index,
             };
-            let wire = serde_json::to_value(&value).unwrap();
+            let wire = crate::json_value(&value).unwrap();
             assert_eq!(wire["destination"]["kind"], "new_component");
             if browser_node_record_index.is_some() {
                 assert_eq!(wire["destination"]["browser_node_record_index"], 777);
@@ -774,12 +774,12 @@ mod tests {
     #[test]
     fn combine_body_node_lists_round_trip_and_omit_empty_lists() {
         let mut value = operation(false);
-        let wire = serde_json::to_value(&value).unwrap();
+        let wire = crate::json_value(&value).unwrap();
         assert!(wire.get("created_body_nodes").is_none());
         assert!(wire.get("consumed_body_nodes").is_none());
         value.created_body_nodes = vec![541, 546];
         value.consumed_body_nodes = vec![510];
-        let wire = serde_json::to_value(&value).unwrap();
+        let wire = crate::json_value(&value).unwrap();
         assert_eq!(wire["created_body_nodes"], serde_json::json!([541, 546]));
         assert_eq!(wire["consumed_body_nodes"], serde_json::json!([510]));
         assert_eq!(
@@ -871,7 +871,7 @@ mod tests {
             external_identity: None,
             body_node: Some(node),
         };
-        let wire = serde_json::to_value(&selection).unwrap();
+        let wire = crate::json_value(&selection).unwrap();
         assert_eq!(
             serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             selection
@@ -881,7 +881,7 @@ mod tests {
             body_node: None,
             ..selection
         };
-        let wire = serde_json::to_value(&without).unwrap();
+        let wire = crate::json_value(&without).unwrap();
         assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
         assert_eq!(
             serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
@@ -908,7 +908,7 @@ mod tests {
         value.form = super::DesignCombineForm::OperandLists;
         value.target_body_node = Some(node(10));
         value.tools.first.body_node = Some(node(20));
-        let wire = serde_json::to_value(&value).unwrap();
+        let wire = crate::json_value(&value).unwrap();
         let read: DesignCombineOperation = serde_json::from_value(wire).unwrap();
         assert_eq!(read, value);
     }

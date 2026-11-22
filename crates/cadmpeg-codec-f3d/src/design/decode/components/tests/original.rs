@@ -60,7 +60,7 @@ fn fixture_attributed_frames_retain_reference_namespaces_and_independent_ordinal
             "{}",
             case.label
         );
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(
             wire["attributed"]["path_discriminator"], case.path_discriminator,
             "{}",
@@ -122,7 +122,7 @@ fn empty_attributed_occurrence_keeps_its_prefix_key_namespace_and_matrix() {
         occurrence.transform().unwrap().value.rows().concat(),
         matrix
     );
-    let wire = serde_json::to_value(&occurrence).unwrap();
+    let wire = crate::json_value(&occurrence).unwrap();
     assert_eq!(wire["attributed"]["attributes"], serde_json::json!([]));
     assert_eq!(wire["attributed"]["ordinal_prefix"], 2);
     assert_eq!(wire["attributed"]["path_discriminator"], 7);

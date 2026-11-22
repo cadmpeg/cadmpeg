@@ -70,7 +70,7 @@ fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
             "{field}"
         );
     }
-    assert_eq!(serde_json::to_value(admitted).unwrap(), copied_wire());
+    assert_eq!(crate::json_value(admitted).unwrap(), copied_wire());
 }
 
 #[test]

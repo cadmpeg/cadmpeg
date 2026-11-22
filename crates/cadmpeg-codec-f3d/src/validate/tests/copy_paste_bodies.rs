@@ -126,7 +126,7 @@ fn source_body_is_a_bodies_root_member_or_a_bound_body() {
 #[test]
 fn copied_body_can_be_history_only_but_not_unsolved() {
     let unsolved = |ordinal: u32, history_only: bool| {
-        let mut value = serde_json::to_value(binding(14, ordinal)).unwrap();
+        let mut value = crate::json_value(binding(14, ordinal)).unwrap();
         let object = value.as_object_mut().unwrap();
         object.remove("body");
         object.insert("history_only".to_owned(), history_only.into());

@@ -353,12 +353,12 @@ mod tests {
             whitespace[field] = serde_json::json!(" ");
             let record = serde_json::from_value::<XrefReference>(whitespace.clone()).unwrap();
             whitespace["occurrence_ordinal"] = serde_json::json!(0);
-            assert_eq!(serde_json::to_value(record).unwrap(), whitespace);
+            assert_eq!(crate::json_value(record).unwrap(), whitespace);
         }
         let mut whitespace = design;
         whitespace["target_file_name"] = serde_json::json!(" ");
         assert_eq!(
-            serde_json::to_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap())
+            crate::json_value(serde_json::from_value::<XrefDesign>(whitespace.clone()).unwrap())
                 .unwrap(),
             whitespace
         );
@@ -372,7 +372,7 @@ mod tests {
             "neutron_role": "role", "neutron_data": "data"
         });
         let restored: super::DerivedReference = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+        assert_eq!(crate::json_value(restored).unwrap(), wire);
         for field in ["from", "relative_path", "neutron_role"] {
             let mut invalid = wire.clone();
             invalid[field] = serde_json::json!("");

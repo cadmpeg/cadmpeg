@@ -19,7 +19,7 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
             design_reference: 1,
             ordinal: 0,
         };
-        let wire = serde_json::to_value(&link).unwrap();
+        let wire = crate::json_value(&link).unwrap();
         assert_eq!(wire["design_id"], text);
         assert_eq!(
             serde_json::from_value::<PersistentDesignLink>(wire.clone()).unwrap(),
@@ -51,7 +51,7 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
             design_references: vec![],
             ordinal: 0,
         };
-        let wire = serde_json::to_value(&tag).unwrap();
+        let wire = crate::json_value(&tag).unwrap();
         assert_eq!(wire["token"], text);
         assert_eq!(
             serde_json::from_value::<PersistentSubentityTag>(wire.clone()).unwrap(),

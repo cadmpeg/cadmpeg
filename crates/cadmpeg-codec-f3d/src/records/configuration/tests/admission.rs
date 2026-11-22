@@ -13,7 +13,7 @@ fn configuration_identity_scope_is_independent_of_its_source_entry_name() {
         "entry_name": name, "kind": "table", "payload": {}
     });
     let record: DesignConfiguration = serde_json::from_value(valid.clone()).unwrap();
-    assert_eq!(serde_json::to_value(record).unwrap(), valid);
+    assert_eq!(crate::json_value(record).unwrap(), valid);
     for id in [
         "f3d::entry#Design/Config%20%231.dsgcfg",
         "f3d:scope with space:entry#Design/Config%20%231.dsgcfg",
@@ -37,7 +37,7 @@ fn configuration_admission_checks_the_wire_payload_and_kind() {
     let wire = serde_json::json!({"id":crate::ids::configuration_entry_id("table.dsgcfg", &cadmpeg_ir::identity_component!("configuration")), "entry_name":"table.dsgcfg", "kind":"table",
         "payload":{"tables":[]}});
     let configuration: DesignConfiguration = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&configuration).unwrap(), wire);
+    assert_eq!(crate::json_value(&configuration).unwrap(), wire);
     let mut invalid = wire.clone();
     invalid["payload"] = serde_json::json!([]);
     assert!(serde_json::from_value::<DesignConfiguration>(invalid)
@@ -67,7 +67,7 @@ fn configuration_kind_requires_its_exact_entry_extension() {
         let admit =
             |name: &str| DesignConfiguration::try_new(name.into(), kind, serde_json::Map::new());
         let record = admit(valid).unwrap();
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = crate::json_value(&record).unwrap();
         assert_eq!(
             wire["id"],
             crate::ids::configuration_entry_id(
@@ -76,10 +76,8 @@ fn configuration_kind_requires_its_exact_entry_extension() {
             )
         );
         assert_eq!(
-            serde_json::to_value(
-                serde_json::from_value::<DesignConfiguration>(wire.clone()).unwrap()
-            )
-            .unwrap(),
+            crate::json_value(serde_json::from_value::<DesignConfiguration>(wire.clone()).unwrap())
+                .unwrap(),
             wire
         );
         for name in [invalid, "entry", "entry.DSGCFG", "entry.dsgcfg/suffix"] {
@@ -118,7 +116,7 @@ fn configuration_id_binds_the_escaped_entry_name() {
         .is_err());
     }
     let record = DesignConfiguration::try_from(wire).unwrap();
-    let mut changed_name = serde_json::to_value(&record).unwrap();
+    let mut changed_name = crate::json_value(&record).unwrap();
     changed_name["entry_name"] = serde_json::json!("Other.dsgcfg");
     assert!(serde_json::from_value::<DesignConfiguration>(changed_name).is_err());
     reject_changed_id(

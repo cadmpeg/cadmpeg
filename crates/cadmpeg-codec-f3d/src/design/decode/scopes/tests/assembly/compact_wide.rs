@@ -241,7 +241,7 @@ fn compact_wide_operand_flag_is_the_frame_sense() {
         let alignment = alignment(flag).expect("alignment");
         assert!(alignment.operand_frames().is_some());
         assert_eq!(alignment.frame_sense, Some(sense));
-        let wire = serde_json::to_value(&alignment).unwrap();
+        let wire = crate::json_value(&alignment).unwrap();
         let back: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_value(wire).unwrap();
         assert_eq!(back.frame_sense, Some(sense));

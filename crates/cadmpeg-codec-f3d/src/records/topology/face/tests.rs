@@ -152,7 +152,7 @@ fn face_operand_wire_derives_node_offsets() {
                 assert!(error.contains("group_member_ordinal"));
             }
             let operand: super::DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
+            assert_eq!(crate::json_value(&operand).unwrap(), wire);
             let mut invalid = wire.clone();
             invalid["recipe_node_offsets"]
                 .as_array_mut()
@@ -210,7 +210,7 @@ fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
 
 #[test]
 fn registered_recipe_frame_borrowed_and_owned_wire_match() {
-    let mut wire = serde_json::to_value(face_operand_for_borrowed(false)).unwrap();
+    let mut wire = crate::json_value(face_operand_for_borrowed(false)).unwrap();
     wire["next_record_index"] = 5.into();
     wire["registered_recipe_frame"] = serde_json::json!({
         "record_index": 5,
@@ -225,7 +225,7 @@ fn registered_recipe_frame_borrowed_and_owned_wire_match() {
         serde_json::to_vec(&operand).unwrap(),
         serde_json::to_vec(&owned).unwrap()
     );
-    let mut null = serde_json::to_value(&operand).unwrap();
+    let mut null = crate::json_value(&operand).unwrap();
     null["registered_recipe_frame"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<super::DesignFaceOperand>(null).is_err());
 }
@@ -294,7 +294,7 @@ fn face_recipe_ordinals_keep_zero_and_group_design_references() {
         postlude_value: None,
     };
     assert!(structure.has_valid_operand_ordinals(&references));
-    let wire = serde_json::to_value(&structure).unwrap();
+    let wire = crate::json_value(&structure).unwrap();
     assert_eq!(wire["sides"][0]["field_count"], 3);
     assert_eq!(wire["sides"][0]["scalars"], serde_json::json!([0, 0]));
     for pair in [[1, 0], [3, 0], [0, 1], [0, 2]] {

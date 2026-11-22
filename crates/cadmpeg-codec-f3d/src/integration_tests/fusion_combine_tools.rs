@@ -18,7 +18,7 @@ fn combine_operands(bytes: &[u8]) -> (serde_json::Value, Vec<String>, serde_json
         .iter()
         .map(|loss| loss.code.local_code().to_owned())
         .collect();
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = crate::json_value(result.ir()).expect("serialize the IR");
     let mut combines = ir["model"]["features"]
         .as_array()
         .expect("feature list")

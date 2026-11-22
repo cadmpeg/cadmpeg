@@ -128,7 +128,7 @@ fn silhouette_split_keeps_the_mode_and_solved_carrier_in_both_prefixes() {
             panic!("Silhouette Split scope");
         };
         *slot = Some(operation);
-        let wire = serde_json::to_value(&scope).unwrap();
+        let wire = crate::json_value(&scope).unwrap();
         assert_eq!(wire["silhouette_split_operation"]["mode_word"], mode_word);
         assert_eq!(
             serde_json::from_value::<DesignParameterScope>(wire).unwrap(),

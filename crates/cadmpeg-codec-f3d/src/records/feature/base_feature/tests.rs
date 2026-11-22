@@ -169,7 +169,7 @@ fn base_feature_native_fixed_body_fields_refuse_nonlocal_flags() {
             let admitted: DesignBaseFeatureConstruction =
                 serde_json::from_value(maximum_member).unwrap();
             assert_eq!(
-                serde_json::to_value(admitted).unwrap()[name][0],
+                crate::json_value(admitted).unwrap()[name][0],
                 "0000ffffffff"
             );
         }

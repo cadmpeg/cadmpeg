@@ -2123,7 +2123,7 @@ mod tests {
             design_parameter_scopes: scopes,
             ..Default::default()
         };
-        let native = serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
+        let native = serde_json::from_value(crate::json_value(native).unwrap()).unwrap();
         crate::writer::primitives::validate_assembly_projection(
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
@@ -2380,7 +2380,7 @@ mod tests {
             ..Default::default()
         };
         let restored: crate::native::F3dNative =
-            serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
+            serde_json::from_value(crate::json_value(native).unwrap()).unwrap();
         assert_eq!(restored.design_parameter_scopes, omitted_scopes);
         assert_eq!(restored.xref_references, [omitted]);
         let kept = instances(&restored.xref_references);
@@ -3048,16 +3048,14 @@ mod tests {
             )
         };
         let kind = |projection: &super::AssemblyJointProjection| {
-            serde_json::to_value(&projection.joints[0]).unwrap()["operands"]["value"]["kind"]
-                .clone()
+            crate::json_value(&projection.joints[0]).unwrap()["operands"]["value"]["kind"].clone()
         };
 
         let rigid = project(&[]);
         assert_eq!(kind(&rigid)["kind"], "fixed");
         // Connector frames stay in their operand's own space, in millimetres.
-        let connectors = serde_json::to_value(&rigid.joints[0]).unwrap()["operands"]["value"]
-            ["connectors"]
-            .clone();
+        let connectors =
+            crate::json_value(&rigid.joints[0]).unwrap()["operands"]["value"]["connectors"].clone();
         assert_eq!(connectors[0]["frame"][2][3], 0.0);
         assert_eq!(connectors[1]["frame"][2][3], 10.0);
 
@@ -3106,7 +3104,7 @@ mod tests {
         // Rotation about local y turns each connector frame so y becomes z.
         let turned = project(&[motion(&[1], [0, 0])]);
         assert_eq!(kind(&turned)["kind"], "revolute");
-        let frame = serde_json::to_value(&turned.joints[0]).unwrap()["operands"]["value"]
+        let frame = crate::json_value(&turned.joints[0]).unwrap()["operands"]["value"]
             ["connectors"][0]["frame"]
             .clone();
         assert_eq!(frame[1][2], 1.0);

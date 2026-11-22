@@ -2715,7 +2715,7 @@ mod tests {
             .unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].record_index, None);
-        let wire = serde_json::to_value(&recipes[0]).expect("recipe wire");
+        let wire = crate::json_value(&recipes[0]).expect("recipe wire");
         assert_eq!(wire.get("record_index"), None);
         assert_eq!(wire.get("record_index_offset"), None);
     }

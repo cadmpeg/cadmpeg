@@ -83,7 +83,7 @@ fn motion_link_reads_and_retains_two_ordered_rotations() {
         panic!("MotionLink scope");
     };
     *slot = Some(link);
-    let saved = serde_json::to_value(&scope).unwrap();
+    let saved = crate::json_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignParameterScope>(saved.clone()).unwrap(),
         scope

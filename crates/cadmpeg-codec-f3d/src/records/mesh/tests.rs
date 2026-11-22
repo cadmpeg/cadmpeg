@@ -218,7 +218,7 @@ fn mesh_feature_preserves_split_stream_descriptor() {
     wire["bodies"][0]["split_streams"] = serde_json::json!([{"name":"v", "descriptor":"84a14403"}]);
     let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
     assert_eq!(
-        serde_json::to_value(feature).unwrap()["bodies"][0]["split_streams"][0]["descriptor"],
+        crate::json_value(feature).unwrap()["bodies"][0]["split_streams"][0]["descriptor"],
         "84a14403"
     );
 }
@@ -228,7 +228,7 @@ fn mesh_feature_preserves_face_group_registry() {
     let mut wire = mesh_feature_wire_for_borrowed(1, false);
     wire["bodies"][0]["face_group_metadata"] = serde_json::json!({"declared_count":1, "entries":[{"key":0,"guid":"10000000-0000-4000-8000-000000000001"},{"key":2,"guid":"20000000-0000-4000-8000-000000000002"}]});
     let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
-    let output = serde_json::to_value(feature).unwrap();
+    let output = crate::json_value(feature).unwrap();
     assert_eq!(
         output["bodies"][0]["face_group_metadata"]["declared_count"],
         1
@@ -283,7 +283,7 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
         ("offsets", serde_json::json!([100, 125])),
         ("offsets", serde_json::json!([u64::MAX, 0])),
     ] {
-        let mut invalid = serde_json::to_value(bounds.into_wire([100, 124])).unwrap();
+        let mut invalid = crate::json_value(bounds.into_wire([100, 124])).unwrap();
         invalid[field] = bad;
         assert!(crate::records::mesh::DesignMeshSceneBounds::from_wire(
             &serde_json::from_value(invalid).unwrap(),
@@ -317,7 +317,7 @@ fn mesh_record_identity_preserves_wire_and_rejects_invalid_headers() {
         ("frame_length", serde_json::json!(10)),
         ("frame_length", serde_json::json!(u64::MAX)),
     ] {
-        let mut invalid = serde_json::to_value(&record).unwrap();
+        let mut invalid = crate::json_value(&record).unwrap();
         invalid[field] = bad;
         assert!(
             serde_json::from_value::<crate::records::mesh::DesignMeshRecordIdentity>(invalid)
@@ -337,8 +337,8 @@ fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let value = crate::records::mesh::MeshAffineTransform::try_from(rows).unwrap();
-    let json = serde_json::to_value(rows).unwrap();
-    assert_eq!(serde_json::to_value(value).unwrap(), json);
+    let json = crate::json_value(rows).unwrap();
+    assert_eq!(crate::json_value(value).unwrap(), json);
     assert_eq!(
         serde_json::from_value::<crate::records::mesh::MeshAffineTransform>(json).unwrap(),
         value
@@ -348,7 +348,7 @@ fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
         changed[row][column] = invalid;
         assert!(
             serde_json::from_value::<crate::records::mesh::MeshAffineTransform>(
-                serde_json::to_value(changed).unwrap()
+                crate::json_value(changed).unwrap()
             )
             .is_err()
         );
@@ -420,7 +420,7 @@ fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
     let resource = &table.resources()[0];
     assert_eq!(resource.file.filename(), "é😀.png");
     assert_eq!(resource.file.filename_offset(), 225);
-    assert_eq!(serde_json::to_value(&table.into_wire().3[0]).unwrap(), wire);
+    assert_eq!(crate::json_value(&table.into_wire().3[0]).unwrap(), wire);
     for field in ["filename", "archive_entry_name", "filename_offset"] {
         let mut bad = wire.clone();
         bad[field] = if field == "filename_offset" {
@@ -505,10 +505,7 @@ fn mesh_uuid_preserves_wire_and_requires_lowercase_version_four() {
     let text = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let value = crate::records::mesh::DesignMeshUuid::try_from(text.to_owned()).unwrap();
     assert_eq!(value.as_str(), text);
-    assert_eq!(
-        serde_json::to_value(&value).unwrap(),
-        serde_json::json!(text)
-    );
+    assert_eq!(crate::json_value(&value).unwrap(), serde_json::json!(text));
     assert_eq!(
         serde_json::from_value::<crate::records::mesh::DesignMeshUuid>(serde_json::json!(text))
             .unwrap(),
@@ -826,7 +823,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
     let (identity, flags_count, filename_count, encoded) = table.into_wire();
     assert_eq!(identity, record(219));
     assert_eq!((flags_count, filename_count), (21, 113));
-    assert_eq!(serde_json::to_value(encoded).unwrap(), rows);
+    assert_eq!(crate::json_value(encoded).unwrap(), rows);
     let mut duplicate = rows.clone();
     duplicate[0]["ordinal"] = 0.into();
     duplicate[0]["flags_guid_offset"] = 29.into();

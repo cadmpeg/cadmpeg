@@ -31,7 +31,7 @@ fn external_combine_identity_admits_only_complete_offset_chains() {
         let wire = external_wire(version);
         let admitted: DesignCombineExternalBodyIdentity =
             serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        assert_eq!(crate::json_value(admitted).unwrap(), wire);
         for field in [
             "selector_asset_id_offset",
             "selector_context_id_offset",

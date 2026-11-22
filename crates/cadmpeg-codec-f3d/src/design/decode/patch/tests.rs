@@ -124,7 +124,7 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
             model_reference: 353,
         });
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
         scope

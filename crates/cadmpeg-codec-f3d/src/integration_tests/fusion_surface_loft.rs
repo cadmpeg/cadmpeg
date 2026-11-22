@@ -28,7 +28,7 @@ fn assert_surface_loft(bytes: &[u8]) {
         "{}",
         inferred[0].message
     );
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = crate::json_value(result.ir()).expect("serialize the IR");
     let bodies = ir["geometry"]["bodies"].as_array().expect("bodies");
     let mut lofts = ir["model"]["features"]
         .as_array()

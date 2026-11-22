@@ -985,7 +985,7 @@ fn hole_type_metadata_roundtrips_and_rejects_an_unknown_type() {
             serde_json::json!({"extent_control":0,"hole_type":{"value":value,"offset":17}});
         let extent: DesignHoleExtent = serde_json::from_value(encoded.clone()).unwrap();
         assert_eq!(extent.hole_type.as_ref().unwrap().value, value);
-        assert_eq!(serde_json::to_value(extent).unwrap(), encoded);
+        assert_eq!(crate::json_value(extent).unwrap(), encoded);
     }
     assert!(serde_json::from_value::<DesignHoleExtent>(
         serde_json::json!({"hole_type":{"value":3,"offset":17}})

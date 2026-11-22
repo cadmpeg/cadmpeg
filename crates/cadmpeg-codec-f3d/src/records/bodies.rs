@@ -803,8 +803,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()["design_body_bounds"][0]).unwrap(),
-            serde_json::to_value(&bounds).unwrap()
+            crate::json_value(&namespace.arenas()["design_body_bounds"][0]).unwrap(),
+            crate::json_value(&bounds).unwrap()
         );
     }
 
@@ -853,15 +853,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()["design_body_bindings"][0]).unwrap(),
-            serde_json::to_value(&binding).unwrap()
+            crate::json_value(&namespace.arenas()["design_body_bindings"][0]).unwrap(),
+            crate::json_value(&binding).unwrap()
         );
     }
     #[test]
     fn body_member_rejects_unbound_native_identity() {
         let wire = serde_json::json!({"id":"f3d:Design/BulkStream.dat:design-body-member#10", "byte_offset":10, "entity_suffix":7, "flags":0});
         let member: super::DesignBodyMember = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&member).unwrap(), wire);
+        assert_eq!(crate::json_value(&member).unwrap(), wire);
         for id in [
             "",
             "f3d:Design/BulkStream.dat:other#10",
@@ -893,7 +893,7 @@ mod tests {
                 serde_json::json!(["f3d:native:design-body-binding#bad"]),
             ),
         ] {
-            let mut wire = serde_json::to_value(&valid).unwrap();
+            let mut wire = crate::json_value(&valid).unwrap();
             wire[field] = value;
             assert!(
                 serde_json::from_value::<DesignBodyBounds>(wire).is_err(),
@@ -917,7 +917,7 @@ mod tests {
             ("stream", "Other/BulkStream.dat"),
             ("stream", "Design/MetaStream.dat"),
         ] {
-            let mut wire = serde_json::to_value(&valid).unwrap();
+            let mut wire = crate::json_value(&valid).unwrap();
             wire[field] = serde_json::json!(value);
             assert!(serde_json::from_value::<DesignBodyBinding>(wire.clone()).is_err());
             let raw: DesignBodyBindingWire = serde_json::from_value(wire).unwrap();
@@ -929,7 +929,7 @@ mod tests {
     fn body_visibility_rejects_unbound_record_and_stream_identities() {
         let wire = serde_json::json!({"id":"f3d:Breps/BREP.synthetic.smbh:body-visibility#3", "body":"f3d:brep:entity#1", "stream":"Design/BulkStream.dat", "byte_offset":10, "asm_body_key_offset":20, "asm_body_key":3, "entity_suffix":7, "visible":true});
         let visibility: super::BodyVisibility = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&visibility).unwrap(), wire);
+        assert_eq!(crate::json_value(&visibility).unwrap(), wire);
         for (field, value) in [
             ("id", ""),
             ("id", "f3d:Breps/BREP.synthetic.smbh:body-visibility#4"),

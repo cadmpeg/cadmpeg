@@ -178,7 +178,7 @@ fn a_projected_derive_feature_lists_its_scopes_and_orders_its_outputs_by_scope()
 #[test]
 fn a_derived_base_owner_survives_cadir_and_must_sit_in_its_frame() {
     let scope = derived(70, 62, 77, Some(50));
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     let read = serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
     assert_eq!(read.derived_base_owner, scope.derived_base_owner);
 
@@ -187,7 +187,7 @@ fn a_derived_base_owner_survives_cadir_and_must_sit_in_its_frame() {
     assert!(serde_json::from_value::<DesignParameterScope>(moved).is_err());
 
     let extrude = scope_with_owner_on_extrude();
-    let wire = serde_json::to_value(&extrude).unwrap();
+    let wire = crate::json_value(&extrude).unwrap();
     assert!(serde_json::from_value::<DesignParameterScope>(wire).is_err());
 }
 

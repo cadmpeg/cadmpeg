@@ -475,7 +475,7 @@ mod tests {
             bytes[label..label + 6].copy_from_slice(&modern[213..219]);
             bytes[asset + 21..scope_at].copy_from_slice(&modern[270..284]);
             reference(&mut bytes, scope_at + 21, 10);
-            let mut scope_wire = serde_json::to_value(&scope).unwrap();
+            let mut scope_wire = crate::json_value(&scope).unwrap();
             for (field, value) in scope_wire.as_object_mut().unwrap() {
                 if field.ends_with("_offset") && value.is_u64() {
                     *value = serde_json::json!(
@@ -493,7 +493,7 @@ mod tests {
             let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
             assert_eq!(image.asset_name(), "a.png");
             assert!(image.geometry().prologue.visible());
-            let wire = serde_json::to_value(&image).unwrap();
+            let wire = crate::json_value(&image).unwrap();
             assert_eq!(wire["geometry_frame_length"], paired);
             assert_eq!(wire["asset_byte_offset"], asset);
             if planeless {
@@ -537,7 +537,7 @@ mod tests {
                 let toggled_image = toggled_image.unwrap();
                 assert!(toggled_image.geometry().flag_assumed());
                 assert_eq!(
-                    serde_json::to_value(&toggled_image).unwrap()["second_boundary_flag"],
+                    crate::json_value(&toggled_image).unwrap()["second_boundary_flag"],
                     false
                 );
             }

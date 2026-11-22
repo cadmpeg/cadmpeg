@@ -62,6 +62,6 @@ fn draft_angle_preserves_signed_and_zero_values() {
         });
         let operation: DesignDraftOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(operation.angle.get().to_bits(), angle.to_bits());
-        assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+        assert_eq!(crate::json_value(operation).unwrap(), wire);
     }
 }

@@ -49,8 +49,8 @@ fn act_guid_native_retained_limit_refuses_before_guid_clone() {
         .set_arena(&service, "act_guids", std::slice::from_ref(&guid))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_guids"][0]).unwrap(),
-        serde_json::to_value(&guid).unwrap()
+        crate::json_value(&namespace.arenas()["act_guids"][0]).unwrap(),
+        crate::json_value(&guid).unwrap()
     );
 }
 
@@ -103,8 +103,8 @@ fn act_table_reference_native_retained_limit_refuses_before_id_clone() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_table_references"][0]).unwrap(),
-        serde_json::to_value(&reference).unwrap()
+        crate::json_value(&namespace.arenas()["act_table_references"][0]).unwrap(),
+        crate::json_value(&reference).unwrap()
     );
 }
 
@@ -169,8 +169,8 @@ fn act_registry_channel_native_retained_limit_refuses_before_name_clone() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_registry_channels"][0]).unwrap(),
-        serde_json::to_value(&channel).unwrap()
+        crate::json_value(&namespace.arenas()["act_registry_channels"][0]).unwrap(),
+        crate::json_value(&channel).unwrap()
     );
 }
 
@@ -229,8 +229,8 @@ fn act_root_component_native_retained_limit_refuses_before_layout_clone() {
         .set_arena(&service, "act_component_links", std::slice::from_ref(&root))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_component_links"][0]).unwrap(),
-        serde_json::to_value(&root).unwrap()
+        crate::json_value(&namespace.arenas()["act_component_links"][0]).unwrap(),
+        crate::json_value(&root).unwrap()
     );
 }
 
@@ -301,8 +301,8 @@ fn act_entity_native_retained_limit_refuses_before_channel_clone() {
         .set_arena(&service, "act_entities", std::slice::from_ref(&entity))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()["act_entities"][0]).unwrap(),
-        serde_json::to_value(&entity).unwrap()
+        crate::json_value(&namespace.arenas()["act_entities"][0]).unwrap(),
+        crate::json_value(&entity).unwrap()
     );
 }
 
@@ -316,7 +316,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
         "channel_guid_offsets": {"Appearance": 120}
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    assert_eq!(crate::json_value(entity).unwrap(), wire);
     for offsets in [serde_json::json!({}), serde_json::json!({"Material": 120})] {
         let mut invalid = wire.clone();
         invalid["channel_guid_offsets"] = offsets;
@@ -346,7 +346,7 @@ fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
         "channel_class_tail": "0001", "channel_class_tail_offset": 300
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    assert_eq!(crate::json_value(entity).unwrap(), wire);
     for (bytes, offset) in [
         (serde_json::json!(""), serde_json::json!(300)),
         (serde_json::json!("0000"), serde_json::json!(300)),
@@ -371,7 +371,7 @@ fn act_table_row_derives_the_entity_offset_and_rejects_wire_drift() {
     });
     let entity: crate::records::act::ActEntity = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(entity.table_entity_id_offset(), Some(34));
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    assert_eq!(crate::json_value(entity).unwrap(), wire);
     for offset in [20, 33, 35, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["table_entity_id_offset"] = serde_json::json!(offset);
@@ -395,14 +395,14 @@ fn act_component_link_preserves_tracking_references_on_the_wire() {
         "display_name": "", "display_name_offset": 61
     });
     let root: crate::records::act::ActComponentLink = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(root).unwrap(), wire);
+    assert_eq!(crate::json_value(root).unwrap(), wire);
     for record in [0, 1, 2, 4, u32::MAX] {
         let mut invalid = wire.clone();
         invalid["tracked_entity_record"] = serde_json::json!(record);
         let link = serde_json::from_value::<crate::records::act::ActComponentLink>(invalid.clone())
             .unwrap();
         assert_eq!(link.references.tracked_entity, record);
-        assert_eq!(serde_json::to_value(link).unwrap(), invalid);
+        assert_eq!(crate::json_value(link).unwrap(), invalid);
     }
     for field in [
         "record_index_offset",
@@ -451,7 +451,7 @@ fn act_table_reference_derives_target_offset_and_rejects_wire_drift() {
     let reference: crate::records::act::ActTableReference =
         serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(reference.byte_offset(), 20);
-    assert_eq!(serde_json::to_value(reference).unwrap(), wire);
+    assert_eq!(crate::json_value(reference).unwrap(), wire);
     for offset in [0, 20, 22, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["target_record_offset"] = serde_json::json!(offset);
@@ -484,7 +484,7 @@ fn act_guid_derives_payload_offset_and_rejects_wire_drift() {
     let guid: crate::records::act::ActGuid = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(guid.byte_offset(), 20);
     assert_eq!(guid.guid_offset(), 24);
-    assert_eq!(serde_json::to_value(guid).unwrap(), wire);
+    assert_eq!(crate::json_value(guid).unwrap(), wire);
     for offset in [0, 20, 23, 25, u64::MAX] {
         let mut invalid = wire.clone();
         invalid["guid_offset"] = serde_json::json!(offset);
@@ -527,7 +527,7 @@ fn act_registry_channel_derives_offsets_and_rejects_invalid_wire() {
     assert_eq!(channel.name(), "abc");
     assert_eq!(channel.name_offset(), 24);
     assert_eq!(channel.guid_offset(), 31);
-    assert_eq!(serde_json::to_value(channel).unwrap(), wire);
+    assert_eq!(crate::json_value(channel).unwrap(), wire);
     for field in ["name_offset", "guid_offset"] {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(0);

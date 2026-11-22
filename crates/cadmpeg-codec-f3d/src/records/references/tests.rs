@@ -57,8 +57,8 @@ fn lost_edge_reference_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&record))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&record).unwrap()
+        crate::json_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        crate::json_value(&record).unwrap()
     );
 }
 
@@ -111,7 +111,7 @@ fn material_assignment_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&record))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&record).unwrap()
+        crate::json_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        crate::json_value(&record).unwrap()
     );
 }

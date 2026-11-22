@@ -175,7 +175,7 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
     if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
         payload.unresolved_placement = Some(value);
     }
-    let mut encoded = serde_json::to_value(&scope).unwrap();
+    let mut encoded = crate::json_value(&scope).unwrap();
     encoded["component_insert_construction"] = serde_json::json!({
         "relation_record_index":20,
         "carrier_record_index":10,
@@ -183,7 +183,7 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
         "neutron_role_offset":0
     });
     assert!(serde_json::from_value::<DesignParameterScope>(encoded).is_err());
-    let mut encoded = serde_json::to_value(scope).unwrap();
+    let mut encoded = crate::json_value(scope).unwrap();
     encoded["kind"] = serde_json::json!("WorkPoint");
     assert!(serde_json::from_value::<DesignParameterScope>(encoded).is_err());
 }

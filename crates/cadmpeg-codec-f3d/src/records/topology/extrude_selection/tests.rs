@@ -112,7 +112,7 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
         "opaque_index_offset": 58, "opaque_scalar": -1.0, "opaque_scalar_offset": 62,
         "variant": false, "paired_class_tag": "259", "paired_byte_offset": 111});
     let group: super::DesignExtrudeSelectionGroup = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+    assert_eq!(crate::json_value(&group).unwrap(), wire);
     for (field, value) in [
         ("members", serde_json::json!([10, 10])),
         ("member_offsets", serde_json::json!([37, 49])),
@@ -158,7 +158,7 @@ fn typed_selection_group_offsets_use_the_wide_reference_stride() {
     let group = super::DesignExtrudeSelectionGroup::try_from(wire.clone()).expect("typed group");
     assert!(group.typed_references);
     assert_eq!(group.variant, None);
-    let round_trip = serde_json::to_value(&group).unwrap();
+    let round_trip = crate::json_value(&group).unwrap();
     assert_eq!(round_trip["typed_references"], true);
     assert!(round_trip.get("variant").is_none());
 
@@ -182,10 +182,7 @@ fn plain_selection_group_without_variant_ends_one_byte_earlier() {
     assert!(!group.typed_references);
     assert_eq!(group.variant, None);
     assert_eq!(group.paired_byte_offset(), 110);
-    assert!(serde_json::to_value(&group)
-        .unwrap()
-        .get("variant")
-        .is_none());
+    assert!(crate::json_value(&group).unwrap().get("variant").is_none());
 
     let mut variant_offset = wire;
     variant_offset.paired_byte_offset = 111;

@@ -55,7 +55,7 @@ fn source_trailing_transforms_preserve_nonconsecutive_following_records() {
         let actual = parse_construction_operand_transform(&bytes, &header)
             .expect("source transform with an independent following index");
         assert_eq!(actual, expected);
-        let wire = serde_json::to_value(&actual).unwrap();
+        let wire = crate::json_value(&actual).unwrap();
         assert_eq!(
             serde_json::from_value::<DesignConstructionOperandTransform>(wire).unwrap(),
             actual
@@ -281,7 +281,7 @@ fn construction_operand_auxiliary_paths_decode_the_extended_prefix() {
     assert_eq!(transformed.scope_record_index_offset(), 198);
     assert_eq!(transformed.following_byte_offset(), 225);
 
-    let wire = serde_json::to_value(&transformed).unwrap();
+    let wire = crate::json_value(&transformed).unwrap();
     assert_eq!(wire["entity_ref_offset"], 57);
     assert_eq!(wire["transform_offset"], 68);
     let restored: DesignConstructionOperandPath = serde_json::from_value(wire).unwrap();
@@ -469,7 +469,7 @@ fn assert_loft_carrier(length: usize, tail: Option<u64>) {
         carrier.next_reference_offset,
         if length == 100 { 77 } else { 76 }
     );
-    let wire = serde_json::to_value(&carrier).unwrap();
+    let wire = crate::json_value(&carrier).unwrap();
     assert_eq!(wire["flags"], if length == 100 { "010000" } else { "0000" });
     let decoded: crate::records::topology::entity_selection::DesignLoftLegacyBodyCarrier =
         serde_json::from_value(wire).unwrap();

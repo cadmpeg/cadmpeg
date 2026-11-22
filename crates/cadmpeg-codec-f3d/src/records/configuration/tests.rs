@@ -53,7 +53,7 @@ fn configuration_borrowed_wire_matches_owned_wire_bytes() {
             serde_json::to_vec(&record).unwrap(),
             serde_json::to_vec(&owned).unwrap()
         );
-        assert_eq!(serde_json::to_value(&record).unwrap(), value);
+        assert_eq!(crate::json_value(&record).unwrap(), value);
     }
     let name = "a 😀# b.dsgcfg";
     let mut escaped = wire("table", &json!({}));
@@ -112,7 +112,7 @@ fn configuration_payload_is_retained_and_encoded_verbatim() {
     ] {
         let expected = wire("table", &payload.clone());
         let admitted: DesignConfiguration = serde_json::from_value(expected.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&admitted).unwrap(), expected);
+        assert_eq!(crate::json_value(&admitted).unwrap(), expected);
         assert_eq!(
             serde_json::from_slice::<Value>(&encode_configuration_payload(&admitted).unwrap())
                 .unwrap(),
@@ -147,7 +147,7 @@ fn configuration_active_row_belongs_to_a_table_document() {
     value["active_row"] = active_row();
     let record: DesignConfiguration = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(record.active_row().unwrap().row_id, "r");
-    assert_eq!(serde_json::to_value(&record).unwrap(), value);
+    assert_eq!(crate::json_value(&record).unwrap(), value);
 
     let mut rule = wire("rule", &json!({}));
     rule["active_row"] = active_row();

@@ -152,7 +152,7 @@ fn counted_owner_runs_keep_four_alignment_lanes_and_exact_source_positions() {
                         assert_eq!(reference.offset, at + 4 + 11 * u64_from_index(ordinal));
                     }
                 }
-                let wire = serde_json::to_value(&decoded).unwrap();
+                let wire = crate::json_value(&decoded).unwrap();
                 let round_trip: DesignAssemblyAlignment = serde_json::from_value(wire).unwrap();
                 assert_eq!(round_trip, decoded);
             }
@@ -204,7 +204,7 @@ fn counted_owner_runs_validate_owner_membership_order_and_native_offsets() {
         assert!(!valid_alignment(&scope, &decoded, &types, &duplicate));
         for field in ["local_ordinal", "scope_record_index"] {
             let mut changed = owners.clone();
-            let mut wire = serde_json::to_value(&changed[4]).unwrap();
+            let mut wire = crate::json_value(&changed[4]).unwrap();
             wire[field] = serde_json::json!(9);
             changed[4] = serde_json::from_value(wire).unwrap();
             assert!(decode(&bytes, &scope, &changed, &types).is_none());

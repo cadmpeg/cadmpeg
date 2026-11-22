@@ -760,7 +760,7 @@ fn legacy_cut_body_recipe_closes_at_its_profile_group() {
     assert_eq!(operand.next_record_index(), 103);
     assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
     assert!(operand.references().is_empty());
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = crate::json_value(&operand).unwrap();
     let reloaded: crate::records::topology::body_recipe::DesignBodyRecipeOperand =
         serde_json::from_value(wire).unwrap();
     assert_eq!(reloaded, operand);

@@ -80,7 +80,7 @@ fn compact_version_six_body_preserves_equal_affine_maps_and_source_fields() {
         let [feature] = features.as_slice() else {
             panic!("one mesh collection");
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = crate::json_value(feature).unwrap();
         let row = &wire["bodies"][0];
         assert_eq!(
             row["body_variable_layout"]["presence_offsets"],
@@ -204,7 +204,7 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = crate::json_value(feature).unwrap();
         let row = &wire["bodies"][0];
         assert_eq!(row["body_name"], "Axle");
         assert_eq!(feature.scopes().count(), usize::from(!null_scope));

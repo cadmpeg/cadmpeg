@@ -24,7 +24,7 @@ fn refuses_zero<T>(record: &T, field: &str, refusal: &str)
 where
     T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
 {
-    let wire = serde_json::to_value(record).expect("serialize record");
+    let wire = crate::json_value(record).expect("serialize record");
     assert_eq!(
         &serde_json::from_value::<T>(wire.clone()).expect("round trip"),
         record
@@ -130,7 +130,7 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
         tolerance: positive(1.0e-6),
         tolerance_offset: 57,
     };
-    let wire = serde_json::to_value(&support).expect("serialize support");
+    let wire = crate::json_value(&support).expect("serialize support");
     assert_eq!(
         serde_json::from_value::<DesignSurfaceOffsetSupport>(wire.clone()).expect("round trip"),
         support
@@ -209,19 +209,19 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
             .to_string()
             .contains("plane_normal must be a unit vector"));
     }
-    value["plane_origin"] = serde_json::to_value(
+    value["plane_origin"] = crate::json_value(
         cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             0.0, 0.0, 0.0,
         ))
         .unwrap(),
     )
     .unwrap();
-    value["plane_normal"] = serde_json::to_value(
-        cadmpeg_ir::features::geometry::FiniteVector3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS),
-    )
+    value["plane_normal"] = crate::json_value(cadmpeg_ir::features::geometry::FiniteVector3::from(
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+    ))
     .unwrap();
     let plane: DesignMirrorConstruction = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(plane).unwrap(), value);
+    assert_eq!(crate::json_value(plane).unwrap(), value);
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn scale_axis_factors_round_trip_and_reject_partial_or_mixed_forms() {
         "matrix_offset": 60
     });
     let value: DesignScaleOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    assert_eq!(crate::json_value(value).unwrap(), wire);
     for field in ["axis_factors", "axis_factor_offsets"] {
         let mut invalid = wire.clone();
         invalid.as_object_mut().unwrap().remove(field);

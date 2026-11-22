@@ -47,7 +47,7 @@ fn boundary_fill_projects_body_region_groups() {
                 cadmpeg_ir::features::selections::BodySelection::Native(cell.id.clone())
             )]
     ));
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = crate::json_value(&projected).unwrap();
     assert_eq!(wire["value"]["value"]["plane_tools"], serde_json::json!([]));
     assert_eq!(
         wire["value"]["value"]["cells"][0],
@@ -99,7 +99,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let native_wire = serde_json::to_value(&fill_scope).unwrap();
+    let native_wire = crate::json_value(&fill_scope).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignParameterScope>(native_wire.clone()).unwrap(),
         fill_scope
@@ -117,7 +117,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
         .unwrap()
         .unwrap()
     });
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = crate::json_value(&projected).unwrap();
     assert_eq!(
         wire["value"]["value"]["tools"]["value"],
         "f3d:native/BulkStream.dat:construction-group#100"

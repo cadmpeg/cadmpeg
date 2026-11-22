@@ -81,7 +81,7 @@ fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
         "intermediate_parameter_record_indexes": [5, 6], "intermediate_parameter_offsets": [72, 80],
     });
     let group: DesignFixedFilletGroup = serde_json::from_value(input.clone()).unwrap();
-    assert_eq!(serde_json::to_value(group).unwrap(), input);
+    assert_eq!(crate::json_value(group).unwrap(), input);
     for (field, value) in [
         ("radii", serde_json::json!([-1.0, 0.0, 1.0, 0.0])),
         ("radii", serde_json::json!([0.0, 0.0, 0.0, 0.0])),

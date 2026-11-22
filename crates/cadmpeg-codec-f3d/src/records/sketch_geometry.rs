@@ -2535,7 +2535,7 @@ mod tests {
             wire["record_form"]["padded_paired_reference"] = json!(false);
             wire["record_form"]["trailing_reference"] = json!(17);
             let point: SketchPoint = serde_json::from_value(wire).unwrap();
-            let serialized = serde_json::to_value(&point).unwrap();
+            let serialized = crate::json_value(&point).unwrap();
             assert_eq!(serialized["closure"], json!({"selector": 1, "state": 1}));
             let restored: SketchPoint = serde_json::from_value(serialized.clone()).unwrap();
             assert_eq!(restored, point);
@@ -2739,7 +2739,7 @@ mod tests {
         let point: SketchPoint = serde_json::from_value(wire).unwrap();
         assert_eq!(point.owner_reference, Some(17));
         assert_eq!(point.geometry_group, Some(50));
-        let written = serde_json::to_value(&point).unwrap();
+        let written = crate::json_value(&point).unwrap();
         assert_eq!(written["geometry_group"], json!(50));
         let owned = super::SketchPointSerde::from(point.clone());
         assert_eq!(
@@ -2756,7 +2756,7 @@ mod tests {
         assert_eq!(curve.owner_reference, Some(17));
         assert_eq!(curve.geometry_group, Some(50));
         assert_eq!(
-            serde_json::to_value(&curve).unwrap()["geometry_group"],
+            crate::json_value(&curve).unwrap()["geometry_group"],
             json!(50)
         );
     }
@@ -2774,7 +2774,7 @@ mod tests {
         assert_eq!(group.ordinal, 3);
         assert_eq!(group.members, [41, 60]);
         assert_eq!(group.sketch_reference, 17);
-        assert_eq!(serde_json::to_value(&group).unwrap(), wire);
+        assert_eq!(crate::json_value(&group).unwrap(), wire);
     }
 
     #[test]
@@ -2933,10 +2933,7 @@ mod tests {
     fn native_surface_wire_round_trip_preserves_flat_shape() {
         let wire = native_surface_wire();
         let surface: SketchSurface = serde_json::from_value(wire.clone()).expect("valid surface");
-        assert_eq!(
-            serde_json::to_value(surface).expect("serialize surface"),
-            wire
-        );
+        assert_eq!(crate::json_value(surface).expect("serialize surface"), wire);
     }
 
     #[test]

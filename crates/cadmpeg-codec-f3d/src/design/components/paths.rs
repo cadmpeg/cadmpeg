@@ -579,7 +579,7 @@ mod tests {
             repeated_paths.resolve(stream, &keys(&[key_b, key_c])),
             Some((chain[2].id.clone(), 2))
         );
-        let encoded = serde_json::to_value(&table.references[0]).unwrap();
+        let encoded = crate::json_value(&table.references[0]).unwrap();
         let retained: crate::records::xref::XrefReference =
             serde_json::from_value(encoded.clone()).unwrap();
         assert_eq!(retained, table.references[0]);

@@ -123,7 +123,7 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
         "return_member_offsets",
     ] {
         for offset in [77_u32, u32::MAX] {
-            let mut wire = serde_json::to_value(&relation).unwrap();
+            let mut wire = crate::json_value(&relation).unwrap();
             if field == "owner_reference_offset" {
                 wire[field] = serde_json::json!(offset);
             } else if field == "auxiliary_reference_offsets" {

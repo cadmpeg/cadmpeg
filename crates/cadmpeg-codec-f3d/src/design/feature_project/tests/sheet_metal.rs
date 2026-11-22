@@ -1127,7 +1127,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
             })
             .collect();
     }
-    let source = serde_json::to_value(&scope).unwrap();
+    let source = crate::json_value(&scope).unwrap();
     let conditions = crate::test_support::with_decode_context(|_ctx| {
         crate::design::feature_project::surface_patch::surface_patch_boundary_conditions(&scope)
     });
@@ -1149,7 +1149,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
             },
         ]
     );
-    assert_eq!(serde_json::to_value(&scope).unwrap(), source);
+    assert_eq!(crate::json_value(&scope).unwrap(), source);
     for (boundary, (_, scale)) in scope.surface_patch_boundaries().iter().zip(raw) {
         assert_eq!(boundary.scale.get().to_bits(), scale.to_bits());
     }

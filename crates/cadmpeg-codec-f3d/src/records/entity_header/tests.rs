@@ -160,8 +160,8 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&entry))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&entry).unwrap()
+        crate::json_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        crate::json_value(&entry).unwrap()
     );
 }
 
@@ -177,7 +177,7 @@ fn segment_type_rejects_unbound_native_identity() {
         let mut wire = SegmentTypeWire::from(valid.clone());
         wire.id = id.into();
         assert!(SegmentType::try_from(wire).is_err());
-        let mut wire = serde_json::to_value(&valid).unwrap();
+        let mut wire = crate::json_value(&valid).unwrap();
         wire["id"] = serde_json::json!(id);
         assert!(serde_json::from_value::<SegmentType>(wire).is_err());
     }

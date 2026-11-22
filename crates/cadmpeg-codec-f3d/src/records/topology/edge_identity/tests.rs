@@ -91,9 +91,9 @@ fn edge_operand_for_borrowed(axis: bool) -> super::DesignEdgeOperand {
     });
     if axis {
         wire["resolved_axis_origin"] =
-            serde_json::to_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
+            crate::json_value(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();
         wire["resolved_axis_direction"] =
-            serde_json::to_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
+            crate::json_value(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap();
     }
     serde_json::from_value(wire).unwrap()
 }

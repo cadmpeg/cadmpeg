@@ -87,7 +87,7 @@ fn act_entity_requires_a_group_and_a_table_or_inline_key() {
     wire["table_record_index_offset"] = serde_json::json!(20);
     wire["table_entity_id_offset"] = serde_json::json!(34);
     let entity: ActEntity = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    assert_eq!(crate::json_value(entity).unwrap(), wire);
     for field in ["channel_class_tag", "channel_record_index_offset"] {
         wire.as_object_mut().unwrap().remove(field);
     }

@@ -214,7 +214,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(*metadata_record, 401);
     assert_eq!(result_records, &[501, 502]);
     assert_eq!(body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
-    let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
+    let serialized = crate::json_value(&construction).expect("serialize legacy form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
         serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
@@ -432,7 +432,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
         .unwrap()
         .expect("body-snapshot Base Feature frame is canonical");
-    let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
+    let serialized = crate::json_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
         serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
@@ -1349,7 +1349,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         .expect("class-365/class-262 Base Feature frame is canonical");
     assert_eq!(class_365_construction, construction);
 
-    let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
+    let serialized = crate::json_value(&construction).expect("serialize body-reference form");
     assert_eq!(
         serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
             .expect("deserialize body-reference form"),

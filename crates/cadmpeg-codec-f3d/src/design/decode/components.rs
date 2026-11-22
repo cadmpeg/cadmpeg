@@ -1694,7 +1694,7 @@ mod tests {
                 .unwrap();
                 assert_eq!(transform.value, expected);
             }
-            let wire = serde_json::to_value(&record).unwrap();
+            let wire = crate::json_value(&record).unwrap();
             assert_eq!(wire["component_guid_offset"], 52);
             assert_eq!(wire["occurrence_guid_offset"], 128);
             assert_eq!(wire["owner_entity_offset"], if matrix { 351 } else { 223 });
@@ -1747,7 +1747,7 @@ mod tests {
         );
         assert!(loss.message.contains("ordinal 2"));
         assert!(loss.message.contains(&record.id));
-        let wire = serde_json::to_value(&record).unwrap();
+        let wire = crate::json_value(&record).unwrap();
         assert!(serde_json::from_value::<super::DesignComponentOccurrence>(wire).is_err());
     }
 
@@ -1999,13 +1999,13 @@ mod tests {
             occurrence.transform().expect("matrix").value.rows()[2][3],
             4.0
         );
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["source_record_index"], 90);
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
-        let plain_wire = serde_json::to_value(
+        let plain_wire = crate::json_value(
             attributed_component_occurrence(&plain, 0, "f3d:Design/BulkStream.dat")
                 .expect("occurrence without a source reference"),
         )
@@ -2015,7 +2015,7 @@ mod tests {
             .is_none());
 
         // A serialized zero source target is not a reference.
-        let mut zero = serde_json::to_value(&occurrence).unwrap();
+        let mut zero = crate::json_value(&occurrence).unwrap();
         zero["attributed"]["source_record_index"] = serde_json::json!(0);
         assert!(serde_json::from_value::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
@@ -2152,7 +2152,7 @@ mod tests {
         assert_eq!(occurrence.owner_entity, 6);
         let transform = occurrence.transform().expect("matrix");
         assert_eq!(transform.value.rows()[2][3], 4.0);
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_record_index"], 139);
         assert_eq!(wire["attributed"]["key_segment_index"], 1);
         assert_eq!(wire["attributed"]["attributes"][0]["name"], "GatedByParent");
@@ -2166,7 +2166,7 @@ mod tests {
         let bytes = attributed("34", 0, 2);
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("independent path discriminator");
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["path_discriminator"], 0);
         assert_eq!(wire["occurrence_ordinal"], 2);
     }
@@ -2179,7 +2179,7 @@ mod tests {
         );
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("original attributed occurrence");
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_segment_index"], 10);
         assert_eq!(
             wire["attributed"]["attributes"],
@@ -2298,7 +2298,7 @@ mod tests {
             assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
             assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
             assert_eq!(occurrence.occurrence_ordinal(), 1);
-            let wire = serde_json::to_value(&occurrence).unwrap();
+            let wire = crate::json_value(&occurrence).unwrap();
             assert_eq!(wire["component_guid_offset"], 17 + 88);
             assert_eq!(wire["occurrence_guid_offset"], 17 + 164);
             assert_eq!(wire["owner_entity_offset"], 17 + owner_offset);
@@ -2418,7 +2418,7 @@ mod tests {
         assert_eq!(occurrence.component_record_index, 187);
         assert_eq!(occurrence.owner_entity, 6);
         assert_eq!(occurrence.occurrence_guid.as_str(), "34");
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(
             wire["attributed"]["attributes"].as_array().unwrap().len(),
             2
@@ -2644,7 +2644,7 @@ mod tests {
                         .map_or(0, std::num::NonZeroU32::get),
                     discriminator
                 );
-                let wire = serde_json::to_value(&occurrence).unwrap();
+                let wire = crate::json_value(&occurrence).unwrap();
                 let restored: crate::records::feature::assembly_features::DesignComponentOccurrence = serde_json::from_value(wire).unwrap();
                 assert_eq!(restored, occurrence);
             }

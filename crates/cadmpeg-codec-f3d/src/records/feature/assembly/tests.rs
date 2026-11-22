@@ -151,7 +151,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
         }
         let record: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(crate::json_value(record).unwrap(), wire);
     }
     for (field, value) in [
         ("transform", transform),
@@ -475,7 +475,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         for (field, replacement) in [
             ("construction_record_index", serde_json::json!(99)),
             ("construction_byte_offset", serde_json::json!(99)),
-            ("frame", serde_json::to_value(&frames[1]).unwrap()),
+            ("frame", crate::json_value(&frames[1]).unwrap()),
         ] {
             let mut invalid = value.clone();
             invalid["legacy_operand_carriers"][0][field] = replacement;
@@ -539,7 +539,7 @@ fn assembly_path_wire_pairs_guid_locations() {
             let path: crate::records::feature::assembly::DesignAssemblyOperandPath =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(path.occurrence_guids().len(), count);
-            assert_eq!(serde_json::to_value(&path).unwrap(), wire);
+            assert_eq!(crate::json_value(&path).unwrap(), wire);
             for (value_field, offset_field) in [
                 ("occurrence_guids", "occurrence_guid_offsets"),
                 ("identity_guids", "identity_guid_offsets"),
@@ -703,7 +703,7 @@ fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>
                 assert!(decoded.is_err(), "{field}");
             } else {
                 let decoded = decoded.unwrap_or_else(|error| panic!("{field}: {error}"));
-                assert_eq!(serde_json::to_value(decoded).unwrap(), changed);
+                assert_eq!(crate::json_value(decoded).unwrap(), changed);
             }
         }
     }
@@ -725,7 +725,7 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
     }
     let alignment =
         DesignAssemblyAlignment::try_new(-1.0, [-2.0, -0.0, 3.0], Vec::new(), None).unwrap();
-    let json = serde_json::to_value(&alignment).unwrap();
+    let json = crate::json_value(&alignment).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignAssemblyAlignment>(json).unwrap(),
         alignment
@@ -747,11 +747,11 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
         };
         assert_eq!(DesignAssemblyLimits::try_from(wire.clone()).is_ok(), valid);
         if minimum.is_finite() && maximum.is_finite() {
-            let json = serde_json::to_value(wire).unwrap();
+            let json = crate::json_value(wire).unwrap();
             let result = serde_json::from_value::<DesignAssemblyLimits>(json.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(limits) = result {
-                assert_eq!(serde_json::to_value(limits).unwrap(), json);
+                assert_eq!(crate::json_value(limits).unwrap(), json);
             }
         }
     }
@@ -837,7 +837,7 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         guids(&[560, 640, 720, 800]),
     )
     .unwrap();
-    let wire = serde_json::to_value(path).unwrap();
+    let wire = crate::json_value(path).unwrap();
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
     for (field, offsets) in [
         ("occurrence_guid_offsets", vec![300, 480]),
@@ -939,7 +939,7 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
         ),
     ] {
         let occurrence = Occurrence::try_new(draft(100, placement)).unwrap();
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = crate::json_value(&occurrence).unwrap();
         assert_eq!(wire["component_guid_offset"], 148);
         assert_eq!(wire["occurrence_guid_offset"], 224);
         assert_eq!(wire["owner_entity"], 9);
@@ -965,9 +965,7 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
                 .contains(field));
         }
         let boundary = Occurrence::try_new(draft(u64::MAX - last_offset, placement)).unwrap();
-        assert!(
-            serde_json::from_value::<Occurrence>(serde_json::to_value(boundary).unwrap()).is_ok()
-        );
+        assert!(serde_json::from_value::<Occurrence>(crate::json_value(boundary).unwrap()).is_ok());
         assert!(Occurrence::try_new(draft(u64::MAX - last_offset + 1, placement)).is_err());
     }
 }
@@ -1128,7 +1126,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         }),
     )
     .unwrap();
-    let mut value = serde_json::to_value(&alignment).unwrap();
+    let mut value = crate::json_value(&alignment).unwrap();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let remap = |id: &str| {
         Ok(format!(
@@ -1141,7 +1139,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities)
         .unwrap();
     identities.finish().unwrap();
-    assert_eq!(value, serde_json::to_value(expected).unwrap());
+    assert_eq!(value, crate::json_value(expected).unwrap());
     for operand in value["legacy_operand_carriers"].as_array().unwrap() {
         assert_eq!(
             operand["selection"]["recipe_references"][0]["candidate_faces"][0],
@@ -1171,7 +1169,7 @@ fn guids<T: TryFrom<String, Error = String>>(
 #[test]
 fn root_operand_paths_refuse_continuations() {
     let path = |root, shift| {
-        let mut wire = serde_json::to_value(borrowed_assembly_path(true)).unwrap();
+        let mut wire = crate::json_value(borrowed_assembly_path(true)).unwrap();
         wire["type_guid"] = serde_json::json!(super::TYPED_OCCURRENCE_PATH_TYPE_GUID);
         wire["byte_offset"] = serde_json::json!(300 + shift);
         wire["occurrence_guid_offsets"] = serde_json::json!([400 + shift]);

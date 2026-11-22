@@ -144,7 +144,7 @@ fn registered_prefixes_preserve_methods_nullable_owners_and_ordered_groups() {
                 _ => panic!("face-group scope"),
             }
             let restored: DesignParameterScope =
-                serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+                serde_json::from_value(crate::json_value(&scope).unwrap()).unwrap();
             assert_eq!(restored, scope);
         }
     }

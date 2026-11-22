@@ -139,7 +139,7 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
             .collect::<Vec<_>>(),
         [10, 10, 11]
     );
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = crate::json_value(&frame).unwrap();
     assert_eq!(serde_json::from_value::<Frame>(wire).unwrap(), frame);
     let mut all_null = original;
     for operand in &mut all_null.operands {
@@ -194,7 +194,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     let frame = Frame::try_new(draft(100))
         .map_err(|error| error.to_string())
         .unwrap();
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = crate::json_value(&frame).unwrap();
     for field in [
         "annotation_byte_offset",
         "governing_owner_reference_offset",
@@ -331,7 +331,7 @@ fn annotation_frame_absent_metadata_validates_wire_offsets() {
     let frame = Frame::try_new(input.clone()).unwrap();
     assert_eq!(frame.annotation_byte_offset(), 170);
     assert_eq!(frame.clone().into_draft(), input);
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = crate::json_value(&frame).unwrap();
     assert_eq!(wire["metadata_absent"], serde_json::json!(true));
     assert_eq!(
         serde_json::from_value::<Frame>(wire.clone()).unwrap(),
@@ -386,7 +386,7 @@ fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
     }
     let frame = Frame::try_new(input.clone()).unwrap();
     assert_eq!(frame.clone().into_draft(), input);
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = crate::json_value(&frame).unwrap();
     assert!(wire.get("entity_genesis").is_none());
     assert_eq!(
         serde_json::from_value::<Frame>(wire.clone()).unwrap(),

@@ -93,7 +93,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
         .unwrap();
     let mut losses = Vec::new();
     decode_split_tool_extension(&bytes, &mut scope, &mut losses);
-    let value = serde_json::to_value(&scope).unwrap();
+    let value = crate::json_value(&scope).unwrap();
     assert_eq!(
         value["split_tool_extension"],
         serde_json::json!({"value": false, "offset": offset})
@@ -118,7 +118,7 @@ fn split_tool_extension_preserves_absent_block_value_with_a_loss() {
         losses[0].code,
         F3dLossCode::FeatureSplitToolExtensionUnresolved.kind()
     );
-    assert!(serde_json::to_value(&scope)
+    assert!(crate::json_value(&scope)
         .unwrap()
         .get("split_tool_extension")
         .is_none());

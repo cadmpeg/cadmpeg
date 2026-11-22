@@ -1216,7 +1216,7 @@ fn a_proven_root_instance_element_selects_the_saved_world_pose() {
 }
 
 fn object_snapshot(carrier: &mut DesignComponentOccurrence) {
-    let mut wire = serde_json::to_value(&*carrier).unwrap();
+    let mut wire = crate::json_value(&*carrier).unwrap();
     wire["attributed"] = serde_json::json!({
         "attributes": [], "property_names": ["Transform"],
         "persistent_key": "0_100", "ordinal_prefix": 0,

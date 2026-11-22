@@ -26,7 +26,7 @@ fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
                 if let Some(envelope) = result.scopes[0].align_envelope() {
                     assert_eq!(envelope.construction.is_none(), constructor_refused);
                 }
-                let wire = serde_json::to_value(&result.scopes[0]).unwrap();
+                let wire = crate::json_value(&result.scopes[0]).unwrap();
                 let back: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
                 assert_eq!(back, result.scopes[0]);
                 if !refused {

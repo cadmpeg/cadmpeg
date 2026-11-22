@@ -48,7 +48,7 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         let rule: DesignWorkPointRule =
             serde_json::from_value(wire.clone()).expect("supported rule");
         assert_eq!(rule.reference_type(), code);
-        assert_eq!(serde_json::to_value(rule).expect("serialize rule"), wire);
+        assert_eq!(crate::json_value(rule).expect("serialize rule"), wire);
         let alias = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
         let error = serde_json::from_value::<DesignWorkPointRule>(alias)
             .expect_err("native alias rejected");
@@ -63,7 +63,7 @@ fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
         let rule: DesignWorkPointRule =
             serde_json::from_value(wire.clone()).expect("unassigned native form");
         assert_eq!(
-            serde_json::to_value(rule).expect("serialize native form"),
+            crate::json_value(rule).expect("serialize native form"),
             wire
         );
     }
@@ -84,7 +84,7 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
         }}
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    assert_eq!(crate::json_value(admitted).unwrap(), wire);
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
@@ -109,7 +109,7 @@ fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
         }}
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    assert_eq!(crate::json_value(admitted).unwrap(), wire);
     for field in ["identity_record_index", "next_record_index"] {
         let mut invalid = wire.clone();
         invalid["carrier"]["selection"][field] = 12.into();
@@ -135,7 +135,7 @@ fn work_point_sketch_point_carrier_offsets_follow_its_identity_form() {
         }}
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    assert_eq!(crate::json_value(admitted).unwrap(), wire);
     let mut marked = wire.clone();
     marked["carrier"]["selection"]
         .as_object_mut()

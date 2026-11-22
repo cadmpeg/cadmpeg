@@ -18,7 +18,7 @@ fn flagged_collection_direct_owner_joins_all_imported_bodies() {
         let [feature] = features.as_slice() else {
             panic!("one mesh collection");
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = crate::json_value(feature).unwrap();
         assert_eq!(wire["collection_record"]["frame_length"], length);
         assert_eq!(
             wire["collection_body_reference_offsets"],
@@ -183,7 +183,7 @@ fn mesh_operation_member_links_an_unlisted_body() {
     };
     assert_eq!(input.guid.record.record_index(), 103);
     assert_eq!(input.entry.record.record_index(), 102);
-    let wire = serde_json::to_value(&features[0]).unwrap();
+    let wire = crate::json_value(&features[0]).unwrap();
     assert_eq!(
         wire["operation_bodies"][0]["member"]["record"]["record_index"],
         126
@@ -354,7 +354,7 @@ fn mesh_collection_joins_bodies_from_two_scopes() {
             .collect::<Vec<_>>(),
         [(104, Some(109), Some(0)), (117, Some(122), Some(0))]
     );
-    let wire = serde_json::to_value(feature).unwrap();
+    let wire = crate::json_value(feature).unwrap();
     assert_eq!(wire["scopes"][1]["scope_record"]["record_index"], 122);
     assert_eq!(wire["bodies"][1]["scope_record_index"], 122);
     assert_eq!(wire["bodies"][1]["scope_body_ordinal"], 0);

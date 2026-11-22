@@ -99,7 +99,7 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
             }
         }
         for display in &native.display_poses {
-            let wire = serde_json::to_value(display).unwrap();
+            let wire = crate::json_value(display).unwrap();
             assert_eq!(wire["binding"]["state"], "bound");
         }
         let validation = cadmpeg_ir::validate_neutral(ir, result.report().losses.clone()).unwrap();

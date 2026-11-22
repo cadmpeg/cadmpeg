@@ -465,7 +465,7 @@ fn paired_body_to_component_owner_reads_typed_body_runs() {
         .eq(offsets.iter().copied()));
     assert_eq!(
         serde_json::from_value::<DesignBaseFeatureConstruction>(
-            serde_json::to_value(&construction).unwrap()
+            crate::json_value(&construction).unwrap()
         )
         .unwrap(),
         construction

@@ -22,7 +22,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
             .is_empty());
             let scope = serde_json::from_value::<
                 crate::records::feature::scope::DesignParameterScope,
-            >(serde_json::to_value(scope).unwrap())
+            >(crate::json_value(scope).unwrap())
             .unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             assert!(super::super::valid_work_plane_construction(

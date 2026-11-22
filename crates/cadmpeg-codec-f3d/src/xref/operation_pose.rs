@@ -748,7 +748,7 @@ pub(crate) fn project(
                 let mut fields = r.copy_fields(ctx)?;
                 fields.insert(
                     "operation_pose".into(),
-                    serde_json::to_value(operation)
+                    crate::json_value(operation)
                         .map_err(|e| CodecError::malformed(e.to_string()))?,
                 );
                 *r = cadmpeg_ir::NativeRecord::new(

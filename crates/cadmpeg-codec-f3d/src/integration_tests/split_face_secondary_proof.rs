@@ -130,7 +130,7 @@ fn frame_findings(
 #[test]
 fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     let (scope, recipe, operand) = decoded(true);
-    let wire = serde_json::to_value(operand.clone()).unwrap();
+    let wire = crate::json_value(operand.clone()).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"],
         serde_json::json!({
@@ -140,12 +140,12 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     );
     let restored: DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(restored, operand);
-    assert_eq!(serde_json::to_value(restored.clone()).unwrap(), wire);
+    assert_eq!(crate::json_value(restored.clone()).unwrap(), wire);
     let rewritten = crate::test_support::with_decode_context(|ctx| {
         let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
         restored.clone().rewrite_identities(ctx, &mut map).unwrap()
     });
-    assert_eq!(serde_json::to_value(rewritten).unwrap(), wire);
+    assert_eq!(crate::json_value(rewritten).unwrap(), wire);
     assert_eq!(
         frame_findings(
             scope.clone(),
@@ -267,7 +267,7 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
 #[test]
 fn decoded_secondary_recipe_frame_can_end_at_stream_end() {
     let (scope, recipe, operand) = decoded(false);
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = crate::json_value(&operand).unwrap();
     assert_eq!(
         wire["registered_recipe_frame"]["next_primary_index"],
         serde_json::Value::Null

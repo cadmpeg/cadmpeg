@@ -249,7 +249,7 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
     rows[0][3] = 1.0;
     table.references[0].transform = Some(rows.try_into().unwrap());
-    let wire = serde_json::to_value(&table.references[0]).unwrap();
+    let wire = crate::json_value(&table.references[0]).unwrap();
     assert_eq!(
         serde_json::from_value::<crate::records::xref::XrefReference>(wire.clone()).unwrap(),
         table.references[0]

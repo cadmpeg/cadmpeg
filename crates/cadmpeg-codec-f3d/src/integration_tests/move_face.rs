@@ -356,7 +356,7 @@ fn framed_move_face_missing_metadata_and_unknown_prefix_preserve_motion() {
         ] {
             assert!(result.losses.contains(&code.kind()));
         }
-        let native = serde_json::to_value(&result.scope).unwrap();
+        let native = crate::json_value(&result.scope).unwrap();
         assert_eq!(
             serde_json::from_value::<DesignParameterScope>(native).unwrap(),
             result.scope

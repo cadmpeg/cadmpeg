@@ -128,9 +128,9 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     record: T,
     alternatives: &[&str],
 ) {
-    let wire = serde_json::to_value(record).unwrap();
+    let wire = crate::json_value(record).unwrap();
     let restored: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(restored).unwrap(), wire);
+    assert_eq!(crate::json_value(restored).unwrap(), wire);
     for id in alternatives {
         let mut invalid = wire.clone();
         invalid["id"] = serde_json::json!(id);

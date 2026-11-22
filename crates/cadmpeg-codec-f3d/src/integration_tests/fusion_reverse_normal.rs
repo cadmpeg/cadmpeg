@@ -25,7 +25,7 @@ fn decoded(bytes: &[u8]) -> Value {
         "{:#?}",
         result.report().losses
     );
-    serde_json::to_value(result.ir()).expect("serialize the IR")
+    crate::json_value(result.ir()).expect("serialize the IR")
 }
 
 fn features<'a>(ir: &'a Value, tag: &str) -> Vec<&'a Value> {
@@ -97,7 +97,7 @@ fn decoded_with_inferred_history(bytes: &[u8]) -> (Value, bool) {
         .iter()
         .any(|loss| loss.code == F3dLossCode::HistoricalBodyRecipeHistoryInferred.kind());
     (
-        serde_json::to_value(result.ir()).expect("serialize the IR"),
+        crate::json_value(result.ir()).expect("serialize the IR"),
         inferred,
     )
 }

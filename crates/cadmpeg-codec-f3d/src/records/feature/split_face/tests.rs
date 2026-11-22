@@ -53,7 +53,7 @@ fn split_face_method_is_derived_from_controls_and_reference() {
 
 #[test]
 fn split_face_wire_rejects_a_separately_supplied_method() {
-    let mut wire = serde_json::to_value(operation()).unwrap();
+    let mut wire = crate::json_value(operation()).unwrap();
     wire["method"] = serde_json::json!({"kind":"closest_point"});
     assert!(serde_json::from_value::<DesignSplitFaceOperation>(wire).is_err());
 }
@@ -91,7 +91,7 @@ fn split_face_reference_forms_validate_their_qualifiers_and_exact_extents() {
 
 #[test]
 fn split_face_scope_wire_validates_its_owned_locations() {
-    let wire = serde_json::to_value(scope()).unwrap();
+    let wire = crate::json_value(scope()).unwrap();
     assert!(serde_json::from_value::<DesignParameterScope>(wire.clone()).is_ok());
     for at in [18, 20, 115, 120, u64::MAX] {
         let mut invalid = wire.clone();
@@ -115,7 +115,7 @@ fn split_face_scope_wire_validates_its_owned_locations() {
 
 #[test]
 fn split_face_carrier_requires_a_consistent_bounded_snapshot() {
-    let wire = serde_json::to_value(scope()).unwrap();
+    let wire = crate::json_value(scope()).unwrap();
     let mutations = [
         ("carrier_frame", serde_json::json!(null)),
         (
@@ -178,7 +178,7 @@ fn split_face_partial_inputs_and_missing_sources_remain_admitted() {
 
 #[test]
 fn local_reference_envelopes_and_vector_minimum_are_checked() {
-    let wire = serde_json::to_value(scope()).unwrap();
+    let wire = crate::json_value(scope()).unwrap();
     for (field, value) in [
         (
             "direction",
@@ -210,7 +210,7 @@ fn split_face_optional_wire_fields_use_omission_and_nullable_references() {
     let wire = serde_json::json!({"method_offset": 19, "direction_reference": {"kind": "null"}});
     let value: DesignSplitFaceOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
-        serde_json::to_value(value).unwrap(),
+        crate::json_value(value).unwrap(),
         serde_json::json!({
             "method_offset": 19, "direction_reference": {"kind": "null"}, "inputs_complete": false
         })
@@ -232,7 +232,7 @@ fn split_face_optional_wire_fields_use_omission_and_nullable_references() {
 
 #[test]
 fn absent_external_type_cannot_claim_a_different_effective_guid() {
-    let mut wire = serde_json::to_value(scope()).unwrap();
+    let mut wire = crate::json_value(scope()).unwrap();
     let input = serde_json::json!({"kind":"cross_document","target":{"value":88,"offset":218},"inline_type_guid":"00000000-0000-0000-0000-000000000099","segment":7,"asset_guid":"asset","target_type_guid":"00000000-0000-0000-0000-000000000099","external_type_guid_present":false,"link_name":"link","version":null});
     wire["split_face_operation"]["inputs"][0]["value"] = input;
     wire["split_face_operation"]["carrier_frame"]["secondary_offset"] = serde_json::json!(299);

@@ -165,7 +165,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
             let context: super::DesignEdgeRecipeSelectorContext =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(context.clauses.len(), count);
-            assert_eq!(serde_json::to_value(&context).unwrap(), wire);
+            assert_eq!(crate::json_value(&context).unwrap(), wire);
             let mut invalid = wire.clone();
             invalid["unique_incidence_edge_slot"] = serde_json::json!(9);
             assert!(
@@ -218,7 +218,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
         let triplet: super::DesignTopologyRecipeTriplet = serde_json::from_str(&wire).unwrap();
         assert_eq!(triplet.vertex_ordinal(), vertex);
         assert_eq!(serde_json::to_string(&triplet).unwrap(), wire);
-        let mut invalid = serde_json::to_value(triplet).unwrap();
+        let mut invalid = crate::json_value(triplet).unwrap();
         invalid["vertex_ordinal"] = serde_json::json!(outer);
         assert!(
             serde_json::from_value::<super::DesignTopologyRecipeTriplet>(invalid)
@@ -230,7 +230,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
     let wire = r#"{"selector":0,"boundary_edge_count":4,"topology_triplets":[{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"},{"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"}],"common_incident_edge_ordinal":1}"#;
     let entry: super::DesignTopologyRecipeEntry = serde_json::from_str(wire).unwrap();
     assert_eq!(serde_json::to_string(&entry).unwrap(), wire);
-    let mut invalid = serde_json::to_value(entry).unwrap();
+    let mut invalid = crate::json_value(entry).unwrap();
     invalid["common_incident_edge_ordinal"] = serde_json::json!(2);
     assert!(
         serde_json::from_value::<super::DesignTopologyRecipeEntry>(invalid)
@@ -287,5 +287,5 @@ fn recipe_sidecar_derives_counts_without_changing_wire() {
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
     let record: super::DesignTopologyRecipeSide = serde_json::from_value(side.clone()).unwrap();
     assert_eq!(record.field_count(), 2);
-    assert_eq!(serde_json::to_value(record).unwrap(), side);
+    assert_eq!(crate::json_value(record).unwrap(), side);
 }

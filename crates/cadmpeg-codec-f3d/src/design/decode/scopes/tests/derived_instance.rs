@@ -724,7 +724,7 @@ fn typed_local_references_preserve_their_guid_metadata_and_matrix_offsets() {
         "66E375EA-40F1-4115-8D83-0F23DD30593E"
     );
     assert!(relation.carrier.is_some());
-    let wire = serde_json::to_value(&decoded).unwrap();
+    let wire = crate::json_value(&decoded).unwrap();
     assert_eq!(
         serde_json::from_value::<DesignDerivedInstanceConstruction>(wire).unwrap(),
         decoded

@@ -900,7 +900,7 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
         let record = scope.rectangular_pattern_construction().unwrap();
         assert_eq!(
             serde_json::from_value::<DesignRectangularPatternConstruction>(
-                serde_json::to_value(record).unwrap()
+                crate::json_value(record).unwrap()
             )
             .unwrap(),
             *record

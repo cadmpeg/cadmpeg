@@ -82,7 +82,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     flipped["flipped"] = true.into();
     let reversed: DesignHemOperation = serde_json::from_value(flipped.clone()).unwrap();
     assert!(reversed.flipped);
-    assert_eq!(serde_json::to_value(reversed).unwrap(), flipped);
+    assert_eq!(crate::json_value(reversed).unwrap(), flipped);
     for (field, value) in [
         ("flipped", serde_json::json!(2)),
         ("bend_position", serde_json::json!("unknown")),
@@ -94,7 +94,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
     }
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    assert_eq!(crate::json_value(operation).unwrap(), wire);
     for (group, operand) in [
         ("edge_group_record_index", "edge_operand_record_index"),
         (
@@ -111,7 +111,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     operation.aggregate_group_record_index = 30_u32.try_into().unwrap();
     assert_eq!(operation.edge_operand_record_index(), 23);
     assert_eq!(operation.aggregate_operand_record_index(), 33);
-    let changed = serde_json::to_value(operation).unwrap();
+    let changed = crate::json_value(operation).unwrap();
     assert_eq!(changed["edge_operand_record_index"], 23);
     assert_eq!(changed["aggregate_operand_record_index"], 33);
     for field in [

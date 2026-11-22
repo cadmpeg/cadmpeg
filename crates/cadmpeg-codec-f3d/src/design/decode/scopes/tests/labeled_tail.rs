@@ -98,7 +98,7 @@ fn assert_labeled_with_previous(tail: &PlainTail) {
         scope.previous_history_state_id_offset(),
         Some(u64_from_index(kind_end + 31 + 2 * LABEL.len()))
     );
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(wire)
             .unwrap(),

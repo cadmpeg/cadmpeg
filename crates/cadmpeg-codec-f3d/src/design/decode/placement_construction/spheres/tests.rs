@@ -84,7 +84,7 @@ fn sphere_binds_solved_frame_and_projects_millimetres() {
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
     );
     let restored: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 

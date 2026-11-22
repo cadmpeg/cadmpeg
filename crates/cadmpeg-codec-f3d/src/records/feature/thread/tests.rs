@@ -59,7 +59,7 @@ fn thread_wire_rejects_blank_names_and_invalid_dimensions() {
         let mut wire = thread_wire();
         wire[field] = serde_json::json!(" a ");
         let admitted: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        assert_eq!(crate::json_value(admitted).unwrap(), wire);
     }
     for (field, invalid) in [
         ("major_diameter", 0.75),
@@ -81,7 +81,7 @@ fn standard_compact_form_round_trips_and_refuses_a_trailing_reference() {
     wire["form"] = serde_json::json!("standard_compact");
     let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(construction.form, DesignThreadForm::StandardCompact);
-    assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+    assert_eq!(crate::json_value(&construction).unwrap(), wire);
 
     wire["trailing_reference_record_index"] = serde_json::json!(7);
     wire["trailing_reference_offset"] = serde_json::json!(99);
@@ -116,7 +116,7 @@ fn extended_standard_form_round_trips_and_refuses_a_hole_reference() {
     wire["designation_offset"] = serde_json::json!(46);
     let construction: DesignThreadConstruction = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(construction.form, DesignThreadForm::StandardExtended);
-    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+    assert_eq!(crate::json_value(construction).unwrap(), wire);
     wire["trailing_reference_record_index"] = serde_json::json!(7);
     wire["trailing_reference_offset"] = serde_json::json!(99);
     assert!(serde_json::from_value::<DesignThreadConstruction>(wire).is_err());
@@ -136,7 +136,7 @@ fn extended_compact_form_round_trips_its_hole_reference() {
         construction.form,
         DesignThreadForm::CompactExtended(_)
     ));
-    assert_eq!(serde_json::to_value(construction).unwrap(), wire);
+    assert_eq!(crate::json_value(construction).unwrap(), wire);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn compact_owned_thread_forms_preserve_wire_identity_and_reference_shape() {
         assert_eq!(construction.form, form);
         assert_eq!(construction.class(), Some("6H"));
         assert_eq!(construction.external(), None);
-        assert_eq!(serde_json::to_value(&construction).unwrap(), wire);
+        assert_eq!(crate::json_value(&construction).unwrap(), wire);
         assert!(form.designation_offset_holds(46, 0));
         assert!(!form.designation_offset_holds(42, 0));
         assert!(form.reference_count_holds(4));

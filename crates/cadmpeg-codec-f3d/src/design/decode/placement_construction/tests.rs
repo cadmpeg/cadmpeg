@@ -180,7 +180,7 @@ fn placement_modern_versions_decode_explicit_and_identity_frames() {
                     assert_eq!(matrix.value.rows()[1][3], 3.0);
                     assert_eq!(matrix.value.rows()[2][3], 4.0);
                 }
-                let wire = serde_json::to_value(&record).unwrap();
+                let wire = crate::json_value(&record).unwrap();
                 let restored: DesignPlacementConstruction =
                     serde_json::from_value(wire.clone()).unwrap();
                 assert_eq!(restored, record);

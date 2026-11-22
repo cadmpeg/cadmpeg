@@ -17,7 +17,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
                 .unwrap()
                 .extend(binding.as_object().unwrap().clone());
             let value: T = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(value).unwrap(), wire);
+            assert_eq!(crate::json_value(value).unwrap(), wire);
         }
         for binding in [
             serde_json::json!({"historical_entity_kind": "loop"}),

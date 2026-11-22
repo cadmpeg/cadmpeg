@@ -225,7 +225,7 @@ fn short_constant_set_requires_its_following_group_and_radius_owner() {
     assert_eq!(set.tangency_weight_owner_record_index, None);
     assert_eq!(set.tangent_chain, None);
     assert_eq!(set.curvature_continuity, None);
-    let stored = serde_json::to_value(&list).unwrap();
+    let stored = crate::json_value(&list).unwrap();
     let restored: crate::records::feature::fillet_set::DesignFilletSetList =
         serde_json::from_value(stored).unwrap();
     assert_eq!(restored, list);

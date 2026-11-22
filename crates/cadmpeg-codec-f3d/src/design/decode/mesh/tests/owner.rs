@@ -104,7 +104,7 @@ fn named_collection_owner_keeps_its_frame() {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = serde_json::to_value(feature).unwrap();
+        let wire = crate::json_value(feature).unwrap();
         let decoded: crate::records::mesh::DesignMeshFeature =
             serde_json::from_value(wire).unwrap();
         assert_eq!(
@@ -296,7 +296,7 @@ fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
     let [feature] = features.as_slice() else {
         panic!("one mesh feature");
     };
-    let wire = serde_json::to_value(feature).unwrap();
+    let wire = crate::json_value(feature).unwrap();
     assert_eq!(wire["collection_owner_name_count"], 3);
     assert_eq!(wire["collection_owner_backlink_offset"], start + 272);
     let decoded: crate::records::mesh::DesignMeshFeature = serde_json::from_value(wire).unwrap();

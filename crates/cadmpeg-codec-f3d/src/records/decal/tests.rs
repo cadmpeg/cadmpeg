@@ -175,7 +175,7 @@ fn decal_scope_layouts_place_references_and_asset_frames() {
             70,
         ),
     ] {
-        assert_eq!(serde_json::to_value(layout).unwrap(), wire);
+        assert_eq!(crate::json_value(layout).unwrap(), wire);
         assert_eq!(layout.asset_reference(), asset_reference);
         assert_eq!(layout.scope_code(), scope_code);
         assert_eq!(layout.target_group_reference(), target_group_reference);
@@ -208,7 +208,7 @@ fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
     value["placement"] = placement.clone();
     let image: crate::records::decal::DesignDecalImage =
         serde_json::from_value(value.clone()).expect("Decal binding with a placement");
-    assert_eq!(serde_json::to_value(&image).expect("Decal wire"), value);
+    assert_eq!(crate::json_value(&image).expect("Decal wire"), value);
     let asset_at = value["asset_byte_offset"].clone();
     for (field, bad) in [
         ("byte_offset", asset_at),

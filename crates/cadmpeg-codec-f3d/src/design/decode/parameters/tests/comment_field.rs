@@ -73,10 +73,7 @@ fn wide_parameter_comment_moves_the_later_fields() {
 fn wide_parameter_keeps_whitespace_comment_and_offset() {
     let parameter = parse_design_parameter_record(&wide_owned("  ")).expect("comment");
     assert_eq!(parameter.comment(), Some("  "));
-    assert_eq!(
-        serde_json::to_value(&parameter).unwrap()["comment_offset"],
-        35
-    );
+    assert_eq!(crate::json_value(&parameter).unwrap()["comment_offset"], 35);
     assert_eq!(parameter.expression_offset(), 58);
 }
 
@@ -158,7 +155,7 @@ fn comment_discriminated_document_parameter_keeps_comment_and_flag() {
     assert_eq!(parameter.comment(), Some("note"));
     assert!(!parameter.flags().driven);
     assert!(parameter.flags().favorite);
-    let wire = serde_json::to_value(&parameter).unwrap();
+    let wire = crate::json_value(&parameter).unwrap();
     assert_eq!(wire["comment_offset"], 30);
     let round_trip: crate::records::parameters::DesignParameter =
         serde_json::from_value(wire).unwrap();
@@ -171,10 +168,7 @@ fn comment_discriminated_parameter_keeps_whitespace_comment_and_offset() {
     let frame = comment_discriminated(Some(0xee), "  ", [0, 0, 0, 0, 0]);
     let parameter = parse_design_parameter_record(&frame).expect("comment");
     assert_eq!(parameter.comment(), Some("  "));
-    assert_eq!(
-        serde_json::to_value(&parameter).unwrap()["comment_offset"],
-        30
-    );
+    assert_eq!(crate::json_value(&parameter).unwrap()["comment_offset"], 30);
 }
 
 #[test]

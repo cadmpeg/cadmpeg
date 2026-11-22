@@ -61,10 +61,10 @@ fn corner_flange_decodes_both_class_pairs_and_round_trips() {
         assert_eq!(edges[1].group_record_index.get(), 62);
         assert_eq!(edges[1].operand_record_index(), 65);
         assert_eq!(edges[1].aggregate_operand_record_index, 108);
-        let wire = serde_json::to_value(&operation).unwrap();
+        let wire = crate::json_value(&operation).unwrap();
         let decoded: crate::records::feature::sheet_metal::DesignEdgeFlangeOperation =
             serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        assert_eq!(crate::json_value(decoded).unwrap(), wire);
         let mut invalid = wire;
         invalid["reference_side_code"] = serde_json::json!(3);
         assert!(serde_json::from_value::<

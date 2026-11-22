@@ -73,7 +73,7 @@ fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
         ("opaque_index_offset", json!(u64::MAX)),
         ("opaque_scalar_offset", json!(123)),
     ] {
-        let mut wire = serde_json::to_value(frame_wire()).unwrap();
+        let mut wire = crate::json_value(frame_wire()).unwrap();
         wire[field] = value;
         assert!(serde_json::from_value::<DesignConstructionOperandGroupFrame>(wire).is_err());
     }
@@ -83,7 +83,7 @@ fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
     assert!(DesignConstructionOperandGroupFrame::try_from(wire.clone()).is_err());
     assert!(
         serde_json::from_value::<DesignConstructionOperandGroupFrame>(
-            serde_json::to_value(wire).unwrap()
+            crate::json_value(wire).unwrap()
         )
         .is_err()
     );
@@ -96,7 +96,7 @@ fn construction_frame_accepts_a_set_closing_flag() {
     let frame = DesignConstructionOperandGroupFrame::try_from(wire.clone()).unwrap();
     assert!(frame.closing_flag);
     let decoded: DesignConstructionOperandGroupFrame =
-        serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(wire).unwrap()).unwrap();
     assert!(decoded.closing_flag);
 }
 
@@ -110,7 +110,7 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
             assert!(DesignConstructionOperandGroupFrame::try_from(wire.clone()).is_err());
             assert!(
                 serde_json::from_value::<DesignConstructionOperandGroupFrame>(
-                    serde_json::to_value(&wire).unwrap()
+                    crate::json_value(&wire).unwrap()
                 )
                 .is_err()
             );
@@ -123,8 +123,8 @@ fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic
     check_collection!(trailing_transforms, try_set_trailing_transforms);
     check_collection!(trailing_dual_transforms, try_set_trailing_dual_transforms);
     check_collection!(auxiliary_paths, try_set_auxiliary_paths);
-    let wire = serde_json::to_value(frame_wire()).unwrap();
-    assert_eq!(serde_json::to_value(frame).unwrap(), wire);
+    let wire = crate::json_value(frame_wire()).unwrap();
+    assert_eq!(crate::json_value(frame).unwrap(), wire);
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn construction_frame_borrowed_wire_matches_owned_wire_bytes() {
             "opaque_index": 1, "opaque_index_offset": 80,
             "opaque_scalar": 0.0, "opaque_scalar_offset": 84, "variant": false
         }),
-        serde_json::to_value(frame_wire()).unwrap(),
+        crate::json_value(frame_wire()).unwrap(),
     ] {
         let frame: DesignConstructionOperandGroupFrame = serde_json::from_value(wire).unwrap();
         let owned = DesignConstructionOperandGroupFrameWire::from(frame.clone());
@@ -211,7 +211,7 @@ fn construction_group_retains_sketch_profile_flags() {
         }
     });
     let group: DesignConstructionOperandGroup = serde_json::from_value(wire).unwrap();
-    let serialized = serde_json::to_value(group).unwrap();
+    let serialized = crate::json_value(group).unwrap();
     let decoded: DesignConstructionOperandGroup = serde_json::from_value(serialized).unwrap();
     assert_eq!(
         decoded.sketch_profile.unwrap().compact_tail_flags,
@@ -269,7 +269,7 @@ fn construction_group_owns_member_stride_and_derives_role_offset() {
         ])
         .is_err());
     assert_eq!(group, before);
-    assert_eq!(serde_json::to_value(group).unwrap(), wire);
+    assert_eq!(crate::json_value(group).unwrap(), wire);
 }
 
 #[test]
@@ -614,7 +614,7 @@ fn construction_group_wire_requires_source_and_extrude_roles_to_agree() {
         "role_offset": 40, "paired_class_tag": "257", "paired_byte_offset": 50
     });
     let group: DesignConstructionOperandGroup = serde_json::from_value(wire.clone()).unwrap();
-    let encoded = serde_json::to_value(&group).unwrap();
+    let encoded = crate::json_value(&group).unwrap();
     assert_eq!(encoded["role"], wire["role"]);
     assert_eq!(encoded["extrude_role"], wire["extrude_role"]);
     assert_eq!(
@@ -813,7 +813,7 @@ fn tracking_fragment_domain_rejects_nonpositive_and_out_of_range_ordinals() {
         wire["selector"] = json!(selector);
         wire["kind"] = json!(kind);
         let value: DesignConstructionTrackingPath = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), wire);
+        assert_eq!(crate::json_value(value).unwrap(), wire);
     }
     for (selector, kind) in [(-1, 3), (0, 3), (4, 3), (1, 0), (i32::MIN, u32::MAX)] {
         let mut wire = base.clone();

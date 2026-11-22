@@ -1485,7 +1485,7 @@ mod tests {
 
     #[test]
     fn historical_pattern_axis_refuses_empty_wrapper_arrays() {
-        let mut wire = serde_json::to_value(circular_axis(false)).unwrap();
+        let mut wire = crate::json_value(circular_axis(false)).unwrap();
         wire["wrapper_record_indices"] = serde_json::json!([]);
         wire["identity_offsets"] = serde_json::json!([]);
         let error = serde_json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
@@ -1502,8 +1502,8 @@ mod tests {
                 .try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames)))
                 .is_err());
             assert_eq!(serde_json::to_vec(&record).unwrap(), previous);
-            let mut wire = serde_json::to_value(&record).unwrap();
-            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies(
+            let mut wire = crate::json_value(&record).unwrap();
+            wire["instances"] = crate::json_value(DesignRectangularPatternInstances::Bodies(
                 (0..count).map(frame).collect(),
             ))
             .unwrap();
@@ -1577,7 +1577,7 @@ mod tests {
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
         assert_eq!(record.distribution(), wire.distribution.as_ref());
-        let json = serde_json::to_value(&record).unwrap();
+        let json = crate::json_value(&record).unwrap();
         assert_eq!(
             serde_json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
             record
@@ -1587,7 +1587,7 @@ mod tests {
     #[test]
     fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
         let uncapped = construction(None);
-        assert!(serde_json::to_value(&uncapped)
+        assert!(crate::json_value(&uncapped)
             .unwrap()
             .get("instance_search_cap")
             .is_none());
@@ -1598,7 +1598,7 @@ mod tests {
             record.instance_search_cap(),
             Some(RectangularPatternSearchCap::ScannedBytes)
         );
-        let value = serde_json::to_value(&record).unwrap();
+        let value = crate::json_value(&record).unwrap();
         assert_eq!(value["instance_search_cap"], "scanned-bytes");
         assert_eq!(
             serde_json::from_value::<DesignRectangularPatternConstruction>(value).unwrap(),
@@ -1697,7 +1697,7 @@ mod tests {
             offset: 63,
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
-        let encoded = serde_json::to_value(&record).unwrap();
+        let encoded = crate::json_value(&record).unwrap();
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
@@ -1728,7 +1728,7 @@ mod tests {
         assert!(record.secondary_direction().is_some());
         assert!(
             serde_json::from_value::<DesignRectangularPatternConstruction>(
-                serde_json::to_value(&record).unwrap()
+                crate::json_value(&record).unwrap()
             )
             .is_ok()
         );

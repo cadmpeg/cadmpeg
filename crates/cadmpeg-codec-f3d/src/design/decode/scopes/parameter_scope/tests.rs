@@ -91,7 +91,7 @@ fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_co
     assert_eq!(tail.associated[0].value, 700);
     assert_eq!(tail.closing.as_ref().unwrap().value, 701);
     assert_eq!(scope.previous_history_state_id(), Some(4));
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
         scope
@@ -124,11 +124,11 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     assert_eq!(tail.middle.as_ref().unwrap().value, 900);
     assert_eq!(tail.middle.as_ref().unwrap().offset, 215);
     assert_eq!(tail.closing, None);
-    let wire = serde_json::to_value(&scope).unwrap();
-    let cloned_wire = serde_json::to_value(scope.clone()).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
+    let cloned_wire = crate::json_value(scope.clone()).unwrap();
     assert_eq!(wire, cloned_wire);
     let roundtrip: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(roundtrip).unwrap(), wire);
+    assert_eq!(crate::json_value(roundtrip).unwrap(), wire);
     let mut wrong_offset = wire.clone();
     wrong_offset["combine_named_tail"]["middle"]["offset"] = serde_json::json!(214);
     assert!(serde_json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());

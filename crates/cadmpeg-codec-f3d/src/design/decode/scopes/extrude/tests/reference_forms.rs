@@ -73,7 +73,7 @@ fn typed_extrude_prefix_retains_the_construction_group_reference() {
     assert_eq!(value.extent(), Some(DesignExtrudeExtent::OneSidedDistance));
     assert_eq!(value.operation(), DesignExtrudeOperation::Cut);
     assert_eq!(value.start(), DesignExtrudeStart::FromFace);
-    let wire = serde_json::to_value(value).unwrap();
+    let wire = crate::json_value(value).unwrap();
     assert_eq!(wire["reference"]["record_index"], 25);
     assert_eq!(wire["reference"]["record_index_offset"], 26);
     assert_eq!(
@@ -186,7 +186,7 @@ fn reference_aware_two_sided_extents_keep_side_specific_references() {
             super::super::exact_extrude_prologue(&bytes, 0, 300, "300", "260", 300, &references)
                 .expect("face-first prologue");
         assert_eq!(value.extent(), Some(expected));
-        let wire = serde_json::to_value(value).unwrap();
+        let wire = crate::json_value(value).unwrap();
         assert_eq!(wire["extent"], wire_extent);
         assert_eq!(
             serde_json::from_value::<DesignExtrudePrologue>(wire).unwrap(),
@@ -218,7 +218,7 @@ fn reference_aware_two_sided_extents_keep_side_specific_references() {
         value.extent(),
         Some(DesignExtrudeExtent::TwoSidedDistanceToFaceControlOne)
     );
-    let wire = serde_json::to_value(value).unwrap();
+    let wire = crate::json_value(value).unwrap();
     assert_eq!(wire["extent"], "two_sided_distance_to_face_control_one");
     assert_eq!(
         serde_json::from_value::<DesignExtrudePrologue>(wire).unwrap(),

@@ -298,7 +298,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.record_index, 77);
     assert_eq!(reference.trailing_zero_count, 6);
     assert_eq!(operation_offset, 36);
-    let serialized = serde_json::to_value(reference).unwrap();
+    let serialized = crate::json_value(reference).unwrap();
     assert_eq!(serialized["trailing_zero_count"], 6);
     let decoded: crate::records::feature::extrude::DesignExtrudePrologueReference =
         serde_json::from_value(serialized).unwrap();

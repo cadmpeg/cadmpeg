@@ -30,7 +30,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
             let context: super::DesignHistoricalFaceLoopContext =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(context.boundary.coedges().count(), index_from_u32(count));
-            assert_eq!(serde_json::to_value(&context).unwrap(), wire);
+            assert_eq!(crate::json_value(&context).unwrap(), wire);
             for field in ["edge_slots", "vertex_slots", "point_slots", "positions"] {
                 let mut invalid = wire.clone();
                 let mut values = invalid
@@ -40,7 +40,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                     .unwrap_or_default();
                 for _ in 0..=count {
                     values.push(if field == "positions" {
-                        serde_json::to_value(cadmpeg_ir::math::Point3::new(9.0, 0.0, 0.0)).unwrap()
+                        crate::json_value(cadmpeg_ir::math::Point3::new(9.0, 0.0, 0.0)).unwrap()
                     } else {
                         serde_json::json!(99)
                     });

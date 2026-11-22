@@ -578,8 +578,7 @@ fn pattern_native(
     native.design_construction_operand_groups[0].operand_role =
         DesignConstructionOperandRole::Other(first);
     if let Some(second) = second {
-        let mut group =
-            serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+        let mut group = crate::json_value(&native.design_construction_operand_groups[0]).unwrap();
         group["id"] = format!("{stream}:design-construction-operand-group#2000").into();
         group["record_index"] = 102.into();
         group["scope_reference_ordinal"] = 2.into();
@@ -680,7 +679,7 @@ fn path_seed_native(
     };
     let stream = "f3d:Design/BulkStream.dat";
     let mut native = pattern_native(kind, DesignOperandRole::PATH_SEED, None);
-    let mut group = serde_json::to_value(&native.design_construction_operand_groups[0]).unwrap();
+    let mut group = crate::json_value(&native.design_construction_operand_groups[0]).unwrap();
     group["members"] = serde_json::json!([]);
     group["member_offsets"] = serde_json::json!([]);
     group["frame"]["auxiliary_record_indices"] = serde_json::json!([103, 106]);

@@ -1076,8 +1076,8 @@ mod tests {
             .unwrap();
         let stored = &namespace.arenas()["asm_history_records"][0];
         assert_eq!(
-            serde_json::to_value(stored).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            crate::json_value(stored).unwrap(),
+            crate::json_value(&record).unwrap()
         );
     }
 
@@ -1146,8 +1146,8 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
-            serde_json::to_value(&change).unwrap()
+            crate::json_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
+            crate::json_value(&change).unwrap()
         );
     }
 

@@ -464,7 +464,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match F3dCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default())
     {
-        Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect"),
+        Ok(summary) => crate::json_value(&summary).expect("serialize inspect"),
         Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
     };
     let mut text = serde_json::to_string_pretty(&value).expect("serialize inspect snapshot");
@@ -925,10 +925,10 @@ const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 /// declarations.
 fn neutral_document(ir: &CadIr) -> String {
     snapshot_text(&serde_json::json!({
-        "geometry": serde_json::to_value(&ir.geometry).expect("serialize geometry"),
-        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "geometry": crate::json_value(&ir.geometry).expect("serialize geometry"),
+        "model": crate::json_value(&ir.model).expect("serialize model"),
         "units": { "length": "millimeter" },
-        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+        "tolerances": crate::json_value(ir.tolerances).expect("serialize tolerances"),
     }))
 }
 
@@ -1053,7 +1053,7 @@ fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
             &DecodeOptions::default(),
         )
         .expect("skin construction fixture");
-    let document = serde_json::to_value(decoded.ir()).expect("skin document JSON");
+    let document = crate::json_value(decoded.ir()).expect("skin document JSON");
     serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut with_inner_count = document;
@@ -1129,7 +1129,7 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
             &DecodeOptions::default(),
         )
         .expect("rolling-ball construction fixture");
-    let document = serde_json::to_value(decoded.ir()).expect("rolling-ball document JSON");
+    let document = crate::json_value(decoded.ir()).expect("rolling-ball document JSON");
     serde_json::from_value::<CadIr>(document.clone()).expect("the fixture is a document");
 
     let mut restated = document;

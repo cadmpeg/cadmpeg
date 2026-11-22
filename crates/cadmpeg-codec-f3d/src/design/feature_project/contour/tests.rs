@@ -232,7 +232,7 @@ fn contour_missing_source_links_preserves_direction_and_signed_distance() {
 
 #[test]
 fn contour_native_optional_fields_refuse_nulls_and_bad_locations() {
-    let value = serde_json::to_value(prefix()).unwrap();
+    let value = crate::json_value(prefix()).unwrap();
     for key in [
         "settings",
         "carrier",

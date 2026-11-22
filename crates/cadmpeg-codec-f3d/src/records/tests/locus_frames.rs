@@ -48,7 +48,7 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
         let payload = draft(first, 100, length);
         let pair = Pair::try_new(payload.clone()).unwrap();
         assert_eq!(pair.clone().into_draft(), payload);
-        let wire = serde_json::to_value(&pair).unwrap();
+        let wire = crate::json_value(&pair).unwrap();
         assert_eq!(serde_json::from_value::<Pair>(wire).unwrap(), pair);
         let mut short = payload;
         short.frame_length -= 1;
@@ -68,7 +68,7 @@ fn locus_pair_derives_each_form_and_preserves_its_smallest_extent() {
 fn locus_pair_rejects_stale_wire_offsets_and_missing_geometry() {
     for first in [None, NonZeroU32::new(40)] {
         let pair = Pair::try_new(draft(first, 100, 80)).unwrap();
-        let wire = serde_json::to_value(&pair).unwrap();
+        let wire = crate::json_value(&pair).unwrap();
         for field in [
             "opaque_index_offset",
             "first_geometry_reference_offset",

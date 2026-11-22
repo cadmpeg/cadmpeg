@@ -10,7 +10,7 @@ pub(super) fn rejects_changed_fields<T: DeserializeOwned + Serialize>(
     fields: &[&str],
 ) {
     let admitted: T = serde_json::from_value(wire).unwrap();
-    let wire = serde_json::to_value(admitted).unwrap();
+    let wire = crate::json_value(admitted).unwrap();
     for field in fields {
         let mut invalid = wire.clone();
         invalid[field] = (wire[field].as_u64().unwrap() + 1).into();

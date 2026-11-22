@@ -723,12 +723,12 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = crate::json_value(&operand).unwrap();
     assert!(wire.get("serialization_form").is_none());
     let mut form_one = bytes.clone();
     form_one[serialization_form_at..serialization_form_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let form_one_operand = parse_entity_selection_operand(&form_one, &group, 0, &record).unwrap();
-    let wire = serde_json::to_value(&form_one_operand).unwrap();
+    let wire = crate::json_value(&form_one_operand).unwrap();
     assert_eq!(wire["serialization_form"], 1);
     let restored: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
         serde_json::from_value(wire).unwrap();
@@ -1148,7 +1148,7 @@ fn sketch_profile_region_member_retains_its_secondary_curve_identity() {
         Some(247)
     );
     let round_trip: crate::records::topology::sketch_profile::DesignSketchProfileRegionMember =
-        serde_json::from_value(serde_json::to_value(parsed).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(parsed).unwrap()).unwrap();
     assert_eq!(&round_trip, parsed);
     for zero in [
         member::ZERO_WORD_AFTER_PRIMARY,
@@ -1270,7 +1270,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     assert_eq!(operand.secondary(), frame.secondary);
     assert_eq!(operand.next_record_index(), 104);
     assert_eq!(operand.next_byte_offset(), 266);
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = crate::json_value(&operand).unwrap();
     let reloaded: DesignEntitySelectionOperand = serde_json::from_value(wire).unwrap();
     assert_eq!(reloaded, operand);
 }

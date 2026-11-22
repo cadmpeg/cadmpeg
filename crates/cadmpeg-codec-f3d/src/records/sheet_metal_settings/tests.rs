@@ -19,7 +19,7 @@ fn settings_wire_couples_version_arity_and_source_identity() {
             wire["inputs"]["rule_reference_tail"] = serde_json::json!(tail);
         }
         let record: DesignSheetMetalSettings = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        assert_eq!(crate::json_value(record).unwrap(), wire);
         let mut invalid = wire.clone();
         invalid["inputs"]["rule_reference_tail"] = serde_json::json!("000000");
         assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());

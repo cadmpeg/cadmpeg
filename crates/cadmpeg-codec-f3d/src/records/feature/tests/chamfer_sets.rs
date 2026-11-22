@@ -22,7 +22,7 @@ fn set() -> serde_json::Value {
 fn chamfer_set_list_round_trips_and_refuses_empty_runs_and_unknown_keys() {
     let value = wire(1, &serde_json::json!([set()]));
     let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&list).unwrap(), value);
+    assert_eq!(crate::json_value(&list).unwrap(), value);
     assert!(
         serde_json::from_value::<DesignChamferSetList>(wire(1, &serde_json::json!([]))).is_err()
     );
@@ -48,6 +48,6 @@ fn distance_angle_reversal_round_trips_and_defaults_to_false() {
         let value = wire(1, &serde_json::json!([value]));
         let list: DesignChamferSetList = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(list.sets[0].distance_reversed, reversed);
-        assert_eq!(serde_json::to_value(&list).unwrap(), value);
+        assert_eq!(crate::json_value(&list).unwrap(), value);
     }
 }

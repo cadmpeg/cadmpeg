@@ -92,7 +92,7 @@ fn component_insert_native_retained_limit_refuses_before_record_clone() {
 #[test]
 fn typed_component_occurrence_wire_retains_offsets_and_native_fields() {
     for (explicit, owner_offset) in [(false, 299_u64), (false, 298), (true, 426)] {
-        let mut wire = serde_json::to_value(occurrence(explicit)).unwrap();
+        let mut wire = crate::json_value(occurrence(explicit)).unwrap();
         wire["component_guid_offset"] = (10 + 88).into();
         wire["occurrence_guid_offset"] = (10 + 164).into();
         wire["owner_entity_offset"] = (10 + owner_offset).into();
@@ -102,7 +102,7 @@ fn typed_component_occurrence_wire_retains_offsets_and_native_fields() {
             wire["transform_offset"] = (10 + 288).into();
         }
         let record: DesignComponentOccurrence = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        assert_eq!(crate::json_value(&record).unwrap(), wire);
         let owned = DesignComponentOccurrenceWire::from(record.clone());
         assert_eq!(
             serde_json::to_vec(&record).unwrap(),
@@ -187,7 +187,7 @@ fn assert_absent_derived_key<T: serde::de::DeserializeOwned + serde::Serialize>(
 ) {
     let decoded: T = serde_json::from_str(absent).unwrap();
     assert_eq!(
-        serde_json::to_value(decoded).unwrap(),
+        crate::json_value(decoded).unwrap(),
         serde_json::from_str::<serde_json::Value>(absent).unwrap()
     );
     assert!(serde_json::from_str::<T>(explicit_null).is_err());
@@ -216,7 +216,7 @@ fn derived_instance_optional_keys_use_canonical_absence() {
     });
     let decoded: DesignDerivedInstanceReference =
         serde_json::from_value(reference.clone()).unwrap();
-    assert_eq!(serde_json::to_value(decoded).unwrap(), reference);
+    assert_eq!(crate::json_value(decoded).unwrap(), reference);
     let relation = serde_json::json!({
         "carrier_reference":{"target":1},
         "middle_reference":{"target":2},
@@ -229,8 +229,8 @@ fn derived_instance_optional_keys_use_canonical_absence() {
         }
     });
     let decoded: DesignDerivedInstanceRelation = serde_json::from_value(relation.clone()).unwrap();
-    assert_eq!(serde_json::to_value(decoded).unwrap(), relation);
+    assert_eq!(crate::json_value(decoded).unwrap(), relation);
     let source = serde_json::json!({"reference":{"target":7},"relation":relation});
     let decoded: DesignDerivedInstanceSource = serde_json::from_value(source.clone()).unwrap();
-    assert_eq!(serde_json::to_value(decoded).unwrap(), source);
+    assert_eq!(crate::json_value(decoded).unwrap(), source);
 }

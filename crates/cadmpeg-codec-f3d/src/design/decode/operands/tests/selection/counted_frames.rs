@@ -179,7 +179,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         assert_eq!(
             serde_json::from_value::<
                 crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
-            >(serde_json::to_value(&long_member).unwrap())
+            >(crate::json_value(&long_member).unwrap())
             .unwrap(),
             long_member
         );

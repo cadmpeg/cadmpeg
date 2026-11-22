@@ -182,7 +182,7 @@ fn version_four_position_preserves_its_single_matrix_row() {
     assert_eq!(legacy, positions);
     scope.captured_positions = Some(legacy);
     let decoded: DesignParameterScope =
-        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+        serde_json::from_value(crate::json_value(&scope).unwrap()).unwrap();
     assert_eq!(decoded.captured_positions, scope.captured_positions);
 }
 
@@ -299,7 +299,7 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
         assert!(ctx.resource_refusal().is_some());
     });
     scope.captured_positions = Some(positions);
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(
         wire["captured_positions"]["paths"]
             .as_array()

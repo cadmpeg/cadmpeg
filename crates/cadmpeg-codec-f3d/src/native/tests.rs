@@ -172,7 +172,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     );
     for records in round_trip.arenas().values() {
         for record in records {
-            let json = serde_json::to_value(record).unwrap();
+            let json = crate::json_value(record).unwrap();
             assert_eq!(json["id"], record.id());
             assert!(json.as_object().unwrap().len() > 1);
         }

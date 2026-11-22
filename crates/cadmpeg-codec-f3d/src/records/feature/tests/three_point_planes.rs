@@ -77,7 +77,7 @@ fn three_point_resolution_requires_one_state_and_distinct_vertex_slots() {
             .to_string()
             .contains(field));
     }
-    let wire = serde_json::to_value(&plane).unwrap();
+    let wire = crate::json_value(&plane).unwrap();
     assert_eq!(serde_json::from_value::<Plane>(wire).unwrap(), plane);
     plane.clear_resolution();
     assert!(plane

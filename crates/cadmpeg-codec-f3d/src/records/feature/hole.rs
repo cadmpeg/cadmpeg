@@ -776,13 +776,13 @@ mod tests {
         for control in [0, 1] {
             let value = serde_json::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
             let extent: super::DesignHoleExtent = serde_json::from_value(value.clone()).unwrap();
-            assert_eq!(serde_json::to_value(extent).unwrap(), value);
+            assert_eq!(crate::json_value(extent).unwrap(), value);
         }
         let directed = serde_json::json!({
             "extent_control": 0, "direction_control": {"value": 1, "offset": 7}
         });
         let extent: super::DesignHoleExtent = serde_json::from_value(directed.clone()).unwrap();
-        assert_eq!(serde_json::to_value(extent).unwrap(), directed);
+        assert_eq!(crate::json_value(extent).unwrap(), directed);
         assert!(serde_json::from_value::<super::DesignHoleExtent>(
             serde_json::json!({"direction_control": {"value": 2, "offset": 7}})
         )
@@ -794,7 +794,7 @@ mod tests {
         let worded =
             serde_json::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
         let extent: super::DesignHoleExtent = serde_json::from_value(worded.clone()).unwrap();
-        assert_eq!(serde_json::to_value(extent).unwrap(), worded);
+        assert_eq!(crate::json_value(extent).unwrap(), worded);
         assert!(serde_json::from_value::<super::DesignHoleExtent>(
             serde_json::json!({"leading_word": null, "extent_control": 0})
         )
@@ -802,7 +802,7 @@ mod tests {
         let bare = serde_json::json!({});
         let extent: super::DesignHoleExtent = serde_json::from_value(bare.clone()).unwrap();
         assert_eq!(extent.extent_control, None);
-        assert_eq!(serde_json::to_value(extent).unwrap(), bare);
+        assert_eq!(crate::json_value(extent).unwrap(), bare);
         assert!(serde_json::from_value::<super::DesignHoleExtent>(
             serde_json::json!({"extent_control": null})
         )
@@ -901,7 +901,7 @@ mod tests {
         u_axis: [f64; 3],
         v_axis: [f64; 3],
     ) -> DesignHoleConstruction {
-        let mut value = serde_json::to_value(carrier(19, A, &[(17, position)])).unwrap();
+        let mut value = crate::json_value(carrier(19, A, &[(17, position)])).unwrap();
         value["locations"][0]["plane"] = serde_json::json!({
             "selection_record_index": 1, "record_index": 2,
             "origin": origin, "origin_offset": 3,
@@ -934,7 +934,7 @@ mod tests {
     #[test]
     fn face_point_carrier_off_its_record_needs_the_plane_and_one_record() {
         assert_eq!(entry_points(&carrier(19, A, &[(17, B)])), None);
-        let mut two = serde_json::to_value(plane_located(
+        let mut two = crate::json_value(plane_located(
             B,
             [0.0, 0.0, 2.0],
             [1.0, 0.0, 0.0],
@@ -946,7 +946,7 @@ mod tests {
         let two: DesignHoleConstruction = serde_json::from_value(two).unwrap();
         assert_eq!(entry_points(&two), None);
         // Another point-data rule never takes its position from the plane.
-        let mut other = serde_json::to_value(plane_located(
+        let mut other = crate::json_value(plane_located(
             B,
             [0.0, 0.0, 2.0],
             [1.0, 0.0, 0.0],
@@ -961,7 +961,7 @@ mod tests {
     #[test]
     fn a_location_plane_round_trips() {
         let located = plane_located(B, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-        let value = serde_json::to_value(&located).unwrap();
+        let value = crate::json_value(&located).unwrap();
         assert_eq!(
             value["locations"][0]["plane"]["origin"],
             serde_json::json!([0.0, 0.0, 2.0])
@@ -1000,7 +1000,7 @@ mod tests {
     #[test]
     fn hole_locations_round_trip_and_stay_absent_when_empty() {
         let located = carrier(19, A, &[(17, A)]);
-        let value = serde_json::to_value(&located).unwrap();
+        let value = crate::json_value(&located).unwrap();
         assert_eq!(
             value["locations"],
             serde_json::json!([{
@@ -1009,7 +1009,7 @@ mod tests {
         );
         let decoded: DesignHoleConstruction = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, located);
-        let bare = serde_json::to_value(carrier(19, A, &[])).unwrap();
+        let bare = crate::json_value(carrier(19, A, &[])).unwrap();
         assert!(bare.get("locations").is_none());
     }
 

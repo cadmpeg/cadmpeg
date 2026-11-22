@@ -495,7 +495,7 @@ mod tests {
             "pull":{"value":93,"offset":75},"tool":{"value":92,"offset":86},"faces":{"value":91,"offset":101}
         });
         let present: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(present).unwrap(), wire);
+        assert_eq!(crate::json_value(present).unwrap(), wire);
         assert!(present.parting.unwrap().fixed_edges.is_none());
         wire["parting"]["fixed_edges"] = serde_json::json!({"value":94,"offset":75});
         let with_fixed: super::DesignDraftFlags = serde_json::from_value(wire.clone()).unwrap();
@@ -551,13 +551,13 @@ mod tests {
             ..without.clone()
         };
         for value in [both, one, without, flagged] {
-            let wire = serde_json::to_value(&value).unwrap();
+            let wire = crate::json_value(&value).unwrap();
             assert_eq!(
                 serde_json::from_value::<DesignShellOperation>(wire).unwrap(),
                 value
             );
         }
-        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        let mut wire = crate::json_value(operation(None)).unwrap();
         assert!(wire["wall_slots"].get("outside").is_none());
         wire["wall_slots"]["outside"] = serde_json::Value::Null;
         let error = serde_json::from_value::<DesignShellOperation>(wire)
@@ -565,7 +565,7 @@ mod tests {
             .to_string();
         assert!(error.contains("outside"), "{error}");
 
-        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        let mut wire = crate::json_value(operation(None)).unwrap();
         wire["wall_slots"] = serde_json::Value::Null;
         let error = serde_json::from_value::<DesignShellOperation>(wire)
             .unwrap_err()

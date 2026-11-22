@@ -100,7 +100,7 @@ fn parameter_scope_native_writer_refuses_retained_limit_before_outer_clone() {
         super::DesignScopePayload::WorkPoint(None),
         1,
     );
-    let expected = serde_json::to_value(super::DesignParameterScopeSerde::from(scope.clone()))
+    let expected = crate::json_value(super::DesignParameterScopeSerde::from(scope.clone()))
         .expect("owned scope wire");
     super::SCOPE_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(&scope, expected);
@@ -166,7 +166,7 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
     crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &scope,
-        serde_json::to_value(owned).expect("owned scope value"),
+        crate::json_value(owned).expect("owned scope value"),
     );
     super::SCOPE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     crate::records::feature::work_geometry::WORK_GEOMETRY_CLONE_COUNT
@@ -408,7 +408,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         ))
     };
     let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, scope.clone(), remap).unwrap();
-    let mut expected = serde_json::to_value(expected)
+    let mut expected = crate::json_value(expected)
         .unwrap()
         .as_object()
         .unwrap()
@@ -432,7 +432,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         .unwrap();
     let record = &native.arenas()["design_parameter_scopes"][0];
     let expected = cadmpeg_ir::schema::rewrite::identities(&ctx, plane_scope, remap).unwrap();
-    let mut expected = serde_json::to_value(expected)
+    let mut expected = crate::json_value(expected)
         .unwrap()
         .as_object()
         .unwrap()
@@ -498,14 +498,14 @@ fn emboss_scope_wire_retains_native_controls_and_matches_the_borrowed_writer() {
         serde_json::to_vec(&scope).unwrap(),
         serde_json::to_vec(&owned).unwrap()
     );
-    let json = serde_json::to_value(&scope).unwrap();
+    let json = crate::json_value(&scope).unwrap();
     let restored: super::DesignParameterScope = serde_json::from_value(json).unwrap();
     assert_eq!(restored, scope);
 }
 
 #[test]
 fn emboss_scope_wire_refuses_another_family_and_invalid_owner_links() {
-    let source = serde_json::to_value(emboss_scope()).unwrap();
+    let source = crate::json_value(emboss_scope()).unwrap();
     let mut wrong_kind = source.clone();
     wrong_kind["kind"] = serde_json::json!("Thread");
     assert!(serde_json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
@@ -604,7 +604,7 @@ fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
                 hole_type: None,
             });
         }
-        let wire = serde_json::to_value(&scope).unwrap();
+        let wire = crate::json_value(&scope).unwrap();
         let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded.hole_extent(), scope.hole_extent());
         assert!(decoded.hole_construction().is_none());
@@ -627,7 +627,7 @@ fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses
         super::DesignScopePayload::CopyPaste(None),
         1,
     );
-    let mut wire = serde_json::to_value(&scope).unwrap();
+    let mut wire = crate::json_value(&scope).unwrap();
     assert!(wire.get("occurrence_transfer_intent").is_none());
     let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert!(loaded.occurrence_transfer_intent.is_none());
@@ -644,7 +644,7 @@ fn occurrence_transfer_intent_wire_accepts_absence_and_partial_value_but_refuses
     wire["occurrence_transfer_intent"] = partial.clone();
     let loaded: super::DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
-        serde_json::to_value(loaded).unwrap()["occurrence_transfer_intent"],
+        crate::json_value(loaded).unwrap()["occurrence_transfer_intent"],
         partial
     );
     wire["occurrence_transfer_intent"] = serde_json::Value::Null;
@@ -666,9 +666,9 @@ fn native_profile_wire_round_trips_and_rejects_null() {
             &mut Vec::new(),
         )
         .unwrap();
-        let wire = serde_json::to_value(&scope).unwrap();
+        let wire = crate::json_value(&scope).unwrap();
         let loaded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(loaded).unwrap(), wire);
+        assert_eq!(crate::json_value(loaded).unwrap(), wire);
         let mut invalid = wire;
         invalid["extrude_native_profiles"] = serde_json::Value::Null;
         assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
@@ -700,7 +700,7 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
             }],
         });
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(wire["fillet_sets"]["sets"][0]["group_record_index"], 3);
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.fillet_sets(), scope.fillet_sets());
@@ -741,7 +741,7 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
             }],
         });
     }
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     assert_eq!(wire["chamfer_sets"]["sets"][0]["group_record_index"], 3);
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.chamfer_sets(), scope.chamfer_sets());
@@ -759,8 +759,8 @@ fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
     use super::{DesignFeatureKind, DesignParameterScope, DesignParameterScopeSerde};
     let mut scope = crate::test_support::work_plane::scope_referencing(&[73]);
     scope.display_name = Some("Body Split".into());
-    let wire = serde_json::to_value(&scope).unwrap();
-    let owned = serde_json::to_value(DesignParameterScopeSerde::from(scope.clone())).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
+    let owned = crate::json_value(DesignParameterScopeSerde::from(scope.clone())).unwrap();
     assert_eq!(wire, owned);
     let loaded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(loaded, scope);
@@ -773,7 +773,7 @@ fn work_plane_scope_display_name_wire_validates_bounds_and_kind() {
 
     let mut non_work_plane = DesignParameterScope::empty("scope", DesignFeatureKind::Extrude, 1);
     non_work_plane.display_name = Some("Body Split".into());
-    let bad_kind = serde_json::to_value(&non_work_plane).unwrap();
+    let bad_kind = crate::json_value(&non_work_plane).unwrap();
     assert!(serde_json::from_value::<DesignParameterScope>(bad_kind).is_err());
 }
 
@@ -795,11 +795,11 @@ fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
         }))
         .unwrap(),
     );
-    let wire = serde_json::to_value(&scope).unwrap();
+    let wire = crate::json_value(&scope).unwrap();
     let decoded = serde_json::from_value::<super::DesignParameterScope>(wire.clone()).unwrap();
     assert_eq!(decoded, scope);
     assert_eq!(
-        serde_json::to_value(super::DesignParameterScopeSerde::from(scope)).unwrap(),
+        crate::json_value(super::DesignParameterScopeSerde::from(scope)).unwrap(),
         wire
     );
     for field in ["target", "matrix"] {
@@ -862,7 +862,7 @@ fn a_chamfer_scope_with_fixed_lanes_and_a_set_list_round_trips_as_one_payload() 
     let scope: super::DesignParameterScope = serde_json::from_value(value.clone()).unwrap();
     assert!(scope.fixed_chamfer_parameters().is_some());
     assert!(scope.chamfer_sets().is_some());
-    let written = serde_json::to_value(&scope).unwrap();
+    let written = crate::json_value(&scope).unwrap();
     assert_eq!(
         written["fixed_chamfer_parameters"],
         value["fixed_chamfer_parameters"]

@@ -248,7 +248,7 @@ fn role43_section_is_independent_of_missing_scalar_and_unknown_operation() {
     assert!(notes
         .iter()
         .any(|note| note.code == F3dLossCode::FeatureSweepOperationUnresolved.kind()));
-    assert!(serde_json::to_value(shape)
+    assert!(crate::json_value(shape)
         .unwrap()
         .to_string()
         .contains("operand-group#30"));
@@ -401,7 +401,7 @@ fn profile_carrier_is_preserved_without_widening_to_whole_sketch() {
         ],
         &OutputFacts::default(),
     );
-    let value = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let value = crate::json_value(feature.evaluation.definition()).unwrap();
     assert!(value.to_string().contains("design-record-header#2000"));
     assert!(value.to_string().contains("operand-group#32"));
     assert!(notes

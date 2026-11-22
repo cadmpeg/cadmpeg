@@ -39,7 +39,7 @@ fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
             case.label
         );
         let replay: crate::records::sketch_geometry::SketchText =
-            serde_json::from_value(serde_json::to_value(&text).unwrap()).unwrap();
+            serde_json::from_value(crate::json_value(&text).unwrap()).unwrap();
         assert_eq!(replay, text, "{}", case.label);
     }
 }
@@ -80,7 +80,7 @@ fn native_sketch_text_refuses_zero_height() {
         None,
     ))
     .expect("sketch text record");
-    let mut zero_height = serde_json::to_value(&text).expect("serialize sketch text");
+    let mut zero_height = crate::json_value(&text).expect("serialize sketch text");
     zero_height["height"] = serde_json::json!(0.0);
     assert!(
         serde_json::from_value::<crate::records::sketch_geometry::SketchText>(zero_height).is_err()
@@ -95,7 +95,7 @@ fn native_sketch_text_refuses_negative_width_factor() {
         None,
     ))
     .expect("sketch text record");
-    let mut negative_width = serde_json::to_value(&text).expect("serialize sketch text");
+    let mut negative_width = crate::json_value(&text).expect("serialize sketch text");
     negative_width["width_factor"] = serde_json::json!(-1.0);
     assert!(
         serde_json::from_value::<crate::records::sketch_geometry::SketchText>(negative_width)

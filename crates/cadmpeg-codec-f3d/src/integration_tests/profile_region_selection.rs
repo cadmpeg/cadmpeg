@@ -429,7 +429,7 @@ fn a_selection_beside_a_full_ellipse_reports_the_island_absence_assumption() {
         json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
         json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
         json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
-        serde_json::to_value(ellipse).unwrap(),
+        crate::json_value(ellipse).unwrap(),
     ];
     let (profile, losses) =
         bound_fixture_with_losses(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 1, 2, 3, 4]));

@@ -55,7 +55,7 @@ fn silhouette_split_projects_the_saved_mode_direction_and_body_group() {
     };
     assert_eq!(native, &group.id);
     assert!((direction.get().x - 2.5).abs() < EPS_DIRECTION);
-    let wire = serde_json::to_value(&projected).unwrap();
+    let wire = crate::json_value(&projected).unwrap();
     assert_eq!(wire["value"]["kind"], "silhouette_split");
     assert_eq!(wire["value"]["value"]["mode"], "shelled_body");
     assert_eq!(

@@ -28,12 +28,12 @@ fn parameter_owner_orders_preserve_wire_fields() {
         input.record_index = owner;
         input.parameter_record_index = parameter;
         input.companion_record_index = companion;
-        let json = serde_json::to_value(&input).unwrap();
+        let json = crate::json_value(&input).unwrap();
         let value = DesignParameterOwner::try_from(input).unwrap();
         assert_eq!(value.record_index(), owner);
         assert_eq!(value.parameter_record_index(), parameter);
         assert_eq!(value.companion_record_index(), companion);
-        assert_eq!(serde_json::to_value(&value).unwrap(), json);
+        assert_eq!(crate::json_value(&value).unwrap(), json);
         assert_eq!(
             serde_json::from_value::<DesignParameterOwner>(json).unwrap(),
             value
@@ -63,10 +63,10 @@ fn parameter_owner_frame_forms_are_closed() {
         input.evaluated_value_offset = input.byte_offset + delta;
         input.variant = variant;
         assert!(DesignParameterOwner::try_from(input.clone()).is_ok());
-        assert!(serde_json::from_value::<DesignParameterOwner>(
-            serde_json::to_value(input).unwrap()
-        )
-        .is_ok());
+        assert!(
+            serde_json::from_value::<DesignParameterOwner>(crate::json_value(input).unwrap())
+                .is_ok()
+        );
     }
     for (field, value) in [
         ("frame_length", serde_json::json!(0)),
@@ -78,7 +78,7 @@ fn parameter_owner_frame_forms_are_closed() {
         ("parameter_record_index", serde_json::json!(12)),
         ("companion_record_index", serde_json::json!(11)),
     ] {
-        let mut json = serde_json::to_value(wire()).unwrap();
+        let mut json = crate::json_value(wire()).unwrap();
         json[field] = value;
         assert!(
             serde_json::from_value::<DesignParameterOwner>(json).is_err(),
@@ -100,7 +100,7 @@ fn parameter_owner_rejects_nonfinite_values_and_index_overflow() {
     input.record_index = u32::MAX;
     input.parameter_record_index = u32::MAX;
     input.companion_record_index = u32::MAX;
-    let json = serde_json::to_value(&input).unwrap();
+    let json = crate::json_value(&input).unwrap();
     assert!(DesignParameterOwner::try_from(input).is_err());
     assert!(serde_json::from_value::<DesignParameterOwner>(json).is_err());
 }
@@ -114,10 +114,10 @@ fn parameter_owner_legacy_forms_keep_external_scalar_offsets() {
         input.scope_record_index = scope;
         input.evaluated_value_offset = 1000;
         input.variant = None;
-        let json = serde_json::to_value(&input).unwrap();
+        let json = crate::json_value(&input).unwrap();
         let owner = DesignParameterOwner::try_from(input).unwrap();
         assert_eq!(owner.evaluated_value_offset(), 1000);
-        assert_eq!(serde_json::to_value(owner).unwrap(), json);
+        assert_eq!(crate::json_value(owner).unwrap(), json);
     }
 }
 
@@ -125,14 +125,14 @@ fn parameter_owner_legacy_forms_keep_external_scalar_offsets() {
 fn text_parameter_owner_stores_its_text_in_place_of_the_scalar() {
     let mut input = wire();
     input.evaluated_value_offset = 320;
-    let mut json = serde_json::to_value(&input).unwrap();
+    let mut json = crate::json_value(&input).unwrap();
     json["text_value"] = "AB".into();
     json["text_value_offset"] = 144.into();
     let owner: DesignParameterOwner = serde_json::from_value(json.clone()).unwrap();
     assert_eq!(owner.text_value(), Some("AB"));
     assert_eq!(owner.frame_length(), 104);
     assert_eq!(owner.evaluated_value_offset(), 320);
-    assert_eq!(serde_json::to_value(&owner).unwrap(), json);
+    assert_eq!(crate::json_value(&owner).unwrap(), json);
 
     let mut long = json;
     long["text_value"] = "Hello".into();

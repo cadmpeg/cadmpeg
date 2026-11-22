@@ -47,11 +47,11 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
 fn entity_selection_serialization_form_validates_wire() {
     let mut wire = entity_selection_wire_for_borrowed();
     let default: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(default).unwrap(), wire);
+    assert_eq!(crate::json_value(default).unwrap(), wire);
 
     wire["serialization_form"] = 1.into();
     let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+    assert_eq!(crate::json_value(operand).unwrap(), wire);
 
     wire["serialization_form"] = 2.into();
     assert!(serde_json::from_value::<DesignEntitySelectionOperand>(wire).is_err());
@@ -160,7 +160,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         let parsed = serde_json::from_value::<super::DesignLoftLegacyBodyCarrier>(wire.clone());
         if ordinal == 255 {
             assert_eq!(
-                serde_json::to_value(parsed.expect("maximum ordinal")).unwrap(),
+                crate::json_value(parsed.expect("maximum ordinal")).unwrap(),
                 wire
             );
         } else {
@@ -218,7 +218,7 @@ fn paired_entity_selection_retains_independent_successor_index() {
         wire["next_record_index"] = next_record_index.into();
         let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(operand.next_record_index(), next_record_index);
-        assert_eq!(serde_json::to_value(&operand).unwrap(), wire);
+        assert_eq!(crate::json_value(&operand).unwrap(), wire);
         rejects_changed_fields::<DesignEntitySelectionOperand>(
             wire,
             &[

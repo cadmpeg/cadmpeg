@@ -18,7 +18,7 @@ fn decoded(bytes: &[u8]) -> serde_json::Value {
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
-    serde_json::to_value(result.ir()).expect("serialize the IR")
+    crate::json_value(result.ir()).expect("serialize the IR")
 }
 
 /// The definition of the feature named `name`.
