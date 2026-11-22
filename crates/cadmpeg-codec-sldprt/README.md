@@ -125,7 +125,13 @@ state that shapes the solid is written as edited over the stored solid, and a
 the solid shows the state before the edit. The writer does not write the active
 configuration snapshot that the decoder synthesizes from the model; an edit of
 that snapshot which the model does not state gets a
-`writer.configuration-snapshot-edit-unwritten` loss.
+`writer.configuration-snapshot-edit-unwritten` loss. An edit that the native
+records cannot carry keeps the stored record or value: an edit of a
+display-only relation parameter or a parameter value that the written
+expression does not state gets a `writer.parameter-edit-unwritten` loss, and
+an edited compact selection or a feature definition that the encoder cannot
+restate gets a `writer.feature-edit-unwritten` loss. Semantic writes of
+compound-file parts are refused: the writer has no compound-file serializer.
 
 With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
