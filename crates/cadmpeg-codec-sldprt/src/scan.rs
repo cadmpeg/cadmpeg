@@ -76,11 +76,15 @@ fn native(
     budget.retain(32)?;
     scan.source_version = Some(version.to_string());
     let mut found = false;
-    while reader.remaining() >= block::MARKER_VALUE.len() {
+    while reader.remaining() > 0 {
         budget.check()?;
         let at = reader.position();
         let relative = at - source.start();
-        if !source.window()[relative..].starts_with(&block::MARKER_VALUE) {
+        let rest = &source.window()[relative..];
+        if rest.len() < block::MARKER_VALUE.len() && block::MARKER_VALUE.starts_with(rest) {
+            return Err(StopReason::Truncated("SolidWorks block header".into()));
+        }
+        if !rest.starts_with(&block::MARKER_VALUE) {
             reader.seek(
                 at.checked_add(1)
                     .ok_or_else(|| malformed("SolidWorks marker position"))?,
@@ -146,10 +150,6 @@ fn native(
             return Err(malformed("SolidWorks history block size or checksum"));
         }
         found |= wrapped(&expanded, budget, scan)?;
-    }
-    let tail = &source.window()[reader.position() - source.start()..];
-    if !tail.is_empty() && block::MARKER_VALUE.starts_with(tail) {
-        return Err(StopReason::Truncated("SolidWorks block header".into()));
     }
     Ok(found)
 }

@@ -200,8 +200,13 @@ fn scan_sldprt_truncated_non_history_block_is_skipped() {
 
 #[test]
 fn scan_sldprt_history_block_cut_in_its_header_is_truncated() {
-    for cut in [3, 5, 8] {
+    let preview = make_block(0x42, "Preview/Thumbnail", LIST);
+    for (lead, cut) in [&[][..], &preview[..], &[0][..]]
+        .into_iter()
+        .flat_map(|lead| (1..=5).chain([8]).map(move |cut| (lead, cut)))
+    {
         let mut bytes = source(LIST);
+        bytes.extend_from_slice(lead);
         let marker = make_block(0x42, "Contents/Keywords", LIST);
         bytes.extend_from_slice(&marker[..cut]);
         let scan = SldprtCodec::scan_design(
@@ -211,10 +216,15 @@ fn scan_sldprt_history_block_cut_in_its_header_is_truncated() {
         );
         assert!(
             matches!(scan.stop_reason, Some(StopReason::Truncated(_))),
-            "cut at {cut}"
+            "cut at {cut} after {} lead bytes",
+            lead.len()
         );
         let census = scan.census.expect("first block's admitted rows");
-        assert!(!census.complete, "cut at {cut}");
+        assert!(
+            !census.complete,
+            "cut at {cut} after {} lead bytes",
+            lead.len()
+        );
     }
 }
 
