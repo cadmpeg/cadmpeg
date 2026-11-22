@@ -1363,6 +1363,19 @@ fn revolution_axis_outside_the_profile_plane_is_named_and_kept() {
     let in_plane = [profile.clone(), revolve(Point3::new(6.0, 0.0, 0.0))];
     assert!(revolution_axis_off_profile_plane_note(&in_plane, [], &sketches).is_none());
 
+    // Positions within the linear resolution coincide.
+    let resolution = crate::brep::graph::LINEAR_RESOLUTION_MM;
+    let within = [
+        profile.clone(),
+        revolve(Point3::new(6.0, 0.0, 0.5 * resolution)),
+    ];
+    assert!(revolution_axis_off_profile_plane_note(&within, [], &sketches).is_none());
+    let beyond = [
+        profile.clone(),
+        revolve(Point3::new(6.0, 0.0, 2.0 * resolution)),
+    ];
+    assert!(revolution_axis_off_profile_plane_note(&beyond, [], &sketches).is_some());
+
     // The first triple of a nine-value record, (0, 0, t), read as the point.
     let off_plane = [profile.clone(), revolve(Point3::new(0.0, 0.0, 6.0))];
     let note = revolution_axis_off_profile_plane_note(&off_plane, [], &sketches)

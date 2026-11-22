@@ -1168,7 +1168,8 @@ pub(crate) fn bind_profile_revolution_axes(
 
 /// Name the revolutions whose axis lies outside the plane of their profile
 /// sketch (open item DI-85). The axis is kept: the stored record is the only
-/// axis the revolution states.
+/// axis the revolution states. The plane origin and the axis point are model
+/// positions, which coincide within the linear resolution.
 pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
     features: &'a [cadmpeg_ir::features::Feature],
     configuration_states: impl IntoIterator<
@@ -1177,7 +1178,6 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
     sketches: &[Sketch],
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     const DIRECTION_TOLERANCE: f64 = 1e-9;
-    const DISTANCE_TOLERANCE: f64 = 1e-6;
     let mut by_id = HashMap::new();
     for feature in features {
         by_id.insert(&feature.id, feature);
@@ -1233,7 +1233,7 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
             axis.origin.z - origin.z,
         );
         let in_plane = (axis.direction.dot(normal) / length).abs() <= DIRECTION_TOLERANCE
-            && (offset.dot(normal) / length).abs() <= DISTANCE_TOLERANCE;
+            && (offset.dot(normal) / length).abs() <= crate::brep::graph::LINEAR_RESOLUTION_MM;
         if !in_plane && seen.insert(id) {
             let name = by_id
                 .get(id)
