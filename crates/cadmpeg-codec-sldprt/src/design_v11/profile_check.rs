@@ -12,8 +12,9 @@
 //!
 //! The sketch's non-construction curves are cut where they touch or cross,
 //! into pieces whose ends are joints merged within the linear resolution. A
-//! piece that lies along another piece between the same joints repeats it
-//! and bounds nothing of its own. A piece closes where a closed chain of
+//! piece of a curve outside the stored loops that lies along another piece
+//! between the same joints repeats it and bounds nothing of its own. A piece
+//! closes where a closed chain of
 //! pieces runs through it: a circle no curve touches always, and another
 //! piece where it is no bridge of the graph of joints. A dangling curve is a
 //! bridge and closes nothing.
@@ -196,9 +197,11 @@ pub(super) fn check(
     Ok(found)
 }
 
-/// The curves of `state_zero` that the curves of `live` close through:
-/// without them, a curve of `live` that closes in the whole sketch would
-/// close nothing. Empty where the check cannot place the curves.
+/// The curves of `state_zero` that a curve of `live` closes through: each
+/// one joined, through curve ends and contacts, to a curve of `live` that
+/// closes in the whole sketch and closes nothing without the curves of
+/// `state_zero`. A curve that repeats a curve of `live` joins nothing. Empty
+/// where the check cannot place the curves.
 pub(super) fn needed<'a>(
     live: &HashMap<&'a SketchEntityId, &'a PlanarCurve>,
     state_zero: &HashMap<&'a SketchEntityId, &'a PlanarCurve>,
@@ -216,37 +219,48 @@ pub(super) fn needed<'a>(
         .iter()
         .map(|entity| live.contains_key(entity))
         .collect::<Vec<_>>();
-    let live_closing = |present: &[bool]| {
-        let closing = arrangement.closing(|entity| present[entity]);
+    let closes = |closing: Vec<bool>| {
         let mut closes = vec![false; arrangement.ids.len()];
         for (piece, closing) in arrangement.pieces.iter().zip(closing) {
-            closes[piece.entity] |= closing && is_live[piece.entity];
+            closes[piece.entity] |= closing;
         }
         closes
     };
-    let target = live_closing(&vec![true; arrangement.ids.len()]);
-    let keeps = |closes: &[bool]| target.iter().zip(closes).all(|(want, has)| !want || *has);
-    if keeps(&live_closing(&is_live)) {
-        return HashSet::new();
-    }
-    if state_zero
-        .len()
-        .checked_mul(arrangement.pieces.len())
-        .is_none_or(|trials| trials > CLASSIFY_BUDGET)
+    let with = closes(arrangement.closing(|_| true));
+    let without = closes(arrangement.closing(|entity| is_live[entity]));
+    let mut parent = (0..arrangement.joints.len()).collect::<Vec<_>>();
+    for piece in arrangement
+        .pieces
+        .iter()
+        .filter(|piece| piece.repeats.is_none())
     {
-        return HashSet::new();
-    }
-    let mut present = vec![true; arrangement.ids.len()];
-    for entity in (0..arrangement.ids.len()).filter(|&entity| !is_live[entity]) {
-        present[entity] = false;
-        if !keeps(&live_closing(&present)) {
-            present[entity] = true;
+        if let Some([a, b]) = piece.joints {
+            let (a, b) = (root(&mut parent, a), root(&mut parent, b));
+            parent[a] = b;
         }
     }
-    (0..arrangement.ids.len())
-        .filter(|&entity| !is_live[entity] && present[entity])
-        .map(|entity| arrangement.ids[entity])
-        .collect()
+    let mut lost = HashSet::new();
+    for piece in &arrangement.pieces {
+        if is_live[piece.entity] && with[piece.entity] && !without[piece.entity] {
+            lost.extend(piece.joints.into_iter().flatten());
+        }
+    }
+    let lost = lost
+        .into_iter()
+        .map(|joint| root(&mut parent, joint))
+        .collect::<HashSet<_>>();
+    let mut needed = HashSet::new();
+    for piece in &arrangement.pieces {
+        if is_live[piece.entity] || piece.repeats.is_some() {
+            continue;
+        }
+        if let Some([joint, _]) = piece.joints {
+            if lost.contains(&root(&mut parent, joint)) {
+                needed.insert(arrangement.ids[piece.entity]);
+            }
+        }
+    }
+    needed
 }
 
 /// A line, an arc or a circle of the sketch.
@@ -549,7 +563,7 @@ struct Arrangement<'a> {
 }
 
 impl<'a> Arrangement<'a> {
-    /// `first` names the curves a piece that lies along another keeps.
+    /// `first` names the curves whose pieces repeat no other piece.
     fn new(
         curves: &HashMap<&'a SketchEntityId, &PlanarCurve>,
         first: impl Fn(&SketchEntityId) -> bool,
@@ -700,8 +714,9 @@ fn contacts(shapes: &[Shape]) -> Vec<Vec<Cut>> {
     cuts
 }
 
-/// Marks each piece that lies along an earlier piece between the same
-/// joints, the pieces of the curves `first` marks before the others.
+/// Marks each piece of a curve `first` leaves out that lies along an
+/// earlier piece between the same joints, the pieces of the curves `first`
+/// marks before the others.
 fn mark_repeats(pieces: &mut [Piece], first: &[bool]) {
     let mut groups = HashMap::<Option<[usize; 2]>, Vec<usize>>::new();
     for (index, piece) in pieces.iter().enumerate() {
@@ -715,6 +730,10 @@ fn mark_repeats(pieces: &mut [Piece], first: &[bool]) {
         group.sort_by_key(|&index| (!first[pieces[index].entity], index));
         let mut kept: Vec<usize> = Vec::new();
         for index in group {
+            if first[pieces[index].entity] {
+                kept.push(index);
+                continue;
+            }
             let twin = kept
                 .iter()
                 .copied()

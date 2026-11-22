@@ -217,6 +217,22 @@ fn a_second_copy_of_a_stored_curve_is_a_duplicate() {
     );
 }
 
+/// The stored profile holds the circle twice: two stored curves that repeat
+/// each other differ in nothing from the stored profile.
+#[test]
+fn stored_curves_that_repeat_each_other_differ_in_nothing() {
+    let mut curves = rectangle();
+    curves.push(("hole", circle([25.0, 15.0], 5.0)));
+    curves.push(("again", circle([25.0, 15.0], 5.0)));
+    assert_eq!(
+        check(
+            &curves,
+            &[RECTANGLE, &[("hole", false)], &[("again", false)]]
+        ),
+        Ok(vec![])
+    );
+}
+
 /// A line along the bottom edge from its middle to past the corner: the
 /// part along the edge repeats it, and the part past the corner dangles.
 #[test]
@@ -268,14 +284,17 @@ fn a_line_crossing_the_profile_is_cut_where_it_crosses() {
     );
 }
 
-/// The top edge has state `0`, as does a second copy of the bottom edge and
-/// a rectangle around the profile: only the top edge closes the profile.
+/// The top edge has state `0`, as do a line on from its corner, a second
+/// copy of the bottom edge and a rectangle around the profile: the top edge
+/// closes the profile, and the line joins it; the copy and the rectangle
+/// join nothing the profile needs.
 #[test]
-fn a_state_zero_curve_is_needed_where_live_curves_close_only_through_it() {
+fn state_zero_curves_joined_to_a_loop_that_closes_only_through_them_are_needed() {
     let rectangle = rectangle();
     let outer = [[-10.0, -10.0], [60.0, -10.0], [60.0, 40.0], [-10.0, 40.0]];
     let mut zero = vec![
         ("l2", rectangle[2].1.clone()),
+        ("tail", line([50.0, 30.0], [55.0, 30.0])),
         ("copy", line([0.0, 0.0], [50.0, 0.0])),
     ];
     for index in 0..4 {
@@ -299,8 +318,8 @@ fn a_state_zero_curve_is_needed_where_live_curves_close_only_through_it() {
     );
     let zero = keyed(&zero);
     let (live, zero) = (map(&live), map(&zero));
-    let l2 = id("l2");
-    assert_eq!(needed(&live, &zero), HashSet::from([&l2]));
+    let (l2, tail) = (id("l2"), id("tail"));
+    assert_eq!(needed(&live, &zero), HashSet::from([&l2, &tail]));
     let none = HashMap::new();
     assert_eq!(needed(&none, &zero), HashSet::new());
 }
