@@ -13,8 +13,8 @@ use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
 use super::write_generate::{
-    append_generated_object_name, append_generated_sketch_markers, generated_locus_is_point,
-    is_driven_dimension,
+    append_generated_object_name, append_generated_sketch_markers, dimension_parameter,
+    generated_locus_is_point, is_driven_dimension,
 };
 use super::{SKETCH_MARKER, SKETCH_POINT_TOLERANCE, SPATIAL_VERTEX_PREFIX};
 use crate::records::{FeatureInputLane, SketchRelationKind};
@@ -27,7 +27,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
@@ -115,6 +115,38 @@ fn holds_sketches(ir: &cadmpeg_ir::CadIr) -> bool {
         && ir.model.sketch_constraints.is_empty()
         && ir.model.spatial_sketches.is_empty()
         && ir.model.spatial_sketch_entities.is_empty())
+}
+
+/// The parameters of driven (reference) dimensions that a write generating
+/// the sketch lanes leaves out of their features' records: it writes a
+/// dimension only as a driving scalar and a parameter only as an editable
+/// dimension of its feature, so a driven parameter would read back as an
+/// editable one. A parameter is driven where the design states it `Driven`
+/// (D11) or a dimension that states it is driven binds it.
+pub(crate) fn omitted_driven_parameters(
+    ir: &cadmpeg_ir::CadIr,
+) -> HashSet<&cadmpeg_ir::features::ParameterId> {
+    if sketch_baselines(ir) != (None, None) {
+        return HashSet::new();
+    }
+    ir.design
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                parameter.definition,
+                cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+            )
+        })
+        .map(|parameter| &parameter.id)
+        .chain(
+            ir.model
+                .sketch_constraints
+                .iter()
+                .filter(|constraint| constraint.driving == Some(false))
+                .filter_map(|constraint| dimension_parameter(constraint.definition.kind())),
+        )
+        .collect()
 }
 
 /// The driven (reference) dimensions a write omits: a write that generates
@@ -428,6 +460,11 @@ fn validate_source_less_constraints(
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for constraint in &ir.model.sketch_constraints {
+        // The generated sketch omits a driven dimension, so its value and
+        // parameter decide nothing written.
+        if is_driven_dimension(ir, constraint) {
+            continue;
+        }
         let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
         else {
             validate_generated_marker_constraint(ir, constraint)?;
@@ -2111,10 +2148,15 @@ mod source_less_lane_tests {
         };
         assert!(writes_scalar(&ir));
         assert_eq!(super::omitted_driven_dimensions(&ir), 0);
+        assert!(super::omitted_driven_parameters(&ir).is_empty());
 
         ir.model.sketch_constraints[0].driving = Some(false);
         assert!(!writes_scalar(&ir));
         assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&parameter])
+        );
 
         ir.model.sketch_constraints[0].driving = None;
         ir.design
@@ -2141,6 +2183,14 @@ mod source_less_lane_tests {
             });
         assert!(!writes_scalar(&ir));
         assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+
+        // A `Driven` parameter that no dimension binds stays out of its
+        // feature's record too.
+        ir.model.sketch_constraints.clear();
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&ir.design.parameters[0].id])
+        );
     }
 
     #[test]

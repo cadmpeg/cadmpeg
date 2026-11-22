@@ -269,6 +269,8 @@ fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
         .contains("without a retained native partition"));
 }
 
+/// A driven dimension of a generated sketch and its parameter, which no
+/// record of the write holds, are each charged.
 #[test]
 fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
     use cadmpeg_ir::sketches::{
@@ -277,6 +279,22 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
     };
     let mut ir = cube();
     let point = |id: &str| SketchLocus::Entity(SketchEntityId::mint(id).unwrap());
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "D1".to_owned(),
+            expression: "2mm".to_owned(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId::mint("synthetic:test:id#reference-dimension").unwrap(),
         sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
@@ -301,9 +319,15 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
         native_ref: None,
     });
     let losses = super::super::accounting::losses(&ir, false);
-    assert!(losses.iter().any(|loss| loss.code
-        == SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
-        && loss
-            .message
-            .starts_with("1 driven (reference) sketch dimension record(s)")));
+    for prefix in [
+        "1 driven (reference) sketch dimension record(s)",
+        "1 driven (reference) dimension parameter record(s)",
+    ] {
+        assert!(
+            losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+                && loss.message.starts_with(prefix)),
+            "{prefix}: {losses:?}"
+        );
+    }
 }

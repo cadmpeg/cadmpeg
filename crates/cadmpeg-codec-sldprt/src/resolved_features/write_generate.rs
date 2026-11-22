@@ -507,7 +507,7 @@ pub(super) fn append_generated_sketch_markers(
 }
 
 /// The parameter of a dimension the generated sketch writes as a scalar.
-fn dimension_parameter(
+pub(super) fn dimension_parameter(
     definition: &SketchConstraintDefinitionInput,
 ) -> Option<&cadmpeg_ir::features::ParameterId> {
     match definition {
