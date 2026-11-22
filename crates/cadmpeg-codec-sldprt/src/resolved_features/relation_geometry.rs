@@ -426,10 +426,11 @@ pub(crate) fn project_relation_point_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
-) {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
+    let mut losses = Vec::new();
     let mut sketches_by_feature = HashMap::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -598,6 +599,18 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             let position = Point2::new(position_u * QUANTUM, position_v * QUANTUM);
+            if [u, v]
+                .into_iter()
+                .any(|value| value != 0.0 && !value.is_normal())
+            {
+                losses.push(
+                    crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.note(format!(
+                        "sketch marker {}: its stored coordinates ({u:e}, {v:e}) m are subnormal, so its relation point is not drawn",
+                        marker.id()
+                    )),
+                );
+                continue;
+            }
             let id_text = format!(
                 "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
                 marker.offset()
@@ -826,6 +839,7 @@ pub(crate) fn project_relation_point_geometry(
             );
         }
     }
+    losses
 }
 
 fn indexed_geometry_ref_matches(value: &str, owner: &str, kind: &str, index: usize) -> bool {
@@ -4123,6 +4137,9 @@ mod ownership_tests;
 
 #[cfg(test)]
 mod planar_projection_tests;
+
+#[cfg(test)]
+mod point_coordinate_tests;
 
 #[cfg(test)]
 mod spatial_projection_tests;

@@ -148,6 +148,9 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
+    /// A relation point marker whose stored coordinate pair holds a nonzero
+    /// subnormal value gives no relation point.
+    SketchPointCoordinatesSubnormal,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A sketch handle takes the arc of its `sgSketch` curve record although
@@ -454,6 +457,7 @@ impl SldprtLossCode {
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
+        Self::SketchPointCoordinatesSubnormal,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
@@ -615,6 +619,7 @@ impl SldprtLossCode {
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -809,6 +814,7 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
@@ -1052,6 +1058,7 @@ impl SldprtLossCode {
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchProfileRejected
@@ -1295,6 +1302,7 @@ mod tests {
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
+                "sketch.point-coordinates-subnormal",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",

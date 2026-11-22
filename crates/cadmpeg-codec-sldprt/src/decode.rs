@@ -3646,11 +3646,13 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    crate::resolved_features::relation_geometry::project_relation_point_geometry(
-        &mut sketch_entities,
-        &sketches,
-        &ir.model.features,
-        sketch_lanes,
+    pmi_losses.extend(
+        crate::resolved_features::relation_geometry::project_relation_point_geometry(
+            &mut sketch_entities,
+            &sketches,
+            &ir.model.features,
+            sketch_lanes,
+        ),
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut sketch_entities,
@@ -5003,11 +5005,13 @@ fn build_metadata_ir(
         &ir.model.parameters,
         sketch_lanes,
     );
-    crate::resolved_features::relation_geometry::project_relation_point_geometry(
-        &mut ir.model.sketch_entities,
-        &ir.model.sketches,
-        &ir.model.features,
-        sketch_lanes,
+    pmi_losses.extend(
+        crate::resolved_features::relation_geometry::project_relation_point_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &ir.model.features,
+            sketch_lanes,
+        ),
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut ir.model.sketch_entities,
