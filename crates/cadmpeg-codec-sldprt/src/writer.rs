@@ -3202,10 +3202,18 @@ pub(crate) fn brep_body_from(
             ))
         })?;
         if let SolvedCurveGeometry::Nurbs(nurbs) = solved {
+            // A curve whose edges are all stored reversed runs along them.
+            let nurbs = if reversed_edges.curves.contains(&curve.id) {
+                let mut reversed = nurbs.clone();
+                reversed.reverse_parameterization();
+                std::borrow::Cow::Owned(reversed)
+            } else {
+                std::borrow::Cow::Borrowed(nurbs)
+            };
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
-                nurbs,
+                &nurbs,
                 &mut next,
                 length_scale,
                 curve.id.as_str(),
