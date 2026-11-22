@@ -21,7 +21,7 @@
 //! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
 //! archive class of the `ResolvedFeatures` scalar it is bound to and the
 //! parameter class that scalar's own record states (where the two differ,
-//! the dimension has no kind and no value), the kind the decoder's
+//! the dimension is read as one no record types), the kind the decoder's
 //! own parameter took from a record, a relation, or the feature, or the
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
@@ -642,6 +642,7 @@ impl<'a> Entries<'a> {
         }
         let mut rounded = NamedCount::default();
         let mut assumed = NamedCount::default();
+        let mut decided = NamedCount::default();
         let mut unvalued = Unvalued::ALL.map(|reason| (reason, NamedCount::default()));
         let parameters = self
             .list
@@ -653,6 +654,9 @@ impl<'a> Entries<'a> {
                 }
                 if reading.assumed {
                     assumed.push(entry.id.as_str());
+                }
+                if reading.decided {
+                    decided.push(entry.id.as_str());
                 }
                 if let Some((_, named)) = unvalued
                     .iter_mut()
@@ -678,6 +682,15 @@ impl<'a> Entries<'a> {
                  not state the index at which the Config-N class map ends, so the decoder reads \
                  the token as the lane's own: {assumed}",
                 assumed.count()
+            )));
+        }
+        if !decided.is_empty() {
+            losses.push(SldprtLossCode::DesignParameterClassesDisagree.note(format!(
+                "{} dimensions whose scalars' parameter classes the decoder's class sources name \
+                 differently take the length the equation manager stores beside them for the line \
+                 that names them, where their display shows that length in the part's length unit: \
+                 {decided}",
+                decided.count()
             )));
         }
         let unvalued = unvalued
@@ -768,6 +781,10 @@ struct Reading {
     /// The kind is a class a compound-file lane's own declarations alone
     /// give the scalar's class token.
     assumed: bool,
+    /// The decoder's class sources name different classes for the
+    /// dimension's scalars, and the length the equation manager stores
+    /// beside it gave its value.
+    decided: bool,
     /// Why a dimension whose text is a bare number has no value.
     unvalued: Option<Unvalued>,
 }
@@ -854,6 +871,7 @@ fn read(
             display: None,
             rounded: false,
             assumed: false,
+            decided: false,
             unvalued: None,
         };
     }
@@ -876,6 +894,7 @@ fn read(
             display: None,
             rounded: false,
             assumed: false,
+            decided: false,
             unvalued: None,
         };
     }
@@ -902,6 +921,7 @@ fn read(
         .filter(|_| !decoded.pmi_bound(&entry.id, name));
     let mut unread = None;
     let mut assumed = false;
+    let mut decided = false;
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
@@ -938,6 +958,7 @@ fn read(
                         manager_length(shown.number, *stored, readings.length_unit)
                     });
                 if let Some(value) = manager {
+                    decided = unread == Some(Unvalued::ClassesDisagree);
                     (ValueKind::Quantity(Quantity::LENGTH), Some(value))
                 } else if native_parameter_is_length(feature, name, Some(text)) {
                     (ValueKind::Quantity(Quantity::LENGTH), None)
@@ -964,7 +985,10 @@ fn read(
                 })
             };
             match rounded(Some(places)) {
-                Some(value) => (ValueKind::Quantity(Quantity::LENGTH), Some(value)),
+                Some(value) => {
+                    decided = unread == Some(Unvalued::ClassesDisagree);
+                    (ValueKind::Quantity(Quantity::LENGTH), Some(value))
+                }
                 None => {
                     if rounded(None).is_some() {
                         unread = Some(Unvalued::Coarse);
@@ -996,6 +1020,7 @@ fn read(
                 value: Some(literal),
                 display,
                 assumed,
+                decided,
                 unvalued: None,
             };
         }
@@ -1017,6 +1042,7 @@ fn read(
         display,
         rounded: false,
         assumed,
+        decided,
         unvalued,
     }
 }

@@ -1068,13 +1068,15 @@ fn a_bare_display_number_states_no_unit() {
 /// The v11 parameters and notes of a part in millimetres, whose units table
 /// states the length precision `places`, whose equation manager stores the metres of `manager` (feature, dimension, metres) beside
 /// those dimensions, each confirmed by the line that drives it where
-/// `confirmed`, and whose decoder bound the dimensions `pmi` (feature,
-/// dimension) to a PMI record.
+/// `confirmed`, whose decoder bound the dimensions `pmi` (feature,
+/// dimension) to a PMI record, and the dimensions `contested` to a scalar
+/// whose class token the class sources name differently.
 fn parameters_with_manager(
     keywords: &[u8],
     manager: &[(&str, &str, f64)],
     confirmed: bool,
     pmi: &[(&str, &str)],
+    contested: &[(&str, &str)],
     places: Option<u32>,
 ) -> (
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
@@ -1110,6 +1112,11 @@ fn parameters_with_manager(
             native_ref: "pmi-record".to_owned(),
         });
     }
+    for (feature, name) in contested {
+        let parameter = &mut v10[position(feature, name)];
+        parameter.value = None;
+        parameter.native_ref = Some(format!("contested-{name}"));
+    }
     let manager = manager
         .iter()
         .map(|(feature, name, metres)| (v10[position(feature, name)].id.clone(), *metres))
@@ -1119,17 +1126,24 @@ fn parameters_with_manager(
     } else {
         std::collections::HashSet::new()
     };
+    let mut decoded = super::super::parameters::Decoded::new(
+        &v10,
+        &[],
+        &crate::resolved_features::assembly::ConfigurationMaps::new(),
+    );
+    for (feature, name) in contested {
+        decoded.stated.insert(
+            v10[position(feature, name)].native_ref.as_deref().unwrap(),
+            crate::resolved_features::parameter_classes::Statement::Contested,
+        );
+    }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
     super::super::parameters::Entries::new(&native.feature_histories, &timeline)
         .unwrap()
         .parameters(
             &ir.design.scopes[0].definition,
             &super::super::parameters::Readings {
-                decoded: super::super::parameters::Decoded::new(
-                    &v10,
-                    &[],
-                    &crate::resolved_features::assembly::ConfigurationMaps::new(),
-                ),
+                decoded,
                 length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
                 length_places: places,
                 bound: std::collections::HashMap::new(),
@@ -1178,6 +1192,7 @@ fn a_pmi_bound_dimension_takes_no_length_the_manager_stores_beside_its_display()
         &[("Sketch1", "D1", 0.044), ("Sketch1", "D2", 0.044)],
         false,
         &[("Sketch1", "D2")],
+        &[],
         None,
     );
     let (kind, number) = kind_and_number(&parameters, "D1");
@@ -1207,6 +1222,7 @@ fn a_pmi_bound_dimension_takes_no_length_its_line_gives() {
         &[("Sketch1", "D1", third), ("Sketch1", "D2", third)],
         true,
         &[("Sketch1", "D2")],
+        &[],
         Some(2),
     );
     let (kind, number) = kind_and_number(&parameters, "D1");
@@ -1234,12 +1250,12 @@ fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
             </Feature>
         </Keywords>"#;
     let manager = [("Sketch1", "D1", 0.007_823), ("Sketch1", "D2", 0.02)];
-    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], Some(0));
+    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], &[], Some(0));
     let (kind, number) = kind_and_number(&parameters, "D1");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!((number.unwrap() - 7.823).abs() < 1e-9, "{number:?}");
 
-    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], Some(2));
+    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], &[], Some(2));
     let (kind, number) = kind_and_number(&parameters, "D2");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!((number.unwrap() - 20.0).abs() < 1e-9, "{number:?}");
@@ -1353,5 +1369,86 @@ fn a_kind_only_a_compound_lane_declaration_gives_is_named() {
                 .ends_with(&format!(": {}, {}", ids[0], ids[2])),
         "{}",
         assumed.message
+    );
+}
+
+#[test]
+fn the_manager_length_decides_a_dimension_whose_classes_disagree() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    // The class sources of the scalars bound to D1, D2 and D3 name different
+    // classes. The equation manager stores D1's display as millimetres, and
+    // D3's display rounds the length D3's line gives at the document's
+    // precision; the length it stores beside D2 shows nothing D2 displays.
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">44</Dimension>
+                <Dimension Name="D2">12</Dimension>
+                <Dimension Name="D3">0.43</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let dimensions = [("Sketch1", "D1"), ("Sketch1", "D2"), ("Sketch1", "D3")];
+    let (parameters, notes) = parameters_with_manager(
+        keywords,
+        &[
+            ("Sketch1", "D1", 0.044),
+            ("Sketch1", "D2", 0.5),
+            ("Sketch1", "D3", 0.0013 / 3.0),
+        ],
+        true,
+        &[],
+        &dimensions,
+        Some(2),
+    );
+    let (kind, number) = kind_and_number(&parameters, "D1");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 44.0).abs() < 1e-9, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D3");
+    assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number.unwrap() - 1.3 / 3.0).abs() < 1e-12, "{number:?}");
+    let (kind, number) = kind_and_number(&parameters, "D2");
+    assert!(
+        matches!(&kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && number.is_none(),
+        "{kind:?} {number:?}"
+    );
+
+    let id = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap()
+            .id
+            .as_str()
+            .to_owned()
+    };
+    let decided = note_of(&notes, SldprtLossCode::DesignParameterClassesDisagree)
+        .expect("the dimensions the manager decided are named");
+    assert!(
+        decided
+            .message
+            .starts_with("2 dimensions whose scalars' parameter classes")
+            && decided
+                .message
+                .ends_with(&format!(": {}, {}", id("D1"), id("D3"))),
+        "{}",
+        decided.message
+    );
+    let unvalued =
+        note_of(&notes, SldprtLossCode::DesignParameterValueUnread).expect("D2 has no value");
+    assert!(
+        unvalued.message.ends_with(&format!(
+            ": 1 whose scalars' parameter classes the decoder's class sources name differently \
+             ({})",
+            id("D2")
+        )),
+        "{}",
+        unvalued.message
     );
 }
