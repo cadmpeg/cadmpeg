@@ -53,7 +53,7 @@ pub(crate) mod feature_input_operand_cell12 {
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
-/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
 /// ```
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
