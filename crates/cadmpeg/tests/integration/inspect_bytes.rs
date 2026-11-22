@@ -13,11 +13,9 @@ use std::path::{Path, PathBuf};
 use predicates::prelude::{predicate, PredicateBooleanExt, PredicateBoxExt};
 use tempfile::tempdir;
 
-mod support;
-
 use cadmpeg_test_support::compound::compound_fixture;
 
-use crate::support::cadmpeg;
+use crate::binary_support::cadmpeg;
 
 /// Writes `bytes` to `name` inside `dir` and returns the path.
 fn write(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {

@@ -17,22 +17,9 @@
 //! each fixture's `sha256` before classifying it. A fixture whose bytes moved
 //! fails on the digest, not on a dialect derived from something else.
 //!
-//! `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest`
+//! `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test integration corpus_manifest`
 //! rewrites the pins in place; review the diff as a classification change.
 //!
-//! The manifest names every codec, so the target is compiled out unless the
-//! build includes all of them.
-
-#![cfg(all(
-    feature = "catia",
-    feature = "creo",
-    feature = "f3d",
-    feature = "fcstd",
-    feature = "inventor",
-    feature = "nx",
-    feature = "sldprt",
-    feature = "step"
-))]
 #![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
 
 use std::fmt::Write as _;
@@ -65,6 +52,14 @@ struct Entry {
     /// The derived pin. Absent until the first `UPDATE_CORPUS_DIALECTS=1` run.
     #[serde(default)]
     dialect: Option<String>,
+}
+
+fn compiled_formats() -> std::collections::BTreeSet<String> {
+    cadmpeg_registry::InputCatalog::with_builtins()
+        .descriptors()
+        .filter(|descriptor| descriptor.codec().is_some())
+        .map(|descriptor| descriptor.format_id().as_str().to_owned())
+        .collect()
 }
 
 fn repo_root() -> PathBuf {
@@ -140,9 +135,19 @@ fn corpus_manifest_dialects_are_pinned_from_classification() {
         "corpus/manifest.toml declares no fixtures"
     );
 
+    let compiled = compiled_formats();
     let mut pins = Vec::new();
     let mut mismatches = Vec::new();
     for entry in &manifest.files {
+        assert!(
+            cadmpeg_registry::Format::is_known_name(&entry.format).expect("registry loads"),
+            "unknown manifest format {:?}",
+            entry.format
+        );
+        if !compiled.contains(&entry.format) {
+            pins.push(entry.dialect.clone().expect("missing dialect pin"));
+            continue;
+        }
         let bytes = std::fs::read(repo_root().join("corpus").join(&entry.filename))
             .unwrap_or_else(|error| panic!("reading {}: {error}", entry.filename));
         let mut digest = String::new();
@@ -213,16 +218,32 @@ fn corpus_manifest_dialects_name_registry_rows() {
 fn corpus_specimens_pass_check() {
     let manifest: Manifest =
         toml::from_str(&std::fs::read_to_string(manifest_path()).unwrap()).unwrap();
+    let compiled = compiled_formats();
+    let files: Vec<_> = manifest
+        .files
+        .iter()
+        .filter(|entry| compiled.contains(&entry.format))
+        .collect();
+    let formats_with_specimens = [
+        "catia", "creo", "f3d", "fcstd", "inventor", "nx", "sldprt", "step",
+    ];
+    assert!(
+        !files.is_empty()
+            || !formats_with_specimens
+                .iter()
+                .any(|format| compiled.contains(*format)),
+        "compiled formats with corpus specimens must run at least one"
+    );
     let corpus = repo_root().join("corpus");
     let next = AtomicUsize::new(0);
     let failures = Mutex::new(Vec::new());
     let workers = std::thread::available_parallelism()
         .map_or(1, NonZeroUsize::get)
-        .min(manifest.files.len());
+        .min(files.len());
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
-                while let Some(entry) = manifest.files.get(next.fetch_add(1, Ordering::Relaxed)) {
+                while let Some(entry) = files.get(next.fetch_add(1, Ordering::Relaxed)) {
                     let output = Command::new(env!("CARGO_BIN_EXE_cadmpeg"))
                         .arg("check")
                         .arg("--input-format")
