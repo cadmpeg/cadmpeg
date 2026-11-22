@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
@@ -1126,7 +1126,7 @@ mod tests {
     use crate::families::zero_entity::decode::closed_wire_loop_members;
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
         nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry,

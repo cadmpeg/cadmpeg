@@ -10,7 +10,7 @@
 //! decoded by `crate::families::standard::records::decode_curved` has a different layout, endianness,
 //! and axis reconstruction, and keeps its own reader.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::{
     NonNegativeLength, NonZeroLength, PositiveAngle, PositiveLength, PositiveReal,

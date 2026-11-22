@@ -633,7 +633,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -698,7 +698,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 2.0,
@@ -793,7 +793,7 @@ fn semantic_writer_preserves_display_list_geometry() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().geometry.points[0].position().get();
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,

@@ -2,19 +2,19 @@
 //! Loft and circular sweep construction from typed operands and owned result faces.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{
-    features::{
-        BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureOperation,
-        FeatureResultTopology, ProfileRef,
-    },
-    sketches::Sketch,
-};
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::sketches::Sketch;
 
 use super::super::{
     boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
     PmDcFeatureLabel, ProjectionIndex,
 };
-use cadmpeg_ir::features::{LoftGuidance, LoftSection};
+use cadmpeg_ir::features::profiles::LoftSection;
+use cadmpeg_ir::features::LoftGuidance;
 
 pub(super) mod evidence;
 
@@ -79,7 +79,7 @@ pub(in crate::feature) fn project(
             ),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(operation),
             ),
             native_ref: Some(source.id()),

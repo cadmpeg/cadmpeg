@@ -7,7 +7,7 @@ use super::super::{
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceObjectAssociation;

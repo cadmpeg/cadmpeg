@@ -735,7 +735,7 @@ Parsed by:
 
 Spec §6.6 · layout: byte offsets · size: 141 B
 
-Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length.
 
 Parsed by:
 - `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
@@ -747,6 +747,23 @@ Parsed by:
 | 68 | 3 | `flags` | `bytes[3]` | little | spec | Preserve the fixed flag, continuation and suffix bytes. |
 | 71 | 64 | `continuation` | `bytes[64]` | little | spec | eight zero `f64le` values |
 | 135 | 6 | `suffix` | `bytes[6]` | little | spec | 01 00 01 00 07 07 |
+
+## `surface_owned_tail`
+
+Spec §6.1 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Variable total length. The fixed surface_terminal_span_tail record is the terminal-span production in section 6.6.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `patch_identifiers` | `token_stream` | little | spec | The four terminal patch identifiers also use compact unsigned integers. |
+| 1 | `parameters` | `f64[8]` | little | spec | The eight parameter values follow the fourth identifier. |
+| 2 | `flags` | `bytes[3]` | little | spec | then three flags |
+| 3 | `continuation` | `array` | little | spec | The continuation has seven zero f64 values in the 133-byte form and eight finite f64 values in the other forms. |
+| 4 | `axis_descriptors_and_terminal` | `token_stream` | little | spec | The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`. |
 
 ## `b5_cone_payload`
 
@@ -1588,6 +1605,30 @@ Parsed by:
 | 34 | 8 | `direction_u_z` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+
+## `sphere_pcurve_coordinate_selector`
+
+Spec §6.7 · layout: byte offsets · size: 27 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector · value `[65, 17, 130]` |
+| 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
+
+## `owned_pcurve_wide_channel_header`
+
+Spec §6.3 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/wire/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `14 <K:u16le>` · value `20` |
+| 1 | 2 | `site_count` | `u16` | little | spec | This three-byte header repeats the definition-point count `K`. |
 
 ## Not tabulated
 

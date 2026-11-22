@@ -2,9 +2,11 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DesignParameter, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation, ParameterId, ParameterValue,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     SketchFeatureBinding,
 };
 use cadmpeg_ir::math::Point2;

@@ -215,7 +215,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(points[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -334,7 +334,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         let length = delta.norm();
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(points[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -518,7 +518,7 @@ fn adjacent_quad_sheet() -> CadIr {
     for index in 0..positions.len() {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(positions[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
             None,
         ));
@@ -694,7 +694,7 @@ fn planar_tetrahedron() -> CadIr {
     for index in 0..4 {
         ir.geometry.points.push(Point::new(
             point_ids[index].clone(),
-            cadmpeg_ir::features::FinitePoint3::new(positions[index])
+            cadmpeg_ir::features::geometry::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
             None,
         ));

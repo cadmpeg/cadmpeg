@@ -12,6 +12,9 @@ use crate::report::{
 };
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
+    if ir.model.drawings.is_empty() {
+        return;
+    }
     let records = DesignRecords::of(ir);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
@@ -188,12 +191,12 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 crate::features::FeatureDefinition::Operation(
                     crate::features::FeatureOperation::Native {
                         kind: "Cut".into(),

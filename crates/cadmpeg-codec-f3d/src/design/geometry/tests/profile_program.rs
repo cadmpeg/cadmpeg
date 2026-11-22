@@ -5,6 +5,7 @@ use super::*;
 const PROFILE_PROGRAM_TOLERANCE: f64 = 1.0e-7;
 
 mod arrangement_islands;
+mod counted_rings;
 mod identity_unique;
 
 fn divided_circle(two_dividers: bool) -> (Sketch, Vec<SketchEntity>) {
@@ -268,8 +269,8 @@ fn single_region(
     entities: &[SketchEntity],
     rings: &[Vec<(&SketchEntity, bool)>],
 ) -> (
-    Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
-    Vec<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>>,
+    Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>,
+    Vec<Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>>,
 ) {
     let regions = member_regions(sketch, entities, rings).expect("one region");
     let [SketchProfileRegion::Trimmed {
@@ -288,7 +289,9 @@ fn single_region(
     )
 }
 
-fn ring_entities(ring: &[cadmpeg_ir::features::SketchProfileBoundaryUse]) -> Vec<SketchEntityId> {
+fn ring_entities(
+    ring: &[cadmpeg_ir::features::profiles::SketchProfileBoundaryUse],
+) -> Vec<SketchEntityId> {
     let mut entities = ring
         .iter()
         .map(|use_| use_.entity.clone())
@@ -822,7 +825,7 @@ fn a_circle_edge_across_two_pi_boxes_its_axis_extreme() {
     let end = |angle: f64| Point2::new(angle.cos(), angle.sin());
     let edge = SketchArrangementEdge {
         nodes: [0, 1],
-        boundary: cadmpeg_ir::features::SketchProfileBoundaryUse {
+        boundary: cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
             entity: circle.id().clone(),
             parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap(),
             reversed: false,
@@ -1585,4 +1588,275 @@ fn a_named_coincident_curve_that_a_list_omits_still_blocks_the_match() {
         (bottom, true),
     ]];
     assert!(member_selection_without(&sketch, &entities, &ring, &[long]).is_none());
+}
+
+#[test]
+fn a_pruned_interior_crossing_can_name_the_crossed_curve_once() {
+    let id = SketchId::mint("synthetic:test:id#crossed-bottom").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (10.0, 5.0));
+    let sketch = sketch_with_loops(id.clone(), &[&entities]);
+    entities.push(line_entity(&id, "crossing", (5.0, -3.0), (5.0, 2.0)));
+    let ring = || {
+        entities[..4]
+            .iter()
+            .map(|entity| (entity, false))
+            .collect::<Vec<_>>()
+    };
+    let selected = member_selection(&sketch, &entities, &[ring()]).unwrap();
+    assert!(selected.crossing_runs_assumed());
+    let SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    } = &selected.regions[0]
+    else {
+        panic!("trimmed rectangle");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 5);
+    let bottom = outer_boundary
+        .iter()
+        .filter(|use_| use_.entity == *entities[0].id())
+        .collect::<Vec<_>>();
+    assert_eq!(bottom.len(), 2);
+    assert_eq!(bottom[0].parameter_range.endpoints(), [0.0, 0.5]);
+    assert_eq!(bottom[1].parameter_range.endpoints(), [0.5, 1.0]);
+    let exact = member_selection(
+        &sketch,
+        &entities,
+        &[vec![
+            (&entities[0], false),
+            (&entities[0], false),
+            (&entities[1], false),
+            (&entities[2], false),
+            (&entities[3], false),
+        ]],
+    )
+    .unwrap();
+    assert!(!exact.crossing_runs_assumed());
+    let mut reversed = ring();
+    reversed[0].1 = true;
+    assert!(member_selection(&sketch, &entities, &[reversed]).is_none());
+}
+
+#[test]
+fn an_endpoint_split_keeps_its_fragment_multiplicity() {
+    let id = SketchId::mint("synthetic:test:id#endpoint-bottom").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (10.0, 5.0));
+    let sketch = sketch_with_loops(id.clone(), &[&entities]);
+    entities.push(line_entity(&id, "spur", (5.0, 0.0), (5.0, -3.0)));
+    let ring = entities[..4].iter().map(|entity| (entity, false)).collect();
+    assert!(member_selection(&sketch, &entities, &[ring]).is_none());
+}
+
+#[test]
+fn a_crossing_that_divides_the_material_keeps_its_nodes() {
+    let id = SketchId::mint("synthetic:test:id#divided-bottom").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (10.0, 5.0));
+    let sketch = sketch_with_loops(id.clone(), &[&entities]);
+    entities.push(line_entity(&id, "divider", (5.0, -3.0), (5.0, 8.0)));
+    let ring = entities[..4].iter().map(|entity| (entity, false)).collect();
+    assert!(member_selection(&sketch, &entities, &[ring]).is_none());
+}
+
+#[test]
+fn counted_rings_can_mix_exact_fragments_and_pruned_crossing_runs() {
+    let id = SketchId::mint("synthetic:test:id#mixed-crossing-rings").unwrap();
+    let mut entities = rectangle(&id, "first", (0.0, 0.0), (10.0, 5.0));
+    entities.extend(rectangle(&id, "second", (20.0, 0.0), (30.0, 5.0)));
+    let sketch = sketch_with_loops(id.clone(), &[&entities[..4], &entities[4..8]]);
+    entities.push(line_entity(&id, "first-crossing", (5.0, -3.0), (5.0, 2.0)));
+    entities.push(line_entity(
+        &id,
+        "second-crossing",
+        (25.0, -3.0),
+        (25.0, 2.0),
+    ));
+    let selected = member_selection(
+        &sketch,
+        &entities,
+        &[
+            ring(&entities[..4], false),
+            vec![
+                (&entities[4], false),
+                (&entities[4], false),
+                (&entities[5], false),
+                (&entities[6], false),
+                (&entities[7], false),
+            ],
+        ],
+    )
+    .unwrap();
+    assert!(selected.crossing_runs_assumed());
+    assert_eq!(selected.regions.len(), 2);
+    for region in selected.regions {
+        let SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = region
+        else {
+            panic!("trimmed rectangle");
+        };
+        assert_eq!(outer_boundary.len(), 5);
+        assert!(hole_boundaries.is_empty());
+    }
+}
+
+#[test]
+fn a_pruned_crossing_run_can_span_the_start_of_the_boundary_cycle() {
+    let id = SketchId::mint("synthetic:test:id#crossed-cycle-start").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (10.0, 5.0));
+    entities[0] = line_entity(&id, "side-0", (10.0, 0.0), (0.0, 0.0));
+    let sketch = sketch_with_loops(id.clone(), &[]);
+    entities.push(line_entity(&id, "crossing", (5.0, -3.0), (5.0, 2.0)));
+    let selected = member_selection(
+        &sketch,
+        &entities,
+        &[vec![
+            (&entities[0], true),
+            (&entities[1], false),
+            (&entities[2], false),
+            (&entities[3], false),
+        ]],
+    )
+    .unwrap();
+    assert!(selected.crossing_runs_assumed());
+    let SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    } = &selected.regions[0]
+    else {
+        panic!("trimmed rectangle");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 5);
+    let pieces = outer_boundary
+        .iter()
+        .filter(|use_| use_.entity == *entities[0].id())
+        .collect::<Vec<_>>();
+    assert_eq!(pieces.len(), 2);
+    assert!(pieces.iter().all(|use_| use_.reversed));
+    assert!(pieces
+        .iter()
+        .any(|use_| use_.parameter_range.endpoints() == [0.0, 0.5]));
+    assert!(pieces
+        .iter()
+        .any(|use_| use_.parameter_range.endpoints() == [0.5, 1.0]));
+}
+
+#[test]
+fn crossing_run_matching_preserves_the_exact_arrangement_budget() {
+    let id = SketchId::mint("synthetic:test:id#crossing-budget").unwrap();
+    let mut entities = rectangle(&id, "first", (0.0, 0.0), (10.0, 5.0));
+    entities.extend(rectangle(&id, "second", (20.0, 0.0), (30.0, 5.0)));
+    let sketch = sketch_with_loops(id.clone(), &[]);
+    entities.push(line_entity(&id, "crossing", (5.0, -3.0), (5.0, 2.0)));
+    let rings = [&entities[..4], &entities[4..8]].map(|entities| {
+        entities
+            .iter()
+            .map(|entity| SketchEntityUse {
+                entity: entity.id().clone(),
+                reversed: false,
+            })
+            .collect::<Vec<_>>()
+    });
+    crate::test_support::with_decode_context(|ctx| {
+        let exact = ProfileGeometryWork::new();
+        let faces = super::super::curve_arrangement_faces(
+            &sketch,
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &exact,
+            ctx,
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(super::super::match_member_rings(
+            &faces,
+            super::super::MemberRings {
+                uses: &rings,
+                counted: None,
+            },
+            &std::collections::HashSet::new(),
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &exact,
+            false,
+        )
+        .unwrap()
+        .is_none());
+        let crossing = ProfileGeometryWork::new();
+        let selected = super::super::arrangement_regions_matching_member_rings(
+            &sketch,
+            &entities,
+            &rings,
+            &std::collections::HashSet::new(),
+            PROFILE_PROGRAM_TOLERANCE,
+            &crossing,
+            ctx,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(selected.crossing_runs_assumed());
+        assert_eq!(selected.regions.len(), 2);
+        assert_eq!(
+            crossing.arrangement.consumed(),
+            exact.arrangement.consumed()
+        );
+        assert!(crossing.crossing_run_matches.consumed() > 0);
+    });
+}
+
+#[test]
+fn an_exhausted_crossing_match_budget_keeps_a_later_exact_reading() {
+    let id = SketchId::mint("synthetic:test:id#crossing-budget-exhausted").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (10.0, 5.0));
+    let sketch = sketch_with_loops(id.clone(), &[]);
+    entities.push(line_entity(&id, "crossing", (5.0, -3.0), (5.0, 2.0)));
+    let mut members = entities[..4]
+        .iter()
+        .map(|entity| SketchEntityUse {
+            entity: entity.id().clone(),
+            reversed: false,
+        })
+        .collect::<Vec<_>>();
+    let work = ProfileGeometryWork {
+        crossing_run_matches: WorkBudget::new(0),
+        ..ProfileGeometryWork::new()
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        let selected = super::super::arrangement_regions_matching_member_rings(
+            &sketch,
+            &entities,
+            &[members.clone()],
+            &std::collections::HashSet::new(),
+            PROFILE_PROGRAM_TOLERANCE,
+            &work,
+            ctx,
+        )
+        .unwrap();
+        assert!(selected.is_none());
+        assert!(!work.arrangement.exhausted());
+        work.finish_selection();
+        let losses = work.losses();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureProfileCrossingRunsCapped.kind()
+        );
+        members.insert(0, members[0].clone());
+        let selected = super::super::arrangement_regions_matching_member_rings(
+            &sketch,
+            &entities,
+            &[members],
+            &std::collections::HashSet::new(),
+            PROFILE_PROGRAM_TOLERANCE,
+            &work,
+            ctx,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!selected.crossing_runs_assumed());
+        assert!(!work.arrangement.exhausted());
+    });
 }

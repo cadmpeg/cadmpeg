@@ -216,12 +216,12 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_MIRROR,
@@ -485,12 +485,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED_CIRCULAR,
@@ -504,12 +504,12 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
                     pattern: PatternKind::UNRESOLVED,
@@ -634,16 +634,15 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-            "synthetic:test:id#seed",
-        )
-        .expect("identity grammar")])
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
+        ])
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
                     FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),

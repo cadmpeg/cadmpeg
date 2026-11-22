@@ -95,7 +95,7 @@ fn a_second_failure_that_names_no_record_leaves_out_every_parameter() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model
         .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: cadmpeg_ir::features::ParameterId::mint("other:model:parameter#width").unwrap(),
             owner: None,
@@ -104,7 +104,7 @@ fn a_second_failure_that_names_no_record_leaves_out_every_parameter() {
             expression: "10 mm".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,

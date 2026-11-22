@@ -290,7 +290,8 @@ fn a_pole_loop_is_dropped_and_its_face_written() {
     let pole = cadmpeg_ir::ids::LoopId::mint("generated:test:pole-loop#0").expect("identity");
     ir.geometry.points.push(Point::new(
         point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.5, 0.5, 0.0)).expect("finite"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.5, 0.5, 0.0))
+            .expect("finite"),
         None,
     ));
     ir.geometry.vertices.push(Vertex {
@@ -417,7 +418,7 @@ fn an_open_edge_whose_vertex_misses_its_spline_is_written_with_record_invalid() 
     // The fixture's line runs along x; the vertex moves 1 mm off it.
     *row = cadmpeg_ir::topology::Point::new(
         point,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
             position.x,
             position.y + 1.0,
             position.z,

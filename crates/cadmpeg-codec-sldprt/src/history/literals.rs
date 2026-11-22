@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
 
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::parameters::{DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::patterns::PatternTransform;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
-        FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
-        ParameterValue,
-    },
-    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
-};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength};
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
@@ -191,10 +191,10 @@ pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
 
 pub(super) fn parse_valid_direction(
     value: &str,
-) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureDirection3> {
     parse_vector3(value)
         .filter(|value| valid_direction(*value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new)
+        .and_then(cadmpeg_ir::features::geometry::FeatureDirection3::new)
 }
 
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
@@ -377,7 +377,8 @@ mod direction_tests {
     #[test]
     fn parsed_direction_retains_codec_threshold_and_components() {
         assert_eq!(
-            parse_valid_direction("2,0,-3").map(cadmpeg_ir::features::FeatureDirection3::get),
+            parse_valid_direction("2,0,-3")
+                .map(cadmpeg_ir::features::geometry::FeatureDirection3::get),
             Some(Vector3::new(2.0, 0.0, -3.0))
         );
         assert!(parse_valid_direction("0,0,0").is_none());

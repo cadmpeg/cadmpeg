@@ -31,7 +31,7 @@ fn import_feature(native_ref: Option<String>) -> Feature {
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
                 parameters: Default::default(),

@@ -9,10 +9,9 @@ use crate::records::topology::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
-use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, FeatureDefinition, FeatureOperation, NonEmptyMembers,
-    SelectionReference,
-};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::selections::{BodySelection, NonEmptyMembers, SelectionReference};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn project(
