@@ -862,7 +862,7 @@ fn a_point_from_finite_coordinates_holds_them_bit_for_bit() {
 fn feature_arcs_preserve_directed_spans_and_admit_only_valid_frames_and_radii() {
     use crate::features::geometry::{FeatureCircularArc, FeatureEllipticArc};
     use crate::features::{FeatureDefinition, FeatureOperation};
-    use crate::geometry::DirectedParameterRange;
+    use crate::geometry::procedural_curves::DirectedParameterRange;
     use crate::scalar::PositiveLength;
     let center = Point3::new(1.0, 2.0, 3.0);
     let normal = Vector3::new(0.0, 0.0, 2.0);
@@ -1638,7 +1638,7 @@ fn feature_arcs_rebuild_from_checked_parts() {
     use crate::features::geometry::{
         FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
     };
-    use crate::geometry::DirectedParameterRange;
+    use crate::geometry::procedural_curves::DirectedParameterRange;
     use crate::scalar::{PositiveLength, PositiveReal};
 
     let center = Point3::new(1.0, 2.0, 3.0);

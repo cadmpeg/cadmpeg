@@ -166,13 +166,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
         if covered.iter().any(|index| !selected.contains(index)) {
             return Ok(false);
         }
-        let mut cap = Cap {
-            loops: Vec::new(),
-            pieces: Vec::new(),
-            corners: Vec::new(),
-            area: 0.0,
-            measured: Vec::new(),
-        };
+        let mut cap = Cap::new(Vec::new(), Vec::new(), Vec::new(), 0.0, Vec::new());
         let endpoints: Vec<_> = plane
             .before
             .iter()

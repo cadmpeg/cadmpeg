@@ -87,7 +87,9 @@ fn decode_transfers_positional_line_extrusion_plane() {
         })
         .expect("extrusion construction");
     assert!(match construction.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            matched_payload,
+        ) => matches!(
             (
                 &matched_payload.parameter_interval(),
                 matched_payload.direction().as_raw(),

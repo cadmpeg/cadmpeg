@@ -407,6 +407,10 @@ pub(crate) enum F3dLossCode {
     /// A Thread profile angle other than 60 degrees is retained by the native
     /// Thread construction.
     ThreadAngleNative,
+    /// Thread side, flank angle, exact groove profile, and hand outside the extended standard form stay native.
+    ThreadDetailNative,
+    /// A Hole-owned Thread retains its specification in native records.
+    ThreadHoleNative,
     /// The nominal diameter of a Thread with a fractional nominal size is
     /// read as its stored major diameter.
     ThreadFractionalSizeDiameterAssumed,
@@ -444,10 +448,15 @@ pub(crate) enum F3dLossCode {
     /// A Mirror plane is read from the `WorkPlane` scope after its plane
     /// selection identity.
     FeatureMirrorPlaneWorkPlaneAssumed,
+    /// A compact feature seed uses its group selection after scope resolution fails.
+    FeaturePatternFeatureSeedSubstituted,
     /// A Revolve plane target is read from the `WorkPlane` scope at the record after its selection identity.
     FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
     FeatureCircularPatternPlacementNotTransferred,
+    /// A circular pattern projects with its suppressed instances because their
+    /// instance order is unread.
+    FeatureCircularPatternSuppressionNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
     /// A rectangular-pattern payload's seed kind or body references disagree
@@ -537,6 +546,8 @@ pub(crate) enum F3dLossCode {
     HoleExtentLeadingWordAssumed,
     /// A tapped Hole keeps its stored diameter instead of the bore of its thread size.
     HoleTappedDiameterStored,
+    /// A Hole with an absent stored diameter uses its Thread minor diameter as the bore.
+    HoleThreadMinorDiameterAssumed,
     /// A taper-tapped Hole keeps a cylindrical bore of its stored diameter instead of the tapered bore of its thread size.
     HoleTaperTappedBoreCylindrical,
     /// A Base Feature whose marked null reference stores flag `1` reads its result runs as the ordinary result set.
@@ -624,6 +635,12 @@ pub(crate) enum F3dLossCode {
     ConfigurationPropertyUnprojected,
     /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
     HistoryRollbackUnread,
+    /// A coordinate frame retains its source construction references and expressions.
+    CoordinateSystemConstructionNative,
+    /// A coordinate frame transfers without its source construction references and expressions.
+    CoordinateSystemConstructionDropped,
+    /// A coordinate-system scope has an unresolved solved frame.
+    CoordinateSystemFrameUnresolved,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -762,6 +779,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
+    /// Extrude profile selections read counted member pieces over the
+    /// partition by the curves of each member list.
+    FeatureProfilePiecePartitionAssumed,
     /// Extrude profile selections took the polyline side of a projected point
     /// within the tolerance of a NURBS tube of a face boundary.
     FeatureProfilePolylineSideAssumed,
@@ -828,6 +848,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// A pattern seed or `RemoveBody` selection of omitted bodies has no
+    /// resolved ASM history: its producer is the one inserting state of any
+    /// history, or the selection keeps its native slots.
+    FeatureGeneratedBodyHistoryUnresolved,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
     /// A Reverse Normal selection stays in its input state: its bound
@@ -1062,7 +1086,8 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
-    /// A packed-direction split component flag has no settled meaning.
+    /// A packed-direction split component flag has no settled meaning; its
+    /// payload is read with the `{T: 3}` layout.
     MeshComponentFlagUninterpreted,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
@@ -1556,6 +1581,8 @@ impl F3dLossCode {
         Self::ThreadConstructionUnresolved,
         Self::ThreadOffsetNative,
         Self::ThreadAngleNative,
+        Self::ThreadDetailNative,
+        Self::ThreadHoleNative,
         Self::ThreadFractionalSizeDiameterAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -1582,8 +1609,10 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
+        Self::FeaturePatternFeatureSeedSubstituted,
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
+        Self::FeatureCircularPatternSuppressionNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
@@ -1644,6 +1673,7 @@ impl F3dLossCode {
         Self::HoleShapePartialAssumed,
         Self::HoleExtentLeadingWordAssumed,
         Self::HoleTappedDiameterStored,
+        Self::HoleThreadMinorDiameterAssumed,
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
@@ -1692,6 +1722,9 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::CoordinateSystemConstructionNative,
+        Self::CoordinateSystemConstructionDropped,
+        Self::CoordinateSystemFrameUnresolved,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -1765,6 +1798,7 @@ impl F3dLossCode {
         Self::FeatureProfileTextGlyphsAssumed,
         Self::FeatureProfileTextGlyphsNative,
         Self::FeatureProfileIslandAbsenceAssumed,
+        Self::FeatureProfilePiecePartitionAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
@@ -1811,6 +1845,7 @@ impl F3dLossCode {
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
+        Self::FeatureGeneratedBodyHistoryUnresolved,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
         Self::FeatureReverseNormalLinkUnplaced,
@@ -2371,9 +2406,15 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
+            Self::FeaturePatternFeatureSeedSubstituted => {
+                "feature.pattern-feature-seed-substituted"
+            }
             Self::FeatureRevolvePlaneWorkPlaneAssumed => "feature.revolve-plane-work-plane-assumed",
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
+            }
+            Self::FeatureCircularPatternSuppressionNotTransferred => {
+                "feature.circular-pattern-suppression-not-transferred"
             }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
@@ -2544,6 +2585,8 @@ impl F3dLossCode {
             Self::ThreadConstructionUnresolved => "feature.thread-construction-unresolved",
             Self::ThreadOffsetNative => "feature.thread-offset-native",
             Self::ThreadAngleNative => "feature.thread-angle-native",
+            Self::ThreadDetailNative => "feature.thread-detail-native",
+            Self::ThreadHoleNative => "feature.thread-hole-native",
             Self::ThreadFractionalSizeDiameterAssumed => {
                 "feature.thread-fractional-size-diameter-assumed"
             }
@@ -2625,6 +2668,7 @@ impl F3dLossCode {
             Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
             Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
             Self::HoleExtentLeadingWordAssumed => "feature.hole-extent-leading-word-assumed",
+            Self::HoleThreadMinorDiameterAssumed => "feature.hole-thread-minor-diameter-assumed",
             Self::HoleTappedDiameterStored => "feature.hole-tapped-diameter-stored",
             Self::HoleTaperTappedBoreCylindrical => "feature.hole-taper-tapped-bore-cylindrical",
             Self::FeatureBaseFeatureNullFlagAssumed => "feature.base-feature-null-flag-assumed",
@@ -2668,6 +2712,13 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::CoordinateSystemConstructionNative => {
+                "feature.coordinate-system-construction-native"
+            }
+            Self::CoordinateSystemConstructionDropped => {
+                "feature.coordinate-system-construction-dropped"
+            }
+            Self::CoordinateSystemFrameUnresolved => "feature.coordinate-system-frame-unresolved",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -2767,6 +2818,7 @@ impl F3dLossCode {
             Self::FeatureProfileTextGlyphsNative => "feature.profile-text-glyphs-native",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
+            Self::FeatureProfilePiecePartitionAssumed => "feature.profile-piece-partition-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
@@ -2853,6 +2905,9 @@ impl F3dLossCode {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureGeneratedBodyHistoryUnresolved => {
+                "feature.generated-body-history-unresolved"
+            }
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureReverseNormalBodyProducerUnresolved => {
                 "feature.reverse-normal-body-producer-unresolved"
@@ -3332,7 +3387,6 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::MeshGuidBytesUninterpreted
-            | Self::MeshComponentFlagUninterpreted
             | Self::MeshBodyBytesUninterpreted
             | Self::MeshWrapperBytesUninterpreted
             | Self::MeshOwnerBytesUninterpreted
@@ -3493,8 +3547,10 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
@@ -3618,6 +3674,7 @@ impl F3dLossCode {
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
+            | Self::HoleThreadMinorDiameterAssumed
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
@@ -3630,6 +3687,8 @@ impl F3dLossCode {
             | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
             | Self::ThreadAngleNative
+            | Self::ThreadDetailNative
+            | Self::ThreadHoleNative
             | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3675,6 +3734,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -3747,6 +3809,7 @@ impl F3dLossCode {
             | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePiecePartitionAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -3793,6 +3856,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureReverseNormalLinkUnplaced
@@ -3947,6 +4011,7 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
+            | Self::MeshComponentFlagUninterpreted
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -4209,8 +4274,10 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeaturePatternFeatureSeedSubstituted
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
+            | Self::FeatureCircularPatternSuppressionNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
@@ -4346,6 +4413,7 @@ impl F3dLossCode {
             | Self::HoleShapePartialAssumed
             | Self::HoleExtentLeadingWordAssumed
             | Self::HoleTappedDiameterStored
+            | Self::HoleThreadMinorDiameterAssumed
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
@@ -4358,6 +4426,8 @@ impl F3dLossCode {
             | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
             | Self::ThreadAngleNative
+            | Self::ThreadDetailNative
+            | Self::ThreadHoleNative
             | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -4399,6 +4469,9 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::CoordinateSystemConstructionNative
+            | Self::CoordinateSystemConstructionDropped
+            | Self::CoordinateSystemFrameUnresolved
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4470,6 +4543,7 @@ impl F3dLossCode {
             | Self::FeatureProfileTextGlyphsNative
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePiecePartitionAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -4516,6 +4590,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureReverseNormalLinkUnplaced
@@ -5098,6 +5173,8 @@ mod tests {
                 "feature.thread-construction-unresolved",
                 "feature.thread-offset-native",
                 "feature.thread-angle-native",
+                "feature.thread-detail-native",
+                "feature.thread-hole-native",
                 "feature.thread-fractional-size-diameter-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
@@ -5124,8 +5201,10 @@ mod tests {
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
+                "feature.pattern-feature-seed-substituted",
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
+                "feature.circular-pattern-suppression-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
@@ -5186,6 +5265,7 @@ mod tests {
                 "feature.hole-shape-partial-assumed",
                 "feature.hole-extent-leading-word-assumed",
                 "feature.hole-tapped-diameter-stored",
+                "feature.hole-thread-minor-diameter-assumed",
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
@@ -5234,6 +5314,9 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "feature.coordinate-system-construction-native",
+                "feature.coordinate-system-construction-dropped",
+                "feature.coordinate-system-frame-unresolved",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
@@ -5307,6 +5390,7 @@ mod tests {
                 "feature.profile-text-glyphs-assumed",
                 "feature.profile-text-glyphs-native",
                 "feature.profile-island-absence-assumed",
+                "feature.profile-piece-partition-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",
@@ -5353,6 +5437,7 @@ mod tests {
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
+                "feature.generated-body-history-unresolved",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",
                 "feature.reverse-normal-link-unplaced",

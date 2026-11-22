@@ -5,52 +5,51 @@ use crate::history_records::{
     AsmHistoricalEntityDelta, AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalTransition,
     AsmTransitionError,
 };
-use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 #[derive(Default)]
 pub(super) struct Memberships {
-    bodies: BTreeSet<i64>,
-    regions: BTreeSet<i64>,
-    shells: BTreeSet<i64>,
-    faces: BTreeSet<i64>,
-    loops: BTreeSet<i64>,
-    coedges: BTreeSet<i64>,
-    edges: BTreeSet<i64>,
-    vertices: BTreeSet<i64>,
-    points: BTreeSet<i64>,
-    surfaces: BTreeSet<i64>,
-    curves: BTreeSet<i64>,
-    pcurves: BTreeSet<i64>,
-    surface_repeats: BTreeSet<i64>,
-    curve_repeats: BTreeSet<i64>,
-    surface_radii: BTreeSet<i64>,
-    surface_cylinders: BTreeSet<i64>,
-    surface_planes: BTreeSet<i64>,
-    surface_axes: BTreeSet<i64>,
-    curve_axes: BTreeSet<i64>,
-    persistent_subentity_tags: BTreeSet<i64>,
-    body_regions: BTreeSet<i64>,
-    region_shells: BTreeSet<i64>,
-    shell_faces: BTreeSet<i64>,
-    shell_wire_edges: BTreeSet<i64>,
-    shell_free_vertices: BTreeSet<i64>,
-    face_loops: BTreeSet<i64>,
-    face_envelopes: BTreeSet<i64>,
-    edge_envelopes: BTreeSet<i64>,
-    loop_coedges: BTreeSet<i64>,
-    coedge_topology: BTreeSet<i64>,
-    edge_vertices: BTreeSet<i64>,
-    face_surfaces: BTreeSet<i64>,
-    vertex_points: BTreeSet<i64>,
-    edge_curves: BTreeSet<i64>,
-    coedge_pcurves: BTreeSet<i64>,
-    point_positions: BTreeSet<i64>,
-    edge_samples: BTreeSet<i64>,
+    bodies: HashSet<i64>,
+    regions: HashSet<i64>,
+    shells: HashSet<i64>,
+    faces: HashSet<i64>,
+    loops: HashSet<i64>,
+    coedges: HashSet<i64>,
+    edges: HashSet<i64>,
+    vertices: HashSet<i64>,
+    points: HashSet<i64>,
+    surfaces: HashSet<i64>,
+    curves: HashSet<i64>,
+    pcurves: HashSet<i64>,
+    surface_repeats: HashSet<i64>,
+    curve_repeats: HashSet<i64>,
+    surface_radii: HashSet<i64>,
+    surface_cylinders: HashSet<i64>,
+    surface_planes: HashSet<i64>,
+    surface_axes: HashSet<i64>,
+    curve_axes: HashSet<i64>,
+    persistent_subentity_tags: HashSet<i64>,
+    body_regions: HashSet<i64>,
+    region_shells: HashSet<i64>,
+    shell_faces: HashSet<i64>,
+    shell_wire_edges: HashSet<i64>,
+    shell_free_vertices: HashSet<i64>,
+    face_loops: HashSet<i64>,
+    face_envelopes: HashSet<i64>,
+    edge_envelopes: HashSet<i64>,
+    loop_coedges: HashSet<i64>,
+    coedge_topology: HashSet<i64>,
+    edge_vertices: HashSet<i64>,
+    face_surfaces: HashSet<i64>,
+    vertex_points: HashSet<i64>,
+    edge_curves: HashSet<i64>,
+    coedge_pcurves: HashSet<i64>,
+    point_positions: HashSet<i64>,
+    edge_samples: HashSet<i64>,
 }
 
 fn apply_entities(
-    current: &mut BTreeSet<i64>,
+    current: &mut HashSet<i64>,
     delta: &AsmHistoricalEntityDelta,
     updated: &[i64],
 ) -> Result<(), AsmTransitionError> {
@@ -80,7 +79,7 @@ fn apply_entities(
 }
 
 fn apply_rows<R: AsmHistoricalRow>(
-    current: &mut BTreeSet<i64>,
+    current: &mut HashSet<i64>,
     delta: &AsmHistoricalRowDelta<R>,
 ) -> Result<(), AsmTransitionError> {
     if !ordered_keys(&delta.set) || !strictly_sorted(delta.removed.iter().copied()) {
@@ -96,27 +95,6 @@ fn apply_rows<R: AsmHistoricalRow>(
 }
 
 impl Memberships {
-    pub(super) fn families(&self) -> [(AsmHistoricalEntityKind, &BTreeSet<i64>); 12] {
-        [
-            (AsmHistoricalEntityKind::Body, &self.bodies),
-            (AsmHistoricalEntityKind::Region, &self.regions),
-            (AsmHistoricalEntityKind::Shell, &self.shells),
-            (AsmHistoricalEntityKind::Face, &self.faces),
-            (AsmHistoricalEntityKind::Loop, &self.loops),
-            (AsmHistoricalEntityKind::Coedge, &self.coedges),
-            (AsmHistoricalEntityKind::Edge, &self.edges),
-            (AsmHistoricalEntityKind::Vertex, &self.vertices),
-            (AsmHistoricalEntityKind::Point, &self.points),
-            (AsmHistoricalEntityKind::Surface, &self.surfaces),
-            (AsmHistoricalEntityKind::Curve, &self.curves),
-            (AsmHistoricalEntityKind::Pcurve, &self.pcurves),
-        ]
-    }
-    pub(super) fn contains(&self, slot: i64) -> bool {
-        self.families()
-            .iter()
-            .any(|(_, family)| family.contains(&slot))
-    }
     pub(super) fn has_retained_rows(&self) -> bool {
         !self.face_surfaces.is_empty()
             || !self.surface_planes.is_empty()
