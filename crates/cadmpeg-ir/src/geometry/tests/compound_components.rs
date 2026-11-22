@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::geometry::{CompoundComponent, ProceduralSurfaceDefinition};
+use crate::geometry::procedural_curves::CompoundComponent;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
 #[test]
 fn a_compound_surface_component_is_one_object_carrying_its_own_scalar() {
@@ -66,9 +67,9 @@ fn a_compound_surface_carries_no_parallel_parameter_array() {
 
 #[test]
 fn a_compound_curve_component_is_one_object_carrying_its_own_scalar() {
-    use crate::geometry::ProceduralCurveDefinition;
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
     let definition = ProceduralCurveDefinition::Compound(
-        crate::geometry::CompoundCurveConstruction::try_new(
+        crate::geometry::procedural_curves::CompoundCurveConstruction::try_new(
             vec![0.0, 0.5, 1.0],
             vec![
                 CompoundComponent {
@@ -122,7 +123,9 @@ fn a_compound_component_rejects_an_unknown_key_by_name() {
 
 #[test]
 fn compound_curve_requires_components_and_finite_parameters() {
-    use crate::geometry::{CompoundCurveConstruction, ProceduralCurveDefinition};
+    use crate::geometry::procedural_curves::{
+        CompoundCurveConstruction, ProceduralCurveDefinition,
+    };
     let component = || CompoundComponent {
         parameter: -2.0,
         component: "test:model:curve#0".try_into().unwrap(),
@@ -152,7 +155,7 @@ fn compound_curve_requires_components_and_finite_parameters() {
 
 #[test]
 fn a_compound_curve_holds_its_admitted_parameters() {
-    use crate::geometry::CompoundCurveConstruction;
+    use crate::geometry::procedural_curves::CompoundCurveConstruction;
     use crate::scalar::FiniteReal;
 
     let construction = CompoundCurveConstruction::try_new(

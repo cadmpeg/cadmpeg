@@ -3,7 +3,7 @@
 One `<format>.toml` per format holds the numbers each specification states:
 offsets, field widths, record sizes, endianness. `<format>.md` beside it is the
 rendered view the specification links to. Both are validated by
-`crates/cadmpeg/tests/layout_tables.rs`.
+`crates/cadmpeg-layout-tables/tests/layout_tables/main.rs`.
 
 Prose byte-offset paragraphs drift — against each other, and against the
 codecs. A table a test arithmetically closes does not. The division of labour
@@ -12,9 +12,9 @@ is: the specification keeps the semantics, the table keeps the numbers.
 ## Working on a table
 
 ```sh
-cargo test -p cadmpeg --test layout_tables                       # validate
-UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables  # regenerate the .md pages
-UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables  # regenerate crate layout.rs files
+cargo test -p cadmpeg-layout-tables                       # validate
+UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables  # regenerate the .md pages
+UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables  # regenerate crate layout.rs files
 ```
 
 Never edit a `<format>.md` or a generated `src/layout.rs` by hand; regenerate them.
@@ -34,7 +34,7 @@ Decoder code imports a record module by path or alias (`use crate::layout::block
 
 A byte record can set `rust_doc_attributes = true` to emit its Rust documentation as `#[doc = "..."]` attributes. The default emits doc comments.
 
-The mapping from table to generated root file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg/tests/layout_tables/generate.rs`. The F3D Base Feature compact and expanded record modules have generated files under `src/layout/`. The layout test regenerates and checks these files together with the root file. `step` is not in that list: it has no byte-layout records.
+The mapping from table to generated root file is the explicit list `GENERATED_LAYOUT_RS` in `crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs`. The F3D Base Feature compact and expanded record modules have generated files under `src/layout/`. The layout test regenerates and checks these files together with the root file. `step` is not in that list: it has no byte-layout records.
 
 ## What the validator enforces
 
@@ -63,7 +63,7 @@ The mapping from table to generated root file is the explicit list `GENERATED_LA
 
 `layout_validator_rejects_broken_tables` runs the same validator over
 eighteen deliberately-broken fixtures in
-`crates/cadmpeg/tests/fixtures/layout-invalid/`, one per rule, so the rules
+`crates/cadmpeg-layout-tables/tests/fixtures/layout-invalid/`, one per rule, so the rules
 are proven to fire rather than assumed to.
 
 ## Schema

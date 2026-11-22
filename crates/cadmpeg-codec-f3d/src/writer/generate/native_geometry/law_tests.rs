@@ -5,10 +5,11 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+use cadmpeg_ir::geometry::lofts::LoftPathCurve;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
-use cadmpeg_ir::geometry::{
-    LawExpression, LawFormula, LoftPathCurve, ProceduralSurfaceDefinition, SweepSurfaceLayout,
-};
+use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
 use crate::test_support::smbh_surfaces_test::{
     synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
@@ -58,7 +59,7 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     let mut native = payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw)
         .unwrap();
     edit(&mut native.layout);
     let replacement = SweepSurfacePayload::try_new(

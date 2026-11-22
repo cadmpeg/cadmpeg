@@ -213,6 +213,8 @@ fn pcurve_layout(
     IncreasingParameterInterval,
     usize,
 )> {
+    use crate::layout::owned_pcurve_wide_channel_header as wide_channel;
+
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -250,17 +252,28 @@ fn pcurve_layout(
     }
     let knot_at = at;
     at += knot_bytes;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
-        return None;
-    }
-    at = if let Some(count) = wide_extrapolation {
-        if data.get(at..at.checked_add(2)?)? != [0x06, count] {
+    if owned && wide_extrapolation.is_none() && data.get(at) == Some(&wide_channel::MARKER_VALUE) {
+        if usize::from(View::u16_le_at(
+            data.get(at..end)?,
+            wide_channel::SITE_COUNT,
+        )?) != count
+        {
             return None;
         }
-        at.checked_add(2)?
+        at = at.checked_add(wide_channel::LEN)?;
     } else {
-        at.checked_add(1)?
-    };
+        if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
+            return None;
+        }
+        at = if let Some(count) = wide_extrapolation {
+            if data.get(at..at.checked_add(2)?)? != [0x06, count] {
+                return None;
+            }
+            at.checked_add(2)?
+        } else {
+            at.checked_add(1)?
+        };
+    }
     if at > end {
         return None;
     }
@@ -1409,6 +1422,21 @@ mod tests {
                 super::family_pcurves_from_records(&bytes, &records, ConsolidatedFamily::A)
                     .is_empty()
             );
+        }
+    }
+
+    #[test]
+    fn owned_pcurve_repeats_the_site_count_with_a_wide_channel_header() {
+        for (repeated, accepted) in [(2_u16, true), (3, false)] {
+            let mut bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+            let [low, high] = repeated.to_le_bytes();
+            bytes.splice(31..33, [0x14, low, high]);
+            let length = u32::try_from(bytes.len() - 8).expect("small frame");
+            bytes[3..7].copy_from_slice(&length.to_le_bytes());
+
+            let records = consolidated_records(&bytes);
+            let parsed = super::owned_pcurve_from_record(&bytes, &records[0]);
+            assert_eq!(parsed.map(|curve| curve.sites.len()), accepted.then_some(2));
         }
     }
 

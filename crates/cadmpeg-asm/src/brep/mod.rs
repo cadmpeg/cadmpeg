@@ -468,7 +468,7 @@ enum ProceduralCurveSource {
         /// Whether the curve record's sense reversed the cache.
         reversed: bool,
     },
-    Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
+    Cacheless(Box<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

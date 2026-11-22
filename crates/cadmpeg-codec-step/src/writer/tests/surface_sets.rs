@@ -486,7 +486,7 @@ fn a_named_or_pcurve_bearing_curve_bounded_face_keeps_the_sheet_a_shell() {
     use cadmpeg_ir::geometry::pcurve::{
         Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
     };
-    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
     use cadmpeg_ir::ids::PcurveId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::topology::PcurveUse;
@@ -795,9 +795,10 @@ fn curve_bounded_faces_that_share_an_edge_keep_the_sheet_a_shell() {
 /// segments of one composite boundary and no coedge pcurves, so its face
 /// pairs its one loop with that boundary.
 fn implicit_outer_composite_sheet(support: cadmpeg_ir::geometry::SolvedSurfaceGeometry) -> CadIr {
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
-        CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+        CurveGeometry, SolvedCurveGeometry,
     };
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::topology::Sense;

@@ -3,10 +3,10 @@ use super::super::{
     analytic_rolling_ball_surface, rational_four_arc_circle, reverse_procedural_curve_definition,
 };
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
-use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, HelixCurveConstruction, HelixFrame, ProceduralCurveDefinition,
-    SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
