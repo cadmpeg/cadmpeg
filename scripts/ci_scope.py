@@ -262,7 +262,6 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             if dependent not in affected:
                 affected.add(dependent)
                 pending.append(dependent)
-    layout |= 'cadmpeg-layout-tables' in affected
     gates = {}
     for output, codec in SINGLE_CODEC_GATES.items():
         inputs = {'cadmpeg', codec}
@@ -286,7 +285,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
         'schema': full or annex or bool(affected & {'cadmpeg-core', 'cadmpeg-ir', 'cadmpeg-asm'}),
         'iges': full or 'cadmpeg-codec-iges' in affected or cli_changed,
         'inventor_cli': full or 'cadmpeg-codec-inventor' in affected or cli_changed,
-        'layout': layout or full,
+        # `test (stable)` runs the layout test whenever it selects the crate.
+        'layout': layout and 'cadmpeg-layout-tables' not in affected and not full,
         'prose_only': bool(paths) and not full and all(
             path == 'README.md' or re.fullmatch(r'crates/cadmpeg-codec-[^/]+/README\.md', path)
             or path.startswith(LAYOUT_TABLE_INPUTS) for path in paths),

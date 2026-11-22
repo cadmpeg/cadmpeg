@@ -395,7 +395,7 @@ jobs:
         run: cargo test -q -p cadmpeg --no-default-features --features step --test low_confidence_inspect
 
       - name: Layout tables
-        if: needs.changes.outputs.layout == 'true' && needs.changes.outputs.full != 'true' && !contains(fromJSON(needs.changes.outputs.packages), 'cadmpeg-layout-tables')
+        if: needs.changes.outputs.layout == 'true'
         run: cargo test -q -p cadmpeg-layout-tables
 
   fuzz:

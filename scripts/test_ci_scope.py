@@ -294,19 +294,20 @@ class ScopeTests(unittest.TestCase):
                 self.assertTrue(scope['layout'])
 
     def test_layout_crate_and_generated_code_select_layout_gate(self):
-        for path in ('crates/cadmpeg-layout-tables/tests/layout_tables/main.rs',
-                     'crates/cadmpeg-codec-f3d/src/layout.rs',
+        for path in ('crates/cadmpeg-codec-f3d/src/layout.rs',
                      'crates/cadmpeg-codec-f3d/src/layout/part.rs'):
             with self.subTest(path=path):
                 self.assertTrue(select(ROOT, [path])['layout'])
-        self.assertIn('cadmpeg-layout-tables', select(
-            ROOT, ['crates/cadmpeg-layout-tables/tests/layout_tables/main.rs'])['packages'])
+        scope = select(ROOT, ['crates/cadmpeg-layout-tables/tests/layout_tables/main.rs'])
+        self.assertIn('cadmpeg-layout-tables', scope['packages'])
+        self.assertFalse(scope['layout'])
         scope = select(ROOT, ['crates/cadmpeg-codec-f3d/src/decoder.rs'])
         self.assertNotIn('cadmpeg-layout-tables', scope['packages'])
         self.assertTrue(scope['layout'])
         self.assertFalse(select(ROOT, ['crates/cadmpeg-codec-step/src/lib.rs'])['layout'])
         self.assertTrue(select(ROOT, ['crates/cadmpeg-registry/docs/dialects.toml'])['layout'])
-        self.assertTrue(select(ROOT, [], full=True)['layout'])
+        self.assertFalse(select(ROOT, [], full=True)['layout'])
+        self.assertIn('cadmpeg-layout-tables', select(ROOT, [], full=True)['packages'])
 
     def test_the_specification_and_its_annex_generator_select_the_schema_gate(self):
         for path in sorted(ANNEX_INPUTS):
