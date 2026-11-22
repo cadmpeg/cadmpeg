@@ -942,7 +942,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     ir.geometry
         .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
-                definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
+                definition: crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             })

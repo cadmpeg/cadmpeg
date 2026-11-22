@@ -656,7 +656,10 @@ fn profile_termination_operands() -> (
     let faces = vec![FaceId::mint("synthetic:test:id#profile-face").unwrap()];
     let boundary = SketchProfileBoundaryUse {
         entity: entity.clone(),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            1.0, 0.0,
+        ])
+        .unwrap(),
         reversed: true,
     };
     let planar = vec![

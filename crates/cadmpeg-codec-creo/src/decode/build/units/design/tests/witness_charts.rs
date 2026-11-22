@@ -1,8 +1,7 @@
 use super::*;
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::{AnchoredVertexUse, LoopBoundary, LoopRing, PcurveUse};
 
 #[test]
@@ -27,7 +26,7 @@ fn witness_pcurve_charts_follow_singular_anchored_and_curve_bounded_owners() {
             pcurve: id.clone(),
             isoparametric: None,
             parameter_range: Some(
-                cadmpeg_ir::geometry::DirectedParameterRange::new([2.0, 3.0])
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([2.0, 3.0])
                     .expect("valid witness chart fixture"),
             ),
         };

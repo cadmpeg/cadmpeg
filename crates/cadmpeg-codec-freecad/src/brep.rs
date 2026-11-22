@@ -11,11 +11,12 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Vector3};
@@ -6249,7 +6250,7 @@ fn append_text_surface(
                         None,
                         None,
                         true,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
