@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{boundary_use_samples, clearance, point_in_polygon, scanline_midpoints, CURVE_SAMPLES};
+use super::{
+    boundary_use_samples, clearance, point_in_polygon, ring_bounds, Aabb2, CURVE_SAMPLES,
+    MAX_SCANLINES,
+};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::math::Point2;
@@ -56,23 +59,89 @@ pub(super) fn interiors_are_disjoint(
     {
         return false;
     }
-    let contains = |rings: &[&[Point2]], point: Point2| {
-        point_in_polygon(point, rings[0])
-            && clearance(point, rings[0]) > tolerance
-            && rings[1..]
+    let bounds: Vec<Vec<Aabb2>> = regions
+        .iter()
+        .map(|rings| {
+            rings
                 .iter()
-                .all(|hole| !point_in_polygon(point, hole) && clearance(point, hole) > tolerance)
+                .map(|ring| ring_bounds(ring).unwrap_or(Aabb2::EMPTY))
+                .collect()
+        })
+        .collect();
+    let contains = |region_index: usize, point: Point2| {
+        let rings = &regions[region_index];
+        let boxes = &bounds[region_index];
+        if !boxes[0].contains(point) {
+            return false;
+        }
+        if !point_in_polygon(point, rings[0]) || clearance(point, rings[0]) <= tolerance {
+            return false;
+        }
+        rings[1..].iter().zip(&boxes[1..]).all(|(hole, hole_box)| {
+            !hole_box.expanded(tolerance).contains(point)
+                || (!point_in_polygon(point, hole) && clearance(point, hole) > tolerance)
+        })
     };
-    for (index, first) in regions.iter().enumerate() {
-        for second in &regions[index + 1..] {
-            let rings: Vec<_> = first.iter().chain(second).copied().collect();
-            if points
-                .iter()
-                .copied()
-                .chain(scanline_midpoints(&rings))
-                .any(|point| contains(first, point) && contains(second, point))
-            {
+    let mut heights = Vec::new();
+    let mut rows = Vec::new();
+    let mut crossings = Vec::new();
+    for (first_index, first) in regions.iter().enumerate() {
+        let first_outer = bounds[first_index][0];
+        for (offset, second) in regions[first_index + 1..].iter().enumerate() {
+            let second_index = first_index + 1 + offset;
+            let Some(overlap) = first_outer.interior_overlap(bounds[second_index][0]) else {
+                continue;
+            };
+            if points.iter().copied().any(|point| {
+                overlap.contains(point)
+                    && contains(first_index, point)
+                    && contains(second_index, point)
+            }) {
                 return false;
+            }
+            heights.clear();
+            for ring in first.iter().chain(second) {
+                heights.extend(ring.iter().map(|point| point.v));
+            }
+            heights.sort_by(f64::total_cmp);
+            heights.dedup();
+            rows.clear();
+            rows.extend(heights.windows(2).map(|pair| 0.5 * (pair[0] + pair[1])));
+            let step = rows.len().div_ceil(MAX_SCANLINES).max(1);
+            for &row in rows.iter().step_by(step) {
+                if row < overlap.min_v || row > overlap.max_v {
+                    continue;
+                }
+                crossings.clear();
+                for (ring, ring_box) in first
+                    .iter()
+                    .zip(&bounds[first_index])
+                    .chain(second.iter().zip(&bounds[second_index]))
+                {
+                    if row < ring_box.min_v || row > ring_box.max_v {
+                        continue;
+                    }
+                    for index in 0..ring.len() {
+                        let start = ring[index];
+                        let end = ring[(index + 1) % ring.len()];
+                        if (start.v - row) * (end.v - row) < 0.0 {
+                            crossings.push(
+                                start.u + (end.u - start.u) * (row - start.v) / (end.v - start.v),
+                            );
+                        }
+                    }
+                }
+                crossings.sort_by(f64::total_cmp);
+                for pair in crossings.windows(2) {
+                    let mid_u = 0.5 * (pair[0] + pair[1]);
+                    if mid_u < overlap.min_u || mid_u > overlap.max_u {
+                        continue;
+                    }
+                    let point = Point2::new(mid_u, row);
+                    if contains(first_index, point) && contains(second_index, point) {
+                        return false;
+                    }
+                }
             }
         }
     }

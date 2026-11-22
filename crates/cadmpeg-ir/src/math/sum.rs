@@ -8,11 +8,25 @@ use crate::scalar::{FiniteReal, NonZeroReal};
 /// A non-finite input, and a sum outside the finite range, leave the dot
 /// product non-finite; it then carries the plain left-to-right sum of the
 /// products.
+#[inline]
 pub(crate) fn finite_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
 ) -> Result<FiniteReal, f64> {
     let products = std::array::from_fn(|index| coefficients[index] * components[index]);
+    if let Some(value) = fast_dot(coefficients, components, products) {
+        return Ok(value);
+    }
+    finite_dot_slow(coefficients, components, products)
+}
+
+#[cold]
+#[inline(never)]
+fn finite_dot_slow<const N: usize>(
+    coefficients: [f64; N],
+    components: [f64; N],
+    products: [f64; N],
+) -> Result<FiniteReal, f64> {
     let plain = || {
         products
             .into_iter()
@@ -25,9 +39,6 @@ pub(crate) fn finite_dot<const N: usize>(
         .any(|value| !value.is_finite())
     {
         return Err(plain());
-    }
-    if let Some(value) = fast_dot(coefficients, components, products) {
-        return Ok(value);
     }
     let mut sum = ExactSignedSum::default();
     for (coefficient, component) in coefficients.into_iter().zip(components) {
@@ -900,35 +911,36 @@ fn normal_ratio_products<const N: usize>(
     Some(products)
 }
 
+#[inline]
 pub(crate) fn fast_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
     products: [f64; N],
 ) -> Option<FiniteReal> {
-    if products.iter().any(|product| !product.is_finite()) {
+    let mut sum = 0.0_f64;
+    let mut scale = 0.0_f64;
+    for index in 0..N {
+        let product = products[index];
+        let abs = product.abs();
+        // A product below the normal range may have rounded before it reached
+        // this check, even when it is nonzero. Recompute every such column from
+        // the exact significands.
+        if abs < f64::MIN_POSITIVE && coefficients[index] != 0.0 && components[index] != 0.0 {
+            return None;
+        }
+        scale = scale.max(abs);
+        sum += product;
+    }
+    if !sum.is_finite() {
         return None;
     }
-    if coefficients.into_iter().zip(components).zip(products).any(
-        |((coefficient, component), product)| {
-            // A product below the normal range may have rounded before it
-            // reached this check, even when it is nonzero. Recompute every
-            // such column from the exact significands.
-            coefficient != 0.0 && component != 0.0 && product.abs() < f64::MIN_POSITIVE
-        },
-    ) {
-        return None;
-    }
-    let scale = products
-        .iter()
-        .fold(0.0_f64, |scale, product| scale.max(product.abs()));
     if scale == 0.0 {
         return Some(FiniteReal::ZERO);
     }
-    let sum = FiniteReal::new(products.into_iter().sum::<f64>())?;
-    if sum.get().abs() / scale < f64::EPSILON {
+    if sum.abs() / scale < f64::EPSILON {
         return None;
     }
-    Some(sum)
+    FiniteReal::new(sum)
 }
 
 /// The outcome of [`product_sum`].
