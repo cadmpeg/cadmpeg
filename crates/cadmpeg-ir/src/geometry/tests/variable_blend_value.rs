@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::geometry::VariableBlendValue;
+use crate::geometry::variable_blends::VariableBlendValue;
 use serde_json::json;
 
 #[test]

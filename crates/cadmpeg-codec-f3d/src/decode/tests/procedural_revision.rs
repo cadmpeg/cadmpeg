@@ -63,7 +63,7 @@ fn generated_revision_exact_surface_round_trips() {
 
 #[test]
 fn generated_revision_exact_surface_carries_two_unextended_intervals() {
-    use cadmpeg_ir::geometry::{ExactSpline, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::procedural_surfaces::{ExactSpline, ProceduralSurfaceDefinition};
 
     // Two distinct non-[0,1] unextended parameter intervals: U then V.
     let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
@@ -101,7 +101,9 @@ fn generated_revision_exact_surface_carries_two_unextended_intervals() {
 
 #[test]
 fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
+    use cadmpeg_ir::geometry::procedural_surfaces::{
+        ProceduralSurfaceDefinition, SplineSurfaceParameters,
+    };
 
     // First wrap interval non-empty [0,1]; second reversed [1,0] = empty.
     let smbh = synthetic_revision_surface_smbh("loft_spl_sur", |surface| {
@@ -273,8 +275,9 @@ fn generated_parameterized_revision_g2_blend_round_trips() {
         .expect("parameterized revision g2 blend decode");
     let procedural = &result.ir().geometry.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionG2Blend { construction } =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RevisionG2Blend {
+        construction,
+    } = procedural.definition()
     else {
         panic!("expected a revision g2 blend construction")
     };
@@ -346,7 +349,7 @@ fn generated_revision_offset_with_inline_untyped_support_decodes() {
 
 #[test]
 fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_section() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -368,7 +371,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
 
     assert!(matches!(
         &construction.cross_section,
-        Some(cadmpeg_ir::geometry::VariableBlendCrossSection::Circular {})
+        Some(cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection::Circular {})
     ));
     let expected = construction.clone();
     let (mut source_less, _, _) = decoded.into_parts();
@@ -394,7 +397,8 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
 
 #[test]
 fn generated_variable_blend_round_trips_parameterized_cross_sections() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendCrossSection};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection;
 
     for (selector, expected_cross_section) in [
         (
@@ -457,8 +461,9 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
 
 #[test]
 fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, VariableBlendBareCrossSection, VariableBlendCrossSection,
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::variable_blends::{
+        VariableBlendBareCrossSection, VariableBlendCrossSection,
     };
 
     for (selector, expected) in [
@@ -565,7 +570,7 @@ fn generated_parameterized_revision_compound_loft_round_trips() {
         .expect("parameterized revision compound loft decode");
     let procedural = &result.ir().geometry.procedural_surfaces[0];
     assert_eq!(procedural.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
         procedural.definition()
     else {
         panic!("expected a revision compound loft construction")
@@ -599,7 +604,7 @@ fn generated_revision_compound_loft_trailing_curve_round_trips() {
 
 #[test]
 fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     // The trailing curve is present exactly when both parameter values are
     // present, so a payload carrying two present values and closing straight
@@ -783,9 +788,9 @@ fn record_level_surface_bounds_round_trip() {
 
 #[test]
 fn generated_vertex_blends_decode_all_boundary_variants() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, SurfaceGeometry, VertexBlendBoundaryGeometry,
-    };
+    use cadmpeg_ir::geometry::blends::VertexBlendBoundaryGeometry;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
 
     for name in ["VBL_SURF", "vertexblendsur"] {
         let result = F3dCodec
@@ -934,7 +939,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
 
 #[test]
 fn decode_retains_generated_translational_extrusion_and_fit_contract() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let f3d = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
     let result = F3dCodec
@@ -945,7 +950,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
@@ -982,7 +987,7 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
 
 #[test]
 fn decode_retains_versioned_nested_translational_extrusion() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let result = F3dCodec
         .decode(
@@ -994,7 +999,7 @@ fn decode_retains_versioned_nested_translational_extrusion() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
@@ -1016,7 +1021,7 @@ fn decode_retains_versioned_nested_translational_extrusion() {
 
 #[test]
 fn revision_cylinder_rejects_tokens_after_its_terminal_surface_tail() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let result = F3dCodec
         .decode(
@@ -1040,7 +1045,7 @@ fn revision_cylinder_rejects_tokens_after_its_terminal_surface_tail() {
 
 #[test]
 fn generated_f3d_rewrites_translational_extrusion_header() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
     let decoded = F3dCodec
@@ -1073,10 +1078,10 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
                 parameter_interval_value,
                 direction_value,
                 native_position_value,
-                cadmpeg_ir::geometry::CacheContract::from_form(
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                     definition_payload
                         .revision_form()
-                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
+                        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw),
                 ),
             )
             .unwrap();
@@ -1130,7 +1135,7 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
     assert_eq!(
         round_trip.ir().geometry.procedural_surfaces[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.075)
     );
 }
@@ -1345,7 +1350,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
 
 #[test]
 fn generated_f3d_rewrites_extrusion_directrix_control_points() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = f3d_with_smbh(&synthetic_cyl_spl_sur_smbh());
     let decoded = F3dCodec
@@ -1413,14 +1418,14 @@ fn decode_resolves_generated_ref_translational_extrusion() {
     assert_eq!(
         result.ir().geometry.procedural_surfaces[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
 }
 
 #[test]
 fn decode_resolves_revision_extrusion_implicit_directrix_reference() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let f3d = f3d_with_smbh(&synthetic_revision_ref_directrix_cyl_spl_sur_smbh());
     let result = F3dCodec

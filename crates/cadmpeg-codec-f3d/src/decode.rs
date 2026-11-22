@@ -3209,6 +3209,24 @@ enum SessionPath {
     },
 }
 
+/// Store a bodyless design's records and attach its owners. The body history
+/// tails collected for the design are reported here, as the geometry path
+/// reports them through the consumed-history fill.
+fn store_bodyless_design(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    mut design: design_intent::DesignNative,
+    native: &mut F3dNative,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let consumers = std::mem::take(&mut design.history_body_consumers);
+    design.store(native);
+    crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
+    crate::design::owners::attach(scan, native, ir, losses)?;
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
+}
+
 /// Phase-2 outcome as product projection and finalization see it.
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
@@ -3762,6 +3780,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
+                self.report.losses.extend(materials.losses);
                 self.report.losses.extend(face_losses);
                 self.report.losses.extend(name_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -4032,17 +4051,11 @@ impl<'a> F3dDecodeSession<'a> {
                             design.configuration_roots_unbound,
                             &self.ir,
                         );
-                        design.store(&mut self.native);
-                        crate::design::decode::sketch_owners::attach(
+                        store_bodyless_design(
                             ctx,
                             scan,
-                            &self.native,
-                            &mut self.ir.model,
-                            &mut self.report.losses,
-                        )?;
-                        crate::design::owners::attach(
-                            scan,
-                            &self.native,
+                            *design,
+                            &mut self.native,
                             &mut self.ir,
                             &mut self.report.losses,
                         )?;
@@ -4241,7 +4254,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            crate::design_v11::project(
+                ctx,
+                &mut decoded.ir,
+                decoded.body.transfer.depth(),
+                &mut decoded.body.losses,
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -5167,7 +5185,7 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
             &mut report.losses,
             F3dLossCode::XrefPlacementMetadataNative,
             format_args!(
-                "{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator, ordinal and cross-segment metadata reference only in native source frames"
+                "{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator and ordinal in native source frames"
             ),
         );
     }
@@ -5491,7 +5509,8 @@ fn decode_result(
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
-    if matches!(report_scope, crate::report::ReportScope::ArchiveMember(_)) {
+    let archive_member = matches!(report_scope, crate::report::ReportScope::ArchiveMember(_));
+    if archive_member {
         crate::tree::state_root_definition(ctx, &mut ir)?;
     }
     let mut source = crate::report::classify_document(
@@ -5502,18 +5521,22 @@ fn decode_result(
     )?;
     // Stamped on the finalized, classified document, so the write path
     // compares against the exact document the sealed wrapper returns.
+    // Standalone decodes apply post-passes and stamp `document_local_sha256`
+    // in `decode`, so skip the discarded intermediate digest here.
     ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        &ir,
-        Some(&source),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    source.attributes.insert(
-        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        hash,
-    );
+    if archive_member {
+        let hash = cadmpeg_ir::hash::document_local_sha256(
+            ctx,
+            &ir,
+            Some(&source),
+            "f3d",
+            crate::ids::FILE_SOURCE_IMAGE_ID,
+        )?;
+        source.attributes.insert(
+            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+            hash,
+        );
+    }
     Ok(AuthoredDecoded {
         scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),

@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/f3d.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `named_parameter_scope_tail` record.
 ///
@@ -7497,6 +7497,9 @@ pub(crate) mod construction_operand_affine_transform_frame {
 /// Offsets are relative to the reference presence marker. The repeated references carry the same entity, source occurrence identity and type GUID.
 /// ```
 pub(crate) mod legacy_occurrence_target_reference {
+    /// Record length in bytes. Spec §1.4.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 60;
     /// Offset of `target_entity` (`u64`, little-endian). Spec §1.4.
     #[cfg(test)]
     pub(crate) const TARGET_ENTITY: usize = 1;
@@ -7879,6 +7882,18 @@ pub(crate) mod compact_reference_profile_chain_record {
     pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
 }
 
+/// Byte offsets for the `compact_reference_sketchless_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 42 B.
+pub(crate) mod compact_reference_sketchless_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `selection_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 31;
+}
+
 /// Byte offsets for the `compact_reference_profile_identity_record` record.
 ///
 /// Spec §3.1. Record length 36 B.
@@ -8162,6 +8177,22 @@ pub(crate) mod assembly_typed_rigid_group_matrix_locator {
     pub(crate) const DISCRIMINATOR: usize = 303;
     /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
     pub(crate) const ZERO_TAIL: usize = 307;
+}
+
+/// Byte offsets for the `circular_pattern_axis_record` record.
+///
+/// Spec §Assembly operands. Record length 220 B.
+///
+/// ```text
+/// Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220.
+/// ```
+pub(crate) mod circular_pattern_axis_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 220;
+    /// Offset of `control` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const CONTROL: usize = 89;
+    /// Stated value of `control` (`u32`). Spec §Assembly operands.
+    pub(crate) const CONTROL_VALUE: u32 = 0x0000_0007;
 }
 
 /// Byte offsets for the `rectangular_pattern_direction_record` record.
@@ -8494,10 +8525,8 @@ pub(crate) mod circular_pattern_payload_distribution {
     pub(crate) const LEN: usize = 25;
     /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO: usize = 8;
-    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COMPUTE_OPTION: usize = 8;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 16;
     /// Offset of `fixed_one` (`u8`). Spec §Assembly operands.
@@ -8584,8 +8613,8 @@ pub(crate) mod rectangular_pattern_payload_suffix {
     pub(crate) const SCOPE: usize = 11;
     /// Offset of `seed_group` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SEED_GROUP: usize = 22;
-    /// Offset of `zero_tail` (`bytes[4]`). Spec §Assembly operands.
-    pub(crate) const ZERO_TAIL: usize = 33;
+    /// Offset of `suppressed_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SUPPRESSED_COUNT: usize = 33;
 }
 
 /// Byte offsets for the `sketch_geometry_ordinal_collection_reference` record.
@@ -11301,6 +11330,14 @@ pub(crate) mod move_marker_one_transform_prologue {
 pub(crate) mod move_transform_omitted_matrix_frame_126 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 126;
+}
+
+/// Byte offsets for the `move_transform_omitted_matrix_frame_128` record.
+///
+/// Spec §3.1. Record length 128 B.
+pub(crate) mod move_transform_omitted_matrix_frame_128 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 128;
 }
 
 /// Byte offsets for the `rigid_transform_leading_prefix` record.

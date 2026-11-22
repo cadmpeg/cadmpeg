@@ -2,7 +2,22 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#247:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#247:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
       "containers": [
         {
           "kind": "ordered",
@@ -106,12 +121,14 @@
       "scopes": [
         {
           "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#247:0",
           "current": [],
           "definition": "sldprt:model:product-definition#root",
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -152,18 +169,81 @@
       "colliders": [],
       "configurations": [
         {
-          "active": false,
-          "feature_states": {},
+          "active": true,
+          "feature_states": {
+            "sldprt:model:feature#247:0": {
+              "definition": {
+                "kind": "operation",
+                "value": {
+                  "kind": "extrude",
+                  "value": {
+                    "direction": {
+                      "kind": "profile_normal"
+                    },
+                    "extent": {
+                      "kind": "one_sided",
+                      "side": {
+                        "termination": {
+                          "kind": "blind",
+                          "length": 12.5
+                        }
+                      }
+                    },
+                    "op": "join",
+                    "profile": {
+                      "kind": "planar",
+                      "value": {
+                        "kind": "unresolved",
+                        "value": "sldprt:history:feature#247:0"
+                      }
+                    },
+                    "solid": true,
+                    "start": {
+                      "kind": "profile_plane"
+                    }
+                  }
+                }
+              },
+              "dependencies": [],
+              "evaluation": {
+                "kind": "active",
+                "outputs": []
+              }
+            },
+            "sldprt:model:feature#247:1": {
+              "definition": {
+                "kind": "operation",
+                "value": {
+                  "kind": "native",
+                  "value": {
+                    "kind": "EquationDrivenCurve",
+                    "parameters": {}
+                  }
+                }
+              },
+              "dependencies": [],
+              "evaluation": {
+                "kind": "active",
+                "outputs": []
+              }
+            }
+          },
           "id": "sldprt:model:configuration#247:0",
           "material": "Steel",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#247:0",
           "ordinal": 0,
           "parameter_overrides": {},
-          "parameter_values": {},
+          "parameter_values": {
+            "sldprt:model:parameter#247:0:0": {
+              "kind": "length",
+              "value": 12.5
+            }
+          },
           "properties": {
             "DisplayState": "Shaded"
-          }
+          },
+          "source_index": 0
         }
       ],
       "declared_measures": [],
@@ -426,6 +506,7 @@
         "parasolid_schema": "SCH_SW_33103_11000",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#247:0",
         "sldprt_native_configuration_sha256": "a6a9e3af32106ac486286c5b0526863edbbfe38f7659acb8e5325933fd8e4e66",
         "sldprt_native_history_sha256": "4813e18a77f366ff5f17995bb17623fb92d2d53e66d6c33f119b4bfef16588b1",
         "sldprt_native_parameter_sha256": "1269173203e9b534703f9d9bdd7ab433dbd9e1ebe660d240782ee509b6ec3898",
@@ -604,36 +685,12 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "config.active-identity-unresolved",
-            "kind": "feature_history_retained",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "active configuration identity is unresolved; 0 of 1 configuration records are active.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "config.incoherent-body-refs",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
           }
         },
         "message": "1 configuration record(s) have unresolved body membership; 0 configuration record(s) contain missing or repeated body references.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "config.incomplete-snapshot",
-            "kind": "feature_history_retained",
-            "namespace": "sldprt"
-          }
-        },
-        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {

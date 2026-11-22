@@ -18,9 +18,8 @@ use cadmpeg_core::CodecError;
 use crate::document::CadIr;
 use crate::geometry::curve_payloads::SubsetCurveConstruction;
 use crate::geometry::nurbs::NurbsCurve;
-use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::scalar::FiniteReal;
 use crate::topology::{IncreasingParameterInterval, ParameterInterval, Sense};
