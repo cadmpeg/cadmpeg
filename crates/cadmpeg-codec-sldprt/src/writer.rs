@@ -13,7 +13,7 @@ mod envelope;
 mod history_drop;
 mod materials;
 mod metadata_owners;
-mod native;
+pub(crate) mod native;
 mod ownership;
 mod reduce;
 pub(crate) mod target;
@@ -609,15 +609,15 @@ fn native_skeleton(
         .find(|value| value.active)
         .and_then(|value| value.name.clone())
         .unwrap_or_else(|| "Default".to_owned());
-    // The skeleton's object identifiers follow the history summary's, so the
-    // decoder binds no summary feature to a skeleton object.
-    let id_base = native
+    // The skeleton's stored bodies, parameters and last folders take
+    // identifiers after the history summary's, so the decoder binds no
+    // summary feature to a skeleton object.
+    let last_feature = native
         .iter()
         .flat_map(|native| &native.feature_histories)
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
-        .max()
-        .unwrap_or_default();
+        .max();
     let (features, unwritten_extrusion, driven, lane_reason) =
         match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
             native::from_ir::Features::Native {
@@ -636,19 +636,20 @@ fn native_skeleton(
     } else {
         ir.geometry.bodies.len()
     };
-    let streams = ir
-        .geometry
-        .bodies
-        .iter()
-        .take(stored)
-        .enumerate()
-        .map(|(index, body)| {
-            native::Body::numbered(&name, id_base, index, body.kind == BodyKind::Sheet)
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .and_then(|bodies| {
+    let streams = native::Numbering::new(last_feature, stored, &features)
+        .and_then(|numbering| {
+            let bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .take(stored)
+                .enumerate()
+                .map(|(index, body)| {
+                    native::Body::numbered(&name, &numbering, index, body.kind == BodyKind::Sheet)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             native::skeleton(&native::Facts {
-                id_base,
+                numbering,
                 name: &name,
                 active: &active,
                 features: &features,
@@ -658,10 +659,7 @@ fn native_skeleton(
         .map_err(|error| error.to_string())?;
     let native_features = features
         .iter()
-        .map(|feature| match feature {
-            native::Feature::Sketch(sketch) => sketch.feature_id,
-            native::Feature::Extrusion(extrusion) => extrusion.feature_id,
-        })
+        .map(native::Feature::id)
         .collect::<HashSet<_>>();
     if let Some((stream, _)) = streams.iter().find(|(stream, _)| {
         stream != SKELETON_RESOLVED && sections.iter().any(|(candidate, _)| candidate == stream)

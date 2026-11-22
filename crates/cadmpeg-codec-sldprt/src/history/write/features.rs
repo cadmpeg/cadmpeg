@@ -125,8 +125,9 @@ fn generated_feature_source_ids(
         .collect::<HashMap<_, _>>();
     // `next` is the lowest source id not yet offered. `None` states that the
     // id space is exhausted: every allocation advances it, and the allocation
-    // that finds it exhausted is the one refusal.
-    let mut next = Some(1u32);
+    // that finds it exhausted is the one refusal. A part's default feature
+    // tree holds the identifiers below the first user feature's.
+    let mut next = Some(crate::writer::native::ids::FIRST_USER);
     let mut allocated = HashMap::new();
     for feature in features
         .iter()

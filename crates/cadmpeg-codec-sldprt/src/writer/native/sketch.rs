@@ -15,7 +15,7 @@ use std::io::Write as _;
 use cadmpeg_core::CodecError;
 
 use super::archive::Archive;
-use super::block::{block, named, Oid, Schema, Tail, TAIL};
+use super::block::{block, named, Schema, Tail, TAIL};
 use super::tree::{unit_component, Plane};
 use super::TIME_STAMP;
 use crate::records::SketchRelationKind;
@@ -279,7 +279,7 @@ pub(super) fn profile_feature(
         archive,
         Some(&sketch.name),
         Schema::Plain,
-        Oid::Plain(sketch.feature_id),
+        sketch.feature_id,
     );
     block(archive, feature_tail(PROFILE_BLOCK_WORD));
     archive.zeros(10);
@@ -531,8 +531,7 @@ fn origin_projection(archive: &mut Archive, reference: u32) {
     archive.zeros(24);
     archive.bytes(&[0xff; 16]);
     archive.zeros(20);
-    let origin = archive.tree_id(super::ids::ORIGIN);
-    archive.u32(origin);
+    archive.u32(super::ids::ORIGIN);
     archive.u32(TIME_STAMP);
     handle(archive, Operand::Point(0));
     archive.u32(1);
@@ -582,12 +581,7 @@ fn dimension_groups(archive: &mut Archive, sketch: &Sketch, next_id: &mut u32) {
         archive.object(dimension.class.name());
         archive.u32(0);
         archive.object("moLengthParameter_c");
-        named(
-            archive,
-            Some(&dimension.name),
-            Schema::Plain,
-            Oid::Plain(u32::MAX),
-        );
+        named(archive, Some(&dimension.name), Schema::Plain, u32::MAX);
         archive.u16(0);
         archive.f64(dimension.value);
         archive.u8(0);
@@ -839,8 +833,7 @@ fn profile_body(archive: &mut Archive, stream: &[u8]) -> Result<(), CodecError> 
 fn plane(archive: &mut Archive, plane: Plane, reference: u32) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
-    let feature = archive.tree_id(plane.tree_id());
-    archive.u32(feature);
+    archive.u32(plane.tree_id());
     archive.u32(TIME_STAMP);
     archive.u16(0);
     archive.u16(plane.reference_word());
