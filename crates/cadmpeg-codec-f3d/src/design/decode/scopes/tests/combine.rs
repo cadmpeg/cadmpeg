@@ -626,6 +626,9 @@ struct OperandListFixture {
     optional_reference: bool,
     /// Operation entries after the first, each a reference or null.
     further_operation_entries: Vec<Option<u32>>,
+    /// The number of bytes of the first operation-identity value that the
+    /// reference table follows, for a truncated frame.
+    truncated_identity: Option<usize>,
     tool_bodies: FixtureToolBodies,
     reference_form: FixtureReferenceForm,
 }
@@ -675,6 +678,7 @@ impl OperandListFixture {
             omit_consumed: false,
             optional_reference: true,
             further_operation_entries: Vec::new(),
+            truncated_identity: None,
             tool_bodies: FixtureToolBodies::default(),
             reference_form: FixtureReferenceForm::default(),
         }
@@ -761,6 +765,7 @@ impl OperandListFixture {
         } else {
             bytes.push(0);
         }
+        let identity_at = bytes.len();
         bytes.extend_from_slice(&306u64.to_le_bytes());
         for entry in &self.further_operation_entries {
             match entry {
@@ -788,6 +793,9 @@ impl OperandListFixture {
             bytes.extend_from_slice(&[unit, 0]);
         }
         bytes.resize(bytes.len() + self.guid_tail_zeros, 0);
+        if let Some(kept) = self.truncated_identity {
+            bytes.truncate(identity_at + kept);
+        }
         let table = self.table();
         bytes.extend_from_slice(&(u32::try_from(table.len() * 2).unwrap()).to_le_bytes());
         for (operation, selection) in &table {
@@ -1109,6 +1117,27 @@ fn operand_list_prologue_reports_an_operation_entry_form_outside_the_stated_form
     );
     bytes[first_identity..first_identity + 8].copy_from_slice(&(identity + 1).to_le_bytes());
     assert_eq!(operation_entry_codes(&bytes), assumed);
+}
+
+#[test]
+fn a_truncated_operation_identity_reads_the_standard_prologue_with_a_loss() {
+    for first_present in [true, false] {
+        let mut fixture = OperandListFixture::new(1, 0);
+        fixture.property_block = true;
+        fixture.optional_reference = first_present;
+        fixture.truncated_identity = Some(4);
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(
+            operation.map(|operation| operation.form),
+            Some(DesignCombineForm::Standard),
+            "first reference present: {first_present}"
+        );
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombinePrologueAssumed.kind()],
+            "first reference present: {first_present}"
+        );
+    }
 }
 
 #[test]

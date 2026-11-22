@@ -267,7 +267,9 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
     )?)
     .ok()?;
     let mut cursor = field(combine_lists::REFERENCE_MARKER)?;
-    if entries == 0 || entries > prologue.len().checked_sub(cursor)? / OPERATION_ENTRY_MIN_LEN {
+    if entries == 0
+        || (entries > 1 && entries > prologue.len().checked_sub(cursor)? / OPERATION_ENTRY_MIN_LEN)
+    {
         return None;
     }
     let mut first = None;
