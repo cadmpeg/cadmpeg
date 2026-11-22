@@ -45,11 +45,11 @@ const NODE_NAME_CLASS: &str = "moNodeName_c";
 /// The material folder of a part with no material.
 const MATERIAL_NAME: &str = "Material <not specified>";
 
-/// The object identifiers of the default tree's nodes: the identifiers a part
-/// made from the default template of the version holds (sldprt.md §2.3,
-/// "Object identifiers"). `15` and `18` stay free: the template's third
-/// directional light, which the skeleton does not write, and an object the
-/// tree does not hold.
+/// The object identifiers of the default tree's nodes: the first layout and
+/// the first identifier set of sldprt.md §2.3, "Object identifiers". `15`
+/// and `18` stay free: the set's third directional light, which the
+/// skeleton does not write (open item EV-34), and an object the tree does
+/// not hold.
 pub(crate) mod ids {
     pub(super) const ANNOTATIONS: u32 = 1;
     pub(super) const FRONT_PLANE: u32 = 2;
@@ -72,8 +72,8 @@ pub(crate) mod ids {
     pub(super) const HISTORY: u32 = 21;
     pub(super) const SELECTION_SETS: u32 = 22;
     /// The identifier of the first user feature. The history summary
-    /// numbers its features from it, and the tree writes a user feature
-    /// with the summary's identifier.
+    /// numbers a generated part's features from it, and the tree writes a
+    /// user feature with the summary's identifier.
     pub(crate) const FIRST_USER: u32 = 23;
 }
 
