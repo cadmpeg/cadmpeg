@@ -2002,6 +2002,7 @@ fn resolved_feature_payload(
     // Descending offset order: a spliced name changes the length of the payload
     // after it, and every remaining name sits before the one just written.
     lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
+    let name_marker = crate::resolved_features::names::name_marker(&lane.native_payload);
     for (name, rename) in lane_renames {
         let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = u8::try_from(utf16.len()).map_err(|_| {
@@ -2013,12 +2014,13 @@ fn resolved_feature_payload(
         let end = start
             .checked_add(6 + name.value.encode_utf16().count() * 2)
             .ok_or_else(|| CodecError::Malformed("feature-input name range overflow".into()))?;
-        if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
+        if payload.get(start..start + name_marker.len()) != Some(name_marker.as_slice()) {
             return Err(CodecError::Malformed(
                 "feature-input name marker does not match retained payload".into(),
             ));
         }
-        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff, length];
+        let mut replacement = name_marker.to_vec();
+        replacement.push(length);
         for unit in utf16 {
             replacement.extend_from_slice(&unit.to_le_bytes());
         }
