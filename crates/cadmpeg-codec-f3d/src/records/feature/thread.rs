@@ -298,6 +298,28 @@ pub(crate) struct DesignThreadConstruction {
     pub(crate) extended: Option<DesignThreadExtended>,
 }
 
+impl DesignThreadConstruction {
+    pub(crate) fn class(&self) -> Option<&str> {
+        self.extended
+            .as_ref()
+            .map(|value| value.class.as_str())
+            .or(match self.form {
+                DesignThreadForm::Standard
+                | DesignThreadForm::StandardLegacy
+                | DesignThreadForm::StandardCompact => Some("6g"),
+                DesignThreadForm::Compact(_)
+                | DesignThreadForm::CompactLegacy
+                | DesignThreadForm::CompactOwnersLeading
+                | DesignThreadForm::CompactOwnersTrailing => Some("6H"),
+                _ => None,
+            })
+    }
+
+    pub(crate) fn external(&self) -> Option<bool> {
+        self.extended.as_ref().map(|value| value.external)
+    }
+}
+
 /// Positive finite thread diameters ordered from minor through pitch to major.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignThreadDiameters {
