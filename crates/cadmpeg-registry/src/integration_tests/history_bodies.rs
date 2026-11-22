@@ -59,10 +59,10 @@ fn every_encoder_exports_a_document_with_history_bodies_as_one_without() {
     let expected = [
         #[cfg(feature = "step")]
         Format::Step,
-        #[cfg(feature = "rhino")]
-        Format::Rhino,
-        #[cfg(feature = "fcstd")]
-        Format::Fcstd,
+        #[cfg(feature = "f3d")]
+        Format::F3d,
+        #[cfg(feature = "usd")]
+        Format::Usd,
     ];
     for format in expected {
         assert!(
