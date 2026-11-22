@@ -1216,3 +1216,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** On the stored frame of a support plane with an oblique normal, the fields are local sketch coordinates (`sldprt.md` §2 "When profile anchors do not determine the transform"). A sketch projected from a B-rep face takes its frame from the Parasolid plane: its origin and reference direction. On such a frame with an oblique normal, the decoder reads the fields as the model-coordinate components of the axis-parallel rule. Two such sketches have relation points that the two readings place differently, and no projected B-rep vertex lies at those points under either reading. On an axis-parallel normal with a turned `u` axis, the decoder reads the fields as model-coordinate components. 14 marker sketches have such frames, and no placed marker of them lies on a projected B-rep vertex. For 12 of them, none does under any of the 8 signed axis permutations in the sketch frame.
 
 **Need.** Sketches of either kind whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component and the local-coordinate readings.
+
+### DI-81. The stored frame of an offset reference plane
+
+**Question.** What do the normal and origin of the complete plane frame an offset reference-plane object stores state, relative to its source plane and its signed `D1`?
+
+**Known.** An offset reference-plane object that carries a complete frame stores the offset plane's own u-axis there (`sldprt.md` §2.3). Some such frames have a normal perpendicular to the source plane normal. Where the stored normal is parallel to the source plane normal, the stored origin agrees in the plane with the source origin translated by `D1`, and along the normal it lies on either side of the source plane, including at the mirror position of that translation. Sketches on such planes have B-rep vertices that lie in the stored plane and off the plane the translation gives.
+
+**Need.** For offset planes whose stored frame and translated source frame differ, the B-rep vertices of the features sketched on them, compared with both planes, and the source plane's own stored frame for planes whose normal is perpendicular to the source normal.
