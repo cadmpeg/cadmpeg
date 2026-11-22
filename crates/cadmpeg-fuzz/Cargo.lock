@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-edrawings"
-version = "0.6.7"
+version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
