@@ -6,7 +6,7 @@ All multi-byte integers are little-endian unless explicitly marked **BE**. Float
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Variant families
 

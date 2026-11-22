@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# Deliberately broken layout table: the declared discrepancy states numbers that are not the real ones
-# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+# Deliberately broken layout table: `parsed_by` names a path that does not exist.
+# `crates/cadmpeg-layout-tables/tests/layout_tables/main.rs` asserts the validator rejects it.
 schema = 1
 format = "f3d"
 spec = "docs/formats/f3d.md"
@@ -11,7 +11,7 @@ name = "asmheader_binaryfile8"
 kind = "byte"
 section = "3"
 anchor = "`BinaryFile8` header layout"
-size = 47
+parsed_by = "crates/cadmpeg-asm/src/does_not_exist.rs"
 
 [[record.field]]
 name = "magic"
@@ -19,9 +19,3 @@ offset = 0
 type = "bytes[15]"
 source = "spec"
 anchor = "`0..15` | magic `ASM BinaryFile8`"
-
-[[record.discrepancy]]
-kind = "size_mismatch"
-computed = 20
-declared = 47
-note = "Wrong on purpose: the fields end at 15, not 20."
