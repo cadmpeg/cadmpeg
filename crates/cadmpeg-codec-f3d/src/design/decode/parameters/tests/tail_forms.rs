@@ -83,7 +83,7 @@ fn parameter_discriminator_is_independent_of_source_kind_and_tail() {
                     parse_design_parameter_record(&frame)
                         .expect("discriminated parameter")
                         .family_discriminator()
-                        .map(|value| value.value.code()),
+                        .map(|value| u64::from(value.value.code())),
                     Some(discriminator)
                 );
             }
@@ -160,7 +160,7 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
         assert_eq!(
             parameter
                 .family_discriminator()
-                .map(|field| field.value.code()),
+                .map(|field| u64::from(field.value.code())),
             Some(discriminator)
         );
     }

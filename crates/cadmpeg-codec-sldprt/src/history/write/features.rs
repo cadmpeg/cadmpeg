@@ -19,7 +19,20 @@ use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::history::extrude_direction::cleared_reversal;
+use crate::loss::SldprtLossCode;
 use crate::records::FeatureSource;
+use crate::resolved_features::terminations::EndSpecAnchor;
+
+/// What preparing the native history for a write produced.
+#[derive(Debug, Default)]
+pub(crate) struct PreparedFeatures {
+    /// The serialized object names to rewrite.
+    pub(crate) renames: Vec<FeatureInputRename>,
+    /// The feature edits the written records hold only in part, or that the
+    /// stored solid does not show.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
 
 /// A write-side request to rewrite one serialized object name.
 ///
@@ -173,7 +186,7 @@ pub(in crate::history) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<PreparedFeatures, CodecError> {
     let features = &ir.model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -181,7 +194,7 @@ pub(in crate::history) fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(Vec::new());
+        return Ok(PreparedFeatures::default());
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -214,6 +227,20 @@ pub(in crate::history) fn sync_neutral_features(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
+    // The end specs whose reversal flag an edit clears, read from the stored
+    // records as the decoder read them. A scan the context refuses finds no
+    // flag, and the write names each reversal it could not clear.
+    let reversed_end_specs = if features.iter().any(cleared_reversal) {
+        crate::resolved_features::terminations::reversed_end_specs(
+            &ctx,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        )
+        .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+    let mut cleared = Vec::new();
     enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
     let resolved_parameter_names = resolved_histories
         .iter()
@@ -396,6 +423,12 @@ pub(in crate::history) fn sync_neutral_features(
             resolved_parameter_names: &resolved_parameter_names,
         }
         .encode()?;
+        if cleared_reversal(feature) {
+            let stated = existing
+                .as_deref()
+                .is_some_and(|record| record.properties.contains_key("Reverse"));
+            cleared.push((feature, stated));
+        }
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
                 record,
@@ -485,6 +518,11 @@ pub(in crate::history) fn sync_neutral_features(
             });
         }
     }
+    let losses = clear_reversals(
+        &cleared,
+        &reversed_end_specs,
+        &mut native.feature_input_lanes,
+    );
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     let changed_parameters = native
         .feature_histories
@@ -541,7 +579,45 @@ pub(in crate::history) fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(renames)
+    Ok(PreparedFeatures { renames, losses })
+}
+
+/// Writes `0` to the end-spec reversal word of each extrusion whose decoded
+/// reversal an edit cleared, each paired with whether its record states the
+/// flag as a Keywords attribute, which the encoder already dropped. Names
+/// each extrusion whose flag the write could not clear.
+fn clear_reversals(
+    cleared: &[(&cadmpeg_ir::features::Feature, bool)],
+    reversed_end_specs: &HashMap<String, Vec<EndSpecAnchor>>,
+    lanes: &mut [crate::records::FeatureInputLane],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::layout::extrusion_end_spec_header::REVERSAL;
+    let mut losses = Vec::new();
+    for (feature, stated) in cleared {
+        let anchors = feature
+            .native_ref
+            .as_deref()
+            .and_then(|record| reversed_end_specs.get(record))
+            .map_or(&[][..], Vec::as_slice);
+        let mut unwritten = anchors.is_empty() && !stated;
+        for anchor in anchors {
+            let at = anchor.offset + REVERSAL;
+            match lanes
+                .get_mut(anchor.lane)
+                .and_then(|lane| lane.native_payload.get_mut(at..at + 4))
+            {
+                Some(word) => word.copy_from_slice(&0_u32.to_le_bytes()),
+                None => unwritten = true,
+            }
+        }
+        let extrusion = crate::history::extrude_direction::label(feature);
+        if unwritten {
+            losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal."
+            )));
+        }
+    }
+    losses
 }
 
 fn synchronize_neutral_feature_content(

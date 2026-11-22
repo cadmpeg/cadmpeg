@@ -804,6 +804,41 @@ fn principal_planes_are_datums_on_the_principal_planes() {
     assert_no_design_findings(&ir);
 }
 
+/// An extrusion whose record states a reversal is typed along the reversed
+/// profile normal.
+#[test]
+fn a_reversed_extrusion_is_typed_with_a_reversed_profile_normal() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::ops::swept::ExtrudeDirection;
+
+    let (ir, _) = sketch_and_extrude_from(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7" Reverse="true">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+    );
+    let FeatureOperation::Extrude(extrude) = &feature_named(&ir, "Boss").definition.operation
+    else {
+        panic!("Boss is no extrude");
+    };
+    assert_eq!(
+        extrude.direction,
+        Some(ExtrudeDirection::ProfileNormal {
+            reversed: Some(Dimension::Literal(true)),
+        })
+    );
+}
+
 #[test]
 fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     use cadmpeg_ir::design::dimension::Dimension;
@@ -925,6 +960,8 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     for parameter in &parameters {
@@ -1131,6 +1168,8 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     let diameter = parameters

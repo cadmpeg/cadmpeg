@@ -127,3 +127,24 @@ date = 2026-10-24
 level = 2
 files = 5
 result = "decode and check clean; packages carry placed tessellation and product structure and no exact streams; tessellation converts to AP242 STEP"
+
+[[evaluation]]
+dialect = "edrawings:hsf-19-10"
+date = 2026-11-05
+level = 2
+files = 2
+result = "one part and one assembly decode and validate clean; bodies are faceted B-reps rebuilt from display meshes"
+
+[[evaluation]]
+dialect = "edrawings:hsf-18-00"
+date = 2026-11-06
+level = 2
+files = 1
+result = "one assembly decodes and validates clean; bodies are faceted B-reps rebuilt from display meshes, many of them sheets"
+
+[[evaluation]]
+dialect = "edrawings:hsf-19-00"
+date = 2026-11-09
+level = 2
+files = 1
+result = "one assembly decodes and validates clean; bodies are faceted B-reps rebuilt from display meshes"

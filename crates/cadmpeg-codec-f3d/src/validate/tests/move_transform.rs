@@ -154,7 +154,8 @@ fn move_transform_validator_reports_shifted_matrix_location() {
             let validate = |native: &crate::native::F3dNative| {
                 let ctx = super::super::Ctx::new(&ir, native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+                super::super::parameter_scopes::validate_parameter_scopes(&ctx, &mut findings)
+                    .unwrap();
                 findings
             };
             assert!(validate(&native).is_empty());

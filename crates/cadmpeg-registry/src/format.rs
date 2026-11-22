@@ -157,6 +157,7 @@ mod tests {
             "acis",
             "parasolid",
             "pvz",
+            "edrawings",
             "usd",
         ] {
             assert!(

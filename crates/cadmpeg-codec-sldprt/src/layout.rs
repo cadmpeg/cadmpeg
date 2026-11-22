@@ -2972,6 +2972,8 @@ pub(crate) mod sketch_record_head {
     pub(crate) const LOCUS: usize = 23;
     /// Offset of `role` (`u16`, little-endian). Spec §Sketch objects.
     pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §Sketch objects.
+    pub(crate) const STATE: usize = 29;
     /// Offset of `minus_one` (`f32`, little-endian). Spec §Sketch objects.
     pub(crate) const MINUS_ONE: usize = 31;
     /// Offset of `object_pointer` (`u16`, little-endian). Spec §Sketch objects.
@@ -3436,6 +3438,51 @@ pub(crate) mod weldment_xt_entry_prefix {
     pub(crate) const STREAM_LEN: usize = 4;
 }
 
+/// Byte offsets for the `equation_token_words` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words.
+/// ```
+pub(crate) mod equation_token_words {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 16;
+}
+
+/// Byte offsets for the `equation_expression_separator` record.
+///
+/// Spec §2. Record length 10 B.
+///
+/// ```text
+/// The expression side's class tag and token count follow.
+/// ```
+pub(crate) mod equation_expression_separator {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 10;
+    /// Stated value of `separator_lead` (`bytes[8]`). Spec §2.
+    pub(crate) const SEPARATOR_LEAD_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `equation_dimension_reference_token` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value.
+/// ```
+pub(crate) mod equation_dimension_reference_token {
+    /// Offset of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD: usize = 2;
+    /// Stated value of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `wrapper_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const WRAPPER_CLASS_TOKEN: usize = 6;
+    /// Offset of `stored_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STORED_VALUE: usize = 8;
+}
+
 /// Byte offsets for the `draft_declared_neutral_frame` record.
 ///
 /// Spec §2. Record length 120 B.
@@ -3536,6 +3583,18 @@ pub(crate) mod extrusion_compact_operation_trailer {
     pub(crate) const FINAL_TOKEN: usize = 34;
     /// Offset of `zero_tail` (`bytes[4]`). Spec §2.
     pub(crate) const ZERO_TAIL: usize = 36;
+}
+
+/// Byte offsets for the `extrusion_end_spec_header` record.
+///
+/// Spec §2. Record length 26 B.
+///
+/// ```text
+/// Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26.
+/// ```
+pub(crate) mod extrusion_end_spec_header {
+    /// Offset of `reversal` (`u32`, little-endian). Spec §2.
+    pub(crate) const REVERSAL: usize = 12;
 }
 
 /// Byte offsets for the `pmark_record_head` record.
