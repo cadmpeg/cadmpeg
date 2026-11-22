@@ -491,37 +491,52 @@ pub(crate) fn principal_sketch_frame(
     }
 }
 
-/// The loss naming the profile sketches placed on the Top frame through the
-/// plane their feature-input reference names, rather than through a
-/// principal-plane component record that stores the Top frame (`sldprt.md`
-/// §3.3). Which plane that reference gives a sketch is open item DI-73: the
-/// B-rep of some sketches bound this way lies on another principal plane.
-pub(crate) fn top_plane_binding_note(
-    features: &[cadmpeg_ir::features::Feature],
-    sketches: &[cadmpeg_ir::sketches::Sketch],
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    let top = principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top);
-    let mut assumed = crate::loss::NamedCount::default();
-    for sketch in sketches {
-        if super::transforms::support_plane_sketch_kind(sketch)
-            && sketch
-                .resolved_placement()
-                .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
-                == Some(top)
-            && !super::transforms::top_component_marked(sketch, features)
-        {
-            assumed.push(sketch.name.as_deref().unwrap_or(sketch.id.as_str()));
+/// The profile sketches whose frame is the principal Top plane that their
+/// feature-input plane reference names (`SupportFrame::top_reference`), rather
+/// than a frame a component record or a stored plane gives (`sldprt.md` §3.3).
+#[derive(Debug, Default)]
+pub(crate) struct TopReferenceSketches(std::collections::HashSet<cadmpeg_ir::sketches::SketchId>);
+
+impl TopReferenceSketches {
+    pub(super) fn record(&mut self, sketch: &cadmpeg_ir::sketches::SketchId, top_reference: bool) {
+        if top_reference {
+            self.0.insert(sketch.clone());
         }
     }
-    (!assumed.is_empty()).then(|| {
-        crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.note(format!(
-            "{} profile sketch(es) ({assumed}) are placed on the Top plane (origin 0,0,0, \
-             normal +Y, u-axis +X) that their feature-input plane reference names; the plane \
-             is assumed, because the B-rep of some sketches bound this way lies on another \
-             principal plane (sldprt-open-items.md DI-73).",
-            assumed.count(),
-        ))
-    })
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
+    /// The loss naming the recorded sketches that lie on the Top frame. Which
+    /// plane their reference gives them is open item DI-73: the B-rep of some
+    /// sketches bound this way lies on another principal plane.
+    pub(crate) fn note(
+        &self,
+        sketches: &[cadmpeg_ir::sketches::Sketch],
+    ) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let top = principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top);
+        let mut assumed = crate::loss::NamedCount::default();
+        for sketch in sketches {
+            if self.0.contains(&sketch.id)
+                && sketch
+                    .resolved_placement()
+                    .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+                    == Some(top)
+            {
+                assumed.push(sketch.name.as_deref().unwrap_or(sketch.id.as_str()));
+            }
+        }
+        (!assumed.is_empty()).then(|| {
+            crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.note(format!(
+                "{} profile sketch(es) ({assumed}) are placed on the Top plane (origin 0,0,0, \
+                 normal +Y, u-axis +X) that their feature-input plane reference names; the plane \
+                 is assumed, because the B-rep of some sketches bound this way lies on another \
+                 principal plane (sldprt-open-items.md DI-73).",
+                assumed.count(),
+            ))
+        })
+    }
 }
 
 #[cfg(test)]

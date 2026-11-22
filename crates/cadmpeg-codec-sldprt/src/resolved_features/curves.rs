@@ -60,15 +60,20 @@ pub(crate) struct SketchPlaneFrame {
     pub(super) normal: Vector3,
     pub(super) u_axis: Vector3,
     pub(super) u_axis_source: SketchPlaneUAxisSource,
+    /// The principal plane whose frame this is, when the frame comes from a
+    /// principal-plane feature rather than from a stored or derived frame.
+    pub(super) principal: Option<cadmpeg_ir::features::PrincipalPlane>,
 }
 
 impl SketchPlaneFrame {
-    fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
+    pub(super) fn principal(plane: cadmpeg_ir::features::PrincipalPlane) -> Self {
+        let (origin, normal, u_axis) = principal_sketch_frame(plane);
         Self {
             origin,
             normal,
             u_axis,
             u_axis_source: SketchPlaneUAxisSource::Native,
+            principal: Some(plane),
         }
     }
 
@@ -81,6 +86,7 @@ impl SketchPlaneFrame {
             normal,
             u_axis,
             u_axis_source,
+            principal: None,
         }
     }
 
@@ -1330,7 +1336,7 @@ pub(super) fn sketch_plane_frames(
             let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPrincipalPlane { plane },
-                ) => SketchPlaneFrame::native(principal_sketch_frame(*plane)),
+                ) => SketchPlaneFrame::principal(*plane),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPlane { frame },
                 ) => SketchPlaneFrame::from_frame(
@@ -1388,6 +1394,7 @@ pub(super) fn sketch_plane_frames(
                     ),
                     u_axis: stored_offset_plane_u_axis(feature, frame.normal)
                         .unwrap_or(frame.u_axis),
+                    principal: None,
                     ..frame
                 })
             })() else {
@@ -1433,7 +1440,7 @@ pub(crate) fn lane_sketch_plane_frames(
         };
         let frame = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-                SketchPlaneFrame::native(principal_sketch_frame(*plane))
+                SketchPlaneFrame::principal(*plane)
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                 SketchPlaneFrame::from_frame(

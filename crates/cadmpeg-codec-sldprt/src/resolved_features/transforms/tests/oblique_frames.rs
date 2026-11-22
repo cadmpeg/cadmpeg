@@ -116,10 +116,11 @@ fn tilted(tilt: f64) -> Frame {
     }
 }
 
-/// On the Right frame and its translates, on the reversed frame `N=-X, U=+Z`,
-/// and on the translates of the Top frame along `Y` with `U=+X` or `U=-X`, the
-/// pair `(a, b)` is the local sketch coordinate: on Right it is the model point
-/// `(0, b, -a)`.
+/// On the Right frame and its translates along `X`, on the reversed frame
+/// `N=-X, U=+Z` with its origin on the `X` axis, on frames `N=+Y, U=-X` with
+/// their origin on the `Y` axis (the origin itself included), and on the
+/// translates of the Top frame along `Y` with `U=+X`, the pair `(a, b)` is the
+/// local sketch coordinate: on Right it is the model point `(0, b, -a)`.
 #[test]
 fn local_pair_frame_families_read_markers_as_sketch_coordinates() {
     for (frame, expected) in [
@@ -143,6 +144,14 @@ fn local_pair_frame_families_read_markers_as_sketch_coordinates() {
             frame((0.0, -5.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)),
             (-10.0, -5.0, 20.0),
         ),
+        (
+            frame((0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)),
+            (-10.0, 0.0, 20.0),
+        ),
+        (
+            frame((-3.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            (-3.0, 20.0, 10.0),
+        ),
     ] {
         let transform = frame.transform(MARKER_SKETCH);
         assert_eq!(transform, MarkerTransform::identity());
@@ -153,8 +162,9 @@ fn local_pair_frame_families_read_markers_as_sketch_coordinates() {
 
 /// Every other axis-parallel support frame keeps the model-component reading
 /// (open item DI-80): the pair is the two model coordinates other than the
-/// normal's, in ascending axis order. The Top frame itself is among them, and
-/// so is the Front lane fallback frame `N=-Y, U=-Z`.
+/// normal's, in ascending axis order. The Top frame itself is among them, so
+/// is the Front lane fallback frame `N=-Y, U=-Z`, and so are the `X`-family
+/// frames whose origin is displaced within the plane off the `X` axis.
 #[test]
 fn other_axis_parallel_support_frames_keep_the_model_component_reading() {
     for (frame, expected) in [
@@ -177,6 +187,18 @@ fn other_axis_parallel_support_frames_keep_the_model_component_reading() {
         (
             frame((0.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, -1.0)),
             (10.0, 0.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, -244.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (0.0, 10.0, 20.0),
+        ),
+        (
+            frame((7.0, 3.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, -1.0)),
+            (7.0, 10.0, 20.0),
+        ),
+        (
+            frame((0.0, 0.0, 6.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+            (0.0, 10.0, 20.0),
         ),
     ] {
         let transform = frame.transform(MARKER_SKETCH);

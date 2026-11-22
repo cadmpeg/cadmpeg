@@ -264,6 +264,7 @@ fn top_offset_frame_with_u_axis(
         normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         u_axis,
         u_axis_source: SketchPlaneUAxisSource::Native,
+        principal: None,
     }
 }
 

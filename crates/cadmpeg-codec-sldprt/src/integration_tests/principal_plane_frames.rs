@@ -319,3 +319,17 @@ fn offset_plane_whose_stored_frame_contradicts_it_reports_the_conflict() {
     );
     assert!(!codes.contains(&side), "{codes:?}");
 }
+
+/// A stored frame parallel to the source plane at `D1` states the side even
+/// when its origin lies elsewhere in the offset plane: the plane is the same.
+#[test]
+fn offset_plane_frame_displaced_within_its_plane_states_the_side() {
+    let (distance, codes) = offset_plane_with_stored_origin("3mm,-2mm,-6mm");
+    assert_eq!(distance, -6.0);
+    for code in [
+        crate::loss::SldprtLossCode::FeatureOffsetPlaneFrameConflict.kind(),
+        crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind(),
+    ] {
+        assert!(!codes.contains(&code), "{codes:?}");
+    }
+}

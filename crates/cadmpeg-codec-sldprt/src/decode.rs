@@ -3548,15 +3548,19 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        &mut sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut top_references =
+        crate::resolved_features::compact_reference_planes::TopReferenceSketches::default();
+    top_references.extend(
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            &mut sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -3573,18 +3577,20 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut sketch_entities,
-            held: &mut held_handles,
-        },
-        &histories,
-        sketch_lanes,
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut held_handles,
+            },
+            &histories,
+            sketch_lanes,
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -3873,6 +3879,7 @@ fn build_geometry_ir(
         &all_lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::history::configuration::bind_configuration_topology_selections(
@@ -4297,12 +4304,7 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(
-        crate::resolved_features::compact_reference_planes::top_plane_binding_note(
-            &ir.model.features,
-            &ir.model.sketches,
-        ),
-    );
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4878,15 +4880,19 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        &mut ir.model.sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut top_references =
+        crate::resolved_features::compact_reference_planes::TopReferenceSketches::default();
+    top_references.extend(
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -4903,18 +4909,20 @@ fn build_metadata_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut ir.model.sketch_entities,
-            held: &mut held_handles,
-        },
-        &histories,
-        sketch_lanes,
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut ir.model.sketch_entities,
+                held: &mut held_handles,
+            },
+            &histories,
+            sketch_lanes,
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -5105,6 +5113,7 @@ fn build_metadata_ir(
         lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
@@ -5196,12 +5205,7 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(
-        crate::resolved_features::compact_reference_planes::top_plane_binding_note(
-            &ir.model.features,
-            &ir.model.sketches,
-        ),
-    );
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

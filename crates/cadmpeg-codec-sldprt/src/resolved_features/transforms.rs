@@ -162,19 +162,11 @@ pub(super) fn feature_sketch_marker_transform(
     quantum: f64,
     features: &[cadmpeg_ir::features::Feature],
 ) -> Option<MarkerTransform> {
-    component_sketch_marker_transform(sketch, quantum, top_component_marked(sketch, features))
-}
-
-/// Whether a sketch feature binding `sketch` records that a principal-plane
-/// component record placed it on the Top frame (`record_top_marker_coordinates`).
-pub(super) fn top_component_marked(
-    sketch: &cadmpeg_ir::sketches::Sketch,
-    features: &[cadmpeg_ir::features::Feature],
-) -> bool {
-    features.iter().any(|feature| {
+    let top = features.iter().any(|feature| {
         matches!(feature.evaluation.definition(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)) }) if id == &sketch.id)
             && feature.source_properties.get(MARKER_COORDINATE_SYSTEM).is_some_and(|value| value == PRINCIPAL_TOP_COMPONENT)
-    })
+    });
+    component_sketch_marker_transform(sketch, quantum, top)
 }
 
 /// The transform the sketch placement gives the feature-input marker pair. On
@@ -298,7 +290,7 @@ pub(super) const LEGACY_CONFIG_SKETCH_KIND: &str = "legacy-config";
 /// and the legacy-configuration sketches (the same table, or the unique frame of
 /// their lane). `bore:` sketches take their frame from the same table but project
 /// their points from model space, so their pair is not a sketch coordinate.
-pub(super) fn support_plane_sketch_kind(sketch: &cadmpeg_ir::sketches::Sketch) -> bool {
+fn support_plane_sketch_kind(sketch: &cadmpeg_ir::sketches::Sketch) -> bool {
     sketch
         .id
         .as_str()
@@ -316,13 +308,14 @@ pub(super) fn support_plane_sketch_kind(sketch: &cadmpeg_ir::sketches::Sketch) -
 
 /// Whether the feature-input marker pair of a sketch on its support plane's
 /// frame is the local sketch coordinate (`sldprt.md` §2): on a frame whose
-/// normal is oblique to the model axes; on the Right frame (`N=+X`, `U=-Z`) and
-/// the reversed frame `N=-X`, `U=+Z` wherever they lie; and on a frame with
-/// `N=+Y` and `U=+X` or `U=-X` whose origin lies on the `Y` axis, other than the
-/// Top frame itself. On every other axis-parallel frame, the Top frame among
-/// them, the decoder keeps the model-component reading (open item DI-80); a Top
-/// sketch that a principal-plane component record places reads locally through
-/// `component_sketch_marker_transform`.
+/// normal is oblique to the model axes; on a frame with `N=+X`, `U=-Z` (the
+/// Right frame and its offsets) or `N=-X`, `U=+Z` whose origin lies on the `X`
+/// axis; and on a frame with `N=+Y` whose origin lies on the `Y` axis, with
+/// `U=-X`, or with `U=+X` other than the Top frame itself. On every other
+/// axis-parallel frame, the Top frame and the frames whose origin is displaced
+/// within the plane among them, the decoder keeps the model-component reading
+/// (open item DI-80); a Top sketch that a principal-plane component record
+/// places reads locally through `component_sketch_marker_transform`.
 fn local_pair_frame(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
     const EPS: f64 = EPS_TRANSFORMS_LOCAL_PAIR_FRAME_E8;
     let (normal_length, u_length) = (normal.norm(), u_axis.norm());
@@ -335,9 +328,11 @@ fn local_pair_frame(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
         return true;
     }
     let along = |vector: [f64; 3], axis: usize, sign: f64| (vector[axis] * sign - 1.0).abs() <= EPS;
+    let on_x_axis = origin.y.abs() <= EPS && origin.z.abs() <= EPS;
     let on_y_axis = origin.x.abs() <= EPS && origin.z.abs() <= EPS;
-    along(normal, 0, 1.0) && along(u_axis, 2, -1.0)
-        || along(normal, 0, -1.0) && along(u_axis, 2, 1.0)
+    on_x_axis
+        && (along(normal, 0, 1.0) && along(u_axis, 2, -1.0)
+            || along(normal, 0, -1.0) && along(u_axis, 2, 1.0))
         || along(normal, 1, 1.0)
             && on_y_axis
             && (along(u_axis, 0, -1.0) || along(u_axis, 0, 1.0) && origin.y.abs() > EPS)

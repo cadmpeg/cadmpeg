@@ -447,8 +447,9 @@ enum StoredOffsetSide {
 }
 
 /// `D1` is a magnitude. A stored frame parallel to the source plane at the
-/// absolute `D1` from it states the side; a stored frame in the source plane
-/// is the source plane's frame and states none (`sldprt.md` §2).
+/// absolute `D1` from it states the side, wherever its origin lies in that
+/// plane; a stored frame in the source plane is the source plane's frame and
+/// states none (`sldprt.md` §2).
 fn stored_offset_side(
     stored: Option<(Point3, Vector3, Vector3)>,
     source: (Point3, Vector3),
@@ -457,12 +458,9 @@ fn stored_offset_side(
     let Some((origin, normal, _)) = stored else {
         return StoredOffsetSide::Unstated;
     };
-    let Some((signed, tangent)) = parallel_plane_offset(source, (origin, normal)) else {
+    let Some((signed, _)) = parallel_plane_offset(source, (origin, normal)) else {
         return StoredOffsetSide::Contradicted("normal not parallel to the source plane");
     };
-    if !same_offset_scalar(tangent, 0.0) {
-        return StoredOffsetSide::Contradicted("origin moved within the plane");
-    }
     if same_offset_scalar(signed.abs(), distance.get().abs()) {
         return Length::new(distance.get().abs().copysign(signed))
             .map_or(StoredOffsetSide::Unstated, StoredOffsetSide::Stated);
