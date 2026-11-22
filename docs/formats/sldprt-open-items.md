@@ -1142,6 +1142,16 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** The writer numbers a generated part's user features first, from `23`, and their dimension parameters after them, the extrusion's depth parameter last. It writes the extrusion one above its sketch and nothing at the four identifiers. A feature added to a part takes an identifier past the largest that the decoder reads in the part, so it takes none of the four.
 
+### EV-34. The light set of the default tree
+
+**Question.** Which `moDirectionLight_c` objects and which `moEqnFolder_c` identifier does a part hold when its `moEnvFolder_c` holds fewer than three directional lights?
+
+**Known.** `sldprt.md` §2.3 gives the two identifier sets of the default nodes: directional lights `13`, `14` and `15` with the `moEqnFolder_c` `16`, or those lights and a fourth `16` with the `moEqnFolder_c` `61`. Parts of other versions that hold exactly two directional lights, at `13` and `14`, hold the `moEqnFolder_c` at an identifier other than `16`, some at `15`. Parts that hold the `moAmbientLight_c` at `12` and the `moEqnFolder_c` at `16` with `15` empty hold their directional lights at other identifiers.
+
+**Need.** The light set and `moEqnFolder_c` identifier a writer gives a generated part, so that its default tree is one native parts hold.
+
+**Conflict.** The writer writes two directional lights, `13` and `14`, and the `moEqnFolder_c` at `16`, and leaves `15` empty. No native part holds that combination. The first identifier set with a third directional light at `15` is a combination native parts hold.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
