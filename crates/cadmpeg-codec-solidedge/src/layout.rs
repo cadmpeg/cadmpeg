@@ -123,3 +123,19 @@ pub(crate) mod type_compact_record {
     /// Offset of `link` (`u16`, little-endian). Spec §3.2.
     pub(crate) const LINK: usize = 18;
 }
+
+/// Byte offsets for the `part_feature_object` record.
+///
+/// Spec §4.3. Record length 12 B.
+pub(crate) mod part_feature_object {
+    /// Offset of `state` (`u32`, little-endian). Spec §4.3.
+    pub(crate) const STATE: usize = 8;
+}
+
+/// Byte offsets for the `folder_object` record.
+///
+/// Spec §4.3. Record length 12 B.
+pub(crate) mod folder_object {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §4.3.
+    pub(crate) const MEMBER_COUNT: usize = 8;
+}

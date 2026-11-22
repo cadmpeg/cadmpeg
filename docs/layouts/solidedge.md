@@ -130,3 +130,33 @@ Unstated regions:
 
 - `16..18` (2 B): §3.2 states no field before the value.
 - `20..26` (6 B): §3.2 states no field after the value.
+
+## `part_feature_object`
+
+Spec §4.3 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/features.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `state` | `u32` | little | spec | The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word. |
+
+Unstated regions:
+
+- `0..8` (8 B): The object frame (§3.1).
+
+## `folder_object`
+
+Spec §4.3 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/features.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 4 | `member_count` | `u32` | little | spec | The `u32` at object offset 8 is the member count `c`. |
+
+Unstated regions:
+
+- `0..8` (8 B): The object frame (§3.1).

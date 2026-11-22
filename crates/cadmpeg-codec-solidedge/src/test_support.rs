@@ -466,6 +466,11 @@ pub(crate) const NAVIGATOR_GUID: [u8; 16] = [
 /// The bytes after the frame of a navigator object that lists the three base
 /// planes `planes` and then `features`.
 pub(crate) fn navigator_body(planes: [u32; 3], features: &[u32]) -> Vec<u8> {
+    navigator_body_last(planes, features, features.last().copied().unwrap_or(0))
+}
+
+/// As [`navigator_body`], with the last-feature identifier `last`.
+pub(crate) fn navigator_body_last(planes: [u32; 3], features: &[u32], last: u32) -> Vec<u8> {
     let mut body = 0_u32.to_le_bytes().to_vec();
     body.extend_from_slice(&NAVIGATOR_GUID);
     let word = |body: &mut Vec<u8>, value: u32| body.extend_from_slice(&value.to_le_bytes());
@@ -482,7 +487,7 @@ pub(crate) fn navigator_body(planes: [u32; 3], features: &[u32]) -> Vec<u8> {
         word(&mut body, value);
     }
     word(&mut body, 7);
-    word(&mut body, features.last().copied().unwrap_or(0));
+    word(&mut body, last);
     word(
         &mut body,
         u32::try_from(planes.len() + features.len()).unwrap(),
@@ -498,8 +503,14 @@ pub(crate) fn navigator_body(planes: [u32; 3], features: &[u32]) -> Vec<u8> {
 /// The bytes after the frame of a `CLSID_JMPart` object with function name
 /// `function`.
 pub(crate) fn part_body(function: &str) -> Vec<u8> {
+    part_body_state(function, 0)
+}
+
+/// As [`part_body`], with the state word `state` at object offset 8.
+pub(crate) fn part_body_state(function: &str, state: u32) -> Vec<u8> {
     // The frame is 8 bytes; the counted block starts at object offset 132.
     let mut body = vec![0_u8; 132 - 8];
+    body[..4].copy_from_slice(&state.to_le_bytes());
     body.extend_from_slice(&6_u32.to_le_bytes());
     body.extend_from_slice(&[0xee; 6]);
     body.extend_from_slice(&u32::try_from(function.len() + 1).unwrap().to_le_bytes());
@@ -508,12 +519,29 @@ pub(crate) fn part_body(function: &str) -> Vec<u8> {
     body
 }
 
+/// The bytes after the frame of a `CLSID_JMFeatureGroup` object that lists
+/// `members`, each pair led by `marker`.
+fn folder_body(members: &[u32], marker: u32) -> Vec<u8> {
+    let mut body = u32::try_from(members.len()).unwrap().to_le_bytes().to_vec();
+    for member in members {
+        body.extend_from_slice(&marker.to_le_bytes());
+        body.extend_from_slice(&member.to_le_bytes());
+    }
+    body
+}
+
 /// One feature of [`feature_document`].
 pub(crate) enum Feature<'a> {
     /// A `CLSID_JMPart` with this function name.
     Part(&'a str),
+    /// A `CLSID_JMPart` with this function name and state word.
+    PartState(&'a str, u32),
     /// A `CLSID_JMGroup`.
     Group,
+    /// A `CLSID_JMFeatureGroup` that lists these member object identifiers.
+    Folder(&'a [u32]),
+    /// A `CLSID_JMFeatureGroup` whose pairs carry the marker 2.
+    FolderBadMarker(&'a [u32]),
     /// An object of this other class.
     Other(&'a str),
 }
@@ -522,12 +550,19 @@ pub(crate) enum Feature<'a> {
 /// features and a navigator that lists them in order. Every object's form is
 /// its declaration index, since the compact table is empty.
 pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
+    feature_document_last(features, None)
+}
+
+/// As [`feature_document`], with the navigator's last-feature identifier
+/// `last` when given.
+pub(crate) fn feature_document_last(features: &[Feature<'_>], last: Option<u32>) -> Vec<u8> {
     let mut classes = vec![
         "ReferencePlaneObject",
         "CLSID_JMPart",
         "CLSID_JMGroup",
         "CLSID_JMPartOwner",
         "FeatureNavigatorObject",
+        "CLSID_JMFeatureGroup",
     ];
     let mut objects = Vec::new();
     for id in 1..=3 {
@@ -544,7 +579,10 @@ pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
         listed.push(id);
         let (form, body) = match feature {
             Feature::Part(function) => (1, part_body(function)),
+            Feature::PartState(function, state) => (1, part_body_state(function, *state)),
             Feature::Group => (2, vec![0; 8]),
+            Feature::Folder(members) => (5, folder_body(members, 1)),
+            Feature::FolderBadMarker(members) => (5, folder_body(members, 2)),
             Feature::Other(class) => {
                 classes.push(class);
                 (u16::try_from(classes.len() - 1).unwrap(), vec![0; 8])
@@ -567,7 +605,11 @@ pub(crate) fn feature_document(features: &[Feature<'_>]) -> Vec<u8> {
         id: 5000,
         form: 4,
         flags: 0,
-        body: navigator_body([1, 2, 3], &listed),
+        body: navigator_body_last(
+            [1, 2, 3],
+            &listed,
+            last.unwrap_or(listed.last().copied().unwrap_or(0)),
+        ),
     });
     objects.sort_by_key(|object| object.id);
     let (cluster, map) = cluster_and_map(&objects);

@@ -255,7 +255,7 @@ fn full_decode_states_the_feature_order_as_one_timeline() {
     let codes = loss_codes(&result);
     for code in [
         "feature.operands-pending",
-        "feature.rollback-unread",
+        "feature.suppression-unread",
         "feature.kind-unknown",
         "body.decode-pending",
     ] {
@@ -266,6 +266,7 @@ fn full_decode_states_the_feature_order_as_one_timeline() {
         );
     }
     assert!(!codes.iter().any(|code| code == "feature.storage-unread"));
+    assert!(!codes.iter().any(|code| code == "feature.rollback-unread"));
 }
 
 #[test]
@@ -353,4 +354,174 @@ fn full_decode_states_folder_members_as_features_and_reports_the_folder() {
     let codes = loss_codes(&result);
     assert!(codes.iter().any(|code| code == "feature.folder-unread"));
     assert!(!codes.iter().any(|code| code == "feature.kind-unknown"));
+}
+
+/// The timeline container and the suppressed state of its features.
+fn timeline_of(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> (&cadmpeg_ir::design::container::Container, Vec<Option<bool>>) {
+    use cadmpeg_ir::design::dimension::Dimension;
+    let design = &result.ir().design;
+    let suppressed = design
+        .features
+        .iter()
+        .map(|feature| match &feature.suppressed {
+            Some(Dimension::Literal(value)) => Some(*value),
+            _ => None,
+        })
+        .collect();
+    (&design.containers[0], suppressed)
+}
+
+#[test]
+fn full_decode_states_suppression_from_the_part_state_word() {
+    use test_support::Feature;
+
+    let result = decode(test_support::feature_document(&[
+        Feature::PartState("JMProtrusionFunction", 0x10),
+        Feature::PartState("JMCutoutFunction", 0x00),
+        Feature::PartState("JMHoleFunction", 0x02),
+    ]));
+    let (_, suppressed) = timeline_of(&result);
+    assert_eq!(suppressed, vec![Some(true), Some(false), Some(false)]);
+    assert!(!loss_codes(&result)
+        .iter()
+        .any(|code| code == "feature.suppression-unread"));
+}
+
+#[test]
+fn full_decode_reports_one_suppression_note_for_unreadable_states() {
+    use test_support::Feature;
+
+    let result = decode(test_support::feature_document(&[
+        Feature::Group,
+        Feature::Group,
+    ]));
+    let (_, suppressed) = timeline_of(&result);
+    assert_eq!(suppressed, vec![None, None]);
+    let codes = loss_codes(&result);
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| *code == "feature.suppression-unread")
+            .count(),
+        1
+    );
+}
+
+fn rollback_of(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> Option<cadmpeg_ir::design::container::Rollback> {
+    use cadmpeg_ir::design::container::Container;
+    let (Container::Ordered { rollback, .. }, _) = timeline_of(result) else {
+        panic!("the timeline is an ordered container");
+    };
+    rollback.clone()
+}
+
+#[test]
+fn full_decode_states_rollback_from_the_navigator_last_feature() {
+    use cadmpeg_ir::design::container::{Container, Rollback};
+    use test_support::Feature;
+
+    let features = [
+        Feature::Part("JMProtrusionFunction"),
+        Feature::Part("JMCutoutFunction"),
+        Feature::Part("JMHoleFunction"),
+    ];
+    // The middle feature is the last built one: the final feature is rolled
+    // back.
+    let result = decode(test_support::feature_document_last(&features, Some(11)));
+    let (Container::Ordered { members, .. }, _) = timeline_of(&result) else {
+        panic!("the timeline is an ordered container");
+    };
+    assert_eq!(
+        rollback_of(&result),
+        Some(Rollback::Before(members[2].clone()))
+    );
+    assert!(!loss_codes(&result)
+        .iter()
+        .any(|code| code == "feature.rollback-unread"));
+    // The final feature is the last built one: nothing is rolled back.
+    let result = decode(test_support::feature_document_last(&features, Some(12)));
+    assert_eq!(rollback_of(&result), Some(Rollback::End));
+    assert!(!loss_codes(&result)
+        .iter()
+        .any(|code| code == "feature.rollback-unread"));
+    // An identifier that no listed feature carries states no rollback and a loss.
+    let result = decode(test_support::feature_document_last(&features, Some(99)));
+    assert_eq!(rollback_of(&result), None);
+    assert_eq!(
+        loss_codes(&result)
+            .iter()
+            .filter(|code| *code == "feature.rollback-unread")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn full_decode_states_a_folder_over_consecutive_features() {
+    use cadmpeg_ir::design::container::Container;
+    use test_support::Feature;
+
+    // Object identifiers are 10 + the listed position: the folder is 11, its
+    // members 12 and 13 are timeline features 1 and 2.
+    let result = decode(test_support::feature_document(&[
+        Feature::Part("JMProtrusionFunction"),
+        Feature::Folder(&[12, 13]),
+        Feature::Part("JMCutoutFunction"),
+        Feature::Part("JMHoleFunction"),
+    ]));
+    let (Container::Ordered { folders, .. }, _) = timeline_of(&result) else {
+        panic!("the timeline is an ordered container");
+    };
+    assert_eq!(folders.len(), 1);
+    assert_eq!((folders[0].first, folders[0].last), (1, 2));
+    assert_eq!(folders[0].name, None);
+    let codes = loss_codes(&result);
+    assert_eq!(
+        codes
+            .iter()
+            .filter(|code| *code == "feature.folder-name-unread")
+            .count(),
+        1
+    );
+    assert!(!codes.iter().any(|code| code == "feature.folder-unread"));
+}
+
+#[test]
+fn full_decode_reports_a_folder_that_is_not_a_run_of_features() {
+    use cadmpeg_ir::design::container::Container;
+    use test_support::Feature;
+
+    let cases: [&[Feature<'_>]; 2] = [
+        // Members 10 and 13 are timeline features 0 and 2.
+        &[
+            Feature::Part("JMProtrusionFunction"),
+            Feature::Folder(&[10, 13]),
+            Feature::Part("JMCutoutFunction"),
+            Feature::Part("JMHoleFunction"),
+        ],
+        // The pair marker is 2.
+        &[
+            Feature::FolderBadMarker(&[11]),
+            Feature::Part("JMCutoutFunction"),
+        ],
+    ];
+    for features in cases {
+        let result = decode(test_support::feature_document(features));
+        let (Container::Ordered { folders, .. }, _) = timeline_of(&result) else {
+            panic!("the timeline is an ordered container");
+        };
+        assert!(folders.is_empty());
+        let codes = loss_codes(&result);
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| *code == "feature.folder-unread")
+                .count(),
+            1
+        );
+    }
 }
