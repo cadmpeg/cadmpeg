@@ -284,42 +284,39 @@ fn a_line_crossing_the_profile_is_cut_where_it_crosses() {
     );
 }
 
-/// The top edge has state `0`, as do a line on from its corner, a second
-/// copy of the bottom edge and a rectangle around the profile: the top edge
-/// closes the profile, and the line joins it; the copy and the rectangle
-/// join nothing the profile needs.
+/// The top edge has state `0`, as do a second copy of the bottom edge and
+/// a rectangle around the profile: the profile closes only through the top
+/// edge, so every curve of state `0` of the sketch is needed. Where the top
+/// edge has state `1`, none is.
 #[test]
-fn state_zero_curves_joined_to_a_loop_that_closes_only_through_them_are_needed() {
+fn state_zero_curves_are_needed_where_live_curves_close_only_through_them() {
     let rectangle = rectangle();
     let outer = [[-10.0, -10.0], [60.0, -10.0], [60.0, 40.0], [-10.0, 40.0]];
-    let mut zero = vec![
-        ("l2", rectangle[2].1.clone()),
-        ("tail", line([50.0, 30.0], [55.0, 30.0])),
-        ("copy", line([0.0, 0.0], [50.0, 0.0])),
-    ];
+    let mut zero = vec![("copy", line([0.0, 0.0], [50.0, 0.0]))];
     for index in 0..4 {
         zero.push((
             ["o0", "o1", "o2", "o3"][index],
             line(outer[index], outer[(index + 1) % 4]),
         ));
     }
+    let mut with_top = zero.clone();
+    with_top.push(("l2", rectangle[2].1.clone()));
     let keyed = |curves: &[(&str, PlanarCurve)]| {
         curves
             .iter()
             .map(|(key, curve)| (id(key), curve.clone()))
             .collect::<Vec<_>>()
     };
-    let live = keyed(
+    let open = keyed(
         &rectangle
             .iter()
             .filter(|(key, _)| *key != "l2")
             .cloned()
             .collect::<Vec<_>>(),
     );
-    let zero = keyed(&zero);
-    let (live, zero) = (map(&live), map(&zero));
-    let (l2, tail) = (id("l2"), id("tail"));
-    assert_eq!(needed(&live, &zero), HashSet::from([&l2, &tail]));
-    let none = HashMap::new();
-    assert_eq!(needed(&none, &zero), HashSet::new());
+    let (closed, zero, with_top) = (keyed(&rectangle), keyed(&zero), keyed(&with_top));
+    let all = map(&with_top).keys().copied().collect::<HashSet<_>>();
+    assert_eq!(needed(&map(&open), &map(&with_top)), all);
+    assert_eq!(needed(&map(&closed), &map(&zero)), HashSet::new());
+    assert_eq!(needed(&HashMap::new(), &map(&with_top)), HashSet::new());
 }

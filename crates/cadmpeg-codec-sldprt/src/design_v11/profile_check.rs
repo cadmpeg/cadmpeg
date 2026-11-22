@@ -197,11 +197,9 @@ pub(super) fn check(
     Ok(found)
 }
 
-/// The curves of `state_zero` that a curve of `live` closes through: each
-/// one joined, through curve ends and contacts, to a curve of `live` that
-/// closes in the whole sketch and closes nothing without the curves of
-/// `state_zero`. A curve that repeats a curve of `live` joins nothing. Empty
-/// where the check cannot place the curves.
+/// The curves of `state_zero`, where a curve of `live` closes in the whole
+/// sketch and closes nothing without them; empty elsewhere, and where the
+/// check cannot place the curves.
 pub(super) fn needed<'a>(
     live: &HashMap<&'a SketchEntityId, &'a PlanarCurve>,
     state_zero: &HashMap<&'a SketchEntityId, &'a PlanarCurve>,
@@ -228,39 +226,13 @@ pub(super) fn needed<'a>(
     };
     let with = closes(arrangement.closing(|_| true));
     let without = closes(arrangement.closing(|entity| is_live[entity]));
-    let mut parent = (0..arrangement.joints.len()).collect::<Vec<_>>();
-    for piece in arrangement
-        .pieces
-        .iter()
-        .filter(|piece| piece.repeats.is_none())
-    {
-        if let Some([a, b]) = piece.joints {
-            let (a, b) = (root(&mut parent, a), root(&mut parent, b));
-            parent[a] = b;
-        }
+    let lost = (0..arrangement.ids.len())
+        .any(|entity| is_live[entity] && with[entity] && !without[entity]);
+    if lost {
+        state_zero.keys().copied().collect()
+    } else {
+        HashSet::new()
     }
-    let mut lost = HashSet::new();
-    for piece in &arrangement.pieces {
-        if is_live[piece.entity] && with[piece.entity] && !without[piece.entity] {
-            lost.extend(piece.joints.into_iter().flatten());
-        }
-    }
-    let lost = lost
-        .into_iter()
-        .map(|joint| root(&mut parent, joint))
-        .collect::<HashSet<_>>();
-    let mut needed = HashSet::new();
-    for piece in &arrangement.pieces {
-        if is_live[piece.entity] || piece.repeats.is_some() {
-            continue;
-        }
-        if let Some([joint, _]) = piece.joints {
-            if lost.contains(&root(&mut parent, joint)) {
-                needed.insert(arrangement.ids[piece.entity]);
-            }
-        }
-    }
-    needed
 }
 
 /// A line, an arc or a circle of the sketch.
