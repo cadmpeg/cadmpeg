@@ -895,11 +895,8 @@ fn a_version_three_omitted_matrix_frame_is_an_identity_free_move() {
     let notes =
         crate::design::decode::scopes::direct_face::move_transform_prefix_losses(&scope, &decoded);
     assert_eq!(
-        notes
-            .iter()
-            .map(|note| note.code)
-            .collect::<Vec<_>>(),
-        [crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed.kind()]
+        notes.iter().map(|note| &note.code).collect::<Vec<_>>(),
+        [&crate::loss::F3dLossCode::FeatureMoveTransformIdentityAssumed.kind()]
     );
     assert_eq!(marked_move_loss_of(&bytes, &scope, 3), None);
     assert!(marked_move_loss_of(&bytes, &scope, 2).is_some_and(|loss| loss.contains("128-byte")));
