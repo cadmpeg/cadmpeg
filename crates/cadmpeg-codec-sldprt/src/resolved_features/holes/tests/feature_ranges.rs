@@ -33,12 +33,14 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 #[test]
 fn own_principal_component_record_names_the_profile_plane() {
     use crate::resolved_features::compact_reference_planes::{
-        principal_sketch_frame, CompactReferencePlaneIndex,
+        principal_sketch_frame, CompactReferencePlaneIndex, PlaneBinding,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-    use crate::resolved_features::holes::{feature_input_sketch_frame, principal_profile_frame};
+    use crate::resolved_features::holes::{
+        feature_input_sketch_frame, feature_input_support_frame, principal_profile_frame,
+    };
     use cadmpeg_ir::features::PrincipalPlane;
-    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::math::Point3;
     use std::collections::HashMap;
 
     const QUANTUM: f64 = 1.0e-8;
@@ -74,11 +76,6 @@ fn own_principal_component_record_names_the_profile_plane() {
             2,
             SketchPlaneFrame::from_frame(front, SketchPlaneUAxisSource::Native),
         )]);
-        let expected = (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        );
         let plane = if selector == 2 {
             PrincipalPlane::Top
         } else {
@@ -86,8 +83,8 @@ fn own_principal_component_record_names_the_profile_plane() {
         };
         let principal = Some((principal_sketch_frame(plane), plane));
         // The profile's own principal record names its plane, whether the
-        // Front reference comes from the preceding object or the lane default.
-        // The support-frame table keeps the Front lane fallback frame.
+        // Front reference comes from the preceding object or the lane default,
+        // for the sketch and for the hole positions that the profile gives.
         for context in [0, start] {
             assert_eq!(
                 principal_profile_frame(&frames, &index, context, start, payload.len()),
@@ -102,7 +99,19 @@ fn own_principal_component_record_names_the_profile_plane() {
                     start,
                     payload.len()
                 ),
-                Some(expected)
+                Some(principal_sketch_frame(plane))
+            );
+            assert_eq!(
+                feature_input_support_frame(
+                    &payload,
+                    &frames,
+                    &index,
+                    context,
+                    start,
+                    payload.len()
+                )
+                .map(|support| support.binding),
+                Some(PlaneBinding::Principal(plane))
             );
             let frame = principal_sketch_frame(plane);
             let sketch = cadmpeg_ir::sketches::Sketch {
@@ -161,7 +170,7 @@ fn own_principal_component_record_names_the_profile_plane() {
         )]);
         assert_eq!(
             feature_input_sketch_frame(&payload, &frames, &index, 0, start, payload.len()),
-            Some(placed)
+            Some(principal_sketch_frame(plane))
         );
         assert_eq!(
             principal_profile_frame(&frames, &index, 0, start, payload.len()),
@@ -451,5 +460,15 @@ fn own_declared_front_record_keeps_the_principal_plane_in_both_numberings() {
             feature_input_support_frame(&payload, &frames, &index, 0, start, declared_only_end)
                 .map(|support| (support.frame, support.binding));
         assert_eq!(support, Some((front, PlaneBinding::Stored)));
+        let support =
+            feature_input_support_frame(&payload, &frames, &index, 0, start, payload.len())
+                .map(|support| (support.frame, support.binding));
+        assert_eq!(
+            support,
+            Some((
+                principal_sketch_frame(PrincipalPlane::Top),
+                PlaneBinding::Principal(PrincipalPlane::Top)
+            ))
+        );
     }
 }

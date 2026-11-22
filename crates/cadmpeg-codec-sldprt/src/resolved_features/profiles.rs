@@ -36,7 +36,7 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::holes::{
-    feature_input_sketch_marker_transform, feature_input_support_frame, principal_profile_frame,
+    feature_input_sketch_marker_transform, feature_input_support_frame, reference_support_frame,
     sketch_feature_frames, SupportFrame,
 };
 use super::markers::{
@@ -696,26 +696,22 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let principal =
-                principal_profile_frame(&plane_frames, &plane_index, context_start, start, end);
-            let top_component = principal
-                .is_some_and(|(_, plane)| plane == cadmpeg_ir::features::PrincipalPlane::Top);
-            let Some(((origin, normal, u_axis), binding)) = principal
-                .map(|(frame, _)| (frame, PlaneBinding::Stored))
-                .or_else(|| {
-                    feature_input_support_frame(
-                        &lane.native_payload,
-                        &plane_frames,
-                        &plane_index,
-                        context_start,
-                        start,
-                        end,
-                    )
-                    .map(|support| (support.frame, support.binding))
-                })
+            let Some(SupportFrame {
+                frame: (origin, normal, u_axis),
+                binding,
+            }) = feature_input_support_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            )
             else {
                 continue;
             };
+            let top_component =
+                binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -1504,37 +1500,30 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let principal = (!block_definition)
-                .then(|| {
-                    principal_profile_frame(&plane_frames, &plane_index, context_start, start, end)
-                })
-                .flatten();
-            let top_component = principal
-                .is_some_and(|(_, plane)| plane == cadmpeg_ir::features::PrincipalPlane::Top);
-            let principal_frame = principal.map(|(frame, _)| frame);
-            let support = if principal_frame.is_some() {
-                None
+            let support_frame = if block_definition {
+                reference_support_frame
             } else {
-                feature_input_support_frame(
-                    &lane.native_payload,
-                    &plane_frames,
-                    &plane_index,
-                    context_start,
-                    start,
-                    end,
-                )
-                .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
+                feature_input_support_frame
             };
+            let support = support_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            )
+            .or_else(|| feature_frames.get(native_feature.id.as_str()).copied());
             let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
-            let frame = principal_frame
-                .or(support.map(|support| support.frame))
-                .or_else(|| {
-                    block_definition.then_some((
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    ))
-                });
+            let top_component =
+                binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
+            let frame = support.map(|support| support.frame).or_else(|| {
+                block_definition.then_some((
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ))
+            });
             let lane_key = lane
                 .id
                 .rsplit_once('#')

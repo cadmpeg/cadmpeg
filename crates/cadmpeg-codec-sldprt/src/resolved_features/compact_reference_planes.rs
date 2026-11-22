@@ -535,6 +535,9 @@ pub(crate) enum PlaneBinding {
     /// A record of the profile's own object, or a stored plane frame, gives
     /// the frame.
     Stored,
+    /// A principal-plane component record of the profile's own object names
+    /// the plane (`sldprt.md` §2).
+    Principal(cadmpeg_ir::features::PrincipalPlane),
     /// The frame is the principal Top plane that the profile's feature-input
     /// plane reference names.
     TopReference,
@@ -610,7 +613,7 @@ impl PlaneBindings {
         sketch: &cadmpeg_ir::sketches::SketchId,
         binding: PlaneBinding,
     ) {
-        if binding == PlaneBinding::Stored {
+        if matches!(binding, PlaneBinding::Stored | PlaneBinding::Principal(_)) {
             self.0.remove(sketch);
         } else {
             self.0.insert(sketch.clone(), binding);
