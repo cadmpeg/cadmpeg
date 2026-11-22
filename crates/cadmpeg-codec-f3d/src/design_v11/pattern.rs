@@ -61,7 +61,8 @@ pub(super) fn project(
             second
                 .iter()
                 .map(|second| (Some(second.direction.get()), second.count, second.symmetric)),
-        );
+        )
+        .filter(|(_, count, _)| *count > 1);
     let mut records = construction.directions().iter();
     let mut runs = Vec::with_capacity(2);
     for (axis, (source_count, extent)) in source.into_iter().enumerate() {
@@ -345,7 +346,7 @@ fn run(
                 if symmetric {
                     RunSides::Symmetric {
                         count: Some(SymmetricMeasure::Total),
-                        extent: Some(SymmetricMeasure::PerSide),
+                        extent: (!adjacent).then_some(SymmetricMeasure::PerSide),
                     }
                 } else {
                     RunSides::One

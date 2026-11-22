@@ -87,6 +87,15 @@ fn operation(
     second: Option<LinearPatternDirection>,
     symmetric: bool,
 ) -> LegacyOperation {
+    operation_with_count(direction, 3, second, symmetric)
+}
+
+fn operation_with_count(
+    direction: Option<Vector3>,
+    count: u32,
+    second: Option<LinearPatternDirection>,
+    symmetric: bool,
+) -> LegacyOperation {
     LegacyOperation::Pattern {
         seeds: vec![PatternSeed::Feature(
             FeatureId::mint("f3d:model:feature#seed").unwrap(),
@@ -94,7 +103,7 @@ fn operation(
         pattern: PatternKind::new(PatternTransform::Linear {
             direction: direction.map(|value| FeatureDirection3::new(value).unwrap()),
             spacing: PositiveLength::new(5.0).unwrap(),
-            count: 3,
+            count,
             second,
             omitted_instances: Vec::new(),
             symmetric,
@@ -328,4 +337,51 @@ fn face_and_body_seed_groups_keep_their_native_selections_beside_the_typed_layou
             .iter()
             .any(|loss| loss.code == F3dLossCode::FeatureRectangularPatternDesignNative.kind()));
     }
+}
+
+#[test]
+fn a_pitch_run_states_no_symmetric_extent() {
+    let scope = scope([3, 1], [2.0, 0.0], 7, true);
+    let operation = operation(Some(Vector3::new(1.0, 0.0, 0.0)), None, true);
+    let (first, _) = linear(project(&operation, &scope).unwrap());
+    assert!(matches!(first.run.spacing, Spacing::Pitch { .. }));
+    assert_eq!(
+        first.run.sides,
+        Some(RunSides::Symmetric {
+            count: Some(SymmetricMeasure::Total),
+            extent: None
+        })
+    );
+}
+
+#[test]
+fn a_direction_two_only_pattern_projects_from_the_two_run_definition() {
+    let scope = scope([1, 3], [1.0, 2.0], 7, false);
+    let second = LinearPatternDirection {
+        direction: FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+        spacing: PositiveLength::new(5.0).unwrap(),
+        count: 3,
+        symmetric: false,
+    };
+    let operation = operation_with_count(Some(Vector3::new(1.0, 0.0, 0.0)), 1, Some(second), false);
+    let (first, second) = linear(project(&operation, &scope).unwrap());
+    assert!(matches!(
+        first.run.spacing,
+        Spacing::Pitch {
+            count: Dimension::Literal(1),
+            ..
+        }
+    ));
+    let second = second.unwrap();
+    assert_eq!(
+        second.direction.resolved,
+        UnitVector3::new(Vector3::new(0.0, 1.0, 0.0))
+    );
+    assert!(matches!(
+        second.run.spacing,
+        Spacing::Pitch {
+            count: Dimension::Literal(3),
+            ..
+        }
+    ));
 }
