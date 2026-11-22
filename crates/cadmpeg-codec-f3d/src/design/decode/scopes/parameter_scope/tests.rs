@@ -651,6 +651,75 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
     }
 }
 
+/// The 88-byte companion tail of Thread scope 12, which owns Hole 5.
+fn thread_companion_tail(suppressed: bool) -> Vec<u8> {
+    use crate::layout::thread_hole_companion_tail as companion;
+    let marked = |tail: &mut [u8], at: usize, record_index: u32| {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    let mut tail = vec![0; companion::LEN];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    marked(&mut tail, companion::FIRST_COMPANION, 9);
+    tail[companion::PREVIOUS_HISTORY_STATE..companion::PREVIOUS_HISTORY_STATE + 4]
+        .copy_from_slice(&8u32.to_le_bytes());
+    tail[companion::EVALUATION_DURATION..companion::EVALUATION_DURATION + 8]
+        .copy_from_slice(&0.25f64.to_le_bytes());
+    marked(&mut tail, companion::SECOND_COMPANION, 8);
+    tail[companion::FLAGS] = u8::from(suppressed);
+    marked(&mut tail, companion::THIRD_COMPANION, 7);
+    marked(&mut tail, companion::HOLE, 5);
+    tail
+}
+
+fn parse_thread_scope(tail: &[u8]) -> Option<crate::records::feature::scope::DesignParameterScope> {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"344");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    push_marked(&mut bytes, 16);
+    push_marked(&mut bytes, 19);
+    bytes.extend_from_slice(&9u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Thread");
+    bytes.extend_from_slice(tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    super::parse_parameter_scope(
+        &bytes,
+        &indexed_record_offsets_for_test(&bytes),
+        12,
+        &"344".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+}
+
+#[test]
+fn companion_and_reciprocal_hole_tails_leave_the_timeline_state_unread() {
+    for suppressed in [false, true] {
+        let scope =
+            parse_thread_scope(&thread_companion_tail(suppressed)).expect("Thread companion tail");
+        assert_eq!(scope.previous_history_state_id(), Some(8));
+        assert_eq!(scope.rolled_back, None, "{suppressed}");
+        assert!(!scope.suppression_flag && !scope.no_result_flag);
+        for (members, further) in [
+            (&[12][..], false),
+            (&[12][..], true),
+            (&[12, 100][..], false),
+            (&[12, 100][..], true),
+        ] {
+            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
+                .expect("reciprocal Hole tail");
+            assert_eq!(scope.rolled_back, None, "{members:?} {further}");
+            assert!(!scope.suppression_flag && !scope.no_result_flag);
+        }
+    }
+}
+
 #[test]
 fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
@@ -666,6 +735,7 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
         Some("Tapped Hole")
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
+    assert_eq!(scope.rolled_back, None);
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }

@@ -1690,24 +1690,49 @@ fn fixed_tail_previous_history_offset(
     rigid_group: bool,
     second_tail_reference: bool,
 ) -> Option<usize> {
+    match fixed_tail_history(kind, tail_length, rigid_group, second_tail_reference) {
+        FixedTailHistory::ItemTail(offset) => Some(offset),
+        FixedTailHistory::Other(offset) => offset,
+    }
+}
+
+/// The form of a fixed scope tail and the offset of its preceding
+/// history-state identity.
+enum FixedTailHistory {
+    /// A feature item tail, which stores the timeline state bytes and lane
+    /// flags.
+    ItemTail(usize),
+    /// A tail form that the feature kind selects, or an unknown form.
+    Other(Option<usize>),
+}
+
+fn fixed_tail_history(
+    kind: &str,
+    tail_length: usize,
+    rigid_group: bool,
+    second_tail_reference: bool,
+) -> FixedTailHistory {
+    use FixedTailHistory::{ItemTail, Other};
     if rigid_group && kind == "As-built" {
-        return crate::design::assembly::OrdinaryRigidGroupTail::for_length(tail_length)
-            .map(|tail| tail.previous_history);
+        return Other(
+            crate::design::assembly::OrdinaryRigidGroupTail::for_length(tail_length)
+                .map(|tail| tail.previous_history),
+        );
     }
     match (kind, tail_length) {
-        ("As-built", crate::layout::ordinary_rigid_group_tail_88::LEN) => {
-            Some(crate::layout::ordinary_rigid_group_tail_88::PREVIOUS_HISTORY_STATE_ID)
-        }
-        ("Hole", 98) => Some(42),
-        ("Hole", 108) => Some(52),
-        ("CopyPasteBodies", 110) | ("Hole", 109) => Some(53),
-        ("Hole", 119) => Some(63),
-        ("CoilPrimitive", 88) => None,
-        (_, 72 | 76) => Some(30),
-        (_, 77 | 78) => Some(31),
-        (_, 87 | 88) if second_tail_reference => Some(41),
-        (_, 87) => Some(31),
-        _ => None,
+        ("As-built", crate::layout::ordinary_rigid_group_tail_88::LEN) => Other(Some(
+            crate::layout::ordinary_rigid_group_tail_88::PREVIOUS_HISTORY_STATE_ID,
+        )),
+        ("Hole", 98) => Other(Some(42)),
+        ("Hole", 108) => Other(Some(52)),
+        ("CopyPasteBodies", 110) | ("Hole", 109) => Other(Some(53)),
+        ("Hole", 119) => Other(Some(63)),
+        ("CoilPrimitive", 88) => Other(None),
+        (_, 72 | 76) => ItemTail(30),
+        (_, 77 | 78) => ItemTail(31),
+        (_, 87 | 88) if second_tail_reference => ItemTail(41),
+        (_, 87) => ItemTail(31),
+        _ => Other(None),
     }
 }
 
@@ -2034,24 +2059,35 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             }
             _ => None,
         };
-        let previous_history_state_id_offset = companion_history
-            .or_else(|| match tail_form {
-                ScopeTailForm::Named => named.as_ref().map(|named| named.previous_history_state_id),
-                ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
-                    typed_scope_previous_history_offset(
-                        kind.as_str(),
-                        tail_length.checked_sub(label_bytes)?,
-                    )?
-                    .checked_add(label_bytes)
-                }
-                ScopeTailForm::Fixed => fixed_tail_previous_history_offset(
+        let (previous_history_state_id_offset, item_tail) = match companion_history {
+            Some(offset) => (Some(offset), false),
+            None => match tail_form {
+                ScopeTailForm::Named => (
+                    named.as_ref().map(|named| named.previous_history_state_id),
+                    true,
+                ),
+                ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => (
+                    tail_length
+                        .checked_sub(label_bytes)
+                        .and_then(|unlabelled| {
+                            typed_scope_previous_history_offset(kind.as_str(), unlabelled)
+                        })
+                        .and_then(|offset| offset.checked_add(label_bytes)),
+                    false,
+                ),
+                ScopeTailForm::Fixed => match fixed_tail_history(
                     kind.as_str(),
                     tail_length,
                     kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
                     tail.get(FIXED_TAIL_SECOND_REFERENCE) == Some(&1),
-                ),
-            })
-            .and_then(|offset| kind_end.checked_add(offset));
+                ) {
+                    FixedTailHistory::ItemTail(offset) => (Some(offset), true),
+                    FixedTailHistory::Other(offset) => (offset, false),
+                },
+            },
+        };
+        let previous_history_state_id_offset =
+            previous_history_state_id_offset.and_then(|offset| kind_end.checked_add(offset));
         let named_references = named
             .map(|named| named.references)
             .filter(|references| references.extra_bytes().is_some_and(|extra| extra > 0));
@@ -2267,6 +2303,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         .ok()?;
         scope.source_kind = source_kind;
         if let Some(state) = previous_history_state_id_offset
+            .filter(|_| item_tail)
             .and_then(|previous| scope_timeline_state(bytes, kind_end, previous, paired_at))
         {
             scope.rolled_back = Some(state.lanes.rolled_back);
