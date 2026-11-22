@@ -177,7 +177,8 @@ impl<'a> ScanBudget<'a> {
     }
     /// Returns a charge for storage that was dropped.
     pub fn release_retained(&self, bytes: u64) {
-        self.retained.set(self.retained.get().saturating_sub(bytes));
+        let current = self.retained.get();
+        self.retained.set(current - bytes.min(current));
     }
     /// Charges one feature visit before reading its listing record.
     pub fn feature(&self) -> Result<FeatureVisit<'_>, StopReason> {
