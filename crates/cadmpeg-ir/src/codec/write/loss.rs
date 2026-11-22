@@ -17,6 +17,9 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub(crate) enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
+    /// The output holds a record of this kind as the source file stores it,
+    /// without the document's edit (§3.4, Paths item 4).
+    EditDropped(EntityKind),
     /// A writer dropped native records of its own namespace (§3.4, W1, W3).
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
@@ -46,6 +49,7 @@ impl ExportLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
+            Self::EditDropped(_) => "edit.dropped",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
             Self::EvaluationMissing => "evaluation.missing",
@@ -69,14 +73,14 @@ impl ExportLossCode {
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable => Severity::Warning,
             Self::ParameterRenamed => Severity::Info,
-            Self::RecordInvalid(_) => Severity::Error,
+            Self::EditDropped(_) | Self::RecordInvalid(_) => Severity::Error,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         let kind = match self {
-            Self::ArenaOmitted(kind) | Self::RecordInvalid(kind) => kind,
+            Self::ArenaOmitted(kind) | Self::EditDropped(kind) | Self::RecordInvalid(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::EvaluationMissing
@@ -296,6 +300,14 @@ where
         ids.len(),
         ids.join(", ")
     )))
+}
+
+/// `export:edit.dropped`: the output holds these records of `kind` as the
+/// source file stores them, without the document's edit (§3.4, Paths item 4).
+/// The message names each record.
+#[must_use]
+pub fn edit_dropped(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::EditDropped(kind).note(message)
 }
 
 /// `export:output.empty`: the written file holds no geometry (§3.5).

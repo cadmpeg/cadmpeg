@@ -199,6 +199,7 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current,
+        unproduced: BTreeSet::default(),
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);

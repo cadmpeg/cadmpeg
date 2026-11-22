@@ -107,7 +107,7 @@ fn fields(payload: &[u8]) -> Option<Fields> {
     view.seek(at)?;
     match view.u8()? {
         0x0c => {}
-        0x08 if view.u8()? % 4 == 1 => {}
+        0x08 if matches!(view.u8()? % 4, 1 | 3) => {}
         _ => return None,
     }
     view.counted(u64_from_index(count), 31usize.checked_mul(WORD_BYTES)?)?;
@@ -138,32 +138,49 @@ fn fields(payload: &[u8]) -> Option<Fields> {
     let control = view.u8()?;
     view.seek(prefix::MAXIMAL_V)?;
     let maximal_v = pair(&mut view)?;
+    let absent_length = prefix::LEN.checked_add(unmapped::LEN)?;
+    let repeated_length = absent_length.checked_add(WORD_BYTES)?;
+    let extended_length = repeated_length.checked_add(2)?;
+    let lane_words = count.checked_mul(SCALAR_LANES)?;
+    let explicit_length = repeated_length.checked_add(lane_words.checked_mul(WORD_BYTES)?)?;
+    let sheet_limits = tail.len() == extended_length;
+    let sheet_scalar = tail.len() == explicit_length.checked_add(2)?;
     let current_values = current.map(f64::from_bits);
     let maximal_v_values = maximal_v.map(f64::from_bits);
     if !matches!(control, 0x03 | 0x05)
         || current_values[0] >= current_values[1]
         || current_values[2] >= current_values[3]
         || current_values[4] <= 0.0
-        || current[3] != current[4]
+        || (!sheet_limits && !sheet_scalar && current[3] != current[4])
         || maximal_v_values[0] > current_values[2]
         || maximal_v_values[1] < current_values[3]
     {
         return None;
     }
-    let absent_length = prefix::LEN.checked_add(unmapped::LEN)?;
-    let repeated_length = absent_length.checked_add(WORD_BYTES)?;
-    let scalar = if tail.len() == absent_length || tail.len() == repeated_length {
+    let mut trimmed_u = [false; 2];
+    let mut doubled_span = false;
+    let scalar = if tail.len() == absent_length || tail.len() == repeated_length || sheet_limits {
         view.seek(prefix::LEN.checked_add(unmapped::BRANCH)?)?;
-        for expected in unmapped::BRANCH_VALUE {
-            if view.u8()? != expected {
+        let branch = view.take(unmapped::BRANCH_VALUE.len())?;
+        if sheet_limits {
+            doubled_span = branch.starts_with(&[1, 0]);
+            if (!doubled_span && branch[..2] != unmapped::BRANCH_VALUE[..2])
+                || branch[2] > 1
+                || branch[3] > 1
+                || branch[4..] != unmapped::BRANCH_VALUE[4..]
+                || (doubled_span
+                    && (current_values[2] != 0.0 || current_values[3] != 2.0 * current_values[4]))
+            {
                 return None;
             }
+            trimmed_u = [branch[2] == 1, branch[3] == 1];
+        } else if branch != unmapped::BRANCH_VALUE {
+            return None;
         }
         view.seek(prefix::LEN.checked_add(unmapped::MAXIMAL_U)?)?;
         ScalarSource::Absent
     } else {
-        let lane_words = count.checked_mul(SCALAR_LANES)?;
-        if tail.len() != repeated_length.checked_add(lane_words.checked_mul(WORD_BYTES)?)? {
+        if tail.len() != explicit_length && !sheet_scalar {
             return None;
         }
         view.seek(prefix::LEN)?;
@@ -186,8 +203,9 @@ fn fields(payload: &[u8]) -> Option<Fields> {
     let maximal_u = pair(&mut view)?;
     let maximal_u_values = maximal_u.map(f64::from_bits);
     if maximal_u_values[0] < f64::from_bits(first)
-        || maximal_u_values[0] > current_values[0]
-        || maximal_u_values[1] < current_values[1]
+        || (!trimmed_u[0] && maximal_u_values[0] > current_values[0])
+        || maximal_u_values[0] >= maximal_u_values[1]
+        || (!trimmed_u[1] && maximal_u_values[1] < current_values[1])
         || maximal_u_values[1] > previous
     {
         return None;
@@ -196,11 +214,23 @@ fn fields(payload: &[u8]) -> Option<Fields> {
         None
     } else {
         let repeat = word(&mut view)?;
-        if repeat != current[4] {
+        let value = f64::from_bits(repeat);
+        if sheet_scalar {
+            if current_values[2] != 0.0 || repeat != current[3] {
+                return None;
+            }
+        } else if sheet_limits {
+            if value <= 0.0 || (doubled_span && value != current_values[4]) {
+                return None;
+            }
+        } else if repeat != current[4] {
             return None;
         }
         Some(repeat)
     };
+    if (sheet_limits || sheet_scalar) && view.take(2)? != [0, 0] {
+        return None;
+    }
     if view.remaining() != 0 {
         return None;
     }

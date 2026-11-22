@@ -141,9 +141,8 @@ fn mapped_pcurve_finding_is_reported() {
 }
 
 fn charted(with_supports: bool) -> CadIr {
-    use crate::geometry::{
-        ProceduralCurve, ProceduralCurveDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-    };
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{ProceduralCurve, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     let mut ir = CadIr::empty();
     let supports: [crate::ids::SurfaceId; 2] =
         ["test:model:surface#first", "test:model:surface#second"].map(|id| id.try_into().unwrap());
@@ -194,14 +193,14 @@ fn charted(with_supports: bool) -> CadIr {
             ProceduralCurve::new(
                 "test:model:procedural#charted".try_into().unwrap(),
                 ProceduralCurveDefinition::TolerantIntersection {
-                    construction: crate::geometry::TolerantIntersectionConstruction::try_new(
+                    construction: crate::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         supports,
                         [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                         0.01,
                     )
                     .unwrap(),
                     parameterization: Some(
-                        crate::geometry::TolerantIntersectionParameterization::try_new(
+                        crate::geometry::intersection_curves::TolerantIntersectionParameterization::try_new(
                             [pcurve.clone(), pcurve],
                             [0.0, 1.0],
                         )
@@ -259,7 +258,7 @@ fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
     ] {
         let ir = super::mapped_surface_curve(mapping);
         let index = crate::index::ModelIndex::new_model_only(&ir);
-        let crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } =
+        let crate::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.geometry.procedural_curves[0].definition()
         else {
             panic!("surface curve");

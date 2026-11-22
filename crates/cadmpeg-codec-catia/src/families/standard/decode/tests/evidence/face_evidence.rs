@@ -799,6 +799,8 @@ fn extrusion_definition_copy_equals_the_source_definition() {
     let copied = { copy_standard_extrusion_definition(&definition) };
     assert_eq!(
         copied,
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition
+        ),
     );
 }

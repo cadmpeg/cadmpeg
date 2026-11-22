@@ -126,6 +126,7 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }
