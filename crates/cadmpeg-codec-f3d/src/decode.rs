@@ -3459,16 +3459,9 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
         );
-        if prereqs.design_superseded_scope_envelopes != 0 {
-            push_loss_vec(
-                &mut self.report.losses,
-                F3dLossCode::FeatureScopeEnvelopeSuperseded,
-                format_args!(
-                    "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
-                    prereqs.design_superseded_scope_envelopes
-                ),
-            );
-        }
+        self.report
+            .losses
+            .extend(prereqs.design_superseded_scope_envelopes.losses());
         self.report
             .losses
             .extend(prereqs.design_component_occurrence_losses.iter().cloned());

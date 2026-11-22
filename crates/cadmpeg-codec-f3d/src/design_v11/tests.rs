@@ -239,6 +239,7 @@ fn tail_flags(suppressed: bool, rolled_back: bool) -> DesignScopeTailFlags {
         suppressed,
         rolled_back,
         suppressed_offset: 0,
+        envelope_offset: None,
     }
 }
 

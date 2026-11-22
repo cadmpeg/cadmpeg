@@ -707,12 +707,15 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .previous_history_state_id_offset
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
-                assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_core::decode::test_support::service_decode_context(),
-                    scope,
-                    &english,
-                )
-                .unwrap());
+                assert_eq!(
+                    super::compare_scope_variant_payloads(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        scope,
+                        &english,
+                    )
+                    .unwrap(),
+                    super::EnvelopeComparison::Equivalent
+                );
             }
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
@@ -900,4 +903,21 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(entity.entity_id.suffix(), 173);
         assert_eq!(at, 1);
     }
+}
+
+#[test]
+fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stripped = |mut value: serde_json::Value| {
+        super::strip_scope_variant_provenance(&ctx, &mut value, false).unwrap();
+        value
+    };
+    let standard = |offset: u64| {
+        serde_json::json!({"hole_extent": {"standard": {
+            "offset": offset, "standard": "ISO", "fit": "Normal",
+            "size": "M6", "fastener": "Socket head cap screw"}}})
+    };
+    assert_eq!(stripped(standard(120)), stripped(standard(480)));
+    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }
