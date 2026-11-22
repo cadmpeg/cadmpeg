@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# Deliberately broken layout table: a byte range no field or gap covers
-# `crates/cadmpeg/tests/layout_tables.rs` asserts the validator rejects it.
+# Deliberately broken layout table: a byte-record field states no offset
+# `crates/cadmpeg-layout-tables/tests/layout_tables/main.rs` asserts the validator rejects it.
 schema = 1
 format = "f3d"
 spec = "docs/formats/f3d.md"
@@ -14,14 +14,6 @@ anchor = "`BinaryFile8` header layout"
 
 [[record.field]]
 name = "magic"
-offset = 0
 type = "bytes[15]"
 source = "spec"
 anchor = "`0..15` | magic `ASM BinaryFile8`"
-
-[[record.field]]
-name = "entity_count"
-offset = 31
-type = "u64"
-source = "spec"
-anchor = "little-endian u64 entity-count word"

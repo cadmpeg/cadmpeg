@@ -48,7 +48,9 @@ use std::sync::LazyLock;
 
 use serde::Deserialize;
 
-use crate::generate::{emit_layout_rs, external_layout_files, render, GENERATED_LAYOUT_RS};
+use crate::generate::{
+    emit_layout_rs, external_layout_files, format_outputs, render, GENERATED_LAYOUT_RS,
+};
 
 /// Every format directory the workspace ships a codec or spec for.
 const EXPECTED_FORMATS: &[&str] = &[
@@ -1350,7 +1352,7 @@ fn layout_validator_rejects_broken_tables() {
         ),
     ];
     let root = repo_root();
-    let dir = root.join("crates/cadmpeg/tests/fixtures/layout-invalid");
+    let dir = root.join("crates/cadmpeg-layout-tables/tests/fixtures/layout-invalid");
     let mut ctx = Context::new(root.clone());
 
     let present: BTreeSet<String> = layout_files(&dir)
@@ -1434,7 +1436,7 @@ fn rendered_layout_pages_match_the_tables() {
     assert!(
         stale.is_empty(),
         "rendered layout pages are stale: {}\n\
-         regenerate with `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`",
+         regenerate with `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`",
         stale.join(", ")
     );
 }
@@ -1470,61 +1472,67 @@ fn every_byte_layout_table_has_a_generated_file() {
 fn generated_layout_code_matches_the_tables() {
     let root = repo_root();
     let update = std::env::var_os("UPDATE_LAYOUT_CODE").is_some();
-    let mut stale = Vec::new();
-    let mut emit_errors = Vec::new();
-    for (format, relative) in GENERATED_LAYOUT_RS {
-        let table = root.join("docs/layouts").join(format!("{format}.toml"));
-        let (_, file) = LAYOUT_TABLES
+    let results = std::thread::scope(|scope| {
+        GENERATED_LAYOUT_RS
             .iter()
-            .find(|(path, _)| *path == table)
-            .unwrap_or_else(|| panic!("{}: no layout table", table.display()));
-        assert_eq!(
-            file.format,
-            *format,
-            "{}: format must match the mapping key",
-            table.display()
-        );
-        let mut rendered = match emit_layout_rs(file, root.join(relative).parent().unwrap()) {
-            Ok(rendered) => rendered,
-            Err(errors) => {
-                emit_errors.extend(errors);
-                continue;
-            }
-        };
-        if *format == "asm" {
-            assert!(
-                rendered.contains("`coedge`"),
-                "asm layout.rs must list the discrepant coedge record as omitted"
-            );
-            assert!(
-                !rendered.contains("mod coedge"),
-                "asm layout.rs must not emit constants for a discrepant record"
-            );
+            .map(|(format, relative)| {
+                let root = &root;
+                scope.spawn(move || {
+                    let table = root.join("docs/layouts").join(format!("{format}.toml"));
+                    let (_, file) = LAYOUT_TABLES
+                        .iter()
+                        .find(|(path, _)| *path == table)
+                        .unwrap_or_else(|| panic!("{}: no layout table", table.display()));
+                    assert_eq!(
+                        file.format,
+                        *format,
+                        "{}: format must match the mapping key",
+                        table.display()
+                    );
+                    let mut rendered = emit_layout_rs(file, root.join(relative).parent().unwrap())?;
+                    if *format == "asm" {
+                        assert!(
+                            rendered.contains("`coedge`"),
+                            "asm layout.rs must list the discrepant coedge record as omitted"
+                        );
+                        assert!(
+                            !rendered.contains("mod coedge"),
+                            "asm layout.rs must not emit constants for a discrepant record"
+                        );
+                    }
+                    let external = external_layout_files(format, &mut rendered)
+                        .map_err(|error| vec![error])?;
+                    let target = root.join(relative);
+                    let mut outputs = vec![(target.clone(), rendered)];
+                    outputs.extend(
+                        external
+                            .into_iter()
+                            .map(|(path, body)| (target.parent().unwrap().join(path), body)),
+                    );
+                    Ok::<_, Vec<String>>(outputs)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    let mut outputs = Vec::new();
+    let mut emit_errors = Vec::new();
+    for result in results {
+        match result {
+            Ok(files) => outputs.extend(files),
+            Err(errors) => emit_errors.extend(errors),
         }
-        let external = match external_layout_files(format, &mut rendered) {
-            Ok(files) => files,
-            Err(error) => {
-                emit_errors.push(error);
-                continue;
-            }
-        };
-        let target = root.join(relative);
-        let mut outputs = vec![(target.clone(), rendered)];
-        outputs.extend(
-            external
-                .into_iter()
-                .map(|(path, body)| (target.parent().unwrap().join(path), body)),
-        );
-        for (target, rendered) in outputs {
-            if update {
-                std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-                write_if_changed(&target, &rendered).unwrap();
-                continue;
-            }
-            let current = read_text(&target).unwrap_or_default();
-            if current != rendered {
-                stale.push(target.strip_prefix(&root).unwrap().display().to_string());
-            }
+    }
+    format_outputs(&mut outputs);
+    let mut stale = Vec::new();
+    for (target, rendered) in outputs {
+        if update {
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            write_if_changed(&target, &rendered).unwrap();
+        } else if read_text(&target).unwrap_or_default() != rendered {
+            stale.push(target.strip_prefix(&root).unwrap().display().to_string());
         }
     }
     assert!(
@@ -1535,7 +1543,7 @@ fn generated_layout_code_matches_the_tables() {
     assert!(
         stale.is_empty(),
         "generated layout.rs files are stale: {}\n\
-         regenerate with `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`",
+         regenerate with `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`",
         stale.join(", ")
     );
 }

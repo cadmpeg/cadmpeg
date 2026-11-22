@@ -520,6 +520,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-layout-tables"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-core",
+ "proc-macro2",
+ "serde",
+ "syn 3.0.10",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "cadmpeg-measure"
 version = "0.6.12"
 dependencies = [

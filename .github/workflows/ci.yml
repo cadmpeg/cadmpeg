@@ -396,9 +396,7 @@ jobs:
 
       - name: Layout tables
         if: needs.changes.outputs.layout == 'true'
-        # The test reads only documents and generated sources. It shares the
-        # STEP-only build above.
-        run: cargo test -q -p cadmpeg --no-default-features --features step --test layout_tables
+        run: cargo test -q -p cadmpeg-layout-tables
 
   fuzz:
     needs: changes
