@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::sketch::parse_sketch_surface;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::math::Point3;
 
 fn tested_parse_sketch_surface(
@@ -104,4 +105,57 @@ fn sketch_surface_parser_refuses_scaled_coordinate_overflow() {
     assert!(error
         .to_string()
         .contains("control point 0 overflows millimetres"));
+}
+
+#[test]
+fn unreadable_surface_keeps_its_sibling_surface() {
+    use std::io::{Cursor, Write};
+
+    let mut unreadable = canonical_surface_payload();
+    unreadable[..4].copy_from_slice(&3u32.to_le_bytes());
+    unreadable[4..7].copy_from_slice(b"256");
+    unreadable[7..11].copy_from_slice(&41u32.to_le_bytes());
+    unreadable[131..139].copy_from_slice(&f64::MAX.to_le_bytes());
+    let mut sibling = canonical_surface_payload();
+    sibling[..11].copy_from_slice(&unreadable[..11]);
+    sibling[7..11].copy_from_slice(&42u32.to_le_bytes());
+    let sibling_start = unreadable.len();
+    unreadable.extend_from_slice(&sibling);
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "00000000-0000-0000-0000-000000000001",
+            "",
+            0,
+            "MSketch",
+            &[41, 42],
+        )],
+        &[(41, 0), (42, u64_from_index(sibling_start))],
+    );
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    for (name, bytes) in [
+        ("FusionAssetName[Active]/Design1/BulkStream.dat", unreadable),
+        ("FusionAssetName[Active]/Design1/MetaStream.dat", meta),
+    ] {
+        archive.start_file(name, stored).unwrap();
+        archive.write_all(&bytes).unwrap();
+    }
+    let archive = archive.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let mut losses = Vec::new();
+        let surfaces = super::super::decode_sketch_surfaces(scan, &mut losses).unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].record_index, 42);
+        assert_eq!(surfaces[0].byte_offset, u64_from_index(sibling_start));
+        assert_eq!(
+            surfaces[0].geometry.control_points[1][1].get(),
+            Point3::new(30.0, 20.0, 10.0)
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::SketchSurfaceUndecoded.kind()
+        );
+    });
 }
