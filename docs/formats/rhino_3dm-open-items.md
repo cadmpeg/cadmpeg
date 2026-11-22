@@ -970,8 +970,8 @@ model grows?
 candidate commits. `validate/admit.rs:81-90` implements admission by running
 full neutral validation and filtering its findings afterward. The decoder
 repeats this full-document walk for successive candidates, and `cadmpeg check`
-runs full validation again after decode. On one 26,176,187-byte archive with
-69 object records and 27 decoded objects, full check takes 8.36 seconds,
+runs full validation again after decode. For an archive of 69 object records,
+27 of which decode to objects, full check takes 8.36 seconds,
 including 8.31 seconds of user CPU time, and reaches about 125 MiB resident
 memory. Container-only check takes about 0.02 seconds; checking the emitted
 49 MiB CADIR alone takes about 4.7 seconds and reaches about 186 MiB resident

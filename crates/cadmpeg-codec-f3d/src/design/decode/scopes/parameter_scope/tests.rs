@@ -199,8 +199,7 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (259, 0),
         (270, 2),
         (271, 1),
-        // A set suppressed flag stays refused until the flags are read.
-        (258, 1),
+        (258, 2),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
@@ -209,9 +208,14 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
             "offset {offset}"
         );
     }
-    let mut admitted = bytes.clone();
-    admitted[241] = 2;
-    assert!(parse_marked_named_combine(&admitted).is_some());
+    for (offset, value) in [(241, 2), (258, 1)] {
+        let mut admitted = bytes.clone();
+        admitted[offset] = value;
+        assert!(
+            parse_marked_named_combine(&admitted).is_some(),
+            "offset {offset}"
+        );
+    }
     let mut broken = bytes.clone();
     broken[196..200].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(parse_marked_named_combine(&broken).is_none());
@@ -703,12 +707,15 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .previous_history_state_id_offset
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
-                assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_core::decode::test_support::service_decode_context(),
-                    scope,
-                    &english,
-                )
-                .unwrap());
+                assert_eq!(
+                    super::compare_scope_variant_payloads(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        scope,
+                        &english,
+                    )
+                    .unwrap(),
+                    super::EnvelopeComparison::Equivalent
+                );
             }
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
@@ -896,4 +903,21 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(entity.entity_id.suffix(), 173);
         assert_eq!(at, 1);
     }
+}
+
+#[test]
+fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stripped = |mut value: serde_json::Value| {
+        super::strip_scope_variant_provenance(&ctx, &mut value, false).unwrap();
+        value
+    };
+    let standard = |offset: u64| {
+        serde_json::json!({"hole_extent": {"standard": {
+            "offset": offset, "standard": "ISO", "fit": "Normal",
+            "size": "M6", "fastener": "Socket head cap screw"}}})
+    };
+    assert_eq!(stripped(standard(120)), stripped(standard(480)));
+    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

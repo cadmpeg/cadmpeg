@@ -612,8 +612,10 @@ pub(crate) enum F3dLossCode {
     EmbossScalarOwnerAssumed,
     EmbossScalarUnitAssumed,
     EmbossPlacementNative,
-    /// A non-equivalent duplicate scope envelope was superseded by the
-    /// primary-indexed envelope.
+    /// A duplicate scope envelope that differs from the kept envelope in
+    /// payload or history state was superseded by the primary-indexed
+    /// envelope, or by the later envelope when the two differ only in their
+    /// tail flags.
     FeatureScopeEnvelopeSuperseded,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
@@ -621,6 +623,8 @@ pub(crate) enum F3dLossCode {
     ParameterRecordUnparsed,
     /// Decoded parameters set an uninterpreted flag in the expression trailer.
     ParameterTrailerFlagUninterpreted,
+    /// Decoded parameters set the uninterpreted header flag at offset 21.
+    ParameterHeaderFlagUninterpreted,
     /// Decoded parameter owners store a set final flag byte in the compact trailer.
     ParameterOwnerTrailerFlagUninterpreted,
     /// Decoded compact null-owner parameters have no owner binding.
@@ -655,8 +659,10 @@ pub(crate) enum F3dLossCode {
     ConfigurationScopeWithoutActiveRow,
     /// Configuration properties the design does not state.
     ConfigurationPropertyUnprojected,
-    /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
+    /// The rollback marker of a timeline is not read, or an unread item follows a rolled-back item; the marker is stated at its most likely position.
     HistoryRollbackUnread,
+    /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
+    HistoryRollbackBoundUnread,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1323,6 +1329,8 @@ pub(crate) enum F3dLossCode {
     WriterParameterOmitted,
     /// A sketch entity or constraint was not written.
     WriterSketchContentOmitted,
+    /// A sketch was written on a plane that stands for its source support.
+    WriterSketchSupportSubstituted,
     /// A configuration was not written.
     WriterConfigurationOmitted,
     /// A tessellation was not written.
@@ -1785,6 +1793,7 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
         Self::ParameterTrailerFlagUninterpreted,
+        Self::ParameterHeaderFlagUninterpreted,
         Self::ParameterOwnerTrailerFlagUninterpreted,
         Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
@@ -1803,6 +1812,7 @@ impl F3dLossCode {
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
+        Self::HistoryRollbackBoundUnread,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2182,6 +2192,7 @@ impl F3dLossCode {
         Self::WriterJointOmitted,
         Self::WriterParameterOmitted,
         Self::WriterSketchContentOmitted,
+        Self::WriterSketchSupportSubstituted,
         Self::WriterConfigurationOmitted,
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
@@ -2811,6 +2822,7 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
+            Self::ParameterHeaderFlagUninterpreted => "parameter.header-flag-uninterpreted",
             Self::ParameterOwnerTrailerFlagUninterpreted => {
                 "parameter.owner-trailer-flag-uninterpreted"
             }
@@ -2835,6 +2847,7 @@ impl F3dLossCode {
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -3393,6 +3406,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => "writer.joint-omitted",
             Self::WriterParameterOmitted => "writer.parameter-omitted",
             Self::WriterSketchContentOmitted => "writer.sketch-content-omitted",
+            Self::WriterSketchSupportSubstituted => "writer.sketch-support-substituted",
             Self::WriterConfigurationOmitted => "writer.configuration-omitted",
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
@@ -3503,6 +3517,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => Severity::Warning,
             Self::WriterParameterOmitted => Severity::Warning,
             Self::WriterSketchContentOmitted => Severity::Warning,
+            Self::WriterSketchSupportSubstituted => Severity::Warning,
             Self::WriterConfigurationOmitted => Severity::Warning,
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
@@ -3879,6 +3894,7 @@ impl F3dLossCode {
             | Self::ParameterRecordUnparsed
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterHeaderFlagUninterpreted
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -3896,6 +3912,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4333,6 +4350,7 @@ impl F3dLossCode {
             Self::WriterJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::WriterParameterOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchContentOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchSupportSubstituted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
@@ -4660,6 +4678,7 @@ impl F3dLossCode {
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
+            | Self::ParameterHeaderFlagUninterpreted
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -4674,6 +4693,7 @@ impl F3dLossCode {
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
+            | Self::HistoryRollbackBoundUnread
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5556,6 +5576,7 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.record-unparsed",
                 "parameter.trailer-flag-uninterpreted",
+                "parameter.header-flag-uninterpreted",
                 "parameter.owner-trailer-flag-uninterpreted",
                 "parameter.owner-unstored",
                 "parameter.owner-unrecognized",
@@ -5574,6 +5595,7 @@ mod tests {
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",
+                "history.rollback-bound-unread",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",
@@ -5953,6 +5975,7 @@ mod tests {
                 "writer.joint-omitted",
                 "writer.parameter-omitted",
                 "writer.sketch-content-omitted",
+                "writer.sketch-support-substituted",
                 "writer.configuration-omitted",
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",
