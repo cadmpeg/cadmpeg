@@ -2,6 +2,7 @@
 
 use crate::materials::bind_body_override;
 use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 
 fn body(name: &str) -> BodyId {
@@ -32,7 +33,13 @@ fn body_override_replaces_the_material_assignment_binding_of_that_body_only() {
     let over = binding("override-1", &first, "override");
     let mut bindings = vec![assigned, other.clone()];
 
-    bind_body_override(&mut bindings, &mut Default::default(), over.clone());
+    let mut losses = Vec::new();
+    bind_body_override(
+        &mut bindings,
+        &mut Default::default(),
+        &mut losses,
+        over.clone(),
+    );
 
     let on_first: Vec<_> = bindings
         .iter()
@@ -42,6 +49,7 @@ fn body_override_replaces_the_material_assignment_binding_of_that_body_only() {
     assert_eq!(on_first[0].appearance, over.appearance);
     assert!(bindings.contains(&other));
     assert_eq!(bindings.len(), 2);
+    assert_eq!(losses.len(), 1);
 }
 
 #[test]
@@ -52,7 +60,12 @@ fn body_override_naming_the_assigned_appearance_keeps_the_assignment_binding() {
     let over = binding("override-1", &first, "material");
     let mut bindings = vec![assigned.clone()];
 
-    bind_body_override(&mut bindings, &mut Default::default(), over);
+    bind_body_override(
+        &mut bindings,
+        &mut Default::default(),
+        &mut Vec::new(),
+        over,
+    );
 
     assert_eq!(bindings, vec![assigned]);
 }
@@ -66,8 +79,56 @@ fn the_first_body_override_wins_over_a_later_one() {
     let mut bindings = vec![assigned];
     let mut overridden = Default::default();
 
-    bind_body_override(&mut bindings, &mut overridden, earlier.clone());
-    bind_body_override(&mut bindings, &mut overridden, later);
+    bind_body_override(
+        &mut bindings,
+        &mut overridden,
+        &mut Vec::new(),
+        earlier.clone(),
+    );
+    bind_body_override(&mut bindings, &mut overridden, &mut Vec::new(), later);
 
     assert_eq!(bindings, vec![earlier]);
+}
+
+#[test]
+fn decode_binds_the_override_appearance_over_a_different_assignment_and_charges_the_assumption() {
+    let assigned = "11111111-2222-3333-4444-555555555555";
+    let overriding = "00000000-2222-3333-4444-555555555555";
+    let f3d = crate::test_support::zip_test::f3d_with_smbh_and_protein_guids_and_browser_override(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        &[assigned, overriding],
+        overriding,
+    );
+    let result = crate::F3dCodec
+        .decode(
+            &mut std::io::Cursor::new(f3d),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("override decode");
+    let model = &result.ir().model;
+    let appearance = |guid: &str| {
+        model
+            .appearances
+            .iter()
+            .find(|appearance| appearance.visual_guid.as_deref() == Some(guid))
+            .unwrap_or_else(|| panic!("appearance {guid} decoded"))
+            .id
+            .clone()
+    };
+    assert_eq!(model.appearance_bindings.len(), 1);
+    assert_eq!(
+        model.appearance_bindings[0].appearance,
+        appearance(overriding)
+    );
+    assert_ne!(
+        model.appearance_bindings[0].appearance,
+        appearance(assigned)
+    );
+    let charged = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::F3dLossCode::BodyOverridePrecedenceAssumed.kind())
+        .count();
+    assert_eq!(charged, 1);
 }

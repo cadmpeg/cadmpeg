@@ -20,6 +20,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1014. Order of a body-override appearance and the body's material assignment
+
+**Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
+
+**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 records a user's test in which a body's assigned appearance shows through a root override, which is the opposite order.
+
+**Need.** A save with a body whose material assignment and body-override record name different appearances, with the displayed appearance of the body.
+
+**Note.** The decoder binds the override's appearance, replaces the binding of the material assignment, and charges `appearance.body-override-precedence-assumed`.
+
 ### DR-817. Silhouette Split direction selection
 
 **Question.** How does the direction selector bind to the datum or topology in the state before the split?
