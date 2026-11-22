@@ -317,7 +317,7 @@ fn scalar_unit_from_feature_parameter(
     {
         return Some(ScalarUnit::Length);
     }
-    let expression = feature.parameters.get(name)?;
+    let expression = display?;
     let source_sketch_dimension = crate::classification::classify(feature)
         == Some(crate::classification::FeatureClass::Sketch)
         && feature.content.iter().any(|content| {
