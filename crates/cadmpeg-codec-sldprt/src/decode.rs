@@ -3412,6 +3412,7 @@ fn build_geometry_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
     let length_places = crate::design_v11::length_places(scan);
     let DecodedBrep {
         metadata_header,
@@ -4304,6 +4305,7 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                equations: equation_managers,
                 length_places,
                 rollback,
             },
@@ -4724,6 +4726,7 @@ fn build_metadata_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
     let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
@@ -5210,6 +5213,7 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                equations: equation_managers,
                 length_places,
                 rollback,
             },
