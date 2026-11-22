@@ -96,7 +96,7 @@ fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
 /// Each level is three containers of the stored record (the element, its
 /// content array and the content item), and a CADIR document is read with the
 /// 128 containers a `serde_json` text parse admits from the document root. A
-/// stored element of 39 levels is the deepest that reads back, so 16 levels
+/// stored element of 40 levels is the deepest that reads back, so 16 levels
 /// keep the record under half of that; corpus elements nest 2 levels.
 const MAX_APPLICATION_LEVELS: usize = 16;
 
@@ -188,6 +188,54 @@ fn report_application_cut(
         "Keywords member {member}: the Application element {} nests {} element levels; the native history keeps {MAX_APPLICATION_LEVELS}, so {count} not kept, the first a {first}; a SolidWorks write that regenerates the history omits them",
         application_name(application),
         cut.deepest,
+    )));
+}
+
+/// Charges the forms of a Keywords text that the native history does not keep
+/// and that change a value: comments, processing instructions, the edge
+/// whitespace of a text value, and namespaces. Whitespace between elements,
+/// attribute order, quoting, CDATA and character references are XML-equal
+/// forms of what the history keeps.
+fn report_normalised(losses: &mut Vec<LossNote>, member: &str, document: &roxmltree::Document<'_>) {
+    let (mut comments, mut instructions, mut trimmed, mut namespaced) =
+        (0usize, 0usize, 0usize, 0usize);
+    for node in document.descendants() {
+        match node.node_type() {
+            roxmltree::NodeType::Comment => comments += 1,
+            roxmltree::NodeType::PI => instructions += 1,
+            roxmltree::NodeType::Text => {
+                let text = node.text().unwrap_or_default();
+                let kept = text.trim();
+                let value = !kept.is_empty()
+                    || (node.prev_sibling().is_none() && node.next_sibling().is_none());
+                trimmed += usize::from(value && kept.len() != text.len());
+            }
+            roxmltree::NodeType::Element => {
+                namespaced += usize::from(node.tag_name().namespace().is_some())
+                    + node
+                        .attributes()
+                        .filter(|attribute| attribute.namespace().is_some())
+                        .count();
+            }
+            roxmltree::NodeType::Root => {}
+        }
+    }
+    let forms = [
+        (comments, "", "comment(s)"),
+        (instructions, "", "processing instruction(s)"),
+        (trimmed, "the edge whitespace of ", "text value(s)"),
+        (namespaced, "the namespace of ", "name(s)"),
+    ]
+    .into_iter()
+    .filter(|(count, _, _)| *count != 0)
+    .map(|(count, part, form)| format!("{part}{count} {form}"))
+    .collect::<Vec<_>>();
+    if forms.is_empty() {
+        return;
+    }
+    losses.push(crate::loss::SldprtLossCode::HistoryXmlNormalised.note(format!(
+        "Keywords member {member}: the native history drops {}; a SolidWorks write that regenerates the history writes the text without them",
+        forms.join(", ")
     )));
 }
 
@@ -299,6 +347,7 @@ pub(crate) fn histories(
                 }
                 return Ok(histories);
             }
+            report_normalised(losses, stream.as_str(), &doc);
             let parent = format!("sldprt:history:feature-history#{source}");
             let applications = root
                 .children()

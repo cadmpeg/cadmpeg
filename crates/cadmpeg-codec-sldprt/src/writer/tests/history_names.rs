@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: Apache-2.0
+//! A regenerated Keywords text: what XML cannot hold is left out and charged,
+//! and the written history reads back.
+#![allow(clippy::unwrap_used)]
+
+use std::io::Cursor;
+
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::loss::LossNote;
+
+use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
+use crate::records::{FeatureHistory, HistoryContent, HistoryElement, HistoryElementContent};
+use crate::test_support::container::{make_block, sldprt_with_body};
+use crate::test_support::native::{sldprt_native, update_sldprt_native};
+use crate::test_support::parasolid::triangle_body;
+use crate::SldprtCodec;
+
+const KEYWORDS: &str = r#"<Keywords Name="Part"><Application Name="Simulation"><Keyword Name="Analysis type">Static</Keyword><Keyword Name="Mesh type">Solid Mesh</Keyword></Application><Configuration Name="Default" SourceIndex="0"/><Feature Name="Sketch1" Type="ProfileFeature" id="1"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#;
+
+struct Written {
+    /// What the writer charged.
+    losses: Vec<LossNote>,
+    /// The written Keywords member.
+    keywords: Vec<u8>,
+    /// The history a decode of the written file reads.
+    history: FeatureHistory,
+    /// What that decode charged.
+    reread: Vec<LossNote>,
+}
+
+fn decoded(keywords: &str) -> cadmpeg_test_support::EditableDecodeResult {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap()
+        .into()
+}
+
+/// Writes the part of `keywords` after `edit` of its native history and
+/// decodes the written file.
+fn write_edited(keywords: &str, edit: impl FnOnce(&mut SldprtNative)) -> Written {
+    let mut decoded = decoded(keywords);
+    update_sldprt_native(&mut decoded.ir_mut(), edit);
+    let mut bytes = Vec::new();
+    let output = crate::test_support::write_in_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut bytes,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let written_keywords = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("Contents/Keywords"))
+        .unwrap()
+        .payload
+        .clone();
+    let reread = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let histories = sldprt_native(reread.ir()).feature_histories;
+    assert_eq!(histories.len(), 1);
+    Written {
+        losses: output.losses,
+        keywords: written_keywords,
+        history: histories.into_iter().next().unwrap(),
+        reread: reread.report().losses.clone(),
+    }
+}
+
+fn charged(losses: &[LossNote], code: SldprtLossCode) -> Vec<&str> {
+    losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// The writer's charges against the Keywords text.
+fn history_charges(losses: &[LossNote]) -> Vec<&LossNote> {
+    losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("writer.history-"))
+        .collect()
+}
+
+/// The regenerated history was written and the reader reads it.
+fn assert_regenerated(written: &Written) {
+    assert!(
+        charged(
+            &written.losses,
+            SldprtLossCode::WriterHistoryRegenerationRefused
+        )
+        .is_empty(),
+        "{:?}",
+        written.losses
+    );
+    assert!(charged(&written.reread, SldprtLossCode::HistoryUnread).is_empty());
+}
+
+fn key(name: &str) -> NonBlankString {
+    NonBlankString::new(name).unwrap()
+}
+
+fn application(history: &mut FeatureHistory) -> &mut HistoryElement {
+    match &mut history.content[0] {
+        HistoryContent::Element(element) => element,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn child(element: &mut HistoryElement, index: usize) -> &mut HistoryElement {
+    match &mut element.content[index] {
+        HistoryElementContent::Element(child) => child,
+        other @ HistoryElementContent::Text(_) => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn names_xml_cannot_hold_are_left_out_and_the_history_reads_back() {
+    let mut written = write_edited(KEYWORDS, |native| {
+        let history = &mut native.feature_histories[0];
+        history.properties.insert(key("xmlns"), "urn:x".into());
+        history.configurations[0]
+            .properties
+            .insert(key("1st"), "x".into());
+        let boss = &mut history.features[1];
+        boss.properties.insert(key("bad key"), "1".into());
+        boss.properties.insert(key("Suppressed"), "1".into());
+        let application = application(history);
+        application.attributes.insert(key("Na me"), "x".into());
+        child(application, 1).tag = "Mesh type".into();
+    });
+    assert_regenerated(&written);
+    let names = charged(&written.losses, SldprtLossCode::WriterHistoryNameNotWritten);
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(
+        names[0].contains("1 element(s)")
+            && names[0].contains(r#"the Application "Simulation" element > Mesh type"#),
+        "{}",
+        names[0]
+    );
+    for name in [
+        r#""xmlns""#,
+        r#""1st""#,
+        r#""bad key""#,
+        r#""Suppressed""#,
+        r#""Na me""#,
+    ] {
+        assert!(
+            names[1].contains("5 attribute(s)") && names[1].contains(name),
+            "{}",
+            names[1]
+        );
+    }
+    let history = &mut written.history;
+    assert!(!history.properties.contains_key("xmlns"));
+    assert!(!history.configurations[0].properties.contains_key("1st"));
+    let boss = &history.features[1];
+    assert!(!boss.suppressed);
+    assert!(!boss.properties.contains_key("bad key"));
+    let application = application(history);
+    assert_eq!(application.attributes.len(), 1);
+    assert_eq!(application.content.len(), 1);
+}
+
+#[test]
+fn a_feature_tag_xml_cannot_hold_or_another_record_owns_is_written_as_feature() {
+    for (tag, expected) in [
+        ("Bad Tag", "Feature"),
+        ("a:b", "Feature"),
+        ("1st", "Feature"),
+        ("Dimension", "Feature"),
+        ("Configuration", "Feature"),
+        ("Keywords", "Feature"),
+        ("Application", "Feature"),
+        ("Schlüssel", "Schlüssel"),
+        ("Boss-Extrude.1", "Boss-Extrude.1"),
+    ] {
+        let written = write_edited(KEYWORDS, |native| {
+            native.feature_histories[0].features[1].xml_tag = tag.into();
+        });
+        assert_regenerated(&written);
+        let boss = written
+            .history
+            .features
+            .iter()
+            .find(|feature| feature.name == "Boss")
+            .unwrap();
+        assert_eq!(boss.xml_tag, expected, "{tag}");
+        assert_eq!(boss.kind, "BossExtrude", "{tag}");
+        assert_eq!(boss.parameters["Depth"], "12mm", "{tag}");
+        let names = charged(&written.losses, SldprtLossCode::WriterHistoryNameNotWritten);
+        assert_eq!(
+            names.len(),
+            usize::from(tag != expected),
+            "{tag}: {names:?}"
+        );
+        assert!(
+            names.iter().all(|note| note.contains(&format!("<{tag}>"))),
+            "{names:?}"
+        );
+    }
+}
+
+#[test]
+fn characters_xml_cannot_hold_are_left_out_and_tabs_and_returns_are_kept() {
+    let mut written = write_edited(KEYWORDS, |native| {
+        let history = &mut native.feature_histories[0];
+        let boss = &mut history.features[1];
+        boss.name = "Bo\u{1}ss\u{ffff}".into();
+        boss.properties.insert(key("Note"), "a\tb\r\nc".into());
+        child(application(history), 0).content =
+            vec![HistoryElementContent::Text("Sta\r\ntic\tx".into())];
+    });
+    assert_regenerated(&written);
+    let characters = charged(
+        &written.losses,
+        SldprtLossCode::WriterHistoryCharactersNotWritten,
+    );
+    assert_eq!(characters.len(), 1);
+    assert!(
+        characters[0].contains("2 character(s)")
+            && characters[0].contains("1 value(s)")
+            && characters[0].contains("Name"),
+        "{}",
+        characters[0]
+    );
+    let history = &mut written.history;
+    let boss = &history.features[1];
+    assert_eq!(boss.name, "Boss");
+    assert_eq!(boss.properties["Note"], "a\tb\r\nc");
+    assert_eq!(
+        child(application(history), 0).content,
+        [HistoryElementContent::Text("Sta\r\ntic\tx".into())]
+    );
+}
+
+#[test]
+fn adjacent_text_items_read_back_as_separate_items() {
+    let texts = |values: &[&str]| {
+        values
+            .iter()
+            .map(|value| HistoryElementContent::Text((*value).into()))
+            .collect::<Vec<_>>()
+    };
+    let mut written = write_edited(KEYWORDS, |native| {
+        let history = &mut native.feature_histories[0];
+        history.content.insert(1, HistoryContent::Text("a".into()));
+        history.content.insert(2, HistoryContent::Text("b".into()));
+        child(application(history), 0).content = texts(&["lead", "mid", "tail"]);
+    });
+    assert_regenerated(&written);
+    assert!(history_charges(&written.losses).is_empty());
+    let history = &mut written.history;
+    assert!(matches!(
+        &history.content[1..3],
+        [HistoryContent::Text(a), HistoryContent::Text(b)] if a == "a" && b == "b"
+    ));
+    assert_eq!(
+        child(application(history), 0).content,
+        texts(&["lead", "mid", "tail"])
+    );
+}
+
+#[test]
+fn a_history_that_cannot_be_regenerated_writes_its_source_member() {
+    let written = write_edited(KEYWORDS, |native| {
+        let features = &mut native.feature_histories[0].features;
+        features[1].name = "Edited".into();
+        features[1].source_id = features[0].source_id;
+    });
+    let refused = charged(
+        &written.losses,
+        SldprtLossCode::WriterHistoryRegenerationRefused,
+    );
+    assert_eq!(refused.len(), 1);
+    assert!(
+        refused[0].contains("cannot be built: malformed")
+            && refused[0].contains("duplicate feature source id")
+            && refused[0].contains("the source member is written in its place"),
+        "{}",
+        refused[0]
+    );
+    assert_eq!(written.keywords, KEYWORDS.as_bytes());
+    assert_eq!(written.history.features[1].name, "Boss");
+}
+
+/// A Keywords text whose `Application` element holds 15 nested `Group`
+/// elements; the level-16 one holds text runs around two element chains of 3
+/// and 1 levels.
+fn branching_cut() -> String {
+    format!(
+        r#"<Keywords Name="Part"><Application Name="Simulation">{}lead<A><B><C/></B></A>mid<D/>tail{}</Application><Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+        "<Group>".repeat(15),
+        "</Group>".repeat(15)
+    )
+}
+
+#[test]
+fn an_edited_write_of_a_cut_element_writes_the_kept_levels_and_text_runs() {
+    let keywords = branching_cut();
+    let mut stored = sldprt_native(decoded(&keywords).ir()).feature_histories[0].clone();
+    let stored = application(&mut stored).clone();
+    let written = write_edited(&keywords, |native| {
+        native.feature_histories[0].features[0].name = "Edited".into();
+    });
+    assert_regenerated(&written);
+    assert!(history_charges(&written.losses).is_empty());
+    let mut history = written.history;
+    assert_eq!(history.features[0].name, "Edited");
+    assert_eq!(*application(&mut history), stored);
+    let mut deepest = &stored;
+    for _ in 1..16 {
+        deepest = match &deepest.content[0] {
+            HistoryElementContent::Element(child) => child,
+            other @ HistoryElementContent::Text(_) => panic!("{other:?}"),
+        };
+    }
+    assert_eq!(
+        deepest.content,
+        ["lead", "mid", "tail"]
+            .map(|value| HistoryElementContent::Text(value.into()))
+            .to_vec()
+    );
+    assert!(charged(
+        &written.reread,
+        SldprtLossCode::HistoryApplicationNestingCut
+    )
+    .is_empty());
+}

@@ -116,6 +116,10 @@ pub(crate) enum SldprtLossCode {
     /// An `Application` element nests deeper than the levels the native history
     /// keeps, so the elements below them are not kept.
     HistoryApplicationNestingCut,
+    /// A Keywords text holds comments, processing instructions, text with
+    /// edge whitespace or namespace prefixes, which the native history does
+    /// not keep.
+    HistoryXmlNormalised,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -317,6 +321,17 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// A regenerated Keywords text leaves out a name XML cannot hold or the
+    /// writer itself writes: an attribute, or an element with its subtree, or
+    /// a feature tag written under the generic `Feature` tag.
+    WriterHistoryNameNotWritten,
+    /// A regenerated Keywords text leaves out characters an XML document
+    /// cannot hold from the values it writes.
+    WriterHistoryCharactersNotWritten,
+    /// A regenerated Keywords text cannot be built or is refused by the
+    /// reader, so the source member is written in its place or no member is
+    /// written.
+    WriterHistoryRegenerationRefused,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -405,6 +420,7 @@ impl SldprtLossCode {
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
         Self::HistoryApplicationNestingCut,
+        Self::HistoryXmlNormalised,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -491,6 +507,9 @@ impl SldprtLossCode {
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterHistoryNameNotWritten,
+        Self::WriterHistoryCharactersNotWritten,
+        Self::WriterHistoryRegenerationRefused,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -550,6 +569,7 @@ impl SldprtLossCode {
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
             Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
+            Self::HistoryXmlNormalised => "history.xml-normalised",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -642,6 +662,9 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterHistoryNameNotWritten => "writer.history-name-not-written",
+            Self::WriterHistoryCharactersNotWritten => "writer.history-characters-not-written",
+            Self::WriterHistoryRegenerationRefused => "writer.history-regeneration-refused",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -686,6 +709,10 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterHistoryNameNotWritten | Self::WriterHistoryCharactersNotWritten => {
+                Severity::Warning
+            }
+            Self::WriterHistoryRegenerationRefused => Severity::Error,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -827,14 +854,18 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
-            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryXmlNormalised => Severity::Info,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
-            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted
+            | Self::WriterHistoryNameNotWritten
+            | Self::WriterHistoryCharactersNotWritten
+            | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -934,9 +965,9 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
-            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::HistoryApplicationNotTransferred
+            | Self::HistoryApplicationNestingCut
+            | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1192,6 +1223,7 @@ mod tests {
                 "history.unread",
                 "history.application-not-transferred",
                 "history.application-nesting-cut",
+                "history.xml-normalised",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1278,6 +1310,9 @@ mod tests {
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.history-name-not-written",
+                "writer.history-characters-not-written",
+                "writer.history-regeneration-refused",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

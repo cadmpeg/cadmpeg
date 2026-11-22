@@ -143,6 +143,18 @@ pub(crate) fn serialize_history_in_native_envelope_after_refusal(
         .map(|output| output.dialect)
 }
 
+/// Runs the semantic writer over an authored native envelope and returns what
+/// it reports.
+pub(crate) fn write_in_native_envelope(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+    writer: &mut dyn Write,
+) -> Result<crate::writer::SemanticOutput, CodecError> {
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
+    let records = crate::source_records(&ir, &fidelity)?;
+    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
+}
+
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
     let unavailable = {
         let record = fidelity

@@ -173,6 +173,7 @@ pub(in crate::history) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
     let features = &ir.model.features;
     if features.is_empty() {
@@ -354,17 +355,12 @@ pub(in crate::history) fn sync_neutral_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let mut unwritten_tags = crate::loss::NamedCount::default();
     for feature in features {
-        if feature
+        let unwritten_tag = feature
             .source_tag
             .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} has an invalid source tag",
-                feature.id
-            )));
-        }
+            .filter(|tag| !valid_xml_name(tag));
         let mut existing = native
             .feature_histories
             .iter_mut()
@@ -436,8 +432,11 @@ pub(in crate::history) fn sync_neutral_features(
             }
         });
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
-                existing.xml_tag.clone_from(tag);
+            match (&feature.source_tag, unwritten_tag) {
+                (Some(tag), None) => existing.xml_tag.clone_from(tag),
+                (_, Some(tag)) => unwritten_tags
+                    .push(&format!("{} {tag:?} as <{}>", feature.id, existing.xml_tag)),
+                (None, None) => {}
             }
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
@@ -460,11 +459,15 @@ pub(in crate::history) fn sync_neutral_features(
             }
             existing.text.clone_from(&feature.source_text);
         } else {
+            let xml_tag = feature_xml_tag(feature);
+            if let Some(tag) = unwritten_tag {
+                unwritten_tags.push(&format!("{} {tag:?} as <{xml_tag}>", feature.id));
+            }
             let history = &mut native.feature_histories[0];
             history.features.push(Feature {
                 id: record_ids[&feature.id].clone(),
                 parent: history.id.clone(),
-                xml_tag: feature_xml_tag(feature),
+                xml_tag,
                 tree_parent,
                 source_id: generated_sources.get(&feature.id).copied(),
                 ordinal,
@@ -484,6 +487,12 @@ pub(in crate::history) fn sync_neutral_features(
                     .collect(),
             });
         }
+    }
+    if !unwritten_tags.is_empty() {
+        losses.push(crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.note(format!(
+            "{} feature source tag(s) are not XML element names, so the Keywords elements of the features are written under another tag: {unwritten_tags}",
+            unwritten_tags.count()
+        )));
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     let changed_parameters = native
@@ -802,7 +811,7 @@ mod tests {
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(native))
+        let error = sync_neutral_features(&ir, &[], &[], &mut Some(native), &mut Vec::new())
             .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
@@ -821,8 +830,14 @@ mod tests {
         let mut ir = decoded.ir().clone();
         ir.model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(sldprt_native(decoded.ir())))
-            .expect_err("a blank object name is not writable");
+        let error = sync_neutral_features(
+            &ir,
+            &[],
+            &[],
+            &mut Some(sldprt_native(decoded.ir())),
+            &mut Vec::new(),
+        )
+        .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
