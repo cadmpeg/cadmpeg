@@ -32,6 +32,8 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
+const EPS_CURVES_STORED_OFFSET_PLANE_NORMAL: f64 = 1.0e-8;
+const EPS_CURVES_STORED_OFFSET_PLANE_U_AXIS: f64 = 1.0e-9;
 
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
@@ -1278,6 +1280,34 @@ fn features_by_native_ref(
     by_native
 }
 
+/// The `UAxis` an offset reference plane stores with its own frame, when its
+/// stored `Normal` points the way of the normal it inherits and the axis lies
+/// in that plane (`sldprt.md` §2, offset reference planes).
+fn stored_offset_plane_u_axis(
+    feature: &cadmpeg_ir::features::Feature,
+    inherited_normal: Vector3,
+) -> Option<Vector3> {
+    let stored = |key: &str| {
+        feature
+            .source_properties
+            .get(key)
+            .and_then(|value| crate::history::literals::parse_vector3(value))
+    };
+    let (normal, u_axis) = (stored("Normal")?, stored("UAxis")?);
+    let lengths = [inherited_normal.norm(), normal.norm(), u_axis.norm()];
+    if !lengths
+        .iter()
+        .all(|length| length.is_finite() && *length > f64::EPSILON)
+    {
+        return None;
+    }
+    let codirectional = inherited_normal.dot(normal)
+        >= (1.0 - EPS_CURVES_STORED_OFFSET_PLANE_NORMAL) * lengths[0] * lengths[1];
+    let in_plane = inherited_normal.dot(u_axis).abs()
+        <= EPS_CURVES_STORED_OFFSET_PLANE_U_AXIS * lengths[0] * lengths[2];
+    (codirectional && in_plane).then_some(u_axis)
+}
+
 pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -1355,6 +1385,8 @@ pub(super) fn sketch_plane_frames(
                         frame.origin.y + frame.normal.y * distance.get(),
                         frame.origin.z + frame.normal.z * distance.get(),
                     ),
+                    u_axis: stored_offset_plane_u_axis(feature, frame.normal)
+                        .unwrap_or(frame.u_axis),
                     ..frame
                 })
             })() else {
