@@ -656,6 +656,14 @@ resolve a seed feature?
 
 **Note.** DI-02 holds the relation-list grammar that locates `H`.
 
+### DI-78. Equation-manager stored values in a part whose relations sit in several streams
+
+**Question.** In a part whose equation-manager relations sit in several `Contents/Config-N` streams, are the values a stream stores beside a line's names the values of that stream's configuration, so that they test the active configuration's lines as they do in a part whose relations sit in one stream?
+
+**Known.** `sldprt.md` §2 "A relation whose byte 1 after its text is `02` or `03` stores its sides as tokens" places the f64 stored beside each dimension reference. The decoder tests a line's tree against the values its relation stores beside the names it reads, and types a dimension of unread kind as a length from the value stored beside it (`sldprt.md` §2 "The active configuration's equation-manager lines are parameter expressions" and "A dimension with no `PMISemanticDataDB` record"). It reads the active configuration's stream, and refuses a line that another stream does not hold with the same right-hand side. The value stored on the assigned side can be another configuration's value, and a whole stream can hold another configuration's values (`sldprt.md` §2 "The name in a token is the name the manager resolved"). Where the stream read holds another configuration's value of a dimension a line reads and that value differs from the decoded one, the line stays source text. The decoder types a dimension as a length from the value the manager stores beside it where its display in the part's length unit equals that value, or where each value stored beside a name the line that drives it reads equals that name's decoded value, the line evaluated over those values gives the stored value, and the display is the stored value rounded to the document's length precision.
+
+**Need.** A part whose relations sit in several streams, with each configuration's decoded dimension values (its Keywords snapshot or its `PMISemanticDataDB` records) to compare with the values its stream stores beside the same names, and each stream's lines evaluated over that stream's values. Where every stream stores its own configuration's values, the active stream's values test the active configuration's lines as in a part with one stream. Without it, a line of such a part that reads a value its stream stores for another configuration stays SolidWorks source text.
+
 ### DI-44. Sign of an integer scalar value
 
 **Question.** Is the four-byte value of an `moIntegerParameter_c` named scalar signed or unsigned?
@@ -1010,9 +1018,9 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### EV-19. Configuration object stream
 
-**Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
+**Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how does a relation whose six bytes after its text are all zero store its equation sides, and what are the `Config-N` layouts of files below `swVersion` 14000?
 
-**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions. A relation whose six bytes after its text are all zero opens its first side with the same side class or token as the other relations and stores fewer tokens; a global-variable token's character range differs in length from its text. Its dimension reference is the relation-dimension class tag, six zero bytes, and the counted name, with no wrapper and no value.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
 
