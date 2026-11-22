@@ -664,6 +664,18 @@ fn xml_text_skips_either_lead_marker() {
 }
 
 #[test]
+fn lead_byte_85_is_xml_only_before_a_declaration() {
+    assert_eq!(
+        container::payload_family(b"\x85<?xml version=\"1.0\"?><Keywords/>"),
+        container::PayloadFamily::Xml
+    );
+    assert_eq!(
+        container::payload_family(b"\x85\x00\x01<\x02\x03"),
+        container::PayloadFamily::Unknown
+    );
+}
+
+#[test]
 fn xml_utf16_replacement_decodes_unpaired_surrogate() {
     assert_eq!(
         container::xml_text(&[0xff, 0xfe, 0, 0xd8, 0x5a]).as_deref(),

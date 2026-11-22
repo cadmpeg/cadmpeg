@@ -87,7 +87,11 @@ pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
         PayloadFamily::Unqlite
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
-        || (xml_lead_marker(payload) && contains(&payload[..payload.len().min(64)], b"<"))
+        || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
+        || (xml_lead_marker(payload)
+            && payload
+                .get(1..)
+                .is_some_and(|rest| rest.starts_with(b"<?xml")))
     {
         PayloadFamily::Xml
     } else {
