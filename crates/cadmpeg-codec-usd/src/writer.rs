@@ -27,6 +27,7 @@ mod records;
 mod shading;
 mod text;
 mod texture;
+mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -216,6 +217,8 @@ struct Unwritten {
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
     untrimmed_breps: Vec<String>,
+    /// Bodies whose `BrepArray` prim leaves out poles that have no trim curve.
+    pole_breps: Vec<String>,
     curves: usize,
     channels: usize,
     reduced_appearances: BTreeSet<String>,
@@ -1028,7 +1031,11 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
+                    Some(nurbs)
+                        if face.loops.is_empty()
+                            || self.whole_domain(face, nurbs)
+                            || (!exact && self.trim_loops(face).is_some()) =>
+                    {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -1592,6 +1599,11 @@ impl<'ir> Writer<'ir> {
         if reversed {
             self.out.line("uniform token orientation = \"leftHanded\"");
         }
+        if !face.loops.is_empty() && !self.whole_domain(face, nurbs) {
+            if let Some(loops) = self.trim_loops(face) {
+                self.trim_attributes(&loops);
+            }
+        }
         self.color_primvars(Some(body));
         self.out.close();
     }
@@ -1903,6 +1915,14 @@ impl<'ir> Writer<'ir> {
                  exact image on its NURBS surface: {}",
                 unwritten.untrimmed_breps.len(),
                 unwritten.untrimmed_breps.join(", ")
+            )));
+        }
+        if !unwritten.pole_breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepPoleNotWritten.note(format!(
+                "the BrepArray prims of {} bodies leave out the poles of their edge loops \
+                 that have no trim curve: {}",
+                unwritten.pole_breps.len(),
+                unwritten.pole_breps.join(", ")
             )));
         }
         if unwritten.curves > 0 {
