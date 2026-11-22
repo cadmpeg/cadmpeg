@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Coordinate-root assignment and incidence-constrained closure.
 
-use super::{
-    compact_boundary_domain_viable, deferred_boundary_cycle_matches,
-    distinct_domain_matching_with_budget, enforce_edge_arc_consistency,
-    enforce_sparse_endpoint_membership, incidence_cycles, same_unordered_pair, Arc, Cell, HashMap,
-    HashSet, MatchingEdgeConstraint, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
-    MeshFaceBoundaryDomain, MeshQuotient, PointAssignmentOutcome, UnionFind, WorkBudget,
+use super::quotient::MeshQuotient;
+use super::root_domains::{enforce_edge_arc_consistency, enforce_sparse_endpoint_membership};
+use super::PointAssignmentOutcome;
+use crate::families::standard::topology::incidence_cycles;
+use crate::solve::incidence::{compact_boundary_domain_viable, deferred_boundary_cycle_matches};
+use crate::solve::matching::{distinct_domain_matching_with_budget, MatchingEdgeConstraint};
+use crate::solve::missing_edge::{
+    same_unordered_pair, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
+    MeshFaceBoundaryDomain,
 };
+use crate::solve::union_find::UnionFind;
+use cadmpeg_core::decode::WorkBudget;
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use cadmpeg_core::decode::work_units;
 use cadmpeg_core::decode::DecodeContext;

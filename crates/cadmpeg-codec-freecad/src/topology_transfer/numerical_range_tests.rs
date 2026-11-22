@@ -35,7 +35,8 @@ fn numerical_0922_interior_trim_is_preserved() {
 fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero() {
     use cadmpeg_ir::geometry::analytic::CircleCurve;
     use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
-    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();

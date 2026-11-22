@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    CacheFirstCurveParameterization, FitTolerance, RevisionCacheForm,
-    RevisionSurfaceParameterization,
-};
+use crate::geometry::legacy_cache::FitTolerance;
+use crate::geometry::revision_forms::{RevisionCacheForm, RevisionSurfaceParameterization};
+use crate::geometry::surface_curves::CacheFirstCurveParameterization;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 

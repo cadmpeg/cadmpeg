@@ -211,14 +211,14 @@ impl Classes {
     }
 }
 
-/// The persistent identity of the `Extrude` scope after `sketches` `Sketch`
-/// items; the scope owns it and the next.
+/// The persistent identity of the `Extrude` scope after `preceding`
+/// timeline items; the scope owns it and the next.
 pub(in crate::writer::generate::design) fn persistent_id(
-    sketches: usize,
+    preceding: usize,
 ) -> Result<u64, CodecError> {
-    u64::try_from(sketches)
+    u64::try_from(preceding)
         .ok()
-        .and_then(|sketches| super::super::base_feature::FIRST_IDENTITY.checked_add(sketches))
+        .and_then(|items| super::super::base_feature::FIRST_IDENTITY.checked_add(items))
         .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
 }
 
@@ -260,7 +260,7 @@ pub(super) fn write(
         sketch_records,
         node: body.0.node,
         node_guid: &body.1.node_guid,
-        identity: persistent_id(plan.after)?,
+        identity: persistent_id(plan.preceding)?,
         stamp: ctx.values.stamps.scope,
         asset: crate::manifest::GENERATED_ASSET_FOLDER_GUID,
         context: ctx.values.lower_guid("component-a"),
@@ -317,7 +317,13 @@ impl Item<'_> {
     /// record-timestamp table and its item-tail companion.
     fn scope(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (records, classes) = (self.records, &self.classes);
-        let [_, _, normal] = self.sketch.plane.axes();
+        let [_, _, normal] = self
+            .sketch
+            .origin_plane()
+            .ok_or_else(|| {
+                CodecError::Malformed("an Extrude sketch on a construction plane".into())
+            })?
+            .axes();
         out.record(&classes.scope, records.scope)
             .zeros(9)
             .byte(1)

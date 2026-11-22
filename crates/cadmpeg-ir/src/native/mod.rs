@@ -48,18 +48,21 @@ fn nests_too_deep_message() -> String {
     format!("native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers")
 }
 
-/// States whether `value` holds a container chain longer than `limit`.
+/// Measures the deepest container chain inside `value`, returning `None` if it
+/// exceeds `limit`.
 ///
 /// The pending containers live in this function's own vector, so measuring a
 /// value cannot itself overflow the machine stack. Only containers enter it: a
 /// scalar carries no chain, and a key is not a value.
-fn nests_past(value: &Value, limit: usize) -> bool {
+fn max_container_depth(value: &Value, limit: usize) -> Option<usize> {
     let mut pending: Vec<(&Value, usize)> = Vec::new();
+    let mut deepest = 0_usize;
     push_container(&mut pending, value, 1);
     while let Some((value, depth)) = pending.pop() {
         if depth > limit {
-            return true;
+            return None;
         }
+        deepest = deepest.max(depth);
         match value {
             Value::Array(items) => {
                 for item in items {
@@ -74,7 +77,7 @@ fn nests_past(value: &Value, limit: usize) -> bool {
             Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
         }
     }
-    false
+    Some(deepest)
 }
 
 /// Records `value` at `depth` when it is a container.
@@ -256,6 +259,9 @@ pub struct NativeRecord {
     /// Canonical compact JSON object text: `id` first, then the codec-owned
     /// fields in key order.
     json: Box<str>,
+    /// Deepest container nesting in `json`, the outer record object included.
+    /// Bounded by `MAX_NATIVE_NESTING_DEPTH + 1` (257).
+    depth: usize,
 }
 
 impl NativeRecord {
@@ -271,16 +277,19 @@ impl NativeRecord {
         mut fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
         fields.remove("id");
+        let mut max_field_depth = 0_usize;
         for (field, value) in &fields {
-            if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
+            let Some(field_depth) = max_container_depth(value, MAX_NATIVE_NESTING_DEPTH) else {
                 return Err(NativeConvertError::FieldNestsTooDeep {
                     id,
                     field: field.clone(),
                 });
-            }
+            };
+            max_field_depth = max_field_depth.max(field_depth);
         }
         let json = render(&id, &fields);
-        Ok(Self { id, json })
+        let depth = 1 + max_field_depth;
+        Ok(Self { id, json, depth })
     }
 
     /// Build a record from an admitted identity and fields that do not nest.
@@ -294,13 +303,16 @@ impl NativeRecord {
     ) -> Self {
         let id = id.into();
         let mut stored = Map::new();
+        let mut has_list = false;
         for (name, value) in fields {
             if name != "id" {
+                has_list |= matches!(value, NativeField::TextList(_));
                 stored.insert(name, value.into_value());
             }
         }
         let json = render(&id, &stored);
-        Self { id, json }
+        let depth = if has_list { 2 } else { 1 };
+        Self { id, json, depth }
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -335,14 +347,20 @@ impl NativeRecord {
         record: &T,
     ) -> Result<Self, NativeConvertError> {
         let mut out = Vec::new();
+        let mut min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
         let serialized = record
-            .serialize(canon::CanonText::for_record(ctx, &mut out))
+            .serialize(canon::CanonText::for_record_tracking(
+                ctx,
+                &mut out,
+                &mut min_remaining,
+            ))
             .map_err(|error| error.into_native(ctx))?;
         let canon::Written::Object(members) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
         let (id, json) = members.into_record(out)?;
-        Ok(Self { id, json })
+        let depth = (MAX_NATIVE_NESTING_DEPTH + 1) - min_remaining;
+        Ok(Self { id, json, depth })
     }
 
     pub(crate) fn digest_unknown(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
@@ -402,6 +420,11 @@ impl NativeRecord {
         self.json.len()
     }
 
+    /// Borrow the stored canonical compact JSON object text.
+    pub(crate) fn json_text(&self) -> &str {
+        &self.json
+    }
+
     /// Parse the codec-owned fields, excluding `id`.
     ///
     /// Each call builds a new [`Value`] tree from the stored text. Read one
@@ -458,10 +481,32 @@ impl NativeRecord {
     /// `id` is not a codec-owned field and is never answered here.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
-        if name == "id" {
+        if name == "id" || !self.may_hold_field(name) {
             return None;
         }
         replay::value(replay::member(&self.json, name)?.get()).ok()
+    }
+
+    /// Cheap text check before parsing `self.json` for `name`: canonical
+    /// compact JSON renders any unescaped ASCII key literally as `"name":`.
+    fn may_hold_field(&self, name: &str) -> bool {
+        let plain_ascii = name
+            .bytes()
+            .all(|byte| (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\');
+        if !plain_ascii {
+            return true;
+        }
+        if name.len() <= 64 {
+            let mut needle = [0_u8; 67];
+            needle[0] = b'"';
+            needle[1..=name.len()].copy_from_slice(name.as_bytes());
+            needle[name.len() + 1] = b'"';
+            needle[name.len() + 2] = b':';
+            if let Ok(needle) = std::str::from_utf8(&needle[..name.len() + 3]) {
+                return self.json.contains(needle);
+            }
+        }
+        self.json.contains(name)
     }
 
     /// Deserialize the codec-owned record straight from its stored text.
@@ -473,8 +518,9 @@ impl NativeRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        let mut frames = Vec::new();
-        for _ in 0..container_depth(&self.json) {
+        let depth = self.depth;
+        let mut frames = Vec::with_capacity(depth);
+        for _ in 0..depth {
             frames.push(ctx.enter_nested(canon::WORK)?);
         }
         // The writer bounded each field's nesting, so the parser's recursion
@@ -507,37 +553,6 @@ impl NativeRecord {
 struct DigestUnknown<'a> {
     id: &'a str,
     links: &'a [Value],
-}
-
-/// Deepest container nesting in canonical JSON text, the outer value
-/// included.
-fn container_depth(json: &str) -> usize {
-    let mut depth = 0_usize;
-    let mut deepest = 0;
-    let mut in_string = false;
-    let mut escaped = false;
-    for byte in json.bytes() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match byte {
-            b'"' => in_string = true,
-            b'[' | b'{' => {
-                depth += 1;
-                deepest = deepest.max(depth);
-            }
-            b']' | b'}' => depth -= 1,
-            _ => {}
-        }
-    }
-    deepest
 }
 
 /// The refusal without the text position a parse appends to its message.

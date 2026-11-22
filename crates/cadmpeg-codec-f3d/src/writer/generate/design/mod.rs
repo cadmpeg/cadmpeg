@@ -11,6 +11,7 @@
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
 //! failure. Its fallbacks, in [`Part`] order, write the sketches without
 //! their dimensions, the extrude in the Base Feature, the design without its
+//! construction planes and the sketches on them, the design without its
 //! `Sketch` items, then no design ([`dropped_records`]): they never drop a
 //! body.
 
@@ -86,6 +87,21 @@ fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
 
 #[cfg(test)]
 thread_local! {
+    /// Makes the next attempt that writes a construction plane on this
+    /// thread fail in the plane records.
+    static FAIL_NEXT_PLANES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_PLANES`] requests, once.
+#[cfg(test)]
+fn requested_plane_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_PLANES.with(|fail| fail.replace(false)).then(|| {
+        cadmpeg_core::CodecError::NotImplemented("a test failure of the plane records".into())
+    })
+}
+
+#[cfg(test)]
+thread_local! {
     /// Makes the next attempt that writes a sketch dimension on this thread
     /// fail in the dimension records.
     static FAIL_NEXT_DIMENSIONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -145,12 +161,19 @@ pub(super) enum Part {
     Dimensions,
     /// The `Extrude` item: the Base Feature holds the extrude.
     Extrude,
+    /// The `WorkPlane` items and the `Sketch` items on them.
+    Planes,
     /// The `Sketch` items.
     Sketches,
 }
 
 impl Part {
-    const ORDER: [Self; 3] = [Self::Dimensions, Self::Extrude, Self::Sketches];
+    const ORDER: [Self; 4] = [
+        Self::Dimensions,
+        Self::Extrude,
+        Self::Planes,
+        Self::Sketches,
+    ];
 }
 
 /// The parts the writer has dropped, each with the failure that dropped it.
@@ -182,6 +205,7 @@ impl Fallback {
                 .is_some_and(|design| match part {
                     Part::Dimensions => design.writes_dimensions(),
                     Part::Extrude => matches!(design.extrude, Decision::Extrude(_)),
+                    Part::Planes => !design.sketches.planes.is_empty(),
                     Part::Sketches => design.writes_sketches(),
                 });
             if writes {
@@ -216,14 +240,15 @@ pub(super) fn plan<'a>(
     };
     let mut parameters = parameters::plan(target, &scope.definition);
     let features = scope_features(target, scope);
-    let mut sketches = sketch_plan(target, &features);
+    let mut sketches = sketch_plan(target, &features, fallback.reason(Part::Planes));
     let mut ordinal = 1;
     if let Some(reason) = fallback.reason(Part::Sketches) {
         sketches.drop_items(reason);
-    } else if let Some(reason) = fallback.reason(Part::Dimensions) {
-        sketches.drop_dimensions(reason);
     } else {
-        ordinal = sketches.claim_dimensions(
+        if let Some(reason) = fallback.reason(Part::Dimensions) {
+            sketches.drop_dimensions(reason);
+        }
+        ordinal = sketches.claim_parameters(
             &mut parameters,
             sketch::dimensions::Tolerances {
                 linear: target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE) / MM_PER_CM,
@@ -289,7 +314,7 @@ pub(super) fn plan<'a>(
         .collect::<Vec<_>>();
     losses.extend(unwritten_records(target, scope));
     losses.extend(states(target));
-    let base_feature = base_feature::plan(target, sketches.items.len())?;
+    let base_feature = base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
@@ -351,7 +376,7 @@ impl NeutralDesign<'_> {
         let roster = roster::Roster::new(
             bodies.len(),
             self.parameters.written_count(),
-            &self.sketches.items,
+            &self.sketches,
             extrude,
         )?;
         let ctx = roster::Context {
@@ -360,6 +385,7 @@ impl NeutralDesign<'_> {
             values: roster::values::Values::new(target, &scope.definition, smbh),
             bodies,
             sketches: &self.sketches.items,
+            planes: &self.sketches.planes,
             extrude,
         };
         let mut records = DesignRecords::default();
@@ -390,13 +416,19 @@ impl NeutralDesign<'_> {
     }
 }
 
-/// The plan of the sketches among `features`. The `Sketch` items precede
-/// the `Base Feature`, which a design with no body does not write.
-fn sketch_plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchPlan<'a> {
+/// The plan of the sketches among `features`, without the sketches off the
+/// origin planes where `planes` names the failure that dropped them. The
+/// `Sketch` items precede the `Base Feature`, which a design with no body
+/// does not write.
+fn sketch_plan<'a>(
+    target: &'a CadIr,
+    features: &[&'a FeatureId],
+    planes: Option<&str>,
+) -> SketchPlan<'a> {
     if target.geometry.bodies.is_empty() {
         SketchPlan::default()
     } else {
-        sketch::plan(target, features)
+        sketch::plan(target, features, planes)
     }
 }
 

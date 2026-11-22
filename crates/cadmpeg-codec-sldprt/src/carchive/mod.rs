@@ -129,7 +129,7 @@ pub(crate) fn walk_configuration(
     resolved: &[u8],
     ver: Option<u32>,
 ) -> Result<Option<Walk>, cadmpeg_core::CodecError> {
-    let Some(count) = crate::archive::resolved_features_count(resolved) else {
+    let Some(count) = crate::archive::resolved_count(resolved) else {
         return Ok(None);
     };
     let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
