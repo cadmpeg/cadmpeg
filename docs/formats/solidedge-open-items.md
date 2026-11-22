@@ -24,11 +24,11 @@
 
 **Need.** A part with a known edge length saved under each option, with the displayed value of that length.
 
-### DR-1015. Feature suppression and rollback
+### DR-1015. Feature suppression, rollback and folders
 
-**Question.** Which fields store a feature's suppressed state and the feature-tree rollback position?
+**Question.** Which fields store a feature's suppressed state, the feature-tree rollback position, and the features a folder holds?
 
-**Known.** The feature navigator object lists the features in order (§4.1). In documents without suppressed features and without a rollback, its flag word is `0x08000003` or `0x08800013`.
+**Known.** The feature navigator object lists the features in order (§4.1). A folder is a `CLSID_JMFeatureGroup` entry of the navigator list. In documents without suppressed features and without a rollback, the navigator flag word is `0x08000003` or `0x08800013`.
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 

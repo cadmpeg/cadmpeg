@@ -26,6 +26,8 @@ use crate::psm::{Cluster, Object, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TA
 const PART_CLASS: &str = "CLSID_JMPart";
 /// The class of a feature stored as a mirror copy or pattern.
 const GROUP_CLASS: &str = "CLSID_JMGroup";
+/// The class of a feature-tree folder.
+const FOLDER_CLASS: &str = "CLSID_JMFeatureGroup";
 /// The class of the object that owns the part's features.
 const OWNER_CLASS: &str = "CLSID_JMPartOwner";
 
@@ -55,7 +57,7 @@ const FUNCTION_BLOCK_AT: usize = 132;
 /// The result of reading the feature navigator.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Navigator {
-    /// No cluster-0 object is a feature navigator.
+    /// No cluster-0 object is a part feature navigator.
     Absent,
     /// A navigator object exists and does not parse, or names an object the
     /// cluster does not hold.
@@ -79,6 +81,8 @@ pub(crate) enum Kind {
     Function(Option<String>),
     /// A mirror copy or pattern.
     Group,
+    /// A feature-tree folder.
+    Folder,
     /// An object of another class.
     Other(String),
 }
@@ -92,6 +96,9 @@ pub(crate) fn navigator(cluster: &Cluster<'_>, types: &TypeTable) -> Navigator {
             .get(NAVIGATOR_GUID_AT..NAVIGATOR_GUID_AT + NAVIGATOR_GUID.len())
             != Some(&NAVIGATOR_GUID[..])
         {
+            continue;
+        }
+        if !names_navigator(object.bytes) {
             continue;
         }
         candidates = true;
@@ -142,6 +149,21 @@ fn skip(bytes: &[u8], at: &mut usize, count: usize) -> Option<()> {
     }
     *at = end;
     Some(())
+}
+
+/// Whether the part navigator name stands at its grammar position (§4.1).
+/// An object with the navigator GUID and another name, such as an
+/// assembly's, is not a part navigator.
+fn names_navigator(bytes: &[u8]) -> bool {
+    let mut at = NAVIGATOR_GUID_AT + NAVIGATOR_GUID.len();
+    skip_list(bytes, &mut at)
+        .and_then(|()| skip_list(bytes, &mut at))
+        .and_then(|()| skip(bytes, &mut at, BLOCK_BEFORE_NAME))
+        .and_then(|()| word(bytes, &mut at))
+        .is_some_and(|length| {
+            usize::try_from(length).is_ok_and(|length| length == NAVIGATOR_NAME.len())
+                && bytes.get(at..at + NAVIGATOR_NAME.len()) == Some(NAVIGATOR_NAME)
+        })
 }
 
 /// The object identifiers of the navigator's entries after the three base
@@ -196,6 +218,7 @@ fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<V
         let kind = match class {
             PART_CLASS => Kind::Function(function_name(&object)),
             GROUP_CLASS => Kind::Group,
+            FOLDER_CLASS => Kind::Folder,
             other => Kind::Other(other.to_owned()),
         };
         features.push(Listed { object: id, kind });
@@ -242,6 +265,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Group => Some(OperationFamily::Pattern),
         Kind::Function(Some(function)) => function_family(function),
         Kind::Function(None) | Kind::Other(_) => None,
+        Kind::Folder => return None,
     };
     if let Some(family) = family {
         return Some((FeatureOperation::Unresolved { family }, None));
@@ -250,7 +274,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Function(Some(function)) => function.as_str(),
         Kind::Function(None) => PART_CLASS,
         Kind::Other(class) => class.as_str(),
-        Kind::Group => return None,
+        Kind::Group | Kind::Folder => return None,
     };
     let native = FeatureOperation::Native {
         kind: NonBlankString::new(format!("solidedge:{name}"))?,
@@ -278,7 +302,17 @@ fn container_id() -> ContainerId {
 /// covers.
 fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature>> {
     let mut features = Vec::new();
-    for entry in listed {
+    let folders = listed
+        .iter()
+        .filter(|entry| entry.kind == Kind::Folder)
+        .count();
+    if folders > 0 {
+        losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
+            "the feature tree has {folders} folder(s) whose members are not read; the features \
+             are stated without folders"
+        )));
+    }
+    for entry in listed.iter().filter(|entry| entry.kind != Kind::Folder) {
         let (operation, unmapped) = operation(&entry.kind)?;
         if let Some(name) = unmapped {
             losses.push(SolidEdgeLossCode::FeatureKindUnknown.note(format!(
@@ -346,7 +380,7 @@ pub(crate) fn project<'a>(
         Navigator::Absent => {
             if has_feature_objects(&cluster, &types) {
                 losses.push(SolidEdgeLossCode::FeatureNavigatorAbsent.note(
-                    "the document has feature objects and no feature navigator; the feature \
+                    "the document has feature objects and no part feature navigator; the feature \
                      order is not transferred",
                 ));
             }

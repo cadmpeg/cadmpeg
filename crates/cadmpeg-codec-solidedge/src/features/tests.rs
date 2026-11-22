@@ -86,6 +86,22 @@ fn feature_of_another_class_keeps_its_class_name() {
 }
 
 #[test]
+fn folder_entry_reads_as_a_folder() {
+    assert_eq!(
+        kinds(read(&[
+            Feature::Part("JMProtrusionFunction"),
+            Feature::Other("CLSID_JMFeatureGroup"),
+            Feature::Part("JMCutoutFunction"),
+        ])),
+        vec![
+            Kind::Function(Some("JMProtrusionFunction".into())),
+            Kind::Folder,
+            Kind::Function(Some("JMCutoutFunction".into())),
+        ]
+    );
+}
+
+#[test]
 fn function_names_map_to_families() {
     let table = [
         ("JMProtrusionFunction", OperationFamily::Extrude),
@@ -175,11 +191,13 @@ fn damaged(edit: impl FnOnce(&mut Vec<u8>)) -> Navigator {
 
 #[test]
 fn malformed_navigators_are_unread_not_absent() {
-    // The name is not at its grammar position: after the frame, the flag word,
+    // The name differs at its grammar position: after the frame, the flag word,
     // the GUID, two lists of 2 and 1 identifiers, the 147-byte block and the
     // length word.
+    // An object with the navigator GUID and another name is not a part
+    // navigator.
     let name_at = 8 + 4 + 16 + (4 + 8) + (4 + 4) + 147 + 4;
-    assert_eq!(damaged(|object| object[name_at] ^= 1), Navigator::Unread);
+    assert_eq!(damaged(|object| object[name_at] ^= 1), Navigator::Absent);
     // The entry list runs past the object.
     assert_eq!(
         damaged(|object| object.truncate(object.len() - 12)),
