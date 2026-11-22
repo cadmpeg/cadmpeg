@@ -440,12 +440,14 @@ fn copy_output_body_id(id: &str) -> Result<BodyId, cadmpeg_core::CodecError> {
 /// `body_modifiers` pairs an emitted body identity with the native source id of
 /// its last modifying history feature. An absent or ambiguous source id does
 /// not supply an output body.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct FeatureOutputSources<'a> {
     pub face_producers: &'a [(String, u32)],
     pub body_modifiers: &'a [(String, u32)],
 }
 
+/// `held` admits the bodies the outputs may name: every decoded body for the
+/// document features, a configuration's own partition bodies for its states.
 pub(crate) fn derive_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
@@ -453,6 +455,7 @@ pub(crate) fn derive_feature_outputs(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
+    held: impl Fn(&BodyId) -> bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let FeatureOutputSources {
         face_producers,
@@ -491,6 +494,9 @@ pub(crate) fn derive_feature_outputs(
                 Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
                 Err(error) => return Err(error),
             };
+            if !held(&body) {
+                continue;
+            }
             feature.evaluation.edit(|_, outputs| {
                 outputs.insert(body);
             });
@@ -505,6 +511,9 @@ pub(crate) fn derive_feature_outputs(
         let Some(body) = owners.get(face.as_str()) else {
             continue;
         };
+        if !held(body) {
+            continue;
+        }
         let bodies = produced.entry(*source_id).or_default();
         if !bodies.contains(body) {
             bodies.push(body);

@@ -772,3 +772,99 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         .contains_key(&dependent));
     assert!(ir.model.configurations[1].parameter_values.is_empty());
 }
+
+#[test]
+fn copied_hole_placements_bring_their_sketch_dependencies() {
+    let feature = |id: &str, dependencies: Vec<FeatureId>, definition: FeatureDefinition| Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("synthetic:test:id#{id}")).expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
+        native_ref: None,
+    };
+    let hole = |placements: Option<Vec<HolePlacement>>| {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            direction: None,
+            placements,
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
+                None,
+                None,
+            )
+            .unwrap(),
+            extent: None,
+            bottom: None,
+            taper_angle: None,
+            allow_multi_profile_faces: None,
+        })
+    };
+    let placement = HolePlacement::Axis {
+        origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .unwrap(),
+        axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+            .unwrap(),
+    };
+    let sketch = feature(
+        "position",
+        Vec::new(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        }),
+    );
+    let other = FeatureId::mint("synthetic:test:id#other").expect("identity grammar");
+    let model_hole = feature(
+        "hole",
+        vec![sketch.id.clone(), other],
+        hole(Some(vec![placement])),
+    );
+    let hole_id = model_hole.id.clone();
+    let sketch_id = sketch.id.clone();
+    let mut ir = CadIr::empty();
+    ir.model.features.extend([sketch, model_hole]);
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Configuration".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            hole_id.clone(),
+            ConfigurationFeatureState {
+                evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                    outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                },
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                definition: hole(None),
+            },
+        )]),
+        native_ref: None,
+    });
+
+    sync_active_configuration_resolutions(&mut ir).unwrap();
+
+    let state = &ir.model.configurations[0].feature_states[&hole_id];
+    assert!(matches!(
+        &state.definition,
+        FeatureDefinition::Operation(FeatureOperation::Hole { placements: Some(placements), .. })
+            if placements.len() == 1
+    ));
+    assert_eq!(state.dependencies.as_slice(), [sketch_id]);
+}

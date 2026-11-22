@@ -535,23 +535,40 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     Ok(())
 }
 
-/// Resolve topology operands in configuration-local feature snapshots.
+/// Resolve topology operands and produced bodies in configuration-local
+/// feature snapshots.
+///
+/// A configuration's states name the bodies of its own partition that the
+/// partition's producer and body-modifier attributes assign to each feature,
+/// as the document features do over every decoded body. A configuration
+/// whose body membership is unresolved gains no produced body.
 pub(crate) fn bind_configuration_topology_selections(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
+    outputs: crate::history::bind::FeatureOutputSources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let body_membership_resolved = ir.model.configurations[configuration_index]
+        let held = ir.model.configurations[configuration_index]
             .bodies
-            .is_some();
+            .as_ref()
+            .map(|bodies| bodies.iter().cloned().collect::<HashSet<_>>());
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(&ir.model.features, states);
-        if body_membership_resolved {
+        if let Some(held) = held {
+            crate::history::bind::derive_feature_outputs(
+                &mut features,
+                histories,
+                outputs,
+                &ir.geometry.faces,
+                &ir.geometry.shells,
+                &ir.geometry.regions,
+                |body| held.contains(body),
+            )?;
             let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
                 bodies: &ir.geometry.bodies,
                 faces: &ir.geometry.faces,

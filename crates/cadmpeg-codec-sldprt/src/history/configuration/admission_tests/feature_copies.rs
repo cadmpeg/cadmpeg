@@ -105,6 +105,7 @@ fn run_topology() -> Result<(), CodecError> {
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &[],
+        crate::history::bind::FeatureOutputSources::default(),
     )?;
     assert_eq!(ir, expected);
     Ok(())
