@@ -22,6 +22,7 @@ const NEW_CLASS: &[u8] = b"\xff\xff\x01\x00";
 const UNIT_CLASS_SUFFIX: &[u8] = b"Units_c";
 /// The unit class besides the length unit that holds a length unit pointer.
 const DENSITY_CLASS: &[u8] = b"moDensityUnits_c";
+
 /// The length unit every configuration's units table states, or `None`
 /// where a configuration states none or two state different ones.
 pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
