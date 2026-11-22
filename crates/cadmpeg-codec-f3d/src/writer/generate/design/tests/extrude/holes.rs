@@ -34,8 +34,8 @@ use super::super::roster::segment;
 use super::super::sketch::{feature_id, frame, picked, point2, principal, sketch_id, Source};
 use super::super::{loss, neutral, number, parameter_id, write, write_bytes};
 use super::{
-    blind, decoded_extrude, entry, kinds, planned, reference_at, sketch_and_extrude_of, square,
-    u32_at, u64_at, SIDE, TOLERANCE,
+    blind, curve_entity, decoded_extrude, entry, kinds, planned, reference_at,
+    sketch_and_extrude_of, square, u32_at, u64_at, SIDE, TOLERANCE,
 };
 
 /// `lines` (see [`planned`]) then one circle per `(center, radius)`, in cm.
@@ -54,6 +54,7 @@ pub(super) fn with_circles<'a>(
                 radius: *radius,
             },
             construction: false,
+            entity: curve_entity(planned.curves.len()),
         });
     }
     planned

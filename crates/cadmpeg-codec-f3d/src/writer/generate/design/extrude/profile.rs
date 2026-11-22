@@ -7,7 +7,7 @@ use std::f64::consts::TAU;
 
 use cadmpeg_ir::math::portable::Portable;
 
-use super::super::sketch::{CurveGeometry, PlannedSketch};
+use super::super::sketch::{CurveGeometry, PlannedCurve, PlannedSketch};
 
 /// One entry of the profile loop: a curve of the planned sketch, and whether
 /// the ring runs it from its end point to its start point.
@@ -409,6 +409,16 @@ pub(in crate::writer::generate::design) fn profile(
     sketch: &PlannedSketch<'_>,
     tolerance: f64,
 ) -> Result<Vec<ProfileLoop>, &'static str> {
+    profile_of(sketch, tolerance, |_| true)
+}
+
+/// [`profile`] of the non-construction curves of `sketch` that `walked`
+/// admits.
+pub(in crate::writer::generate::design) fn profile_of(
+    sketch: &PlannedSketch<'_>,
+    tolerance: f64,
+    walked: impl Fn(&PlannedCurve) -> bool,
+) -> Result<Vec<ProfileLoop>, &'static str> {
     let point = |index: usize| sketch.points.get(index).copied().ok_or(NO_POINT);
     let mut rings = Vec::new();
     let mut pieces = Vec::new();
@@ -416,7 +426,7 @@ pub(in crate::writer::generate::design) fn profile(
         .curves
         .iter()
         .enumerate()
-        .filter(|(_, curve)| !curve.construction)
+        .filter(|(_, curve)| !curve.construction && walked(curve))
     {
         match planned.geometry {
             CurveGeometry::Line { start, end } => pieces.push(Piece {
