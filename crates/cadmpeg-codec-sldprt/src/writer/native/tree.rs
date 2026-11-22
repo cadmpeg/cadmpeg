@@ -140,10 +140,6 @@ pub(super) fn resolved_features(
         Some(id) => id,
         None => archive.count32(usize::MAX, "object identifier"),
     };
-    assert!(
-        plane_reference > ORIGIN_PLANE_REFERENCE,
-        "a user sketch's plane reference exceeds the origin sketch's"
-    );
     // The map index of each sketch written, by its object identifier.
     let mut profiles = Vec::new();
     for feature in facts.features {
