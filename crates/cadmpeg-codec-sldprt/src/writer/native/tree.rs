@@ -200,7 +200,13 @@ fn favorites(archive: &mut Archive) {
     archive.u32(1);
 }
 
-/// `moHistoryFolder_c` with an item per user feature.
+/// The four u32 of a history item before its string.
+const HISTORY_ITEM_WORDS: [u32; 4] = [1, 0x4000_0000, u32::MAX, 0];
+
+/// `moHistoryFolder_c`: the folder, the item count and, in source order, a
+/// `moHistoryFeatItemData_c` per user feature: u16 `0`,
+/// [`HISTORY_ITEM_WORDS`], an empty `CString` and a `moCompFeature_c` naming
+/// the feature by its object identifier.
 fn history(archive: &mut Archive, features: &[Feature]) {
     plain_folder(
         archive,
@@ -209,7 +215,22 @@ fn history(archive: &mut Archive, features: &[Feature]) {
         Oid::Tree(ids::HISTORY),
         TAIL,
     );
-    super::history::items(archive, features);
+    let count = archive.count16(features.len(), "history item count");
+    archive.u16(count);
+    for feature in features {
+        let id = match feature {
+            Feature::Sketch(sketch) => sketch.feature_id,
+            Feature::Extrusion(extrusion) => extrusion.feature_id,
+        };
+        archive.object("moHistoryFeatItemData_c");
+        archive.u16(0);
+        archive.u32s(&HISTORY_ITEM_WORDS);
+        archive.cstring("");
+        archive.object("moCompFeature_c");
+        unit_component(archive, 0);
+        archive.u32(id);
+        archive.u32(TIME_STAMP);
+    }
 }
 
 /// `moSelectionSetFolder_c`: the folder, u16 `0` and u32 `1`.

@@ -15,7 +15,6 @@ mod config;
 mod detailing;
 pub(super) mod extrude;
 pub(super) mod from_ir;
-mod history;
 pub(super) mod sketch;
 mod streams;
 pub(super) mod tree;
