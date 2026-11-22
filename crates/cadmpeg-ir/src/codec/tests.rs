@@ -19,7 +19,7 @@ use super::{
 };
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View,
+    ContentScope, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::CodecError;
 
@@ -34,24 +34,32 @@ fn decoded(ir: CadIr) -> Decoded {
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(decoded(ir), FormatId::new("test"), DecodeDepth::Full).unwrap()
+    DecodeResult::new(
+        decoded(ir),
+        FormatId::new("test"),
+        DecodeDepth::Full,
+        &DecodePolicy::default(),
+    )
+    .unwrap()
 }
 
 fn with_parameter(mut ir: CadIr) -> CadIr {
-    ir.model.parameters.push(crate::features::DesignParameter {
-        product_definition: None,
-        id: crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "1mm".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    });
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            product_definition: None,
+            id: crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
     ir
 }
 
@@ -239,6 +247,31 @@ impl CodecBackend for ForeignIdentityCodec {
         ));
         Ok(decoded(ir))
     }
+}
+
+#[test]
+fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
+    let mut ir = unit_cube().unwrap();
+    let dimension = crate::pmi::PmiDimension {
+        modifiers: vec![crate::pmi::DimensionModifier::Other(
+            "Statistical".to_owned(),
+        )],
+        ..crate::pmi::PmiDimension::new(crate::pmi::PmiDimensionKind::Size)
+    };
+    ir.model.pmi.push(crate::pmi::PmiAnnotation::new(
+        crate::ids::PmiId::try_from("test:codec:pmi#size".to_owned()).unwrap(),
+        Vec::new(),
+        crate::pmi::PmiDefinition::Dimension(dimension),
+    ));
+    let result = decode_result(ir);
+    let crate::pmi::PmiDefinition::Dimension(dimension) = &result.ir().model.pmi[0].definition
+    else {
+        panic!("a dimension");
+    };
+    assert_eq!(
+        dimension.modifiers,
+        [crate::pmi::DimensionModifier::Statistical]
+    );
 }
 
 #[test]
@@ -436,6 +469,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         },
         FormatId::new("test"),
         DecodeDepth::Container,
+        &DecodePolicy::default(),
     )
     .unwrap();
 
@@ -475,7 +509,13 @@ fn the_document_records_the_depth_the_backend_reported() {
             unit_cube().expect("valid unit cube fixture")
         });
         decoded.body.transfer = transfer;
-        let result = DecodeResult::new(decoded, FormatId::new("test"), transfer.depth()).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            transfer.depth(),
+            &DecodePolicy::default(),
+        )
+        .unwrap();
         assert_eq!(result.ir().scope(), transfer.depth().scope());
         assert_eq!(result.report().depth(), transfer.depth());
         assert_eq!(
@@ -506,7 +546,13 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
             unit_cube().expect("valid unit cube fixture")
         });
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
-        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.ir().scope(), delivered.scope());
         let losses = depth_losses(&result);
@@ -532,7 +578,13 @@ fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty(
     for requested in [DecodeDepth::Geometry, DecodeDepth::Design] {
         let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
         decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
-        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
         assert_eq!(result.ir().scope(), requested.scope());
         assert!(depth_losses(&result).is_empty());
     }
@@ -547,14 +599,26 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(decoded, FormatId::new("test"), depth).unwrap_err();
+        let error = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            depth,
+            &DecodePolicy::default(),
+        )
+        .unwrap_err();
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(error.to_string().contains(expected), "{error}");
     }
 
     let mut decoded = decoded(ir.clone());
     decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
-    let result = DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Geometry).unwrap();
+    let result = DecodeResult::new(
+        decoded,
+        FormatId::new("test"),
+        DecodeDepth::Geometry,
+        &DecodePolicy::default(),
+    )
+    .unwrap();
     assert_eq!(result.ir().scope(), ContentScope::design());
     assert_eq!(result.ir().model.parameters.len(), 1);
 

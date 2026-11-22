@@ -446,7 +446,8 @@ mod tests {
     use super::*;
     use cadmpeg_ir::design::construction::{kinds, FrameAxis};
     use cadmpeg_ir::design::selection::{Anchor, PickTarget, PrincipalEntity, Witness};
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     #[test]
     fn axis_conversion_reaches_nested_values_options_and_steps() {

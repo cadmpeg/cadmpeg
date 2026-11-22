@@ -5,7 +5,7 @@ use super::super::{
     analytic_segment_intersections, arrangement_node, arrangement_split_parameters, point_distance,
     sketch_geometry_point, CodecError, DecodeContext, ProfileBoundarySegment, ProfileGeometryWork,
 };
-use cadmpeg_ir::features::SketchProfileBoundaryUse;
+use cadmpeg_ir::features::profiles::SketchProfileBoundaryUse;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityUse, SketchGeometryDefinition};
 use std::collections::HashSet;
 

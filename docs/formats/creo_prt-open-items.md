@@ -394,6 +394,14 @@ and `41 <tail7>` second-coordinate images in pcurve chart slots, the
 end-cylinder axis sign, and the mirrored end-cylinder placement before
 nonzero finite endpoints or complete cap charts are promoted.
 
+### GS-37. Packed surface-row identifiers after an unclosed body
+
+**Question.** Where does a positional `srf_array` row with a packed `c0..df XX YY` `geom_id` begin when it follows a row body without a row-close `e3`?
+
+**Known.** `creo_prt.md` §3 defines the packed tier of `geom_id`, `feat_id`, and `next_geom_ptr`. The positional scan finds a row from its type byte and reads the identifier backwards. The decoder reads each payload twice: with the one- and two-byte tiers, and with the packed tier where it applies. In the packed reading, a positional packed `geom_id` lies inside a counted frame, starts at the frame start or after an `e3` byte, and no one- or two-byte identifier that ends at the same type byte starts at such a position. A packed field ends before the next frame label and before its namespace end, and its two value bytes hold no `e3` and start no named-record header. A positional `feat_id` whose packed reading is not followed by valid discriminators, and a named field or a positional `feat_id` or `next_geom_ptr` with no packed reading, take the one- or two-byte reading, which reads a lone `c0..ff` byte as its own value. The payload keeps the packed reading when, with every boundary type and with boundary types `00` and `06`, it keeps at least as many rows as the one- and two-byte reading in every counted frame and outside the frames. Otherwise the payload keeps the one- and two-byte reading, and a named datum plane reads its identifiers as reference identifiers. `geometry.surface-row-packed-reading` counts, per frame and outside the frames, the kept rows of the one- and two-byte reading that the packed reading replaces, and `geometry.surface-row-compact-reading` counts the kept rows of the packed reading that the one- and two-byte reading replaces.
+
+**Need.** A row-body grammar that bounds every body, so that each row start is known before its identifier is read.
+
 ### GS-19. Unresolved cone origin-coordinate images
 
 **Question.** Which owned scalar or model-reference grammar resolves the remaining cone origin-coordinate images and establishes their placement?
@@ -1030,6 +1038,14 @@ nearby schema markers and reject a class field borrowed from another row.
 
 **Conflict.** Joining a nearby schema-object record through its numeric key can
 conflict with an independently established model-feature definition.
+
+### SP-47. Datum, hole-placement, and revolve-axis construction constraints
+
+**Question.** Which Creo feature-input records carry the defining constraints and references of a datum plane, datum coordinate system, placed hole position, and revolve axis?
+
+**Known.** The decoder reads the resolved frame of a datum plane or coordinate system, the resolved point of a directed hole placement, and the resolved axis of a revolve. In v11 design projection, each construction carries one unread input (`Picks::Unread`) beside its resolved value so the element is never stated as a fixed element without constraints.
+
+**Need.** Feature records whose datum constraints, hole-placement dimensions, and revolve-axis references resolve to prior entities, so the v11 constructions state their real inputs in place of the unread input.
 
 ## 4. Topology and appearance
 

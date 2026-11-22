@@ -58,7 +58,7 @@ usd = ["cadmpeg-registry/usd"]
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
 cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }

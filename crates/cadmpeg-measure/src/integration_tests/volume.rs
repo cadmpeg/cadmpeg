@@ -168,7 +168,7 @@ fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64
         .find(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
     {
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 0.0, 0.0, corner,
             ))
             .expect("finite"),

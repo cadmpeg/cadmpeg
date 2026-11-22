@@ -7,7 +7,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, Surface, SurfaceGeometry,
@@ -161,6 +161,9 @@ pub(super) fn append(
                         }
                     }
                     for patch in &patches {
+                        if let Some(bounds) = patch.recovery.untransferred_plane_bounds {
+                            refusal.push_plane_bounds_not_transferred(patch.face, bounds);
+                        }
                         let accuracy_gap = patch
                             .sides
                             .iter()
@@ -785,7 +788,7 @@ fn append_component(
     }
     if faces.is_empty() {
         return Err(CodecError::malformed(
-            cadmpeg_ir::features::BodySelectionError::Empty,
+            cadmpeg_ir::features::selections::BodySelectionError::Empty,
         ));
     }
     ir.geometry

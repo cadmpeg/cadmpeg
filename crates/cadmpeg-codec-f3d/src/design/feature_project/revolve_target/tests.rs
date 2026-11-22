@@ -16,11 +16,14 @@ use crate::records::topology::entity_selection::{
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::{DesignFaceOperand, DesignFaceOperandDraft};
-use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, FaceSelection, FeatureDefinition, FeatureOperation,
-    PartialRevolveConstruction, PlanarProfileRef, PlaneTargetSource, RevolveConstruction,
-    RevolveExtent,
+use cadmpeg_ir::features::extents::{AngularTermination, PlaneTargetSource};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::revolve::{
+    PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const SCOPE: u32 = 12;

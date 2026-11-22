@@ -3,7 +3,7 @@
 
 #[test]
 fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
-    use crate::features::{RevolutionAxis, RevolveConstruction};
+    use crate::features::revolve::{RevolutionAxis, RevolveConstruction};
 
     let axis = serde_json::json!({
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -40,7 +40,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
 
 #[test]
 fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
-    use crate::features::RevolveExtent;
+    use crate::features::revolve::RevolveExtent;
     use serde_json::json;
     use std::f64::consts::{PI, TAU};
 

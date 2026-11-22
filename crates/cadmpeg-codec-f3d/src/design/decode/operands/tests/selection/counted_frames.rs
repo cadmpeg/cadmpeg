@@ -598,7 +598,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
@@ -666,7 +666,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0, 1]
@@ -685,7 +685,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchSelection {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchSelection {
                 sketch: ref actual_sketch,
                 selections: ref actual_selections,
             }) if actual_sketch == &sketch_id && actual_selections.as_slice() == [group.id.clone()]
@@ -708,7 +708,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     ctx: decode_ctx,
                 }
                 .scoped(&[]), crate::design::profile_select::ExtrudeTransition { history_state_id: None, previous_history_state_id: None, cut: false }).unwrap(),
-            cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::SketchProfiles {
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
                 ref profiles,
             }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
@@ -717,6 +717,111 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 }
 
 /// Build a 240-byte selection member with synthetic values.
+fn plain_extrude_scope() -> DesignParameterScope {
+    DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 1000,
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
+                .unwrap(),
+            record_index: 12,
+            frame_length: 200,
+            kind_offset: 1100,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            label: None,
+            history_state_id: None,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: None,
+            reference_count_offset: 1080,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![100],
+                vec![1085],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: crate::records::feature::scope::DesignFeatureKind::Extrude
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "261".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 1200,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap()
+}
+
+/// A plain-reference group with one member and `separator` between its two
+/// nested-record references.
+fn plain_group_bytes(separator: &[u8]) -> (Vec<u8>, usize) {
+    let reference = |bytes: &mut Vec<u8>, target: u32| {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    };
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"331", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    reference(&mut bytes, 12);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, 200);
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    reference(&mut bytes, 102);
+    bytes.extend_from_slice(separator);
+    reference(&mut bytes, 101);
+    bytes.push(0);
+    reference(&mut bytes, 12);
+    let paired_at = bytes.len();
+    indexed_header(&mut bytes, *b"259", 100);
+    (bytes, paired_at)
+}
+
+#[test]
+fn plain_extrude_selection_group_admits_both_nested_reference_separators() {
+    let scope = plain_extrude_scope();
+    let record = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("331".to_owned()).unwrap(),
+        record_index: 100,
+    };
+    for (separator, variant, paired_at) in [
+        (&[1, 0, 0][..], Some(false), 89 + 11),
+        (&[1, 1, 0][..], Some(true), 89 + 11),
+        (&[0, 0][..], None, 88 + 11),
+    ] {
+        let (bytes, expected_paired_at) = plain_group_bytes(separator);
+        assert_eq!(expected_paired_at, paired_at);
+        let group = parse_extrude_selection_group(&bytes, &scope, 0, &record)
+            .expect("group decode resources")
+            .expect("plain Extrude selection group");
+        assert_eq!(group.variant, variant);
+        assert!(!group.typed_references);
+        assert_eq!(group.paired_byte_offset(), u64_from_index(paired_at));
+        assert_eq!(
+            group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .collect::<Vec<_>>(),
+            [200]
+        );
+    }
+    for separator in [&[0, 1][..], &[1, 2, 0][..], &[1, 0, 1][..]] {
+        let (bytes, _) = plain_group_bytes(separator);
+        assert!(parse_extrude_selection_group(&bytes, &scope, 0, &record)
+            .expect("group decode resources")
+            .is_none());
+    }
+}
+
 fn scope_tail_member_bytes(scope: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"290", 200);

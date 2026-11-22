@@ -10,7 +10,7 @@ use crate::evaluation::FeatureBoundary;
 use crate::evaluation::UnsupportedBodyCensusReason;
 use cadmpeg_ir::features::patterns::PatternKind;
 use cadmpeg_ir::features::patterns::PatternSeed;
-use cadmpeg_ir::features::BodySelection;
+use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
@@ -37,13 +37,15 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         1,
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![seed.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![seed.clone()])
                     .expect("distinct bodies"),
             ))],
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: Some(
-                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
-                        .unwrap(),
+                    cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        1.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
                 ),
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                 count: 3,
@@ -55,7 +57,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         }),
     );
     pattern.evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
             first_copy.clone(),
             second_copy.clone(),
         ])
@@ -78,13 +80,13 @@ fn output_free_unresolved_pattern_is_body_census_neutral() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED,
@@ -110,13 +112,15 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         seed.clone(),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![seed])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![seed])
                     .expect("distinct bodies"),
             ))],
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
+                plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     1.0, 0.0, 0.0,
                 ))
                 .unwrap(),
@@ -152,9 +156,11 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
+                plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     1.0, 0.0, 0.0,
                 ))
                 .unwrap(),
@@ -187,10 +193,10 @@ fn zero_occurrence_body_pattern_refuses_lineage() {
     let mut feature = ir.model.features[0].clone();
     feature
         .evaluation
-        .set_outputs(cadmpeg_ir::features::DistinctMembers::default());
+        .set_outputs(cadmpeg_ir::features::selections::DistinctMembers::default());
     let mut bodies = std::collections::BTreeSet::from([seed.clone()]);
     let seeds = [PatternSeed::Bodies(BodySelection::Bodies(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![seed]).unwrap(),
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![seed]).unwrap(),
     ))];
     assert!(matches!(
         super::super::apply_complete_body_pattern(&feature, &mut bodies, &seeds, Some(0), false),

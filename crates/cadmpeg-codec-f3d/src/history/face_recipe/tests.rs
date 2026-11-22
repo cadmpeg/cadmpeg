@@ -124,8 +124,100 @@ fn bounded_face_nodes_resolve_the_complete_referenced_boundary() {
     assert!(operand.candidate_faces.is_empty());
 }
 
+fn topology_with_four_face_edge() -> AsmHistoricalTopology {
+    let mut topology = topology();
+    topology.edges.push(16);
+    topology.edge_vertices.push(AsmHistoricalEdge {
+        edge: 16,
+        start_vertex: 1,
+        end_vertex: 4,
+    });
+    for face in [104, 105] {
+        let loop_ = face + 100;
+        let first = face * 10;
+        topology.faces.push(face);
+        topology.face_loops.push(AsmHistoricalRelation {
+            owner_ref: face,
+            member_refs: vec![loop_],
+        });
+        topology.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: loop_,
+            member_refs: vec![first, first + 1],
+        });
+        for (coedge, edge, other) in [(first, 13, first + 1), (first + 1, 16, first)] {
+            topology.coedge_topology.push(AsmHistoricalCoedge {
+                coedge,
+                owner_loop: loop_,
+                edge,
+                next: other,
+                previous: other,
+                radial_next: 0,
+            });
+        }
+    }
+    topology
+}
+
+fn set_node_fans(operand: &mut DesignFaceOperand, index: usize, fans: [&[i32]; 2]) {
+    let node = &mut operand.recipe_nodes[index];
+    let structure = node.recipe_structure.as_ref().unwrap();
+    let mut fields = vec![structure.root, -1, structure.prelude[0], -1, 2, -1];
+    for fan in fans {
+        fields.push(i32::try_from(fan.len()).unwrap());
+        for &ordinal in fan {
+            fields.extend([ordinal, -1]);
+        }
+        fields.extend([0, 0, -1]);
+    }
+    node.recipe_structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(ctx, &fields).unwrap()
+    });
+    node.program = vec![-1, -1, 2];
+    node.program.extend(fields);
+    operand.recipe_program = vec![0, -1, i32::try_from(operand.recipe_nodes.len()).unwrap()];
+    for node in &operand.recipe_nodes {
+        operand.recipe_program.extend_from_slice(&node.program);
+    }
+}
+
 #[test]
-fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+fn bounded_face_nodes_use_the_clause_to_cross_a_four_face_edge() {
+    let index = FaceRecipeIndex::new(&topology_with_four_face_edge());
+    let mut operand = operand();
+    for ordinal in [4, 5] {
+        let mut reference = operand.recipe_references[0].clone();
+        reference.selector_offset = ordinal;
+        reference.token_offset = ordinal;
+        reference.design_reference = i64::try_from(ordinal).unwrap();
+        reference.design_reference_offset = ordinal;
+        reference.candidate_faces = vec![crate::ids::brep_face_id(
+            100 + i64::try_from(ordinal).unwrap(),
+        )];
+        operand.recipe_references.push(reference);
+    }
+    set_node_fans(&mut operand, 0, [&[0, 1, 4, 5, 3], &[0, 1, 2]]);
+    set_node_fans(&mut operand, 2, [&[0, 2, 3], &[0, 1, 4, 5, 3]]);
+    assert_eq!(index.resolve(&operand), Some(100));
+    assert_eq!(index.resolve_loop(&operand), Some(100));
+    operand.recipe_references[1]
+        .candidate_faces
+        .push(crate::ids::brep_face_id(104));
+    operand.recipe_references[3]
+        .candidate_faces
+        .push(crate::ids::brep_face_id(105));
+    set_node_fans(&mut operand, 0, [&[0, 1, 1, 3, 3], &[0, 1, 2]]);
+    set_node_fans(&mut operand, 2, [&[0, 2, 3], &[0, 1, 1, 3, 3]]);
+    assert_eq!(index.resolve(&operand), Some(100));
+    for invalid in [&[0, 1, 4, 3, 5][..], &[0, 1, 4, 3], &[0, 1, 4, 4, 3]] {
+        set_node_fans(&mut operand, 0, [invalid, &[0, 1, 2]]);
+        assert_eq!(index.resolve(&operand), None);
+        assert_eq!(index.resolve_loop(&operand), None);
+    }
+}
+
+/// Face 100 gains an inner loop whose one closed edge 20, at vertex 5, it
+/// shares with face 104.
+fn topology_with_inner_loop() -> AsmHistoricalTopology {
     let mut topology = topology();
     topology.faces.push(104);
     topology.edges.push(20);
@@ -154,6 +246,12 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
             radial_next,
         });
     }
+    topology
+}
+
+#[test]
+fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
+    let topology = topology_with_inner_loop();
     let index = FaceRecipeIndex::new(&topology);
     let mut operand = operand();
     assert_eq!(index.resolve(&operand), None);
@@ -161,6 +259,222 @@ fn bounded_face_nodes_resolve_a_complete_loop_of_a_face_with_an_inner_loop() {
     operand.recipe_nodes.truncate(2);
     operand.recipe_program[2] = 2;
     assert_eq!(index.resolve_loop(&operand), None);
+}
+
+/// Add operand 4 for face 104 and a node for the closed edge between faces
+/// 100 and 104. The node has one endpoint clause with the fan `fan`.
+fn add_closed_edge_node(operand: &mut DesignFaceOperand, fan: [i32; 2]) {
+    let mut reference = operand.recipe_references[3].clone();
+    reference.selector_offset = 4;
+    reference.token_offset = 4;
+    reference.design_reference = 4;
+    reference.design_reference_offset = 4;
+    reference.candidate_faces = vec![crate::ids::brep_face_id(104)];
+    operand.recipe_references.push(reference);
+    let fields = vec![0, -1, 4, -1, 1, -1, 2, fan[0], -1, fan[1], -1, 0, 0, -1];
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            .unwrap()
+            .unwrap()
+    });
+    assert_eq!(structure.sides.len(), 1);
+    let mut program = vec![-1, -1, 2];
+    program.extend(fields);
+    operand.recipe_program[2] = 4;
+    operand.recipe_program.extend(&program);
+    operand.recipe_nodes.push(DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program,
+        recipe_structure: Some(structure),
+    });
+}
+
+#[test]
+fn a_one_clause_node_binds_a_closed_edge_by_the_fan_at_its_one_vertex() {
+    let index = FaceRecipeIndex::new(&topology_with_inner_loop());
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    assert_eq!(operand.recipe_program[2], 4);
+    assert_eq!(
+        operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.recipe_structure.as_ref().unwrap().prelude[1])
+            .collect::<Vec<_>>(),
+        [2, 2, 2, 1]
+    );
+    assert_eq!(index.resolve(&operand), Some(100));
+    let mut operand = self::operand();
+    add_closed_edge_node(&mut operand, [4, 1]);
+    assert_eq!(index.resolve(&operand), None);
+}
+
+#[test]
+fn a_one_clause_node_refuses_a_closed_edge_whose_vertex_meets_another_edge() {
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    let mut topology = topology_with_inner_loop();
+    topology.edges.push(21);
+    topology.vertices.push(6);
+    topology.edge_vertices.push(AsmHistoricalEdge {
+        edge: 21,
+        start_vertex: 5,
+        end_vertex: 6,
+    });
+    let index = FaceRecipeIndex::new(&topology);
+    assert!(!index.edge_faces.contains_key(&21));
+    assert_eq!(index.closed_edge_fan(20, 5), None);
+    assert_eq!(index.resolve(&operand), None);
+}
+
+/// Add face `face` with one loop of the two edges `edges`.
+fn add_two_edge_face(topology: &mut AsmHistoricalTopology, face: i64, edges: [i64; 2]) {
+    let loop_ = face + 100;
+    let first = face * 10;
+    topology.faces.push(face);
+    topology.face_loops.push(AsmHistoricalRelation {
+        owner_ref: face,
+        member_refs: vec![loop_],
+    });
+    topology.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: loop_,
+        member_refs: vec![first, first + 1],
+    });
+    for (coedge, edge, other) in [(first, edges[0], first + 1), (first + 1, edges[1], first)] {
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: loop_,
+            edge,
+            next: other,
+            previous: other,
+            radial_next: 0,
+        });
+    }
+}
+
+fn add_edge(topology: &mut AsmHistoricalTopology, edge: i64, vertices: [i64; 2]) {
+    topology.edges.push(edge);
+    topology.edge_vertices.push(AsmHistoricalEdge {
+        edge,
+        start_vertex: vertices[0],
+        end_vertex: vertices[1],
+    });
+}
+
+fn singleton_lanes() -> Vec<BTreeSet<i64>> {
+    (100..=107).map(|face| BTreeSet::from([face])).collect()
+}
+
+/// Whether the corner walk at `vertex` from edge 10 and face 100 matches
+/// `ordinals` in their stored order, without the vertex shape gates.
+fn corner_walk_without_gates(index: &FaceRecipeIndex, vertex: i64, ordinals: &[i32]) -> bool {
+    let corners = &index.corners[&vertex];
+    let mut incidence = std::collections::HashMap::<_, Vec<_>>::new();
+    for (position, corner) in corners.iter().enumerate() {
+        for &edge in &corner.edges {
+            incidence.entry(edge).or_default().push(position);
+        }
+    }
+    let lanes = singleton_lanes();
+    let pattern: Vec<_> = ordinals
+        .iter()
+        .map(|&ordinal| &lanes[usize::try_from(ordinal).unwrap()])
+        .collect();
+    super::corner_walk_matches(10, 100, corners, &incidence, &pattern)
+}
+
+#[test]
+fn a_branching_fan_refuses_a_second_four_use_edge() {
+    let mut topology = topology_with_four_face_edge();
+    add_edge(&mut topology, 17, [1, 4]);
+    add_two_edge_face(&mut topology, 106, [16, 17]);
+    add_two_edge_face(&mut topology, 107, [17, 16]);
+    let index = FaceRecipeIndex::new(&topology);
+    let ordinals = [0, 3, 4, 6, 7, 5, 1];
+    assert!(corner_walk_without_gates(&index, 1, &ordinals));
+    assert!(!index.branching_fan_matches(10, 1, 100, &ordinals, &singleton_lanes()));
+}
+
+#[test]
+fn a_branching_fan_refuses_a_three_use_edge() {
+    let mut topology = topology_with_four_face_edge();
+    add_edge(&mut topology, 17, [1, 4]);
+    add_two_edge_face(&mut topology, 106, [16, 17]);
+    let index = FaceRecipeIndex::new(&topology);
+    for ordinals in [[0, 3, 4, 6, 5, 1], [0, 3, 5, 6, 4, 1]] {
+        assert!(!index.branching_fan_matches(10, 1, 100, &ordinals, &singleton_lanes()));
+    }
+}
+
+#[test]
+fn a_branching_fan_refuses_an_edge_without_a_corner_at_its_vertex() {
+    let mut topology = topology_with_four_face_edge();
+    let ordinals = [0, 1, 4, 5, 3];
+    let index = FaceRecipeIndex::new(&topology);
+    assert!(index.branching_fan_matches(10, 1, 100, &ordinals, &singleton_lanes()));
+    add_edge(&mut topology, 18, [1, 9]);
+    let index = FaceRecipeIndex::new(&topology);
+    assert!(!index.branching_fan_matches(10, 1, 100, &ordinals, &singleton_lanes()));
+}
+
+#[test]
+fn a_candidate_face_without_a_complete_boundary_vetoes_the_group() {
+    let mut topology = topology();
+    topology.faces.push(104);
+    topology.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 104,
+        member_refs: vec![204],
+    });
+    let mut operand = operand();
+    operand.recipe_references[0]
+        .candidate_faces
+        .push(crate::ids::brep_face_id(104));
+    let index = FaceRecipeIndex::new(&topology);
+    assert!(!index.boundaries.contains_key(&104));
+    assert_eq!(index.resolve(&operand), Some(100));
+    let mut recipe = index.prepare(&operand).unwrap();
+    recipe.candidates.insert(104);
+    assert_eq!(index.resolve_prepared_boundary(recipe, false), None);
+}
+
+#[test]
+fn a_one_clause_closed_edge_leaves_the_loop_recipe_unresolved() {
+    let index = FaceRecipeIndex::new(&topology_with_inner_loop());
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    let node = operand.recipe_nodes.pop().unwrap();
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_program.extend_from_slice(&node.program);
+    operand.recipe_nodes = vec![node];
+    let structure = operand.recipe_nodes[0].recipe_structure.as_ref().unwrap();
+    assert_eq!(structure.prelude[1], 1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&operand.recipe_references));
+    assert!(operand.resolved_face_slots.is_empty());
+    assert_eq!(operand.group_record_index(), Some(20));
+    let mut lanes: Vec<_> = (100..=104).map(|face| BTreeSet::from([face])).collect();
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+
+    let mut topology = topology_with_inner_loop();
+    topology.faces.retain(|face| *face != 104);
+    let other = topology.face_loops.pop().unwrap();
+    topology.face_loops[0].member_refs.extend(other.member_refs);
+    operand.recipe_references[4].candidate_faces = vec![crate::ids::brep_face_id(100)];
+    lanes[4] = lanes[0].clone();
+    let index = FaceRecipeIndex::new(&topology);
+    assert_eq!(index.edge_faces[&20], [100, 100]);
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
+fn a_one_clause_node_does_not_bind_an_open_edge() {
+    let index = FaceRecipeIndex::new(&topology());
+    let mut operand = operand();
+    let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+    structure.sides.truncate(1);
+    assert_eq!(index.resolve(&operand), None);
 }
 
 #[test]
@@ -319,7 +633,7 @@ fn endpoint_fans_retain_multiplicity_and_cyclic_adjacency() {
 
 #[test]
 fn delete_face_selection_retains_native_group_until_every_member_has_boundary_proof() {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:test:scope#10",
         crate::records::feature::scope::DesignFeatureKind::DeleteFace,

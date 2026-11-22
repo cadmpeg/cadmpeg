@@ -12,11 +12,9 @@ use crate::records::{
     },
     identity::Located,
 };
-use cadmpeg_ir::{
-    features::FeatureDirection3,
-    math::Vector3,
-    scalar::{FiniteReal, PositiveReal},
-};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 fn scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(

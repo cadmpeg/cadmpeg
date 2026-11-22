@@ -10,7 +10,9 @@ mod design;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::features::surface_inputs::WrapMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::scaling::ScaleRefusal;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -30,7 +32,7 @@ fn scale_point3(point: &mut Point3, scale: PositiveReal) {
 }
 
 fn scale_finite_point3(
-    point: &mut cadmpeg_ir::features::FinitePoint3,
+    point: &mut cadmpeg_ir::features::geometry::FinitePoint3,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     *point = point
@@ -116,22 +118,22 @@ fn scale_optional_length(
 }
 
 fn scale_datum_plane_reference(
-    reference: &mut cadmpeg_ir::features::DatumPlaneReference,
+    reference: &mut cadmpeg_ir::features::datums::DatumPlaneReference,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } = reference {
+    if let cadmpeg_ir::features::datums::DatumPlaneReference::ResolvedPlane { frame } = reference {
         scale_support_plane_frame(frame, scale)?;
     }
     Ok(())
 }
 
 fn scale_support_plane_frame(
-    frame: &mut cadmpeg_ir::features::FeatureSupportPlaneFrame,
+    frame: &mut cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     let mut origin = frame.origin().get();
     scale_point3(&mut origin, scale);
-    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).ok_or_else(|| {
         CodecError::malformed("Creo scaled plane support must have a finite origin")
     })?;
     *frame = frame.with_origin(origin);
@@ -139,23 +141,26 @@ fn scale_support_plane_frame(
 }
 
 fn scale_datum_point_construction(
-    construction: &mut cadmpeg_ir::features::DatumPointConstruction,
+    construction: &mut cadmpeg_ir::features::datums::DatumPointConstruction,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     match construction {
-        cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection { planes } => {
+        cadmpeg_ir::features::datums::DatumPointConstruction::ThreePlaneIntersection { planes } => {
             for plane in planes.iter_mut() {
                 scale_datum_plane_reference(plane, scale)?;
             }
         }
-        cadmpeg_ir::features::DatumPointConstruction::EdgePlaneIntersection { plane, .. } => {
+        cadmpeg_ir::features::datums::DatumPointConstruction::EdgePlaneIntersection {
+            plane,
+            ..
+        } => {
             scale_datum_plane_reference(plane, scale)?;
         }
-        cadmpeg_ir::features::DatumPointConstruction::CircleCenter { .. }
-        | cadmpeg_ir::features::DatumPointConstruction::TwoEdgeIntersection { .. }
-        | cadmpeg_ir::features::DatumPointConstruction::Vertex { .. }
-        | cadmpeg_ir::features::DatumPointConstruction::SketchPoint { .. }
-        | cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge { .. } => {}
+        cadmpeg_ir::features::datums::DatumPointConstruction::CircleCenter { .. }
+        | cadmpeg_ir::features::datums::DatumPointConstruction::TwoEdgeIntersection { .. }
+        | cadmpeg_ir::features::datums::DatumPointConstruction::Vertex { .. }
+        | cadmpeg_ir::features::datums::DatumPointConstruction::SketchPoint { .. }
+        | cadmpeg_ir::features::datums::DatumPointConstruction::DistanceOnEdge { .. } => {}
     }
     Ok(())
 }
@@ -202,27 +207,31 @@ fn scale_feature_operation(
             for point in &mut corners {
                 scale_point2(point, scale);
             }
-            *bounds = cadmpeg_ir::features::FeatureImageBounds::new(corners).ok_or_else(|| {
-                CodecError::malformed(
-                    "Creo scaled image bounds must have finite corners and nonzero extents",
-                )
-            })?;
+            *bounds = cadmpeg_ir::features::geometry::FeatureImageBounds::new(corners).ok_or_else(
+                || {
+                    CodecError::malformed(
+                        "Creo scaled image bounds must have finite corners and nonzero extents",
+                    )
+                },
+            )?;
         }
         FeatureOperation::DatumCoordinateSystem { frame } => {
             let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
-            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-                CodecError::malformed("Creo scaled coordinate frame must have a finite origin")
-            })?;
+            let origin =
+                cadmpeg_ir::features::geometry::FinitePoint3::new(origin).ok_or_else(|| {
+                    CodecError::malformed("Creo scaled coordinate frame must have a finite origin")
+                })?;
             *frame = frame.with_origin(origin);
         }
         FeatureOperation::DatumPlane { frame }
         | FeatureOperation::DatumThreePointPlane { frame, .. } => {
             let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
-            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
-                CodecError::malformed("Creo scaled datum plane must have a finite origin")
-            })?;
+            let origin =
+                cadmpeg_ir::features::geometry::FinitePoint3::new(origin).ok_or_else(|| {
+                    CodecError::malformed("Creo scaled datum plane must have a finite origin")
+                })?;
             *frame = frame.with_origin(origin);
         }
         FeatureOperation::DatumAxis { .. } => design::axis(ctx, definition, scale)?,
@@ -258,8 +267,8 @@ fn scale_feature_operation(
             let mut end = segment.end().get();
             scale_point3(&mut start, scale);
             scale_point3(&mut end, scale);
-            *segment =
-                cadmpeg_ir::features::FeatureLineSegment::new(start, end).ok_or_else(|| {
+            *segment = cadmpeg_ir::features::geometry::FeatureLineSegment::new(start, end)
+                .ok_or_else(|| {
                     CodecError::malformed("Creo scaled line must have finite distinct endpoints")
                 })?;
         }
@@ -268,10 +277,11 @@ fn scale_feature_operation(
             let mut radius = arc.radius();
             scale_point3(&mut center, scale);
             scale_positive_length(&mut radius, scale)?;
-            let center = cadmpeg_ir::features::FinitePoint3::new(center).ok_or_else(|| {
-                CodecError::malformed("Creo scaled circular arc must have finite geometry")
-            })?;
-            *arc = cadmpeg_ir::features::FeatureCircularArc::from_parts(
+            let center =
+                cadmpeg_ir::features::geometry::FinitePoint3::new(center).ok_or_else(|| {
+                    CodecError::malformed("Creo scaled circular arc must have finite geometry")
+                })?;
+            *arc = cadmpeg_ir::features::geometry::FeatureCircularArc::from_parts(
                 center,
                 arc.normal(),
                 radius,
@@ -298,12 +308,13 @@ fn scale_feature_operation(
                 })?;
                 points.push(scaled);
             }
-            *chain = cadmpeg_ir::features::FeaturePolyline::from_parts(points, chain.closed())
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "Creo scaled polyline must have finite distinct adjacent vertices",
-                    )
-                })?;
+            *chain =
+                cadmpeg_ir::features::geometry::FeaturePolyline::from_parts(points, chain.closed())
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "Creo scaled polyline must have finite distinct adjacent vertices",
+                        )
+                    })?;
         }
         FeatureOperation::RegularPolygonCurve { circumradius, .. } => {
             scale_positive_length(circumradius, scale)?;
@@ -343,11 +354,11 @@ fn scale_feature_operation(
             scale_finite_point3(axis_origin, scale)?;
             scale_positive_length(radius, scale)?;
             match shape {
-                cadmpeg_ir::features::HelixShape::Cylindrical { pitch }
-                | cadmpeg_ir::features::HelixShape::Conical { pitch, .. } => {
+                cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch }
+                | cadmpeg_ir::features::sweeps::HelixShape::Conical { pitch, .. } => {
                     scale_nonzero_length(pitch, scale)?;
                 }
-                cadmpeg_ir::features::HelixShape::Spiral { radial_growth } => {
+                cadmpeg_ir::features::sweeps::HelixShape::Spiral { radial_growth } => {
                     scale_length(radial_growth, scale)?;
                 }
             }
@@ -419,20 +430,20 @@ fn scale_feature_operation(
             let mut radial_growth = construction.travel.radial_growth();
             scale_length(&mut height, scale)?;
             scale_length(&mut radial_growth, scale)?;
-            construction.travel = cadmpeg_ir::features::HelicalSweepTravel::new(
-                height,
-                radial_growth,
-            )
-            .ok_or_else(|| {
-                CodecError::malformed("Creo scaled helical sweep must retain nonzero travel")
-            })?;
+            construction.travel =
+                cadmpeg_ir::features::sweeps::HelicalSweepTravel::new(height, radial_growth)
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "Creo scaled helical sweep must retain nonzero travel",
+                        )
+                    })?;
         }
         FeatureOperation::Coil { construction, .. } => {
             scale_coil_construction(construction, scale)?;
         }
         FeatureOperation::Binder {
             construction:
-                cadmpeg_ir::features::BinderConstruction::SubShape {
+                cadmpeg_ir::features::binders::BinderConstruction::SubShape {
                     offset: Some(offset),
                     ..
                 },
@@ -441,8 +452,8 @@ fn scale_feature_operation(
         FeatureOperation::Binder { .. } => {}
         FeatureOperation::Loft { sections, .. } => {
             for section in sections {
-                if let cadmpeg_ir::features::LoftSection::Point(
-                    cadmpeg_ir::features::LoftPointSection::Point(point),
+                if let cadmpeg_ir::features::profiles::LoftSection::Point(
+                    cadmpeg_ir::features::profiles::LoftPointSection::Point(point),
                 ) = section
                 {
                     scale_finite_point3(point, scale)?;
@@ -549,10 +560,11 @@ fn scale_feature_operation(
             rotation,
             ..
         } => {
-            *translation = cadmpeg_ir::features::FiniteVector3::new(translation.scale(scale.get()))
-                .ok_or_else(|| {
-                    CodecError::malformed("Creo scaled body translation must be finite")
-                })?;
+            *translation =
+                cadmpeg_ir::features::geometry::FiniteVector3::new(translation.scale(scale.get()))
+                    .ok_or_else(|| {
+                        CodecError::malformed("Creo scaled body translation must be finite")
+                    })?;
             if let Some(rotation) = rotation {
                 scale_finite_point3(&mut rotation.origin, scale)?;
             }
@@ -562,7 +574,7 @@ fn scale_feature_operation(
         }
         FeatureOperation::Flex { mode, .. } => scale_flex_mode(mode, scale)?,
         FeatureOperation::Scale {
-            center: Some(cadmpeg_ir::features::ScaleCenter::Point(point)),
+            center: Some(cadmpeg_ir::features::direct_edit::ScaleCenter::Point(point)),
             ..
         } => scale_finite_point3(point, scale)?,
         FeatureOperation::Scale { .. } => {}
@@ -587,24 +599,24 @@ fn scale_feature_operation(
 }
 
 fn scale_fuzzy_tolerance(
-    tolerance: &mut cadmpeg_ir::features::FuzzyTolerance,
+    tolerance: &mut cadmpeg_ir::features::operation_settings::FuzzyTolerance,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let cadmpeg_ir::features::FuzzyTolerance::Explicit(value) = tolerance {
+    if let cadmpeg_ir::features::operation_settings::FuzzyTolerance::Explicit(value) = tolerance {
         scale_positive_length(value, scale)?;
     }
     Ok(())
 }
 
 fn scale_primitive_solid(
-    solid: &mut cadmpeg_ir::features::PrimitiveSolid,
+    solid: &mut cadmpeg_ir::features::primitives::PrimitiveSolid,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     *solid = solid.scaled(scale).map_err(|error| match error {
-        cadmpeg_ir::features::PrimitiveSolidScaleError::NonFinite => {
+        cadmpeg_ir::features::primitives::PrimitiveSolidScaleError::NonFinite => {
             CodecError::malformed("Creo scaled length must be finite")
         }
-        cadmpeg_ir::features::PrimitiveSolidScaleError::Admission(message) => {
+        cadmpeg_ir::features::primitives::PrimitiveSolidScaleError::Admission(message) => {
             CodecError::malformed(message)
         }
     })?;
@@ -612,26 +624,26 @@ fn scale_primitive_solid(
 }
 
 fn scale_sweep_section(
-    section: &mut cadmpeg_ir::features::GeneratedSweepSection,
+    section: &mut cadmpeg_ir::features::sweeps::GeneratedSweepSection,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region } = section;
+    let cadmpeg_ir::features::sweeps::GeneratedSweepSection::CircularRegion { region } = section;
     let mut outer_radius = region.outer_radius();
     let mut wall_thickness = region.wall_thickness();
     scale_positive_length(&mut outer_radius, scale)?;
     scale_optional_positive_length(&mut wall_thickness, scale)?;
-    *region = cadmpeg_ir::features::SweepCircularRegion::new(outer_radius, wall_thickness)
+    *region = cadmpeg_ir::features::sweeps::SweepCircularRegion::new(outer_radius, wall_thickness)
         .map_err(CodecError::malformed)?;
     Ok(())
 }
 
 fn scale_unit_plane_frame(
-    frame: &mut cadmpeg_ir::features::FeatureUnitPlaneFrame,
+    frame: &mut cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     let mut origin = frame.origin().get();
     scale_point3(&mut origin, scale);
-    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(origin).ok_or_else(|| {
         CodecError::malformed("Creo scaled plane frame must have a finite origin")
     })?;
     *frame = frame.with_origin(origin);
@@ -639,33 +651,35 @@ fn scale_unit_plane_frame(
 }
 
 fn scale_coil_construction(
-    construction: &mut cadmpeg_ir::features::CoilConstruction,
+    construction: &mut cadmpeg_ir::features::sweeps::CoilConstruction,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let cadmpeg_ir::features::CoilPlacement::Explicit { frame } = &mut construction.placement {
+    if let cadmpeg_ir::features::sweeps::CoilPlacement::Explicit { frame } =
+        &mut construction.placement
+    {
         scale_unit_plane_frame(frame, scale)?;
     }
     scale_positive_length(&mut construction.diameter, scale)?;
     match &mut construction.extent {
-        cadmpeg_ir::features::CoilExtent::RevolutionsHeight { height, .. } => {
+        cadmpeg_ir::features::sweeps::CoilExtent::RevolutionsHeight { height, .. } => {
             scale_length(height, scale)?;
         }
-        cadmpeg_ir::features::CoilExtent::RevolutionsPitch { pitch, .. } => {
+        cadmpeg_ir::features::sweeps::CoilExtent::RevolutionsPitch { pitch, .. } => {
             scale_nonzero_length(pitch, scale)?;
         }
-        cadmpeg_ir::features::CoilExtent::HeightPitch { height, pitch } => {
+        cadmpeg_ir::features::sweeps::CoilExtent::HeightPitch { height, pitch } => {
             scale_nonzero_length(height, scale)?;
             scale_nonzero_length(pitch, scale)?;
         }
-        cadmpeg_ir::features::CoilExtent::Spiral { radial_pitch, .. } => {
+        cadmpeg_ir::features::sweeps::CoilExtent::Spiral { radial_pitch, .. } => {
             scale_nonzero_length(radial_pitch, scale)?;
         }
     }
     match &mut construction.section {
-        cadmpeg_ir::features::CoilSection::Circular { diameter }
-        | cadmpeg_ir::features::CoilSection::Square { size: diameter }
-        | cadmpeg_ir::features::CoilSection::ExternalTriangle { size: diameter }
-        | cadmpeg_ir::features::CoilSection::InternalTriangle { size: diameter } => {
+        cadmpeg_ir::features::sweeps::CoilSection::Circular { diameter }
+        | cadmpeg_ir::features::sweeps::CoilSection::Square { size: diameter }
+        | cadmpeg_ir::features::sweeps::CoilSection::ExternalTriangle { size: diameter }
+        | cadmpeg_ir::features::sweeps::CoilSection::InternalTriangle { size: diameter } => {
             scale_positive_length(diameter, scale)?;
         }
     }
@@ -673,10 +687,10 @@ fn scale_coil_construction(
 }
 
 fn scale_extrude_start(
-    start: &mut cadmpeg_ir::features::ExtrudeStart,
+    start: &mut cadmpeg_ir::features::extents::ExtrudeStart,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::ExtrudeStart;
+    use cadmpeg_ir::features::extents::ExtrudeStart;
 
     match start {
         ExtrudeStart::OffsetProfilePlane { offset } => scale_length(offset, scale)?,
@@ -688,7 +702,7 @@ fn scale_extrude_start(
 }
 
 fn scale_extrude_side(
-    side: &mut cadmpeg_ir::features::ExtrudeSide,
+    side: &mut cadmpeg_ir::features::extents::ExtrudeSide,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     scale_linear_termination(&mut side.termination, scale)?;
@@ -696,10 +710,10 @@ fn scale_extrude_side(
 }
 
 fn scale_extrude_extent(
-    extent: &mut cadmpeg_ir::features::ExtrudeExtent,
+    extent: &mut cadmpeg_ir::features::extents::ExtrudeExtent,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::ExtrudeExtent;
+    use cadmpeg_ir::features::extents::ExtrudeExtent;
 
     match extent {
         ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -714,10 +728,10 @@ fn scale_extrude_extent(
 }
 
 fn scale_revolve_extent(
-    extent: &mut cadmpeg_ir::features::RevolveExtent,
+    extent: &mut cadmpeg_ir::features::revolve::RevolveExtent,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::RevolveExtent;
+    use cadmpeg_ir::features::revolve::RevolveExtent;
 
     match extent {
         RevolveExtent::OneSided { termination } | RevolveExtent::Symmetric { termination } => {
@@ -732,10 +746,10 @@ fn scale_revolve_extent(
 }
 
 fn scale_linear_termination(
-    termination: &mut cadmpeg_ir::features::LinearTermination,
+    termination: &mut cadmpeg_ir::features::extents::LinearTermination,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::LinearTermination;
+    use cadmpeg_ir::features::extents::LinearTermination;
 
     match termination {
         LinearTermination::Blind { length } => scale_nonzero_length(length, scale)?,
@@ -756,10 +770,10 @@ fn scale_linear_termination(
 }
 
 fn scale_angular_termination(
-    termination: &mut cadmpeg_ir::features::AngularTermination,
+    termination: &mut cadmpeg_ir::features::extents::AngularTermination,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::AngularTermination;
+    use cadmpeg_ir::features::extents::AngularTermination;
 
     match termination {
         AngularTermination::ToFace { offset, .. } => scale_optional_length(offset, scale)?,
@@ -780,10 +794,10 @@ fn scale_angular_termination(
 }
 
 fn scale_sheet_metal_flange_height(
-    height: &mut cadmpeg_ir::features::SheetMetalFlangeHeight,
+    height: &mut cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeight,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::SheetMetalFlangeHeight;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeHeight;
 
     match height {
         SheetMetalFlangeHeight::ToObject(construction) => {
@@ -795,10 +809,10 @@ fn scale_sheet_metal_flange_height(
 }
 
 fn scale_sheet_metal_flange_width(
-    width: &mut cadmpeg_ir::features::SheetMetalFlangeWidth,
+    width: &mut cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeWidth,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::SheetMetalFlangeWidth;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeWidth;
 
     match width {
         SheetMetalFlangeWidth::SymmetricPerEdge { widths } => {
@@ -831,10 +845,10 @@ fn scale_sheet_metal_flange_width(
 }
 
 fn scale_sheet_metal_hem_form(
-    form: &mut cadmpeg_ir::features::SheetMetalHemForm,
+    form: &mut cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemForm,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::SheetMetalHemForm;
+    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalHemForm;
 
     match form {
         SheetMetalHemForm::Flat { length } | SheetMetalHemForm::Rolled { radius: length, .. } => {
@@ -924,10 +938,10 @@ fn scale_chamfer_spec(
 }
 
 fn scale_ruled_surface_mode(
-    mode: &mut cadmpeg_ir::features::RuledSurfaceMode,
+    mode: &mut cadmpeg_ir::features::surface_inputs::RuledSurfaceMode,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::RuledSurfaceMode;
+    use cadmpeg_ir::features::surface_inputs::RuledSurfaceMode;
 
     match mode {
         RuledSurfaceMode::Normal { distance }
@@ -940,18 +954,18 @@ fn scale_ruled_surface_mode(
 }
 
 fn scale_face_motion(
-    motion: &mut cadmpeg_ir::features::FaceMotion,
+    motion: &mut cadmpeg_ir::features::direct_edit::FaceMotion,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match motion {
-        cadmpeg_ir::features::FaceMotion::Offset { distance }
-        | cadmpeg_ir::features::FaceMotion::Translate { distance, .. } => {
+        cadmpeg_ir::features::direct_edit::FaceMotion::Offset { distance }
+        | cadmpeg_ir::features::direct_edit::FaceMotion::Translate { distance, .. } => {
             scale_length(distance, scale)?;
         }
-        cadmpeg_ir::features::FaceMotion::Rotate { axis_origin, .. } => {
+        cadmpeg_ir::features::direct_edit::FaceMotion::Rotate { axis_origin, .. } => {
             scale_finite_point3(axis_origin, scale)?;
         }
-        cadmpeg_ir::features::FaceMotion::Transform { transform } => {
+        cadmpeg_ir::features::direct_edit::FaceMotion::Transform { transform } => {
             scale_transform_translation(transform, scale)?;
         }
     }
@@ -959,10 +973,10 @@ fn scale_face_motion(
 }
 
 fn scale_flex_mode(
-    mode: &mut cadmpeg_ir::features::FlexMode,
+    mode: &mut cadmpeg_ir::features::direct_edit::FlexMode,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::FlexMode;
+    use cadmpeg_ir::features::direct_edit::FlexMode;
 
     match mode {
         FlexMode::Unresolved { .. } => {}
@@ -1175,7 +1189,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 let mut axis_origin = payload.axis_origin().get();
                 scale_point3(&mut axis_origin, scale);
                 payload.set_axis_origin(
-                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)
                         .ok_or(SCALED_REVOLUTION_AXIS_REFUSAL)?,
                 );
             }
@@ -1183,7 +1197,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 let mut axis_origin = payload.axis_origin().get();
                 scale_point3(&mut axis_origin, scale);
                 payload.set_axis_origin(
-                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)
                         .ok_or(SCALED_REVOLUTION_AXIS_REFUSAL)?,
                 );
             }
@@ -1314,8 +1328,8 @@ pub(in crate::decode) fn scale_sketch_geometry(
 
 fn scale_attached_sheet_metal(
     radius: &mut cadmpeg_ir::scalar::PositiveLength,
-    relief: &mut cadmpeg_ir::features::SheetMetalRelief,
-    transition: &mut cadmpeg_ir::features::SheetMetalTransition,
+    relief: &mut cadmpeg_ir::features::sheet_metal_forms::SheetMetalRelief,
+    transition: &mut cadmpeg_ir::features::sheet_metal_forms::SheetMetalTransition,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     scale_positive_length(radius, scale)?;
@@ -1356,7 +1370,7 @@ mod tests {
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -1375,12 +1389,14 @@ mod tests {
         cadmpeg_ir::scalar::PositiveLength::new(value).expect("a positive length fixture")
     }
 
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternScaleCenter, PatternTransform},
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
-        FeatureDefinition, FeatureOperation, FuzzyTolerance, LinearTermination, PlanarProfileRef,
-        ProfileRef,
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::{BooleanOp, FuzzyTolerance};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternScaleCenter, PatternTransform};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
     #[test]
     fn feature_and_parameter_lengths_are_in_millimeters_at_admission() {
@@ -1398,12 +1414,12 @@ mod tests {
                     ordinal: 0,
                     name: None,
                     suppressed: None,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     source_properties: std::collections::BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: cadmpeg_ir::features::FeatureContent::default(),
-                    evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
                             profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(
                                 "profile".into(),
@@ -1422,7 +1438,7 @@ mod tests {
                                 },
                                 second: ExtrudeSide {
                                     termination: LinearTermination::ToFace {
-                                        face: cadmpeg_ir::features::FaceSelection::Native(
+                                        face: cadmpeg_ir::features::selections::FaceSelection::Native(
                                             "face".into(),
                                         ),
                                         offset: Some(
@@ -1448,7 +1464,7 @@ mod tests {
         {
             carriers.admit_parameter(
                 &mut ir,
-                cadmpeg_ir::features::DesignParameter {
+                cadmpeg_ir::features::parameters::DesignParameter {
                     product_definition: None,
                     id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#length")
                         .expect("identity grammar"),
@@ -1460,7 +1476,7 @@ mod tests {
                     value: Some(ParameterValue::Length(
                         Length::new(5.0).expect("finite length fixture"),
                     )),
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     properties: BTreeMap::new(),
                     pmi: None,
                     native_ref: None,
@@ -1520,7 +1536,7 @@ mod tests {
                     cadmpeg_ir::topology::Point::new(
                         cadmpeg_ir::ids::PointId::mint("test:model:entity#point")
                             .expect("identity grammar"),
-                        cadmpeg_ir::features::FinitePoint3::new(position)
+                        cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                             .expect("finite point fixture"),
                         None,
                     ),
@@ -1582,7 +1598,7 @@ mod tests {
     #[test]
     fn scales_face_motion_lengths_and_origins() {
         let mut translate = FaceMotion::Translate {
-            direction: cadmpeg_ir::features::FeatureDirection3::new(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid direction fixture"),
@@ -1600,11 +1616,13 @@ mod tests {
         assert_close(distance.get(), 50.8);
 
         let mut rotate = FaceMotion::Rotate {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                .expect("finite point fixture"),
-            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(
-                0.0, 0.0, 1.0,
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                1.0, 2.0, 3.0,
             ))
+            .expect("finite point fixture"),
+            axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            )
             .expect("valid direction fixture"),
             angle: cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture"),
         };
@@ -1664,7 +1682,7 @@ mod tests {
         let mut pattern = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Scale {
                 center: PatternScaleCenter::Point(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                         .expect("finite point fixture"),
                 ),
                 final_factor: positive(2.0),
@@ -2065,7 +2083,7 @@ mod tests {
 
     fn elliptic_arc(center: Point3, radii: [f64; 2]) -> FeatureDefinition {
         FeatureDefinition::Operation(FeatureOperation::EllipticArc {
-            arc: cadmpeg_ir::features::FeatureEllipticArc::new(
+            arc: cadmpeg_ir::features::geometry::FeatureEllipticArc::new(
                 center,
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -2177,8 +2195,8 @@ mod tests {
     #[test]
     fn a_sweep_wall_that_rounds_onto_its_radius_is_refused() {
         let [low, high] = collapsing_pair();
-        let mut section = cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
-            region: cadmpeg_ir::features::SweepCircularRegion::new(
+        let mut section = cadmpeg_ir::features::sweeps::GeneratedSweepSection::CircularRegion {
+            region: cadmpeg_ir::features::sweeps::SweepCircularRegion::new(
                 positive_length(high),
                 Some(positive_length(low)),
             )
@@ -2225,8 +2243,8 @@ mod tests {
     fn a_wedge_whose_extent_rounds_to_one_value_is_refused() {
         let [low, high] = collapsing_pair();
         let length = |value: f64| Length::new(value).expect("a finite length");
-        let mut solid = cadmpeg_ir::features::PrimitiveSolid::new(
-            cadmpeg_ir::features::PrimitiveSolidKind::Wedge {
+        let mut solid = cadmpeg_ir::features::primitives::PrimitiveSolid::new(
+            cadmpeg_ir::features::primitives::PrimitiveSolidKind::Wedge {
                 xmin: length(low),
                 ymin: length(0.0),
                 zmin: length(0.0),
@@ -2494,12 +2512,12 @@ mod tests {
 
     #[test]
     fn generated_sweep_scaling_scales_generated_sections() {
-        let shape = cadmpeg_ir::features::SweepShape::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-            sections: vec![cadmpeg_ir::features::SweepSection::Generated(
-                cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
-                    region: cadmpeg_ir::features::SweepCircularRegion::new(
+        let shape = cadmpeg_ir::features::sweeps::SweepShape::Solid {
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
+            section: cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+            sections: vec![cadmpeg_ir::features::sweeps::SweepSection::Generated(
+                cadmpeg_ir::features::sweeps::GeneratedSweepSection::CircularRegion {
+                    region: cadmpeg_ir::features::sweeps::SweepCircularRegion::new(
                         positive_length(1.0),
                         None,
                     )
@@ -2529,21 +2547,21 @@ mod tests {
         };
         assert!(matches!(
             shape.generated_sections_mut().next(),
-            Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region })
+            Some(cadmpeg_ir::features::sweeps::GeneratedSweepSection::CircularRegion { region })
                 if region.outer_radius().get() == 2.0
         ));
     }
 
     #[test]
     fn loft_scaling_scales_point_sections() {
-        let point =
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
+        let point = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("point");
         let result = scaled_definition(FeatureDefinition::Operation(FeatureOperation::Loft {
-            sections: vec![cadmpeg_ir::features::LoftSection::Point(
-                cadmpeg_ir::features::LoftPointSection::Point(point),
+            sections: vec![cadmpeg_ir::features::profiles::LoftSection::Point(
+                cadmpeg_ir::features::profiles::LoftPointSection::Point(point),
             )],
             guidance: cadmpeg_ir::features::LoftGuidance::default(),
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             closed: false,
             solid: true,
             ruled: false,
@@ -2553,7 +2571,7 @@ mod tests {
         }));
         assert!(
             matches!(result, FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
-            if matches!(&sections[0], cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Point(point)) if point.get().x == 2.0))
+            if matches!(&sections[0], cadmpeg_ir::features::profiles::LoftSection::Point(cadmpeg_ir::features::profiles::LoftPointSection::Point(point)) if point.get().x == 2.0))
         );
     }
 
@@ -2564,7 +2582,7 @@ mod tests {
         };
         let fillet = scaled_definition(FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups: vec![FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::All,
+                edges: cadmpeg_ir::features::selections::EdgeSelection::All,
                 radius: RadiusSpec::Constant {
                     radius: positive_length(1.0),
                 },
@@ -2579,7 +2597,7 @@ mod tests {
         );
         let chamfer = scaled_definition(FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: vec![ChamferGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::All,
+                edges: cadmpeg_ir::features::selections::EdgeSelection::All,
                 spec: ChamferSpec::Distance {
                     distance: positive_length(1.0),
                 },
@@ -2597,8 +2615,8 @@ mod tests {
     #[test]
     fn hole_scaling_scales_each_placement() {
         use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
-        let point =
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
+        let point = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("point");
         let result = scaled_definition(FeatureDefinition::Operation(FeatureOperation::Hole {
             profile: None,
             profile_filter: None,
@@ -2606,8 +2624,10 @@ mod tests {
             direction: None,
             placements: Some(vec![HolePlacement::Axis {
                 origin: point,
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                    .expect("axis"),
+                axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .expect("axis"),
             }]),
             shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
                 .expect("shape"),
@@ -2626,7 +2646,7 @@ mod tests {
     fn feature_polyline_scaling_scales_each_point() {
         let definition = || {
             FeatureDefinition::Operation(FeatureOperation::Polyline {
-                chain: cadmpeg_ir::features::FeaturePolyline::new(
+                chain: cadmpeg_ir::features::geometry::FeaturePolyline::new(
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
                     false,
                 )
@@ -2646,13 +2666,12 @@ mod tests {
     }
     #[test]
     fn attached_sheet_metal_scales_every_length_operand() {
-        use cadmpeg_ir::{
-            features::{
-                EdgeSelection, FeatureId, SheetMetalRelief, SheetMetalReliefForm,
-                SheetMetalTransition, SheetMetalTransitionForm,
-            },
-            scalar::{NonNegativeLength, PositiveLength},
+        use cadmpeg_ir::features::selections::EdgeSelection;
+        use cadmpeg_ir::features::sheet_metal_forms::{
+            SheetMetalRelief, SheetMetalReliefForm, SheetMetalTransition, SheetMetalTransitionForm,
         };
+        use cadmpeg_ir::features::FeatureId;
+        use cadmpeg_ir::scalar::{NonNegativeLength, PositiveLength};
         let mut definition = FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
             plate: FeatureId::mint("test:model:feature#plate").expect("identity"),
             attachment: EdgeSelection::All,
@@ -2702,13 +2721,10 @@ mod edge_tests;
 #[cfg(test)]
 mod contour_tests {
     use super::*;
-    use cadmpeg_ir::{
-        features::{
-            sheet_metal::SheetMetalContourFlangeConstruction, ExtrudeExtent, ExtrudeSide,
-            FeatureOperation, LinearTermination,
-        },
-        scalar::{NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal},
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::sheet_metal::SheetMetalContourFlangeConstruction;
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 
     #[test]
     fn contour_scaling_visits_sheet_lengths_and_signed_travel() {

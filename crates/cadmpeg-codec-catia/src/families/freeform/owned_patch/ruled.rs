@@ -92,7 +92,7 @@ impl Ruled {
         let evaluate = |curve| {
             eval::decode::curve_point_solved(EvaluationAdmission::Standard, curve, u)
                 .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         };
         let p = evaluate(&self.guides[0])?;
         let q = evaluate(&self.guides[1])?;
@@ -106,7 +106,7 @@ impl Ruled {
         let tangent = |guide| {
             eval::curve_tangent_solved(EvaluationAdmission::Standard, guide, u)
                 .ok()
-                .map(cadmpeg_ir::features::FiniteVector3::get)
+                .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         };
         let p_tangent = tangent(&self.guides[0])?;
         let q_tangent = tangent(&self.guides[1])?;
