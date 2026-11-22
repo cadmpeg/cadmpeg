@@ -885,9 +885,52 @@ fn selected_body_map_records(
     let modern = body_map_records(bytes, meta)?;
     if modern.is_empty() {
         snapshot_body_map_records(bytes, meta)
+    } else if let Some(edited) = edited_base_feature_snapshot_records(bytes, meta, &modern)? {
+        Ok(edited)
     } else {
         Ok(modern)
     }
+}
+
+/// Snapshot body-map records that select the model bodies of a stream whose
+/// modern body maps are all empty while one of its Base Features stores the
+/// result-run flag `1`: the snapshot records when every pair names a body entity
+/// suffix of such a Base Feature. `None` when the rule does not apply.
+fn edited_base_feature_snapshot_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    modern: &[BodyMapRecord],
+) -> Result<Option<Vec<BodyMapRecord>>, CodecError> {
+    if !modern
+        .iter()
+        .all(|record| record.bindings.is_empty() && record.blob_name.is_empty())
+    {
+        return Ok(None);
+    }
+    let flagged = super::scopes::base_feature::flagged_base_feature_body_entities(bytes, meta)?;
+    if flagged.is_empty() {
+        return Ok(None);
+    }
+    Ok(select_flagged_snapshot_records(
+        snapshot_body_map_records(bytes, meta)?,
+        &flagged,
+    ))
+}
+
+/// The snapshot records when they hold at least one pair and every pair names
+/// a flagged body entity suffix.
+fn select_flagged_snapshot_records(
+    snapshots: Vec<BodyMapRecord>,
+    flagged: &HashSet<u64>,
+) -> Option<Vec<BodyMapRecord>> {
+    let selects_flagged_bodies = snapshots.iter().any(|record| !record.bindings.is_empty())
+        && snapshots.iter().all(|record| {
+            record
+                .bindings
+                .iter()
+                .all(|binding| flagged.contains(&binding.entity_suffix))
+        });
+    selects_flagged_bodies.then_some(snapshots)
 }
 
 pub(crate) struct ModelBodySelection {
@@ -949,10 +992,15 @@ pub(crate) fn design_model_selection(
                 }
             }
         }
-        let selected = if modern.is_empty() {
-            &snapshots
+        let edited = if modern.is_empty() {
+            None
         } else {
-            &modern
+            edited_base_feature_snapshot_records(bytes, &metadata, &modern)?
+        };
+        let selected = match &edited {
+            Some(records) => records,
+            None if modern.is_empty() => &snapshots,
+            None => &modern,
         };
         selected_maps_empty &= selected
             .iter()
@@ -1431,8 +1479,9 @@ mod tests {
     use zip::CompressionMethod;
 
     use super::{
-        body_bindings, body_bound_candidates, parse_body_map_frame, snapshot_body_map_records,
-        typed_browser_node_hidden_flags,
+        body_bindings, body_bound_candidates, parse_body_map_frame,
+        select_flagged_snapshot_records, snapshot_body_map_records,
+        typed_browser_node_hidden_flags, BodyBinding, BodyMapRecord,
     };
     use crate::bytes::lp_utf16_bytes;
     use crate::bytes::take_reference;
@@ -1449,6 +1498,7 @@ mod tests {
     use crate::test_support::manifest_test::write_synthetic_manifests;
     use crate::test_support::push_reference_u64;
     use crate::test_support::zip_test::with_scan;
+    use std::collections::HashSet;
 
     #[test]
     fn body_members_decode_one_member_identity() {
@@ -1743,6 +1793,44 @@ mod tests {
         names.dedup();
         let breps: Vec<_> = names.into_iter().map(|name| (name, &[0][..])).collect();
         crate::test_support::body_map_test::f3d_with_breps_and_design(&breps, &bulk, &meta)
+    }
+
+    fn snapshot_record(name: &str, entities: &[u64]) -> BodyMapRecord {
+        BodyMapRecord {
+            blob_name: name.to_owned(),
+            blob_name_offset: 0,
+            bindings: entities
+                .iter()
+                .enumerate()
+                .map(|(ordinal, entity)| BodyBinding {
+                    asm_key: u64::try_from(ordinal).unwrap(),
+                    asm_key_offset: ordinal * 16,
+                    entity_suffix: *entity,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn flagged_snapshot_records_select_only_when_every_pair_is_flagged() {
+        let flagged = HashSet::from([238_u64]);
+        let selected =
+            select_flagged_snapshot_records(vec![snapshot_record("BREP.a.smb", &[238])], &flagged)
+                .expect("flagged pair is selected");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].bindings.len(), 1);
+        for records in [
+            vec![snapshot_record("BREP.a.smb", &[238, 300])],
+            vec![snapshot_record("BREP.a.smb", &[300])],
+            vec![
+                snapshot_record("BREP.a.smb", &[238]),
+                snapshot_record("BREP.b.smb", &[300]),
+            ],
+            vec![snapshot_record("", &[])],
+            Vec::new(),
+        ] {
+            assert!(select_flagged_snapshot_records(records, &flagged).is_none());
+        }
     }
 
     #[test]
