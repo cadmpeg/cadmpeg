@@ -4286,7 +4286,23 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
+    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
+    for extrusion in &retained.reversals {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag of its end spec."
+        )));
+    }
+    if !retained.assumed.is_empty() {
+        let mut assumed = crate::loss::NamedCount::default();
+        for extrusion in &retained.assumed {
+            assumed.push(extrusion);
+        }
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal on the reversal flag of their end spec alone, as the solid neither holds nor contradicts that travel: {assumed}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            assumed.count()
+        )));
+    }
+    if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;

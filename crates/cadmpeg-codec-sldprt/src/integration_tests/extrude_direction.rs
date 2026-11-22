@@ -75,44 +75,121 @@ fn uncontradicted_travel_preserves_native_and_mirrored_controls() {
     }
 }
 
+/// The decoded direction, whether the decoder left the reversal flag
+/// unread, and the loss codes and messages of an extrusion of `operation`
+/// and `attributes` over a start cap at `z = 0` facing `-z` and an end cap
+/// at `z = side` facing `side`.
+fn cap_pair(
+    side: f64,
+    operation: &str,
+    attributes: &str,
+) -> (
+    ExtrudeDirection,
+    bool,
+    Vec<(cadmpeg_ir::report::loss::LossKind, String)>,
+) {
+    use crate::test_support::history::sldprt_with_nested_sketch_profile;
+    let mut body = cap(0, 700, 0.0, 1.0);
+    body.extend(cap(200, 701, side, side));
+    let mut source = sldprt_with_nested_sketch_profile(&body);
+    let keywords = format!(
+        r#"<Keywords><Sketch Name="Sketch1" Type="Sketch" id="1"/><Extrusion Name="Extrude" Type="BossExtrude" id="31" Profile="1" Operation="{operation}" EndCondition="Blind"{attributes}><Dimension Name="Depth">1m</Dimension></Extrusion></Keywords>"#
+    );
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    add_solidworks_version(&mut source, 18000);
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(native_envelope_fixture(&source)),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic cap pair");
+    let (direction, unread) = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find_map(|f| match f.evaluation.definition().operation() {
+            FeatureOperation::Extrude { direction, .. } => Some((
+                direction.clone(),
+                crate::history::extrude_direction::reversal_unread(&f.source_properties),
+            )),
+            _ => None,
+        })
+        .expect("extrusion");
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| (loss.code.clone(), loss.message.clone()))
+        .collect();
+    (direction, unread, losses)
+}
+
+fn has(losses: &[(cadmpeg_ir::report::loss::LossKind, String)], code: SldprtLossCode) -> bool {
+    losses.iter().any(|(kind, _)| *kind == code.kind())
+}
+
 #[test]
 fn decoded_opposite_cap_retains_travel_with_a_mirrored_cap_control() {
-    use crate::test_support::history::sldprt_with_nested_sketch_profile;
     for side in [-1.0, 1.0] {
-        let mut body = cap(0, 700, 0.0, 1.0);
-        body.extend(cap(200, 701, side, side));
-        let mut source = sldprt_with_nested_sketch_profile(&body);
-        source.extend(make_block(0x42,"Contents/Keywords",br#"<Keywords><Sketch Name="Sketch1" Type="Sketch" id="1"/><Extrusion Name="Extrude" Type="BossExtrude" id="31" Profile="1" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">1m</Dimension></Extrusion></Keywords>"#));
-        add_solidworks_version(&mut source, 18000);
-        let decoded = SldprtCodec
-            .decode(
-                &mut Cursor::new(native_envelope_fixture(&source)),
-                &DecodeOptions::default(),
-            )
-            .expect("synthetic cap pair");
-        let direction = decoded
-            .ir()
-            .model
-            .features
-            .iter()
-            .find_map(|f| match f.evaluation.definition().operation() {
-                FeatureOperation::Extrude { direction, .. } => Some(direction),
-                _ => None,
-            })
-            .expect("extrusion");
+        let (direction, _, losses) = cap_pair(side, "Join", "");
         assert_eq!(
             matches!(direction, ExtrudeDirection::Unresolved {}),
             side < 0.0,
             "side={side}",
         );
         assert_eq!(
-            decoded
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == SldprtLossCode::FeatureExtrudeDirectionUnresolved.kind()),
+            has(&losses, SldprtLossCode::FeatureExtrudeDirectionUnresolved),
             side < 0.0
         );
+    }
+}
+
+/// A reversal whose caps run along the profile normal travels along it and
+/// charges `feature.extrude-reversal-contradicted`, which names the
+/// extrusion; caps against the normal keep the reversal.
+#[test]
+fn caps_along_the_normal_override_a_decoded_reversal() {
+    for side in [-1.0, 1.0] {
+        let (direction, unread, losses) = cap_pair(side, "Join", r#" Reverse="true""#);
+        let expected = if side > 0.0 {
+            ExtrudeDirection::ProfileNormal {}
+        } else {
+            ExtrudeDirection::ReversedProfileNormal {}
+        };
+        assert_eq!(direction, expected, "side={side}");
+        assert_eq!(unread, side > 0.0);
+        let contradicted = losses
+            .iter()
+            .filter(|(kind, _)| *kind == SldprtLossCode::FeatureExtrudeReversalContradicted.kind())
+            .map(|(_, message)| message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(contradicted.len(), usize::from(side > 0.0), "{losses:?}");
+        assert!(
+            contradicted
+                .iter()
+                .all(|message| message.contains("Extrusion \"Extrude\" (")),
+            "{contradicted:?}"
+        );
+        assert!(!has(
+            &losses,
+            SldprtLossCode::FeatureExtrudeDirectionUnresolved
+        ));
+    }
+}
+
+/// A cut leaves its reversal flag unread: it travels along the profile
+/// normal on either side, as the base reading did, with no loss.
+#[test]
+fn a_cut_keeps_the_normal_under_the_reversal_flag() {
+    for side in [-1.0, 1.0] {
+        let (direction, unread, losses) = cap_pair(side, "Cut", r#" Reverse="true""#);
+        assert_eq!(direction, ExtrudeDirection::ProfileNormal {}, "side={side}");
+        assert!(unread);
+        assert!(!has(
+            &losses,
+            SldprtLossCode::FeatureExtrudeReversalContradicted
+        ));
     }
 }
 
@@ -170,4 +247,227 @@ fn cap(base: u16, owner: u16, z: f64, normal: f64) -> Vec<u8> {
         1,
     );
     body
+}
+
+/// A part whose join `Extrude` (id 31) states no reversal in Keywords and
+/// whose feature-input lane holds its one-direction blind end spec with
+/// reversal flag `1`, and the offset of that end spec's anchor in the lane.
+/// With `caps`, the body holds a start cap at `z = 0` and an end cap at
+/// `z = caps`, and the extrusion's profile is a placed sketch; without, the
+/// solid can neither hold nor contradict the travel.
+fn lane_flagged(caps: Option<f64>) -> (Vec<u8>, usize) {
+    use crate::test_support::history::resolved_features_payload;
+    use crate::test_support::parasolid::{parasolid_with_body, triangle_body};
+    let (mut source, mut payload, keywords) = match caps {
+        Some(side) => {
+            let mut body = cap(0, 700, 0.0, 1.0);
+            body.extend(cap(200, 701, side, side));
+            let mut payload = resolved_features_payload(&[0, 1, 1, 1]);
+            payload.extend(parasolid_with_body(
+                "feature input sketch",
+                "SCH_SW_33103_11000",
+                &triangle_body(),
+            ));
+            (
+                sldprt_with_body(&body),
+                payload,
+                r#"<Keywords><Sketch Name="Sketch1" Type="Sketch" id="1"/><Extrusion Name="Extrude" Type="BossExtrude" id="31" Profile="1" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">1m</Dimension></Extrusion></Keywords>"#,
+            )
+        }
+        None => (
+            sldprt_with_body(&owned_triangle(0, 700, 0.0)),
+            Vec::new(),
+            r#"<Keywords><Extrusion Name="Extrude" Type="BossExtrude" id="31" Operation="Join" EndCondition="Blind"><Dimension Name="Depth">10mm</Dimension></Extrusion></Keywords>"#,
+        ),
+    };
+    payload.extend(resolved_feature_classes_with_ids(&[(
+        "moExtrusion_c",
+        "Extrude",
+        31,
+    )]));
+    let anchor = payload.len();
+    payload.resize(anchor + 26, 0);
+    payload[anchor..anchor + 2].copy_from_slice(&[0x0c, 0x8e]);
+    payload[anchor + 4] = 1;
+    payload[anchor + 12] = 1;
+    payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+    let block = payload.len();
+    payload.resize(block + 16, 0);
+    payload[block + 9] = 0x20;
+    payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+    payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+    payload.resize(anchor + 200, 0);
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    add_solidworks_version(&mut source, 18000);
+    (native_envelope_fixture(&source), anchor)
+}
+
+fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes")
+}
+
+/// The extrusion `Extrude` of `ir`, its direction, and the reversal word of
+/// its end spec at `anchor` in the first lane.
+fn extrusion_state(
+    ir: &cadmpeg_ir::CadIr,
+    anchor: usize,
+) -> (&cadmpeg_ir::features::Feature, ExtrudeDirection, Vec<u8>) {
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrude"))
+        .expect("the extrusion");
+    let FeatureOperation::Extrude { direction, .. } = feature.evaluation.definition().operation()
+    else {
+        panic!("Extrude is no extrusion");
+    };
+    let native = crate::test_support::native::sldprt_native(ir);
+    let word = native.feature_input_lanes[0].native_payload[anchor + 12..anchor + 16].to_vec();
+    (feature, direction.clone(), word)
+}
+
+fn messages(
+    losses: &[(cadmpeg_ir::report::loss::LossKind, String)],
+    code: SldprtLossCode,
+) -> Vec<&str> {
+    losses
+        .iter()
+        .filter(|(kind, _)| *kind == code.kind())
+        .map(|(_, message)| message.as_str())
+        .collect()
+}
+
+fn losses(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+) -> Vec<(cadmpeg_ir::report::loss::LossKind, String)> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| (loss.code.clone(), loss.message.clone()))
+        .collect()
+}
+
+/// Clears the decoded reversal of `Extrude` and writes the part, with the
+/// write's losses.
+fn clear_and_write(
+    decoded: cadmpeg_ir::codec::DecodeResult,
+) -> (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut edit = decoded.ir_mut();
+        let feature = edit
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("Extrude"))
+            .expect("the extrusion");
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ProfileNormal {};
+            }
+        });
+    }
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("the cleared reversal writes");
+    let losses = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| (loss.code.clone(), loss.message.clone()))
+        .collect();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("the write completes");
+    (bytes, losses)
+}
+
+/// A reversal read from the end-spec word alone travels against the normal
+/// and names its assumption. Cleared by an edit, it is written as a `0`
+/// word, and the written part decodes along the normal with no reversal.
+#[test]
+fn a_cleared_reversal_writes_a_zero_end_spec_word() {
+    let (bytes, anchor) = lane_flagged(None);
+    let decoded = decode(bytes);
+    let (feature, direction, word) = extrusion_state(decoded.ir(), anchor);
+    assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
+    assert!(!crate::history::extrude_direction::reversal_unread(
+        &feature.source_properties
+    ));
+    assert_eq!(word, [1, 0, 0, 0]);
+    let decode_losses = losses(&decoded);
+    let assumed = messages(
+        &decode_losses,
+        SldprtLossCode::FeatureExtrudeReversalAssumed,
+    );
+    assert_eq!(assumed.len(), 1, "{decode_losses:?}");
+    assert!(assumed[0].contains("\"Extrude\" ("), "{assumed:?}");
+
+    let (written, write_losses) = clear_and_write(decoded);
+    assert!(!has(
+        &write_losses,
+        SldprtLossCode::WriterExtrudeReversalUnwritten
+    ));
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
+
+    let again = decode(written);
+    let (feature, direction, word) = extrusion_state(again.ir(), anchor);
+    assert_eq!(direction, ExtrudeDirection::ProfileNormal {});
+    assert!(!feature.source_properties.contains_key("Reverse"));
+    assert_eq!(word, [0, 0, 0, 0]);
+    assert!(!has(
+        &losses(&again),
+        SldprtLossCode::FeatureExtrudeReversalAssumed
+    ));
+}
+
+/// An edit that clears a reversal whose stored caps still show it is
+/// written, with the `0` word, and named by the general stale-solid loss.
+#[test]
+fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
+    let (bytes, anchor) = lane_flagged(Some(-1.0));
+    let decoded = decode(bytes);
+    let (_, direction, word) = extrusion_state(decoded.ir(), anchor);
+    assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
+    assert_eq!(word, [1, 0, 0, 0]);
+    // The solid holds the reversal, so it rests on more than the flag.
+    assert!(!has(
+        &losses(&decoded),
+        SldprtLossCode::FeatureExtrudeReversalAssumed
+    ));
+
+    let (written, write_losses) = clear_and_write(decoded);
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
+    assert!(!has(
+        &write_losses,
+        SldprtLossCode::WriterExtrudeReversalUnwritten
+    ));
+
+    let (_, _, word) = extrusion_state(decode(written).ir(), anchor);
+    assert_eq!(word, [0, 0, 0, 0]);
 }

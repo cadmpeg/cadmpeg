@@ -74,7 +74,7 @@ fn a_face_without_loops_covers_its_whole_patch() {
     assert_measured(measures.area(), 4.0, 4.0);
     assert_eq!(*measures.region(), Some(RegionRule::WholeSurface));
     let bbox = measures.bbox().measured().expect("box");
-    assert_eq!(bbox.value().kind, BoxKind::Conservative);
+    assert_eq!(bbox.value().kind, BoxKind::Tight);
     assert_eq!(bbox.value().max.get().x, 2.0);
     assert_eq!(bbox.value().max.get().y, 2.0);
     assert_range(measures.u_range().as_ref(), [0.0, 1.0], 1.0);
@@ -109,6 +109,38 @@ fn an_unspecified_loop_reads_its_declared_side_with_the_complement() {
         assert_eq!(candidate.reading(), Reading::Complement);
         let numeric = candidate.numeric_error().get();
         assert!((candidate.value().value.get() - complement).abs() <= numeric + 1.0e-9 * 4.0);
+        let bbox = measures.bbox().measured().expect("trimmed patch box");
+        let expected = if declared == 1.0 {
+            [0.5, 1.5]
+        } else {
+            [0.0, 2.0]
+        };
+        assert_eq!(bbox.value().kind, BoxKind::Tight);
+        assert_eq!(
+            bbox.value().min.get(),
+            Point3::new(expected[0], expected[0], 0.0)
+        );
+        assert_eq!(
+            bbox.value().max.get(),
+            Point3::new(expected[1], expected[1], 0.0)
+        );
+        assert_eq!(bbox.reading(), Some(Reading::Declared));
+        let [other] = bbox.candidates() else {
+            panic!("one box candidate");
+        };
+        let expected = if complement == 1.0 {
+            [0.5, 1.5]
+        } else {
+            [0.0, 2.0]
+        };
+        assert_eq!(
+            other.value().min.get(),
+            Point3::new(expected[0], expected[0], 0.0)
+        );
+        assert_eq!(
+            other.value().max.get(),
+            Point3::new(expected[1], expected[1], 0.0)
+        );
         assert_eq!(*face.orientation().consistent(), None);
         assert!(face
             .caveats()
@@ -187,7 +219,7 @@ fn a_rational_quarter_cylinder_inverts_its_edges() {
     let Quantity::Measured(bbox) = measures.bbox() else {
         panic!("a measured box");
     };
-    assert_eq!(bbox.value().kind, BoxKind::Conservative);
+    assert_eq!(bbox.value().kind, BoxKind::Tight);
 }
 
 /// The triangle `(0,0,0)`, `(1,0,0)`, `(0,1,0)` as a bilinear patch whose

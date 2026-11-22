@@ -35,7 +35,7 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
-use super::super::extrude::{ring, LoopEntry};
+use super::super::extrude::profile::{profile, LoopEntry, ProfileLoop};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch, Support};
 use super::roster::segment;
 use super::sketch::{
@@ -46,6 +46,12 @@ use super::{
     loss, neutral, number, parameter, parameter_id, scoped_cube, write, write_bytes, EXTRUDE,
     SKETCH,
 };
+
+mod arcs;
+mod construction;
+mod faces;
+mod holes;
+mod reversed;
 
 const TOLERANCE: f64 = 1e-9;
 /// The cube's edge, in mm.
@@ -907,6 +913,17 @@ fn planned<'a>(
 
 fn entry(curve: usize, reversed: bool) -> LoopEntry {
     LoopEntry { curve, reversed }
+}
+
+/// The one loop of `sketch`'s profile.
+fn ring(sketch: &PlannedSketch<'_>, tolerance: f64) -> Result<Vec<LoopEntry>, &'static str> {
+    match profile(sketch, tolerance)?.as_slice() {
+        [ProfileLoop {
+            exterior: true,
+            entries,
+        }] => Ok(entries.clone()),
+        other => panic!("one exterior loop: {other:?}"),
+    }
 }
 
 #[test]

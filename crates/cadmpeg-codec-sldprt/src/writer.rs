@@ -201,9 +201,10 @@ pub(crate) fn write_semantic_with_records(
             retained_records,
             &mut attempt_cut,
         ) {
-            Ok(renames) => {
+            Ok(prepared) => {
                 cut.extend(attempt_cut);
-                break renames;
+                losses.extend(prepared.losses);
+                break prepared.renames;
             }
             Err(error) => {
                 let Some((parameters, source_native)) = snapshot else {
@@ -1986,14 +1987,15 @@ pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
 ];
 
 /// Synchronize the native history, sketches, parameters and configuration
-/// states with the document, and return the feature-input renames to write.
+/// states with the document, and return the feature-input renames to write
+/// and the losses of the prepared features.
 fn prepare_history(
     normalized: &mut CadIr,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     cut: &mut Vec<String>,
-) -> Result<Vec<crate::history::write::features::FeatureInputRename>, CodecError> {
+) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -2003,8 +2005,8 @@ fn prepare_history(
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut feature_input_renames = crate::history::write::prepare_features_for_write(ir, native)?;
-    fit_feature_input_renames(&mut feature_input_renames, cut);
+    let mut prepared = crate::history::write::prepare_features_for_write(ir, native)?;
+    fit_feature_input_renames(&mut prepared.renames, cut);
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, cut)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
@@ -2025,7 +2027,7 @@ fn prepare_history(
                 .transpose()
         },
     )?;
-    Ok(feature_input_renames)
+    Ok(prepared)
 }
 
 /// Cut each rename to [`FEATURE_INPUT_OBJECT_NAME`]. A rename whose cut is
