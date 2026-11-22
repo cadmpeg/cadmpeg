@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::*;
-use cadmpeg_ir::geometry::{
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallJetStation, RollingBallJetStations,
+use cadmpeg_ir::geometry::blends::{
+    RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation, RollingBallJetStations,
 };
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Vector3;
 
 fn cylinder_section() -> ProceduralSurfaceDefinition {

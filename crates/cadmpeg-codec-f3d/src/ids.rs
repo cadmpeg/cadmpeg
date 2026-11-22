@@ -466,6 +466,17 @@ pub(crate) fn neutral_sheet_metal_rule_id(
     ))
 }
 
+pub(crate) fn body_history_tail_feature_id(
+    body: &cadmpeg_ir::ids::BodyId,
+) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-tail", "feature"),
+        cadmpeg_ir::identity_key!("body:").with_tail(
+            &cadmpeg_ir::ids::IdentityKeyTail::percent_encode(body.as_str()),
+        ),
+    )
+}
+
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(

@@ -11,33 +11,33 @@ use crate::eval::variable_blend_radius;
 use crate::eval::ConstantRollingBallSection;
 use crate::eval::{cacheless_circular_variable_blend_section, ContactTrack, SurfaceFirstOrder};
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::blends::BlendCrossSection;
+use crate::geometry::blends::BlendRadiusLaw;
+use crate::geometry::blends::BlendSupport;
+use crate::geometry::blends::RollingBallConstruction;
+use crate::geometry::blends::RollingBallRadiusSelector;
+use crate::geometry::blends::RollingBallSide;
 use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::RevisionSurfaceParameterization;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
-use crate::geometry::BlendCrossSection;
-use crate::geometry::BlendRadiusLaw;
-use crate::geometry::BlendSupport;
+use crate::geometry::variable_blends::VariableBlendConstruction;
+use crate::geometry::variable_blends::VariableBlendConvexity;
+use crate::geometry::variable_blends::VariableBlendCrossSection;
+use crate::geometry::variable_blends::VariableBlendRadii;
+use crate::geometry::variable_blends::VariableBlendRenderMode;
+use crate::geometry::variable_blends::VariableBlendSupportKind;
+use crate::geometry::variable_blends::VariableBlendSurfaceSubtype;
+use crate::geometry::variable_blends::VariableBlendValue;
+use crate::geometry::variable_blends::VariableBlendValuePayload;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
 use crate::geometry::ProceduralSurface;
-use crate::geometry::ProceduralSurfaceDefinition;
-use crate::geometry::RevisionSurfaceParameterization;
-use crate::geometry::RollingBallConstruction;
-use crate::geometry::RollingBallRadiusSelector;
-use crate::geometry::RollingBallSide;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::SolvedSurfaceGeometry;
 use crate::geometry::Surface;
 use crate::geometry::SurfaceGeometry;
-use crate::geometry::VariableBlendConstruction;
-use crate::geometry::VariableBlendConvexity;
-use crate::geometry::VariableBlendCrossSection;
-use crate::geometry::VariableBlendRadii;
-use crate::geometry::VariableBlendRenderMode;
-use crate::geometry::VariableBlendSupportKind;
-use crate::geometry::VariableBlendSurfaceSubtype;
-use crate::geometry::VariableBlendValue;
-use crate::geometry::VariableBlendValuePayload;
 use crate::ids::CurveId;
 use crate::ids::ProceduralSurfaceId;
 use crate::ids::SurfaceId;
@@ -116,7 +116,7 @@ fn variable_blend_eval_fixture(
     ]);
     let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
-        surface: Some(crate::geometry::RollingBallSupportSurface {
+        surface: Some(crate::geometry::blends::RollingBallSupportSurface {
             surface,
             parameter_ranges: [[None, None], [None, None]],
         }),
@@ -156,7 +156,7 @@ fn variable_blend_eval_fixture(
                 shape_parameter: 0.0,
                 shape_length: 0.0,
                 shape_tail: 0,
-                cache: crate::geometry::VariableBlendCache::Parameterization {
+                cache: crate::geometry::revision_forms::VariableBlendCache::Parameterization {
                     shape_prefix: 1,
                     parameterization: RevisionSurfaceParameterization {
                         u_interval: [Some(0.0), Some(1.0)],
@@ -347,9 +347,9 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         };
         let mut construction = definition_payload.construction().to_raw();
 
-        construction.cache = crate::geometry::VariableBlendCache::Current {
+        construction.cache = crate::geometry::revision_forms::VariableBlendCache::Current {
             shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
-            fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+            fit_tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.0).unwrap(),
         };
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
@@ -388,7 +388,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         };
         let mut construction = definition_payload.construction().to_raw();
 
-        construction.cache = crate::geometry::VariableBlendCache::Stale {};
+        construction.cache = crate::geometry::revision_forms::VariableBlendCache::Stale {};
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                 construction,
@@ -639,7 +639,7 @@ fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
                 Some(slice.clone()),
                 BlendRadiusLaw::constant(3.0).unwrap(),
                 BlendCrossSection::Circular,
-                crate::geometry::CacheContract::from_form(Some(Box::new(
+                crate::geometry::legacy_cache::CacheContract::from_form(Some(Box::new(
                     RollingBallConstruction {
                         revision: crate::scalar::PositiveI64::new(23100)
                             .expect("positive revision"),
@@ -653,7 +653,7 @@ fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
                         shape_prefix: 0,
                         parameters: [0.0, 0.0],
                         tail: 0,
-                        cache: crate::geometry::RevisionCacheForm::Parameterization(
+                        cache: crate::geometry::revision_forms::RevisionCacheForm::Parameterization(
                             RevisionSurfaceParameterization {
                                 u_interval: [Some(0.0), Some(1.0)],
                                 v_interval: [Some(0.0), Some(1.0)],
@@ -835,7 +835,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
+            crate::geometry::legacy_cache::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition
@@ -870,8 +870,8 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         };
 
         native.offsets = [3.0, 3.0];
-        native.cache = crate::geometry::RevisionCacheForm::SolvedCache {
-            fit_tolerance: crate::geometry::FitTolerance::try_new(0.0).unwrap(),
+        native.cache = crate::geometry::revision_forms::RevisionCacheForm::SolvedCache {
+            fit_tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.0).unwrap(),
         };
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload = crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -879,7 +879,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
+            crate::geometry::legacy_cache::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition
@@ -922,7 +922,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         };
 
         native.offsets = [4.0, 4.0];
-        native.cache = crate::geometry::RevisionCacheForm::Parameterization(
+        native.cache = crate::geometry::revision_forms::RevisionCacheForm::Parameterization(
             RevisionSurfaceParameterization::default(),
         );
         let restored_cache = definition_payload.legacy_cache();
@@ -931,7 +931,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            crate::geometry::CacheContract::from_form(Some(Box::new(native))),
+            crate::geometry::legacy_cache::CacheContract::from_form(Some(Box::new(native))),
         )
         .unwrap();
         definition
@@ -1147,7 +1147,7 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
                 )
                 .unwrap(),
             ),
-            terminal: crate::geometry::VariableBlendTerminal::Double(0.0),
+            terminal: crate::geometry::variable_blends::VariableBlendTerminal::Double(0.0),
         },
     }
     .admit()

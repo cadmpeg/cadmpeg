@@ -22,6 +22,7 @@
 //! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
+mod datum;
 mod operation;
 mod parameters;
 mod sheet_metal;
@@ -32,7 +33,7 @@ mod timeline;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -56,8 +57,12 @@ const TYPES: &str = "design_types";
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    depth: DecodeDepth,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    if depth < DecodeDepth::Design {
+        return Ok(());
+    }
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(());
     };
@@ -185,6 +190,7 @@ pub(crate) fn project(
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
+            unproduced: BTreeSet::default(),
         });
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
