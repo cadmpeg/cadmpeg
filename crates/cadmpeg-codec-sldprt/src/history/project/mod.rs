@@ -1182,7 +1182,7 @@ pub(crate) fn project_configurations(
                 id,
                 ordinal: configuration.ordinal,
                 active: false,
-                source_index: configuration.source_index,
+                source_index: configuration.partition_index(),
                 name: Some(name),
                 material,
                 properties,

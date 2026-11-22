@@ -170,8 +170,8 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            // The source states no active configuration. The writer writes its
-            // only configuration active, names that assumption, and generates
+            // The source's lone configuration is active and owns partition 0.
+            // The writer writes it active without assuming one, and generates
             // the envelope that states it; the history is the source's.
             let history = |ir: &cadmpeg_ir::CadIr| {
                 (
@@ -196,14 +196,13 @@ fn fixtures_survive_the_semantic_write_path() {
                 )
             };
             let source = decode_container(&bytes).expect("legacy history decodes");
-            assert!(!source.ir().model.configurations[0].active);
             let fixture = bytes.as_slice();
             semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
                 SemanticOutcome::Written { report, bytes, .. } => {
                     written_count += 1;
                     assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
                     assert!(
-                        report
+                        !report
                             .losses
                             .iter()
                             .any(|loss| loss.code.local_code()
@@ -590,17 +589,12 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .expect("historical history fixture retains its source");
-    assert!(!result.ir().model.configurations.is_empty());
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .configurations
-            .iter()
-            .filter(|c| c.active)
-            .count(),
-        0
-    );
+    let [configuration] = result.ir().model.configurations.as_slice() else {
+        panic!("the lone Keywords configuration");
+    };
+    assert!(configuration.active);
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(configuration.bodies.is_none());
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();

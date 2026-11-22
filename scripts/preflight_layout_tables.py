@@ -9,7 +9,7 @@ table records and regenerating, never by merging the derived text by hand.
 Without `--run-layout` the check compares which of the three files changed
 and prints the regeneration commands. With `--run-layout` it regenerates
 both derived files, reports what regeneration changed, and runs the
-`layout_tables` test. That builds the `cadmpeg` test target. A derived file
+`layout_tables` test. That builds the `cadmpeg-layout-tables` test target. A derived file
 that changed without its table passes when regeneration reproduces it byte
 for byte.
 """
@@ -22,12 +22,12 @@ from pathlib import PurePosixPath
 NAME = "layout-tables"
 ORDER = 40
 
-GENERATOR = "crates/cadmpeg/tests/layout_tables/generate.rs"
+GENERATOR = "crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs"
 MAPPING = re.compile(r'\("(\w+)",\s*"([^"]+/layout\.rs)"\)')
 CONFLICT = re.compile(r"^(<{7}|={7}|>{7})( |$)", re.MULTILINE)
-TEST = ["cargo", "test", "-q", "-p", "cadmpeg", "--test", "layout_tables"]
+TEST = ["cargo", "test", "-q", "-p", "cadmpeg-layout-tables"]
 REGENERATE = ("UPDATE_LAYOUT_DOCS=1 UPDATE_LAYOUT_CODE=1 "
-              "cargo test -p cadmpeg --test layout_tables")
+              "cargo test -p cadmpeg-layout-tables")
 
 
 def generated_code(context) -> dict[str, str]:
