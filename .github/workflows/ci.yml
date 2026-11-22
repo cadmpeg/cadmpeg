@@ -281,6 +281,7 @@ jobs:
           sudo chmod 600 /mnt/cadmpeg-swap
           sudo mkswap /mnt/cadmpeg-swap
           sudo swapon /mnt/cadmpeg-swap
+          sudo sysctl vm.swappiness=1
           swapon --show
           free -m
 
