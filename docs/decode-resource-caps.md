@@ -446,6 +446,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
 | `cadmpeg-codec-sldprt` | `src/resolved_features/sketch_lists.rs` | `MAX_SKETCH_POINTS` | `4096` | 2 | Largest point count read as an `sgSketch` header. A larger count frames no sketch list, and its markers keep native geometry. |
+| `cadmpeg-codec-sldprt` | `src/resolved_features/sweeps/paths.rs` | `MAX_SWEEP_PATH_CURVES` | `1024` | 4 | Curve count of one sweep path. A larger path keeps its native reference with `feature.sweep-path-retained`. |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
@@ -593,16 +594,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 371.
+Production `MAX_*` constants: 372.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 44    |
 | 2    | Per-input bound            | 91    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 180   |
+| 4    | Local work cap             | 181   |
 | N    | Not a decode bound         | 56    |
-|      | Total                      | 371   |
+|      | Total                      | 372   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -611,7 +612,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 19, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 31,
-`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 39,
+`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 40,
 `cadmpeg-codec-catia` 80, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-edrawings` 19, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
