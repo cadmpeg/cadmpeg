@@ -408,4 +408,39 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
             "{prefix}: {losses:?}"
         );
     }
+
+    // A parameter whose expression reads the driven one is written with its
+    // value. A write that reduces a foreign history names that where it
+    // writes every expression so; a write that keeps the source's history
+    // charges it here.
+    let mut dependent = ir.model.parameters[0].clone();
+    dependent.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#twice").unwrap();
+    dependent.name = "D2".to_owned();
+    dependent.expression = "\"D1\" * 2".to_owned();
+    dependent.dependencies = [ir.model.parameters[0].id.clone()].into_iter().collect();
+    ir.model.parameters.push(dependent);
+    let expressions = |ir: &CadIr| {
+        super::super::accounting::losses(ir, false)
+            .into_iter()
+            .filter(|loss| loss.code == SldprtLossCode::WriterParameterExpressionsOmitted.kind())
+            .map(|loss| loss.message)
+            .collect::<Vec<_>>()
+    };
+    assert!(expressions(&ir).is_empty());
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        std::collections::BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
+            "0".into(),
+        )]),
+    ));
+    let charged = expressions(&ir);
+    assert!(
+        matches!(charged.as_slice(), [message] if message.starts_with(
+            "1 parameter expression reading an omitted driven (reference) dimension parameter record(s)"
+        )),
+        "{charged:?}"
+    );
 }

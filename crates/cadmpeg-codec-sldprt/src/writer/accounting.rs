@@ -114,6 +114,25 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterDrivenDimensionsOmitted,
         "driven (reference) dimension parameter",
     );
+    // A write that reduces a foreign history writes every expression with its
+    // value and names it there (`history_drop`).
+    if !super::history_drop::HistoryDrop::applies(ir) {
+        charge(
+            ir.model
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    !omitted.contains(&parameter.id)
+                        && parameter
+                            .dependencies
+                            .iter()
+                            .any(|dependency| omitted.contains(dependency))
+                })
+                .count(),
+            SldprtLossCode::WriterParameterExpressionsOmitted,
+            "parameter expression reading an omitted driven (reference) dimension parameter",
+        );
+    }
     let bound = ir
         .model
         .appearance_bindings
