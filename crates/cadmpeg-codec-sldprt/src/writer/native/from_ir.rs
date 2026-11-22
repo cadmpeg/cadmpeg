@@ -8,8 +8,10 @@ use cadmpeg_ir::sketches::{
     Sketch as IrSketch, SketchEntityId, SketchGeometryDefinition, SketchLocus,
 };
 
+use super::extrude::Extrusion;
 use super::sketch::{Curve, Dimension, Operand, Point, Relation, Sketch};
 use super::tree::Plane;
+use super::Feature;
 use crate::records::SketchRelationKind;
 use crate::resolved_features::write_generate::{
     generated_dimension, generated_marker_relations, GeneratedDimension, GeneratedMarkerRelation,
@@ -32,44 +34,48 @@ const POINT_MERGE_TOLERANCE_M: f64 = 1.0e-9;
 /// Millimetres to metres.
 const METRES_PER_MILLIMETRE: f64 = 0.001;
 
-/// The user sketches of a generated part, or why the tree writes none of them.
+/// The user features of a generated part, or why the tree writes none of
+/// them.
 #[derive(Debug)]
-pub(in crate::writer) enum Sketches {
-    /// Every sketch, in source order.
-    Native(Vec<Sketch>),
+pub(in crate::writer) enum Features {
+    /// Every sketch and, in a part whose every feature the tree writes, every
+    /// extrusion, in source order.
+    Native(Vec<Feature>),
     /// The sketches stay in the generated lane; the text names the first
     /// sketch the tree cannot write and why.
     Lane(String),
 }
 
-/// The sketches of `ir`: every planar sketch of the first configuration as a
-/// native sketch, when each lies on a default plane and holds only points,
-/// lines, arcs and circles that are not construction geometry, and the part
-/// holds no spatial sketch.
-pub(in crate::writer) fn sketches(
+/// The user features of `ir`: every planar sketch of the first configuration
+/// as a native sketch, when each lies on a default plane and holds only
+/// points, lines, arcs and circles that are not construction geometry, and
+/// the part holds no spatial sketch; and every extrusion, when the part's one
+/// body comes from its sketches and one-sided blind extrusions alone.
+pub(in crate::writer) fn features(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
-) -> Result<Sketches, CodecError> {
+) -> Result<Features, CodecError> {
     if ir.model.sketches.is_empty() {
-        return Ok(Sketches::Native(Vec::new()));
+        return Ok(Features::Native(Vec::new()));
     }
     if let Some(spatial) = ir.model.spatial_sketches.first() {
-        return Ok(Sketches::Lane(format!(
+        return Ok(Features::Lane(format!(
             "spatial sketch {} has no native sketch form here",
             spatial.id.as_str()
         )));
     }
     let Some(native) = native else {
-        return Ok(Sketches::Lane("the write holds no history summary".into()));
+        return Ok(Features::Lane("the write holds no history summary".into()));
     };
     let mut out = Vec::new();
+    let mut sketch_sides = Vec::new();
     for sketch in &ir.model.sketches {
         if sketch
             .configuration
             .as_deref()
             .is_some_and(|key| key != "0")
         {
-            return Ok(Sketches::Lane(format!(
+            return Ok(Features::Lane(format!(
                 "sketch {} belongs to configuration {}",
                 sketch.id.as_str(),
                 sketch.configuration.as_deref().unwrap_or_default()
@@ -84,22 +90,25 @@ pub(in crate::writer) fn sketches(
             record.name.as_str()
         };
         let name = GENERATED_NAME.fit(name).text.to_owned();
-        let geometry = geometry(ir, sketch).and_then(|(plane, points, curves, handles)| {
-            let (relations, dimensions) = constraints(ir, sketch, &handles)?;
-            Ok((plane, points, curves, relations, dimensions))
-        });
-        let (plane, points, curves, relations, dimensions) = match geometry {
+        let geometry =
+            geometry(ir, sketch).and_then(|(plane, points, curves, handles, flipped)| {
+                let (relations, dimensions) = constraints(ir, sketch, &handles)?;
+                Ok((plane, points, curves, relations, dimensions, flipped))
+            });
+        let (plane, points, curves, relations, dimensions, flipped) = match geometry {
             Ok(geometry) => geometry,
             Err(reason) => {
-                return Ok(Sketches::Lane(format!(
+                return Ok(Features::Lane(format!(
                     "sketch {}: {reason}",
                     sketch.id.as_str()
                 )))
             }
         };
+        sketch_sides.push((sketch.id.clone(), flipped));
         out.push((
             owner.ordinal,
-            Sketch {
+            sketch.id.clone(),
+            Feature::Sketch(Sketch {
                 name,
                 feature_id,
                 plane,
@@ -108,13 +117,145 @@ pub(in crate::writer) fn sketches(
                 relations,
                 dimensions,
                 body: generated_profile_stream(ir, sketch)?,
-            },
+            }),
         ));
     }
-    out.sort_by_key(|(ordinal, _)| *ordinal);
-    Ok(Sketches::Native(
-        out.into_iter().map(|(_, sketch)| sketch).collect(),
-    ))
+    if let Some(extrusions) = extrusions(ir, native, &sketch_sides) {
+        out.extend(extrusions);
+    }
+    out.sort_by_key(|(ordinal, ..)| *ordinal);
+    // An extrusion's profile is the position, among the features, of the
+    // sketch it extrudes.
+    let sketches = out
+        .iter()
+        .map(|(_, key, feature)| matches!(feature, Feature::Sketch(_)).then_some(key))
+        .collect::<Vec<_>>();
+    let mut features = Vec::new();
+    for (_, key, mut feature) in out.iter().cloned() {
+        if let Feature::Extrusion(extrusion) = &mut feature {
+            let Some(position) = sketches.iter().position(|sketch| *sketch == Some(&key)) else {
+                return Ok(Features::Lane(format!(
+                    "extrusion {} extrudes no written sketch",
+                    extrusion.name
+                )));
+            };
+            extrusion.profile = position;
+        }
+        features.push(feature);
+    }
+    Ok(Features::Native(features))
+}
+
+/// A user feature with its ordinal and the sketch it is or extrudes.
+type Ordered = (u64, cadmpeg_ir::sketches::SketchId, Feature);
+
+/// The one-sided blind extrusions of `ir`, each with its ordinal and the
+/// sketch it extrudes, when the part's one body comes from its written
+/// sketches and such extrusions alone: the first extrusion makes the body,
+/// later ones join to it or cut it, each extrudes every profile of one
+/// written sketch from the sketch plane, without draft.
+fn extrusions(
+    ir: &cadmpeg_ir::CadIr,
+    native: &crate::native::SldprtNative,
+    sketches: &[(cadmpeg_ir::sketches::SketchId, bool)],
+) -> Option<Vec<Ordered>> {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FeatureDefinition,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+    if ir.geometry.bodies.len() != 1 {
+        return None;
+    }
+    let mut out = Vec::new();
+    for feature in &ir.model.features {
+        let FeatureDefinition::Operation(operation) = feature.evaluation.definition() else {
+            return None;
+        };
+        let (profile, direction, start, extent, op, solid) = match operation {
+            FeatureOperation::Sketch { .. } => continue,
+            FeatureOperation::Extrude {
+                profile,
+                direction,
+                start,
+                extent,
+                op,
+                solid,
+                ..
+            } => (profile, direction, start, extent, op, solid),
+            _ => return None,
+        };
+        let sketch = match profile {
+            ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
+            ProfileRef::Planar(PlanarProfileRef::SketchProfiles { sketch, profiles }) => {
+                let count = ir
+                    .model
+                    .sketches
+                    .iter()
+                    .find(|candidate| candidate.id == *sketch)
+                    .map_or(0, |candidate| candidate.profiles.len());
+                let every = (0..count)
+                    .all(|index| u32::try_from(index).is_ok_and(|index| profiles.contains(&index)));
+                if count == 0 || !every || profiles.len() != count {
+                    return None;
+                }
+                sketch
+            }
+            _ => return None,
+        };
+        let &(_, flipped) = sketches.iter().find(|(candidate, _)| candidate == sketch)?;
+        let ExtrudeExtent::OneSided { side } = extent else {
+            return None;
+        };
+        let LinearTermination::Blind { length } = side.termination else {
+            return None;
+        };
+        let against = match direction {
+            ExtrudeDirection::ProfileNormal {} => false,
+            ExtrudeDirection::ReversedProfileNormal {} => true,
+            _ => return None,
+        };
+        let first = out.is_empty();
+        let cut = match op {
+            BooleanOp::NewBody if first => false,
+            BooleanOp::Join if !first => false,
+            BooleanOp::Cut if !first => true,
+            _ => return None,
+        };
+        if side.draft.is_some()
+            || !matches!(start, ExtrudeStart::ProfilePlane {})
+            || *solid == Some(false)
+        {
+            return None;
+        }
+        let record_id = feature.native_ref.clone().unwrap_or_else(|| {
+            crate::history::write::features::generated_feature_record_id(&feature.id)
+        });
+        let record = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|record| record.id == record_id)?;
+        let feature_id = record.source_value()?;
+        let name = if record.name.is_empty() {
+            feature.name.as_deref().unwrap_or(feature.id.as_str())
+        } else {
+            record.name.as_str()
+        };
+        let depth = length.get();
+        out.push((
+            feature.ordinal,
+            sketch.clone(),
+            Feature::Extrusion(Extrusion {
+                name: GENERATED_NAME.fit(name).text.to_owned(),
+                feature_id,
+                profile: 0,
+                cut,
+                depth: depth.abs() * METRES_PER_MILLIMETRE,
+                reversed: against ^ flipped ^ (depth < 0.0),
+            }),
+        ));
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// The operand handle of each entity and of each locus that is a point.
@@ -145,7 +286,9 @@ impl Handles {
     }
 }
 
-type Geometry = (Plane, Vec<Point>, Vec<Curve>, Handles);
+/// A sketch's plane, records, handles, and whether its normal opposes its
+/// plane's.
+type Geometry = (Plane, Vec<Point>, Vec<Curve>, Handles, bool);
 
 /// The sketch's plane, its point and curve records and the operand handles
 /// of its entities, or why it has none.
@@ -278,7 +421,7 @@ fn geometry(ir: &cadmpeg_ir::CadIr, sketch: &IrSketch) -> Result<Geometry, Strin
         }
     }
     lines.extend(arcs);
-    Ok((plane, points, lines, handles))
+    Ok((plane, points, lines, handles, flipped))
 }
 
 /// The sketch's relations and dimensions as native relation-table rows and

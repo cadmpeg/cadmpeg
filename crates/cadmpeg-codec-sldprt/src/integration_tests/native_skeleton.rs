@@ -468,3 +468,119 @@ fn native_sketch_relations_and_dimensions_decode_back() {
         );
     }
 }
+
+/// `cube_with_sketches` with the rectangle extruded 5 into a new body.
+fn cube_with_extrusion() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, FeatureId,
+        LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+    let mut ir = cube_with_sketches();
+    let ordinal = u64::try_from(ir.model.features.len()).expect("ordinal");
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:feature#Boss").expect("id"),
+        ordinal,
+        name: Some("Boss".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                    cadmpeg_ir::sketches::SketchId::mint("synthetic:test:sketch#Rectangle")
+                        .expect("id"),
+                )),
+                direction: ExtrudeDirection::ProfileNormal {},
+                start: ExtrudeStart::ProfilePlane {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).expect("length"),
+                        },
+                        draft: None,
+                    },
+                },
+                op: BooleanOp::NewBody,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
+        native_ref: None,
+    });
+    ir
+}
+
+#[test]
+fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
+    let bytes = write(&cube_with_extrusion());
+    let scan = crate::test_support::container::scan(&bytes);
+    let payload = |name: &str| {
+        scan.sections()
+            .find(|section| section.name() == Some(name))
+            .map_or_else(
+                || panic!("{name} is written"),
+                crate::container::Section::payload,
+            )
+    };
+    let config = payload("Contents/Config-0");
+    let resolved = payload("Contents/Config-0-ResolvedFeatures");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, Some(14000))
+        .expect("walk")
+        .expect("the class map reconciles");
+    assert_eq!(walk.status, crate::carchive::Status::End);
+    let classes = walk
+        .trace
+        .iter()
+        .map(|object| &*object.class)
+        .collect::<Vec<_>>();
+    assert!(classes.contains(&"moExtrusion_c"));
+    assert!(!classes.contains(&"moBaseBody_c"));
+    let depths = walk
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.name.as_str() == Some("D1"))
+        .map(|parameter| parameter.value)
+        .collect::<Vec<_>>();
+    assert_eq!(depths, [0.005]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    let extrude = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find_map(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent, profile, ..
+            }) => Some((extent.clone(), profile.clone())),
+            _ => None,
+        })
+        .expect("the extrusion decodes");
+    assert!(
+        matches!(
+            &extrude,
+            (
+                cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Blind { length },
+                        ..
+                    }
+                },
+                cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Sketch(_)
+                ),
+            ) if (length.get() - 5.0).abs() < 1.0e-9
+        ),
+        "{extrude:?}"
+    );
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+}

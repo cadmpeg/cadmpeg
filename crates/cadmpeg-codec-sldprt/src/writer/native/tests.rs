@@ -14,7 +14,7 @@ fn streams(bodies: usize) -> Vec<(String, Vec<u8>)> {
         id_base: 0,
         name: "Bracket",
         active: "Default",
-        sketches: &[],
+        features: &[],
         bodies: &bodies,
     })
     .expect("the skeleton writes")
@@ -120,7 +120,7 @@ fn tree_identifiers_follow_the_identifier_base() {
         id_base: 40,
         name: "Bracket",
         active: "Default",
-        sketches: &[],
+        features: &[],
         bodies: &bodies,
     })
     .expect("the skeleton writes");
@@ -197,13 +197,13 @@ fn top_sketch() -> super::sketch::Sketch {
 
 #[test]
 fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
-    let sketches = [top_sketch()];
+    let features = [super::Feature::Sketch(top_sketch())];
     let bodies = [Body::numbered("Bracket", 7, 0).expect("body numbers")];
     let streams = skeleton(&Facts {
         id_base: 7,
         name: "Bracket",
         active: "Default",
-        sketches: &sketches,
+        features: &features,
         bodies: &bodies,
     })
     .expect("the skeleton writes");

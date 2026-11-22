@@ -9,7 +9,7 @@ use super::archive::{Archive, ClassMap};
 use super::block::{
     block, block_close, block_open, body_head, named, Oid, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
 };
-use super::{ids, Body, Facts, PLANE_HALF_EXTENT, TIME_STAMP};
+use super::{ids, Body, Facts, Feature, PLANE_HALF_EXTENT, TIME_STAMP};
 
 /// The sketch-record attribute block of the origin point: `ff ff`, a u16,
 /// a byte, eight `ff` bytes and f32 `-1`.
@@ -124,17 +124,36 @@ pub(super) fn resolved_features(
     origin(&mut archive);
     // Dimension parameters take identifiers after the stored bodies' and the
     // user features'.
-    let features = archive.count32(facts.bodies.len() + facts.sketches.len(), "feature count");
+    let features = archive.count32(facts.bodies.len() + facts.features.len(), "feature count");
     let mut next_id = archive.tree_id(ids::MARKUPS + 1).saturating_add(features);
-    for sketch in facts.sketches {
-        super::sketch::profile_feature(&mut archive, sketch, &mut next_id)?;
+    let mut profiles = Vec::new();
+    for feature in facts.features {
+        let profile = match feature {
+            Feature::Sketch(sketch) => Some(super::sketch::profile_feature(
+                &mut archive,
+                sketch,
+                &mut next_id,
+            )?),
+            Feature::Extrusion(extrusion) => {
+                let profile = profiles.get(extrusion.profile).copied().flatten();
+                let Some(profile) = profile else {
+                    return Err(CodecError::malformed(
+                        "SLDPRT native skeleton: an extrusion's profile is no earlier sketch",
+                    ));
+                };
+                super::extrude::extrusion(&mut archive, extrusion, profile, part.atom, next_id);
+                next_id = next_id.saturating_add(1);
+                None
+            }
+        };
+        profiles.push(profile);
     }
     for (body, &component) in facts.bodies.iter().zip(&part.bodies) {
         base_body(&mut archive, body, component);
     }
     // The u16 after the map count is the top-level object count minus two.
     let tops = archive.count16(
-        DEFAULT_TREE_OBJECTS - 2 + facts.sketches.len() + facts.bodies.len(),
+        DEFAULT_TREE_OBJECTS - 2 + facts.features.len() + facts.bodies.len(),
         "top-level object count",
     );
     let (objects, _) = archive.finish()?;
@@ -148,6 +167,8 @@ pub(super) fn resolved_features(
 pub(super) struct PartRefs {
     /// The map index of the `moEnvFolder_c` object.
     pub(super) environment: u32,
+    /// The map index of the `moAtom_c` object.
+    pub(super) atom: u32,
     /// The map index of each body's `moCompSolidBody_c` object.
     pub(super) bodies: Vec<u32>,
 }

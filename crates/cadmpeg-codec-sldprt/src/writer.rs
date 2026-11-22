@@ -555,22 +555,33 @@ fn native_skeleton(
         .filter_map(crate::records::Feature::source_value)
         .max()
         .unwrap_or_default();
-    let bodies = (0..ir.geometry.bodies.len())
+    let (features, lane_reason) = match native::from_ir::features(ir, native)? {
+        native::from_ir::Features::Native(features) => (features, None),
+        native::from_ir::Features::Lane(reason) => (Vec::new(), Some(reason)),
+    };
+    // A body the native extrusions make is not also written as a stored body.
+    let extruded = features
+        .iter()
+        .any(|feature| matches!(feature, native::Feature::Extrusion(_)));
+    let bodies = (0..if extruded {
+        0
+    } else {
+        ir.geometry.bodies.len()
+    })
         .map(|index| native::Body::numbered(&name, id_base, index))
         .collect::<Result<Vec<_>, _>>()?;
-    let (sketches, lane_reason) = match native::from_ir::sketches(ir, native)? {
-        native::from_ir::Sketches::Native(sketches) => (sketches, None),
-        native::from_ir::Sketches::Lane(reason) => (Vec::new(), Some(reason)),
-    };
-    let native_sketches = sketches
+    let native_features = features
         .iter()
-        .map(|sketch| sketch.feature_id)
+        .map(|feature| match feature {
+            native::Feature::Sketch(sketch) => sketch.feature_id,
+            native::Feature::Extrusion(extrusion) => extrusion.feature_id,
+        })
         .collect::<HashSet<_>>();
     let facts = native::Facts {
         id_base,
         name: &name,
         active: &active,
-        sketches: &sketches,
+        features: &features,
         bodies: &bodies,
     };
     let mut lane_merged = false;
@@ -598,7 +609,7 @@ fn native_skeleton(
             ir.model
                 .features
                 .iter()
-                .filter(|feature| !native_feature_written(native, feature, &native_sketches))
+                .filter(|feature| !native_feature_written(native, feature, &native_features))
                 .map(|feature| feature.id.as_str().to_owned())
                 .collect::<Vec<_>>()
         });
@@ -651,8 +662,8 @@ fn native_skeleton_losses(
         losses.push(SldprtLossCode::WriterNativeHistorySummary.note(format!(
             "{} source feature(s) are written only in the cadmpeg history summary \
              Contents/Keywords-0, a stream SolidWorks parts do not hold; the native feature \
-             tree holds the default tree, the sketches it writes natively and one moBaseBody_c \
-             stored body per body: {}",
+             tree holds the default tree, the features it writes natively and one moBaseBody_c \
+             stored body per body it makes no extrusion of: {}",
             features.len(),
             features.join(", ")
         )));

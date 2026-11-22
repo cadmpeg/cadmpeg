@@ -173,13 +173,14 @@ impl Curve {
 }
 
 /// Writes `sketch` as a top-level `moProfileFeature_c`.
-/// Dimension parameters take object identifiers from `next_id` on.
+/// Dimension parameters take object identifiers from `next_id` on. Returns
+/// the map index of the `moProfileFeature_c`.
 pub(super) fn profile_feature(
     archive: &mut Archive,
     sketch: &Sketch,
     next_id: &mut u32,
-) -> Result<(), CodecError> {
-    archive.object("moProfileFeature_c");
+) -> Result<u32, CodecError> {
+    let index = archive.object("moProfileFeature_c");
     named(
         archive,
         Some(&sketch.name),
@@ -218,7 +219,7 @@ pub(super) fn profile_feature(
     archive.u16(0);
     archive.null();
     plane(archive, sketch.plane);
-    Ok(())
+    Ok(index)
 }
 
 /// The 64-byte head of a sketch record of `kind`.
