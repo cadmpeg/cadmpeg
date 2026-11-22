@@ -35,17 +35,24 @@ const RECORD_TYPE: u32 = 20;
 /// The u32 pair after the views (§2.3).
 const VIEW_LIST_END: [u32; 2] = [50, 108];
 
-/// The byte runs `sldprt.md` gives as lengths only (EV-19), written as zero
-/// bytes: the bytes between the sketch-block manager and the exploded-view
-/// manager.
-const THREAD_DATA_RUN: usize = 300;
+/// The untagged thread data between the sketch-block manager and the
+/// exploded-view manager in its shortest form (§2.3): thirteen zero bytes,
+/// u32 `1`, u32 `0` and a u32.
+const THREAD_DATA_ZEROS: usize = 13;
+const THREAD_DATA_WORDS: [u32; 3] = [1, 0, 0];
 
 /// An atom's 64 bytes after its named head.
 const ATOM_RUN: usize = 64;
 
 /// The view index the first annotation view takes; the notes-area view
-/// follows the annotation views.
+/// follows the two annotation views.
 const FIRST_ANNOTATION_VIEW: u32 = 200;
+const NOTES_AREA_VIEW: u32 = FIRST_ANNOTATION_VIEW + 2;
+
+/// The byte at +10 of an annotation view's 50 bytes: `0`, or `4` in the
+/// notes-area view.
+const ANNOTATION_VIEW_BYTE: u8 = 0;
+const NOTES_AREA_BYTE: u8 = 4;
 
 /// The scale a view states at +58 of its bytes: `1`, or `0.8` in the
 /// notes-area view.
@@ -215,7 +222,8 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     a.u16(0);
     a.u32s(&[0, 0, 0, 0]);
     block_manager(&mut a);
-    a.zeros(THREAD_DATA_RUN);
+    a.zeros(THREAD_DATA_ZEROS);
+    a.u32s(&THREAD_DATA_WORDS);
     a.object("moPrtExplViewManager_c");
     named(&mut a, None, Schema::Plain, Oid::Tree(ids::EXPLODED_VIEWS));
     block(&mut a, Tail { word64: 0, ..TAIL });
@@ -530,13 +538,18 @@ fn material(a: &mut Archive, bodies: usize) {
     }
 }
 
-/// One body record of the part: a `moCompSolidBody_c` whose face reference
-/// names a face of the body by its base-body feature, the 28 bytes
+/// One body record of the part: a `moCompSolidBody_c`, or a
+/// `moCompSurfaceBody_c` for a sheet body, whose face reference names a face
+/// of the body by its base-body feature, the 28 bytes
 /// (u32 `1`, the body identifier, i32 `-1`, u32 `0`, u32 `0`, u32 `1`, the
-/// body identifier) and a clear visual-properties flag. Returns the
-/// `moCompSolidBody_c`'s map index.
+/// body identifier) and a clear visual-properties flag. Returns the body
+/// object's map index.
 fn body_record(a: &mut Archive, facts: &Facts<'_>, body: &Body, document: &mut Option<u32>) -> u32 {
-    let index = a.object("moCompSolidBody_c");
+    let index = a.object(if body.sheet {
+        "moCompSurfaceBody_c"
+    } else {
+        "moCompSolidBody_c"
+    });
     unit_component(a, body.id);
     a.object("moFaceRef_c");
     a.u32s(&[1, 0, 1, 0, 0]);
@@ -589,7 +602,9 @@ fn document_object(a: &mut Archive, facts: &Facts<'_>, document: &mut Option<u32
     a.zeros(12);
 }
 
-/// `moRelMgr_c`: no relations, u16 `0` and the detailing settings.
+/// `moRelMgr_c`: no relations, u16 `0` and the detailing settings: the
+/// template's runs as zero bytes, its strings, the unit names, and each
+/// length unit in inches with one decimal place.
 fn relations(a: &mut Archive) {
     a.object("moRelMgr_c");
     a.u16(0);
@@ -598,12 +613,34 @@ fn relations(a: &mut Archive) {
         match *detail {
             Detail::Run(length) => a.zeros(length),
             Detail::Text(text) => a.cstring(text),
+            Detail::UnitNames(names) => {
+                let count = a.count32(names.len(), "unit name count");
+                a.u32(count);
+                for name in names {
+                    a.cstring(name);
+                }
+            }
             Detail::LengthUnit => {
-                a.object(LENGTH.class);
+                a.object(DUAL_LENGTH.class);
+                unit_base(a, &DUAL_LENGTH);
+                a.u16(INCH);
+                a.null();
+                unit_base(a, &DETAIL_STEP_UNIT);
+                a.u16(0);
             }
         }
     }
 }
+
+/// The unit base form that follows each length unit of the detailing
+/// settings in place.
+const DETAIL_STEP_UNIT: Unit = Unit {
+    class: "",
+    kind: 2,
+    value: UNIT_STEP,
+    decimals: 10,
+    words: UNIT_WORDS,
+};
 
 /// One light of the environment folder: the feature and its own fields
 /// (§2.3).
@@ -720,12 +757,22 @@ fn view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u32, scale: 
     a.zeros(26);
 }
 
-/// A `moAnnotationView_c`: the view and its 50 bytes (§2.3): u32 `1` at
-/// +28, i32 `-1` at +34, u32 `1` at +38, and i32 `-1` at +42 and +46.
-fn annotation_view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u32, scale: f64) {
+/// A `moAnnotationView_c`: the view and its 50 bytes (§2.3): `byte` at +10,
+/// u32 `1` at +28, i32 `-1` at +34, u32 `1` at +38, and i32 `-1` at +42 and
+/// +46.
+fn annotation_view(
+    a: &mut Archive,
+    name: &str,
+    rows: Option<[f64; 9]>,
+    index: u32,
+    scale: f64,
+    byte: u8,
+) {
     a.object("moAnnotationView_c");
     view(a, name, rows, index, scale);
-    a.zeros(28);
+    a.zeros(10);
+    a.u8(byte);
+    a.zeros(17);
     a.u32(1);
     a.zeros(2);
     a.i32(-1);
@@ -736,8 +783,9 @@ fn annotation_view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u
 
 /// `moSketchBlockMgr_c` (§2.3): a named head (null name) and block, twelve
 /// bytes, u32, identifier, u32, u16, a list of the two annotation views,
-/// u32, u32, one identifier, 30 bytes, its `moPMarkRecord_c`, a list of the
-/// notes-area view, u32 and two `CString` values.
+/// the notes-area view's index, u32, one identifier (the notes-area view's
+/// index), 30 bytes, its `moPMarkRecord_c`, a list of the notes-area view,
+/// u32 and two `CString` values.
 fn block_manager(a: &mut Archive) {
     a.object("moSketchBlockMgr_c");
     named_with(a, None, Schema::Plain, Oid::Plain(u32::MAX), 0);
@@ -749,12 +797,26 @@ fn block_manager(a: &mut Archive) {
     a.u16(0);
     a.object("suObList");
     a.u16(2);
-    annotation_view(a, "*Front", None, FIRST_ANNOTATION_VIEW, VIEW_SCALE);
-    annotation_view(a, "*Top", VIEWS[5].1, FIRST_ANNOTATION_VIEW + 1, VIEW_SCALE);
-    a.u32(0);
+    annotation_view(
+        a,
+        "*Front",
+        None,
+        FIRST_ANNOTATION_VIEW,
+        VIEW_SCALE,
+        ANNOTATION_VIEW_BYTE,
+    );
+    annotation_view(
+        a,
+        "*Top",
+        VIEWS[5].1,
+        FIRST_ANNOTATION_VIEW + 1,
+        VIEW_SCALE,
+        ANNOTATION_VIEW_BYTE,
+    );
+    a.u32(NOTES_AREA_VIEW);
     a.u32(BLOCK_MANAGER_WORD);
     a.u32(1);
-    a.u32(0);
+    a.u32(NOTES_AREA_VIEW);
     a.zeros(30);
     a.object("moPMarkRecord_c");
     a.u32(MARK_KIND);
@@ -769,8 +831,9 @@ fn block_manager(a: &mut Archive) {
         a,
         "Notes Area",
         None,
-        FIRST_ANNOTATION_VIEW + 2,
+        NOTES_AREA_VIEW,
         NOTES_AREA_SCALE,
+        NOTES_AREA_BYTE,
     );
     a.u32(0);
     a.cstring("");

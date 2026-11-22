@@ -11,6 +11,7 @@ mod foreign_carriers;
 mod helix_surfaces;
 mod homogeneous_poles;
 mod metadata_members;
+mod native_skeleton;
 mod normalization;
 mod parameters_extrude;
 mod patterns_history;

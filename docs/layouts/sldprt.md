@@ -3202,6 +3202,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 1 | `area` | `u8` | little | spec | a byte at +10 |
 | 28 | 4 | `one` | `u32` | little | spec | little-endian u32 `1` at +28 · value `1` |
 | 34 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +34 |
 | 38 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +38 |
@@ -3210,7 +3211,8 @@ Parsed by:
 
 Unstated regions:
 
-- `0..28` (28 B): Zero bytes.
+- `0..10` (10 B): Zero bytes.
+- `11..28` (17 B): Zero bytes.
 - `32..34` (2 B): Zero bytes.
 
 ## `named_object_header`

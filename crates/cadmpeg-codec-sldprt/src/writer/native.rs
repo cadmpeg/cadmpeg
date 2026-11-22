@@ -5,8 +5,9 @@
 //! `swXmlContents` streams, and the fixed-form streams of a part of
 //! `swVersion` 14000 (`docs/formats/sldprt.md` §2.2, §2.3, §8.2).
 //!
-//! Fields `sldprt.md` lays out carry the values chosen here; byte runs it
-//! gives as lengths only are written as zero bytes.
+//! Fields `sldprt.md` lays out carry the values chosen here. Byte runs it
+//! gives as lengths only are written as zero bytes, which native parts do
+//! not hold in most of them; `writer.native-skeleton-unlaid-runs` names them.
 
 mod archive;
 mod block;
@@ -92,13 +93,20 @@ pub(super) struct Body {
     pub(super) name: String,
     /// The body's GUID text.
     pub(super) guid: String,
+    /// Whether the body is a sheet body, recorded as a `moCompSurfaceBody_c`.
+    pub(super) sheet: bool,
 }
 
 impl Body {
     /// The `index`-th body (from zero): `Imported<index + 1>`, with
-    /// identifiers after the default tree's (offset by `id_base`) and a GUID derived from the part
-    /// name and index.
-    pub(super) fn numbered(part: &str, id_base: u32, index: usize) -> Result<Self, CodecError> {
+    /// identifiers after the default tree's (offset by `id_base`) and a GUID
+    /// derived from the part name and index.
+    pub(super) fn numbered(
+        part: &str,
+        id_base: u32,
+        index: usize,
+        sheet: bool,
+    ) -> Result<Self, CodecError> {
         let ordinal = u32::try_from(index).ok();
         let id = ordinal.and_then(|ordinal| config::FIRST_BODY_ID.checked_add(ordinal));
         let feature_id = ordinal
@@ -114,6 +122,7 @@ impl Body {
             feature_id,
             name: format!("Imported{}", index + 1),
             guid: guid(part, id),
+            sheet,
         })
     }
 }
@@ -143,6 +152,45 @@ fn guid(part: &str, id: u32) -> String {
         &hex[20..32]
     )
 }
+
+/// The count and total length of the detailing settings' byte runs, which
+/// the skeleton writes as zero bytes.
+pub(super) fn detailing_zero_runs() -> (usize, usize) {
+    detailing::zero_runs()
+}
+
+/// The skeleton's other zero byte runs in which native parts of the version
+/// hold values.
+pub(super) const OTHER_ZERO_RUNS: &str = "the 64 bytes of the moAtom_c, the 30-byte runs of the \
+     sketch-block manager and its moPMarkRecord_c, and the origin sketch's 76-byte and 42-byte \
+     settings runs";
+
+/// The streams every native part of the version holds that the skeleton
+/// leaves out.
+pub(super) const OMITTED_STREAMS: [&str; 22] = [
+    "Header2",
+    "ModelStamps",
+    "Preview",
+    "Contents/3DExperienceExchange2",
+    "Contents/CMgr",
+    "Contents/CMgrHdr2",
+    "Contents/Config-0-LWDATA",
+    "Contents/Config-0-ModelHeader",
+    "Contents/CusProps",
+    "Contents/Definition",
+    "SwDocContentMgr/SwDocContentMgrInfo",
+    "ThirdPtyStore/VisualStates",
+    "_MO_VERSION_14000/Biography",
+    "_MO_VERSION_14000/History",
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "docProps/app.xml",
+    "docProps/core.xml",
+    "docProps/custom.xml",
+    "docProps/Config-0-Properties.xml",
+    "docProps/ISolidWorksInformation.xml",
+    "docProps/OpenTime.xml",
+];
 
 /// The streams of the skeleton, by name.
 pub(super) fn skeleton(facts: &Facts<'_>) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
