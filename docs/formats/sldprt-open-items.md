@@ -636,6 +636,14 @@ resolve a seed feature?
 
 **Note.** DI-02 holds the relation-list grammar that locates `H`.
 
+### DI-78. Equation-manager stored values in a part whose relations sit in several streams
+
+**Question.** In a part whose equation-manager relations sit in several `Contents/Config-N` streams, are the values a stream stores beside a line's names the values of that stream's configuration, so that they test the active configuration's lines as they do in a part whose relations sit in one stream?
+
+**Known.** `sldprt.md` §2 "A relation whose byte 1 after its text is `02` or `03` stores its sides as tokens" places the f64 stored beside each dimension reference. The decoder tests a line's tree against the values its relation stores beside the names it reads, and types a dimension of unread kind as a length from the value stored beside it (`sldprt.md` §2 "The active configuration's equation-manager lines are parameter expressions" and "A dimension with no `PMISemanticDataDB` record"). It reads the active configuration's stream, and refuses a line that another stream does not hold with the same right-hand side. The value stored on the assigned side can be another configuration's value, and a whole stream can hold another configuration's values (`sldprt.md` §2 "The name in a token is the name the manager resolved"). Where the stream read holds another configuration's value of a dimension a line reads, that value differs from the decoded one, so the line stays source text, and the dimension is typed only where its display in the part's length unit equals the stored value.
+
+**Need.** A part whose relations sit in several streams, with each configuration's decoded dimension values (its Keywords snapshot or its `PMISemanticDataDB` records) to compare with the values its stream stores beside the same names, and each stream's lines evaluated over that stream's values. Where every stream stores its own configuration's values, the active stream's values test the active configuration's lines as in a part with one stream. Without it, a line of such a part that reads a value its stream stores for another configuration stays SolidWorks source text.
+
 ### DI-44. Sign of an integer scalar value
 
 **Question.** Is the four-byte value of an `moIntegerParameter_c` named scalar signed or unsigned?
