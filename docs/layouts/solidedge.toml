@@ -1111,7 +1111,7 @@ name = "key"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "| 0 | `u32` key: the index in bits 24..31, the group in bits 0..7 |"
+anchor = "| 0 | `u32` key |"
 
 [[record.field]]
 name = "index"

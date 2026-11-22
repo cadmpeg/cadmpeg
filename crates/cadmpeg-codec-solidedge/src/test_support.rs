@@ -942,7 +942,12 @@ pub(crate) fn variable_table(count: u32, records: &[(u32, f64)]) -> Vec<u8> {
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     for &(index, value) in records {
         let mut record = [0_u8; 24];
-        record[0..4].copy_from_slice(&((index << 24) | 1).to_le_bytes());
+        let key = if index < 4 {
+            ((index - 1) << 24) | 2
+        } else {
+            index << 24
+        };
+        record[0..4].copy_from_slice(&key.to_le_bytes());
         record[4..8].copy_from_slice(&index.to_le_bytes());
         record[8..12].copy_from_slice(&(1000 + index).to_le_bytes());
         record[12..14].copy_from_slice(&1_u16.to_le_bytes());

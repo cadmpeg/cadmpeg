@@ -52,11 +52,18 @@ const DEVIATIONAL_TOLERANCE: usize = 10;
 const BEND_DEDUCTION: usize = 11;
 const BEND_ALLOWANCE: usize = 12;
 const BEND_METHOD: usize = 13;
+/// The key of index `i` is `(i - 1) << 24 | 2` below this index and
+/// `i << 24` from it on (§10.1).
+const KEY_GROUP_LIMIT: u32 = 4;
+/// The key of an index below [`KEY_GROUP_LIMIT`] stores this group.
+const KEY_LOW_GROUP: u32 = 2;
+/// The key stores its ordinal in bits 24..31.
+const KEY_ORDINAL_SHIFT: u32 = 24;
+/// The largest ordinal bits 24..31 hold.
+const KEY_ORDINAL_MAX: u32 = 0xFF;
 /// The number of index slots the reader keeps.
 const SLOTS: usize = BEND_METHOD + 1;
 
-/// The key stores the index in bits 24..31.
-const KEY_INDEX_SHIFT: u32 = 24;
 /// The unit types of §10.1: length, density and unitless.
 const UNIT_TYPES: [u16; 3] = [1, 16, 58];
 /// The integral bend-method codes the reader states as an integer.
@@ -72,6 +79,16 @@ fn rule_id() -> SheetMetalRuleId {
         &cadmpeg_ir::identity_namespace!("solidedge", "design", "sheet-metal-rule"),
         cadmpeg_ir::identity_key!("root"),
     ))
+}
+
+/// The key §10.1 states for `index`; `None` for an index below 1 or above
+/// [`KEY_ORDINAL_MAX`].
+fn expected_key(index: u32) -> Option<u32> {
+    if index < KEY_GROUP_LIMIT {
+        Some((index.checked_sub(1)? << KEY_ORDINAL_SHIFT) | KEY_LOW_GROUP)
+    } else {
+        (index <= KEY_ORDINAL_MAX).then_some(index << KEY_ORDINAL_SHIFT)
+    }
 }
 
 /// The values of the variable table `bytes`, by index.
@@ -106,7 +123,7 @@ fn variables(bytes: &[u8]) -> Result<Variables, String> {
             .ok_or_else(|| "a record is truncated".to_owned())?;
         let reserved = View::u16_le_at(bytes, at + record::RESERVED)
             .ok_or_else(|| "a record is truncated".to_owned())?;
-        if key >> KEY_INDEX_SHIFT != index
+        if expected_key(index) != Some(key)
             || object == 0
             || !UNIT_TYPES.contains(&unit)
             || reserved != record::RESERVED_VALUE

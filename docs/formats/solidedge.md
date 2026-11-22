@@ -588,16 +588,17 @@ version `1`. `n` records of 24 bytes follow:
 
 | Offset | Field |
 | ---: | --- |
-| 0 | `u32` key: the index in bits 24..31, the group in bits 0..7 |
+| 0 | `u32` key |
 | 4 | `u32` index |
 | 8 | `u32` identifier of the cluster-0 `Double Value Object` that holds the variable |
 | 12 | `u16` unit type: `1` length in metres, `16` density, `58` unitless |
 | 14 | `u16` zero |
 | 16 | `f64` value, equal to the value of the referenced object |
 
-A part document (`.par`) lists indices 2 and 3. A sheet-metal document
-(`.psm`) lists indices 2 to 13. An assembly document lists no record. The
-indices are:
+The key is `(i - 1) << 24 | 2` for index `i` 2 or 3, and `i << 24` for the
+other indices. A part document (`.par`) lists indices 2 and 3. A sheet-metal
+document (`.psm`) lists indices 2 to 13. An assembly document lists no
+record. The indices are:
 
 | Index | Variable |
 | ---: | --- |
