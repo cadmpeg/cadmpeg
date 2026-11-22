@@ -330,3 +330,35 @@ fn an_extrude_whose_sketch_has_no_stored_loop_is_reported_unchecked() {
     );
     assert!(typed.sketch_empty.is_none(), "{:?}", typed.sketch_empty);
 }
+
+/// Every curve of the sketch is read from a curve record of state `0`, and
+/// no other curve closes through them: all are construction, the sketch
+/// holds no profile curve, and the note says the pick takes no region.
+#[test]
+fn an_extrude_whose_sketch_holds_no_profile_curve_is_reported_empty() {
+    let (mut ir, _) = sketch_and_extrude();
+    set_profiles(&mut ir, &[]);
+    let outside = ["l0", "l1", "l2", "l3", "hole"]
+        .into_iter()
+        .map(entity)
+        .collect::<HashSet<_>>();
+    let (_, typed) = project(&mut ir, &outside);
+    let note = typed.sketch_empty.expect("the empty profile is reported");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::DesignExtrudeSketchEmpty.kind()
+    );
+    assert_eq!(note.severity, cadmpeg_ir::report::Severity::Warning);
+    let boss = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(note.message.contains(boss.id.as_str()), "{}", note.message);
+    assert!(
+        typed.profile_unchecked.is_none(),
+        "{:?}",
+        typed.profile_unchecked
+    );
+}

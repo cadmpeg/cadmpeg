@@ -14,10 +14,9 @@
 //! into pieces whose ends are joints merged within the linear resolution. A
 //! piece of a curve outside the stored loops that lies along another piece
 //! between the same joints repeats it and bounds nothing of its own. A piece
-//! closes where a closed chain of
-//! pieces runs through it: a circle no curve touches always, and another
-//! piece where it is no bridge of the graph of joints. A dangling curve is a
-//! bridge and closes nothing.
+//! closes where a closed chain of pieces runs through it: a circle no curve
+//! touches always, and another piece where it is no bridge of the graph of
+//! joints. A dangling curve is a bridge and closes nothing.
 
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::{PI, TAU};
