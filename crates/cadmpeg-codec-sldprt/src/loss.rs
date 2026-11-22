@@ -187,10 +187,11 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
-    /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
     FeatureExtrudeReversalContradicted,
-    /// Extrusion travels against its profile normal on its end-spec reversal
-    /// flag alone: no solid that the decoder tests holds or contradicts that
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
     /// travel.
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.

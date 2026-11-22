@@ -388,14 +388,9 @@ fn losses(
 
 /// Clears the decoded reversal of `Extrude` and writes the part, with the
 /// write's losses.
-fn clear_and_write(
-    decoded: cadmpeg_ir::codec::DecodeResult,
-) -> (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
-        let mut edit = decoded.ir_mut();
-        let feature = edit
+fn clear_and_write(decoded: cadmpeg_ir::codec::DecodeResult) -> Written {
+    edit_and_write(decoded, |ir| {
+        let feature = ir
             .model
             .features
             .iter_mut()
@@ -408,13 +403,29 @@ fn clear_and_write(
                 *direction = ExtrudeDirection::ProfileNormal {};
             }
         });
+    })
+    .expect("the cleared reversal writes")
+}
+
+/// The written bytes and the write's losses.
+type Written = (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>);
+
+/// Applies `edit` to the decoded part and writes it, with the write's
+/// losses.
+fn edit_and_write(
+    decoded: cadmpeg_ir::codec::DecodeResult,
+    edit: impl FnOnce(&mut cadmpeg_ir::CadIr),
+) -> Result<Written, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir = decoded.ir_mut();
+        edit(&mut ir);
     }
-    let plan = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .expect("the cleared reversal writes");
+    let plan = SldprtCodec.plan(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
+    )?;
     let losses = plan
         .report()
         .losses
@@ -423,7 +434,7 @@ fn clear_and_write(
         .collect();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the write completes");
-    (bytes, losses)
+    Ok((bytes, losses))
 }
 
 /// A reversal read from the end-spec word alone travels against the normal
@@ -745,4 +756,143 @@ fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
         alternate_direction(again.ir()),
         ExtrudeDirection::ProfileNormal {}
     );
+}
+
+/// The `Depth` parameter of `Extrude` and its value in the configuration
+/// `Alternate`.
+fn alternate_depth(ir: &cadmpeg_ir::CadIr) -> (cadmpeg_ir::features::ParameterId, f64) {
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrude"))
+        .expect("the extrusion");
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| {
+            parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "Depth"
+        })
+        .expect("the depth of the extrusion");
+    let configuration = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Alternate"))
+        .expect("the configuration Alternate");
+    let Some(ParameterValue::Length(depth)) = configuration.parameter_values.get(&parameter.id)
+    else {
+        panic!("Alternate states no depth for Extrude");
+    };
+    (parameter.id.clone(), depth.get())
+}
+
+/// Doubles the depth of `Extrude` in the inactive configuration `Alternate`:
+/// its parameter value and, where that state is blind, its length.
+fn deepen_alternate(ir: &mut cadmpeg_ir::CadIr) {
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::{Length, NonZeroLength};
+    let (parameter, depth) = alternate_depth(ir);
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrude"))
+        .expect("the extrusion")
+        .id
+        .clone();
+    let configuration = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Alternate"))
+        .expect("the configuration Alternate");
+    configuration.parameter_values.insert(
+        parameter,
+        ParameterValue::Length(Length::new(2.0 * depth).expect("a finite depth")),
+    );
+    let state = configuration
+        .feature_states
+        .get_mut(&feature)
+        .expect("the state of Extrude in Alternate");
+    if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = &mut state.definition
+    {
+        if let LinearTermination::Blind { length } = &mut side.termination {
+            *length = NonZeroLength::new(2.0 * depth).expect("a nonzero depth");
+        }
+    }
+}
+
+/// The four parts of the `lane_flagged` fixture with an inactive
+/// configuration `Alternate` and caps: the lanes state the same end
+/// condition (`0`) or not (`1`), and the solid holds the reversal (`-1`) or
+/// contradicts it (`1`).
+const SETTLED_CASES: [(u8, f64); 4] = [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0)];
+
+/// An edit of a configuration parameter over configuration states whose
+/// reversal the decoder settled against the active solid is no native edit:
+/// the writer settles the states it reads back from the lanes as the
+/// decoder settled them. The fixture states the depth only as a Keywords
+/// dimension, so no lane scalar can carry the edit, and the writer names
+/// that alike whether the solid holds the reversal or contradicts it.
+#[test]
+fn a_configuration_edit_over_settled_reversals_is_no_native_edit() {
+    let outcomes = SETTLED_CASES.map(|(alternate, side)| {
+        let (bytes, _) = lane_flagged(Some(side), Some(alternate));
+        let error = edit_and_write(decode(bytes), deepen_alternate)
+            .map(|_| ())
+            .expect_err("no lane scalar holds the depth");
+        (alternate, side, error.to_string())
+    });
+    for (alternate, side, error) in &outcomes {
+        assert!(
+            error.contains("configuration design-state edit has no complete native lane encoding"),
+            "alternate={alternate} side={side}: {outcomes:#?}"
+        );
+    }
+}
+
+/// A part whose configuration baselines are gone, as in a document built
+/// from another source, writes over configuration states whose reversal
+/// the decoder settled against the active solid, and decodes to the same
+/// travel in every configuration.
+#[test]
+fn configuration_states_without_baselines_write_over_settled_reversals() {
+    let mut refused = Vec::new();
+    for (alternate, side) in SETTLED_CASES {
+        let (bytes, anchor) = lane_flagged(Some(side), Some(alternate));
+        let decoded = decode(bytes);
+        let directions = |ir: &cadmpeg_ir::CadIr| {
+            (
+                extrusion_state(ir, anchor).1,
+                default_direction(ir),
+                alternate_direction(ir),
+            )
+        };
+        let decoded_directions = directions(decoded.ir());
+        let written = edit_and_write(decoded, |ir| {
+            let source = ir.source.as_mut().expect("the decoded source");
+            source
+                .attributes
+                .remove("sldprt_configuration_feature_states_local_sha256");
+            source
+                .attributes
+                .remove("sldprt_configuration_parameter_values_local_sha256");
+        });
+        match written {
+            Ok((written, _)) => assert_eq!(
+                directions(decode(written).ir()),
+                decoded_directions,
+                "alternate={alternate} side={side}"
+            ),
+            Err(error) => refused.push(format!("alternate={alternate} side={side}: {error}")),
+        }
+    }
+    assert!(refused.is_empty(), "{refused:#?}");
 }

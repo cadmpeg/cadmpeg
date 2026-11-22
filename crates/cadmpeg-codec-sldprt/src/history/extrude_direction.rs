@@ -31,14 +31,16 @@ const CURVE_SAMPLE_INTERVALS: u32 = 16;
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
 /// The source property that the decoder sets to `false` where an extrusion
-/// record holds the end-spec reversal flag `1` and the extrusion travels
+/// record states the reversal flag `1` and the extrusion travels
 /// along its profile normal: a cut, a two-direction extrusion whose end caps
 /// do not confirm the reversal, or a reversal its solid contradicts. The
 /// encoder then keeps the record's flag, and a reversal cleared without it
 /// is an edit.
 pub(crate) const REVERSE_DECODED: &str = "reverse_decoded";
 
-/// Whether `properties` hold the end-spec reversal flag `1`.
+/// Whether `properties` state the reversal flag `1`, as the `Reverse`
+/// property: the reversal word of the extrusion's end spec, or a `Reverse`
+/// attribute of its history record.
 pub(crate) fn reversal_flag(properties: &BTreeMap<NonBlankString, String>) -> bool {
     properties
         .get("Reverse")
@@ -182,7 +184,7 @@ pub(crate) struct Retained {
     /// The decoded reversals that the solid contradicts, each named by its
     /// feature name and id.
     pub(crate) reversals: Vec<String>,
-    /// The decoded reversals that rest on the end-spec flag alone, as the
+    /// The decoded reversals that rest on the reversal flag alone, as the
     /// solid neither holds nor contradicts them, each named by its feature
     /// name and id.
     pub(crate) assumed: Vec<String>,
@@ -190,7 +192,7 @@ pub(crate) struct Retained {
     /// their own reversal flag, as the active solid contradicts that flag for
     /// the same extrusion, by configuration.
     pub(crate) configuration_reversals: Vec<ConfigurationStates>,
-    /// The configuration states whose reversal rests on the end-spec flag of
+    /// The configuration states whose reversal rests on the reversal flag of
     /// their own lane alone, by configuration.
     pub(crate) configuration_assumed: Vec<ConfigurationStates>,
 }
@@ -215,10 +217,10 @@ pub(crate) struct ConfigurationStates {
 pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
     let work = WorkBudget::new(MAX_WITNESS_WORK);
     let mut retained = Retained::default();
-    let mut held = HashSet::new();
-    let mut fallen = HashSet::new();
+    let mut settlement = Settlement::default();
     let probes = active_reversals(ir);
     if let Some(witness) = witness(ir, &[], &work) {
+        let held = &mut settlement.held;
         let contradicted = matching(&ir.model, &work, |feature| {
             match verdict(&ir.model, feature, &witness, &work) {
                 Some(true) => {
@@ -231,36 +233,181 @@ pub(crate) fn retain_contradicted_directions(ir: &mut CadIr) -> Retained {
         let confirmed = matching(&ir.model, &work, |feature| {
             confirms(&ir.model, feature, &witness.caps, &work)
         });
-        held.extend(confirmed.iter().cloned());
-        fallen = settle_travel(ir, &contradicted, &confirmed, &mut retained);
+        settlement.held.extend(confirmed.iter().cloned());
+        settle_travel(
+            ir,
+            &contradicted,
+            &confirmed,
+            &mut settlement,
+            &mut retained,
+        );
     }
-    let mut active_verdicts = HashMap::new();
-    if let Some(witness) = (!probes.is_empty())
-        .then(|| witness(ir, &probes, &work))
-        .flatten()
-    {
-        for probe in &probes {
-            if !work.charge() {
-                break;
-            }
-            if let Some(holds) = verdict(&ir.model, probe, &witness, &work) {
-                active_verdicts.insert(probe.id.clone(), holds);
-            }
-        }
-    }
-    settle_configuration_reversals(ir, &held, &fallen, &active_verdicts, &mut retained);
+    settlement.active_verdicts = active_verdicts(ir, &probes, &work);
+    settle_configuration_states(ir, &settlement, &mut retained);
     retained.assumed = ir
         .model
         .features
         .iter()
         .filter(|feature| {
             reversal_flag(&feature.source_properties)
-                && !held.contains(&feature.id)
+                && !settlement.held.contains(&feature.id)
                 && reversed(feature.evaluation.definition())
         })
         .map(label)
         .collect();
     retained
+}
+
+/// A step that settles an extrusion's travel: [`retain`] or [`reverse`].
+type Step = fn(&mut FeatureDefinition);
+
+/// The decoder's settlement of extrusion travel against the active solid,
+/// which settles the configuration states.
+#[derive(Default)]
+struct Settlement {
+    /// Each extrusion whose model travel settled, with its definition before
+    /// the settlement and the step that settled it.
+    travel: Vec<(FeatureId, FeatureDefinition, Step)>,
+    /// The extrusions whose decoded travel the active solid holds.
+    held: HashSet<FeatureId>,
+    /// The decoded model reversals that the active solid contradicts.
+    fallen: HashSet<FeatureId>,
+    /// The active solid's verdict on each reversed state of the active
+    /// configuration whose model feature does not travel against the normal.
+    active_verdicts: HashMap<FeatureId, bool>,
+}
+
+/// The active solid's verdict on each of `probes`, while `work` lasts.
+fn active_verdicts(ir: &CadIr, probes: &[Feature], work: &WorkBudget) -> HashMap<FeatureId, bool> {
+    let mut verdicts = HashMap::new();
+    if let Some(witness) = (!probes.is_empty())
+        .then(|| witness(ir, probes, work))
+        .flatten()
+    {
+        for probe in probes {
+            if !work.charge() {
+                break;
+            }
+            if let Some(holds) = verdict(&ir.model, probe, &witness, work) {
+                verdicts.insert(probe.id.clone(), holds);
+            }
+        }
+    }
+    verdicts
+}
+
+/// Settles configuration states that the writer reads back from the lanes
+/// as the decoder settled them on decode, so that a part whose lanes no
+/// edit changed reads back to the states it decoded to. The model of `ir`
+/// is decoded and so already settled: the settlement is rebuilt from each
+/// model extrusion as it read before the decoder settled it, tested against
+/// the same solid, and applied by the decoder's own step.
+///
+/// The decoder's settlement changes a model extrusion's direction only, so
+/// each settled reading is recovered from what it left: a reversal the
+/// solid contradicts reads along the normal over an unread flag `1`, travel
+/// along the normal that the solid contradicts reads unresolved, and a
+/// two-direction reversal the end caps confirm reads reversed over a flag
+/// the decoder read. The model of `ir` is left as it is.
+pub(crate) fn settle_projected_configurations(ir: &mut CadIr) {
+    if ir.model.configurations.is_empty() {
+        return;
+    }
+    let work = WorkBudget::new(MAX_WITNESS_WORK);
+    let mut settlement = Settlement::default();
+    let unsettled = ir
+        .model
+        .features
+        .iter()
+        .filter_map(unsettled_reading)
+        .collect::<Vec<_>>();
+    let readings = unsettled
+        .iter()
+        .map(|(feature, _)| feature.clone())
+        .collect::<Vec<_>>();
+    if let Some(witness) = (!readings.is_empty())
+        .then(|| witness(ir, &readings, &work))
+        .flatten()
+    {
+        for (feature, settled_by) in &unsettled {
+            let settled = match settled_by {
+                SettledBy::Contradiction => {
+                    verdict(&ir.model, feature, &witness, &work) == Some(false)
+                }
+                SettledBy::Confirmation => confirms(&ir.model, feature, &witness.caps, &work),
+            };
+            if !settled {
+                continue;
+            }
+            let original = feature.evaluation.definition().clone();
+            if reversed(&original) && *settled_by == SettledBy::Contradiction {
+                settlement.fallen.insert(feature.id.clone());
+            }
+            let step: Step = match settled_by {
+                SettledBy::Contradiction => retain,
+                SettledBy::Confirmation => reverse,
+            };
+            settlement.travel.push((feature.id.clone(), original, step));
+        }
+    }
+    // The decoder probes the active states of model extrusions that read
+    // along the normal before the settlement, which a fallen reversal did
+    // not.
+    let probes = active_reversals(ir)
+        .into_iter()
+        .filter(|probe| !settlement.fallen.contains(&probe.id))
+        .collect::<Vec<_>>();
+    settlement.active_verdicts = active_verdicts(ir, &probes, &work);
+    settle_configuration_states(ir, &settlement, &mut Retained::default());
+}
+
+/// How the decoder settled a model extrusion's travel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettledBy {
+    /// The solid contradicted the decoded travel.
+    Contradiction,
+    /// The end caps confirmed a two-direction reversal.
+    Confirmation,
+}
+
+/// A decoded model extrusion that the decoder may have settled, as it read
+/// before the settlement, with the test that settles it.
+fn unsettled_reading(feature: &Feature) -> Option<(Feature, SettledBy)> {
+    let FeatureOperation::Extrude {
+        direction, extent, ..
+    } = feature.evaluation.definition().operation()
+    else {
+        return None;
+    };
+    let flag = reversal_flag(&feature.source_properties);
+    let unread = reversal_unread(&feature.source_properties);
+    let (before, settled_by) = match (direction, extent) {
+        (ExtrudeDirection::ProfileNormal {}, ExtrudeExtent::OneSided { .. }) if flag && unread => (
+            ExtrudeDirection::ReversedProfileNormal {},
+            SettledBy::Contradiction,
+        ),
+        (ExtrudeDirection::Unresolved {}, ExtrudeExtent::OneSided { .. }) => {
+            (ExtrudeDirection::ProfileNormal {}, SettledBy::Contradiction)
+        }
+        (ExtrudeDirection::ReversedProfileNormal {}, ExtrudeExtent::TwoSided { .. })
+            if flag && !unread =>
+        {
+            (ExtrudeDirection::ProfileNormal {}, SettledBy::Confirmation)
+        }
+        _ => return None,
+    };
+    let mut reading = feature.clone();
+    reading.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+            definition
+        {
+            *direction = before;
+        }
+    });
+    if settled_by == SettledBy::Confirmation {
+        set_unread(&mut reading, true);
+    }
+    Some((reading, settled_by))
 }
 
 /// The feature's name and id, or its id where it has no name.
@@ -271,18 +418,18 @@ pub(crate) fn label(feature: &Feature) -> String {
     )
 }
 
-/// Settles the travel of each contradicted or confirmed extrusion and of its
-/// equal active configuration states, and returns the decoded reversals that
-/// fell back to the profile normal.
+/// Settles the travel of each contradicted or confirmed model extrusion, and
+/// records each in `settlement`, with the decoded reversals that fell back
+/// to the profile normal.
 fn settle_travel(
     ir: &mut CadIr,
     contradicted: &HashSet<FeatureId>,
     confirmed: &HashSet<FeatureId>,
+    settlement: &mut Settlement,
     retained: &mut Retained,
-) -> HashSet<FeatureId> {
-    let mut fallen = HashSet::new();
+) {
     for feature in &mut ir.model.features {
-        let settle: fn(&mut FeatureDefinition) = if contradicted.contains(&feature.id) {
+        let settle: Step = if contradicted.contains(&feature.id) {
             retain
         } else if confirmed.contains(&feature.id) {
             reverse
@@ -294,27 +441,45 @@ fn settle_travel(
         retained.changed |= original != *feature.evaluation.definition();
         if reversed(&original) {
             retained.reversals.push(label(feature));
-            fallen.insert(feature.id.clone());
+            settlement.fallen.insert(feature.id.clone());
             set_unread(feature, true);
             retained.changed = true;
         } else if confirmed.contains(&feature.id) {
             set_unread(feature, false);
             retained.changed = true;
         }
+        settlement
+            .travel
+            .push((feature.id.clone(), original, settle));
+    }
+}
+
+/// Settles the configuration states by `settlement`: each active state equal
+/// to a settled model extrusion's definition before the settlement takes the
+/// same step, and then each reversed state as
+/// [`settle_configuration_reversals`] says.
+fn settle_configuration_states(ir: &mut CadIr, settlement: &Settlement, retained: &mut Retained) {
+    for (id, original, settle) in &settlement.travel {
         for configuration in ir
             .model
             .configurations
             .iter_mut()
             .filter(|configuration| configuration.active)
         {
-            if let Some(state) = configuration.feature_states.get_mut(&feature.id) {
-                if state.definition == original {
+            if let Some(state) = configuration.feature_states.get_mut(id) {
+                if state.definition == *original {
                     settle(&mut state.definition);
                 }
             }
         }
     }
-    fallen
+    settle_configuration_reversals(
+        ir,
+        &settlement.held,
+        &settlement.fallen,
+        &settlement.active_verdicts,
+        retained,
+    );
 }
 
 /// Each model feature that does not travel against the profile normal, with

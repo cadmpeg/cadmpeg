@@ -4307,12 +4307,12 @@ fn build_geometry_ir(
     let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
     for extrusion in &retained.reversals {
         pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag of its end spec."
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
         )));
     }
     if !retained.assumed.is_empty() {
         pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal on the reversal flag of their end spec alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
             retained.assumed.len(),
             retained.assumed.join(", ")
         )));
@@ -4326,7 +4326,7 @@ fn build_geometry_ir(
         };
         for extrusion in &states.extrusions {
             pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
-                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag of its end spec there, {witness}."
+                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
             )));
         }
     }
@@ -4337,7 +4337,7 @@ fn build_geometry_ir(
             "as the decoder tests no solid of that configuration for that travel"
         };
         pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
-            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag of their end spec there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
             states.extrusions.len(),
             states.configuration,
             states.extrusions.join(", ")
