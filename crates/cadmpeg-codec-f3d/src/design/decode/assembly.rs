@@ -2,7 +2,8 @@
 //! Parse exact legacy As-built assembly alignment frames.
 
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::operands::{parse_entity_selection_prefix, parse_face_operand};
+use crate::design::decode::operands::entity_selections::parse_entity_selection_prefix;
+use crate::design::decode::operands::face_operand_frames::parse_face_operand;
 use crate::layout::assembly_as_built_421_frame_297 as as_built_421_frame_297;
 use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
@@ -434,7 +435,7 @@ fn exact_legacy_as_built_face_selection(
                 ctx,
                 bytes,
                 records,
-                crate::design::decode::operands::FaceOperandFrame {
+                crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                     registered_frame: None,
                     scope,
                     scope_reference_ordinal,

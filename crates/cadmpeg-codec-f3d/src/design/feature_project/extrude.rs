@@ -168,7 +168,9 @@ pub(super) fn project_extrude(
     let prologue = or_none!(scope.extrude_prologue());
     let native_profiles = scope.extrude_native_profiles();
     let shared_profile = native_profiles
-        .filter(|profiles| crate::design::decode::operands::composable_sketch_profiles(profiles))
+        .filter(|profiles| {
+            crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(profiles)
+        })
         .and_then(<[_]>::first);
     let profile_ref = if native_profiles.is_some() && shared_profile.is_none() {
         ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))

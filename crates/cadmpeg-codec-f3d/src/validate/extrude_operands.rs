@@ -299,7 +299,7 @@ pub(super) fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<
                         && side_two_offset_count == 1
                         && (!prologue.direction_reversed()
                             || class_296_two_faces_layout
-                            || design::decode::operands::extrude_has_selected_termination(scope))
+                            || design::decode::operands::construction_groups::extrude_has_selected_termination(scope))
                 }
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance => {
                     has_one_along_carrier

@@ -27,6 +27,7 @@ use crate::test_support::zip_test::with_scan;
 mod comment_field;
 mod compact_null_owner;
 mod expression_flags;
+mod header_flag;
 mod registered_tail;
 mod tail_forms;
 mod text_owner;
@@ -324,7 +325,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
             parse_design_parameter_record(&earlier_distance)
                 .expect("earlier feature parameter")
                 .family_discriminator()
-                .map(|value| value.value.code()),
+                .map(|value| u64::from(value.value.code())),
             Some(discriminator)
         );
     }

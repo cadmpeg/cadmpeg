@@ -138,7 +138,7 @@ fn binding_with_regions(
     }];
     let placements = [placement];
     let profile_curves = crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::decode::operands::decode_profile_curve_selections(
+        crate::design::decode::operands::sketch_profiles::decode_profile_curve_selections(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             std::slice::from_ref(&profile_group),
