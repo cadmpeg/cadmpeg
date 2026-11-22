@@ -322,6 +322,30 @@ fn a_top_plane_sketch_references_its_plane_with_the_plane_rotation() {
 }
 
 #[test]
+fn the_origin_sketch_holds_the_plane_reference_trailer_of_native_origin_sketches() {
+    let (resolved, _) = extruded_top_sketch();
+    // After the Front plane's zero frame and f64 `1`: three zero bytes, u32
+    // `4`, i32 `-7`, u32 `0`, identifier `101`, u32 `0`, two empty hop lists
+    // and four zero bytes, before the user sketch.
+    let mut trailer = 1.0_f64.to_le_bytes().to_vec();
+    trailer.extend([0, 0, 0]);
+    trailer.extend(4_u32.to_le_bytes());
+    trailer.extend((-7_i32).to_le_bytes());
+    trailer.extend(0_u32.to_le_bytes());
+    trailer.extend(super::tree::ORIGIN_PLANE_REFERENCE.to_le_bytes());
+    trailer.extend([0; 12]);
+    let origin = cstring_at(&resolved, "Origin");
+    let sketch = cstring_at(&resolved, "Sketch1");
+    assert!(
+        resolved[origin..sketch]
+            .windows(trailer.len())
+            .any(|window| window == trailer),
+        "the origin sketch's moCompRefPlane_c ends with the native trailer"
+    );
+    assert_eq!(super::tree::ORIGIN_PLANE_REFERENCE, 101);
+}
+
+#[test]
 fn chains_name_curves_by_the_chain_identifiers_their_records_store() {
     let (resolved, walk) = extruded_top_sketch();
     // A record head: `ff ff`, schema `1f 00`, slot `3`, eight `ff` bytes and

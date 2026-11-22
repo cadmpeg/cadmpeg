@@ -131,15 +131,19 @@ pub(super) fn resolved_features(
         None => archive.count32(usize::MAX, "object identifier"),
     };
     // A user sketch's plane reference holds an identifier in its trailer,
-    // which in native parts exceeds the origin sketch's (`101` and up) and
-    // differs from every body identifier (sldprt.md, EV-16). The tree numbers
-    // the sketches' from one past the last body identifier it writes, and
-    // from `102` in a part with no body.
+    // which in native parts exceeds the origin sketch's (sldprt.md, EV-16).
+    // The tree numbers the sketches' from one past the last body identifier
+    // it writes, and from `102` in a part with no body, so each also differs
+    // from every body identifier it writes.
     let body_ids = archive.count32(facts.bodies.len().max(1), "body count");
     let mut plane_reference = match super::config::FIRST_BODY_ID.checked_add(body_ids) {
         Some(id) => id,
         None => archive.count32(usize::MAX, "object identifier"),
     };
+    assert!(
+        plane_reference > ORIGIN_PLANE_REFERENCE,
+        "a user sketch's plane reference exceeds the origin sketch's"
+    );
     // The map index of each sketch written, by its object identifier.
     let mut profiles = Vec::new();
     for feature in facts.features {
@@ -509,8 +513,17 @@ fn origin_point(archive: &mut Archive) {
     archive.u32(0);
 }
 
+/// The identifier in the origin sketch's plane-reference trailer: `101`, the
+/// value 10 of the 17 native origin sketches of `swVersion` 14000 hold (the
+/// others hold `102` to `107`), and one native part holds it beside body
+/// `101` and a user sketch's `102`, as a one-body part the tree writes does.
+/// Every user sketch's identifier exceeds it (sldprt.md §2.3, EV-16).
+pub(super) const ORIGIN_PLANE_REFERENCE: u32 = super::config::FIRST_BODY_ID;
+
 /// The origin sketch's plane: a `moCompRefPlane_c` naming the Front plane by
-/// its identifier, with the identity frame and an empty trailer.
+/// its identifier, with the identity frame and the trailer of the native
+/// origin sketches: three zero bytes, u32 `4`, i32 `-7`, u32 `0`,
+/// [`ORIGIN_PLANE_REFERENCE`], u32 `0` and no hops.
 fn origin_plane(archive: &mut Archive) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
@@ -523,8 +536,10 @@ fn origin_plane(archive: &mut Archive) {
     archive.u8(0);
     archive.f64s(&[0.0, 0.0, 0.0, 1.0]);
     archive.zeros(3);
-    archive.u32(3);
-    archive.zeros(12);
+    archive.u32(4);
+    archive.i32(-7);
+    archive.u32(0);
+    archive.u32(ORIGIN_PLANE_REFERENCE);
     archive.u32(0);
     archive.u16(0);
     archive.u16(0);
