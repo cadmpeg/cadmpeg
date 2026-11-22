@@ -107,6 +107,15 @@ pub(crate) enum SldprtLossCode {
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
+    /// A Keywords history member has no XML text that parses, so none of its
+    /// records is read.
+    HistoryUnread,
+    /// A Keywords root holds an `Application` element, which the native history
+    /// keeps and no neutral record holds.
+    HistoryApplicationNotTransferred,
+    /// An `Application` element nests deeper than the levels the native history
+    /// keeps, so the elements below them are not kept.
+    HistoryApplicationNestingCut,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -133,6 +142,8 @@ pub(crate) enum SldprtLossCode {
     /// line with an identifier trailer and that the handle's own read
     /// endpoints contradict when they coincide.
     SketchHandleReadingAssumed,
+    /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
+    SketchPointRecordIndexBasisAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
@@ -154,6 +165,14 @@ pub(crate) enum SldprtLossCode {
     FeatureInputArchiveWalkStopped,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Sweep path geometry keeps its native reference after an unreadable record.
+    FeatureSweepPathRetained,
+    /// Sweep path lines use their sketch point roster.
+    FeatureSweepPathRosterAssumed,
+    /// A sweep path component source follows a u32 header word.
+    FeatureSweepPathHeaderAssumed,
+    /// A generated solid sweep uses the Merge reading of its Boolean operation.
+    FeatureSweepMergeAssumed,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -397,6 +416,9 @@ impl SldprtLossCode {
         Self::HistoryIncompleteReferences,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackMarkClassInferred,
+        Self::HistoryUnread,
+        Self::HistoryApplicationNotTransferred,
+        Self::HistoryApplicationNestingCut,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -407,6 +429,7 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
+        Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
         Self::SketchListedCurveRelationDropped,
@@ -417,6 +440,10 @@ impl SldprtLossCode {
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureSweepPathRetained,
+        Self::FeatureSweepPathRosterAssumed,
+        Self::FeatureSweepPathHeaderAssumed,
+        Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
@@ -539,6 +566,9 @@ impl SldprtLossCode {
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
+            Self::HistoryUnread => "history.unread",
+            Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
+            Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -552,6 +582,7 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
+            Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -559,6 +590,10 @@ impl SldprtLossCode {
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
+            Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
+            Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
+            Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
@@ -686,7 +721,11 @@ impl SldprtLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::ContainerNoParasolidStream
             | Self::GeometryMeshBodyNotTransferred
-            | Self::GeometryImportedBodiesNotTransferred => Severity::Error,
+            | Self::GeometryImportedBodiesNotTransferred
+            | Self::HistoryUnread => Severity::Error,
+            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
+                Severity::Warning
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -724,6 +763,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
@@ -735,6 +775,10 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
@@ -917,7 +961,11 @@ impl SldprtLossCode {
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
-            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
+            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -946,6 +994,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
@@ -957,6 +1006,10 @@ impl SldprtLossCode {
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
+            | Self::FeatureSweepPathHeaderAssumed
+            | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
@@ -1169,6 +1222,9 @@ mod tests {
                 "history.incomplete-references",
                 "history.rollback-unread",
                 "history.rollback-mark-class-inferred",
+                "history.unread",
+                "history.application-not-transferred",
+                "history.application-nesting-cut",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1179,6 +1235,7 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
+                "sketch.point-record-index-basis-assumed",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",
                 "sketch.listed-curve-relation-dropped",
@@ -1189,6 +1246,10 @@ mod tests {
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
+                "feature.sweep-path-retained",
+                "feature.sweep-path-roster-assumed",
+                "feature.sweep-path-header-assumed",
+                "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",

@@ -9,9 +9,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::geometry::{
-    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -867,8 +866,9 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
                     decoded.ir().geometry.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
-            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-                construction.definition()
+            let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+                definition_payload,
+            ) = construction.definition()
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
@@ -914,8 +914,9 @@ fn decode_standard_transfers_exact_offset_construction() {
     let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -978,8 +979,9 @@ fn decode_standard_transfers_construction_use_offset() {
     let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("offset construction");
     };
@@ -1026,7 +1028,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
         &surface.geometry,
         SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
     ));
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) =
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) =
         procedural.definition()
     else {
         panic!("rolling-ball jet");

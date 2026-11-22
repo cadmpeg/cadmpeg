@@ -5,6 +5,7 @@ members = [
   "crates/cadmpeg",
   "crates/cadmpeg-asm",
   "crates/cadmpeg-core",
+  "crates/cadmpeg-layout-tables",
   "crates/cadmpeg-derive",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",

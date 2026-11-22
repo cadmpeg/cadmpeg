@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A cyclic model shared by validator and sealed decode tests.
 
+use crate::geometry::intersection_curves::{
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+};
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry, TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
