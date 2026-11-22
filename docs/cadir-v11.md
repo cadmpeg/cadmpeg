@@ -1249,6 +1249,8 @@ pub enum FuzzyTolerance { KernelDefault, Automatic, Explicit(Dimension<PositiveL
 
 `FeatureInputTopology.edge_geometry` states samples of edges in the feature's input state. A `HistoricalEdgeGeometry.carrier` holds the edge's curve and its finite ordered parameter interval in the frame of `interior`. The curve is a line, circle, ellipse, parabola, hyperbola, or NURBS. The interval's lower endpoint is first; it does not state edge traversal direction. An absent carrier leaves the samples available.
 
+`FeatureInputTopology.face_owners` states the body of the input state that holds a face of that state, for faces the state's features select where the state has more than one body. A `HistoricalFaceOwner` names a face of `faces` and a body of `bodies`, and a face has at most one entry. A face with no entry has an owner the state does not state.
+
 A feature defined by stored geometry has the operation `FeatureOperation::Stored { bodies, tessellations, origin }` (part 6), whose origin types are:
 
 ```rust
