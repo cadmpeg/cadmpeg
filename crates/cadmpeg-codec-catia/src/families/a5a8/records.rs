@@ -1782,7 +1782,7 @@ fn a5_surface(
     let Some(u_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, u_degree, u_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1796,7 +1796,7 @@ fn a5_surface(
     let Some(v_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, v_degree, v_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -2227,9 +2227,16 @@ fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize>
     Some(count)
 }
 
-fn a5_array_marker(bytes: &[u8], at: usize, owned: bool) -> Option<usize> {
+fn a5_array_marker(
+    bytes: &[u8],
+    at: usize,
+    owned: bool,
+    degree: u32,
+    distinct_count: usize,
+) -> Option<usize> {
     match bytes.get(at..at + 2) {
         Some([0x0c, ..]) => Some(at + 1),
+        Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
         Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,
