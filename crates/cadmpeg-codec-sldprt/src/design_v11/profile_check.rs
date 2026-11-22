@@ -202,8 +202,10 @@ impl Joints {
         let cell = [cell(point[0])?, cell(point[1])?];
         for du in -1..=1_i64 {
             for dv in -1..=1_i64 {
-                let near = [cell[0].saturating_add(du), cell[1].saturating_add(dv)];
-                if let Some(found) = self.cells.get(&near) {
+                let (Some(u), Some(v)) = (cell[0].checked_add(du), cell[1].checked_add(dv)) else {
+                    continue;
+                };
+                if let Some(found) = self.cells.get(&[u, v]) {
                     if let Some(&joint) = found
                         .iter()
                         .find(|&&joint| meets(self.points[joint], point))
@@ -298,8 +300,8 @@ fn classify(
         .iter()
         .map(|(_, points)| points.len())
         .sum::<usize>()
-        .saturating_mul(rings.iter().map(Vec::len).sum());
-    if tests > CLASSIFY_BUDGET {
+        .checked_mul(rings.iter().map(Vec::len).sum());
+    if tests.is_none_or(|tests| tests > CLASSIFY_BUDGET) {
         return vec![Difference::Other];
     }
     let mut parent = (0..graph.joints).collect::<Vec<_>>();
