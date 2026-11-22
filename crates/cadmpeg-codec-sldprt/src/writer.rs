@@ -876,7 +876,7 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
-fn configuration_partitions(
+pub(crate) fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {

@@ -157,3 +157,41 @@ fn a_display_table_binds_to_the_active_copy_of_a_stored_face() {
         .any(|loss| loss.code == SldprtLossCode::ConfigStatePresentationUnstated.kind()));
     assert_valid(&result);
 }
+
+/// A configuration whose body list its evaluation holds writes its own
+/// partition from that evaluation's records. No write reaches this today:
+/// a write regenerates partitions only without a retained or patched
+/// partition, and such a write of a part with configurations is refused
+/// before it, for want of a native lane encoding of the design state.
+#[test]
+fn a_stored_configuration_state_writes_its_partition() {
+    let result = decode(native_envelope_fixture(&two_configurations()));
+    let ir = result.ir();
+    let first = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("First"))
+        .unwrap();
+    assert_eq!(first.bodies, None);
+    let [evaluation] = ir.design.evaluations.as_slice() else {
+        panic!("one evaluation");
+    };
+    let stored = &evaluation.content.as_ref().unwrap().delta.records;
+    let sections = crate::writer::configuration_partitions(ir, 0.001).unwrap();
+    let section = format!("Contents/Config-{}-Partition", first.source_index.unwrap());
+    let (_, payload) = sections
+        .iter()
+        .find(|(name, _)| *name == section)
+        .unwrap_or_else(|| {
+            panic!(
+                "{section} in {:?}",
+                sections.iter().map(|(name, _)| name).collect::<Vec<_>>()
+            )
+        });
+    let mut written = outer_header();
+    written.extend(make_block(0x20, &section, payload));
+    let reread = decode(written);
+    assert_eq!(reread.ir().geometry.bodies.len(), stored.bodies.len());
+    assert_eq!(reread.ir().geometry.faces.len(), stored.faces.len());
+}
