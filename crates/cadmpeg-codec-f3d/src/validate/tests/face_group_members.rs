@@ -9,7 +9,7 @@ fn unresolved_count(
 ) -> usize {
     let members = BTreeSet::from([(STREAM, 30, 31)]);
     let mut findings = Vec::new();
-    super::super::validate_face_group_member_resolution(
+    super::super::face_operands::validate_face_group_member_resolution(
         &mut findings,
         members,
         face_operands,
@@ -40,27 +40,27 @@ fn identity_of_another_scope_does_not_resolve_the_member() {
 #[test]
 fn split_direct_face_admits_the_reference_zero_and_two_tool_faces() {
     use crate::records::recipes::ConstructionRecipeKind;
-    assert!(super::super::split_direct_face_admitted(
+    assert!(super::super::face_operands::split_direct_face_admitted(
         1,
         ConstructionRecipeKind::BoundedFace
     ));
-    assert!(super::super::split_direct_face_admitted(
+    assert!(super::super::face_operands::split_direct_face_admitted(
         0,
         ConstructionRecipeKind::Face
     ));
-    assert!(!super::super::split_direct_face_admitted(
+    assert!(!super::super::face_operands::split_direct_face_admitted(
         0,
         ConstructionRecipeKind::BoundedFace
     ));
-    assert!(super::super::split_direct_face_admitted(
+    assert!(super::super::face_operands::split_direct_face_admitted(
         2,
         ConstructionRecipeKind::Face
     ));
-    assert!(!super::super::split_direct_face_admitted(
+    assert!(!super::super::face_operands::split_direct_face_admitted(
         2,
         ConstructionRecipeKind::BoundedFace
     ));
-    assert!(!super::super::split_direct_face_admitted(
+    assert!(!super::super::face_operands::split_direct_face_admitted(
         3,
         ConstructionRecipeKind::Face
     ));
@@ -83,7 +83,7 @@ fn retained_sketch_profiles_resolve_members_in_their_own_scope() {
         let stream = crate::ids::native_stream(&scope.id).unwrap();
         for owner in [scope.record_index, scope.record_index + 1] {
             let mut findings = Vec::new();
-            super::super::validate_face_group_member_resolution(
+            super::super::face_operands::validate_face_group_member_resolution(
                 &mut findings,
                 BTreeSet::from([(stream, owner, 100), (stream, owner, 200)]),
                 &HashSet::new(),
