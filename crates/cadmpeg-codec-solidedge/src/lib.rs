@@ -8,8 +8,10 @@
 mod container;
 mod decode;
 mod dialect;
+mod features;
 mod layout;
 mod loss;
+mod psm;
 mod settings;
 
 use cadmpeg_core::decode::{DecodeContext, View};

@@ -11,7 +11,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-use crate::{container, dialect, loss::SolidEdgeLossCode, settings};
+use crate::{container, dialect, features, loss::SolidEdgeLossCode, settings};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
@@ -27,11 +27,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }),
     );
     if !ctx.container_only() {
-        let mut root_definition =
-            ProductDefinition::root(root_definition(), ExternalDocument::default());
-        root_definition.units = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => {
-                let cluster = snapshot.open(ctx, entry)?;
+        let definition = root_definition();
+        let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
+        let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
+            Some(entry) => Some(snapshot.open(ctx, entry)?),
+            None => None,
+        };
+        product.units = match cluster {
+            Some(cluster) => {
                 let sets = settings::property_sets(ctx, cluster.window());
                 settings::unit_system(&sets, &mut body.losses)
             }
@@ -44,7 +47,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 None
             }
         };
-        ir.model.product_definitions.push(root_definition);
+        ir.model.product_definitions.push(product);
+        if let Some(cluster) = cluster {
+            features::project(
+                ctx,
+                &snapshot,
+                cluster,
+                &definition,
+                &mut ir,
+                &mut body.losses,
+            )?;
+        }
         body.losses
             .push(SolidEdgeLossCode::BodiesPending.note("Solid Edge body decoding is pending"));
     }
