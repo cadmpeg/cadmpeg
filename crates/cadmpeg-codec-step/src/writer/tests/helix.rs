@@ -4,17 +4,19 @@
 
 use super::reports::edgeless_doc;
 use crate::{export::write_step, loss::StepLossCode, StepSchema, StepWriteOptions};
-use cadmpeg_ir::{
-    geometry::{
-        Curve, CurveGeometry, HelixCircleProfile, HelixCurveConstruction, HelixFrame,
-        HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile, ProceduralCurve,
-        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
-    },
-    ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId},
-    math::{Point3, Vector3},
-    topology::{EdgeCarrier, Point},
-    CadIr,
+use cadmpeg_ir::geometry::helix::{
+    HelixCircleProfile, HelixCurveConstruction, HelixFrame, HelixPathConstruction,
+    HelixSurfaceConstruction, HelixSurfaceProfile,
 };
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{EdgeCarrier, Point};
+use cadmpeg_ir::CadIr;
 
 /// The edgeless document with its one edge closed on a full turn of a
 /// pitchless helix in the face plane, from and to `(1, 0, 0)`.

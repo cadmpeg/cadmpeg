@@ -2,12 +2,13 @@
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::{model_surface_point_by_id, EvaluationFailure};
 use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::surface_payloads::{
     AxisRevolutionSurfaceConstruction, LinearSweepSurfaceConstruction, OffsetSurfaceConstruction,
 };
 use crate::geometry::{
-    Curve, CurveGeometry, LegacyExtensionFlags, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, LegacyExtensionFlags, ProceduralSurface, SolvedCurveGeometry, Surface,
+    SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::index::ModelIndex;

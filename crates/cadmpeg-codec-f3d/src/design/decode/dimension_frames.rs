@@ -1406,15 +1406,20 @@ pub(crate) fn decode_dimension_annotation_frames(
             intervals.push(interval);
         }
         for (start, end, containing_companion_record_index) in intervals {
+            let scan_end = end
+                .checked_add(11)
+                .map_or(bytes.len(), |limit| limit.min(bytes.len()));
+            let scan_bytes = &bytes[..scan_end];
             let mut position = start;
             while position < end {
-                let at = next_indexed_record_offset(bytes, position);
+                let at = next_indexed_record_offset(scan_bytes, position);
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
                 if let Some(mut frame) = parse_dimension_annotation_frame(
                     bytes,
                     at,
+                    end,
                     containing_companion_record_index,
                     &governed_owners,
                     geometry_indices,
@@ -1454,6 +1459,7 @@ pub(crate) fn decode_dimension_annotation_frames(
 fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
+    end: usize,
     companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
@@ -1529,9 +1535,16 @@ fn parse_dimension_annotation_frame(
             _ => return None,
         }
     };
+    let scan_end = end
+        .checked_add(11)
+        .map_or(bytes.len(), |limit| limit.min(bytes.len()));
+    let scan_bytes = &bytes[..scan_end];
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let at = next_indexed_record_offset(scan_bytes, paired_search)?;
+        if at >= end {
+            return None;
+        }
         let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);

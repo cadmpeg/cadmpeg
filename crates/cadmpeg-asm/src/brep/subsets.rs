@@ -9,9 +9,8 @@
 //! its sense.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::topology::{Coedge, Edge, IncreasingParameterInterval, ParameterInterval};
 
