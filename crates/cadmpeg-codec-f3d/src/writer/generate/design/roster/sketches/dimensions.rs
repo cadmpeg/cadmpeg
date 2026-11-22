@@ -283,10 +283,6 @@ pub(in crate::writer::generate::design::roster) fn losses(ctx: &Context<'_>) -> 
                 "dimension parameters {} (family discriminator {DISCRIMINATOR}, the expression trailer of ten zero bytes, the owner's parameter number the source ordinal, the dimension suffix {FIRST_SUFFIX} for a sketch's first dimension of a kind and one more for each later one)",
                 parameters.join(" ")
             ),
-            format!(
-                "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter; f3d.md states the value for a design whose every parameter is named d<n>)",
-                ctx.context_value()
-            ),
         ]);
     }
     cadmpeg_ir::codec::write::record_residual_unavailable(

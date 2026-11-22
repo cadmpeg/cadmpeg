@@ -429,7 +429,7 @@ impl BaseFeaturePlan<'_> {
                 ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
             )?,
             extrude,
-            context_value: ctx.context_value(),
+            context_value: ctx.timeline_value.value(),
         };
         writer.timeline(out)?;
         writer.context(out)?;
@@ -698,8 +698,7 @@ struct Writer<'a> {
     persistent_id: u64,
     /// The `Extrude` written in place of the `Base Feature`.
     extrude: Option<ExtrudeItem<'a>>,
-    /// The timeline context value: the largest source ordinal of an owned
-    /// parameter (f3d.md §3.1, "Design records of Sketch items").
+    /// The timeline context value.
     context_value: u64,
 }
 
