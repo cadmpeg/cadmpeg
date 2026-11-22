@@ -1060,25 +1060,61 @@ fn operand_list_prologue_admits_any_operation_identity_value() {
     );
 }
 
+/// Decode an operand-list frame and return the loss codes, after checking
+/// that its tool list is read after the last operation entry.
+fn operation_entry_codes(bytes: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    let (operation, losses) = decode_combine_frame_with(bytes, &HashMap::new());
+    let operation = operation.expect("operand-list Combine");
+    assert_eq!(operation.form, DesignCombineForm::OperandLists);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
+    assert_eq!(operation.target_record_index, 96);
+    assert_eq!(operation.tools.iter().count(), 2);
+    losses.into_iter().map(|loss| loss.code).collect()
+}
+
 #[test]
-fn operand_list_prologue_reads_every_operation_entry_before_the_tool_list() {
-    for further in [vec![None], vec![Some(378)], vec![None, Some(378)]] {
+fn operand_list_prologue_reads_a_null_first_two_entry_form() {
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    assert_eq!(operation_entry_codes(&fixture.bytes()), []);
+}
+
+#[test]
+fn operand_list_prologue_reports_an_operation_entry_form_outside_the_stated_forms() {
+    let assumed = [F3dLossCode::FeatureCombineOperationEntriesAssumed.kind()];
+    for (first_present, further) in [
+        (true, vec![None]),
+        (true, vec![Some(378)]),
+        (false, vec![None, Some(378)]),
+    ] {
         let mut fixture = OperandListFixture::new(1, 0).two_tools();
+        fixture.optional_reference = first_present;
         fixture.further_operation_entries = further;
-        let operation = fixture.decode().expect("operand-list Combine");
-        assert_eq!(operation.form, DesignCombineForm::OperandLists);
-        assert_eq!(
-            operation.operation,
-            cadmpeg_ir::features::operation_settings::BooleanKind::Cut
-        );
-        assert_eq!(operation.target_record_index, 96);
-        assert_eq!(operation.tools.iter().count(), 2);
+        assert_eq!(operation_entry_codes(&fixture.bytes()), assumed);
     }
+
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    let mut bytes = fixture.bytes();
+    let first_identity = 36;
+    let identity = u64::from_le_bytes(
+        bytes[first_identity..first_identity + 8]
+            .try_into()
+            .unwrap(),
+    );
+    bytes[first_identity..first_identity + 8].copy_from_slice(&(identity + 1).to_le_bytes());
+    assert_eq!(operation_entry_codes(&bytes), assumed);
 }
 
 #[test]
 fn repeated_tool_body_is_consumed_once() {
     let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
     fixture.further_operation_entries = vec![Some(378)];
     fixture.tool_bodies = FixtureToolBodies::LastRepeatsFirst;
     let operation = fixture.decode().expect("operand-list Combine");

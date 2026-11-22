@@ -257,8 +257,8 @@ pub(crate) struct ReplacedTools {
 /// Name each generated tool body by the identity that the result state of its
 /// generating feature lists. A generating feature whose result state lists one
 /// body generates that body, so a tool that it generates is that body. A
-/// `Combine` whose tools then name no listed identity, or name one twice,
-/// takes back its native tools.
+/// `Combine` with a tool whose generating feature lists several bodies, or
+/// whose tools then name one body twice, takes back its native tools.
 pub(crate) fn align_with_result_states(
     features: &mut [Feature],
     results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
@@ -284,13 +284,6 @@ pub(crate) fn align_with_result_states(
                 else {
                     return Some(body.clone());
                 };
-                if state
-                    .bodies()
-                    .iter()
-                    .any(|listed| listed.as_str() == body.local_id.as_str())
-                {
-                    return Some(body.clone());
-                }
                 let [only] = state.bodies() else {
                     return None;
                 };
@@ -318,7 +311,7 @@ pub(crate) fn align_with_result_states(
         });
         if reverted {
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
-                "feature {} retains its native Combine tools: a generated tool body is absent from the result state of its generating feature",
+                "feature {} retains its native Combine tools: the result state of a generating feature lists several bodies, or two tools name one body",
                 feature.id
             )));
         }

@@ -63,6 +63,10 @@ pub(super) fn exact_combine_operation(
     let mut contradiction = None;
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
+        let entries_unstated = prologue
+            .lists
+            .as_ref()
+            .is_some_and(|lists| !lists.entries_stated);
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
             PrologueReading::Operation(operation, unconfirmed) => {
                 if operation.form == DesignCombineForm::OperandLists
@@ -71,6 +75,12 @@ pub(super) fn exact_combine_operation(
                 {
                     losses.push(F3dLossCode::FeatureCombineNamedTailPrologueAssumed.note(format!(
                         "{}: its expanded named tail is read with the complete operand-list prologue despite the overlapping standard prefix (DR-560)",
+                        scope.id
+                    )));
+                }
+                if entries_unstated {
+                    losses.push(F3dLossCode::FeatureCombineOperationEntriesAssumed.note(format!(
+                        "{}: the operand-list prologue stores an operation-entry form other than one entry or a null-first two-entry pair; its tool list is read after the last stored entry",
                         scope.id
                     )));
                 }
@@ -144,6 +154,9 @@ struct CombinePrologue {
 /// that its lists settle.
 struct OperandLists {
     tool_count_offset: usize,
+    /// The prologue stores one operation entry, or two entries whose first
+    /// reference is null and whose first identity is one more than the second.
+    entries_stated: bool,
     companions: Vec<u32>,
     new_component: u8,
 }
@@ -257,15 +270,29 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
     if entries == 0 || entries > prologue.len().checked_sub(cursor)? / OPERATION_ENTRY_MIN_LEN {
         return None;
     }
-    for _ in 0..entries {
-        match take_reference(prologue, &mut cursor)? {
-            Reference::Null => {}
-            Reference::Local { target, .. } if target != 0 => {}
+    let mut first = None;
+    let mut second_identity = None;
+    for entry in 0..entries {
+        let null = match take_reference(prologue, &mut cursor)? {
+            Reference::Null => true,
+            Reference::Local { target, .. } if target != 0 => false,
             _ => return None,
+        };
+        let identity = View::u64_le_at(prologue, cursor);
+        match entry {
+            0 => first = Some((null, identity)),
+            1 => second_identity = identity,
+            _ => {}
         }
-        View::u64_le_at(prologue, cursor)?;
         cursor = cursor.checked_add(combine_lists::TOOL_COUNT - combine_lists::STAMP)?;
     }
+    let entries_stated = match (entries, first) {
+        (1, _) => true,
+        (2, Some((true, Some(first)))) => {
+            second_identity.and_then(|second| second.checked_add(1)) == Some(first)
+        }
+        _ => false,
+    };
     Some(CombinePrologue {
         form: DesignCombineForm::OperandLists,
         operation_offset: start
@@ -274,6 +301,7 @@ fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologu
         keep_tools_offset: field(combine_lists::KEEP_TOOLS)?,
         lists: Some(OperandLists {
             tool_count_offset: cursor,
+            entries_stated,
             companions,
             new_component: *prologue.get(field(combine_lists::NEW_COMPONENT)?)?,
         }),
