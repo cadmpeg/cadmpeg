@@ -2190,12 +2190,14 @@ fn bind_body_override(
     losses: &mut Vec<LossNote>,
     binding: AppearanceBinding,
 ) {
-    if !overridden.insert(binding.target.entity.clone()) {
-        return;
-    }
+    // A repeat of the appearance already bound to the body changes nothing and
+    // does not consume the body's override.
     if bindings.iter().any(|existing| {
         existing.target.entity == binding.target.entity && existing.appearance == binding.appearance
     }) {
+        return;
+    }
+    if !overridden.insert(binding.target.entity.clone()) {
         return;
     }
     let before = bindings.len();

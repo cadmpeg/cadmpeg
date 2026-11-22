@@ -70,6 +70,26 @@ fn body_override_naming_the_assigned_appearance_keeps_the_assignment_binding() {
     assert_eq!(bindings, vec![assigned]);
 }
 
+/// A body-override record repeating the assignment's appearance is examined
+/// before the real override when it sorts first; it must not consume the
+/// body's override, so the real override still binds and is charged.
+#[test]
+fn a_repeat_of_the_assigned_appearance_does_not_consume_the_override() {
+    let first = body("1");
+    let assigned = binding("assigned-1", &first, "material");
+    let repeat = binding("override-0", &first, "material");
+    let over = binding("override-1", &first, "override");
+    let mut bindings = vec![assigned];
+    let mut overridden = Default::default();
+    let mut losses = Vec::new();
+
+    bind_body_override(&mut bindings, &mut overridden, &mut losses, repeat);
+    bind_body_override(&mut bindings, &mut overridden, &mut losses, over.clone());
+
+    assert_eq!(bindings, vec![over]);
+    assert_eq!(losses.len(), 1);
+}
+
 #[test]
 fn the_first_body_override_wins_over_a_later_one() {
     let first = body("1");
@@ -92,8 +112,13 @@ fn the_first_body_override_wins_over_a_later_one() {
 
 #[test]
 fn decode_binds_the_override_appearance_over_a_different_assignment_and_charges_the_assumption() {
-    let assigned = "11111111-2222-3333-4444-555555555555";
-    let overriding = "00000000-2222-3333-4444-555555555555";
+    assert_override_binds(
+        "11111111-2222-3333-4444-555555555555",
+        "00000000-2222-3333-4444-555555555555",
+    );
+}
+
+fn assert_override_binds(assigned: &str, overriding: &str) {
     let f3d = crate::test_support::zip_test::f3d_with_smbh_and_protein_guids_and_browser_override(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
         &[assigned, overriding],
