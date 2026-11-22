@@ -1411,24 +1411,22 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
 }
 
 #[test]
-fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
+fn oversized_zip_entry_declaration_is_given_up_before_allocation() {
     let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX - 1);
 
-    // The Part refusal gives up the entry before any allocation; the design
-    // body map that needs the entry then refuses the document.
-    let error = F3dCodec
+    let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect_err("oversized inflated entry must be rejected");
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains("missing BREP entry Body1.smbh")
-        ),
-        "{error:?}"
-    );
+        .expect("a Part refusal refuses no file");
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "decode/record.unreadable"
+            && loss.message.starts_with(
+                "part archive-entry \"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\"",
+            )
+            && loss.message.contains("scope Part")
+    }));
 }
 
 #[test]

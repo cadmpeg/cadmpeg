@@ -624,7 +624,22 @@ struct OperandListFixture {
     new_component: u8,
     omit_consumed: bool,
     optional_reference: bool,
+    /// Operation entries after the first, each a reference or null.
+    further_operation_entries: Vec<Option<u32>>,
+    /// The number of bytes of the first operation-identity value that the
+    /// reference table follows, for a truncated frame.
+    truncated_identity: Option<usize>,
+    tool_bodies: FixtureToolBodies,
     reference_form: FixtureReferenceForm,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum FixtureToolBodies {
+    /// Each tool selection names its own browser node.
+    #[default]
+    Distinct,
+    /// The last tool selection names the browser node of the first tool.
+    LastRepeatsFirst,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -662,6 +677,9 @@ impl OperandListFixture {
             new_component: 0,
             omit_consumed: false,
             optional_reference: true,
+            further_operation_entries: Vec::new(),
+            truncated_identity: None,
+            tool_bodies: FixtureToolBodies::default(),
             reference_form: FixtureReferenceForm::default(),
         }
     }
@@ -716,9 +734,11 @@ impl OperandListFixture {
             self.tools.iter().map(|(operation, _)| *operation).collect();
         let consumed = self.consumed.clone().unwrap_or_else(|| {
             if self.keep_tools == 0 && self.companions.is_empty() {
+                let mut seen = std::collections::HashSet::new();
                 self.tools
                     .iter()
-                    .map(|(_, selection)| selection + 100)
+                    .map(|(_, selection)| self.body_node(*selection))
+                    .filter(|node| seen.insert(*node))
                     .collect()
             } else {
                 Vec::new()
@@ -737,13 +757,23 @@ impl OperandListFixture {
         marked_list(&mut bytes, &self.companions);
         bytes.push(self.keep_tools);
         bytes.push(self.new_component);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(1 + self.further_operation_entries.len()).unwrap()).to_le_bytes(),
+        );
         if self.optional_reference {
             marked(&mut bytes, 377);
         } else {
             bytes.push(0);
         }
+        let identity_at = bytes.len();
         bytes.extend_from_slice(&306u64.to_le_bytes());
+        for entry in &self.further_operation_entries {
+            match entry {
+                Some(record) => marked(&mut bytes, *record),
+                None => bytes.push(0),
+            }
+            bytes.extend_from_slice(&305u64.to_le_bytes());
+        }
         marked_list(
             &mut bytes,
             self.listed_tools.as_deref().unwrap_or(&tool_operations),
@@ -763,6 +793,9 @@ impl OperandListFixture {
             bytes.extend_from_slice(&[unit, 0]);
         }
         bytes.resize(bytes.len() + self.guid_tail_zeros, 0);
+        if let Some(kept) = self.truncated_identity {
+            bytes.truncate(identity_at + kept);
+        }
         let table = self.table();
         bytes.extend_from_slice(&(u32::try_from(table.len() * 2).unwrap()).to_le_bytes());
         for (operation, selection) in &table {
@@ -820,10 +853,13 @@ impl OperandListFixture {
             bytes.extend_from_slice(&2u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
             marked_list(&mut bytes, &[selection + 50]);
-            let node = selection + 100;
+            let node = self.body_node(*selection);
             marked_list(&mut bytes, &vec![node; self.node_entries]);
             bytes.extend_from_slice(&9u32.to_le_bytes());
             indexed_header(&mut bytes, *b"258", *selection);
+            if node != selection + 100 {
+                continue;
+            }
             indexed_header(&mut bytes, *b"304", node);
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, "20000000-0000-0000-0000-000000000001");
@@ -864,6 +900,18 @@ impl OperandListFixture {
             indexed_header(&mut bytes, *b"258", *node);
         }
         bytes
+    }
+
+    /// The browser-node record that the body selection `selection` names.
+    fn body_node(&self, selection: u32) -> u32 {
+        match (&self.tools[..], self.tool_bodies) {
+            ([(_, first), .., (_, last)], FixtureToolBodies::LastRepeatsFirst)
+                if selection == *last =>
+            {
+                first + 100
+            }
+            _ => selection + 100,
+        }
     }
 
     /// Name `nodes` in the second middle list as bodies the Combine creates.
@@ -996,7 +1044,7 @@ fn operand_list_prologue_rejects_nonzero_fixed_fields() {
         (11, 1),
         (19, 1),
         (30, 1),
-        (31, 2),
+        (31, 0),
         (35, 0),
         (44, 1),
         (45, 1),
@@ -1018,6 +1066,99 @@ fn operand_list_prologue_admits_any_operation_identity_value() {
         decode_combine_frame(&bytes).map(|operation| operation.form),
         Some(DesignCombineForm::OperandLists)
     );
+}
+
+/// Decode an operand-list frame and return the loss codes, after checking
+/// that its tool list is read after the last operation entry.
+fn operation_entry_codes(bytes: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    let (operation, losses) = decode_combine_frame_with(bytes, &HashMap::new());
+    let operation = operation.expect("operand-list Combine");
+    assert_eq!(operation.form, DesignCombineForm::OperandLists);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
+    assert_eq!(operation.target_record_index, 96);
+    assert_eq!(operation.tools.iter().count(), 2);
+    losses.into_iter().map(|loss| loss.code).collect()
+}
+
+#[test]
+fn operand_list_prologue_reads_a_null_first_two_entry_form() {
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    assert_eq!(operation_entry_codes(&fixture.bytes()), []);
+}
+
+#[test]
+fn operand_list_prologue_reports_an_operation_entry_form_outside_the_stated_forms() {
+    let assumed = [F3dLossCode::FeatureCombineOperationEntriesAssumed.kind()];
+    for (first_present, further) in [
+        (true, vec![None]),
+        (true, vec![Some(378)]),
+        (false, vec![None, Some(378)]),
+    ] {
+        let mut fixture = OperandListFixture::new(1, 0).two_tools();
+        fixture.optional_reference = first_present;
+        fixture.further_operation_entries = further;
+        assert_eq!(operation_entry_codes(&fixture.bytes()), assumed);
+    }
+
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    let mut bytes = fixture.bytes();
+    let first_identity = 36;
+    let identity = u64::from_le_bytes(
+        bytes[first_identity..first_identity + 8]
+            .try_into()
+            .unwrap(),
+    );
+    bytes[first_identity..first_identity + 8].copy_from_slice(&(identity + 1).to_le_bytes());
+    assert_eq!(operation_entry_codes(&bytes), assumed);
+}
+
+#[test]
+fn a_truncated_operation_identity_reads_the_standard_prologue_with_a_loss() {
+    for first_present in [true, false] {
+        let mut fixture = OperandListFixture::new(1, 0);
+        fixture.property_block = true;
+        fixture.optional_reference = first_present;
+        fixture.truncated_identity = Some(4);
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(
+            operation.map(|operation| operation.form),
+            Some(DesignCombineForm::Standard),
+            "first reference present: {first_present}"
+        );
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombinePrologueAssumed.kind()],
+            "first reference present: {first_present}"
+        );
+    }
+}
+
+#[test]
+fn repeated_tool_body_is_consumed_once() {
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    fixture.tool_bodies = FixtureToolBodies::LastRepeatsFirst;
+    let operation = fixture.decode().expect("operand-list Combine");
+    assert_eq!(operation.consumed_body_nodes, [192]);
+    assert_eq!(
+        operation
+            .tools
+            .iter()
+            .map(|tool| tool.body_node.map(|node| node.record_index))
+            .collect::<Vec<_>>(),
+        [Some(192), Some(192)]
+    );
+
+    fixture.consumed = Some(vec![192, 192]);
+    assert_eq!(fixture.decode(), None);
 }
 
 #[test]

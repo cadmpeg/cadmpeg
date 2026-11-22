@@ -1091,16 +1091,24 @@ pub(crate) fn design_primary_frame_offsets(
 /// index. An envelope is history-bound when it resolves to one ASM state pair
 /// through the history header links. Binding output is not read, so selection
 /// does not depend on whether history binding ran. Exactly one history-bound
-/// envelope is authoritative. An unresolved group remains an error.
+/// envelope is authoritative. Otherwise, the later envelope is authoritative
+/// when the envelopes are equivalent and none is history-bound; else the
+/// primary-indexed envelope; else, with none history-bound, the later envelope
+/// when the envelopes differ only in their tail flags. Where that later
+/// envelope stores no flags, it takes the flags of the latest earlier envelope
+/// that stores them before its own start. Groups are resolved in record order,
+/// so their notes and the first unresolved group are the same on every decode.
+/// An unresolved group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
     primary_frames: &std::collections::HashSet<(String, u64)>,
-) -> Result<usize, CodecError> {
+) -> Result<SupersededScopeEnvelopes, CodecError> {
     let mut admitted = vec![true; scopes.len()];
-    let mut superseded = 0usize;
-    let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
+    let mut superseded = SupersededScopeEnvelopes::default();
+    let mut carried_flags = Vec::new();
+    let mut groups = std::collections::BTreeMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
@@ -1138,15 +1146,29 @@ pub(crate) fn admit_history_bound_scope_variants(
                 break;
             }
         }
-        let mut equivalent_payload = history_bound.is_none() && !multiple_history_bounds;
-        if equivalent_payload {
+        let mut comparison = EnvelopeComparison::Different;
+        if history_bound.is_none() && !multiple_history_bounds {
+            comparison = EnvelopeComparison::Equivalent;
             for index in following {
-                if !equivalent_scope_variant_payload(ctx, &scopes[*first], &scopes[*index])? {
-                    equivalent_payload = false;
+                comparison = comparison.max(compare_scope_variant_payloads(
+                    ctx,
+                    &scopes[*first],
+                    &scopes[*index],
+                )?);
+                if comparison == EnvelopeComparison::Different {
                     break;
                 }
             }
         }
+        let later = following.iter().copied().fold(*first, |keep, index| {
+            if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
+                index
+            } else {
+                keep
+            }
+        });
+        let count_overflow =
+            || CodecError::Malformed("Design scope envelope count overflows".into());
         // Without a history binding, the envelope that the stream's primary
         // record index names is the live one when it is unique in the group.
         let mut primary = indices.iter().copied().filter(|index| {
@@ -1159,26 +1181,41 @@ pub(crate) fn admit_history_bound_scope_variants(
             (Some(index), None) => Some(index),
             _ => None,
         };
-        let keep = match (history_bound, multiple_history_bounds, primary_indexed) {
-            (Some(keep), false, _) => keep,
-            (None, false, _) if equivalent_payload => {
-                following.iter().copied().fold(*first, |keep, index| {
-                    if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
-                        index
-                    } else {
-                        keep
-                    }
-                })
-            }
-            // Several envelopes resolve to ASM transitions: the one the primary
-            // record index names is live; the others are retained revisions.
-            (Some(_), true, Some(keep)) | (None, false, Some(keep)) => {
-                // The other envelopes are not equivalent serializations, so
-                // dropping them loses their payload.
-                superseded = superseded.checked_add(following.len()).ok_or_else(|| {
-                    CodecError::Malformed("Design scope envelope count overflows".into())
-                })?;
+        let keep = match (
+            history_bound,
+            multiple_history_bounds,
+            primary_indexed,
+            comparison,
+        ) {
+            (Some(keep), false, _, _) => keep,
+            (None, false, _, EnvelopeComparison::Equivalent) => later,
+            // Several envelopes resolve to ASM transitions, so two copies of
+            // one payload can be bound to different transitions.
+            (Some(_), true, Some(keep), _) => {
+                superseded.primary_indexed = superseded
+                    .primary_indexed
+                    .checked_add(envelopes_differing_from(
+                        ctx,
+                        scopes,
+                        indices,
+                        keep,
+                        Some(histories),
+                    )?)
+                    .ok_or_else(count_overflow)?;
                 keep
+            }
+            (None, false, Some(keep), _) => {
+                superseded.primary_indexed = superseded
+                    .primary_indexed
+                    .checked_add(envelopes_differing_from(ctx, scopes, indices, keep, None)?)
+                    .ok_or_else(count_overflow)?;
+                keep
+            }
+            (None, false, None, EnvelopeComparison::TailFlags) => {
+                let (carried, note) = flags_only_group(scopes, indices, later);
+                superseded.tail_flags.push(note);
+                carried_flags.extend(carried.map(|flags| (later, flags)));
+                later
             }
             _ => {
                 return Err(CodecError::Malformed(
@@ -1192,6 +1229,9 @@ pub(crate) fn admit_history_bound_scope_variants(
     }
 
     drop(groups);
+    for (index, flags) in carried_flags {
+        scopes[index].tail_flags = Some(flags);
+    }
 
     let mut retained = Vec::new();
     for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
@@ -1203,24 +1243,176 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(superseded)
 }
 
-/// Compare two same-index scope envelopes after removing source-location and
-/// dynamic-class fields. An equivalent envelope is one serialization of the
-/// same logical scope; the later envelope supersedes the earlier one when no
-/// decoded ASM state pair can select a revision.
-fn equivalent_scope_variant_payload(
+/// The flags that the `keep` envelope of a group that differs only in its tail
+/// flags takes from the latest earlier envelope that stores them before the
+/// start of `keep`, where `keep` stores none, and the loss note of the group.
+fn flags_only_group(
+    scopes: &[DesignParameterScope],
+    indices: &[usize],
+    keep: usize,
+) -> (Option<scope::DesignScopeTailFlags>, String) {
+    let kept = &scopes[keep];
+    let kept_at = kept.byte_offset();
+    let carried = match kept.tail_flags {
+        Some(_) => None,
+        None => indices
+            .iter()
+            .map(|index| &scopes[*index])
+            .filter_map(|copy| {
+                let at = copy.byte_offset();
+                let flags = scope::DesignScopeTailFlags {
+                    envelope_offset: Some(at),
+                    ..copy.tail_flags?
+                };
+                flags.lie_within(kept).then_some((at, flags))
+            })
+            .max_by_key(|(at, _)| *at),
+    };
+    let values = |flags: Option<scope::DesignScopeTailFlags>| {
+        flags.map(|flags| (flags.suppressed, flags.rolled_back))
+    };
+    let spell = |(suppressed, rolled_back): (bool, bool)| {
+        format!("suppressed={suppressed}, rolled-back={rolled_back}")
+    };
+    let kept_flags = values(kept.tail_flags.or(carried.map(|(_, flags)| flags)));
+    let kept_clause = match (kept.tail_flags, carried) {
+        (Some(flags), _) => format!(
+            "the decoder kept {} from its later envelope at byte {kept_at}",
+            spell((flags.suppressed, flags.rolled_back))
+        ),
+        (None, Some((at, flags))) => format!(
+            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, so the decoder kept {} from the earlier envelope at byte {at}",
+            spell((flags.suppressed, flags.rolled_back))
+        ),
+        (None, None) => format!(
+            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, and no earlier envelope stores them before that byte"
+        ),
+    };
+    let differing = indices
+        .iter()
+        .filter(|index| **index != keep)
+        .map(|index| &scopes[*index])
+        .filter(|scope| values(scope.tail_flags) != kept_flags)
+        .map(|scope| {
+            let flags = values(scope.tail_flags).map_or_else(|| "none".to_owned(), spell);
+            format!("at byte {}, {flags}", scope.byte_offset())
+        })
+        .collect::<Vec<_>>();
+    let others = if differing.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " {} other envelope(s) store different flags, which were not decoded: {}.",
+            differing.len(),
+            differing.join("; ")
+        )
+    };
+    let note = format!(
+        "Feature scope {} (record {}): {kept_clause} (open item DR-1005).{others}",
+        kept.id, kept.record_index
+    );
+    (carried.map(|(_, flags)| flags), note)
+}
+
+/// Duplicate scope envelopes that admission did not decode.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct SupersededScopeEnvelopes {
+    /// Envelopes not decoded because the primary-indexed envelope of their
+    /// record was, and that differ from it in payload or, where several are
+    /// history-bound, in their current or effective preceding history state.
+    pub(crate) primary_indexed: usize,
+    /// One note for each record whose envelopes differ only in their
+    /// suppressed or rolled-back flags.
+    pub(crate) tail_flags: Vec<String>,
+}
+
+impl SupersededScopeEnvelopes {
+    pub(crate) fn losses(&self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+        let code = crate::loss::F3dLossCode::FeatureScopeEnvelopeSuperseded;
+        let primary_indexed = (self.primary_indexed != 0).then(|| code.note(format!(
+            "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
+            self.primary_indexed
+        )));
+        primary_indexed.into_iter().chain(
+            self.tail_flags
+                .iter()
+                .map(move |note| code.note(note.clone())),
+        )
+    }
+}
+
+/// How two same-index scope envelopes compare, from closest to farthest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum EnvelopeComparison {
+    /// One serialization of the same logical scope.
+    Equivalent,
+    /// The envelopes differ only in their suppressed or rolled-back flags.
+    TailFlags,
+    Different,
+}
+
+/// The envelopes of `indices`, other than `keep`, that differ from `keep` in
+/// payload or, with `histories`, in their current or effective preceding
+/// history state.
+fn envelopes_differing_from(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scopes: &[DesignParameterScope],
+    indices: &[usize],
+    keep: usize,
+    histories: Option<&[crate::history_records::AsmHistory]>,
+) -> Result<usize, CodecError> {
+    let states = |index: usize| {
+        let scope = &scopes[index];
+        histories.map(|histories| {
+            (
+                scope.history_state_id(),
+                crate::history::header_scope_previous_history_state_id(scope, histories),
+            )
+        })
+    };
+    let mut differing = 0;
+    for &index in indices {
+        if index != keep
+            && (states(index) != states(keep)
+                || compare_scope_variant_payloads(ctx, &scopes[keep], &scopes[index])?
+                    != EnvelopeComparison::Equivalent)
+        {
+            differing += 1;
+        }
+    }
+    Ok(differing)
+}
+
+/// Compare two same-index scope envelopes after removing source-location,
+/// dynamic-class and history-state fields. Source locations are the
+/// `*_offset` and `*_offsets` fields, every integer `offset`, and the byte
+/// positions `prefix_end` and `start_frame_end`.
+fn compare_scope_variant_payloads(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     left: &DesignParameterScope,
     right: &DesignParameterScope,
-) -> Result<bool, CodecError> {
+) -> Result<EnvelopeComparison, CodecError> {
     let Some(mut left) = scope_variant_json(ctx, left)? else {
-        return Ok(false);
+        return Ok(EnvelopeComparison::Different);
     };
     let Some(mut right) = scope_variant_json(ctx, right)? else {
-        return Ok(false);
+        return Ok(EnvelopeComparison::Different);
     };
     strip_scope_variant_provenance(ctx, &mut left, true)?;
     strip_scope_variant_provenance(ctx, &mut right, true)?;
-    Ok(left == right)
+    if left == right {
+        return Ok(EnvelopeComparison::Equivalent);
+    }
+    for value in [&mut left, &mut right] {
+        if let serde_json::Value::Object(fields) = value {
+            fields.remove("tail_flags");
+        }
+    }
+    Ok(if left == right {
+        EnvelopeComparison::TailFlags
+    } else {
+        EnvelopeComparison::Different
+    })
 }
 
 fn scope_variant_json(
@@ -1265,8 +1457,17 @@ fn strip_scope_variant_provenance(
             }
         }
         serde_json::Value::Object(fields) => {
+            // An integer `offset` is a byte location: the `offset` of a
+            // located value (`Located`, `RecordedValue`) and of a Hole's
+            // standard-name block. A float `offset` (an alignment vector) is
+            // geometry and stays compared.
+            let located = fields.get("offset").is_some_and(serde_json::Value::is_u64);
             fields.retain(|key, _| {
-                if key.ends_with("_offset") || key.ends_with("_offsets") {
+                if key.ends_with("_offset")
+                    || key.ends_with("_offsets")
+                    || (located && key == "offset")
+                    || matches!(key.as_str(), "prefix_end" | "start_frame_end")
+                {
                     return false;
                 }
                 if top_level
@@ -1634,42 +1835,40 @@ fn unparsed_rigid_group_tail_length(
     paired.checked_sub(kind_end)
 }
 
-fn typed_fixed_scope_tail_is_valid(
+/// The tail offset of the suppressed flag of a typed-reference tail in the
+/// 196-byte form, or the Assemble form with one more typed reference.
+fn typed_scope_tail(
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
     extended: bool,
     label_units: usize,
-) -> bool {
+) -> Option<usize> {
     use crate::bytes::typed_local_reference_target as target;
-    (|| {
-        let tail = bytes.get(kind_end..paired_at)?;
-        let label = label_units.checked_mul(2)?;
-        let first = typed_tail::FIRST_REFERENCE.checked_add(label)?;
-        let shift = label + usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
-        let state =
-            tail.get(typed_tail::SECOND_ZERO_RUN_2 + shift..typed_tail::THIRD_REFERENCE + shift)?;
-        let zero_run = if label_units == 0 {
-            tail.get(typed_tail::ZERO_RUN_15..first)? == [0; 15]
-        } else {
-            tail_label(tail, 0)?.1 == named_tail::ASSOCIATED_COUNT + label
-                && tail.get(named_tail::ASSOCIATED_COUNT + label..first)? == [0; 7]
-        };
-        (tail.len() == typed_tail::LEN + shift
-            && zero_run
-            && target(tail, first).is_some()
-            && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID + label).is_some())
-            && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
-            && if extended {
-                state.iter().all(|byte| *byte <= 1)
-            } else {
-                state == [0; 2]
-            }
-            && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
-            && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
-            .then_some(())
-    })()
-    .is_some()
+    let tail = bytes.get(kind_end..paired_at)?;
+    let label = label_units.checked_mul(2)?;
+    let first = typed_tail::FIRST_REFERENCE.checked_add(label)?;
+    let shift = label + usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+    let counts = if label_units == 0 {
+        tail.get(typed_tail::ZERO_WORD..typed_tail::STATE_BYTES)? == [0; 12]
+    } else {
+        tail_label(tail, 0)?.1 == typed_tail::ZERO_COUNT + label
+            && tail.get(typed_tail::ZERO_COUNT + label..typed_tail::STATE_BYTES + label)? == [0; 4]
+    };
+    let state = tail.get(typed_tail::STATE_BYTES + label..first)?;
+    let suppressed = *tail.get(typed_tail::SUPPRESSED_FLAG + shift)?;
+    let rolled_back = *tail.get(typed_tail::ROLLED_BACK_FLAG + shift)?;
+    (tail.len() == typed_tail::LEN + shift
+        && counts
+        && suppressed <= 1
+        && rolled_back <= 1
+        && (suppressed == 1 || state == [0; 3])
+        && target(tail, first).is_some()
+        && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID + label).is_some())
+        && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
+        && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
+        && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
+        .then_some(typed_tail::SUPPRESSED_FLAG + shift)
 }
 
 pub(crate) fn typed_scope_previous_history_offset(kind: &str, tail_length: usize) -> Option<usize> {
@@ -1827,15 +2026,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 } else {
                     ScopeTailForm::TypedFixed
                 };
-                if typed_fixed_scope_tail_is_valid(
-                    bytes,
-                    kind_end,
-                    paired_at,
-                    extended,
-                    label_units,
-                ) && fixed_candidate
-                    .replace((at, kind_end, tail_length, form, label_units))
-                    .is_some()
+                if typed_scope_tail(bytes, kind_end, paired_at, extended, label_units).is_some()
+                    && fixed_candidate
+                        .replace((at, kind_end, tail_length, form, label_units))
+                        .is_some()
                 {
                     fixed_ambiguous = true;
                 }
@@ -1844,7 +2038,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 kind == "Combine" || (registered_boundary_fill && kind == "BoundaryFill");
             let named_tail = label_units > 0
                 && tail_length <= 590
-                && (named_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
+                && (plain_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
                     extended_named || tail.references.extra_bytes() == Some(0)
                 }) || (kind == "Hole"
                     && named_reciprocal_hole_history(
@@ -1893,7 +2087,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             None
         };
         let named = (tail_form == ScopeTailForm::Named)
-            .then(|| named_scope_tail(bytes, kind_end, paired_at))
+            .then(|| plain_scope_tail(bytes, kind_end, paired_at))
             .flatten();
         let reference_table_end = kind_at.checked_sub(4)?;
         let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
@@ -2052,6 +2246,28 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 ),
             })
             .and_then(|offset| kind_end.checked_add(offset));
+        let tail_flags = match tail_form {
+            ScopeTailForm::Named => named.as_ref().map(|named| named.flags),
+            ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => typed_scope_tail(
+                bytes,
+                kind_end,
+                paired_at,
+                tail_form == ScopeTailForm::TypedExtended,
+                label_units,
+            ),
+            ScopeTailForm::Fixed => {
+                plain_scope_tail(bytes, kind_end, paired_at).map(|plain| plain.flags)
+            }
+        }
+        .and_then(|at| {
+            let at = kind_end.checked_add(at)?;
+            Some(scope::DesignScopeTailFlags {
+                suppressed: *bytes.get(at)? == 1,
+                rolled_back: *bytes.get(at.checked_add(1)?)? == 1,
+                suppressed_offset: u64_from_index(at),
+                envelope_offset: None,
+            })
+        });
         let named_references = named
             .map(|named| named.references)
             .filter(|references| references.extra_bytes().is_some_and(|extra| extra > 0));
@@ -2266,6 +2482,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         })
         .ok()?;
         scope.source_kind = source_kind;
+        scope.tail_flags = tail_flags;
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -2524,16 +2741,31 @@ fn tail_label(bytes: &[u8], kind_end: usize) -> Option<(String, usize)> {
     (!label.chars().any(char::is_control)).then_some((label, end.checked_sub(kind_end)?))
 }
 
-/// A labeled parameter-scope tail in the plain reference spelling.
-struct NamedScopeTail {
+/// A parameter-scope tail in the plain reference spelling.
+struct PlainScopeTail {
     references: scope::DesignNamedScopeReferences,
     /// Tail offset of the preceding history-state identity.
     previous_history_state_id: usize,
+    /// Tail offset of the suppressed flag; the rolled-back flag follows it.
+    flags: usize,
 }
 
-fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<NamedScopeTail> {
+fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<PlainScopeTail> {
     let bytes = bytes.get(..paired_at)?;
-    let (_, label_end) = tail_label(bytes, kind_end)?;
+    let label_end = if View::u32_le_at(bytes, kind_end.checked_add(named_tail::LABEL_LENGTH)?)? == 0
+    {
+        if View::u32_le_at(bytes, kind_end)? == 0
+            || bytes.get(
+                kind_end.checked_add(named_tail::ZERO_WORD)?
+                    ..kind_end.checked_add(named_tail::LABEL_LENGTH)?,
+            )? != [0; 4]
+        {
+            return None;
+        }
+        named_tail::ASSOCIATED_COUNT
+    } else {
+        tail_label(bytes, kind_end)?.1
+    };
     let mut cursor = kind_end.checked_add(label_end)?;
     let count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
     cursor = cursor.checked_add(4)?;
@@ -2544,11 +2776,9 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
     for _ in 0..count {
         associated.push(named_scope_reference(bytes, &mut cursor)?.into_local()?);
     }
-    let padding_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::PADDING)?;
-    if bytes.get(cursor..padding_end)? != [0; 3] {
-        return None;
-    }
-    cursor = padding_end;
+    let state_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::STATE_BYTES)?;
+    let state = bytes.get(cursor..state_end)?;
+    cursor = state_end;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let middle = named_scope_reference(bytes, &mut cursor)?.into_local();
     let previous_history_state_id = cursor.checked_sub(kind_end)?;
@@ -2565,7 +2795,7 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
         .checked_add(named_tail::SECOND_REFERENCE - named_tail::SECOND_EVALUATION_EPOCH)?;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let flags = named_tail::THIRD_REFERENCE - named_tail::LANE_FLAGS;
-    let flag = |at: usize| bytes.get(at) == Some(&0);
+    let flag = |at: usize| bytes.get(at).is_some_and(|flag| *flag <= 1);
     let close = |mut at: usize| {
         named_scope_reference(bytes, &mut at)?.into_local()?;
         let closing = named_scope_reference(bytes, &mut at)?.into_local();
@@ -2576,24 +2806,28 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
     let long_form = (bytes.get(cursor) == Some(&1) && flag(cursor + 1) && flag(cursor + 2))
         .then(|| close(cursor + flags))
         .flatten();
-    let closing = match long_form {
-        Some(closing) => closing,
+    let (closing, suppressed_at) = match long_form {
+        Some(closing) => (closing, cursor.checked_add(1)?),
         None => {
             let short_form =
                 associated.is_empty() && middle.is_none() && flag(cursor) && flag(cursor + 1);
             if !short_form || close(cursor + flags - 1)?.is_some() {
                 return None;
             }
-            None
+            (None, cursor)
         }
     };
-    Some(NamedScopeTail {
+    if *bytes.get(suppressed_at)? == 0 && state != [0; 3] {
+        return None;
+    }
+    Some(PlainScopeTail {
         references: scope::DesignNamedScopeReferences {
             associated,
             middle,
             closing,
         },
         previous_history_state_id,
+        flags: suppressed_at.checked_sub(kind_end)?,
     })
 }
 

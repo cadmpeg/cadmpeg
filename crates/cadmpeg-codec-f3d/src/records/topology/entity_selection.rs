@@ -1125,6 +1125,10 @@ pub(crate) struct DesignProfileCurveSelection {
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
     pub(crate) identity_end_offset: u64,
+    /// Lost profile-reference records that the status record at the
+    /// selection index plus two references, in stored order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) lost_reference_records: Vec<u32>,
     /// Ordered region groups with their boundary loops.
     pub(crate) groups: Vec<DesignProfileRegionGroup>,
 }
@@ -1179,6 +1183,11 @@ impl DesignProfileCurveSelection {
                         .all(|entry| matches!(entry.entry_fields, [0 | 1, 1, 1]))
                 })
         })
+    }
+
+    /// Whether the status record references a lost profile-reference record.
+    pub(crate) fn reference_lost(&self) -> bool {
+        !self.lost_reference_records.is_empty()
     }
 
     pub(crate) fn valid_layout(&self) -> bool {
