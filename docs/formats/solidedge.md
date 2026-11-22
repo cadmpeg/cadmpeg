@@ -321,7 +321,10 @@ A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
 `JMCutoutFunction`, `JMRevolvedProtrusionFunction`,
 `JMMultiSweepProtrusionFunction`, `JMLoftedProtrusionFunction` or
 `JMBaseTabFunction` stores the identifier of its profile as the `u32` 72
-bytes after the end of its function name (§4.2). A feature with function
+bytes after the end of its function name (§4.2). For
+`JMMultiSweepProtrusionFunction` that profile is the sweep path, and the
+`u32` 104 bytes after the end of the function name is the identifier of the
+section profile. A feature with function
 `JMHoleFunction`, `JMFlangeFunction` or `JMFastPatternFunction` stores it 68
 bytes after the end of its function name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
@@ -372,7 +375,7 @@ object offset 12 is `3`. The three `f64` at offset 13 are a point on the
 axis in model space, and the three `f64` at offset 37 are the unit axis
 direction. The sweep angle is a `Double Value Object` or a `CLSID_JDim`.
 
-## 7. Holes, rounds and chamfers
+## 7. Holes, rounds, chamfers and thin walls
 
 ### 7.1 Dimension values
 
@@ -410,6 +413,13 @@ A `CLSID_JMHolePropData` object stores:
 | 28 | `f64` counterbore depth |
 | 36 | `f64` countersink angle, in degrees |
 | 72 | `f64` hole depth |
+| 1053 | `f64` thread minor diameter, in millimetres |
+| 1061 | `f64` thread major diameter, in millimetres |
+| 1069 | `u32` thread designation length `k`, in UTF-16 code units |
+| 1073 | `k` UTF-16LE code units: the thread designation |
+
+A hole of type `3` is threaded with the stored thread. A hole of another
+type can keep thread values from an earlier type; they do not apply.
 
 ### 7.3 Rounds
 
@@ -439,8 +449,30 @@ object identifiers after the end of its function name:
 | 156 | the first setback, a `CLSID_JDim` |
 | 184 | the second setback or the angle, a `CLSID_JDim`, or `0` |
 
-Chamfer type `41` has one setback on both faces. Type `43` has two setbacks.
-Type `42` has a setback and an angle.
+Chamfer type `41` has one setback on both faces. Type `43` has two setbacks;
+the first setback is on the reference face. Type `42` has a setback on the
+reference face and an angle from it.
+
+### 7.5 Thin walls
+
+A `CLSID_JMPart` feature with function `JMThinwallAssocFunctionNew` stores
+these object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the thin-wall type, a `Double Value Object` |
+| 96 | the wall thickness, a `CLSID_JDim` |
+| 124 | the `CLSID_JMTopologyProxy` of the open faces |
+
+Type `4` hollows the body inward by the thickness, with the open faces
+removed.
+
+### 7.6 Edge selections
+
+A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge. Its
+`f64` values at object offsets 121, 129 and 137 are the edge start point,
+the `f64` values at offsets 145, 153 and 161 are the unit edge direction,
+and the `f64` at offset 177 is the edge length. Lengths are metres.
 
 ## 8. Patterns and mirrors
 
@@ -480,7 +512,8 @@ direction, and the second count and spacing along the second direction.
 A circular pattern references one `CLSID_JArc2d` object. Its centre is on
 the pattern axis, which is normal to the profile plane. The first count is
 the number of instances, and the angle between instances is the
-`f64` at `E` + 34.
+`f64` at `E` + 34. The instances follow the seed counter-clockwise about
+the profile normal `A` (§5.1).
 
 All values are in profile coordinates, metres and radians.
 
@@ -493,7 +526,7 @@ stores:
 | ---: | --- |
 | 92 | `u32` seed count `c` |
 | 96 | `c` `u32` seed feature identifiers |
-| 329 | for `c` = 1, `u32` identifier of the mirror plane |
+| 325 + 4·`c` | `u32` identifier of the mirror plane |
 
 The mirror plane is a `ReferencePlaneObject`, the plane about which the seed
 is mirrored. Its object stores three `f64` at offset 13, a point on the plane,
