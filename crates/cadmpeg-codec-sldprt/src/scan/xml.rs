@@ -63,10 +63,19 @@ pub(super) fn census(
         return Ok(false);
     }
     scan.census.get_or_insert_with(FeatureCensus::default);
+    let applications = document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.tag_name().name() == "Application")
+        .collect::<Vec<_>>();
     for node in document.descendants().filter(roxmltree::Node::is_element) {
         budget.check()?;
         let name = node.tag_name().name();
-        if matches!(name, "Keywords" | "Configuration" | "Dimension") {
+        if matches!(name, "Keywords" | "Configuration" | "Dimension")
+            || node
+                .ancestors()
+                .any(|ancestor| applications.contains(&ancestor))
+        {
             continue;
         }
         let visit = budget.feature()?;
