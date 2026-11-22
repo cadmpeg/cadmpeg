@@ -4343,7 +4343,39 @@ impl SupportFrame {
     }
 }
 
+/// The support frame of a sketch or hole-position profile: the plane that a
+/// principal-plane component record of the profile's own object names
+/// (`principal_profile_frame`), otherwise [`reference_support_frame`].
 pub(super) fn feature_input_support_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
+    if let Some((frame, plane)) =
+        principal_profile_frame(plane_frames, plane_index, context_start, start, end)
+    {
+        return Some(SupportFrame {
+            frame,
+            binding: PlaneBinding::Principal(plane),
+        });
+    }
+    reference_support_frame(
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+}
+
+/// The support frame that a profile's plane reference, component frame
+/// records or explicit frame give, without its principal-plane component
+/// records. A sketch block definition takes this frame.
+pub(super) fn reference_support_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
