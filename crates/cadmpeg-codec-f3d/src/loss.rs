@@ -326,6 +326,8 @@ pub(crate) enum F3dLossCode {
     DecalDefinitionUnresolved,
     /// A body-override appearance replaced a different appearance that the body's material assignment names; the override is assumed to take precedence.
     BodyOverridePrecedenceAssumed,
+    /// A later body-override appearance naming a different appearance than the body's first override is not bound; the first override is assumed to bind.
+    BodyOverrideSuperseded,
     /// Source parametric edge references marked lost have no independent proof.
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
@@ -1531,6 +1533,7 @@ impl F3dLossCode {
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
         Self::BodyOverridePrecedenceAssumed,
+        Self::BodyOverrideSuperseded,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureMeshImportTessellationsUnresolved,
@@ -2395,6 +2398,7 @@ impl F3dLossCode {
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
             Self::BodyOverridePrecedenceAssumed => "appearance.body-override-precedence-assumed",
+            Self::BodyOverrideSuperseded => "appearance.body-override-superseded",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
@@ -3791,6 +3795,7 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::BodyOverridePrecedenceAssumed
+            | Self::BodyOverrideSuperseded
             | Self::ParameterExpressionUnbound
             | Self::ParameterReferencedDesignUnscoped
             | Self::ParameterOwnerOutsideTimeline
@@ -4848,9 +4853,9 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::FaceAppearanceAmbiguous | Self::BodyOverridePrecedenceAssumed => {
-                LossTaxonomy::AppearanceReduced
-            }
+            Self::FaceAppearanceAmbiguous
+            | Self::BodyOverridePrecedenceAssumed
+            | Self::BodyOverrideSuperseded => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
@@ -5187,6 +5192,7 @@ mod tests {
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
                 "appearance.body-override-precedence-assumed",
+                "appearance.body-override-superseded",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.mesh-import-tessellations-unresolved",
