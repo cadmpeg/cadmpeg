@@ -47,7 +47,7 @@ pub struct DesignScope {
     /// The scope's current states.
     pub current: Vec<CurrentState>,
     /// Bodies owned by definitions the scope spans that no member produces.
-    #[serde(default, with = "cadmpeg_core::distinct_keys::set")]
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
     #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<BodyId>"))]
     pub unproduced: BTreeSet<BodyId>,
 }
