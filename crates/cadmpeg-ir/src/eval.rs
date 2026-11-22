@@ -693,35 +693,15 @@ fn refine_nurbs_surface_parameters(
     u_domain: ParameterInterval,
     v_domain: ParameterInterval,
     budget: &WorkBudget,
-) -> Result<Option<FinitePoint2>, ResourceLimit> {
+) -> Result<Option<(FinitePoint2, FinitePoint3)>, ResourceLimit> {
     let distance = |position: Point3| position.distance(point);
     let [start_u, start_v] = start.coordinates();
     let mut parameters = FinitePoint2::from_coordinates(
         u_domain.project(ExtendedReal::from_finite(start_u)),
         v_domain.project(ExtendedReal::from_finite(start_v)),
     );
+    let mut last_position: Option<FinitePoint3> = None;
     for _ in 0..32 {
-        let Some(position) = finite_or_refusal(
-            crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                budget,
-                |admission| {
-                    crate::eval::decode::nurbs_surface_point(
-                        admission,
-                        surface,
-                        parameters.u,
-                        parameters.v,
-                    )
-                },
-            ),
-        )?
-        else {
-            return Ok(None);
-        };
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
         let Some(partials) = finite_or_refusal(
             crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
                 budget,
@@ -738,6 +718,13 @@ fn refine_nurbs_surface_parameters(
         else {
             return Ok(None);
         };
+        let position = partials.point;
+        last_position = Some(position);
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
@@ -767,16 +754,17 @@ fn refine_nurbs_surface_parameters(
                 return Ok(None);
             };
             if distance(candidate_position.get()) <= current_distance {
-                accepted = Some(candidate);
+                accepted = Some((candidate, candidate_position));
                 break;
             }
             scale = scale.halved();
         }
-        let Some(candidate) = accepted else {
+        let Some((candidate, candidate_position)) = accepted else {
             break;
         };
         let (moved_u, moved_v) = (candidate.u - parameters.u, candidate.v - parameters.v);
         parameters = candidate;
+        last_position = Some(candidate_position);
         if moved_u.abs()
             <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.u.abs())
             && moved_v.abs()
@@ -785,7 +773,7 @@ fn refine_nurbs_surface_parameters(
             break;
         }
     }
-    Ok(Some(parameters))
+    Ok(last_position.map(|position| (parameters, position)))
 }
 
 fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
@@ -876,7 +864,7 @@ fn complete_nurbs_surface_starts(
             let parameters = refine_nurbs_surface_parameters(
                 ctx, surface, point, start, u_domain, v_domain, budget,
             )?
-            .unwrap_or(start);
+            .map_or(start, |(parameters, _)| parameters);
             Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
         };
     let mut best_distance = f64::INFINITY;
@@ -1126,22 +1114,9 @@ fn solve_nurbs_surface_parameter(
         if distance.is_finite() && distance <= tolerance {
             return Ok(Some((parameters, distance)));
         }
-        if let Some(refined) = refine_nurbs_surface_parameters(
+        if let Some((refined, position)) = refine_nurbs_surface_parameters(
             ctx, surface, point, parameters, u_domain, v_domain, budget,
         )? {
-            let Some(position) = finite_or_refusal(
-                crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                    budget,
-                    |admission| {
-                        crate::eval::decode::nurbs_surface_point(
-                            admission, surface, refined.u, refined.v,
-                        )
-                    },
-                ),
-            )?
-            else {
-                return Ok(None);
-            };
             let distance = (position.x - point.x)
                 .portable_hypot(position.y - point.y)
                 .portable_hypot(position.z - point.z);
@@ -1160,24 +1135,8 @@ fn solve_nurbs_surface_parameter(
     let mut best_seed_distance = f64::INFINITY;
     let mut best_fits = false;
     for &start in &starts {
-        let Some(parameters) = refine_nurbs_surface_parameters(
+        let Some((parameters, position)) = refine_nurbs_surface_parameters(
             ctx, surface, point, start, u_domain, v_domain, budget,
-        )?
-        else {
-            continue;
-        };
-        let Some(position) = finite_or_refusal(
-            crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                budget,
-                |admission| {
-                    crate::eval::decode::nurbs_surface_point(
-                        admission,
-                        surface,
-                        parameters.u,
-                        parameters.v,
-                    )
-                },
-            ),
         )?
         else {
             continue;
@@ -2337,8 +2296,10 @@ fn nurbs_pcurve_differential_unsettled(
             let derivative = |second| {
                 linear_nurbs_derivative(
                     &basis,
-                    &poles,
-                    local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                    CurvePoles::Slice {
+                        points: &poles,
+                        weights: local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                    },
                     1,
                     scale.get(),
                     second,
@@ -3609,27 +3570,15 @@ fn curve_derivative_unsettled(
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter).ok_or(EvaluationFailure::NoValue)?;
-            let poles = nurbs.pole_rows();
-            let points = scratch
-                .collect((0..poles.count()).map(|index| poles.point_at(index)))
-                .ok_or(EvaluationFailure::NoValue)?;
-            let weights = match poles {
-                crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
-                crate::geometry::nurbs::NurbsPoles3::Rational { points } => Some(
-                    scratch
-                        .collect(points.iter().map(|pole| Some(pole.weight.get())))
-                        .ok_or(EvaluationFailure::NoValue)?,
-                ),
-            };
-            nurbs_curve_derivative(
+            let poles = CurvePoles::Rows(nurbs.pole_rows());
+            scratch.settle(nurbs_curve_poles_derivative_unsettled(
                 scratch,
                 nurbs.degree(),
                 nurbs.knots(),
-                &points,
-                weights.as_deref(),
+                poles,
                 parameter,
                 order,
-            )
+            ))
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let points = scratch
@@ -3682,6 +3631,38 @@ fn sinh_cosh_lanes(
 /// left the finite range, as did a point or derivative projection that
 /// overflows. A knot vector or pole list that states no span at `t`, a zero
 /// weight sum, and a span of zero width have no value.
+#[derive(Clone, Copy)]
+enum CurvePoles<'a> {
+    Slice {
+        points: &'a [FinitePoint3],
+        weights: Option<&'a [f64]>,
+    },
+    Rows(&'a crate::geometry::nurbs::NurbsPoles3<FinitePoint3>),
+}
+
+impl CurvePoles<'_> {
+    fn len(self) -> usize {
+        match self {
+            Self::Slice { points, .. } => points.len(),
+            Self::Rows(rows) => rows.count(),
+        }
+    }
+
+    fn point_at(self, index: usize) -> Option<FinitePoint3> {
+        match self {
+            Self::Slice { points, .. } => points.get(index).copied(),
+            Self::Rows(rows) => rows.point_at(index),
+        }
+    }
+
+    fn weight_at(self, index: usize) -> Option<f64> {
+        match self {
+            Self::Slice { weights, .. } => weights.and_then(|weights| weights.get(index).copied()),
+            Self::Rows(rows) => rows.weight_at(index),
+        }
+    }
+}
+
 fn nurbs_curve_derivative(
     scratch: &decode::Scratch<'_, '_>,
     degree: u32,
@@ -3691,23 +3672,24 @@ fn nurbs_curve_derivative(
     t: FiniteReal,
     order: CurveDerivative,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    scratch.settle(nurbs_curve_derivative_unsettled(
+    scratch.settle(nurbs_curve_poles_derivative_unsettled(
         scratch,
         degree,
         knots,
-        control_points,
-        weights,
+        CurvePoles::Slice {
+            points: control_points,
+            weights,
+        },
         t,
         order,
     ))
 }
 
-fn nurbs_curve_derivative_unsettled(
+fn nurbs_curve_poles_derivative_unsettled(
     scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
-    control_points: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    poles: CurvePoles<'_>,
     t: FiniteReal,
     order: CurveDerivative,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
@@ -3721,7 +3703,7 @@ fn nurbs_curve_derivative_unsettled(
             scratch.admission,
             knots,
             degree,
-            control_points.len(),
+            poles.len(),
             t,
         ))
         .flatten()
@@ -3754,7 +3736,7 @@ fn nurbs_curve_derivative_unsettled(
         })?;
         if degree == 1 {
             let [x, y, z] = finite_lanes(
-                linear_nurbs_derivative(&basis, control_points, weights, span, scale.get(), second)
+                linear_nurbs_derivative(&basis, poles, span, scale.get(), second)
                     .ok_or(no_value)?,
             )
             .map_err(|_| non_finite)?;
@@ -3775,8 +3757,8 @@ fn nurbs_curve_derivative_unsettled(
         homogeneous_curve_sum(
             scratch,
             values,
-            |index| control_points.get(index).copied(),
-            |index| weights.and_then(|weights| weights.get(index).copied()),
+            |index| poles.point_at(index),
+            |index| poles.weight_at(index),
             span - degree,
         )
         .ok_or(non_finite)
@@ -3832,24 +3814,17 @@ fn nurbs_curve_derivative_unsettled(
 /// coordinate whose quotient overflows.
 fn linear_nurbs_derivative(
     basis: &[f64],
-    control_points: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    poles: CurvePoles<'_>,
     span: usize,
     width: f64,
     second: bool,
 ) -> Option<[Result<FiniteReal, f64>; 3]> {
     use crate::math::sum::{product_sum, scaled_finite, ProductSum};
     let start = span.checked_sub(1)?;
-    let first = *control_points.get(start)?;
-    let last = *control_points.get(span)?;
-    let weight0 = weights
-        .and_then(|weights| weights.get(start))
-        .copied()
-        .unwrap_or(1.0);
-    let weight1 = weights
-        .and_then(|weights| weights.get(span))
-        .copied()
-        .unwrap_or(1.0);
+    let first = poles.point_at(start)?;
+    let last = poles.point_at(span)?;
+    let weight0 = poles.weight_at(start).unwrap_or(1.0);
+    let weight1 = poles.weight_at(span).unwrap_or(1.0);
     let ProductSum::Value(base_weight) =
         product_sum([Some([basis[0], weight0]), Some([basis[1], weight1])].into_iter())
     else {
