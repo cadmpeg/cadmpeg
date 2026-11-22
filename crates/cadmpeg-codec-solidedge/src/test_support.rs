@@ -1026,3 +1026,6 @@ pub(crate) fn dressup_document(
 
 mod patterns;
 pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};
+
+mod assembly;
+pub(crate) use assembly::{assembly_document, OccurrenceSpec, SiteSpec};

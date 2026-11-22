@@ -11,7 +11,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
-use crate::{container, dialect, features, loss::SolidEdgeLossCode, settings};
+use crate::{assembly, container, dialect, features, loss::SolidEdgeLossCode, settings};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
@@ -49,6 +49,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         };
         ir.model.product_definitions.push(product);
         if let Some(cluster) = cluster {
+            assembly::project(
+                ctx,
+                &snapshot,
+                cluster,
+                &definition,
+                &mut ir,
+                &mut body.losses,
+            )?;
             features::project(
                 ctx,
                 &snapshot,
