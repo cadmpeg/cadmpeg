@@ -140,6 +140,18 @@ fn application_element_is_not_a_feature_and_is_named() {
 }
 
 #[test]
+fn history_member_with_another_root_is_unread() {
+    let decoded = decode(
+        "swXmlContents/KeyWords",
+        br#"<Other Name="Part"><Feature id="1" Name="Boss"/></Other>"#,
+    );
+    assert!(decoded.histories.is_empty());
+    assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
+    let message = &decoded.losses[0].message;
+    assert!(message.contains(r#"its root element "Other""#), "{message}");
+}
+
+#[test]
 fn history_member_that_is_not_text_is_unread() {
     let decoded = decode("swXmlContents/KeyWords", &[0x84, b'<', 0xff, b'>']);
     assert!(decoded.histories.is_empty());

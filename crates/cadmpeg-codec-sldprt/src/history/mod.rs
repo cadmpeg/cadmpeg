@@ -197,6 +197,16 @@ pub(crate) fn histories(
             };
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
+                if named {
+                    report_unread(
+                        losses,
+                        stream.as_str(),
+                        &format!(
+                            "its root element {:?} is not a Keywords root",
+                            root.tag_name().name()
+                        ),
+                    );
+                }
                 return Ok(histories);
             }
             let applications = root
