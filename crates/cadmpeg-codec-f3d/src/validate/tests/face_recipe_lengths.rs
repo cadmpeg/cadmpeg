@@ -6,11 +6,15 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
     use crate::records::recipes::ConstructionRecipeKind;
 
     assert_eq!(
-        crate::validate::recipe_program_operand_length(ConstructionRecipeKind::Face),
+        crate::validate::operand_groups::recipe_program_operand_length(
+            ConstructionRecipeKind::Face
+        ),
         Some(16)
     );
     assert_eq!(
-        crate::validate::recipe_program_operand_length(ConstructionRecipeKind::BoundedFace),
+        crate::validate::operand_groups::recipe_program_operand_length(
+            ConstructionRecipeKind::BoundedFace
+        ),
         Some(24)
     );
     for kind in [
@@ -18,7 +22,10 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
         ConstructionRecipeKind::Edge,
         ConstructionRecipeKind::Vertex,
     ] {
-        assert_eq!(crate::validate::recipe_program_operand_length(kind), None);
+        assert_eq!(
+            crate::validate::operand_groups::recipe_program_operand_length(kind),
+            None
+        );
     }
 }
 

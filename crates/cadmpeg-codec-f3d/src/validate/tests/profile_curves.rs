@@ -47,7 +47,7 @@ fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
     };
     let validate = |selection: &DesignProfileCurveSelection| {
         let mut findings = Vec::new();
-        super::super::validate_profile_curve_selection(selection, &mut findings);
+        super::super::sketches::validate_profile_curve_selection(selection, &mut findings);
         findings
     };
     assert!(validate(&selection).is_empty());
