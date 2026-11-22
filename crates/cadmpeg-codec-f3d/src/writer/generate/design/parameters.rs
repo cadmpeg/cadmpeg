@@ -15,8 +15,9 @@ use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{parameter_flattened, parameter_renamed, value_unwritable};
-use cadmpeg_ir::design::dimension::ParameterRef;
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
+use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -51,7 +52,103 @@ pub(in crate::writer::generate) struct ParameterPlan {
     claimed: Vec<PlannedParameter>,
     /// The names of the new parameters written features own.
     owned: Vec<String>,
+    /// The driven parameters, which only the dimension that binds them can
+    /// write.
+    driven: Vec<DrivenParameter>,
     losses: Vec<LossNote>,
+}
+
+/// A `Driven` parameter (the parameter of a driven dimension).
+struct DrivenParameter {
+    source: ParameterId,
+    name: String,
+    form: Form,
+    unit: Option<UnitSymbol>,
+    /// The cached value in Fusion's database units.
+    evaluated: Option<f64>,
+    literal: Option<RecordLiteral>,
+    comment: Option<String>,
+    unheld: Unheld,
+    /// Whether a written dimension owns it.
+    taken: bool,
+}
+
+/// The literal the record of a driven dimension's parameter stores (the
+/// source setting `f3d:literal`), which can differ from its measured value
+/// (f3d.md §3.1, "Sketch dimensions").
+#[derive(Clone)]
+pub(super) struct RecordLiteral {
+    pub(super) text: String,
+    /// Its value in Fusion's database units.
+    pub(super) value: f64,
+}
+
+impl RecordLiteral {
+    /// The literal of `parameter`'s source setting `f3d:literal`, where it is
+    /// one number with a unit of the parameter's quantity.
+    fn of(parameter: &DesignParameter, form: Form) -> Option<Self> {
+        let Some(NativeOption::Text(Dimension::Literal(text))) = parameter
+            .source_settings
+            .get(crate::design_v11::parameters::LITERAL)
+        else {
+            return None;
+        };
+        let node = crate::design_v11::parameters::literal(text.as_str(), &parameter.kind)?;
+        let canonical = expression::evaluate(&node, &|_| None)?;
+        Some(Self {
+            text: text.as_str().to_owned(),
+            value: form.database(canonical),
+        })
+    }
+}
+
+/// A driven parameter that a dimension can own.
+pub(super) struct Driven {
+    index: usize,
+    /// The cached value in Fusion's database units.
+    pub(super) evaluated: Option<f64>,
+    /// The literal its source record stores, which its record keeps.
+    pub(super) literal: Option<RecordLiteral>,
+    pub(super) unit: UnitSymbol,
+}
+
+/// What the record of a written parameter does not hold of its source, each
+/// an entry of its loss: a source name other than the written one, a
+/// container or attribute owner, and a display presentation.
+struct Unheld {
+    renamed: Option<String>,
+    unbound: Option<String>,
+    displayed: Option<String>,
+}
+
+impl Unheld {
+    fn of(parameter: &DesignParameter, name: &str) -> Self {
+        let source_name = parameter
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str);
+        Self {
+            renamed: (source_name != Some(name)).then(|| {
+                format!(
+                    "{} ({} -> `{name}`)",
+                    parameter.id,
+                    source_name.map_or_else(|| "no name".to_owned(), |name| format!("`{name}`")),
+                )
+            }),
+            unbound: match &parameter.owner {
+                Some(ParameterOwner::Container(container)) => {
+                    Some(format!("{} (owner container {container})", parameter.id))
+                }
+                Some(ParameterOwner::Attribute(attribute)) => {
+                    Some(format!("{} (owner attribute {attribute})", parameter.id))
+                }
+                Some(ParameterOwner::Feature(_)) | None => None,
+            },
+            displayed: parameter
+                .display
+                .map(|display| format!("{} ({display:?})", parameter.id)),
+        }
+    }
 }
 
 /// A parameter a written feature owns, as its record holds it.
@@ -68,6 +165,7 @@ pub(super) struct OwnedParameter {
     pub(super) ordinal: u32,
     /// Whether the expression names another parameter.
     pub(super) names_parameter: bool,
+    pub(super) comment: Option<String>,
 }
 
 /// One user parameter as the record holds it.
@@ -146,6 +244,14 @@ impl Form {
             Self::Angle | Self::Real => database,
         }
     }
+
+    fn quantity(self) -> Quantity {
+        match self {
+            Self::Length => Quantity::LENGTH,
+            Self::Angle => Quantity::ANGLE,
+            Self::Real => Quantity::REAL,
+        }
+    }
 }
 
 /// The plan for the parameters of the scope of `definition`.
@@ -160,18 +266,45 @@ pub(in crate::writer::generate) fn plan(
         .filter(|parameter| parameter.scope == *definition)
         .collect::<Vec<_>>();
     let mut omitted_kind = Vec::new();
-    let mut omitted_driven = Vec::new();
+    let mut driven_candidates = Vec::new();
     let mut candidates = Vec::new();
     for parameter in parameters {
         match (Form::of(&parameter.kind), &parameter.definition) {
             (None, _) => omitted_kind.push(parameter.id.to_string()),
-            (Some(_), ParameterDefinition::Driven) => {
-                omitted_driven.push(parameter.id.to_string());
-            }
+            (Some(form), ParameterDefinition::Driven) => driven_candidates.push((parameter, form)),
             (Some(form), _) => candidates.push((parameter, form)),
         }
     }
-    let names = Names::new(&candidates);
+    // The driven parameters are named after the others, so that their names
+    // change none of those.
+    let names = Names::new(
+        &candidates
+            .iter()
+            .chain(&driven_candidates)
+            .copied()
+            .collect::<Vec<_>>(),
+    );
+    let driven = driven_candidates
+        .iter()
+        .enumerate()
+        .map(|(position, (parameter, form))| {
+            let name = names.of(candidates.len() + position);
+            DrivenParameter {
+                source: parameter.id.clone(),
+                name: name.to_owned(),
+                form: *form,
+                unit: form.unit(parameter.unit.as_ref()),
+                evaluated: cached(parameter).map(|value| form.database(value)),
+                literal: RecordLiteral::of(parameter, *form),
+                comment: parameter
+                    .comment
+                    .clone()
+                    .filter(|comment| !comment.is_empty()),
+                unheld: Unheld::of(parameter, name),
+                taken: false,
+            }
+        })
+        .collect();
     let (order, forced) = dependency_order(&candidates);
     let mut written_names: HashMap<&ParameterId, &str> = HashMap::new();
     let mut written_values: HashMap<&ParameterId, f64> = HashMap::new();
@@ -214,29 +347,10 @@ pub(in crate::writer::generate) fn plan(
             }
         };
         let name = names.of(index);
-        let source_name = parameter
-            .name
-            .as_ref()
-            .map(cadmpeg_core::text::NonBlankString::as_str);
-        if source_name != Some(name) {
-            renamed.push(format!(
-                "{} ({} -> `{name}`)",
-                parameter.id,
-                source_name.map_or_else(|| "no name".to_owned(), |name| format!("`{name}`")),
-            ));
-        }
-        match &parameter.owner {
-            Some(ParameterOwner::Container(container)) => {
-                unbound.push(format!("{} (owner container {container})", parameter.id));
-            }
-            Some(ParameterOwner::Attribute(attribute)) => {
-                unbound.push(format!("{} (owner attribute {attribute})", parameter.id));
-            }
-            Some(ParameterOwner::Feature(_)) | None => {}
-        }
-        if let Some(display) = parameter.display {
-            displayed.push(format!("{} ({display:?})", parameter.id));
-        }
+        let unheld = Unheld::of(parameter, name);
+        renamed.extend(unheld.renamed);
+        unbound.extend(unheld.unbound);
+        displayed.extend(unheld.displayed);
         if matches!(parameter.kind, ValueKind::Integer) {
             integers.push(parameter.id.to_string());
         }
@@ -267,12 +381,6 @@ pub(in crate::writer::generate) fn plan(
         "parameter",
         "a Fusion user parameter holds only a length, an angle or a number",
         omitted_kind,
-    ));
-    losses.extend(named_loss(
-        F3dLossCode::WriterParameterOmitted,
-        "parameter",
-        "a Fusion user parameter is never driven by the geometry",
-        omitted_driven,
     ));
     losses.extend(parameter_flattened(
         "F3D",
@@ -311,6 +419,7 @@ pub(in crate::writer::generate) fn plan(
         written,
         claimed: Vec::new(),
         owned: Vec::new(),
+        driven,
         losses,
     }
 }
@@ -330,6 +439,7 @@ pub(in crate::writer::generate) fn native_or_neutral(
             written: Vec::new(),
             claimed: Vec::new(),
             owned: Vec::new(),
+            driven: Vec::new(),
             losses: Vec::new(),
         },
         |scope| plan(target, &scope.definition),
@@ -481,16 +591,103 @@ impl ParameterPlan {
     }
 
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
-        self.losses
+        let mut losses = self.losses;
+        let (taken, untaken): (Vec<_>, Vec<_>) = self
+            .driven
+            .into_iter()
+            .partition(|parameter| parameter.taken);
+        losses.extend(named_loss(
+            F3dLossCode::WriterParameterOmitted,
+            "parameter",
+            "a driven parameter is written as the parameter of the dimension it drives, and no written dimension binds these",
+            untaken.iter().map(|parameter| parameter.source.to_string()),
+        ));
+        losses.extend(parameter_renamed(
+            "F3D",
+            "renames these driven parameters to legal, unique Fusion names",
+            taken
+                .iter()
+                .filter_map(|parameter| parameter.unheld.renamed.clone()),
+        ));
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these driven parameters as parameters of their dimensions without their owners: the parameter of a Fusion dimension is bound to no container or attribute",
+            taken
+                .iter()
+                .filter_map(|parameter| parameter.unheld.unbound.clone()),
+        ));
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these driven parameters without their diameter or radius display presentation: the record of a Fusion parameter holds no display flag",
+            taken
+                .iter()
+                .filter_map(|parameter| parameter.unheld.displayed.clone()),
+        ));
+        losses
     }
 
-    /// The names of the written parameters, user and owned.
+    /// The names of the written parameters, user, owned and driven.
     pub(super) fn names(&self) -> impl Iterator<Item = &str> {
         self.written
             .iter()
             .chain(&self.claimed)
             .map(|parameter| parameter.name.as_str())
             .chain(self.owned.iter().map(String::as_str))
+            .chain(self.driven.iter().map(|parameter| parameter.name.as_str()))
+    }
+
+    /// The driven parameter `id` for a dimension of `quantity` to own;
+    /// `None` where `id` is no driven parameter, and the reason where the
+    /// dimension cannot own it.
+    pub(super) fn driven(
+        &self,
+        id: &ParameterId,
+        quantity: Quantity,
+    ) -> Result<Option<Driven>, &'static str> {
+        let Some(index) = self
+            .driven
+            .iter()
+            .position(|parameter| &parameter.source == id)
+        else {
+            return Ok(None);
+        };
+        let parameter = &self.driven[index];
+        if parameter.taken {
+            return Err("an earlier dimension owns its driven parameter");
+        }
+        let unit = parameter
+            .unit
+            .filter(|_| parameter.form.quantity() == quantity)
+            .ok_or("its driven parameter is of another quantity")?;
+        Ok(Some(Driven {
+            index,
+            evaluated: parameter.evaluated,
+            literal: parameter.literal.clone(),
+            unit,
+        }))
+    }
+
+    /// `driven` as the parameter of the dimension that owns it, with source
+    /// ordinal `ordinal`, the literal `expression` and `value` in Fusion's
+    /// database units.
+    pub(super) fn take_driven(
+        &mut self,
+        driven: &Driven,
+        expression: String,
+        value: f64,
+        ordinal: u32,
+    ) -> OwnedParameter {
+        let parameter = &mut self.driven[driven.index];
+        parameter.taken = true;
+        OwnedParameter {
+            name: parameter.name.clone(),
+            expression,
+            unit: driven.unit,
+            value,
+            ordinal,
+            names_parameter: false,
+            comment: parameter.comment.clone(),
+        }
     }
 
     /// The written parameter `id`, user or claimed.
@@ -557,6 +754,7 @@ impl ParameterPlan {
             value: parameter.evaluated,
             ordinal,
             names_parameter: parameter.names_parameter,
+            comment: parameter.comment.clone(),
         };
         self.claimed.push(parameter);
         Some(owned)
@@ -586,6 +784,7 @@ impl ParameterPlan {
             value,
             ordinal,
             names_parameter,
+            comment: None,
         }
     }
 }
