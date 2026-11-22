@@ -33,7 +33,8 @@ use std::collections::{HashMap, HashSet};
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
 
-pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str =
+    crate::records::REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY;
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 
 #[derive(Clone, Copy, Debug)]

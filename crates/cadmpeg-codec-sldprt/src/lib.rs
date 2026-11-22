@@ -260,8 +260,9 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
-        // An edit the full decoder does not read back from the written part
-        // is written again with its feature's stored record.
+        // An edit the full decoder does not read back from the written part,
+        // or that changes what no edit touches, is written again with its
+        // feature's stored record.
         let mut withheld = Vec::new();
         let (bytes, output, read_back) = loop {
             let mut bytes = Vec::new();
@@ -272,11 +273,12 @@ impl SldprtCodec {
                 &withheld,
                 &mut bytes,
             )?;
-            let read_back = history::write::edits::ReadBack::of_written(&output.claims, &bytes);
+            let read_back =
+                history::write::read_back::ReadBack::of_written(ir, &output.claims, &bytes);
             let before = withheld.len();
-            for id in &read_back.withhold {
-                if !withheld.contains(id) {
-                    withheld.push(id.clone());
+            for (id, reason) in &read_back.withhold {
+                if !withheld.iter().any(|(withheld, _)| withheld == id) {
+                    withheld.push((id.clone(), reason.clone()));
                 }
             }
             if withheld.len() == before {

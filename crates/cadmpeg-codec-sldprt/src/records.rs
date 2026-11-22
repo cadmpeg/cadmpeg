@@ -340,25 +340,91 @@ pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDir
 pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "YAxis", "ZAxis"];
 /// The frame of a reference plane, filled from the feature-input lane.
 pub(crate) const REFERENCE_PLANE_FRAME_PROPERTIES: [&str; 3] = ["Origin", "Normal", "UAxis"];
+/// Where a reference plane's sketch U axis comes from, filled with its frame.
+pub(crate) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+/// What the decoder fills from the feature-input lane while a reference
+/// plane's record states none of its frame: the frame, its U-axis source, and
+/// the plane's reference.
+pub(crate) const REFERENCE_PLANE_DERIVED_PROPERTIES: [&str; 10] = [
+    "Origin",
+    "Normal",
+    "UAxis",
+    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    "Reference",
+    "ReferenceFaceNative",
+    "ReferenceFaceFeature",
+    "ReferenceFaceOrigin",
+    "ReferenceFaceNormal",
+    "ReferenceFaceUAxis",
+];
 /// The frame of a reference axis, filled from its two construction planes.
 pub(crate) const REFERENCE_AXIS_FRAME_PROPERTIES: [&str; 2] = ["Origin", "Direction"];
 /// The translation of a move-face feature, filled from the feature-input lane.
 pub(crate) const MOVE_FACE_PROPERTIES: [&str; 2] = ["Mode", "Direction"];
-/// The end conditions of an extrusion, filled from the lane while the record
-/// states no `EndCondition`.
+/// The end condition whose absence makes the decoder fill an extrusion's
+/// termination from the feature-input lane.
+pub(crate) const EXTRUSION_TERMINATION_GATE: [&str; 1] = ["EndCondition"];
+/// The end conditions of an extrusion that the decoder fills from the lane.
 pub(crate) const EXTRUSION_TERMINATION_PROPERTIES: [&str; 4] =
     ["EndCondition", "EndCondition2", "Vertex", "Face"];
+/// The depths of an extrusion that the decoder fills from the lane, each
+/// under the first of its two names when the record states neither.
+pub(crate) const EXTRUSION_DEPTH_PARAMETERS: [&str; 4] = ["D1", "Depth", "D2", "Depth2"];
+/// The two directions of a linear pattern, which the decoder fills from the
+/// lane while the projected definition states neither.
+pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", "Direction2"];
 
-/// Record properties the decoder fills from the feature-input lane together,
-/// and only while the record states none of the group. A record that states
-/// one member is read for the whole group.
-pub(crate) const LANE_DERIVED_PROPERTY_GROUPS: [&[&str]; 6] = [
-    &REVOLUTION_AXIS_PROPERTIES,
-    &COORDINATE_SYSTEM_PROPERTIES,
-    &REFERENCE_PLANE_FRAME_PROPERTIES,
-    &REFERENCE_AXIS_FRAME_PROPERTIES,
-    &MOVE_FACE_PROPERTIES,
-    &EXTRUSION_TERMINATION_PROPERTIES,
+/// Record fields the decoder fills from the feature-input lane together, and
+/// only while the record states none of the group's gate. A record that states
+/// a gate key is read for the whole group.
+pub(crate) struct LaneDerivedGroup {
+    /// The properties whose absence lets the decoder fill the group.
+    pub(crate) gate: &'static [&'static str],
+    /// The properties the decoder fills, the gate among them.
+    pub(crate) properties: &'static [&'static str],
+    /// The parameters the decoder fills with them.
+    pub(crate) parameters: &'static [&'static str],
+}
+
+/// Every lane-derived group. The decoder guards read the gate constants above;
+/// the linear-pattern guard reads the projected definition, whose two
+/// directions come from these two properties.
+pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
+    LaneDerivedGroup {
+        gate: &REVOLUTION_AXIS_PROPERTIES,
+        properties: &REVOLUTION_AXIS_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &COORDINATE_SYSTEM_PROPERTIES,
+        properties: &COORDINATE_SYSTEM_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_PLANE_FRAME_PROPERTIES,
+        properties: &REFERENCE_PLANE_DERIVED_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        properties: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &MOVE_FACE_PROPERTIES,
+        properties: &MOVE_FACE_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &EXTRUSION_TERMINATION_GATE,
+        properties: &EXTRUSION_TERMINATION_PROPERTIES,
+        parameters: &EXTRUSION_DEPTH_PARAMETERS,
+    },
+    LaneDerivedGroup {
+        gate: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        properties: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        parameters: &[],
+    },
 ];
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).

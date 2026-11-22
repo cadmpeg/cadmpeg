@@ -452,7 +452,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 super::extrusion_start::insert_condition(&mut feature.properties, condition)?;
             }
         }
-        if feature.properties.contains_key("EndCondition") {
+        if feature.states_any(&crate::records::EXTRUSION_TERMINATION_GATE) {
             continue;
         }
         let Some(votes) = terminations.get(&feature.id) else {

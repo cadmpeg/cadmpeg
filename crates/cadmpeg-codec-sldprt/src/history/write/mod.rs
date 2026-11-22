@@ -24,6 +24,7 @@ pub(crate) mod configurations;
 pub(crate) mod edits;
 pub(crate) mod features;
 pub(crate) mod parameters;
+pub(crate) mod read_back;
 pub(crate) mod xml;
 
 use self::edits::SourceEdits;

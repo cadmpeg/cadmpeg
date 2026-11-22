@@ -541,13 +541,38 @@ pub(in crate::history) fn sync_neutral_features(
             if kind == baseline.kind {
                 kind.clone_from(&record.kind);
             }
-            parameters =
-                stored_unless_moved(&record.parameters, parameters, &baseline.parameters, &[]);
+            // A lane-derived group whose gate the record does not state is
+            // read from the record once a member is written: write it whole.
+            let moved_properties = moved_keys(&properties, &baseline.properties);
+            let groups = crate::records::LANE_DERIVED_GROUPS
+                .iter()
+                .filter(|group| {
+                    !record.states_any(group.gate)
+                        && group
+                            .properties
+                            .iter()
+                            .any(|member| moved_properties.contains(*member))
+                })
+                .collect::<Vec<_>>();
+            let group_parameters = groups
+                .iter()
+                .flat_map(|group| group.parameters.iter().copied())
+                .collect::<HashSet<_>>();
+            let group_properties = groups
+                .iter()
+                .flat_map(|group| group.properties.iter().copied())
+                .collect::<HashSet<_>>();
+            parameters = stored_unless_moved(
+                &record.parameters,
+                parameters,
+                &baseline.parameters,
+                &group_parameters,
+            );
             properties = stored_unless_moved(
                 &record.properties,
                 properties,
                 &baseline.properties,
-                &crate::records::LANE_DERIVED_PROPERTY_GROUPS,
+                &group_properties,
             );
         }
         if kept {
@@ -822,36 +847,36 @@ pub(in crate::history) fn sync_neutral_features(
     Ok(renames)
 }
 
+/// The keys of `written` whose entry differs from `baseline`'s.
+fn moved_keys<V: PartialEq>(
+    written: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+) -> HashSet<String> {
+    written
+        .iter()
+        .filter(|(key, value)| baseline.get(*key) != Some(*value))
+        .map(|(key, _)| key.as_str().to_owned())
+        .collect()
+}
+
 /// The stored entries of a record field, with each entry whose encoding
 /// `written` moves from the source feature's encoding `baseline` written as
-/// `written` states it. A moved entry of one of `groups` that `stored` states
-/// none of is written with the rest of its group: the decoder fills such a
-/// group from the lane only while the record states none of it.
+/// `written` states it, and each entry of `group` that `written` states
+/// written too: `group` holds the members of the lane-derived groups the
+/// write makes the record state.
 fn stored_unless_moved<V: Clone + PartialEq>(
     stored: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
     written: BTreeMap<cadmpeg_core::text::NonBlankString, V>,
     baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
-    groups: &[&[&str]],
+    group: &HashSet<&str>,
 ) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
-    let moved = written
-        .iter()
-        .filter(|(key, value)| baseline.get(*key) != Some(*value))
-        .map(|(key, _)| key.as_str().to_owned())
-        .collect::<HashSet<_>>();
-    let with_group = groups
-        .iter()
-        .filter(|group| {
-            group.iter().any(|member| moved.contains(*member))
-                && !group.iter().any(|member| stored.contains_key(*member))
-        })
-        .flat_map(|group| group.iter().copied())
-        .collect::<HashSet<_>>();
+    let moved = moved_keys(&written, baseline);
     let mut merged = stored.clone();
     for key in baseline.keys().filter(|key| !written.contains_key(*key)) {
         merged.remove(key);
     }
     for (key, value) in written {
-        if moved.contains(key.as_str()) || with_group.contains(key.as_str()) {
+        if moved.contains(key.as_str()) || group.contains(key.as_str()) {
             merged.insert(key, value);
         }
     }

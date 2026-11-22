@@ -205,14 +205,28 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
     let edited_feature = format!("F:{}", job.feature);
     let (differences, outcome) = if unwritten == 0 {
         // A carried edit moves its own feature's records: the source
-        // properties and content that mirror them, and its parameters.
+        // property values and content that mirror them, and its parameter
+        // values. It adds and drops none of them.
         let own_parameters = format!("parameter P:{edited_feature}.");
         let mut differences = crate::test_support::readback::differences(
             decoded.ir(),
             written.ir(),
             &[&edited_feature],
         );
-        differences.retain(|difference| !difference.starts_with(&own_parameters));
+        differences.retain(|difference| {
+            !difference.starts_with(&own_parameters)
+                || difference.ends_with(" is added")
+                || difference.ends_with(" is missing")
+        });
+        differences.extend(
+            crate::test_support::readback::missing_source_properties(
+                decoded.ir(),
+                written.ir(),
+                &edited_feature,
+            )
+            .into_iter()
+            .map(|property| format!("source property {property} is missing")),
+        );
         if let Some((expected, read)) = crate::test_support::readback::definition_difference(
             decoded.ir(),
             written.ir(),
@@ -294,4 +308,55 @@ fn every_leaf_edit_of_ftc_06_is_carried_or_named() {
 #[test]
 fn every_leaf_edit_of_ftc_08_is_carried_or_named() {
     assert_every_leaf_edit_is_carried_or_named(ftc_08());
+}
+
+/// The job that edits the first leaf of feature `feature` whose pointer
+/// `selected` accepts.
+fn job(part: &DecodeResult, feature: &str, selected: impl Fn(&str) -> bool) -> Job {
+    let [found] = named(&part.ir().model.features, feature)[..] else {
+        panic!("{feature} is not named once");
+    };
+    let wire = serde_json::to_value(found.evaluation.definition()).unwrap();
+    let mut found = Vec::new();
+    leaves(&wire, "", &mut found);
+    let (pointer, _) = found
+        .into_iter()
+        .find(|(pointer, leaf_type)| *leaf_type == "real" && selected(pointer))
+        .unwrap();
+    Job {
+        feature: feature.to_owned(),
+        pointer,
+    }
+}
+
+/// The record states the first depth as `D1`: the edit is written there, and
+/// no `Depth` parameter is added beside it.
+#[test]
+fn an_extrusion_depth_edit_is_written_to_the_stored_dimension() {
+    let job = job(ftc_06(), "Boss-Extrude1", |pointer| {
+        pointer.ends_with("/length") && !pointer.contains("second")
+    });
+    let outcome = run(ftc_06(), &job);
+    assert!(
+        matches!(outcome, Ok(Outcome::Carried)),
+        "{:?}",
+        outcome.err()
+    );
+}
+
+/// A linear pattern reads both directions from its record once one is
+/// written: an edit of the first direction alone keeps the second. The `y`
+/// component is zero, so plus one leaves a direction that is not parallel to
+/// the source.
+#[test]
+fn a_linear_pattern_first_direction_edit_is_carried() {
+    let job = job(ftc_08(), "LPattern1", |pointer| {
+        pointer.ends_with("/pattern/direction/y")
+    });
+    let outcome = run(ftc_08(), &job);
+    assert!(
+        matches!(outcome, Ok(Outcome::Carried)),
+        "{:?}",
+        outcome.err()
+    );
 }

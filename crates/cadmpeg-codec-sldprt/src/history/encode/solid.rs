@@ -184,6 +184,47 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         .is_some_and(|names| names.contains("D1"))
                 }))
                 && !parameters.contains_key("Depth");
+            let positional_depth2 = (parameters.contains_key("D2")
+                || existing.is_some_and(|record| {
+                    resolved_parameter_names
+                        .get(&record.id)
+                        .is_some_and(|names| names.contains("D2"))
+                }))
+                && !parameters.contains_key("Depth2");
+            // A depth goes under the record's dimension name when the record
+            // holds one, so the record never states a depth twice.
+            let depth_entry = |positional: bool,
+                               dimension: cadmpeg_core::text::NonBlankString,
+                               named: cadmpeg_core::text::NonBlankString,
+                               length: cadmpeg_ir::scalar::Length| {
+                if positional {
+                    let value = format_length_like(
+                        length,
+                        existing
+                            .and_then(|record| record.parameters.get(dimension.as_str()))
+                            .map(String::as_str),
+                    );
+                    (dimension, value)
+                } else {
+                    (named, format_length_mm(length))
+                }
+            };
+            let first_depth = |length: cadmpeg_ir::scalar::Length| {
+                depth_entry(
+                    positional_depth,
+                    cadmpeg_core::nonblank_literal!("D1"),
+                    cadmpeg_core::nonblank_literal!("Depth"),
+                    length,
+                )
+            };
+            let second_depth = |length: cadmpeg_ir::scalar::Length| {
+                depth_entry(
+                    positional_depth2,
+                    cadmpeg_core::nonblank_literal!("D2"),
+                    cadmpeg_core::nonblank_literal!("Depth2"),
+                    length,
+                )
+            };
             let mut properties = feature.source_properties.clone();
             if extent_is_unresolved && existing.is_none() {
                 return Err(CodecError::NotImplemented(format!(
@@ -290,10 +331,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             "OffsetFromFace".into(),
                         );
                         properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
-                        parameters.insert(
-                            cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm((*offset).into()),
-                        );
+                        let (key, value) = first_depth((*offset).into());
+                        parameters.insert(key, value);
                     }
                 },
                 ExtrudeExtent::Symmetric { side } => match &side.termination {
@@ -302,10 +341,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             cadmpeg_core::nonblank_literal!("EndCondition"),
                             "Symmetric".into(),
                         );
-                        parameters.insert(
-                            cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm((*length).into()),
-                        );
+                        let (key, value) = first_depth((*length).into());
+                        parameters.insert(key, value);
                     }
                     _ => return Err(unsupported_extent()),
                 },
@@ -319,14 +356,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 cadmpeg_core::nonblank_literal!("EndCondition"),
                                 "TwoSided".into(),
                             );
-                            parameters.insert(
-                                cadmpeg_core::nonblank_literal!("Depth"),
-                                format_length_mm((*first).into()),
-                            );
-                            parameters.insert(
-                                cadmpeg_core::nonblank_literal!("Depth2"),
-                                format_length_mm((*second).into()),
-                            );
+                            for (key, value) in
+                                [first_depth((*first).into()), second_depth((*second).into())]
+                            {
+                                parameters.insert(key, value);
+                            }
                         }
                         (LinearTermination::ThroughAll {}, LinearTermination::ThroughAll {}) => {
                             properties.insert(

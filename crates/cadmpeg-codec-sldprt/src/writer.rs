@@ -75,17 +75,19 @@ pub(crate) struct SemanticOutput {
     /// Which edits `unwritten` names: the stale-solid check reads no edit of
     /// these as written.
     pub(crate) written: crate::history::write::edits::UnwrittenEdits,
-    /// The construction edits of the written features, for the read-back.
-    pub(crate) claims: Vec<crate::history::write::edits::FeatureClaims>,
+    /// The construction edits of the written features and what the rest of
+    /// the document reads back as.
+    pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
-/// wrote. Each feature of `withheld` keeps its stored definition record.
+/// wrote. Each feature of `withheld` keeps its stored definition record, for
+/// the reason it is paired with.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
-    withheld: &[cadmpeg_ir::features::FeatureId],
+    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
