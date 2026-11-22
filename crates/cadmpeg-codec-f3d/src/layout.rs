@@ -7497,6 +7497,9 @@ pub(crate) mod construction_operand_affine_transform_frame {
 /// Offsets are relative to the reference presence marker. The repeated references carry the same entity, source occurrence identity and type GUID.
 /// ```
 pub(crate) mod legacy_occurrence_target_reference {
+    /// Record length in bytes. Spec §1.4.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 60;
     /// Offset of `target_entity` (`u64`, little-endian). Spec §1.4.
     #[cfg(test)]
     pub(crate) const TARGET_ENTITY: usize = 1;
