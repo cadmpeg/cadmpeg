@@ -1074,3 +1074,77 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "| 18 | `u32` byte count `n` |"
+
+[[record]]
+name = "variable_table_header"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sheet_metal.rs"
+section = "10.1"
+anchor = "It starts with a `u32` record count `n` and a `u32`"
+size = 8
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "It starts with a `u32` record count `n` and a `u32`"
+
+[[record.field]]
+name = "version"
+offset = 4
+type = "u32"
+value = 1
+source = "spec"
+anchor = "version `1`. `n` records of 24 bytes follow:"
+
+[[record]]
+name = "variable_record"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sheet_metal.rs"
+section = "10.1"
+anchor = "version `1`. `n` records of 24 bytes follow:"
+size = 24
+
+[[record.field]]
+name = "key"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | `u32` key: the index in bits 24..31, the group in bits 0..7 |"
+
+[[record.field]]
+name = "index"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | `u32` index |"
+
+[[record.field]]
+name = "object"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` identifier of the cluster-0 `Double Value Object` that holds the variable |"
+
+[[record.field]]
+name = "unit"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "| 12 | `u16` unit type: `1` length in metres, `16` density, `58` unitless |"
+
+[[record.field]]
+name = "reserved"
+offset = 14
+type = "u16"
+value = 0
+source = "spec"
+anchor = "| 14 | `u16` zero |"
+
+[[record.field]]
+name = "value"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "| 16 | `f64` value, equal to the value of the referenced object |"

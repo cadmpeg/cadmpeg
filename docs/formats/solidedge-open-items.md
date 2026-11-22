@@ -95,3 +95,19 @@
 **Known.** A lofted feature stores its first profile at the §5.3 position.
 
 **Need.** Lofts between two and three sections, and a copy of each with one section moved.
+
+### DR-1031. Bend deduction and other bend methods
+
+**Question.** How does a bend take its flat length under bend method `1` (§10.1), and which other values can the bend method take?
+
+**Known.** Bend method `1` is bend deduction. A document with bend method `1` keeps its neutral factor, bend deduction and bend allowance values unchanged. The bend deduction and bend allowance values do not change with the material thickness.
+
+**Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
+
+### DR-1032. Bend relief length and shape
+
+**Question.** Which dimension of a bend relief does the relief length (§10.1) set, and where is the relief shape stored?
+
+**Known.** The relief width and relief length variables hold the values set as the document defaults. A document with no flange has no bend relief to measure.
+
+**Need.** A flange with a bend relief at two relief lengths, and a copy with each relief shape.

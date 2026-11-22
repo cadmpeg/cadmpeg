@@ -577,3 +577,53 @@ header, then a file moniker at offset 12:
 A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
+
+## 10. Sheet metal
+
+### 10.1 Variable table
+
+The stream `CustomPropertyVariableInfo` lists the document variables that
+the software defines. It starts with a `u32` record count `n` and a `u32`
+version `1`. `n` records of 24 bytes follow:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` key: the index in bits 24..31, the group in bits 0..7 |
+| 4 | `u32` index |
+| 8 | `u32` identifier of the cluster-0 `Double Value Object` that holds the variable |
+| 12 | `u16` unit type: `1` length in metres, `16` density, `58` unitless |
+| 14 | `u16` zero |
+| 16 | `f64` value, equal to the value of the referenced object |
+
+A part document (`.par`) lists indices 2 and 3. A sheet-metal document
+(`.psm`) lists indices 2 to 13. An assembly document lists no record. The
+indices are:
+
+| Index | Variable |
+| ---: | --- |
+| 2 | density |
+| 3 | accuracy |
+| 4 | material thickness |
+| 5 | bend radius |
+| 6 | relief width |
+| 7 | relief length |
+| 8 | neutral factor |
+| 9 | minimum arc length |
+| 10 | deviational tolerance |
+| 11 | bend deduction |
+| 12 | bend allowance |
+| 13 | bend method: `0` neutral factor, `1` bend deduction |
+
+The referenced object of a variable also stores the variable name as
+UTF-16 text. The neutral factor is the K-factor: the distance of the neutral
+surface from the inside of a bend, as a fraction of the thickness.
+
+### 10.2 Base tab
+
+A `CLSID_JMPart` feature with function `JMBaseTabFunction` stores its
+profile at the §5.3 position, the identifier of the material-thickness
+variable object (§10.1) 100 bytes after the end of its function name, and a
+side `Double Value Object` 128 bytes after the end of its function name.
+The base tab is a flat sheet of the material thickness over the region of
+its profile. Side `2` puts the material along the profile normal `A`
+(§5.1) and side `1` against it.
