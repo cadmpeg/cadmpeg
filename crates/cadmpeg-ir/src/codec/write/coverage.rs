@@ -183,27 +183,37 @@ macro_rules! declare_arena_dispositions {
                     .is_none_or(|disposition| disposition.carries())
             }
 
-            /// The label of each arena whose disposition is
-            /// [`ArenaDisposition::Omitted`]: a model arena by its field name,
-            /// a design or process arena as `design.<field>` or
-            /// `process.<field>`.
+            /// The label of each arena of `ir` whose records the write omits and
+            /// names in an `arena.omitted` loss: a model arena by its field name,
+            /// a design or process arena as `design.<field>` or `process.<field>`.
             #[must_use]
-            pub fn omitted(&self) -> Vec<&'static str> {
-                let mut labels = Vec::new();
-                $(
-                    if disposition!(self, $field, $home) == ArenaDisposition::Omitted {
-                        labels.push(crate::document::arena_label!($field, $home));
-                    }
-                )*
-                labels
+            pub fn omitted(&self, ir: &CadIr) -> Vec<&'static str> {
+                self.charged_omissions(ir)
+                    .into_iter()
+                    .map(|(_, label, _)| label)
+                    .collect()
             }
 
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
+                self.charged_omissions(ir)
+                    .into_iter()
+                    .map(|(kind, label, records)| {
+                        ExportLossCode::ArenaOmitted(kind).note(format!(
+                            "the {format} write does not represent model arena `{label}`: \
+                             {records} record(s) omitted",
+                        ))
+                    })
+                    .collect()
+            }
+
+            /// Each arena of `ir` whose records the write omits and charges: its
+            /// kind, label and record count.
+            fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path
                 // writes.
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
-                let mut losses = Vec::new();
+                let mut charged = Vec::new();
                 $(
                     // The document root is the written document itself.
                     let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
@@ -215,17 +225,14 @@ macro_rules! declare_arena_dispositions {
                         && records != 0
                         && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
                     {
-                        losses.push(
-                            ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))
-                            .note(format!(
-                                "the {format} write does not represent model arena `{}`: \
-                                 {records} record(s) omitted",
-                                crate::document::arena_label!($field, $home),
-                            )),
-                        );
+                        charged.push((
+                            arena_kind(&ir.$home.$field),
+                            crate::document::arena_label!($field, $home),
+                            records,
+                        ));
                     }
                 )*
-                losses
+                charged
             }
         }
     };

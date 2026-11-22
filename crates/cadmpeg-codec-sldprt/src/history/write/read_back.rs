@@ -331,7 +331,7 @@ impl<'a> Judge<'a> {
             self.judge_part(
                 &mut read_back,
                 claims,
-                (&source.ir, &output.coverage.omitted()),
+                (&source.ir, &output.coverage.omitted(self.input)),
                 written,
                 &mut |stated| baseline_of(round_trip, source, stated),
             );
