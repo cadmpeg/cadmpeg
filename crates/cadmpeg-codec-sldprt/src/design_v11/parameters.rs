@@ -17,10 +17,11 @@
 //! in degrees (§5.12): the stored value where a record stores one, else the
 //! displayed number, which Keywords rounds to the display precision and the
 //! `design.parameter-display-rounded` note names. A length display at most
-//! one rounding step from zero, at the part's length precision, is no cache
-//! where that step is coarser than the linear resolution, `1e-5` mm: it
-//! holds no value of the length it rounds. A display whose step is at or
-//! below the linear resolution is exact, zero included. Where the root
+//! one rounding step from zero, at the fewest decimal places a configuration
+//! states, is no cache where that step is coarser than the linear
+//! resolution, `1e-5` mm: it holds no value of the length it rounds. A
+//! display whose step is at or below the linear resolution is exact, zero
+//! included. Where the root
 //! definition states no length unit, a length display is no cache (§5.13).
 //! A parameter that a reference
 //! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
@@ -30,11 +31,16 @@
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
 //! its feature holds under its name, where that value shows the display
-//! (Rule H1): a length at the part's length precision, where its units table
-//! states one, as Keywords rounds a length to that many places whether it
-//! drops trailing zeros or keeps them. A dimension whose kind no record states
-//! keeps the number its bound scalar stores, as a `Native` kind holds it
-//! (§5.12). The
+//! (Rule H1): a length at the part's length precision, the largest decimal
+//! places its units tables state, where each states them, as Keywords
+//! rounds a length to that many places whether it drops trailing zeros or
+//! keeps them. A bare display that rounds the length
+//! the equation manager stores beside the dimension at that precision takes
+//! that length where the line that drives the dimension, evaluated over the
+//! values stored beside its names, gives it, unless the decoder bound it to a
+//! PMI record. A
+//! dimension whose kind no record states keeps the number its bound scalar
+//! stores, as a `Native` kind holds it (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
 
@@ -58,7 +64,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
-use super::units::LengthUnit;
+use super::units::{LengthPlaces, LengthUnit};
 use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
@@ -283,6 +289,14 @@ impl<'a> Decoded<'a> {
         }
     }
 
+    /// Whether the decoder's parameter of id `id` named `name` is bound to a
+    /// PMI record, which never yields to the equation manager's value
+    /// (`docs/formats/sldprt.md`).
+    fn pmi_bound(&self, id: &ParameterId, name: &str) -> bool {
+        self.parameter(id, name)
+            .is_some_and(|parameter| parameter.pmi.is_some())
+    }
+
     /// The decoder's parameter of id `id` named `name`.
     fn parameter(
         &self,
@@ -498,15 +512,21 @@ struct Entry<'a> {
 pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
     pub(super) length_unit: Option<UnitSymbol>,
-    /// The number of decimal places at which the part shows lengths, where
-    /// its units tables state one (the largest, where they differ).
-    pub(super) length_places: Option<u32>,
+    /// The decimal places at which the part's configurations show lengths,
+    /// where each units table states them.
+    pub(super) length_places: Option<LengthPlaces>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it
     /// measures: such a parameter states no display of that measure.
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     /// The parameters a reference dimension binds.
     pub(super) driven: HashSet<ParameterId>,
+    /// The value the active configuration's equation manager stores beside
+    /// each dimension its lines name: metres, radians, or a count.
+    pub(super) manager: HashMap<ParameterId, f64>,
+    /// The dimensions whose stored value the line that drives them gives,
+    /// evaluated over the values stored beside the names it reads.
+    pub(super) confirmed: HashSet<ParameterId>,
 }
 
 /// The parameters of the timeline's features and of the equations folders,
@@ -559,13 +579,29 @@ impl<'a> Entries<'a> {
         readings: &Readings<'_>,
     ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
+        let mut read_entries = self
+            .list
+            .iter()
+            .map(|entry| read(entry, &aliases, readings, None))
+            .collect::<Vec<_>>();
+        if let Some(places) = readings
+            .length_places
+            .map(|places| places.largest)
+            .filter(|_| !readings.confirmed.is_empty())
+        {
+            for (entry, reading) in self.list.iter().zip(&mut read_entries) {
+                if readings.confirmed.contains(&entry.id) {
+                    *reading = read(entry, &aliases, readings, Some(places));
+                }
+            }
+        }
         let mut rounded = NamedCount::default();
         let mut unvalued = Unvalued::ALL.map(|reason| (reason, NamedCount::default()));
         let parameters = self
             .list
             .iter()
-            .map(|entry| {
-                let reading = read(entry, &aliases, readings);
+            .zip(read_entries)
+            .map(|(entry, reading)| {
                 if reading.rounded {
                     rounded.push(entry.id.as_str());
                 }
@@ -591,7 +627,7 @@ impl<'a> Entries<'a> {
             .filter(|(_, named)| !named.is_empty())
             .map(|(reason, named)| {
                 let why = match (reason, readings.length_places) {
-                    (Unvalued::RoundingStep, Some(places)) => format!(
+                    (Unvalued::RoundingStep, Some(LengthPlaces { fewest: places, .. })) => format!(
                         "lengths displayed at most one rounding step from zero, at the {places} \
                          decimal places of the part's length unit, a step coarser than the 1e-5 \
                          mm linear resolution"
@@ -703,18 +739,27 @@ enum Unvalued {
     /// display or from each other.
     Disagrees,
     /// The dimension is a length displayed at most one rounding step from
-    /// zero, a step coarser than the linear resolution.
+    /// zero, at the fewest decimal places a configuration states, a step
+    /// coarser than the linear resolution.
     RoundingStep,
+    /// The line that drives it gives the length the equation manager stores,
+    /// and its display rounds that length at fewer decimal places than the
+    /// document's length precision. A dimension both this and
+    /// [`Self::RoundingStep`] describe has this reason: it names the stored
+    /// length the decoder refused, where `RoundingStep` names only why the
+    /// display holds none.
+    Coarse,
 }
 
 impl Unvalued {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Kind,
         Self::NoScalar,
         Self::ClassUnread,
         Self::LengthUnit,
         Self::Disagrees,
         Self::RoundingStep,
+        Self::Coarse,
     ];
 
     /// The note's words for the dimensions with this reason.
@@ -731,11 +776,25 @@ impl Unvalued {
                 "lengths displayed at most one rounding step from zero, a step coarser than the \
                  1e-5 mm linear resolution"
             }
+            Self::Coarse => {
+                "whose display rounds the length their equation gives at fewer decimal places than \
+                 the document's length precision"
+            }
         }
     }
 }
 
-fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
+/// The reading of `entry`. Keywords shows a length rounded to the document's
+/// length precision `places`, the number of decimal places its units table
+/// states (`docs/formats/sldprt.md`). A dimension in `readings.confirmed`
+/// takes its stored length where its display is that length at `places`;
+/// `None` leaves every dimension unrounded.
+fn read(
+    entry: &Entry<'_>,
+    aliases: &Aliases,
+    readings: &Readings<'_>,
+    places: Option<u32>,
+) -> Reading {
     let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
@@ -787,6 +846,10 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         )
     });
     let bound = readings.bound.get(&entry.id).copied();
+    let managed = readings
+        .manager
+        .get(&entry.id)
+        .filter(|_| !decoded.pmi_bound(&entry.id, name));
     let mut unread = None;
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
@@ -796,7 +859,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             name,
             shown,
             readings.length_unit,
-            readings.length_places,
+            readings.length_places.map(|places| places.largest),
         ) {
             Some(reading) => reading,
             None => match shown.filter(|_| !references).map(|shown| {
@@ -805,13 +868,21 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
                     name,
                     shown,
                     readings.length_unit,
-                    readings.length_places,
+                    readings.length_places.map(|places| places.largest),
                 )
             }) {
                 Some(Ok((kind, value))) => (kind, Some(value)),
                 named => {
                     unread = named.and_then(Result::err);
-                    if native_parameter_is_length(feature, name, Some(text)) {
+                    let manager = shown
+                        .filter(|_| !references && bound.is_none_or(|q| q == Quantity::LENGTH))
+                        .zip(managed)
+                        .and_then(|(shown, stored)| {
+                            manager_length(shown.number, *stored, readings.length_unit)
+                        });
+                    if let Some(value) = manager {
+                        (ValueKind::Quantity(Quantity::LENGTH), Some(value))
+                    } else if native_parameter_is_length(feature, name, Some(text)) {
                         (ValueKind::Quantity(Quantity::LENGTH), None)
                     } else if let Some(quantity) = bound {
                         (ValueKind::Quantity(quantity), None)
@@ -824,6 +895,29 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
                 }
             },
         },
+    };
+    let (kind, value) = match (kind, value, places) {
+        (
+            kind @ (ValueKind::Quantity(Quantity::LENGTH) | ValueKind::Native(_)),
+            None,
+            Some(places),
+        ) if !user && !references && readings.confirmed.contains(&entry.id) => {
+            let rounded = |places| {
+                shown.zip(managed).and_then(|(shown, stored)| {
+                    manager_rounded(shown, *stored, readings.length_unit, places)
+                })
+            };
+            match rounded(Some(places)) {
+                Some(value) => (ValueKind::Quantity(Quantity::LENGTH), Some(value)),
+                None => {
+                    if rounded(None).is_some() {
+                        unread = Some(Unvalued::Coarse);
+                    }
+                    (kind, None)
+                }
+            }
+        }
+        (kind, value, _) => (kind, value),
     };
     let display = display
         .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
@@ -842,7 +936,13 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             && readings
                 .length_unit
                 .zip(readings.length_places)
-                .is_some_and(|(symbol, decimals)| LengthUnit { symbol, decimals }.withholds(number))
+                .is_some_and(|(symbol, places)| {
+                    LengthUnit {
+                        symbol,
+                        decimals: places.fewest,
+                    }
+                    .withholds(number)
+                })
     });
     if let Some(number) = number.filter(|_| !below_step) {
         if let Some((node, literal)) =
@@ -858,12 +958,11 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             };
         }
     }
-    let unvalued = (number.is_some() && value.is_none()).then_some(if below_step {
-        Unvalued::RoundingStep
-    } else if length && readings.length_unit.is_none() {
-        Unvalued::LengthUnit
-    } else {
-        unread.unwrap_or(Unvalued::Kind)
+    let unvalued = (number.is_some() && value.is_none()).then_some(match unread {
+        Some(Unvalued::Coarse) => Unvalued::Coarse,
+        _ if below_step => Unvalued::RoundingStep,
+        _ if length && readings.length_unit.is_none() => Unvalued::LengthUnit,
+        _ => unread.unwrap_or(Unvalued::Kind),
     });
     Reading {
         kind,
@@ -876,6 +975,47 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         rounded: false,
         unvalued,
     }
+}
+
+/// The length the equation manager's `stored` metres give a dimension whose
+/// text is the bare display `number` and that no record types: the stored
+/// value, where `number` in the part's length unit `unit` is that many
+/// metres and is not the stored number itself, which a count, a ratio, or
+/// radians store (`docs/formats/sldprt.md`).
+fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<ParameterValue> {
+    let metres = number * canonical(unit?)?.1 / MM_PER_M;
+    let same = |a: f64, b: f64| (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs());
+    (number != 0.0 && same(metres, stored) && !same(number, stored))
+        .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
+        .flatten()
+}
+
+/// The length the equation manager's `stored` metres give a dimension whose
+/// bare display `shown` rounds them, where the line that drives the dimension
+/// gives that value: the stored value, where `shown` is the stored value in
+/// exactly one of millimetres and inches, the part's length unit `unit`,
+/// within half a unit in its own last decimal place or in the last of
+/// `places`, whichever is finer, and the text at its own places shows neither
+/// the stored number itself nor the stored number in degrees
+/// (`docs/formats/sldprt.md`).
+fn manager_rounded(
+    shown: Shown,
+    stored: f64,
+    unit: Option<UnitSymbol>,
+    places: Option<u32>,
+) -> Option<ParameterValue> {
+    let allowed = shown.at_places(places);
+    let shows = |symbol| Some(allowed.shows(stored * MM_PER_M / canonical(symbol)?.1));
+    let (millimetres, inches) = (shows(UnitSymbol::Mm)?, shows(UnitSymbol::In)?);
+    let in_unit = match unit? {
+        UnitSymbol::Mm => millimetres && !inches,
+        UnitSymbol::In => inches && !millimetres,
+        _ => false,
+    };
+    let other_reading = shown.shows(stored) || shown.shows(stored.to_degrees());
+    (shown.number != 0.0 && in_unit && !other_reading)
+        .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
+        .flatten()
 }
 
 /// The literal of a dimension whose text is the bare display `number`, and
@@ -918,7 +1058,7 @@ fn significant(value: f64) -> Option<f64> {
 }
 
 /// The tree of the literal `signed` with the unit `symbol`.
-fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
+pub(super) fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
     let unit = match symbol {
         Some(symbol) => Unit(vec![UnitFactor {
             symbol,
@@ -975,7 +1115,7 @@ fn is_text(text: &str) -> bool {
 }
 
 /// The units a `SolidWorks` literal may carry, longest suffix first.
-const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
+pub(super) const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
     ("deg", UnitSymbol::Deg),
     ("rad", UnitSymbol::Rad),
     ("mm", UnitSymbol::Mm),
@@ -1042,7 +1182,7 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
 const MM_PER_NM: f64 = 1.0e-6;
 
 /// The quantity of a literal unit and its factor to the canonical unit.
-fn canonical(symbol: UnitSymbol) -> Option<(Quantity, f64)> {
+pub(super) fn canonical(symbol: UnitSymbol) -> Option<(Quantity, f64)> {
     Some(match symbol {
         UnitSymbol::Nm => (Quantity::LENGTH, MM_PER_NM),
         UnitSymbol::Um => (Quantity::LENGTH, 1.0e-3),

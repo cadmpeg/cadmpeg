@@ -86,13 +86,36 @@ pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
     units.try_fold(first, |unit, other| (other? == unit).then_some(unit))
 }
 
-/// The number of decimal places at which the part shows lengths: the
-/// largest that a configuration's units table states, whose allowance is the
-/// narrowest. `None` where a configuration states none.
-pub(crate) fn length_places(scan: &ContainerScan) -> Option<u32> {
+/// The decimal places at which a part's configurations show lengths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LengthPlaces {
+    /// The most a configuration states, whose allowance is the narrowest: a
+    /// display shows a stored length within half a unit in its last place.
+    pub(crate) largest: u32,
+    /// The fewest a configuration states, whose rounding step is the
+    /// coarsest: a display near zero may round any length below that step.
+    pub(crate) fewest: u32,
+}
+
+/// The decimal places at which the part shows lengths: the largest and the
+/// fewest that its configurations' units tables state. `None` where a
+/// configuration states none.
+pub(crate) fn length_places(scan: &ContainerScan) -> Option<LengthPlaces> {
     configurations(scan)
         .map(|(payload, bases)| configuration_length_places(payload, bases))
-        .try_fold(None, |largest, places| Some(largest.max(Some(places?))))
+        .try_fold(None, |range: Option<LengthPlaces>, places| {
+            let places = places?;
+            Some(Some(range.map_or(
+                LengthPlaces {
+                    largest: places,
+                    fewest: places,
+                },
+                |range| LengthPlaces {
+                    largest: range.largest.max(places),
+                    fewest: range.fewest.min(places),
+                },
+            )))
+        })
         .flatten()
 }
 
@@ -114,7 +137,7 @@ fn configurations<'a>(
 
 /// Whether `stream` is a configuration's own stream, `Contents/Config-N`,
 /// in either separator and any letter case.
-fn is_configuration(stream: &str) -> bool {
+pub(super) fn is_configuration(stream: &str) -> bool {
     const PREFIX: &str = "contents/config-";
     let stream = stream.replace('\\', "/");
     stream.len() > PREFIX.len()

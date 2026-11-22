@@ -143,18 +143,24 @@ fn stated(
 /// The offset of the i32 count of an `moIntegerParameter_c` scalar framed at
 /// `value`, the end of a 14-byte value-only header. Behind the 18-byte
 /// compact header, whose last four bytes are zero, the count follows those
-/// four bytes; each count's trailer begins after the count.
+/// four bytes; each count's trailer begins after the count. `None` unless a
+/// trailer begins at the cell's +4 and none at its +8 (`docs/formats/sldprt.md`
+/// §2): a padded value-only scalar frames an eight-byte f64 cell there, whose
+/// low half is no count.
 fn count_cell(payload: &[u8], value: usize) -> Option<usize> {
     let header = value.checked_sub(VALUE_ONLY_SCALAR_HEADER.len())?;
     let compact = header.checked_add(COMPACT_SCALAR_HEADER.len())?;
     let behind_compact_header = payload.get(header..compact) == Some(COMPACT_SCALAR_HEADER)
         && !count_trailer(payload, value.checked_add(COUNT_LEN)?)
         && count_trailer(payload, compact.checked_add(COUNT_LEN)?);
-    Some(if behind_compact_header {
+    let cell = if behind_compact_header {
         compact
     } else {
         value
-    })
+    };
+    (count_trailer(payload, cell.checked_add(COUNT_LEN)?)
+        && !count_trailer(payload, cell.checked_add(size_of::<f64>())?))
+    .then_some(cell)
 }
 
 /// Whether a count's trailer begins at `at`: three zero bytes, then the

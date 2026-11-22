@@ -3,8 +3,8 @@ use cadmpeg_ir::design::units::UnitSymbol;
 
 use super::{
     configuration_length_places, configuration_length_unit, length_places, length_unit, Base,
-    LengthUnit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS, LENGTH_DECLARATION, NEW_CLASS,
-    TABLE_CLASS,
+    LengthPlaces, LengthUnit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS, LENGTH_DECLARATION,
+    NEW_CLASS, TABLE_CLASS,
 };
 use crate::layout::{
     units_length_unit_block as block, units_length_unit_compound_four_word as four_word,
@@ -277,7 +277,7 @@ fn the_length_precision_is_the_first_word_of_the_length_unit_base() {
 }
 
 #[test]
-fn configurations_that_state_different_precisions_give_the_largest() {
+fn configurations_that_state_different_precisions_give_the_largest_and_the_fewest() {
     let part = |configurations: &[Option<u32>]| {
         let mut source = outer_header();
         for (index, places) in (0u32..).zip(configurations) {
@@ -300,10 +300,18 @@ fn configurations_that_state_different_precisions_give_the_largest() {
         }
         source
     };
-    for configurations in [[Some(2), Some(5)], [Some(5), Some(2)], [Some(5), Some(5)]] {
+    for (configurations, fewest) in [
+        ([Some(2), Some(5)], 2),
+        ([Some(5), Some(2)], 2),
+        ([Some(5), Some(5)], 5),
+    ] {
         let source = part(&configurations);
         let scanned = scan(&source);
-        assert_eq!(length_places(&scanned), Some(5), "{configurations:?}");
+        assert_eq!(
+            length_places(&scanned),
+            Some(LengthPlaces { largest: 5, fewest }),
+            "{configurations:?}"
+        );
         assert_eq!(
             length_unit(&scanned),
             Some(UnitSymbol::Mm),

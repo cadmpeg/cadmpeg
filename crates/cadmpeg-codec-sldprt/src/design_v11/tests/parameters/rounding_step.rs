@@ -140,3 +140,73 @@ fn a_zero_display_whose_step_is_the_linear_resolution_is_exact() {
     assert_eq!(value.get(), 0.0);
     assert!(note_of(&notes, SldprtLossCode::DesignParameterValueUnread).is_none());
 }
+
+#[test]
+fn withholding_reads_the_fewest_places_and_a_coarse_display_reports_coarse() {
+    use super::super::super::units::LengthPlaces;
+    use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner, ParameterValue};
+
+    // One configuration shows lengths at 2 places, the other at 0. `1` is one
+    // 1 mm step from zero at 0 places, so Step's display holds no value; at 2
+    // places alone it is exact to 0.01 mm. Coarse's line gives 0.7 mm, which
+    // `1` shows at its own places but not at 2, the largest: both reasons
+    // describe Coarse, and the note names it as Coarse.
+    let keywords = br#"<Keywords Name="Bracket">
+            <Extrusion Name="Coarse" Type="BossExtrude" id="7">
+                <Dimension Name="D1">1</Dimension>
+            </Extrusion>
+            <Extrusion Name="Step" Type="BossExtrude" id="8">
+                <Dimension Name="D1">1</Dimension>
+            </Extrusion>
+        </Keywords>"#;
+    let ir = part_with_history(keywords, &[]);
+    let owned = |parameters: &[DesignParameter], feature: &str| {
+        let owner = ParameterOwner::Feature(feature_named(&ir, feature).id.clone());
+        parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(&owner))
+            .unwrap_or_else(|| panic!("{feature}: {parameters:#?}"))
+            .clone()
+    };
+    let manager = [("Coarse", "D1", 0.0007)];
+    let coarse = "whose display rounds the length their equation gives at fewer decimal places \
+                  than the document's length precision";
+
+    let mixed = LengthPlaces {
+        largest: 2,
+        fewest: 0,
+    };
+    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], Some(mixed));
+    let (coarse_parameter, step) = (owned(&parameters, "Coarse"), owned(&parameters, "Step"));
+    assert_eq!(coarse_parameter.value, None);
+    assert_eq!(step.value, None);
+    let unvalued = note_of(&notes, SldprtLossCode::DesignParameterValueUnread)
+        .expect("both displays are charged");
+    assert!(
+        unvalued.message.contains(&format!(
+            "1 lengths displayed at most one rounding step from zero, at the 0 decimal places \
+             of the part's length unit, a step coarser than the 1e-5 mm linear resolution ({})",
+            step.id.as_str()
+        )) && unvalued
+            .message
+            .contains(&format!("1 {coarse} ({})", coarse_parameter.id.as_str())),
+        "{}",
+        unvalued.message
+    );
+
+    // Every configuration at 2 places: `1` is no step from zero, so each
+    // display is its literal, rounded, Coarse's too, and no dimension is
+    // unvalued.
+    let (parameters, notes) =
+        parameters_with_manager(keywords, &manager, true, &[], Some(uniform(2)));
+    for feature in ["Coarse", "Step"] {
+        let Some(ParameterValue::Number(value)) = owned(&parameters, feature).value else {
+            panic!("{feature} has no value: {parameters:#?}");
+        };
+        assert_eq!(value.get(), 1.0, "{feature}");
+    }
+    assert!(
+        note_of(&notes, SldprtLossCode::DesignParameterValueUnread).is_none(),
+        "{notes:#?}"
+    );
+}
