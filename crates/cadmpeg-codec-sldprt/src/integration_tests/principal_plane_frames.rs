@@ -224,3 +224,68 @@ fn serialized_support_offset_preserves_model_frame_and_polarity() {
         assert!(!coplanar_plane_frames(result, mirrored));
     }
 }
+
+/// An offset plane whose only stored frame is its source plane's frame states
+/// no side: the projection keeps its `D1` and reports the assumption.
+#[test]
+fn offset_plane_without_a_side_stating_frame_reports_its_side() {
+    let native = |id: &str, source, ordinal| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "ReferencePlane".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(source),
+        ordinal,
+        name: id.into(),
+        kind: String::new(),
+        input_class: Some("moRefPlane_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let mut offset = native("sldprt:history:feature#0:offset", 7, 3);
+    offset
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "6mm".into());
+    for (key, value) in [
+        (cadmpeg_core::nonblank_literal!("Reference"), "2"),
+        (cadmpeg_core::nonblank_literal!("Origin"), "0mm,0mm,0mm"),
+        (cadmpeg_core::nonblank_literal!("Normal"), "0,0,1"),
+        (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
+    ] {
+        offset.properties.insert(key, value.into());
+    }
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native("sldprt:history:feature#0:front", 2, 0),
+            native("sldprt:history:feature#0:top", 3, 1),
+            native("sldprt:history:feature#0:right", 4, 2),
+            offset,
+        ],
+    }];
+    let mut model = cadmpeg_ir::document::Model::default();
+    let mut losses = Vec::new();
+    crate::history::project::project_feature_model(&histories)
+        .expect("synthetic offset plane")
+        .install(&mut model, &mut losses)
+        .expect("installed");
+    assert!(matches!(
+        model.features[3].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. })
+            if distance.get() == 6.0
+    ));
+    let kind = crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.kind();
+    assert_eq!(
+        losses.iter().filter(|loss| loss.code == kind).count(),
+        1,
+        "{losses:?}"
+    );
+}
