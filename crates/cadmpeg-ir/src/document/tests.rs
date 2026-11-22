@@ -197,8 +197,11 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
     assert_eq!(crate::schema::EntityKind::ALL.len(), ArenaName::ALL.len());
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut ids = std::collections::HashSet::new();
-    collect_ids(&serde_json::to_value(&ir.geometry).unwrap(), &mut ids);
-    collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
+    collect_ids(
+        &crate::test_support::to_value(&ir.geometry).unwrap(),
+        &mut ids,
+    );
+    collect_ids(&crate::test_support::to_value(&ir.model).unwrap(), &mut ids);
     let mut missing = Vec::new();
     let mut visit = |reference: &str| -> Result<(), cadmpeg_core::CodecError> {
         if !ids.contains(reference) {
@@ -253,7 +256,7 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
 #[test]
 fn current_json_without_configurations_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut value = crate::test_support::to_value(&ir).unwrap();
     value
         .get_mut("model")
         .and_then(serde_json::Value::as_object_mut)
@@ -330,7 +333,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
     let (model, parent_id, child_id) = tree_node_model();
-    let value = serde_json::to_value(&model).unwrap();
+    let value = crate::test_support::to_value(&model).unwrap();
     assert!(value["features"][1].get("parent").is_none());
     assert!(value["features"][1].get("regeneration_parent").is_none());
     assert_eq!(
@@ -338,7 +341,10 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         child_id.as_str()
     );
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
-    assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
+    assert_eq!(
+        crate::test_support::from_value::<Model>(&value).unwrap(),
+        model
+    );
 
     let mut regeneration = Model {
         features: vec![
@@ -380,13 +386,13 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     regeneration
         .set_feature_regeneration_parent(&(child_id), &(parent_id.clone()))
         .unwrap();
-    let value = serde_json::to_value(&regeneration).unwrap();
+    let value = crate::test_support::to_value(&regeneration).unwrap();
     assert_eq!(
         value["features"][1]["regeneration_parent"],
         parent_id.as_str()
     );
     assert_eq!(
-        serde_json::from_value::<Model>(value).unwrap(),
+        crate::test_support::from_value::<Model>(&value).unwrap(),
         regeneration
     );
 }
@@ -395,7 +401,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 #[test]
 fn feature_wire_refuses_the_deleted_parent_key() {
     let (model, parent_id, _) = tree_node_model();
-    let mut wire = serde_json::to_value(&model).unwrap();
+    let mut wire = crate::test_support::to_value(&model).unwrap();
     wire["features"][1]["parent"] = serde_json::json!(parent_id.as_str());
     let error = serde_json::from_value::<Model>(wire)
         .unwrap_err()
@@ -472,7 +478,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
         ],
         ..Model::default()
     };
-    let mut value = serde_json::to_value(model).unwrap();
+    let mut value = crate::test_support::to_value(model).unwrap();
     value["features"][2]["regeneration_parent"] =
         serde_json::Value::String(second_id.into_string());
 
@@ -538,7 +544,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         )
         .unwrap();
 
-    let value = serde_json::to_value(&ir).unwrap();
+    let value = crate::test_support::to_value(&ir).unwrap();
     let model = value["geometry"].as_object().unwrap();
     assert_eq!(model["surfaces"][0]["geometry"]["kind"], "solved");
     assert_eq!(model["surfaces"][0]["geometry"]["value"]["kind"], "plane");
@@ -551,7 +557,10 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         .get("cache")
         .is_none());
     assert_eq!(model["procedural_curves"][0]["curve"], curve.as_str());
-    assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
+    assert_eq!(
+        crate::test_support::from_value::<CadIr>(&value).unwrap(),
+        ir
+    );
 
     let mut rewritten = Topology::default();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -653,7 +662,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
 #[test]
 fn current_json_without_parameters_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut value = crate::test_support::to_value(&ir).unwrap();
     value
         .get_mut("model")
         .and_then(serde_json::Value::as_object_mut)
@@ -669,7 +678,7 @@ fn current_json_without_parameters_is_refused() {
 #[test]
 fn current_json_without_a_sketch_arena_is_refused() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let document = serde_json::to_value(&ir).unwrap();
+    let document = crate::test_support::to_value(&ir).unwrap();
     for arena in ["sketches", "sketch_entities", "sketch_constraints"] {
         let mut value = document.clone();
         value
@@ -736,7 +745,8 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 
 #[test]
 fn parser_rejects_unsupported_missing_and_non_string_versions() {
-    let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
+    let canonical =
+        crate::test_support::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
         (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
@@ -796,7 +806,7 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 #[test]
 fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty();
-    let json = serde_json::to_value(&ir).unwrap();
+    let json = crate::test_support::to_value(&ir).unwrap();
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
@@ -829,7 +839,7 @@ fn with_scope(ir: &CadIr, scope: serde_json::Value) -> String {
 fn scope_is_a_required_wire_field() {
     let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.scope(), ContentScope::full());
-    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut value = crate::test_support::to_value(&ir).unwrap();
     assert_eq!(
         value["scope"],
         serde_json::json!({"model": true, "design": true, "process": true})
@@ -1045,7 +1055,7 @@ fn a_classified_source_carries_its_format_once() {
     assert_eq!(source.format(), "rhino");
     assert_eq!(source.dialect(), Some(&matched));
     assert_eq!(source.dialects(), Some(&layers));
-    let rendered = serde_json::to_value(&source).unwrap();
+    let rendered = crate::test_support::to_value(&source).unwrap();
     assert_eq!(rendered["identity"]["kind"], "classified");
     assert!(rendered["identity"].get("format").is_none());
     assert!(rendered["identity"]["dialects"]["primary"]
@@ -1056,7 +1066,7 @@ fn a_classified_source_carries_its_format_once() {
         "rhino:archive-80"
     );
     assert_eq!(
-        serde_json::from_value::<SourceMeta>(rendered.clone()).unwrap(),
+        crate::test_support::from_value::<SourceMeta>(&rendered).unwrap(),
         source
     );
 
@@ -1070,7 +1080,7 @@ fn a_classified_source_carries_its_format_once() {
 #[cfg(feature = "schema")]
 #[test]
 fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
-    let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
+    let schema = crate::test_support::to_value(schemars::schema_for!(SourceMeta)).unwrap();
     let required = schema["required"].as_array().unwrap();
 
     assert!(
@@ -1132,7 +1142,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         .unwrap();
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
-    let wire = serde_json::to_value(&model).unwrap();
+    let wire = crate::test_support::to_value(&model).unwrap();
     assert_eq!(
         wire["features"][0]["definition"]["value"]["value"]["children"],
         serde_json::json!({"children": []})
@@ -1143,7 +1153,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     );
     assert!(wire["features"][1].get("parent").is_none());
     assert_eq!(
-        serde_json::from_value::<Model>(wire.clone()).unwrap(),
+        crate::test_support::from_value::<Model>(&wire).unwrap(),
         model
     );
 
@@ -1210,12 +1220,12 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
 fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
     let geometry = Topology::default();
     let model = Model::default();
-    let mut baseline = serde_json::to_value(&geometry).expect("topology serializes");
+    let mut baseline = crate::test_support::to_value(&geometry).expect("topology serializes");
     let object = baseline.as_object_mut().expect("topology is an object");
     object.remove("subds");
     object.insert(
         "tessellations".into(),
-        serde_json::to_value(&model.tessellations).expect("tessellations serialize"),
+        crate::test_support::to_value(&model.tessellations).expect("tessellations serialize"),
     );
     object.insert("kind".into(), serde_json::json!("brep"));
     assert_eq!(

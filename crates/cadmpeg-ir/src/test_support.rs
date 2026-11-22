@@ -39,3 +39,17 @@ pub(crate) fn with_service_decode_context<T>(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     operation(&ctx)
 }
+
+/// Serialize test values through the canonical JSON writer.
+pub(crate) fn to_value<T: serde::Serialize>(
+    value: T,
+) -> Result<serde_json::Value, serde_json::Error> {
+    crate::hash::finite_json::to_json_value(&value)
+}
+
+/// Read a test value through the JSON text reader.
+pub(crate) fn from_value<T: serde::de::DeserializeOwned>(
+    value: &serde_json::Value,
+) -> Result<T, serde_json::Error> {
+    serde_json::from_str(&serde_json::to_string(value)?)
+}

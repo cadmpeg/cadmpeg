@@ -161,8 +161,11 @@ mod tests {
     #[test]
     fn feature_parent_validation_accepts_one_feature_and_serde_reconstruction() {
         let model = model();
-        let wire = serde_json::to_value(&model).unwrap();
+        let wire = crate::test_support::to_value(&model).unwrap();
         validate(&[&model]).unwrap();
-        assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
+        assert_eq!(
+            crate::test_support::from_value::<Model>(&wire).unwrap(),
+            model
+        );
     }
 }

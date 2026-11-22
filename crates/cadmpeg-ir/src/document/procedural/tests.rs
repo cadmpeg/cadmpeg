@@ -162,13 +162,13 @@ fn procedural_round_trip_and_snapshot_keep_thousands_of_owner_rows() {
     let (surface_model, rows) = surfaces(4096);
     geometry.surfaces = surface_model.surfaces;
     geometry.add_procedural_surfaces(rows).unwrap().unwrap();
-    let encoded = serde_json::to_value(&geometry).unwrap();
-    let reconstructed: Topology = serde_json::from_value(encoded.clone()).unwrap();
+    let encoded = crate::test_support::to_value(&geometry).unwrap();
+    let reconstructed: Topology = crate::test_support::from_value(&encoded).unwrap();
     assert_eq!(reconstructed, geometry);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let snapshot = serde_json::to_value(
+    let snapshot = crate::test_support::to_value(
         geometry
             .geometry_snapshot(&crate::document::Model::default(), "brep")
             .unwrap(),

@@ -89,7 +89,7 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
             &[record("a", &["test:model:body#unresolved"])],
         )
         .unwrap();
-    let valid = serde_json::to_value(&document).unwrap();
+    let valid = crate::test_support::to_value(&document).unwrap();
     let parsed = CadIr::from_json(&valid.to_string()).unwrap();
     assert_eq!(
         parsed.native_unknowns("test").unwrap(),
@@ -116,7 +116,7 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
             CadIr::from_json(&wire.to_string()).unwrap(),
             serde_json::from_value::<CadIr>(wire.clone()).unwrap(),
         ] {
-            assert_eq!(serde_json::to_value(&parsed).unwrap(), wire);
+            assert_eq!(crate::test_support::to_value(&parsed).unwrap(), wire);
             assert!(parsed.native_unknowns("test").is_err());
             assert!(parsed.native_unknowns_iter("test").next().unwrap().is_err());
         }

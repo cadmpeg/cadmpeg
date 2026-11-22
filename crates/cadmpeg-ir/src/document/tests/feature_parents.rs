@@ -94,8 +94,8 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
 #[test]
 fn complete_cadir_admission_checks_the_predecessor_against_current_feature_rows() {
     let ir = predecessor_document();
-    let wire = serde_json::to_value(&ir).unwrap();
-    assert_eq!(serde_json::from_value::<CadIr>(wire.clone()).unwrap(), ir);
+    let wire = crate::test_support::to_value(&ir).unwrap();
+    assert_eq!(crate::test_support::from_value::<CadIr>(&wire).unwrap(), ir);
     for mutation in ["missing parent", "ordinal", "tree ownership"] {
         let mut invalid = wire.clone();
         match mutation {
