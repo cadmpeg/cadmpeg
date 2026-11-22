@@ -11,14 +11,15 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError;
+use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::{DirectedParameterRange, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
 use cadmpeg_ir::geometry::{
-    nurbs::{KnotVector, NurbsCurve, NurbsSurface, NurbsSurfaceAxis},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    sampled::{PolylineCurve, PolylineSamples},
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, DirectedParameterRange,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralGeometryError, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
+    ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -1302,9 +1303,11 @@ pub(super) fn decode(
                     local_cache = admitted_payload.local_cache(solved_geometry);
                     let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
                     if local_cache.is_some() {
-                        definition.set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
-                            cadmpeg_ir::geometry::FitTolerance::ZERO,
-                        ))?;
+                        definition.set_legacy_cache(
+                            cadmpeg_ir::geometry::legacy_cache::LegacyCache::new(
+                                cadmpeg_ir::geometry::legacy_cache::FitTolerance::ZERO,
+                            ),
+                        )?;
                     }
                     Ok(ProceduralCurve::new(construction_id.clone(), definition))
                 }) {

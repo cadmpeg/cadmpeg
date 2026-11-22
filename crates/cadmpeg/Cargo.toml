@@ -35,6 +35,7 @@ default = [
   "sat",
   "pvz",
   "usd",
+  "onshape",
 ]
 #
 # Each id forwards to the same feature of `cadmpeg-registry`, which owns the
@@ -53,6 +54,7 @@ step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
 iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
+onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
 [dependencies]

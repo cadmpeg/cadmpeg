@@ -448,31 +448,22 @@ pub(super) fn encode_document_parameters(
         }
         native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
         out.extend_from_slice(&parameter.record_index.to_le_bytes());
+        // The eleven-byte discriminated form of the written type version 8
+        // (f3d.md §3.1): u32 family discriminator, a zero byte, the comment
+        // (empty when none), the ordinal, the null owner, the expression, the
+        // ten-byte trailer with the document flag, and the empty text value.
+        let discriminator = u32::try_from(family_discriminator.value.code())
+            .map_err(|_| CodecError::Malformed("F3D parameter discriminator".into()))?;
         out.extend_from_slice(&[0; 11]);
-        if let Some(comment) = parameter.comment() {
-            // The comment discriminated form (f3d.md §3.1): u32 family
-            // discriminator, the comment, the ordinal, the null owner, the
-            // expression and the five-byte trailer with the document flag.
-            let discriminator = u32::try_from(family_discriminator.value.code())
-                .map_err(|_| CodecError::Malformed("F3D parameter discriminator".into()))?;
-            out.extend_from_slice(&discriminator.to_le_bytes());
-            native_lp_utf16(&mut out, comment)?;
-            out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-            out.push(0);
-            native_lp_utf16(&mut out, parameter.expression())?;
-            out.extend_from_slice(&[0, 0, 0, 0, 1]);
-            native_lp_utf16(&mut out, "User Parameter")?;
-        } else {
-            out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
-            out.push(0);
-            out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-            out.push(0);
-            native_lp_utf16(&mut out, parameter.expression())?;
-            out.extend_from_slice(&[0; 8]);
-            out.push(1);
-            native_lp_utf16(&mut out, "User Parameter")?;
-            out.extend_from_slice(&0u32.to_le_bytes());
-        }
+        out.extend_from_slice(&discriminator.to_le_bytes());
+        out.push(0);
+        native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
+        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.push(0);
+        native_lp_utf16(&mut out, parameter.expression())?;
+        out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+        native_lp_utf16(&mut out, "User Parameter")?;
+        out.extend_from_slice(&0u32.to_le_bytes());
         if let Some(unit) = parameter.unit() {
             native_lp_utf16(&mut out, unit.value.as_str())?;
         } else {

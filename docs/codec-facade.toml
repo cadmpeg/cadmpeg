@@ -104,3 +104,9 @@ id = "solidedge"
 names = ["SolidEdgeCodec"]
 fuzz = "absent"
 fuzz_reason = "the codec target calls SolidEdgeCodec directly"
+
+[[crate]]
+id = "onshape"
+names = ["OnshapeCodec"]
+fuzz = "absent"
+fuzz_reason = "synthetic bundles exercise OnshapeCodec"

@@ -17,7 +17,10 @@ use self::classify::classless_builtin_node;
 
 use crate::container::ContainerScan;
 use crate::records::FeatureSource;
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
+use crate::records::{
+    Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent, HistoryElement,
+    HistoryElementContent,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
@@ -65,6 +68,180 @@ fn report_unkeyed_property(losses: &mut Vec<LossNote>, record: &str, duplicate: 
     losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
 }
 
+/// Whether a member name is a name of a Keywords history member:
+/// `KeyWords`, a compound-file `KeyWords__ZLB` stream, or a written
+/// `Keywords-<n>` member.
+fn names_history(name: Option<&str>) -> bool {
+    let Some(leaf) = name.and_then(|name| name.rsplit('/').next()) else {
+        return false;
+    };
+    let leaf = leaf.to_ascii_lowercase();
+    leaf == "keywords"
+        || leaf == "keywords__zlb"
+        || leaf.strip_prefix("keywords-").is_some_and(|index| {
+            !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+/// Charges a Keywords history member that no record is read from.
+fn report_unread(losses: &mut Vec<LossNote>, member: &str, cause: &str) {
+    losses.push(crate::loss::SldprtLossCode::HistoryUnread.note(format!(
+        "Keywords member {member}: {cause}; no configuration or feature of the history is read"
+    )));
+}
+
+/// Element levels of one `Application` element the native history keeps, the
+/// element itself being level 1.
+///
+/// Each level is three containers of the stored record (the element, its
+/// content array and the content item), and a CADIR document is read with the
+/// 128 containers a `serde_json` text parse admits from the document root. A
+/// stored element of 39 levels is the deepest that reads back, so 16 levels
+/// keep the record under half of that; corpus elements nest 2 levels.
+const MAX_APPLICATION_LEVELS: usize = 16;
+
+/// The elements of one `Application` subtree below [`MAX_APPLICATION_LEVELS`].
+#[derive(Default)]
+struct ApplicationCut {
+    /// Elements not kept, each counted once.
+    elements: usize,
+    /// Level of the deepest element not kept.
+    deepest: usize,
+    /// The first element not kept and the element it sits in.
+    first: Option<String>,
+}
+
+impl ApplicationCut {
+    /// Counts `child`, an element child of `parent` at `level`, with its
+    /// subtree.
+    fn take(
+        &mut self,
+        parent: roxmltree::Node<'_, '_>,
+        child: roxmltree::Node<'_, '_>,
+        level: usize,
+    ) {
+        self.first.get_or_insert_with(|| {
+            let tag = child.tag_name().name();
+            let named = match child.attribute("Name") {
+                Some(name) => format!("{tag} {name:?}"),
+                None => tag.to_owned(),
+            };
+            format!(
+                "{named} element inside the level-{level} {} element",
+                parent.tag_name().name()
+            )
+        });
+        let mut pending = vec![(child, level + 1)];
+        while let Some((node, at)) = pending.pop() {
+            self.elements += 1;
+            self.deepest = self.deepest.max(at);
+            pending.extend(
+                node.children()
+                    .filter(roxmltree::Node::is_element)
+                    .map(|grandchild| (grandchild, at + 1)),
+            );
+        }
+    }
+}
+
+/// Charges an `Application` element of a Keywords root, which the native
+/// history keeps and no neutral record holds, from its stored record.
+fn report_application(losses: &mut Vec<LossNote>, member: &str, application: &HistoryElement) {
+    let name = application_name(application);
+    let children = application
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            HistoryElementContent::Element(child) => Some(match child.attributes.get("Name") {
+                Some(name) => format!("{} {name:?}", child.tag),
+                None => child.tag.clone(),
+            }),
+            HistoryElementContent::Text(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let held = if children.is_empty() {
+        "no child element".to_owned()
+    } else {
+        format!("the child elements {}", children.join(", "))
+    };
+    losses.push(crate::loss::SldprtLossCode::HistoryApplicationNotTransferred.note(format!(
+        "Keywords member {member}: the Application element {name} with {held} is kept in the native history; no neutral record holds it, so a write to another format omits it"
+    )));
+}
+
+/// Charges the elements of an `Application` subtree that the native history
+/// does not keep.
+fn report_application_cut(
+    losses: &mut Vec<LossNote>,
+    member: &str,
+    application: &HistoryElement,
+    cut: &ApplicationCut,
+) {
+    let Some(first) = &cut.first else {
+        return;
+    };
+    let count = match cut.elements {
+        1 => format!("1 element below level {MAX_APPLICATION_LEVELS} is"),
+        elements => format!("{elements} elements below level {MAX_APPLICATION_LEVELS} are"),
+    };
+    losses.push(crate::loss::SldprtLossCode::HistoryApplicationNestingCut.note(format!(
+        "Keywords member {member}: the Application element {} nests {} element levels; the native history keeps {MAX_APPLICATION_LEVELS}, so {count} not kept, the first a {first}; a SolidWorks write that regenerates the history omits them",
+        application_name(application),
+        cut.deepest,
+    )));
+}
+
+/// The `Name` of a stored `Application` element, as a note states it.
+fn application_name(application: &HistoryElement) -> String {
+    application
+        .attributes
+        .get("Name")
+        .map_or_else(|| "without a Name".to_owned(), |name| format!("{name:?}"))
+}
+
+/// The native record of an XML element at `level` and its subtree to
+/// [`MAX_APPLICATION_LEVELS`]; `cut` counts the elements below it.
+fn history_element(
+    losses: &mut Vec<LossNote>,
+    record: &str,
+    node: roxmltree::Node<'_, '_>,
+    level: usize,
+    cut: &mut ApplicationCut,
+) -> HistoryElement {
+    let attributes = keyed_attributes(
+        losses,
+        record,
+        node.attributes()
+            .map(|attribute| (attribute.name(), attribute.value())),
+    );
+    let mut content = Vec::new();
+    for child in node.children() {
+        if child.is_text() {
+            let value = child.text().unwrap_or_default().trim();
+            if !value.is_empty() {
+                content.push(HistoryElementContent::Text(value.to_owned()));
+            }
+        } else if child.is_element() {
+            if level < MAX_APPLICATION_LEVELS {
+                content.push(HistoryElementContent::Element(history_element(
+                    losses,
+                    record,
+                    child,
+                    level + 1,
+                    cut,
+                )));
+            } else {
+                cut.take(node, child, level);
+            }
+        }
+    }
+    HistoryElement {
+        tag: node.tag_name().name().to_owned(),
+        attributes,
+        content,
+    }
+}
+
 pub(crate) fn histories(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -74,25 +251,66 @@ pub(crate) fn histories(
     scan.sections()
         .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
+            let stream = section.source_stream();
+            let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
+                if named {
+                    report_unread(losses, stream.as_str(), "no XML payload is decoded from it");
+                }
                 return Ok(histories);
             };
             let Some(text) = crate::container::xml_text(payload) else {
+                if named {
+                    report_unread(
+                        losses,
+                        stream.as_str(),
+                        "its bytes are not UTF-8 or UTF-16LE text",
+                    );
+                }
                 return Ok(histories);
             };
             let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
                 Ok(tree) => tree,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => {
+                Err(error) => {
+                    if named {
+                        let cause = match error {
+                            CodecError::Malformed(message) => {
+                                format!("its XML does not parse: {message}")
+                            }
+                            refused => format!("its XML is refused: {refused}"),
+                        };
+                        report_unread(losses, stream.as_str(), &cause);
+                    }
                     return Ok(histories);
                 }
             };
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
+                if named {
+                    report_unread(
+                        losses,
+                        stream.as_str(),
+                        &format!(
+                            "its root element {:?} is not a Keywords root",
+                            root.tag_name().name()
+                        ),
+                    );
+                }
                 return Ok(histories);
             }
-            let stream = section.source_stream();
             let parent = format!("sldprt:history:feature-history#{source}");
+            let applications = root
+                .children()
+                .filter(|node| node.is_element() && node.tag_name().name() == "Application")
+                .map(|node| {
+                    let mut cut = ApplicationCut::default();
+                    let element = history_element(losses, parent.as_str(), node, 1, &mut cut);
+                    report_application(losses, stream.as_str(), &element);
+                    report_application_cut(losses, stream.as_str(), &element, &cut);
+                    (node, element)
+                })
+                .collect::<Vec<_>>();
             let configurations = root
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
@@ -143,6 +361,11 @@ pub(crate) fn histories(
                             node.tag_name().name(),
                             "Keywords" | "Configuration" | "Dimension"
                         )
+                        && !node.ancestors().any(|ancestor| {
+                            applications
+                                .iter()
+                                .any(|(application, _)| *application == ancestor)
+                        })
                 })
             };
             let feature_ids = feature_nodes()
@@ -300,6 +523,11 @@ pub(crate) fn histories(
                         );
                         configuration_ordinal += 1;
                         Some(HistoryContent::Configuration(id))
+                    } else if let Some((_, element)) = applications
+                        .iter()
+                        .find(|(application, _)| *application == child)
+                    {
+                        Some(HistoryContent::Element(element.clone()))
                     } else {
                         feature_ids
                             .get(&child.range().start)

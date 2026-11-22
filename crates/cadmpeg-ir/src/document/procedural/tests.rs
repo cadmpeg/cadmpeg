@@ -2,9 +2,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
