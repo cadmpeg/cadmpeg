@@ -81,7 +81,8 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    const CATIA: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/catia_container/standard_nested");
+    const CATIA: &[u8] =
+        include_bytes!("../../../cadmpeg-fuzz/seeds/catia_container/standard_nested");
     #[cfg(all(
         feature = "catia",
         feature = "creo",
@@ -89,7 +90,8 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    const CREO: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/creo_container/with_surface_rows");
+    const CREO: &[u8] =
+        include_bytes!("../../../cadmpeg-fuzz/seeds/creo_container/with_surface_rows");
     #[cfg(all(
         feature = "catia",
         feature = "creo",
@@ -98,7 +100,7 @@ mod budget {
         feature = "sldprt"
     ))]
     const FREECAD: &[u8] =
-        include_bytes!("../../cadmpeg-fuzz/seeds/fcstd_container/core_design_product.FCStd");
+        include_bytes!("../../../cadmpeg-fuzz/seeds/fcstd_container/core_design_product.FCStd");
     #[cfg(all(
         feature = "catia",
         feature = "creo",
@@ -106,7 +108,7 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    const NX: &[u8] = include_bytes!("fixtures/nx_topology_part.prt");
+    const NX: &[u8] = include_bytes!("../fixtures/nx_topology_part.prt");
     #[cfg(all(
         feature = "catia",
         feature = "creo",
@@ -114,7 +116,7 @@ mod budget {
         feature = "nx",
         feature = "sldprt"
     ))]
-    const SLDPRT: &[u8] = include_bytes!("fixtures/sldprt_triangle_body.sldprt");
+    const SLDPRT: &[u8] = include_bytes!("../fixtures/sldprt_triangle_body.sldprt");
 
     #[cfg(all(
         feature = "catia",
