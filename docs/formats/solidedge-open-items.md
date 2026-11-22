@@ -65,3 +65,19 @@
 
 **Need.** The protrusions that hold `1` rebuilt in controlled saves, and a protrusion and a cutout that differ only in the boolean operation.
 
+### DR-1021. Topology proxy selections
+
+**Question.** Which edges and faces does a `CLSID_JMTopologyProxy` object select, and which face of a two-setback chamfer is its reference face?
+
+**Known.** Rounds and chamfers name their edges and reference faces by `CLSID_JMTopologyProxy` identifiers (§7.3, §7.4). A proxy object is 559 bytes for an edge selection and 827 bytes for a chamfer reference face in the read documents.
+
+**Need.** Documents that differ only in the selected edge of a round, and a two-setback chamfer and its copy with the setbacks swapped.
+
+### DR-1022. Tapped hole thread data
+
+**Question.** At which offset does a tapped hole's `CLSID_JMHolePropData` object store its thread diameters and designation?
+
+**Known.** A tapped hole's property data holds two `f64` diameters in millimetres, then a `u32` character count and the UTF-16LE thread designation. The block's offset varies with the object length.
+
+**Need.** Tapped holes of two thread sizes, with and without a counterbore.
+
