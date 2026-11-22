@@ -458,10 +458,32 @@ impl NativeRecord {
     /// `id` is not a codec-owned field and is never answered here.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
-        if name == "id" {
+        if name == "id" || !self.may_hold_field(name) {
             return None;
         }
         replay::value(replay::member(&self.json, name)?.get()).ok()
+    }
+
+    /// Cheap text check before parsing `self.json` for `name`: canonical
+    /// compact JSON renders any unescaped ASCII key literally as `"name":`.
+    fn may_hold_field(&self, name: &str) -> bool {
+        let plain_ascii = name
+            .bytes()
+            .all(|byte| (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\');
+        if !plain_ascii {
+            return true;
+        }
+        if name.len() <= 64 {
+            let mut needle = [0_u8; 67];
+            needle[0] = b'"';
+            needle[1..=name.len()].copy_from_slice(name.as_bytes());
+            needle[name.len() + 1] = b'"';
+            needle[name.len() + 2] = b':';
+            if let Ok(needle) = std::str::from_utf8(&needle[..name.len() + 3]) {
+                return self.json.contains(needle);
+            }
+        }
+        self.json.contains(name)
     }
 
     /// Deserialize the codec-owned record straight from its stored text.
