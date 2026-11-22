@@ -228,6 +228,32 @@ fn extended(construction: &DesignThreadConstruction) -> &DesignThreadExtended {
 }
 
 #[test]
+fn the_extended_standard_trailer_reads_both_hands_and_rejects_other_flags() {
+    for owner_marked in [false, true] {
+        for (flag, expected) in [(0, Some(false)), (1, Some(true)), (2, None)] {
+            let mut fixture = Fixture::modeled();
+            fixture.owner_marked = owner_marked;
+            let mut bytes = fixture.bytes();
+            *bytes.last_mut().unwrap() = flag;
+            let decoded = fixture.decode_bytes(&bytes);
+            assert_eq!(decoded.is_some(), flag < 2);
+            assert_eq!(
+                decoded
+                    .as_ref()
+                    .and_then(|value| extended(value).right_handed),
+                expected,
+            );
+            if let Some(decoded) = decoded {
+                assert!(decoded.modeled);
+                assert_eq!(decoded.profile.as_str(), "ISO Metric profile");
+                assert_eq!(extended(&decoded).class, "6g");
+                assert!(extended(&decoded).external);
+            }
+        }
+    }
+}
+
+#[test]
 fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
     let construction = Fixture::cosmetic().decode().expect("cosmetic thread");
     assert_eq!(construction.form, DesignThreadForm::StandardExtended);

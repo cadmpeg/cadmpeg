@@ -206,7 +206,7 @@ fn native_pcurve_form(
                     form.uv_offset
                         .unwrap_or(cadmpeg_ir::units::FinitePoint2::ZERO.into()),
                     form.fit_tolerance()
-                        .unwrap_or(cadmpeg_ir::geometry::FitTolerance::ZERO),
+                        .unwrap_or(cadmpeg_ir::geometry::legacy_cache::FitTolerance::ZERO),
                 ),
             ))
         }

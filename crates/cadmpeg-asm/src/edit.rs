@@ -3,11 +3,9 @@
 
 use crate::kernel_header::RefWidth;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    pcurve::PcurveNurbs,
-    ProceduralCurveDefinition,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{ParameterInterval, Sense};
@@ -24,9 +22,9 @@ const LENGTH_PER_MILLIMETRE: FiniteReal = match FiniteReal::new(1.0 / LEN_TO_MM)
 };
 use crate::sab::{self, Record};
 use cadmpeg_ir::geometry::curve_payloads::SpringCurvePayload;
-use cadmpeg_ir::geometry::{
-    CompoundComponent, IntcurveSupportContext, ProjectionTail, SurfaceCurveFamily,
-};
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext;
+use cadmpeg_ir::geometry::procedural_curves::CompoundComponent;
+use cadmpeg_ir::geometry::surface_curves::{ProjectionTail, SurfaceCurveFamily};
 use cadmpeg_ir::ids::CurveId;
 
 /// Framing and fixed-width write context for one ASM record stream.
@@ -1073,7 +1071,7 @@ fn patch_helix_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    definition: &cadmpeg_ir::geometry::HelixCurveConstruction,
+    definition: &cadmpeg_ir::geometry::helix::HelixCurveConstruction,
 ) -> Result<(), CodecError> {
     let angle_range = definition.angle_range();
     let center = definition.center().as_raw();
@@ -1378,10 +1376,11 @@ fn patch_spring_definition(
     let context = definition.support_context();
     let layout = definition.layout();
     let discontinuity_flag = match layout {
-        cadmpeg_ir::geometry::SpringLayout::ContextFirst {
-            discontinuity_flag, ..
+        cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
+            discontinuity_flag,
+            ..
         } => *discontinuity_flag,
-        cadmpeg_ir::geometry::SpringLayout::CacheFirst { .. } => false,
+        cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst { .. } => false,
     };
     let record_bytes = record_slice(bytes, record, "spring")?;
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, stream_width)
@@ -1429,7 +1428,7 @@ fn patch_projection_definition(
     match (&layout.tail, tail) {
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::EarlyClose { flag: offset },
-            cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
+            cadmpeg_ir::geometry::surface_curves::ProjectionTail::EarlyClose { flag },
         ) => AsmEditSet::patch_native_bool(bytes, record.offset + offset, *flag)?,
         (
             crate::nurbs::proc_curve::ProjectionTailPatchLayout::Ranged {
@@ -1437,7 +1436,7 @@ fn patch_projection_definition(
                 parameter_range: range_offsets,
                 role: role_range,
             },
-            cadmpeg_ir::geometry::ProjectionTail::Ranged {
+            cadmpeg_ir::geometry::surface_curves::ProjectionTail::Ranged {
                 flag,
                 parameter_range,
                 role,
@@ -1563,9 +1562,11 @@ fn patch_silhouette_definition(
     let silhouette = construction.silhouette();
     let light_direction = *construction.light_direction();
     let draft_factor = match silhouette {
-        cadmpeg_ir::geometry::SilhouetteKind::Standard {}
-        | cadmpeg_ir::geometry::SilhouetteKind::Parametric {} => None,
-        cadmpeg_ir::geometry::SilhouetteKind::Taper { draft_factor } => Some(draft_factor.get()),
+        cadmpeg_ir::geometry::surface_curves::SilhouetteKind::Standard {}
+        | cadmpeg_ir::geometry::surface_curves::SilhouetteKind::Parametric {} => None,
+        cadmpeg_ir::geometry::surface_curves::SilhouetteKind::Taper { draft_factor } => {
+            Some(draft_factor.get())
+        }
     };
     let record_bytes = record_slice(bytes, record, "silhouette")?;
     let layout =
@@ -2202,9 +2203,10 @@ mod tests {
 
     #[test]
     fn projection_tail_form_rejection_preserves_all_bytes() {
-        use cadmpeg_ir::geometry::{
-            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        use cadmpeg_ir::geometry::intersection_curves::{
+            IntcurveSupportContext, IntcurveSupportSide,
         };
+        use cadmpeg_ir::geometry::surface_curves::{ProjectionRole, ProjectionTail};
 
         for width in [RefWidth::Four, RefWidth::Eight] {
             for early_close in [false, true] {
@@ -2241,9 +2243,10 @@ mod tests {
 
     #[test]
     fn incomplete_projection_context_preserves_ranged_tail_bytes() {
-        use cadmpeg_ir::geometry::{
-            IntcurveSupportContext, IntcurveSupportSide, ProjectionRole, ProjectionTail,
+        use cadmpeg_ir::geometry::intersection_curves::{
+            IntcurveSupportContext, IntcurveSupportSide,
         };
+        use cadmpeg_ir::geometry::surface_curves::{ProjectionRole, ProjectionTail};
         for width in [RefWidth::Four, RefWidth::Eight] {
             let (mut bytes, record) = projection_fixture(width, false);
             let context = IntcurveSupportContext::try_new(

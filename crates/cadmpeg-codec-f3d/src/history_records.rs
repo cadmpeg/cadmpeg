@@ -260,6 +260,10 @@ pub(crate) struct AsmEntityVersion {
 /// Stable entity-slot membership of one re-derived historical B-rep.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopology {
+    #[serde(skip)]
+    pub(crate) face_envelopes: AsmHistoricalEnvelopeCache,
+    #[serde(skip)]
+    pub(crate) edge_envelopes: AsmHistoricalEnvelopeCache,
     pub(crate) bodies: Vec<i64>,
     pub(crate) regions: Vec<i64>,
     pub(crate) shells: Vec<i64>,
@@ -325,6 +329,65 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space samples of the bounded curve carriers of edges in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) edge_samples: Vec<AsmHistoricalEdgeSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AsmHistoricalEnvelope {
+    pub(crate) entity: i64,
+    pub(crate) boundary: Vec<i64>,
+    pub(crate) low: Point3,
+    pub(crate) high: Point3,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct AsmHistoricalEnvelopeCache<T = Vec<AsmHistoricalEnvelope>>(T);
+
+impl<T> PartialEq for AsmHistoricalEnvelopeCache<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> std::ops::Deref for AsmHistoricalEnvelopeCache<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for AsmHistoricalEnvelopeCache<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T> From<T> for AsmHistoricalEnvelopeCache<T> {
+    fn from(rows: T) -> Self {
+        Self(rows)
+    }
+}
+
+impl<T: IntoIterator> IntoIterator for AsmHistoricalEnvelopeCache<T> {
+    type Item = T::Item;
+    type IntoIter = T::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl FromIterator<AsmHistoricalEnvelope> for AsmHistoricalEnvelopeCache {
+    fn from_iter<T: IntoIterator<Item = AsmHistoricalEnvelope>>(rows: T) -> Self {
+        Self(rows.into_iter().collect())
+    }
+}
+
+impl AsmHistoricalRow for AsmHistoricalEnvelope {
+    fn key(&self) -> i64 {
+        self.entity
+    }
 }
 
 /// One persistent tag group attached to a historical face or edge revision.
@@ -898,6 +961,43 @@ mod tests {
     use super::AsmDeltaState;
 
     #[test]
+    fn transient_envelopes_preserve_topology_identity_and_wire() {
+        use super::{
+            AsmHistoricalEnvelope, AsmHistoricalRowDelta, AsmHistoricalRowsDelta,
+            AsmHistoricalTopology,
+        };
+        use cadmpeg_ir::math::Point3;
+
+        let empty = AsmHistoricalTopology::default();
+        let mut cached = empty.clone();
+        cached.face_envelopes.push(AsmHistoricalEnvelope {
+            entity: 1,
+            boundary: vec![2, 3, 4],
+            low: Point3::new(0.0, 0.0, 0.0),
+            high: Point3::new(1.0, 1.0, 1.0),
+        });
+        assert_eq!(empty, cached);
+        assert_eq!(
+            serde_json::to_vec(&empty).unwrap(),
+            serde_json::to_vec(&cached).unwrap()
+        );
+        let rows = AsmHistoricalRowsDelta {
+            face_envelopes: AsmHistoricalRowDelta {
+                set: cached.face_envelopes.to_vec(),
+                ..AsmHistoricalRowDelta::default()
+            }
+            .into(),
+            ..AsmHistoricalRowsDelta::default()
+        };
+        let empty_rows = AsmHistoricalRowsDelta::default();
+        assert_eq!(rows, empty_rows);
+        assert_eq!(
+            serde_json::to_vec(&rows).unwrap(),
+            serde_json::to_vec(&empty_rows).unwrap()
+        );
+    }
+
+    #[test]
     fn history_record_borrowed_wire_matches_owned_wire_bytes() {
         use super::{AsmHistoryRecord, AsmHistoryRecordFraming, AsmHistoryRecordWire};
 
@@ -1174,6 +1274,12 @@ impl AsmHistoricalRow for AsmHistoricalSlotRepeat {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRowsDelta {
+    #[serde(skip)]
+    pub(crate) face_envelopes:
+        AsmHistoricalEnvelopeCache<AsmHistoricalRowDelta<AsmHistoricalEnvelope>>,
+    #[serde(skip)]
+    pub(crate) edge_envelopes:
+        AsmHistoricalEnvelopeCache<AsmHistoricalRowDelta<AsmHistoricalEnvelope>>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]
     pub(crate) surface_repeats: AsmHistoricalRowDelta<AsmHistoricalSlotRepeat>,
     #[serde(default, skip_serializing_if = "AsmHistoricalRowDelta::is_empty")]

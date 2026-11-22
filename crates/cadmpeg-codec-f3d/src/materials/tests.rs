@@ -1732,6 +1732,8 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
 
 mod assignment_losses;
 
+mod body_override_binding;
+
 mod appearance_assignments;
 
 #[test]

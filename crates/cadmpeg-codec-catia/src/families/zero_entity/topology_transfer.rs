@@ -872,7 +872,7 @@ pub(super) fn transfer_closed_face_topology(
                             pcurve: copied_id!(pcurve.id, PcurveId),
                             isoparametric: None,
                             parameter_range: Some(
-                                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
+                                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()?,
                             ),
                         })
                     } else {

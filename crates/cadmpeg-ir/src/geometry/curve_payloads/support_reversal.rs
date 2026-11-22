@@ -6,7 +6,8 @@ use super::{
     SilhouetteCurveConstruction, SpringCurvePayload, SurfaceOffsetCurveConstruction,
     ThreeSurfaceIntersectionCurvePayload, TwoSidedOffsetCurveConstruction,
 };
-use crate::geometry::{CacheContract, SpringLayout};
+use crate::geometry::legacy_cache::CacheContract;
+use crate::geometry::surface_curves::SpringLayout;
 
 impl SpringCurvePayload {
     pub(crate) fn reverse_cache_first_about_zero(&mut self) -> Option<()> {
