@@ -3,7 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{
+    DecodeDepth, DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -327,12 +329,14 @@ fn an_unread_configuration_keeps_timeline_sketches_and_geometry() {
     assert_eq!(replayed, source);
 }
 
-#[test]
-fn an_unread_primary_header_keeps_the_other_design_stream() {
+const SKETCH_CONSTRAINTS: &[u8] =
+    include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d");
+
+/// The sketch-constraints archive plus a Design stream whose first primary
+/// record has an unreadable header and whose second is intact.
+fn with_unread_primary_header() -> Vec<u8> {
     use std::io::Write;
-    let source =
-        include_bytes!("../../tests/golden/fixtures/design_sketch_constraints.f3d").to_vec();
-    let full = decode(source.clone());
+    let source = SKETCH_CONSTRAINTS.to_vec();
     let mut bulk = Vec::new();
     crate::test_support::lp_ascii(&mut bulk, "bad");
     bulk.extend_from_slice(&41u32.to_le_bytes());
@@ -366,7 +370,14 @@ fn an_unread_primary_header_keeps_the_other_design_stream() {
     )
     .unwrap();
     zip.write_all(&meta).unwrap();
-    let recovered = decode(zip.finish().unwrap().into_inner());
+    zip.finish().unwrap().into_inner()
+}
+
+#[test]
+fn an_unread_primary_header_keeps_the_other_design_stream() {
+    let source = SKETCH_CONSTRAINTS.to_vec();
+    let full = decode(source);
+    let recovered = decode(with_unread_primary_header());
     assert_eq!(recovered.ir().model.features, full.ir().model.features);
     assert_eq!(recovered.ir().model.sketches, full.ir().model.sketches);
     assert_eq!(recovered.ir().geometry, full.ir().geometry);
@@ -504,4 +515,37 @@ fn native_validation_accepts_shared_sketch_members_only_without_an_owner() {
         }
     }
     assert_eq!(sketch_ownership_findings(&shared), Vec::<String>::new());
+}
+
+#[test]
+fn an_unread_primary_header_is_no_loss_below_design_depth() {
+    let bytes = with_unread_primary_header();
+    for depth in [DecodeDepth::Container, DecodeDepth::Geometry] {
+        let mut options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        options.policy.mode = DecodeMode::Strict;
+        let result = EditableDecodeResult::from(
+            crate::test_support::archive_session::decode(&mut Cursor::new(&bytes), &options)
+                .expect("strict decode below Design depth admits the archive"),
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != F3dLossCode::PrimaryRecordUndecoded.kind()));
+    }
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect_err("strict decode at Design depth refuses the unread header");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        F3dLossCode::PrimaryRecordUndecoded.kind()
+    );
 }

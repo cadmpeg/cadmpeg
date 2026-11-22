@@ -4065,9 +4065,9 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles.
 
-**Conflict.** None.
+**Conflict.** `f3d.md` §3.1 states that version-3 settings use the mask-and-slots prefix, a u32 mask followed by nine optional references. The frames described here are version-3 frames without the u32 mask and with four present references. The two layouts do not describe the same bytes, and no byte rule selects between them.
 
-**Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+**Note.** The decoder preserves each unread frame in the source archive with `feature.bend-settings-undecoded` and retains other Design records.
 
 ### DR-889. Extrude selection members in sketch text
 

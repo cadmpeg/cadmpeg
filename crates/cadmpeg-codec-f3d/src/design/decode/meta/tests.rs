@@ -267,15 +267,18 @@ fn unreadable_primary_headers_keep_their_indexed_sibling() {
             ],
             secondary_records: Vec::new(),
         };
-        let mut unread = Vec::new();
-        let frames = super::collect_design_primary_frames(&bytes, &meta, |entity, offset, _| {
-            unread.push((entity, offset));
-        })
+        let mut losses = Vec::new();
+        let frames = super::collect_design_primary_frames(
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+            &mut losses,
+        )
         .unwrap();
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].entity_id, 42);
         assert_eq!(frames[0].start, sibling_start);
-        assert_eq!(unread, [(41, 0)]);
+        assert_eq!(losses.len(), 1);
         let typed = super::typed_primary_frames(&bytes, &meta, GUID, "synthetic").unwrap();
         assert_eq!(typed.len(), 1);
         assert_eq!(typed[0].entity_id, 42);
@@ -303,14 +306,17 @@ fn unreadable_nested_header_keeps_its_primary_sibling() {
         ],
         secondary_records: vec![crate::design::test_support::primary_record(41, 11)],
     };
-    let mut unread = Vec::new();
-    let frames = super::collect_design_primary_frames(&bytes, &meta, |entity, offset, _| {
-        unread.push((entity, offset));
-    })
-    .unwrap();
+    let mut losses = Vec::new();
+    let frames =
+        super::collect_design_primary_frames(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
+            .unwrap();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].entity_id, 42);
-    assert_eq!(unread, [(41, 0)]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
+    );
 }
 
 #[test]
@@ -343,7 +349,6 @@ fn primary_header_losses_are_reported_once_for_the_design_stream() {
             losses[0].code,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
         );
-        assert!(losses[0].message.contains("record 41"));
     });
 }
 

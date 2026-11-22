@@ -10,10 +10,14 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn unreadable_relation_keeps_its_sibling_relation() {
+fn skipped_relations_charge_no_loss_and_keep_their_sibling() {
     use crate::design::decode::sketch::{decode_sketch_relation_with_losses, RELATION_TYPE_GUID};
     use crate::records::decal::DesignRecordHeader;
 
+    // A truncated frame and a frame with nonzero padding are skipped without
+    // a loss; only the readable relation is admitted.
+    let mut padded = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    padded.push(1);
     let mut records = Vec::new();
     let mut losses = Vec::new();
     for (index, mut payload) in [
@@ -21,6 +25,7 @@ fn unreadable_relation_keeps_its_sibling_relation() {
             7u32,
             relation_record(&[(300, 0)], &[], 201, 1, &[300])[..20].to_vec(),
         ),
+        (9, padded),
         (8, relation_record(&[(300, 0)], &[], 201, 1, &[300])),
     ] {
         payload[7..11].copy_from_slice(&index.to_le_bytes());
@@ -43,11 +48,7 @@ fn unreadable_relation_keeps_its_sibling_relation() {
     }
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_index, 8);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
-    );
+    assert!(losses.is_empty());
 }
 
 #[test]

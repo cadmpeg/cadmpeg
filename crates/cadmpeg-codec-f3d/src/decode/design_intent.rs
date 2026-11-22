@@ -1537,17 +1537,22 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
-    model.configurations = crate::design::configurations::project_configurations_with_losses(
-        &design.design_configurations,
-        &crate::design::configurations::ConfigurationTargets {
-            parameters: &prereqs.design_parameters,
-            owners: &prereqs.design_parameter_owners,
-            scopes: &design.design_parameter_scopes,
-            neutral_parameters: &model.parameters,
-            neutral_features: &model.features,
-        },
+    model.configurations = crate::design::decode::record::recover(
+        crate::design::configurations::project_configurations(
+            &design.design_configurations,
+            &crate::design::configurations::ConfigurationTargets {
+                parameters: &prereqs.design_parameters,
+                owners: &prereqs.design_parameter_owners,
+                scopes: &design.design_parameter_scopes,
+                neutral_parameters: &model.parameters,
+                neutral_features: &model.features,
+            },
+        ),
         &mut losses,
-    )?;
+        F3dLossCode::ConfigurationProjectionNative,
+        "Configuration projection",
+    )?
+    .unwrap_or_default();
     crate::design::configurations::reconcile_active_configurations(
         &mut model.features,
         &mut model.configurations,

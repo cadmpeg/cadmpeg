@@ -3690,7 +3690,7 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<design_intent::DesignOutputs, CodecError> {
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
-        design_intent::decode(&design_intent::DesignInputs {
+        let outputs = design_intent::decode(&design_intent::DesignInputs {
             ctx: self.ctx,
             scan: self.scan,
             prereqs,
@@ -3725,7 +3725,13 @@ impl<'a> F3dDecodeSession<'a> {
                     FinalizePath::Bodyless(_) => design_intent::DesignPath::Bodyless,
                 },
             },
-        })
+        })?;
+        // A record-level recovery turns every other error into a loss. A
+        // resource refusal that one of them swallowed still ends the session.
+        if let Some(limit) = self.ctx.resource_refusal() {
+            return Err(limit.into());
+        }
+        Ok(outputs)
     }
 
     /// Add the phase-2 losses and neutral arenas. Native records wait for

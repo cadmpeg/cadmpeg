@@ -95,6 +95,14 @@ pub(crate) fn decode_settings(
             .iter()
             .map(|frame| (frame.entity_id, frame))
             .collect::<HashMap<_, _>>();
+        let stream = SettingsStream {
+            entry_name: &entry.name,
+            bytes,
+            registrations: &meta.types,
+            primary: &primary,
+            by_entity: &by_entity,
+            frames_by_entity: &frames_by_entity,
+        };
         let mut thickness_by_rule = HashMap::new();
         for frame in &frames {
             let Some((guid, version)) = by_entity.get(&frame.entity_id) else {
@@ -103,45 +111,10 @@ pub(crate) fn decode_settings(
             if !guid.eq_ignore_ascii_case(SETTINGS_GUID) || !matches!(version, 2 | 3) {
                 continue;
             }
-            let result = (|| {
-                let fields =
-                    parse_settings(bytes, *frame, *version, &primary, &by_entity, &meta.types)
-                        .ok_or_else(|| {
-                            CodecError::malformed(
-                                "F3D sheet-metal settings frame or typed link is invalid",
-                            )
-                        })?;
-                let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
-                    let frame = frames_by_entity.get(&fields.rule)?;
-                    let (_, version) = by_entity.get(&fields.rule)?;
-                    let view = View::over_retained(bytes).child(frame.start, frame.member_end)?;
-                    rule_thickness(view, *version, &by_entity)
-                });
-                let id = super::text::design_record_id(
-                    &entry.name,
-                    ":design-sheet-metal-settings#",
-                    u64_from_index(frame.start),
-                );
-                DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
-                    id,
-                    record_index: frame.entity_id,
-                    byte_offset: u64_from_index(frame.start),
-                    paired_byte_offset: u64_from_index(frame.member_end),
-                    mask: fields.mask,
-                    inputs: fields.inputs,
-                    rule_record_index: fields.rule,
-                    presentation_record_index: fields.presentation,
-                    owner_record_index: fields.owner,
-                    context_record_index: fields.context,
-                    rule_thickness: rule.map(|(thickness, _)| thickness),
-                    rule_thickness_offset: rule.map(|(_, offset)| offset),
-                })
-                .map_err(CodecError::Malformed)
-            })();
             let Some(record) = super::record::recover(
-                result,
+                stream.record(frame, *version, &mut thickness_by_rule),
                 losses,
-                crate::loss::F3dLossCode::SheetMetalSettingsUndecoded,
+                crate::loss::F3dLossCode::BendSettingsUndecoded,
                 format_args!("Sheet-metal settings record {}", frame.entity_id),
             )?
             else {
@@ -213,6 +186,67 @@ fn local(view: &mut View<'_>) -> Result<Option<u64>, ()> {
         _ => Err(()),
     }
 }
+type RuleThickness = Option<(cadmpeg_ir::scalar::PositiveReal, u64)>;
+
+/// The primary frames of one settings stream and the registrations that type
+/// them.
+struct SettingsStream<'a> {
+    entry_name: &'a str,
+    bytes: &'a [u8],
+    registrations: &'a [crate::records::entity_header::SegmentTypeData],
+    primary: &'a HashSet<u64>,
+    by_entity: &'a HashMap<u64, (&'a str, u32)>,
+    frames_by_entity: &'a HashMap<u64, &'a PrimaryRecordFrame>,
+}
+
+impl SettingsStream<'_> {
+    /// The settings record at `frame`, with the thickness of the rule it names.
+    fn record(
+        &self,
+        frame: &PrimaryRecordFrame,
+        version: u32,
+        thickness_by_rule: &mut HashMap<u64, RuleThickness>,
+    ) -> Result<DesignSheetMetalSettings, CodecError> {
+        let fields = parse_settings(
+            self.bytes,
+            *frame,
+            version,
+            self.primary,
+            self.by_entity,
+            self.registrations,
+        )
+        .ok_or_else(|| {
+            CodecError::malformed("F3D sheet-metal settings frame or typed link is invalid")
+        })?;
+        let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
+            let frame = self.frames_by_entity.get(&fields.rule)?;
+            let (_, version) = self.by_entity.get(&fields.rule)?;
+            let view = View::over_retained(self.bytes).child(frame.start, frame.member_end)?;
+            rule_thickness(view, *version, self.by_entity)
+        });
+        let id = super::text::design_record_id(
+            self.entry_name,
+            ":design-sheet-metal-settings#",
+            u64_from_index(frame.start),
+        );
+        DesignSheetMetalSettings::try_from(DesignSheetMetalSettingsWire {
+            id,
+            record_index: frame.entity_id,
+            byte_offset: u64_from_index(frame.start),
+            paired_byte_offset: u64_from_index(frame.member_end),
+            mask: fields.mask,
+            inputs: fields.inputs,
+            rule_record_index: fields.rule,
+            presentation_record_index: fields.presentation,
+            owner_record_index: fields.owner,
+            context_record_index: fields.context,
+            rule_thickness: rule.map(|(thickness, _)| thickness),
+            rule_thickness_offset: rule.map(|(_, offset)| offset),
+        })
+        .map_err(CodecError::Malformed)
+    }
+}
+
 fn parse_settings(
     bytes: &[u8],
     frame: PrimaryRecordFrame,
