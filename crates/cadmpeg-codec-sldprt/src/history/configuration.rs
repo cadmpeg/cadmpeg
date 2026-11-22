@@ -632,9 +632,10 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
-            &ir.model.sketch_entities,
-        );
+        let mut held_handles =
+            crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+                &ir.model.sketch_entities,
+            );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -725,16 +726,17 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
-            crate::resolved_features::profiles::project_compact_sketch_profiles(
-                ctx,
-                &mut features,
-                &mut ir.model.sketches,
-                &mut ir.model.sketch_entities,
-                histories,
-                scoped_lanes,
-                &mut losses,
-            )?;
-            let mut held_handles = held_handles;
+            held_handles.hold_assumed_planes(
+                crate::resolved_features::profiles::project_compact_sketch_profiles(
+                    ctx,
+                    &mut features,
+                    &mut ir.model.sketches,
+                    &mut ir.model.sketch_entities,
+                    histories,
+                    scoped_lanes,
+                    &mut losses,
+                )?,
+            );
             crate::resolved_features::profiles::project_marker_backed_sketches(
                 ctx,
                 &mut features,
@@ -824,6 +826,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             crate::resolved_features::profiles::finalize_unread_marker_entities(
+                &ir.model.sketches,
                 &mut ir.model.sketch_entities,
                 held_handles,
                 &mut losses,
