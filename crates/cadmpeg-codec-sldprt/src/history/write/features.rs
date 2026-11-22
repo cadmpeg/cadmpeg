@@ -521,7 +521,6 @@ pub(in crate::history) fn sync_neutral_features(
     let losses = clear_reversals(
         &cleared,
         reversed_end_specs.as_ref(),
-        &contradicted_travel,
         &ir.model.configurations,
         &mut native.feature_input_lanes,
     );
@@ -588,15 +587,13 @@ pub(in crate::history) fn sync_neutral_features(
 /// reversal an edit cleared, each paired with whether its record states the
 /// flag as a Keywords attribute, which the encoder already dropped.
 /// `reversed_end_specs` is `None` where the writer could not scan the stored
-/// end specs. Names each extrusion whose flag the write could not clear, each
-/// lane outside the active configuration whose flag it cleared, and each
-/// extrusion whose stored solid still shows the reversed travel. Where the
-/// part has fewer than two configurations, every lane holds the model's
+/// end specs. Names each extrusion whose flag the write could not clear, and
+/// each lane outside the active configuration whose flag it cleared. Where
+/// the part has fewer than two configurations, every lane holds the model's
 /// state.
 fn clear_reversals(
     cleared: &[(&cadmpeg_ir::features::Feature, bool)],
     reversed_end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>,
-    contradicted_travel: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     lanes: &mut [crate::records::FeatureInputLane],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
@@ -673,11 +670,6 @@ fn clear_reversals(
         for place in configuration_lanes.into_values() {
             losses.push(SldprtLossCode::WriterExtrudeReversalConfigurationCleared.note(format!(
                 "Extrusion {extrusion} is edited to travel along the profile normal, and the writer also cleared its end-spec reversal flag {place}."
-            )));
-        }
-        if contradicted_travel.contains(&feature.id) {
-            losses.push(SldprtLossCode::WriterExtrudeSolidStale.note(format!(
-                "Extrusion {extrusion} is written along the profile normal as edited, and the stored solid still shows the reversed travel."
             )));
         }
     }
@@ -1054,22 +1046,16 @@ mod tests {
         let feature = cleared_extrusion();
         let scanned = HashMap::<String, Vec<EndSpecAnchor>>::new();
         let unwritten = |stated: bool, end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>| {
-            super::clear_reversals(
-                &[(&feature, stated)],
-                end_specs,
-                &HashSet::new(),
-                &[],
-                &mut [],
-            )
-            .into_iter()
-            .map(|loss| {
-                assert_eq!(
-                    loss.code,
-                    SldprtLossCode::WriterExtrudeReversalUnwritten.kind()
-                );
-                loss.message
-            })
-            .collect::<Vec<_>>()
+            super::clear_reversals(&[(&feature, stated)], end_specs, &[], &mut [])
+                .into_iter()
+                .map(|loss| {
+                    assert_eq!(
+                        loss.code,
+                        SldprtLossCode::WriterExtrudeReversalUnwritten.kind()
+                    );
+                    loss.message
+                })
+                .collect::<Vec<_>>()
         };
         let named = unwritten(false, Some(&scanned));
         assert_eq!(named.len(), 1, "{named:?}");
@@ -1168,7 +1154,6 @@ mod tests {
             let losses = super::clear_reversals(
                 &[(&feature, false)],
                 Some(&anchors),
-                &HashSet::new(),
                 configurations,
                 &mut lanes,
             );

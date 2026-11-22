@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::parameters::design_parameter_discriminator;
 use crate::test_support::lp_utf16;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -80,7 +79,12 @@ pub(crate) fn parameter_record(
     out.extend_from_slice(b"305");
     out.extend_from_slice(&71u32.to_le_bytes());
     out.extend_from_slice(&[0; 11]);
-    out.extend_from_slice(&design_parameter_discriminator(source_kind).to_le_bytes());
+    let discriminator: u64 = match source_kind {
+        "ScaleFactor" => 5,
+        "TangencyWeight" => 6,
+        _ => 0,
+    };
+    out.extend_from_slice(&discriminator.to_le_bytes());
     out.push(0);
     out.extend_from_slice(&9u32.to_le_bytes());
     match owner {

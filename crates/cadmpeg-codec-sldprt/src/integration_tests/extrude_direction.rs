@@ -387,10 +387,7 @@ fn losses(
 }
 
 /// Clears the decoded reversal of `Extrude` and writes the part, with the
-/// write's losses. While the decoded feature baseline stands, the writer
-/// refuses any construction edit of a feature that shapes the B-rep, which
-/// it cannot regenerate (`brep_agreement`); the edit drops that baseline to
-/// reach the history writer.
+/// write's losses.
 fn clear_and_write(
     decoded: cadmpeg_ir::codec::DecodeResult,
 ) -> (Vec<u8>, Vec<(cadmpeg_ir::report::loss::LossKind, String)>) {
@@ -411,11 +408,6 @@ fn clear_and_write(
                 *direction = ExtrudeDirection::ProfileNormal {};
             }
         });
-        edit.source
-            .as_mut()
-            .expect("the decoded source")
-            .attributes
-            .remove("sldprt_neutral_feature_local_sha256");
     }
     let plan = SldprtCodec
         .plan(
@@ -460,7 +452,12 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
-    assert!(!has(&write_losses, SldprtLossCode::WriterExtrudeSolidStale));
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
 
     let again = decode(written);
     let (feature, direction, word) = extrusion_state(again.ir(), anchor);
@@ -474,7 +471,7 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
 }
 
 /// An edit that clears a reversal whose stored caps still show it is
-/// written, with the `0` word, and named as a stale solid.
+/// written, with the `0` word, and named by the general stale-solid loss.
 #[test]
 fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0), None);
@@ -489,9 +486,12 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     ));
 
     let (written, write_losses) = clear_and_write(decoded);
-    let stale = messages(&write_losses, SldprtLossCode::WriterExtrudeSolidStale);
-    assert_eq!(stale.len(), 1, "{write_losses:?}");
-    assert!(stale[0].contains("Extrusion \"Extrude\" ("), "{stale:?}");
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
     assert!(!has(
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
@@ -707,7 +707,8 @@ fn an_active_configuration_reversal_takes_the_active_solid_verdict() {
 
 /// Clearing the model's reversal clears the flag in every lane. The write
 /// names the inactive configuration's lane, whose state still travels
-/// against the normal, and that configuration decodes along it.
+/// against the normal, and that configuration decodes along it. The edit
+/// also carries the general stale-solid loss for the extrusion.
 #[test]
 fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
     let (bytes, anchor) = lane_flagged(None, Some(0));
@@ -731,6 +732,12 @@ fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
+    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
 
     let again = decode(written);
     assert_eq!(lane_words(again.ir(), anchor), [[0, 0, 0, 0], [0, 0, 0, 0]]);

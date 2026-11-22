@@ -4,16 +4,21 @@
 //! "Side-face walk"), decoded back and read from the archive's Design
 //! segment.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_ir::design::construction::Construction;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
-use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve, SketchPlane};
+use cadmpeg_ir::design::ops::sketch::{
+    DefiningRole, DistanceAxis, PlanarCurve, SketchPlane, SketchRelation,
+};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, NativeOptions, SolidOutput, SymmetricMeasure,
 };
+use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::selection::{
@@ -38,7 +43,8 @@ use super::sketch::{
     unread, Source,
 };
 use super::{
-    loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
+    loss, neutral, number, parameter, parameter_id, scoped_cube, write, write_bytes, EXTRUDE,
+    SKETCH,
 };
 
 mod arcs;
@@ -534,6 +540,41 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
     }
 }
 
+/// The user parameters and the Extrude's owned parameters store family
+/// discriminator `6`, and the residual note names the value (DR-911).
+#[test]
+fn the_parameter_records_of_an_extrude_design_store_one_discriminator() {
+    let (report, decoded, bytes) = write_bytes(&sketch_and_extrude(blind(), false));
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut kinds = BTreeSet::new();
+    for (index, _) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        assert_eq!(u32_at(record, 22), 6, "record {index}");
+        let (_, comment_end) = utf16_at(record, 27);
+        let expression_at = comment_end + 4 + if record[comment_end + 4] == 0 { 1 } else { 11 };
+        let (_, end) = utf16_at(record, expression_at);
+        kinds.insert(utf16_at(record, end + 10).0);
+    }
+    assert!(kinds.contains("User Parameter"), "{kinds:?}");
+    assert!(kinds.contains("AlongDistance"), "{kinds:?}");
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("user parameter"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one user-parameter note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("family discriminator 6") && note.contains("DR-911"),
+        "{note}"
+    );
+}
+
 #[test]
 fn the_extrude_commits_the_head_state() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
@@ -957,6 +998,114 @@ fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
         )),
         "{missing}"
     );
+}
+
+/// The timeline context value of the written `bytes`.
+fn context_value(bytes: &[u8]) -> u64 {
+    let design = segment(bytes, "FusionDesignSegmentType1");
+    let context = design.record(198);
+    let mut at = 21 + 4 + 11 * usize::try_from(u32_at(context, 21)).expect("count");
+    let counters = u32_at(context, at);
+    at += 4;
+    for _ in 0..counters {
+        at += 4 + usize::try_from(u32_at(context, at)).expect("length") + 8;
+    }
+    u64_at(context, at)
+}
+
+/// [`sketch_and_extrude`] with a literal depth and no user parameter,
+/// whose profile dimensions `p1` to `p2` with `value`; `edge` is the
+/// design's one parameter where given.
+fn dimensioned_profile(value: Dimension<Length>, edge: Option<DesignParameter>) -> CadIr {
+    let mut profile = square();
+    let relation = SketchRelation::Distance {
+        a: profile.operand("p1"),
+        b: profile.operand("p2"),
+        along: Some(DistanceAxis::Aligned),
+        doubled: None,
+        value,
+    };
+    profile.constraint("edge", relation);
+    let depth = Span::Between {
+        start: Box::new(Limit::AtOrigin),
+        end: Box::new(Limit::Amount(Dimension::Literal(
+            Length::new(SIDE).expect("a length"),
+        ))),
+    };
+    let mut ir = sketch_and_extrude_of(profile, depth, false);
+    ir.design.parameters.clear();
+    ir.design.parameters.extend(edge);
+    ir
+}
+
+/// The `export/record.residual-unavailable` notes of `report` that name
+/// the timeline context.
+fn context_notes(report: &cadmpeg_ir::report::export::ExportReport) -> Vec<&str> {
+    loss(report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("timeline context"))
+        .collect()
+}
+
+#[test]
+fn a_design_of_d_names_writes_the_stated_context_value_without_a_loss() {
+    let ir = dimensioned_profile(
+        Dimension::Literal(Length::new(SIDE).expect("a length")),
+        None,
+    );
+    let (report, decoded, bytes) = write_bytes(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let mut names = decoded
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    names.sort_unstable();
+    assert_eq!(names, ["d1", "d2", "d3"]);
+    assert_eq!(context_value(&bytes), 3);
+    let notes = context_notes(&report);
+    assert!(notes.is_empty(), "{notes:#?}");
+}
+
+#[test]
+fn a_renamed_dimension_parameter_charges_the_chosen_context_value() {
+    let edge = parameter(
+        "edge",
+        "Edge",
+        neutral(number(SIDE, Some(UnitSymbol::Mm))),
+        Some(SIDE),
+    );
+    let ir = dimensioned_profile(Dimension::Parameter(parameter_id("edge")), Some(edge));
+    let (report, decoded, bytes) = write_bytes(&ir);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Edge" && parameter.owner.is_some()));
+    assert_eq!(context_value(&bytes), 3);
+    let notes = context_notes(&report);
+    let [note] = notes.as_slice() else {
+        panic!("one context note: {notes:#?}");
+    };
+    for named in [
+        "record 198 (timeline context: context value 3, the largest source ordinal of an owned parameter",
+        "parameters not named d<n>: Edge",
+        "DR-882",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
 }
 
 #[test]

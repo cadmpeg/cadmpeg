@@ -102,7 +102,7 @@ pub(crate) fn write_semantic_with_records(
     // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
+    let validation = validate_with_model_snapshot(&mut normalized)?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -182,7 +182,8 @@ pub(crate) fn write_semantic_with_records(
                 .transpose()
         },
     )?;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
+    let validation = validate_with_model_snapshot(&mut normalized)?;
+    let ir = &normalized;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -609,6 +610,45 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         }
     }
     configurations
+}
+
+/// Validate `ir` as its written part decodes when the model suppresses a
+/// feature: the decoder restates the synthesized active snapshot from the
+/// model, and validation requires the active configuration to state each
+/// suppression. The snapshot is cleared again for the write.
+fn validate_with_model_snapshot(
+    ir: &mut CadIr,
+) -> Result<cadmpeg_ir::report::check::ValidationReport, CodecError> {
+    let synthesized = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+    });
+    let Some(index) = synthesized
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .position(|configuration| configuration.id.as_str() == id)
+        })
+        .filter(|_| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.suppressed == Some(true))
+        })
+    else {
+        return cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    };
+    let snapshot = crate::decode::model_snapshot(&ir.model);
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values.clear();
+    configuration.feature_states.clear();
+    validation
 }
 
 fn sort_arenas(ir: &mut CadIr) {
