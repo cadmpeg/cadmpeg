@@ -9,11 +9,8 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-mod query_support;
-mod support;
-
+use crate::binary_support::cadmpeg;
 use crate::query_support::write;
-use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
   "ir_version": "11",
@@ -1554,7 +1551,7 @@ fn every_view_json_is_a_query_command_report() {
     fs::write(
         &source,
         include_bytes!(
-            "../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"
+            "../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"
         )
         .as_slice(),
     )

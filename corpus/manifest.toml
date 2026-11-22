@@ -11,7 +11,7 @@
 # hand-written; neither field is derivable from the other.
 #
 # Regenerate with:
-#   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest
+#   UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test integration corpus_manifest
 # and read the diff as a classification change.
 
 [[file]]
