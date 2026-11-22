@@ -2267,7 +2267,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         .ok()?;
         scope.source_kind = source_kind;
         if let Some(state) = previous_history_state_id_offset
-            .and_then(|previous| scope_timeline_state(bytes, previous, paired_at))
+            .and_then(|previous| scope_timeline_state(bytes, kind_end, previous, paired_at))
         {
             scope.rolled_back = Some(state.lanes.rolled_back);
             scope.suppression_flag = state.suppressed;
@@ -2626,11 +2626,13 @@ struct LaneFlags {
     rolled_back: bool,
 }
 
-/// The timeline state of a plain 78- or 77-byte tail form whose preceding
-/// history-state identity is at `previous`. The 78-byte form stores `01`
-/// before the two lane flags.
+/// The timeline state of a plain 78-, 77- or 76-byte tail form that starts
+/// at `tail` and whose preceding history-state identity is at `previous`.
+/// The 78-byte form stores `01` before the two lane flags, and the 76-byte
+/// form has no middle reference slot.
 fn scope_timeline_state(
     bytes: &[u8],
+    tail: usize,
     previous: usize,
     paired_at: usize,
 ) -> Option<ScopeTimelineState> {
@@ -2668,7 +2670,13 @@ fn scope_timeline_state(
     }
     let null_middle_first = previous
         .checked_sub(named_tail::PREVIOUS_HISTORY_STATE_ID - named_tail::FIRST_REFERENCE)?;
-    let first = if reference(null_middle_first)? && bytes.get(previous.checked_sub(1)?) == Some(&0)
+    let first = if previous.checked_sub(tail)? == named_tail::MIDDLE_REFERENCE {
+        let first = previous.checked_sub(reference_width)?;
+        if !reference(first)? {
+            return None;
+        }
+        first
+    } else if reference(null_middle_first)? && bytes.get(previous.checked_sub(1)?) == Some(&0)
     {
         null_middle_first
     } else {

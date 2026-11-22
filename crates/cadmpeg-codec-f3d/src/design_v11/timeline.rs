@@ -99,6 +99,14 @@ impl TimelineScopes {
         });
         (suffix_rolled_back && before_is_built_scope).then_some(first)
     }
+
+    /// Whether the lane flags of the last item state it built, which places
+    /// the saved marker after every item.
+    pub(super) fn built_through_end(&self, stream: &str, items: &[u64]) -> bool {
+        items
+            .last()
+            .is_some_and(|record| self.built.contains(&(stream.to_owned(), *record)))
+    }
 }
 
 /// The containers and features of one document's timelines.
@@ -177,6 +185,7 @@ pub(super) fn project(
                 .and_then(|first| members.get(first))
             {
                 Some(first) => Rollback::Before(first.clone()),
+                None if scopes.built_through_end(stream, &records) => Rollback::End,
                 None => {
                     losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
                         "timeline {id}: rollback marker not read; stated built through its last item"

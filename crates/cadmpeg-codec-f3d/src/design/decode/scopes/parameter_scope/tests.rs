@@ -979,3 +979,30 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(at, 1);
     }
 }
+
+#[test]
+fn a_76_byte_tail_reads_its_state_bytes_before_its_first_reference() {
+    let reference = |bytes: &mut [u8], at: usize, record: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record.to_le_bytes());
+    };
+    for (state, suppressed, unevaluated) in [
+        ([0, 0, 1], false, true),
+        ([0, 1, 1], true, true),
+        ([0, 1, 0], true, false),
+        ([0, 0, 0], false, false),
+    ] {
+        let mut bytes = vec![0; 76];
+        bytes[16..19].copy_from_slice(&state);
+        reference(&mut bytes, 19, 40);
+        bytes[30..34].copy_from_slice(&7u32.to_le_bytes());
+        reference(&mut bytes, 50, 41);
+        bytes[61..63].copy_from_slice(&[0, 1]);
+        reference(&mut bytes, 63, 42);
+        let read = super::scope_timeline_state(&bytes, 0, 30, 76).expect("timeline state");
+        assert_eq!(read.suppressed, suppressed, "{state:?}");
+        assert_eq!(read.unevaluated, unevaluated, "{state:?}");
+        assert!(read.lanes.rolled_back, "{state:?}");
+        assert!(!read.lanes.no_result, "{state:?}");
+    }
+}

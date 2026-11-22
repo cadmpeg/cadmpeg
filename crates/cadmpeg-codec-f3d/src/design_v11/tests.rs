@@ -1327,6 +1327,28 @@ fn a_placed_marker_states_rollback_before_its_item() {
 }
 
 #[test]
+fn a_timeline_whose_last_item_is_built_is_built_through_its_end() {
+    let mut losses = Vec::new();
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[10, 20, 30])],
+            &[],
+            &BTreeSet::new(),
+            &timeline_scopes(&[10, 20, 30], &[]),
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let Container::Ordered { rollback, .. } = &documents[""].containers[0] else {
+        panic!("ordered container")
+    };
+    assert_eq!(*rollback, Rollback::End);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
 fn the_current_state_sits_at_the_rollback_marker() {
     let documents = crate::test_support::with_decode_context(|ctx| {
         super::timeline::project(
