@@ -15,6 +15,7 @@ use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
 use crate::history::project::neutral_feature_id;
 
+use super::edits::ConstructionEdit;
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
@@ -378,9 +379,9 @@ pub(in crate::history) fn sync_neutral_features(
     // Features whose stored content items are kept: the caller did not edit
     // their source content.
     let mut content_kept = HashSet::new();
-    // The construction edits of each feature, by position, that move no
-    // record field.
-    let mut unmoved_edits = HashMap::<FeatureId, HashSet<usize>>::new();
+    // The construction edits of each edited feature with a stored record and
+    // a source feature, each with whether it moves no record field.
+    let mut edited_constructions = HashMap::<FeatureId, Vec<(ConstructionEdit, bool)>>::new();
     for feature in features {
         if feature
             .source_tag
@@ -411,16 +412,19 @@ pub(in crate::history) fn sync_neutral_features(
                 continue;
             }
         }
-        // The source feature with each construction edit applied alone.
-        let applied_edits = match original {
-            Some(original) if !edits.feature_edit_unwritten(&feature.id) => {
-                super::edits::construction_edits(original, feature)
-                    .iter()
-                    .map(|edit| edit.applied(original, feature))
-                    .collect::<Vec<_>>()
-            }
-            _ => Vec::new(),
-        };
+        // The construction edits, and the source feature with each applied
+        // alone. A feature with an edit that is not written keeps its stored
+        // record, whose loss names them.
+        let construction = original
+            .filter(|_| !edits.feature_edit_unwritten(&feature.id))
+            .map(|original| super::edits::construction_edits(original, feature))
+            .unwrap_or_default();
+        let applied_edits = original.map_or_else(Vec::new, |original| {
+            construction
+                .iter()
+                .map(|edit| edit.applied(original, feature))
+                .collect::<Vec<_>>()
+        });
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
@@ -450,26 +454,26 @@ pub(in crate::history) fn sync_neutral_features(
         });
         // A construction edit that, applied alone to the source feature,
         // encodes as the source does moves no record field.
-        if let (Some(original), Some(Ok(baseline))) = (original, baseline.as_ref()) {
+        if let (Some(original), false) = (original, construction.is_empty()) {
             let unmoved = applied_edits
                 .iter()
-                .enumerate()
-                .filter_map(|(index, applied)| {
-                    let encoding = encoder(
-                        applied.as_ref()?,
-                        source_contradicted_travel.contains(&original.id),
-                    )
-                    .encode()
-                    .ok()?;
-                    (encoding.kind == baseline.kind
-                        && encoding.parameters == baseline.parameters
-                        && encoding.properties == baseline.properties)
-                        .then_some(index)
+                .map(|applied| {
+                    let (Some(applied), Some(Ok(baseline))) = (applied, baseline.as_ref()) else {
+                        return false;
+                    };
+                    encoder(applied, source_contradicted_travel.contains(&original.id))
+                        .encode()
+                        .is_ok_and(|encoding| {
+                            encoding.kind == baseline.kind
+                                && encoding.parameters == baseline.parameters
+                                && encoding.properties == baseline.properties
+                        })
                 })
-                .collect::<HashSet<_>>();
-            if !unmoved.is_empty() {
-                unmoved_edits.insert(feature.id.clone(), unmoved);
-            }
+                .collect::<Vec<_>>();
+            edited_constructions.insert(
+                feature.id.clone(),
+                construction.into_iter().zip(unmoved).collect(),
+            );
         }
         // A stored record the encoder cannot restate from the neutral
         // definition is written as stored.
@@ -679,14 +683,13 @@ pub(in crate::history) fn sync_neutral_features(
     // source states it.
     let mut dependencies_unwritten = HashSet::new();
     for feature in features {
-        if edits.operands_kept(&feature.id) || feature.native_ref.is_none() {
-            continue;
-        }
-        let Some(original) = edits.source_feature(&feature.id) else {
+        let (Some(construction), Some(original)) = (
+            edited_constructions.get(&feature.id),
+            edits.source_feature(&feature.id),
+        ) else {
             continue;
         };
-        let construction = super::edits::construction_edits(original, feature);
-        if construction.is_empty() {
+        if edits.operands_kept(&feature.id) {
             continue;
         }
         let written = projected_features.get(&neutral_feature_id(&record_ids[&feature.id])?);
@@ -708,12 +711,10 @@ pub(in crate::history) fn sync_neutral_features(
                 serde_json::to_value(written.evaluation.definition()).ok()?,
             ))
         });
-        let unmoved = unmoved_edits.get(&feature.id);
         let unwritten = construction
             .iter()
-            .enumerate()
-            .filter(|(index, edit)| {
-                unmoved.is_some_and(|unmoved| unmoved.contains(index))
+            .filter(|(edit, unmoved)| {
+                *unmoved
                     || definitions.as_ref().is_some_and(
                         |(source_definition, written, written_definition)| {
                             edit.reads_back_as_source(
@@ -724,17 +725,18 @@ pub(in crate::history) fn sync_neutral_features(
                         },
                     )
             })
-            .map(|(_, edit)| edit.label.clone())
+            .map(|(edit, _)| edit)
             .collect::<Vec<_>>();
-        if original.dependencies != feature.dependencies
-            && unwritten.iter().any(|label| label == "dependencies")
-        {
+        if unwritten.iter().any(|edit| edit.is_dependencies()) {
             dependencies_unwritten.insert(feature.id.clone());
         }
         if !unwritten.is_empty() {
             edits.construction_reads_back_as_stored(
                 &feature.id,
-                &unwritten,
+                &unwritten
+                    .iter()
+                    .map(|edit| edit.label.clone())
+                    .collect::<Vec<_>>(),
                 unwritten.len() == construction.len(),
             );
         }

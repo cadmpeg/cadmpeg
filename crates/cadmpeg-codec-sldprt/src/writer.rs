@@ -1809,13 +1809,6 @@ fn patch_active_configuration_xml(
     Ok(Some(output.into_bytes()))
 }
 
-/// The bytes written for one feature-input lane.
-///
-/// Every object-name record states the payload bytes at its own offset, so the
-/// lane is written as it stands. `renames` carries the write-side object-name
-/// changes that `synchronize_feature_input_names` derived from the neutral
-/// feature names; the splice loop at the end of this function writes each one
-/// into the emitted payload.
 /// The payload written for `lane`. A lane equal to `stored`, the lane of the
 /// same id in the decoded source, is the decoder's reading of its own bytes,
 /// so nothing in it is edited: it is written as stored, with the renamed
@@ -1835,6 +1828,13 @@ fn lane_payload(
     resolved_feature_payload(lane, histories, renames)
 }
 
+/// The bytes written for one feature-input lane.
+///
+/// Every object-name record states the payload bytes at its own offset, so the
+/// lane is written as it stands. `renames` carries the write-side object-name
+/// changes that `synchronize_feature_input_names` derived from the neutral
+/// feature names; `splice_renamed_names` writes each one into the emitted
+/// payload.
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],

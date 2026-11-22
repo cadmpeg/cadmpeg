@@ -110,6 +110,11 @@ enum ConstructionLeaf {
 }
 
 impl ConstructionEdit {
+    /// Whether this is the edit of the dependencies.
+    pub(crate) fn is_dependencies(&self) -> bool {
+        matches!(self.leaf, ConstructionLeaf::Dependencies)
+    }
+
     /// The source feature `original` with this edit of `current` alone;
     /// `None` when that does not form a definition.
     pub(crate) fn applied(&self, original: &Feature, current: &Feature) -> Option<Feature> {
