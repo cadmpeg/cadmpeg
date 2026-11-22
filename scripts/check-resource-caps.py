@@ -2,14 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Check docs/decode-resource-caps.md against production ``const MAX_*`` items.
 
-The table, the overall count, the per-kind counts, and the per-crate bullets
-must match each other and the production constants. Test source is excluded
-the same way as ``check-source-policy.py``: path filters (``tests/`` trees,
+Each production constant has exactly one table row, and each row names a
+production constant. The document stores no counts: on success the checker
+prints the overall, per-kind, and per-crate counts, so pull requests that
+add constants to different crates edit different lines. Test source is
+excluded the same way as ``check-source-policy.py``: path filters (``tests/`` trees,
 ``tests.rs``, and other test files) plus ``production_source``, which masks
 ``#[cfg(test)]`` modules and ``#[cfg(test)]`` / ``#[test]`` items.
 
-Exit 0 prints ``resource-caps census: ok``. Any mismatch prints a diff and
-exits 1.
+Exit 0 prints ``resource-caps census: ok`` and the counts. Any mismatch prints
+the findings and exits 1.
 """
 
 from __future__ import annotations
@@ -36,9 +38,10 @@ SPEC.loader.exec_module(SOURCE_POLICY)
 CONST_MAX = re.compile(
     r"(?<![\w:])(?:pub(?:\s*\([^)]*\))?\s+)?const\s+(MAX_[A-Z0-9_]+)\b"
 )
-OVERALL = re.compile(r"Production `MAX_\*` constants: (\d+)\.")
-CRATE_COUNT = re.compile(r"`([^`]+)`\s+(\d+)")
+STORED_TOTAL = re.compile(r"Production `MAX_\*` constants: \d+\.")
+TOTALS_HEADING = re.compile(r"^## Totals\s*$", re.MULTILINE)
 KINDS = ("1", "2", "3", "4", "N")
+SESSION_CEILING = "3"
 
 
 @dataclass(frozen=True)
@@ -57,18 +60,6 @@ class TableRow:
     name: str
     kind: str
     line: int
-
-
-@dataclass(frozen=True)
-class Totals:
-    overall: int | None
-    overall_line: int | None
-    kinds: dict[str, int]
-    kind_lines: dict[str, int]
-    kind_total: int | None
-    kind_total_line: int | None
-    crates: dict[str, int]
-    crate_line: int | None
 
 
 def unwrap(cell: str) -> str:
@@ -120,7 +111,7 @@ def section(text: str, start_heading: str, *end_headings: str) -> tuple[str, int
 
 def parse_census_rows(text: str) -> tuple[list[TableRow], list[str]]:
     body, offset = section(
-        text, "## Production census", "### Work budgets", "## Totals"
+        text, "## Production census", "### Work budgets", "## Routing"
     )
     if not body:
         return [], [f"{DOC_REL.as_posix()}: missing Production census section"]
@@ -150,96 +141,20 @@ def parse_census_rows(text: str) -> tuple[list[TableRow], list[str]]:
     return rows, []
 
 
-def parse_totals(text: str) -> tuple[Totals, list[str]]:
-    body, offset = section(text, "## Totals", "## Routing")
-    errors: list[str] = []
-    if not body:
-        errors.append(f"{DOC_REL.as_posix()}: missing Totals section")
-        return Totals(None, None, {}, {}, None, None, {}, None), errors
-
-    overall = None
-    overall_line = None
-    for index, line in enumerate(body.splitlines(), offset + 1):
-        match = OVERALL.search(line)
-        if match:
-            overall = int(match.group(1))
-            overall_line = index
-            break
-    if overall is None:
-        errors.append(
-            f"{DOC_REL.as_posix()}: missing 'Production MAX_* constants: N' total"
-        )
-
-    kinds: dict[str, int] = {}
-    kind_lines: dict[str, int] = {}
-    kind_total = None
-    kind_total_line = None
-    in_kind_table = False
-    for index, line in enumerate(body.splitlines(), offset + 1):
-        if line.startswith("| Kind"):
-            in_kind_table = True
-            continue
-        if in_kind_table and not line.startswith("|"):
-            break
-        if not in_kind_table or not line.startswith("|"):
-            continue
-        cols = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cols) < 3 or set(cols[0]) <= {"-", ":"}:
-            continue
-        kind, _meaning, count_cell = cols[0], cols[1], cols[2]
-        try:
-            count = int(count_cell)
-        except ValueError:
-            errors.append(
-                f"{DOC_REL.as_posix()}:{index}: kind count is not an integer"
+def stored_totals(text: str) -> list[str]:
+    """Hand-kept counts, which the checker computes and prints instead."""
+    findings: list[str] = []
+    for pattern in (TOTALS_HEADING, STORED_TOTAL):
+        for match in pattern.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            findings.append(
+                f"{DOC_REL.as_posix()}:{line}: stored total {match.group(0).strip()!r}; "
+                f"delete it, python3 {Path('scripts') / Path(__file__).name} prints the counts"
             )
-            continue
-        if kind in KINDS:
-            kinds[kind] = count
-            kind_lines[kind] = index
-        elif not kind:
-            kind_total = count
-            kind_total_line = index
-
-    crates: dict[str, int] = {}
-    crate_line = None
-    crate_at = body.find("By crate:")
-    if crate_at < 0:
-        errors.append(f"{DOC_REL.as_posix()}: missing By crate totals")
-    else:
-        crate_line = offset + body[:crate_at].count("\n") + 1
-        rest = body[crate_at + len("By crate:") :]
-        blank = re.search(r"\n\s*\n", rest)
-        para = rest if blank is None else rest[: blank.start()]
-        for name, count in CRATE_COUNT.findall(para):
-            crates[name] = int(count)
-        if not crates:
-            errors.append(f"{DOC_REL.as_posix()}:{crate_line}: By crate list is empty")
-
-    return (
-        Totals(
-            overall,
-            overall_line,
-            kinds,
-            kind_lines,
-            kind_total,
-            kind_total_line,
-            crates,
-            crate_line,
-        ),
-        errors,
-    )
+    return findings
 
 
-def parse_doc(text: str) -> tuple[list[TableRow], Totals, list[str]]:
-    rows, row_errors = parse_census_rows(text)
-    totals, total_errors = parse_totals(text)
-    return rows, totals, row_errors + total_errors
-
-
-def compare(
-    constants: list[Constant], rows: list[TableRow], totals: Totals
-) -> list[str]:
+def compare(constants: list[Constant], rows: list[TableRow]) -> list[str]:
     findings: list[str] = []
     src_by_key: dict[tuple[str, str, str], list[Constant]] = defaultdict(list)
     doc_by_key: dict[tuple[str, str, str], list[TableRow]] = defaultdict(list)
@@ -252,119 +167,55 @@ def compare(
         source_hits = src_by_key.get(key, [])
         table_hits = doc_by_key.get(key, [])
         crate, file, name = key
-        extra_source = source_hits[len(table_hits) :]
-        extra_table = table_hits[len(source_hits) :]
-        for constant in extra_source:
+        for constant in source_hits[len(table_hits) :]:
             findings.append(
                 f"source constant missing from table: {constant.relative}:"
                 f"{constant.line} {name}"
             )
-        for row in extra_table:
+        for row in table_hits[len(source_hits) :]:
             findings.append(
                 f"table row with no source constant: {DOC_REL.as_posix()}:"
                 f"{row.line} {crate} {file} {name}"
             )
 
-    n_source = len(constants)
-    n_rows = len(rows)
-    loc = f"{DOC_REL.as_posix()}:{totals.overall_line}" if totals.overall_line else DOC_REL.as_posix()
-    if totals.overall is not None and totals.overall != n_rows:
-        findings.append(
-            f"stated overall {totals.overall} at {loc}, table has {n_rows} rows"
-        )
-    if totals.overall is not None and totals.overall != n_source:
-        findings.append(
-            f"stated overall {totals.overall} at {loc}, source has {n_source} constants"
-        )
-    if totals.overall is None and n_rows != n_source:
-        findings.append(
-            f"table has {n_rows} rows, source has {n_source} constants"
-        )
-
-    row_kinds = Counter(row.kind for row in rows)
-    for kind in KINDS:
-        stated = totals.kinds.get(kind)
-        actual = row_kinds.get(kind, 0)
-        if stated is None and actual == 0:
-            continue
-        if stated is None:
-            findings.append(f"kind {kind}: table has {actual}, missing from kind totals")
-            continue
-        kind_loc = (
-            f"{DOC_REL.as_posix()}:{totals.kind_lines[kind]}"
-            if kind in totals.kind_lines
-            else DOC_REL.as_posix()
-        )
-        if stated != actual:
+    for row in rows:
+        if row.kind == SESSION_CEILING:
             findings.append(
-                f"kind {kind}: stated {stated} at {kind_loc}, table has {actual}"
+                f"{DOC_REL.as_posix()}:{row.line}: {row.name} is kind 3; only "
+                "ResourceLimits fields are session ceilings"
             )
-
-    kind_sum = sum(totals.kinds.values())
-    if totals.kind_total is not None:
-        total_loc = (
-            f"{DOC_REL.as_posix()}:{totals.kind_total_line}"
-            if totals.kind_total_line
-            else DOC_REL.as_posix()
-        )
-        if totals.kind_total != kind_sum:
-            findings.append(
-                f"kind table total {totals.kind_total} at {total_loc} "
-                f"does not equal the sum of kind counts {kind_sum}"
-            )
-        if totals.overall is not None and totals.kind_total != totals.overall:
-            findings.append(
-                f"kind table total {totals.kind_total} at {total_loc} "
-                f"does not equal overall {totals.overall}"
-            )
-
-    src_crates = Counter(constant.crate for constant in constants)
-    row_crates = Counter(row.crate for row in rows)
-    crate_loc = (
-        f"{DOC_REL.as_posix()}:{totals.crate_line}"
-        if totals.crate_line
-        else DOC_REL.as_posix()
-    )
-    for crate in sorted(set(totals.crates) | set(src_crates) | set(row_crates)):
-        stated = totals.crates.get(crate)
-        actual_rows = row_crates.get(crate, 0)
-        actual_src = src_crates.get(crate, 0)
-        if stated is None:
-            findings.append(
-                f"crate {crate}: missing from the By crate list at {crate_loc} "
-                f"(table {actual_rows}, source {actual_src})"
-            )
-            continue
-        if stated != actual_rows:
-            findings.append(
-                f"crate {crate}: stated {stated} at {crate_loc}, table has {actual_rows}"
-            )
-        if stated != actual_src:
-            findings.append(
-                f"crate {crate}: stated {stated} at {crate_loc}, source has {actual_src}"
-            )
-
-    crate_sum = sum(totals.crates.values())
-    if totals.crates and totals.overall is not None and crate_sum != totals.overall:
-        findings.append(
-            f"By crate sum {crate_sum} at {crate_loc} does not equal overall {totals.overall}"
-        )
     return findings
 
 
-def check_tree(root: Path) -> list[str]:
+def census(root: Path) -> tuple[list[Constant], list[TableRow], list[str]]:
+    """The production constants, the table rows, and their mismatches."""
+    constants = production_constants(root)
     doc = root / DOC_REL
     if not doc.is_file():
-        return [f"{DOC_REL.as_posix()}: missing"]
-    rows, totals, errors = parse_doc(doc.read_text(encoding="utf-8"))
-    if errors:
-        return errors + compare(production_constants(root), rows, totals)
-    return compare(production_constants(root), rows, totals)
+        return constants, [], [f"{DOC_REL.as_posix()}: missing"]
+    text = doc.read_text(encoding="utf-8")
+    rows, errors = parse_census_rows(text)
+    return constants, rows, errors + stored_totals(text) + compare(constants, rows)
+
+
+def check_tree(root: Path) -> list[str]:
+    return census(root)[2]
+
+
+def counts(constants: list[Constant], rows: list[TableRow]) -> list[str]:
+    """The overall, per-kind, and per-crate counts of a census that matches."""
+    kinds = Counter(row.kind for row in rows)
+    crates = Counter(constant.crate for constant in constants)
+    return [
+        f"production MAX_* constants: {len(constants)}",
+        "by kind: " + ", ".join(f"{kind} {kinds.get(kind, 0)}" for kind in KINDS),
+        "by crate: " + ", ".join(f"{crate} {crates[crate]}" for crate in sorted(crates)),
+    ]
 
 
 @SOURCE_POLICY.analysis_session
 def main() -> int:
-    findings = check_tree(ROOT)
+    constants, rows, findings = census(ROOT)
     if findings:
         for line in findings:
             print(line, file=sys.stderr)
@@ -374,6 +225,8 @@ def main() -> int:
         )
         return 1
     print("resource-caps census: ok")
+    for line in counts(constants, rows):
+        print(f"  {line}")
     return 0
 
 

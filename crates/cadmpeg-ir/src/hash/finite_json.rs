@@ -145,19 +145,28 @@ pub fn to_json_value<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<serde_json::Value, serde_json::Error> {
     let mut bytes = Vec::new();
+    write_json_value_bytes(&mut bytes, value)?;
+    let text = String::from_utf8(bytes).map_err(serde_json::Error::custom)?;
+    crate::native::replay::value(&text)
+}
+
+/// Writes `value` into `bytes` as JSON text with `to_json_value` float
+/// semantics, reusing the canonical serializer's monomorphizations.
+pub(crate) fn write_json_value_bytes<T: Serialize + ?Sized>(
+    bytes: &mut Vec<u8>,
+    value: &T,
+) -> Result<(), serde_json::Error> {
     write_json(
         CanonicalAdmission::unlimited(),
         Floats::Value,
         None,
-        &mut bytes,
+        bytes,
         value,
     )
     .map_err(|error| match error {
         CanonicalJsonError::Serialize(error) => error,
         error => serde_json::Error::custom(error),
-    })?;
-    let text = String::from_utf8(bytes).map_err(serde_json::Error::custom)?;
-    crate::native::replay::value(&text)
+    })
 }
 
 /// How a walk writes a float.

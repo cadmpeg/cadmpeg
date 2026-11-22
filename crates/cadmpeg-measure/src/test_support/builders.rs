@@ -14,9 +14,11 @@ use cadmpeg_ir::geometry::pcurve::{
     CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs,
     PcurveNurbsPoles, PolarHarmonicPcurve,
 };
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,

@@ -396,3 +396,118 @@ fn a_negative_symmetric_extent_reverses_the_direction_and_its_extra_instance() {
     assert_eq!(pattern["count"], 4);
     assert_eq!(pattern["symmetric"], true);
 }
+
+#[test]
+fn suppressed_instances_are_omitted_from_the_pattern() {
+    // Positions 1 and 3 of five along X, and one position of a 3 by 3 grid,
+    // are suppressed.
+    let files: [(&[u8], u64, Option<u64>, serde_json::Value); 3] = [
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_two_instances.f3d"),
+            5,
+            None,
+            json!([[1, 0], [3, 0]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_grid_middle.f3d"),
+            3,
+            Some(3),
+            json!([[1, 1]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_grid_corner.f3d"),
+            3,
+            Some(3),
+            json!([[2, 2]]),
+        ),
+    ];
+    for (bytes, count, second, omitted) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        let spacing = pattern["spacing"].as_f64().expect("spacing");
+        assert!((spacing - 6.0).abs() < 1e-9, "{pattern}");
+        assert_eq!(pattern["count"], count);
+        assert_eq!(pattern["second"]["count"].as_u64(), second);
+        assert_eq!(pattern["omitted_instances"], omitted);
+    }
+}
+
+/// A save, its first direction, its counts, its symmetric bytes and its
+/// omitted grid positions.
+type SymmetricSuppression = (
+    &'static [u8],
+    serde_json::Value,
+    u64,
+    Option<u64>,
+    bool,
+    Option<bool>,
+    serde_json::Value,
+);
+
+#[test]
+fn suppressed_instances_of_symmetric_directions_keep_the_neutral_numbering() {
+    // A symmetric direction's odd positions lie along it and its even ones
+    // against it. The pattern with direction one at count one projects as one
+    // direction along Y.
+    let files: [SymmetricSuppression; 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_even.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            4,
+            None,
+            true,
+            None,
+            json!([[1, 0], [2, 0]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_direction_two.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            3,
+            Some(3),
+            false,
+            Some(true),
+            json!([[0, 1], [1, 2]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_both.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            3,
+            Some(3),
+            true,
+            Some(true),
+            json!([[1, 1], [2, 2]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_direction_two_only.f3d"),
+            json!({"x": 0.0, "y": 1.0, "z": 0.0}),
+            4,
+            None,
+            false,
+            None,
+            json!([[1, 0], [3, 0]]),
+        ),
+    ];
+    for (bytes, direction, count, second, symmetric, second_symmetric, omitted) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        assert_eq!(pattern["direction"], direction, "{pattern}");
+        if second.is_some() {
+            assert_eq!(
+                pattern["second"]["direction"],
+                json!({"x": 0.0, "y": 1.0, "z": 0.0}),
+                "{pattern}"
+            );
+        }
+        assert_eq!(pattern["count"], count, "{pattern}");
+        assert_eq!(pattern["second"]["count"].as_u64(), second, "{pattern}");
+        assert_eq!(pattern["symmetric"], symmetric, "{pattern}");
+        assert_eq!(
+            pattern["second"]["symmetric"].as_bool(),
+            second_symmetric,
+            "{pattern}"
+        );
+        assert_eq!(pattern["omitted_instances"], omitted, "{pattern}");
+    }
+}
