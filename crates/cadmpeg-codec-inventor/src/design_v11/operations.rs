@@ -80,7 +80,7 @@ fn projects(operation: &LegacyOperation) -> bool {
 fn definition(
     source: &cadmpeg_ir::features::Feature,
     sketches: &[cadmpeg_ir::sketches::Sketch],
-    inputs: &[cadmpeg_ir::features::FeatureInputTopology],
+    inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
     let operation = source.evaluation.definition().operation();
     let (mut operation, reason) = match typed(operation, sketches, inputs) {
@@ -162,7 +162,7 @@ type Projected<T> = Result<T, &'static str>;
 fn typed(
     operation: &LegacyOperation,
     sketches: &[cadmpeg_ir::sketches::Sketch],
-    inputs: &[cadmpeg_ir::features::FeatureInputTopology],
+    inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Projected<FeatureOperation> {
     if let Some(value) = swept::operation(operation, sketches) {
         return value;

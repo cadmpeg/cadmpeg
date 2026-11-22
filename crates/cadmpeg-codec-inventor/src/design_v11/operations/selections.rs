@@ -7,6 +7,7 @@ use cadmpeg_ir::design::selection::{
     Anchor, BoundaryUse, MemberOrder, Members, NativeOwner, OrderedSelection, PickTarget, Picked,
     Picks, Selection, SetSelection, SketchRegion,
 };
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
 use cadmpeg_ir::sketches::Sketch;
@@ -154,7 +155,7 @@ fn historical_edges<'a>(
     edges: impl Iterator<Item = &'a cadmpeg_ir::ids::HistoricalEdgeId>,
     unresolved: &[String],
     group: &str,
-    inputs: &[old::FeatureInputTopology],
+    inputs: &[FeatureInputTopology],
 ) -> Projected<OrderedSelection> {
     let mut states = inputs.iter().filter(|input| &input.id == state);
     let input = states.next().ok_or("the selected edge state is absent")?;
@@ -204,7 +205,7 @@ fn historical_edges<'a>(
 
 pub(super) fn edge(
     value: &EdgeSelection,
-    inputs: &[old::FeatureInputTopology],
+    inputs: &[FeatureInputTopology],
 ) -> Projected<OrderedSelection> {
     match value {
         EdgeSelection::Native(text) => native(text),

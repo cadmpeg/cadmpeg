@@ -151,9 +151,10 @@ fn attached_contour_requires_state_revision_and_operation_form() {
 #[test]
 fn native_validation_rejects_an_altered_attachment_pick() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation as LegacyOperation,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation as LegacyOperation,
     };
     let (parent, source, properties) = fixture();
     let mut ir = crate::test_support::root_part_ir();

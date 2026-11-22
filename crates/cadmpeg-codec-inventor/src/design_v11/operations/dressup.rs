@@ -81,7 +81,7 @@ fn thickness(value: cadmpeg_ir::scalar::PositiveLength, outward: Option<bool>) -
 pub(super) fn operation(
     value: &LegacyOperation,
     sketches: &[Sketch],
-    inputs: &[old::FeatureInputTopology],
+    inputs: &[old::evaluation::FeatureInputTopology],
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
         value,

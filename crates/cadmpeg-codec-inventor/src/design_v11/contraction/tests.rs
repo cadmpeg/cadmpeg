@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use std::collections::BTreeMap;
 

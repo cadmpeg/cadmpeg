@@ -417,7 +417,7 @@ fn native_design_validation_uses_the_decoder_projection() {
 #[test]
 fn source_metadata_and_topology_have_pinned_native_losses() {
     use crate::loss::InventorLossCode;
-    use cadmpeg_ir::features::FeatureInputTopology;
+    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
     use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalFaceId};
     let mut source = feature("native", 0);
     property(&mut source, "source_control", "true");

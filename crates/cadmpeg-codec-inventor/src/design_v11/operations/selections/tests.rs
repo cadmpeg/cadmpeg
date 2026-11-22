@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_ir::design::refs::EntityRef;
-use cadmpeg_ir::features::{
-    DistinctMembers, FeatureId, FeatureInputTopology, HistoricalEdgeGeometry,
-};
+use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{EdgeId, FeatureInputTopologyId, HistoricalEdgeId};
 use cadmpeg_ir::units::UnitVector3;
 
@@ -44,6 +44,7 @@ fn historical_edges_keep_samples_and_require_one_input_state() {
         start: Some(point([0., 2., 3.])),
         end: Some(point([2., 2., 3.])),
         faces: DistinctMembers::default(),
+        carrier: None,
         supports: Vec::new(),
     };
     let input = FeatureInputTopology {
