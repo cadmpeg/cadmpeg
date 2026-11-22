@@ -271,6 +271,90 @@ pub(super) struct Context<'a> {
     pub(super) planes: &'a [super::sketch::PlannedPlane<'a>],
     /// The `Extrude` written in place of the `Base Feature`.
     pub(super) extrude: Option<&'a super::extrude::ExtrudePlan<'a>>,
+    pub(super) timeline_value: ContextValue,
+}
+
+/// The timeline context value.
+pub(super) enum ContextValue {
+    /// The value f3d.md §3.1 states for the design ("Records the timeline
+    /// context names", "Design records of Sketch items").
+    Stated(u64),
+    /// The largest source ordinal of an owned parameter, for a design
+    /// outside the f3d.md rules, with what puts it outside them.
+    Chosen { value: u64, outside: String },
+}
+
+impl ContextValue {
+    /// The value of a design whose parameters are named `names` and whose
+    /// timeline holds `planes`, `sketches` and `extrude`, or a `Base Feature`
+    /// without `extrude`.
+    pub(super) fn of<'n>(
+        names: impl IntoIterator<Item = &'n str>,
+        sketches: &[super::sketch::PlannedSketch<'_>],
+        planes: &[super::sketch::PlannedPlane<'_>],
+        extrude: Option<&super::extrude::ExtrudePlan<'_>>,
+    ) -> Self {
+        let largest = || {
+            let dimensions = sketches
+                .iter()
+                .flat_map(|sketch| &sketch.dimensions)
+                .map(|dimension| dimension.parameter.ordinal);
+            let planes = planes
+                .iter()
+                .filter_map(|plane| plane.parameters.as_ref())
+                .flat_map(|parameters| parameters.iter().map(|parameter| parameter.ordinal));
+            let extrude = extrude
+                .into_iter()
+                .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
+            dimensions
+                .chain(planes)
+                .chain(extrude)
+                .max()
+                .map_or(0, u64::from)
+        };
+        if !planes.is_empty() {
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds WorkPlane items".to_owned(),
+            };
+        }
+        if extrude.is_none() {
+            if sketches.is_empty() {
+                return Self::Stated(0);
+            }
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds Sketch items and a Base Feature".to_owned(),
+            };
+        }
+        let mut largest_number = 0;
+        let mut renamed = Vec::new();
+        for name in names {
+            match owned_number(name) {
+                Some(number) => largest_number = largest_number.max(number),
+                None => renamed.push(name),
+            }
+        }
+        if renamed.is_empty() {
+            return Self::Stated(largest_number);
+        }
+        Self::Chosen {
+            value: largest(),
+            outside: format!("parameters not named d<n>: {}", renamed.join(" ")),
+        }
+    }
+
+    pub(super) fn value(&self) -> u64 {
+        match self {
+            Self::Stated(value) | Self::Chosen { value, .. } => *value,
+        }
+    }
+}
+
+/// `n` of a parameter name `d<n>`.
+fn owned_number(name: &str) -> Option<u64> {
+    let number = name.strip_prefix('d')?.parse::<u64>().ok()?;
+    (format!("d{number}") == name).then_some(number)
 }
 
 impl Context<'_> {
@@ -320,30 +404,6 @@ impl Context<'_> {
         }
         parameters.sort_unstable();
         parameters
-    }
-
-    /// The largest source ordinal of the parameters the timeline items own,
-    /// `0` without one: the timeline context value.
-    pub(super) fn context_value(&self) -> u64 {
-        let dimensions = self
-            .sketches
-            .iter()
-            .flat_map(|sketch| &sketch.dimensions)
-            .map(|dimension| dimension.parameter.ordinal);
-        let extrude = self
-            .extrude
-            .into_iter()
-            .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
-        let planes = self
-            .planes
-            .iter()
-            .filter_map(|plane| plane.parameters.as_ref())
-            .flat_map(|parameters| parameters.iter().map(|parameter| parameter.ordinal));
-        dimensions
-            .chain(extrude)
-            .chain(planes)
-            .max()
-            .map_or(0, u64::from)
     }
 
     /// The timeline item whose scope the browser node of a result body
@@ -469,6 +529,13 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         Some(records) => notes.extend(extrude::losses(ctx, records)),
     }
     notes.extend(sketches::dimensions::losses(ctx));
+    if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            "writes the timeline context value where f3d.md §3.1 states it (\"Records the timeline context names\" and \"Design records of Sketch items\"), and f3d-open-items.md DR-882 leaves the value of other designs open",
+            [format!("record {CONTEXT} (timeline context: context value {value}, the largest source ordinal of an owned parameter; {outside})")],
+        ));
+    }
     notes.extend(record_residual_unavailable(
         "F3D",
         FIXED_CLOCK,
@@ -558,7 +625,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         ));
     }
     if !ctx.roster.planes.is_empty() {
-        let mut entries = vec![
+        let entries = vec![
             "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
             format!(
                 "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
@@ -569,14 +636,6 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
             "record 11 (construction collection: its entities in timeline order)".to_owned(),
             "parameter source ordinals (one counter from 1 over the WorkPlane and Sketch items in timeline order: each WorkPlane item's AlongDistance parameter takes the ordinal after the parameters of the WorkPlane and Sketch items before it, the dimension parameters of the Sketch item after it continue from its ExtraOffset parameter's ordinal plus one, and an Extrude item's two parameters take the last two ordinals)".to_owned(),
         ];
-        // The dimension note names the context value of a design with
-        // dimensions.
-        if !ctx.roster.sketches.has_dimensions() {
-            entries.push(format!(
-                "record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter, where f3d.md §3.1 states the value for a timeline of Sketch items, or of Sketch and Extrude items, and f3d-open-items.md DR-882 leaves it open for a timeline with WorkPlane items)",
-                ctx.context_value()
-            ));
-        }
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
