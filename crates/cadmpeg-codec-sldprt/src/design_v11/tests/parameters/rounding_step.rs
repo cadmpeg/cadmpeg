@@ -13,7 +13,7 @@ fn a_length_display_at_most_one_rounding_step_from_zero_holds_no_value() {
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters, notes) = parameters_with_readings(
+    let (ir, parameters, notes) = parameters_with_scalars(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Zero" Type="BossExtrude" id="7">
                 <Dimension Name="D1">0</Dimension>
@@ -39,7 +39,10 @@ fn a_length_display_at_most_one_rounding_step_from_zero_holds_no_value() {
             ("Stored", "D1", length(8.0), Some("scalar-stored")),
         ],
         &[("scalar-stored", ArchiveParameterClass::Length)],
-        Some(two_places(UnitSymbol::M)),
+        &[],
+        &[],
+        Some(UnitSymbol::M),
+        Some(2),
     );
     let named = |feature: &str| {
         let owner = ParameterOwner::Feature(feature_named(&ir, feature).id.clone());
@@ -112,7 +115,7 @@ fn a_zero_display_whose_step_is_the_linear_resolution_is_exact() {
     use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::Length;
 
-    let (ir, parameters, notes) = parameters_with_readings(
+    let (ir, parameters, notes) = parameters_with_scalars(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Zero" Type="BossExtrude" id="7">
                 <Dimension Name="D1">0</Dimension>
@@ -120,10 +123,10 @@ fn a_zero_display_whose_step_is_the_linear_resolution_is_exact() {
         </Keywords>"#,
         &[("Zero", "D1", V10::Length(Length::new(0.0).unwrap()), None)],
         &[],
-        Some(super::super::units::LengthUnit {
-            symbol: UnitSymbol::Mm,
-            decimals: 5,
-        }),
+        &[],
+        &[],
+        Some(UnitSymbol::Mm),
+        Some(5),
     );
     let owner = ParameterOwner::Feature(feature_named(&ir, "Zero").id.clone());
     let parameter = parameters

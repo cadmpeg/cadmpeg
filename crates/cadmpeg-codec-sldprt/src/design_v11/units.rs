@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The part's length unit: the length unit object of the `moUnitsTable_c`
-//! each configuration's `moPart_c` writes in `Contents/Config-N`
-//! (`docs/formats/sldprt.md`).
+//! The part's length unit and length precision: the length unit object of
+//! the `moUnitsTable_c` each configuration's `moPart_c` writes in
+//! `Contents/Config-N` (`docs/formats/sldprt.md`).
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::units::UnitSymbol;
@@ -78,30 +78,38 @@ impl LengthUnit {
 }
 
 /// The length unit every configuration's units table states, or `None`
-/// where a configuration states none or two state different ones. Where
-/// configurations state different decimal places, the fewest hold, the
-/// coarsest rounding of any of them.
-pub(crate) fn length_unit(scan: &ContainerScan) -> Option<LengthUnit> {
-    let mut found: Option<LengthUnit> = None;
-    for section in scan.sections() {
-        if !section.name().is_some_and(is_configuration) {
-            continue;
-        }
-        let bases: &[Base] = match section {
-            Section::Compound(_) => &COMPOUND_BASES,
-            Section::Block(_) => &BLOCK_BASES,
-        };
-        let unit = configuration_length_unit(section.payload(), bases)?;
-        found = Some(match found {
-            None => unit,
-            Some(known) if known.symbol == unit.symbol => LengthUnit {
-                symbol: unit.symbol,
-                decimals: known.decimals.min(unit.decimals),
-            },
-            Some(_) => return None,
-        });
-    }
-    found
+/// where a configuration states none or two state different ones.
+pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
+    let mut units = configurations(scan)
+        .map(|(payload, bases)| configuration_length_unit(payload, bases).map(|unit| unit.symbol));
+    let first = units.next()??;
+    units.try_fold(first, |unit, other| (other? == unit).then_some(unit))
+}
+
+/// The number of decimal places at which the part shows lengths: the
+/// largest that a configuration's units table states, whose allowance is the
+/// narrowest. `None` where a configuration states none.
+pub(crate) fn length_places(scan: &ContainerScan) -> Option<u32> {
+    configurations(scan)
+        .map(|(payload, bases)| configuration_length_places(payload, bases))
+        .try_fold(None, |largest, places| Some(largest.max(Some(places?))))
+        .flatten()
+}
+
+/// The stream of each configuration and the base forms of a unit object in
+/// its container.
+fn configurations<'a>(
+    scan: &'a ContainerScan<'a>,
+) -> impl Iterator<Item = (&'a [u8], &'static [Base])> {
+    scan.sections()
+        .filter(|section| section.name().is_some_and(is_configuration))
+        .map(|section| {
+            let bases: &'static [Base] = match section {
+                Section::Compound(_) => &COMPOUND_BASES,
+                Section::Block(_) => &BLOCK_BASES,
+            };
+            (section.payload(), bases)
+        })
 }
 
 /// Whether `stream` is a configuration's own stream, `Contents/Config-N`,
@@ -117,29 +125,41 @@ fn is_configuration(stream: &str) -> bool {
             .all(|byte| byte.is_ascii_digit())
 }
 
-/// The length unit of one configuration's units table: after the table's
-/// u16 object count, the object that declares the length unit class, whose
-/// base opens with the display decimal places and whose u16 unit code
-/// follows its base. The table writes it first, or after the other unit
-/// classes it declares; a class declared before it that is not a unit class,
-/// or that holds a length unit pointer itself, leaves the object unplaced
-/// and states no unit. The base is the one of `bases` that the table's
-/// number unit object measures.
-fn configuration_length_unit(payload: &[u8], bases: &[Base]) -> Option<LengthUnit> {
+/// The fields of one configuration's length unit object, from the end of
+/// its class declaration, and their base form: after the table's u16 object
+/// count, the object that declares the length unit class. The table writes
+/// it first, or after the other unit classes it declares; a class declared
+/// before it that is not a unit class, or that holds a length unit pointer
+/// itself, leaves the object unplaced. The base is the one of `bases` that
+/// the table's number unit object measures.
+fn length_object<'a>(payload: &'a [u8], bases: &[Base]) -> Option<(&'a [u8], Base)> {
     let table = find(payload, TABLE_CLASS)?.checked_add(TABLE_CLASS.len())?;
     let objects = payload.get(table.checked_add(2)?..)?;
     let object = find(objects, LENGTH_DECLARATION)?;
     if !declares_other_units(objects.get(..object)?) {
         return None;
     }
-    let fields = object.checked_add(LENGTH_DECLARATION.len())?;
-    let base = base(objects, bases)?;
-    let symbol = unit(View::u16_le_at(
-        objects,
-        fields.checked_add(base.unit_code)?,
-    )?)?;
-    let decimals = View::u32_le_at(objects, fields.checked_add(base.display_decimals)?)?;
-    Some(LengthUnit { symbol, decimals })
+    let fields = objects.get(object.checked_add(LENGTH_DECLARATION.len())?..)?;
+    Some((fields, base(objects, bases)?))
+}
+
+/// The length unit of one configuration's units table: the u16 unit code
+/// that follows the length unit object's base, and the display decimal
+/// places that open it.
+fn configuration_length_unit(payload: &[u8], bases: &[Base]) -> Option<LengthUnit> {
+    let (fields, base) = length_object(payload, bases)?;
+    Some(LengthUnit {
+        symbol: unit(View::u16_le_at(fields, base.unit_code)?)?,
+        decimals: View::u32_le_at(fields, base.display_decimals)?,
+    })
+}
+
+/// The length precision of one configuration's units table: the first u32
+/// of the length unit object's base, the number of decimal places at which
+/// the document shows lengths.
+fn configuration_length_places(payload: &[u8], bases: &[Base]) -> Option<u32> {
+    let (fields, base) = length_object(payload, bases)?;
+    View::u32_le_at(fields, base.display_decimals)
 }
 
 /// The one of `bases` whose length is that of the number unit object in

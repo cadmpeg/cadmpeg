@@ -48,6 +48,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const ZERO_TRAILER: usize = 8;
 }
 
+/// Byte offsets for the `feature_input_scalar_class_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// ```
+pub(crate) mod feature_input_scalar_class_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
+}
+
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §1.1. Record length 8 B.
@@ -2910,6 +2924,48 @@ pub(crate) mod named_object_header {
     pub(crate) const OBJECT_ID: usize = 8;
 }
 
+/// Byte offsets for the `units_length_unit_compound_three_word` record.
+///
+/// Spec §Configuration objects. Record length 46 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
+/// ```
+pub(crate) mod units_length_unit_compound_three_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 44;
+}
+
+/// Byte offsets for the `units_length_unit_compound_four_word` record.
+///
+/// Spec §Configuration objects. Record length 50 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
+/// ```
+pub(crate) mod units_length_unit_compound_four_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 48;
+}
+
+/// Byte offsets for the `units_length_unit_block` record.
+///
+/// Spec §Configuration objects. Record length 64 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+/// ```
+pub(crate) mod units_length_unit_block {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 62;
+}
+
 /// Byte offsets for the `sketch_record_head` record.
 ///
 /// Spec §Sketch objects. Record length 64 B.
@@ -3504,48 +3560,6 @@ pub(crate) mod pmark_record_head {
     pub(crate) const FORM: usize = 4;
     /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM_WORD: usize = 8;
-}
-
-/// Byte offsets for the `units_length_unit_compound_three_word` record.
-///
-/// Spec §Configuration objects. Record length 46 B.
-///
-/// ```text
-/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
-/// ```
-pub(crate) mod units_length_unit_compound_three_word {
-    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
-    pub(crate) const DISPLAY_DECIMALS: usize = 0;
-    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
-    pub(crate) const UNIT_CODE: usize = 44;
-}
-
-/// Byte offsets for the `units_length_unit_compound_four_word` record.
-///
-/// Spec §Configuration objects. Record length 50 B.
-///
-/// ```text
-/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
-/// ```
-pub(crate) mod units_length_unit_compound_four_word {
-    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
-    pub(crate) const DISPLAY_DECIMALS: usize = 0;
-    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
-    pub(crate) const UNIT_CODE: usize = 48;
-}
-
-/// Byte offsets for the `units_length_unit_block` record.
-///
-/// Spec §Configuration objects. Record length 64 B.
-///
-/// ```text
-/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
-/// ```
-pub(crate) mod units_length_unit_block {
-    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
-    pub(crate) const DISPLAY_DECIMALS: usize = 0;
-    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
-    pub(crate) const UNIT_CODE: usize = 62;
 }
 
 /// Byte offsets for the `sweep_wire_contact` record.

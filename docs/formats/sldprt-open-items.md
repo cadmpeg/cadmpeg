@@ -213,7 +213,7 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** Which carrier controls membership when Keywords `id` differs from manifest `swID`, or a native explicit `SourceIndex` conflicts with the complete manifest join?
 
-**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: `140489.sldprt` has `NeedsUpdate="YES"` and a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Conflicting explicit `SourceIndex` values remain unresolved.
+**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: a row with `NeedsUpdate="YES"` can have a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Every stored Keywords `id` names a stored `Config-N` stream index, and the partition of a lone Keywords configuration has its `id` as `N`, so `sldprt.md` §2 binds a configuration without `SourceIndex` through its `id`. Conflicting explicit `SourceIndex` values remain unresolved.
 
 **Need.** A producer save or export must distinguish unequal Keywords `id` and manifest `swID`. A native dual-carrier witness must test explicit `SourceIndex` disagreement with the full manifest join.
 
@@ -986,7 +986,7 @@ resolve a seed feature?
 
 **Question.** What do the unnamed fields of the sketch record head, point and curve records, the `sgSketch` settings block and its 61 trailing bytes mean, what are the eight relation groups, and how are the compact `ff ff 07 00 01` records laid out?
 
-**Known.** In some sketches (about 17 streams; `Intake Final Drive Hex`, `105t HTD Belt…`) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
+**Known.** In some sketches (about 17 streams) the dimension and relation groups hold one u16 count fewer than the usual three plus eight, with the same entries otherwise: a polygon that is the last group's entry elsewhere appears one group earlier. The header fields do not tell the two apart, but no group count has bit 15 set, so a reader detects the shorter form by the class tag that stands where the eighth count would be; which group is dropped is not known. The relation groups observed hold one-operand relations (types `4`, `5`, `17`) in the first group and two-operand relations (types `9`, `12`) in later groups. Some sketches write four zero bytes after the eight groups before the first `suObList` pointer. The zero bytes between the last curve record and the dimension count number 36 when the last curve list holds lines (106 of 115 sketches examined) and 22 when it holds arcs (187 of 220); 34 and 24 occur in the rest. The compact generation occurs in files whose sketches open their records with `ff ff 07 00 01`.
 
 **Need.** A reader that recovers sketch geometry and constraints, and a writer that creates a sketch, have to read and write these fields.
 
@@ -1195,15 +1195,6 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
 **Need.** A document with no length unit gives its length dimensions no value.
-
-### DI-79. The display decimal places of a unit base
-
-**Question.** Is the first u32 of a unit object's base the decimal places to which Keywords rounds a displayed number?
-
-**Known.** `sldprt.md` §2.3 names the word the display decimal places. No Keywords length display of a document has more decimal places than the length unit's word, and in some documents the longest displays have exactly that many. The word is `2` in most tables, and `0` to `8` in others. The decoder reads the length unit's word as the length display's decimal places. A length whose bare display is at most one step of those places from zero has no value where that step is coarser than the linear resolution, `1e-5` mm, and `design.parameter-value-unread` names it. A display whose step is at or below the linear resolution is exact, zero included.
-
-**Need.** A document whose length displays show the word's decimal places with trailing zeros, or a document whose stored lengths and displays give the display precision independently of the word.
-
 
 ### DI-77. The +17 value of a sketch curve record
 

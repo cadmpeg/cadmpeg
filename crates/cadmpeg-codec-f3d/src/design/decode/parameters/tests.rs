@@ -11,9 +11,9 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
-    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
-    parse_text_parameter_owner, wide_parameter_comment,
+    decode_parameters, parameter_comment, parse_design_parameter_record,
+    parse_legacy_parameter_owner_68, parse_legacy_parameter_owner_88, parse_parameter_companion,
+    parse_parameter_owner, parse_text_parameter_owner, WIDE_DISCRIMINATED_SHIFT,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{

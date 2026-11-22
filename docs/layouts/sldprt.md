@@ -64,6 +64,21 @@ Parsed by:
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
 
+## `feature_input_scalar_class_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `relation_class_token` | `u16` | little | spec | the relation class token at prefix +0 |
+| 2 | 4 | `zero` | `u32` | little | spec | a zero u32 at prefix +2 |
+| 6 | 2 | `parameter_class_token` | `u16` | little | spec | the parameter class token at prefix +6 |
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B
@@ -3276,6 +3291,70 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
+## `units_length_unit_compound_three_word`
+
+Spec §Configuration objects · layout: byte offsets · size: 46 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
+| 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+
+## `units_length_unit_compound_four_word`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+
+## `units_length_unit_block`
+
+Spec §Configuration objects · layout: byte offsets · size: 64 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+- `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
+
 ## `sketch_record_head`
 
 Spec §Sketch objects · layout: byte offsets · size: 64 B
@@ -4002,70 +4081,6 @@ Parsed by:
 | 0 | 4 | `mark` | `u32` | little | spec | the mark, a little-endian u32 at +0 |
 | 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
 | 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
-
-## `units_length_unit_compound_three_word`
-
-Spec §Configuration objects · layout: byte offsets · size: 46 B
-
-A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
-
-Parsed by:
-- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
-| 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
-| 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
-
-Unstated regions:
-
-- `4..8` (4 B): The u32 after the display decimal places.
-- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
-
-## `units_length_unit_compound_four_word`
-
-Spec §Configuration objects · layout: byte offsets · size: 50 B
-
-A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
-
-Parsed by:
-- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
-| 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
-| 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
-
-Unstated regions:
-
-- `4..8` (4 B): The u32 after the display decimal places.
-- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
-
-## `units_length_unit_block`
-
-Spec §Configuration objects · layout: byte offsets · size: 64 B
-
-A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
-
-Parsed by:
-- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `display_decimals` | `u32` | little | spec | The decimal places to which Keywords rounds a displayed length (open item DI-79). |
-| 8 | 8 | `value` | `f64` | little | spec | f64 value |
-| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
-| 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
-
-Unstated regions:
-
-- `4..8` (4 B): The u32 after the display decimal places.
-- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
-- `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
 
 ## `sweep_wire_contact`
 

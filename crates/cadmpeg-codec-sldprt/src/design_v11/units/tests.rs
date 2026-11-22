@@ -2,13 +2,15 @@
 use cadmpeg_ir::design::units::UnitSymbol;
 
 use super::{
-    configuration_length_unit, Base, LengthUnit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS,
-    LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
+    configuration_length_places, configuration_length_unit, length_places, length_unit, Base,
+    LengthUnit, BLOCK_BASES, COMPOUND_BASES, DENSITY_CLASS, LENGTH_DECLARATION, NEW_CLASS,
+    TABLE_CLASS,
 };
 use crate::layout::{
     units_length_unit_block as block, units_length_unit_compound_four_word as four_word,
     units_length_unit_compound_three_word as three_word,
 };
+use crate::test_support::container::{make_block, outer_header, scan};
 
 /// The length unit symbol of the units table in `payload`.
 fn symbol(payload: &[u8], bases: &[Base]) -> Option<UnitSymbol> {
@@ -235,4 +237,80 @@ fn a_length_unit_after_another_class_or_a_density_unit_states_no_unit() {
     let length = NEW_CLASS.len() + 2 + TABLE_CLASS.len() + 2 + NEW_CLASS.len();
     cut[length..length + 2].copy_from_slice(&u16::MAX.to_le_bytes());
     assert_eq!(symbol(&cut, &BLOCK_BASES), None);
+}
+
+#[test]
+fn the_length_precision_is_the_first_word_of_the_length_unit_base() {
+    for (mut base, places, bases) in [
+        (
+            three_word_base(),
+            three_word::DISPLAY_DECIMALS,
+            &COMPOUND_BASES[..],
+        ),
+        (
+            four_word_base(),
+            four_word::DISPLAY_DECIMALS,
+            &COMPOUND_BASES[..],
+        ),
+        (block_base(), block::DISPLAY_DECIMALS, &BLOCK_BASES[..]),
+    ] {
+        base[places..places + 4].copy_from_slice(&2u32.to_le_bytes());
+        let angle_first = after(&[angle(&base), number(&base)], &base, 0);
+        for payload in [first(&base, 0), angle_first] {
+            assert_eq!(configuration_length_places(&payload, bases), Some(2));
+        }
+    }
+    let base = block_base();
+    let after_density = after(
+        &[
+            angle(&base),
+            number(&base),
+            object(DENSITY_CLASS, &base, &[0, 0]),
+        ],
+        &base,
+        0,
+    );
+    assert_eq!(
+        configuration_length_places(&after_density, &BLOCK_BASES),
+        None
+    );
+}
+
+#[test]
+fn configurations_that_state_different_precisions_give_the_largest() {
+    let part = |configurations: &[Option<u32>]| {
+        let mut source = outer_header();
+        for (index, places) in (0u32..).zip(configurations) {
+            let mut base = block_base();
+            let payload = match places {
+                Some(places) => {
+                    base[block::DISPLAY_DECIMALS..block::DISPLAY_DECIMALS + 4]
+                        .copy_from_slice(&places.to_le_bytes());
+                    first(&base, 0)
+                }
+                // No number unit object measures the base, so the table
+                // states no precision.
+                None => table(&[length(&base, 0), angle(&base)]),
+            };
+            source.extend(make_block(
+                0x20 + index,
+                &format!("Contents/Config-{index}"),
+                &payload,
+            ));
+        }
+        source
+    };
+    for configurations in [[Some(2), Some(5)], [Some(5), Some(2)], [Some(5), Some(5)]] {
+        let source = part(&configurations);
+        let scanned = scan(&source);
+        assert_eq!(length_places(&scanned), Some(5), "{configurations:?}");
+        assert_eq!(
+            length_unit(&scanned),
+            Some(UnitSymbol::Mm),
+            "{configurations:?}"
+        );
+    }
+    let source = part(&[Some(2), None]);
+    assert_eq!(length_places(&scan(&source)), None);
+    assert_eq!(length_places(&scan(&part(&[]))), None);
 }
