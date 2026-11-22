@@ -535,7 +535,8 @@ pub(in crate::history) fn sync_neutral_features(
             }
             (Err(error), _) => return Err(error),
         };
-        if cleared_reversal(feature) {
+        // A feature written with its stored record keeps its stored flag.
+        if !kept && !edits.feature_edit_unwritten(&feature.id) && cleared_reversal(feature) {
             let stated = existing
                 .as_deref()
                 .is_some_and(|record| record.properties.contains_key("Reverse"));

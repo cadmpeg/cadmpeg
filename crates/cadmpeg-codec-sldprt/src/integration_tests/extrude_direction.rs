@@ -441,10 +441,12 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
     ));
 }
 
-/// An edit that clears a reversal whose stored caps still show it is
-/// written, with the `0` word, and named by the general stale-solid loss.
+/// An edit that clears a reversal whose stored caps still show it does not
+/// read back as cleared: the decoder reads the reversal from the stored
+/// solid as well. The feature is written with its stored record, which keeps
+/// the end-spec flag, and a loss names the edit.
 #[test]
-fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
+fn a_cleared_reversal_over_its_stored_caps_is_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0));
     let decoded = decode(bytes);
     let (_, direction, word) = extrusion_state(decoded.ir(), anchor);
@@ -458,16 +460,17 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
 
     let (written, write_losses) = clear_and_write(decoded);
     assert_eq!(write_losses.len(), 1, "{write_losses:?}");
-    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    let unwritten = messages(&write_losses, SldprtLossCode::WriterFeatureEditUnwritten);
     assert!(
-        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        unwritten.len() == 1 && unwritten[0].contains("does not read back as edited"),
         "{write_losses:?}"
     );
     assert!(!has(
         &write_losses,
-        SldprtLossCode::WriterExtrudeReversalUnwritten
+        SldprtLossCode::WriterSolidStaleAfterEdit
     ));
 
-    let (_, _, word) = extrusion_state(decode(written).ir(), anchor);
-    assert_eq!(word, [0, 0, 0, 0]);
+    let (_, direction, word) = extrusion_state(decode(written).ir(), anchor);
+    assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
+    assert_eq!(word, [1, 0, 0, 0]);
 }
