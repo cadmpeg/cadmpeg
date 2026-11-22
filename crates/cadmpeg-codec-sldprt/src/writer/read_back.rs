@@ -121,8 +121,10 @@ impl SourceDefinitions {
                 ));
                 continue;
             };
-            let missing = outputs.saturating_sub(read.evaluation.outputs().len());
-            if missing > 0 {
+            if let Some(missing) = outputs
+                .checked_sub(read.evaluation.outputs().len())
+                .filter(|missing| *missing > 0)
+            {
                 bodiless.push(feature.id.as_str());
                 bodies += missing;
             }
