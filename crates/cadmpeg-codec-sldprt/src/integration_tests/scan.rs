@@ -190,6 +190,41 @@ fn scan_sldprt_truncated_later_block_keeps_prior_rows_incomplete() {
 }
 
 #[test]
+fn scan_sldprt_truncated_non_history_block_and_short_marker_tail_are_skipped() {
+    for tail in [true, false] {
+        let mut bytes = source(LIST);
+        if tail {
+            let marker = make_block(0x42, "Contents/Keywords", LIST);
+            bytes.extend_from_slice(&marker[..8]);
+        } else {
+            let mut other = make_block(0x42, "Preview/Thumbnail", LIST);
+            other.truncate(other.len() - 1);
+            bytes.extend(other);
+        }
+        assert_complete_history_listing(&bytes);
+    }
+}
+
+fn assert_complete_history_listing(bytes: &[u8]) {
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.stop_reason, None);
+    let census = scan.census.expect("history census");
+    assert!(census.complete);
+    assert_eq!(
+        census
+            .rows
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["BossExtrude", "Fillet"]
+    );
+}
+
+#[test]
 fn scan_sldprt_namespace_prefixes_preserve_local_feature_names() {
     for (xml, expected_kind) in [
         (br#"<k:Keywords xmlns:k="urn:test"><k:Feature Type="BossExtrude" Suppressed="1"/></k:Keywords>"#.as_slice(), "BossExtrude"),

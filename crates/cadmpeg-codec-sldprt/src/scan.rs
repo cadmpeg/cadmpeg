@@ -87,7 +87,14 @@ fn native(
             )?;
             continue;
         }
+        let next = at
+            .checked_add(1)
+            .ok_or_else(|| malformed("SolidWorks marker position"))?;
         reader.seek(at)?;
+        if reader.remaining() < block::LEN {
+            reader.seek(next)?;
+            continue;
+        }
         let header = reader.take(block::LEN)?;
         let bytes = header.window();
         let compressed = View::u32_le_at(bytes, block::COMP_SZ)
@@ -98,21 +105,12 @@ fn native(
             View::u32_le_at(bytes, block::PRE_SZ)
                 .ok_or_else(|| malformed("SolidWorks name size"))?,
         );
-        let end = reader
+        let name_end = reader
             .position()
             .checked_add(name_size)
-            .and_then(|at| at.checked_add(index_from_u32(compressed)))
-            .ok_or_else(|| malformed("SolidWorks block extent"))?;
-        if end > source.end() {
-            return Err(StopReason::Truncated(
-                "SolidWorks history block extent".into(),
-            ));
-        }
-        if compressed == 0 {
-            reader.seek(
-                at.checked_add(1)
-                    .ok_or_else(|| malformed("SolidWorks marker position"))?,
-            )?;
+            .ok_or_else(|| malformed("SolidWorks block name extent"))?;
+        if name_end > source.end() {
+            reader.seek(next)?;
             continue;
         }
         let name = reader.take(name_size)?;
@@ -123,7 +121,19 @@ fn native(
             decoded.push(char::from(byte.rotate_left(4)));
         }
         if !history_name(&decoded) {
-            reader.seek(end)?;
+            reader.seek(next)?;
+            continue;
+        }
+        let end = name_end
+            .checked_add(index_from_u32(compressed))
+            .ok_or_else(|| malformed("SolidWorks block extent"))?;
+        if end > source.end() {
+            return Err(StopReason::Truncated(
+                "SolidWorks history block extent".into(),
+            ));
+        }
+        if compressed == 0 {
+            reader.seek(next)?;
             continue;
         }
         scan.declared_size(budget, &decoded, u64::from(declared))?;
