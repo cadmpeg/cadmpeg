@@ -1606,6 +1606,30 @@ Parsed by:
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 
+## `sphere_pcurve_coordinate_selector`
+
+Spec §6.7 · layout: byte offsets · size: 27 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector · value `[65, 17, 130]` |
+| 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
+
+## `owned_pcurve_wide_channel_header`
+
+Spec §6.3 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/wire/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `14 <K:u16le>` · value `20` |
+| 1 | 2 | `site_count` | `u16` | little | spec | This three-byte header repeats the definition-point count `K`. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
