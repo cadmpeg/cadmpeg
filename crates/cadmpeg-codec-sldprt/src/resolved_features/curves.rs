@@ -1280,9 +1280,10 @@ fn features_by_native_ref(
     by_native
 }
 
-/// The `UAxis` an offset reference plane stores with its own frame, when its
-/// stored `Normal` points the way of the normal it inherits and the axis lies
-/// in that plane (`sldprt.md` §2, offset reference planes).
+/// The `UAxis` an offset reference plane stores with its own frame
+/// (`sldprt.md` §2, offset reference planes). The decoder takes it only when
+/// the stored `Normal` points the way of the normal the plane inherits and the
+/// axis lies in that plane, so that the derived frame stays admissible.
 fn stored_offset_plane_u_axis(
     feature: &cadmpeg_ir::features::Feature,
     inherited_normal: Vector3,

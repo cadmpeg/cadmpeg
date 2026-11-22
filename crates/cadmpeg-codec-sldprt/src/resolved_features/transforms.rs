@@ -10,7 +10,6 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
-const EPS_TRANSFORMS_OBLIQUE_SKETCH_NORMAL_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8: f64 = 1.0e-8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,7 +139,9 @@ pub(super) fn component_sketch_marker_transform(
         && sketch
             .resolved_placement()
             .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
-            == Some(super::compact_reference_planes::principal_top_component_frame())
+            == Some(super::compact_reference_planes::principal_sketch_frame(
+                cadmpeg_ir::features::PrincipalPlane::Top,
+            ))
     {
         Some(MarkerTransform {
             axes: Axes::Aligned {
@@ -167,6 +168,10 @@ pub(super) fn feature_sketch_marker_transform(
     component_sketch_marker_transform(sketch, quantum, top)
 }
 
+/// The transform the sketch placement gives the feature-input marker pair. On
+/// the frame of a support plane the pair is the local sketch coordinate
+/// (`sldprt.md` §2); on a frame the decoder computed it is the model-component
+/// reading.
 pub(super) fn sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -183,6 +188,9 @@ pub(super) fn sketch_frame_marker_transform(
             },
             translation: (0, 0),
         });
+    }
+    if placement_is_support_plane_frame(sketch) {
+        return Some(MarkerTransform::identity());
     }
     axis_aligned_sketch_frame_marker_transform(sketch, quantum)
         .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
@@ -263,27 +271,38 @@ fn axis_aligned_sketch_frame_marker_transform(
     })
 }
 
-/// Whether the sketch comes from a path that places it on the stored frame of
-/// its support plane (`feature_input_sketch_frame`): the marker, compact, and
-/// legacy-configuration sketches.
+/// The sketch-id kind of a marker profile sketch.
+pub(super) const MARKER_SKETCH_KIND: &str = "markers";
+/// The sketch-id kind of a compact profile sketch.
+pub(super) const COMPACT_SKETCH_KIND: &str = "compact";
+/// The sketch-id kind of a legacy-configuration profile sketch.
+pub(super) const LEGACY_CONFIG_SKETCH_KIND: &str = "legacy-config";
+
+/// Whether the sketch comes from a path that places it on the frame of its
+/// support plane: the marker and compact sketches (`feature_input_sketch_frame`)
+/// and the legacy-configuration sketches (the same table, or the unique frame of
+/// their lane). `bore:` sketches take their frame from the same table but project
+/// their points from model space, so their pair is not a sketch coordinate.
 fn placement_is_support_plane_frame(sketch: &cadmpeg_ir::sketches::Sketch) -> bool {
     sketch
         .id
         .as_str()
         .strip_prefix("sldprt:model:sketch#")
-        .is_some_and(|kind| {
-            ["markers:", "compact:", "legacy-config:"]
-                .iter()
-                .any(|prefix| kind.starts_with(prefix))
+        .and_then(|rest| rest.split_once(':'))
+        .is_some_and(|(kind, _)| {
+            [
+                MARKER_SKETCH_KIND,
+                COMPACT_SKETCH_KIND,
+                LEGACY_CONFIG_SKETCH_KIND,
+            ]
+            .contains(&kind)
         })
 }
 
-/// The transform the sketch placement gives the feature-input marker pair.
-/// On a support plane's stored frame whose normal is oblique to the model
-/// axes, the pair is the local sketch coordinate. Otherwise it is the two
-/// model-coordinate components other than the normal's dominant one, lifted
-/// onto the plane and projected onto the frame; on an oblique frame the
-/// decoder computed, that reading is open item DI-80.
+/// The model-component reading of the feature-input marker pair on a frame the
+/// decoder computed with an oblique normal: the two model-coordinate components
+/// other than the normal's dominant one, lifted onto the plane and projected
+/// onto the frame. That reading is open item DI-80.
 fn affine_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -293,13 +312,6 @@ fn affine_sketch_frame_marker_transform(
     let normal = [normal.x, normal.y, normal.z];
     let normal_axis =
         (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
-    let normal_length = normal[0].hypot(normal[1]).hypot(normal[2]);
-    if placement_is_support_plane_frame(sketch)
-        && normal[normal_axis].abs()
-            < (1.0 - EPS_TRANSFORMS_OBLIQUE_SKETCH_NORMAL_E8) * normal_length
-    {
-        return Some(MarkerTransform::identity());
-    }
     let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
         normal[1] * u_axis[2] - normal[2] * u_axis[1],

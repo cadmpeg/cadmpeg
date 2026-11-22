@@ -110,7 +110,7 @@ impl CompactReferencePlaneIndex {
             |(offset, _)| *offset,
         );
         (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
-            .then(principal_top_component_frame)
+            .then(|| principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top))
     }
 
     pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {
@@ -319,31 +319,24 @@ fn compact_principal_reference_plane_record(
     {
         return None;
     }
-    let (origin, normal, u_axis) =
-        principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Right);
-    let v_axis = normal.cross(u_axis);
-    let expected = if source == 4 {
-        [
-            u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z,
-            normal.z, origin.x, origin.y, origin.z, 1.0,
-        ]
+    let plane = if source == 3 {
+        cadmpeg_ir::features::PrincipalPlane::Top
     } else {
-        [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]
+        cadmpeg_ir::features::PrincipalPlane::Right
     };
-    expected
-        .into_iter()
-        .enumerate()
-        .all(|(index, expected)| {
-            View::f64_le_at(bytes, principal_component::BASIS + index * 8)
-                .is_some_and(|value| value == expected)
-        })
-        .then_some(if source == 3 {
-            cadmpeg_ir::features::PrincipalPlane::Top
-        } else {
-            cadmpeg_ir::features::PrincipalPlane::Right
-        })
+    let (origin, normal, u_axis) = principal_sketch_frame(plane);
+    let v_axis = normal.cross(u_axis);
+    [
+        u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z, normal.z,
+        origin.x, origin.y, origin.z, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    .all(|(index, expected)| {
+        View::f64_le_at(bytes, principal_component::BASIS + index * 8)
+            .is_some_and(|value| value == expected)
+    })
+    .then_some(plane)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -466,14 +459,9 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
     ))
 }
 
-pub(super) fn principal_top_component_frame() -> PlaneFrame {
-    (
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(1.0, 0.0, 0.0),
-    )
-}
-
+/// The model-space `(origin, normal, u-axis)` frame of a principal plane
+/// (`sldprt.md` §2): the Top frame is the frame its principal-plane component
+/// record stores.
 pub(crate) fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
 ) -> (Point3, Vector3, Vector3) {
@@ -486,7 +474,7 @@ pub(crate) fn principal_sketch_frame(
         ),
         PrincipalPlane::Top => (
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         ),
         PrincipalPlane::Right => (

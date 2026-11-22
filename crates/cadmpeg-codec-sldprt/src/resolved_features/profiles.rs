@@ -52,7 +52,10 @@ use super::sketch_lists::{
     point_record_index_basis_loss, unchecked_record_conflict, ChordConflict, ChordRecord,
     FramedCurve, ListedReading, SketchRecordLists,
 };
-use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
+use super::transforms::{
+    record_top_marker_coordinates, sketch_frame_marker_transform, COMPACT_SKETCH_KIND,
+    LEGACY_CONFIG_SKETCH_KIND, MARKER_SKETCH_KIND,
+};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -710,7 +713,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#compact:{lane_key}:{}",
+                "sldprt:model:sketch#{COMPACT_SKETCH_KIND}:{lane_key}:{}",
                 native_feature.ordinal
             )) else {
                 continue;
@@ -1523,7 +1526,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let sketch_text = format!(
-                "sldprt:model:sketch#markers:{lane_key}:{}",
+                "sldprt:model:sketch#{MARKER_SKETCH_KIND}:{lane_key}:{}",
                 native_feature.ordinal
             );
             let Ok(sketch_id) = SketchId::mint(sketch_text) else {
@@ -3431,7 +3434,7 @@ fn project_detached_legacy_config_sketches(
                     .copied()
                     .unwrap_or(detached_frame);
                 let Ok(sketch_id) = SketchId::mint(format!(
-                    "sldprt:model:sketch#legacy-config:{lane_key}:{}",
+                    "sldprt:model:sketch#{LEGACY_CONFIG_SKETCH_KIND}:{lane_key}:{}",
                     native_feature.ordinal
                 )) else {
                     break 'feature_edit;

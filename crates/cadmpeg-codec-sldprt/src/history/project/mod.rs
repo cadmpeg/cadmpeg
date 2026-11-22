@@ -84,6 +84,8 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
 pub(crate) struct FeatureProjection {
     pub(super) features: Vec<cadmpeg_ir::features::Feature>,
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
+    /// Offset planes placed at a nonzero `D1` whose side no stored frame states.
+    unstated_offset_sides: crate::loss::NamedCount,
 }
 
 pub(crate) fn neutral_feature_id(native_id: &str) -> Result<FeatureId, CodecError> {
@@ -112,6 +114,17 @@ impl FeatureProjection {
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<(), CodecError> {
         model.features = self.features;
+        if !self.unstated_offset_sides.is_empty() {
+            losses.push(
+                crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.note(format!(
+                    "{} offset reference plane(s) ({}) keep the side of the source plane that \
+                     the sign of D1 gives: D1 is a magnitude and no stored frame of the object \
+                     states the side.",
+                    self.unstated_offset_sides.count(),
+                    self.unstated_offset_sides,
+                )),
+            );
+        }
         for (child, parent) in self.regeneration_parents {
             let error = match model.set_feature_regeneration_parent(&child, &parent) {
                 Ok(()) => continue,
@@ -296,11 +309,12 @@ pub(crate) fn project_feature_model(
                 }
             });
     }
-    bind_offset_plane_references(&mut features);
+    let unstated_offset_sides = bind_offset_plane_references(&mut features);
     bind_native_construction_features(&mut features, histories);
     Ok(FeatureProjection {
         features,
         regeneration_parents,
+        unstated_offset_sides,
     })
 }
 
@@ -357,7 +371,12 @@ pub(crate) fn project_semantic_notes(
     Ok(notes)
 }
 
-pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
+/// Bind each offset reference plane to its source plane and give its distance
+/// the side its stored frame states. Returns the offset planes at a nonzero
+/// distance whose side no stored frame states.
+pub(super) fn bind_offset_plane_references(
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> crate::loss::NamedCount {
     fn canonical_plane_id<'a>(
         id: &'a FeatureId,
         parents: &'a HashMap<FeatureId, FeatureId>,
@@ -469,6 +488,48 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             displacement.z - reference.1.z * signed_distance / reference_normal_length,
         );
         same_scalar(tangent.norm(), 0.0) && same_scalar(signed_distance.abs(), distance.get().abs())
+    };
+    // `D1` is a magnitude. A stored frame parallel to the reference plane at
+    // the absolute `D1` from it states the side (`sldprt.md` §2); any other
+    // stored frame, or none, leaves the side unstated.
+    let stated_distance = |feature: &cadmpeg_ir::features::Feature,
+                           (reference_origin, reference_normal): (Point3, Vector3),
+                           distance: Length| {
+        let (origin, normal, _) = stored_frame(feature)?;
+        let reference_length = reference_normal.norm();
+        if !reference_length.is_finite()
+            || reference_length <= f64::EPSILON
+            || same_scalar(distance.get(), 0.0)
+            || !same_scalar(
+                (normal.dot(reference_normal) / (normal.norm() * reference_length)).abs(),
+                1.0,
+            )
+        {
+            return None;
+        }
+        let displacement = Vector3::new(
+            origin.x - reference_origin.x,
+            origin.y - reference_origin.y,
+            origin.z - reference_origin.z,
+        );
+        let signed_distance = displacement.dot(reference_normal) / reference_length;
+        let tangent = Vector3::new(
+            displacement.x - reference_normal.x * signed_distance / reference_length,
+            displacement.y - reference_normal.y * signed_distance / reference_length,
+            displacement.z - reference_normal.z * signed_distance / reference_length,
+        );
+        (same_scalar(tangent.norm(), 0.0)
+            && same_scalar(signed_distance.abs(), distance.get().abs()))
+        .then(|| Length::new(distance.get().abs().copysign(signed_distance)))
+        .flatten()
+    };
+    let mut unstated_sides = crate::loss::NamedCount::default();
+    let feature_label = |feature: &cadmpeg_ir::features::Feature| {
+        feature
+            .name
+            .as_deref()
+            .unwrap_or(feature.id.as_str())
+            .to_owned()
     };
     let mut ordinals = HashMap::new();
     for feature in features.iter() {
@@ -612,7 +673,8 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
 
     loop {
         let mut changed = false;
-        for feature in features.iter() {
+        let mut sides = Vec::new();
+        for (index, feature) in features.iter().enumerate() {
             let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { feature: reference }),
                 distance,
@@ -625,6 +687,20 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             }
             let Some(&(origin, normal, u_axis)) = frames.get(reference) else {
                 continue;
+            };
+            let distance = match stated_distance(feature, (origin, normal), *distance) {
+                Some(stated) => {
+                    if stated != *distance {
+                        sides.push((index, stated));
+                    }
+                    stated
+                }
+                None => {
+                    if !same_scalar(distance.get(), 0.0) {
+                        unstated_sides.push(&feature_label(feature));
+                    }
+                    *distance
+                }
             };
             let normal_length = normal.norm();
             let id = feature.id.clone();
@@ -641,6 +717,9 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 ),
             );
             changed = true;
+        }
+        for (index, stated) in sides {
+            set_offset_distance(&mut features[index], stated);
         }
 
         let mut bindings = Vec::new();
@@ -766,7 +845,7 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             break;
         }
     }
-    for feature in features {
+    for feature in features.iter_mut() {
         let properties = &feature.source_properties;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -791,6 +870,35 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             }
         });
     }
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
+            distance,
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let (reference, distance) = ((frame.origin().get(), frame.normal().get()), *distance);
+        match stated_distance(feature, reference, distance) {
+            Some(stated) => set_offset_distance(feature, stated),
+            None if !same_scalar(distance.get(), 0.0) => {
+                unstated_sides.push(&feature_label(feature));
+            }
+            None => {}
+        }
+    }
+    unstated_sides
+}
+
+fn set_offset_distance(feature: &mut cadmpeg_ir::features::Feature, stated: Length) {
+    feature.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            distance, ..
+        }) = definition
+        {
+            *distance = stated;
+        }
+    });
 }
 
 fn bind_native_construction_features(

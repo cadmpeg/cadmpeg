@@ -260,8 +260,8 @@ fn top_offset_frame_with_u_axis(
     u_axis: cadmpeg_ir::math::Vector3,
 ) -> crate::resolved_features::curves::SketchPlaneFrame {
     crate::resolved_features::curves::SketchPlaneFrame {
-        origin: Point3::new(0.0, 0.0, 3.0),
-        normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        origin: Point3::new(0.0, 3.0, 0.0),
+        normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         u_axis,
         u_axis_source: SketchPlaneUAxisSource::Native,
     }
@@ -280,16 +280,16 @@ fn offset_plane_frame_translates_its_reference_frame() {
 #[test]
 fn offset_plane_frame_takes_its_own_stored_u_axis() {
     assert_eq!(
-        top_offset_plane_frame(Some(("0,0,1", "0,1,0"))),
+        top_offset_plane_frame(Some(("0,1,0", "0,0,1"))),
         Some(top_offset_frame_with_u_axis(
-            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         ))
     );
 }
 
 #[test]
 fn offset_plane_frame_keeps_the_source_u_axis_for_an_opposite_or_tilted_stored_frame() {
-    for stored in [("0,0,-1", "0,1,0"), ("0,0,1", "0,1,0.5")] {
+    for stored in [("0,-1,0", "0,0,1"), ("0,1,0", "0,0.5,1")] {
         assert_eq!(
             top_offset_plane_frame(Some(stored)),
             Some(top_offset_frame_with_u_axis(

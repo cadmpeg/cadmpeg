@@ -177,17 +177,18 @@ fn serialized_support_offset_preserves_model_frame_and_polarity() {
             features: vec![front, offset, top, right],
         }];
         let features = project_features(&histories).expect("synthetic serialized support frame");
+        // The stored source frame is the Top frame the reference names.
         assert!(matches!(
             features[1].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
+                reference: Some(DatumPlaneReference::Feature { feature }),
                 distance: actual,
-            }) if actual.get() == distance
-                && frame.origin().get() == Point3::new(0.0, 0.0, 0.0)
-                && frame.normal().get() == Vector3::new(0.0, 1.0, 0.0)
-                && frame.u_axis().get() == Vector3::new(1.0, 0.0, 0.0)
+            }) if actual.get() == distance && feature == &features[2].id
         ));
-        assert!(features[1].dependencies.as_slice().is_empty());
+        assert_eq!(
+            features[1].dependencies.as_slice(),
+            std::slice::from_ref(&features[2].id)
+        );
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,

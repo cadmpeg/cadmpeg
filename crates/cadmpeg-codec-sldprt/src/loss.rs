@@ -162,6 +162,9 @@ pub(crate) enum SldprtLossCode {
     FeatureExtrudeDirectionUnresolved,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
+    /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
+    /// magnitude and no stored frame of the object states the side (DI-81).
+    FeatureOffsetPlaneSideAssumed,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -417,6 +420,7 @@ impl SldprtLossCode {
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeStartUnresolved,
+        Self::FeatureOffsetPlaneSideAssumed,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -559,6 +563,7 @@ impl SldprtLossCode {
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
+            Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -735,6 +740,7 @@ impl SldprtLossCode {
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -957,6 +963,7 @@ impl SldprtLossCode {
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1190,6 +1197,7 @@ mod tests {
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-start-unresolved",
+                "feature.offset-plane-side-assumed",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",

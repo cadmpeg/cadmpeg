@@ -1,17 +1,17 @@
-use crate::resolved_features::compact_reference_planes::principal_top_component_frame;
+use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
 use crate::resolved_features::transforms::{
     component_sketch_marker_transform, feature_sketch_marker_transform,
     record_top_marker_coordinates,
 };
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SketchFeatureBinding,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 fn sketch() -> Sketch {
-    let (origin, normal, u_axis) = principal_top_component_frame();
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Top);
     Sketch {
         id: SketchId::mint("synthetic:test:id#top-component").unwrap(),
         name: None,
@@ -26,7 +26,7 @@ fn sketch() -> Sketch {
 #[test]
 fn top_component_rectangle_and_blind_travel_use_intrinsic_coordinates() {
     let sketch = sketch();
-    let (origin, normal, u_axis) = principal_top_component_frame();
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Top);
     let v_axis = normal.cross(u_axis);
     assert_eq!(normal, Vector3::new(0.0, 1.0, 0.0));
     let transform = component_sketch_marker_transform(&sketch, 1.0, true).unwrap();
