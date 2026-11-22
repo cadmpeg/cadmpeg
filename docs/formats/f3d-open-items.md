@@ -2758,14 +2758,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-### DR-642. Circular-pattern compute option
-
-**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
-
-**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
-
 ### DR-818. Targets of rectangular-pattern body references
 
 **Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
@@ -2773,6 +2765,14 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
 
 **Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
+
+### DR-925. Suppressed-instance keys of a symmetric circular pattern
+
+**Question.** Which instance does each suppressed-instance key name in a symmetric circular pattern?
+
+**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the key `k + 1` of instance `k` of a one-sided pattern. In a symmetric pattern of five instances over a partial turn, key `2` names the instance one step from the seed in the negative sense, and key `5` names the instance two steps in the positive sense. The decoder projects a symmetric pattern with suppressed instances with all its instances and charges `feature.circular-pattern-suppression-not-transferred`.
+
+**Need.** Symmetric patterns with other counts, over a partial and a full turn, with suppressed instances on both sides of the seed.
 
 ### DR-644. Atomic regions with holes
 
