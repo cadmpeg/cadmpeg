@@ -12,8 +12,10 @@ mod archive;
 mod block;
 mod config;
 mod detailing;
+pub(super) mod from_ir;
+pub(super) mod sketch;
 mod streams;
-mod tree;
+pub(super) mod tree;
 
 #[cfg(test)]
 mod tests;
@@ -78,6 +80,8 @@ pub(super) struct Facts<'a> {
     pub(super) name: &'a str,
     /// The name of the configuration the skeleton writes.
     pub(super) active: &'a str,
+    /// The user sketches, in source order, written after the origin.
+    pub(super) sketches: &'a [sketch::Sketch],
     /// One stored body per body of the configuration's partition.
     pub(super) bodies: &'a [Body],
 }

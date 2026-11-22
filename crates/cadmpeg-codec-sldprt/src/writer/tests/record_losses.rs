@@ -287,7 +287,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>()
     };
-    let bare = crate::writer::native_skeleton_losses(None, false);
+    let bare = crate::writer::native_skeleton_losses(None, None);
     assert_eq!(
         codes(&bare),
         [
@@ -297,7 +297,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
     );
     let full = crate::writer::native_skeleton_losses(
         Some(vec!["feature#a".to_owned(), "feature#b".to_owned()]),
-        true,
+        Some("sketch#c holds an ellipse".to_owned()),
     );
     assert_eq!(
         codes(&full),
@@ -310,4 +310,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
     );
     assert!(full[0].message.starts_with("2 source feature(s)"));
     assert!(full[0].message.ends_with("feature#a, feature#b"));
+    assert!(full[3].message.ends_with("sketch#c holds an ellipse"));
+    let none_summarized = crate::writer::native_skeleton_losses(Some(Vec::new()), None);
+    assert_eq!(codes(&none_summarized), codes(&bare));
 }

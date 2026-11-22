@@ -122,12 +122,15 @@ pub(super) fn resolved_features(
         plane_data(&mut archive, plane);
     }
     origin(&mut archive);
+    for sketch in facts.sketches {
+        super::sketch::profile_feature(&mut archive, sketch)?;
+    }
     for (body, &component) in facts.bodies.iter().zip(&part.bodies) {
         base_body(&mut archive, body, component);
     }
     // The u16 after the map count is the top-level object count minus two.
     let tops = archive.count16(
-        DEFAULT_TREE_OBJECTS - 2 + facts.bodies.len(),
+        DEFAULT_TREE_OBJECTS - 2 + facts.sketches.len() + facts.bodies.len(),
         "top-level object count",
     );
     let (objects, _) = archive.finish()?;
@@ -230,8 +233,8 @@ fn annotations(archive: &mut Archive) {
 }
 
 /// A default reference plane.
-#[derive(Debug, Clone, Copy)]
-enum Plane {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::writer) enum Plane {
     Front,
     Top,
     Right,
@@ -249,15 +252,28 @@ impl Plane {
     }
 
     fn id(self) -> Oid {
+        Oid::Tree(self.tree_id())
+    }
+
+    /// The plane's `ids` value.
+    pub(super) fn tree_id(self) -> u32 {
         match self {
-            Self::Front => Oid::Tree(ids::FRONT_PLANE),
-            Self::Top => Oid::Tree(ids::TOP_PLANE),
-            Self::Right => Oid::Tree(ids::RIGHT_PLANE),
+            Self::Front => ids::FRONT_PLANE,
+            Self::Top => ids::TOP_PLANE,
+            Self::Right => ids::RIGHT_PLANE,
         }
     }
 
-    /// The plane's normal: Front is the XY plane, Top the XZ plane and Right
-    /// the YZ plane.
+    /// The plane's first and second in-plane axes and its normal in model
+    /// space: the columns of its rotation.
+    pub(in crate::writer) fn axes(self) -> [[f64; 3]; 3] {
+        match self {
+            Self::Front => [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            Self::Top => [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
+            Self::Right => [[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]],
+        }
+    }
+
     /// The plane's rotation rows, for the planes that state one.
     fn rotation(self) -> Option<[f64; 9]> {
         match self {
@@ -268,11 +284,7 @@ impl Plane {
     }
 
     fn normal(self) -> [f64; 3] {
-        match self {
-            Self::Front => [0.0, 0.0, 1.0],
-            Self::Top => [0.0, 1.0, 0.0],
-            Self::Right => [1.0, 0.0, 0.0],
-        }
+        self.axes()[2]
     }
 }
 

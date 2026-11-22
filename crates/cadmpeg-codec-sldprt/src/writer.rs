@@ -558,26 +558,39 @@ fn native_skeleton(
     let bodies = (0..ir.geometry.bodies.len())
         .map(|index| native::Body::numbered(&name, id_base, index))
         .collect::<Result<Vec<_>, _>>()?;
+    let (sketches, lane_reason) = match native::from_ir::sketches(ir, native)? {
+        native::from_ir::Sketches::Native(sketches) => (sketches, None),
+        native::from_ir::Sketches::Lane(reason) => (Vec::new(), Some(reason)),
+    };
     let facts = native::Facts {
         id_base,
         name: &name,
         active: &active,
+        sketches: &sketches,
         bodies: &bodies,
     };
-    let mut lane_follows = false;
+    let mut lane_merged = false;
     for (stream, payload) in native::skeleton(&facts)? {
         if let Some((_, existing)) = sections
             .iter_mut()
             .find(|(candidate, _)| *candidate == stream)
         {
+            // The generated lane holds the sketches' marker records; the
+            // tree holds them as native sketches when it writes them.
             let mut merged = payload;
-            merged.append(existing);
+            if lane_reason.is_some() {
+                merged.append(existing);
+                lane_merged = true;
+            }
             *existing = merged;
-            lane_follows = true;
         } else {
             sections.push((stream, payload));
         }
     }
+    let native_sketches = sketches
+        .iter()
+        .map(|sketch| sketch.feature_id)
+        .collect::<HashSet<_>>();
     let summarized = sections
         .iter()
         .any(|(stream, _)| stream.starts_with("Contents/Keywords"))
@@ -585,10 +598,33 @@ fn native_skeleton(
             ir.model
                 .features
                 .iter()
+                .filter(|feature| !native_feature_written(native, feature, &native_sketches))
                 .map(|feature| feature.id.as_str().to_owned())
                 .collect::<Vec<_>>()
         });
-    Ok(native_skeleton_losses(summarized, lane_follows))
+    Ok(native_skeleton_losses(
+        summarized,
+        lane_reason.filter(|_| lane_merged),
+    ))
+}
+
+/// Whether the native tree writes `feature`: its history record's source id
+/// is one of `written`.
+fn native_feature_written(
+    native: Option<&SldprtNative>,
+    feature: &cadmpeg_ir::features::Feature,
+    written: &HashSet<u32>,
+) -> bool {
+    let record = feature.native_ref.clone().unwrap_or_else(|| {
+        crate::history::write::features::generated_feature_record_id(&feature.id)
+    });
+    native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .find(|candidate| candidate.id == record)
+        .and_then(crate::records::Feature::source_value)
+        .is_some_and(|source| written.contains(&source))
 }
 
 /// The part name a `sw_name` attribute states: its last path component
@@ -607,15 +643,16 @@ fn native_part_name(name: &str) -> String {
 /// written only in the history summary, when the write holds one.
 fn native_skeleton_losses(
     summarized: Option<Vec<String>>,
-    lane_follows: bool,
+    lane_follows: Option<String>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
     let mut losses = Vec::new();
-    if let Some(features) = summarized {
+    if let Some(features) = summarized.filter(|features| !features.is_empty()) {
         losses.push(SldprtLossCode::WriterNativeHistorySummary.note(format!(
             "{} source feature(s) are written only in the cadmpeg history summary \
              Contents/Keywords-0, a stream SolidWorks parts do not hold; the native feature \
-             tree holds the default tree and one moBaseBody_c stored body per body: {}",
+             tree holds the default tree, the sketches it writes natively and one moBaseBody_c \
+             stored body per body: {}",
             features.len(),
             features.join(", ")
         )));
@@ -637,12 +674,13 @@ fn native_skeleton_losses(
              streams of configurations other than the first",
         ),
     ]);
-    if lane_follows {
-        losses.push(SldprtLossCode::WriterNativeSketchLaneOrphan.note(
+    if let Some(reason) = lane_follows {
+        losses.push(SldprtLossCode::WriterNativeSketchLaneOrphan.note(format!(
             "the generated sketch marker records follow the native feature tree in \
              Contents/Config-0-ResolvedFeatures with no owning moProfileFeature_c object, so an \
-             exact walk of the stream stops at the first of them",
-        ));
+             exact walk of the stream stops at the first of them; the tree writes no sketch \
+             natively because {reason}"
+        )));
     }
     losses
 }
