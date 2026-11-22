@@ -169,7 +169,15 @@ pub enum StopReason {
 
 impl From<crate::decode::ParseError> for StopReason {
     fn from(error: crate::decode::ParseError) -> Self {
-        Self::Truncated(format!("{error:?}"))
+        match error.kind {
+            crate::decode::ParseErrorKind::UnexpectedEof { .. } => {
+                Self::Truncated(error.operation.into())
+            }
+            crate::decode::ParseErrorKind::InvalidValue
+            | crate::decode::ParseErrorKind::InvalidFraming => {
+                Self::Malformed(error.operation.into())
+            }
+        }
     }
 }
 

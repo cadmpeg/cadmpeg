@@ -30,7 +30,7 @@ fn wrapped(
 ) -> Result<bool, StopReason> {
     let mut source = budget.view(bytes)?;
     if bytes.starts_with(&zlb::MAGIC_VALUE) {
-        source.req_take(zlb::UNCOMPRESSED_SIZE)?;
+        source.req_take(zlb::MAGIC_VALUE.len())?;
         let declared = source.req_u32_le()?;
         let size = index_from_u32(source.req_u32_le()?);
         scan.declared_size(budget, "SolidWorks history XML", u64::from(declared))?;
@@ -81,9 +81,6 @@ fn native(
         let at = reader.position();
         let relative = at - source.start();
         let rest = &source.window()[relative..];
-        if rest.len() < block::MARKER_VALUE.len() && block::MARKER_VALUE.starts_with(rest) {
-            return Err(StopReason::Truncated("SolidWorks block header".into()));
-        }
         if !rest.starts_with(&block::MARKER_VALUE) {
             reader.seek(
                 at.checked_add(1)
@@ -116,7 +113,8 @@ fn native(
             return Err(StopReason::Truncated("SolidWorks block name".into()));
         }
         let name = reader.take(name_size)?;
-        budget.retain(u64_from_index(name_size))?;
+        let name_charge = u64_from_index(name_size);
+        budget.retain(name_charge)?;
         let mut decoded = String::new();
         for byte in name.window() {
             budget.check()?;
@@ -126,6 +124,7 @@ fn native(
             .checked_add(index_from_u32(compressed))
             .ok_or_else(|| malformed("SolidWorks block extent"))?;
         if !history_name(&decoded) {
+            budget.release_retained(name_charge);
             // A complete block is skipped whole, so its payload is never read as a marker.
             reader.seek(if end <= source.end() { end } else { next })?;
             continue;
@@ -136,6 +135,7 @@ fn native(
             ));
         }
         if compressed == 0 {
+            budget.release_retained(name_charge);
             reader.seek(next)?;
             continue;
         }
@@ -151,6 +151,7 @@ fn native(
             return Err(malformed("SolidWorks history block size or checksum"));
         }
         found |= wrapped(&expanded, budget, scan)?;
+        budget.release_retained(name_charge);
     }
     Ok(found)
 }

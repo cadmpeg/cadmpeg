@@ -175,6 +175,11 @@ impl<'a> ScanBudget<'a> {
             StopReason::RetainedBytes,
         )
     }
+    /// Returns a charge for storage that was dropped.
+    pub fn release_retained(&self, bytes: u64) {
+        self.retained
+            .set(self.retained.get().checked_sub(bytes).unwrap_or_default());
+    }
     /// Charges one feature visit before reading its listing record.
     pub fn feature(&self) -> Result<FeatureVisit<'_>, StopReason> {
         self.charge(

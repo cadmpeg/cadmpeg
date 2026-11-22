@@ -176,6 +176,8 @@ pub(crate) fn decode(source: View<'_>, budget: &ScanBudget<'_>) -> Result<Vec<u8
                 .checked_sub(active.produced)
                 .ok_or(StopReason::ExpandedBytes)?,
         );
+        drop(active);
+        budget.release_retained(storage);
     }
     Ok(output)
 }

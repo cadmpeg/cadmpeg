@@ -172,6 +172,28 @@ of the decode; a stream that exhausts it keeps its bulletin boards and
 history records without historical topology, and the decode reports
 `history.binding-work-exceeded`.
 
+## Scan limits
+
+`ScanLimits` in `crates/cadmpeg-core/src/scan/mod.rs` bounds a feature-only
+design scan. A `ScanBudget` meters the whole scan, nested documents
+included, and a charge is cumulative. Exhaustion stops the scan with the
+matching `StopReason`; the scan keeps the rows admitted before the stop and
+reports the census as incomplete. `ScanLimits::default()` sets:
+
+| Field | Default | `StopReason` |
+| --- | --- | --- |
+| `source_bytes` | 16 MiB | `SourceBytes` |
+| `expanded_bytes` | 32 MiB | `ExpandedBytes` |
+| `retained_bytes` | 64 MiB | `RetainedBytes` |
+| `elapsed_time` | 5 s | `ElapsedTime` |
+| `feature_count` | 100 000 | `FeatureCount` |
+| `nesting_depth` | 32 | `NestingDepth` |
+
+Parser storage and result storage charge `retained_bytes` before the
+allocation, and `ScanBudget::release_retained` returns a charge for storage
+that the scan dropped. A scan limit is a host ceiling, not a `ResourceLimits`
+field, and it does not appear in the census below.
+
 ## Production census
 
 The census lists every `const MAX_*` under `crates/**/src` at this commit,
