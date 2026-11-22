@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-use super::{
-    CacheContract, CurveOffsetDistanceLaw, IntcurveSupportSide, LegacyCache, ProjectionTail,
-    SpringLayout, SpringPcurve, SpringSupport,
-};
-use super::{
-    CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData, DeformableCurveSource,
-    IntcurveSupportContext, OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
-};
+use super::curve_offsets::CurveOffsetDistanceLaw;
+use super::curve_offsets::{CurveOffsetRange, OffsetSide};
+use super::intersection_curves::IntcurveSupportContext;
+use super::intersection_curves::IntcurveSupportSide;
+use super::legacy_cache::ProceduralGeometryError;
+use super::legacy_cache::{CacheContract, LegacyCache};
+use super::procedural_curves::{DeformableCurveData, DeformableCurveSource, VectorOffsetRoles};
+use super::surface_curves::{CacheFirstCurveForm, SilhouetteKind};
+use super::surface_curves::{ProjectionTail, SpringLayout, SpringPcurve, SpringSupport};
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
@@ -100,9 +101,9 @@ struct SurfaceOffsetCurveConstructionWire {
 impl SurfaceOffsetCurveConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
             write,
         )
@@ -245,9 +246,9 @@ struct DeformableCurveConstructionWire {
 impl DeformableCurveConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(Some(&mut self.cache_first.cache), write)
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
+        super::legacy_cache::write_revision_form_tolerance(Some(&mut self.cache_first.cache), write)
     }
 
     /// Admit the construction parameters.
@@ -368,7 +369,7 @@ impl OffsetCurveConstruction {
     ) -> Result<Self, ProceduralGeometryError> {
         if direction.get().norm() <= 0.0 {
             return Err(ProceduralGeometryError::Payload(
-                crate::geometry::INVALID_CURVE_OFFSET,
+                crate::geometry::curve_offsets::INVALID_CURVE_OFFSET,
             ));
         }
         Ok(Self {
@@ -397,11 +398,13 @@ impl OffsetCurveConstruction {
         Self {
             source,
             distance,
-            side: crate::geometry::OffsetSide::Direction {
+            side: crate::geometry::curve_offsets::OffsetSide::Direction {
                 direction: FiniteVector3::from(direction),
                 support,
             },
-            range: Some(crate::geometry::CurveOffsetRange::Uniform { parameter_range }),
+            range: Some(crate::geometry::curve_offsets::CurveOffsetRange::Uniform {
+                parameter_range,
+            }),
         }
     }
     /// Admit the construction parameters. The range and law interval types
@@ -465,7 +468,7 @@ impl OffsetCurveConstruction {
         };
         let (Some(side), Some(range)) = (side, range) else {
             return Err(ProceduralGeometryError::Payload(
-                crate::geometry::INVALID_CURVE_OFFSET,
+                crate::geometry::curve_offsets::INVALID_CURVE_OFFSET,
             ));
         };
 
@@ -961,9 +964,10 @@ fn spring_context_sides<R>(
                 SpringSupport::Ranges(_) => None,
             },
             pcurve: match first_pcurve {
-                SpringPcurve::Pcurve(pcurve) => {
-                    Some(super::SupportPcurve::new(pcurve.clone(), None))
-                }
+                SpringPcurve::Pcurve(pcurve) => Some(super::procedural_curves::SupportPcurve::new(
+                    pcurve.clone(),
+                    None,
+                )),
                 SpringPcurve::Range(_) => None,
             },
         },
@@ -974,7 +978,7 @@ fn spring_context_sides<R>(
             },
             pcurve: second_pcurve
                 .cloned()
-                .map(|pcurve| super::SupportPcurve::new(pcurve, None)),
+                .map(|pcurve| super::procedural_curves::SupportPcurve::new(pcurve, None)),
         },
     ]
 }
@@ -1232,8 +1236,8 @@ impl TryFrom<ProjectionCurvePayloadWire> for ProjectionCurvePayload {
 impl SpringCurvePayload {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        write: super::ToleranceWrite,
-    ) -> super::RevisionCacheWrite {
+        write: super::legacy_cache::ToleranceWrite,
+    ) -> super::legacy_cache::RevisionCacheWrite {
         self.layout.write_revision_fit_tolerance(write)
     }
 }

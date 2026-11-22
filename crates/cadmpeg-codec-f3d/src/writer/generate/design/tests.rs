@@ -151,6 +151,7 @@ fn scoped_cube() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     let mut owned = parameter(
         "d1",
@@ -840,6 +841,7 @@ fn place_part_scope(ir: &mut CadIr) -> (ProductDefinitionId, ContainerId) {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     let mut depth = parameter(
         "depth",
@@ -1191,5 +1193,6 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
 
 mod dimensions;
 mod extrude;
+mod planes;
 mod roster;
 mod sketch;

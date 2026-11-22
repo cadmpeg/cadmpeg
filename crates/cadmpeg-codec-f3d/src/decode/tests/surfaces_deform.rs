@@ -179,7 +179,8 @@ fn generated_source_less_writes_analytic_carriers_without_their_construction() {
 
 #[test]
 fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_minimal_deformable_surface_smbh())),
@@ -223,7 +224,8 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     for mode in [1, 3] {
         let decoded = F3dCodec
             .decode(
@@ -291,7 +293,8 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
 
 #[test]
 fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_revision_deformable_surface_smbh())),
@@ -372,7 +375,8 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_surface_curve_deformable_smbh())),
@@ -448,7 +452,8 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_full_deformable_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::deformable_surfaces::DeformableSurfaceData;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     for expected_version_value in [None, Some(226)] {
         let decoded = F3dCodec
             .decode(
@@ -541,7 +546,8 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, TSplineSubtransform};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::tsplines::TSplineSubtransform;
 
     let decoded = F3dCodec
         .decode(
@@ -594,7 +600,8 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
 
 #[test]
 fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -613,7 +620,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         definition_payload
             .native()
             .as_deref()
-            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
+            .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -635,7 +642,10 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     assert_eq!(profile_frame.as_ref().unwrap().0.z, 30.0);
     assert_eq!(origin.z, 60.0);
     assert_eq!(*path_range, [-20.0, 30.0]);
-    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null {}));
+    assert!(matches!(
+        formula,
+        cadmpeg_ir::geometry::laws::LawFormula::Null {}
+    ));
     let profile = profile.clone();
     let spine = spine.clone();
 
@@ -688,7 +698,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
         definition_payload
             .native()
             .as_deref()
-            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
+            .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected round-trip explicit formula sweep")
     };
@@ -717,7 +727,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
 
 #[test]
 fn generated_source_less_sweep_without_its_native_graph_writes_its_cache() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let mut decoded = F3dCodec
         .decode(
@@ -766,7 +776,8 @@ fn generated_source_less_sweep_without_its_native_graph_writes_its_cache() {
 
 #[test]
 fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -785,7 +796,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
         definition_payload
             .native()
             .as_deref()
-            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
+            .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -875,7 +886,8 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
 
 #[test]
 fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -894,7 +906,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
         definition_payload
             .native()
             .as_deref()
-            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
+            .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -979,7 +991,9 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
 
 #[test]
 fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -998,7 +1012,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
         definition_payload
             .native()
             .as_deref()
-            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
+            .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -1020,7 +1034,10 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     assert_eq!((*mode, *first_mode, *formula_mode), (10, 21, 23));
     assert!(matches!(first_law.as_ref(), LawExpression::Double { value } if *value == 2.5));
     assert!(matches!(second_law.as_ref(), LawExpression::Vector { value } if value.z == 3.0));
-    assert!(matches!(formula, cadmpeg_ir::geometry::LawFormula::Null {}));
+    assert!(matches!(
+        formula,
+        cadmpeg_ir::geometry::laws::LawFormula::Null {}
+    ));
     let bounded_curves = [
         (profile.clone(), *profile_range),
         (spine.clone(), *path_range),
@@ -1084,7 +1101,9 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
 
 #[test]
 fn generated_text_law_driven_sweep_preserves_expression_tokens() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -1100,7 +1119,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected native sweep")
     };
@@ -1147,7 +1166,7 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected round-tripped native sweep")
     };
@@ -1172,7 +1191,9 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
 
 #[test]
 fn generated_revision_text_law_sweep_decodes_and_round_trips() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -1188,7 +1209,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected native revision sweep")
     };
@@ -1212,7 +1233,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         LawExpression::Text { value } if value == "VEC(1,1,1)"
     ));
     assert!(
-        matches!(formula, cadmpeg_ir::geometry::LawFormula::Named { name, .. }
+        matches!(formula, cadmpeg_ir::geometry::laws::LawFormula::Named { name, .. }
         if name.as_str() == "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)")
     );
     assert!(matches!(
@@ -1245,7 +1266,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected round-tripped revision sweep")
     };
@@ -1264,7 +1285,9 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
 
 #[test]
 fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
-    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+    use cadmpeg_ir::geometry::laws::LawExpression;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
     let decoded = F3dCodec
         .decode(
@@ -1282,7 +1305,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected cacheless native revision sweep")
     };
@@ -1336,7 +1359,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     let (Some(native),) = (definition_payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw),)
     else {
         panic!("expected round-tripped cacheless native revision sweep")
     };
@@ -1356,7 +1379,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
 
 #[test]
 fn generated_legacy_surface_names_select_modern_layouts() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let cases = [
         (
@@ -1419,7 +1442,7 @@ fn generated_legacy_surface_names_select_modern_layouts() {
 
 #[test]
 fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let required = [
         (synthetic_skin_spl_sur_smbh(0, false), "skin surface"),

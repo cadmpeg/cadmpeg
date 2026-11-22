@@ -76,8 +76,8 @@ pub(crate) fn expected_revision_surface_tail_discontinuities() -> [Vec<f64>; 6] 
 
 /// The parameterization `append_revision_surface_tail_head` writes for form `2`.
 pub(crate) fn expected_revision_surface_tail_parameterization(
-) -> cadmpeg_ir::geometry::RevisionSurfaceParameterization {
-    cadmpeg_ir::geometry::RevisionSurfaceParameterization {
+) -> cadmpeg_ir::geometry::revision_forms::RevisionSurfaceParameterization {
+    cadmpeg_ir::geometry::revision_forms::RevisionSurfaceParameterization {
         u_interval: [Some(0.25), Some(0.75)],
         v_interval: [Some(-1.5), Some(3.5)],
         u_closure: 1,

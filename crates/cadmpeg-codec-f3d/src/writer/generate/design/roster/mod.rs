@@ -11,6 +11,7 @@ mod component;
 pub(super) mod extrude;
 mod fixed;
 mod owned;
+pub(super) mod planes;
 mod rows;
 pub(super) mod segment;
 pub(super) mod sketches;
@@ -27,6 +28,7 @@ use super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 use extrude::ExtrudeRecords;
+use planes::PlaneRecords;
 use segment::TypeTable;
 use sketches::SketchRoster;
 use values::Values;
@@ -112,6 +114,8 @@ pub(super) struct Roster {
     pub(super) parameters: Vec<u32>,
     /// The records of the `Sketch` items, after the user parameters.
     pub(super) sketches: SketchRoster,
+    /// The records of the `WorkPlane` items, in timeline order.
+    pub(super) planes: Vec<PlaneRecords>,
     /// The records of the `Extrude` item, between the `Sketch` items before
     /// and after it.
     pub(super) extrude: Option<ExtrudeRecords>,
@@ -121,14 +125,16 @@ pub(super) struct Roster {
 impl Roster {
     /// The one-body roster, with the ten records of each further body, one
     /// record of each user parameter, and then the records of each `Sketch`
-    /// item and of `extrude`, in timeline order, at the indices from 225.
-    /// The `Extrude` replaces the `Base Feature` item.
+    /// item, of the `WorkPlane` item before its first sketch, and of
+    /// `extrude`, in timeline order, at the indices from 225. The `Extrude`
+    /// replaces the `Base Feature` item.
     pub(super) fn new(
         bodies: usize,
         parameters: usize,
-        sketches: &[super::sketch::PlannedSketch<'_>],
+        sketch_plan: &super::sketch::SketchPlan<'_>,
         extrude: Option<&super::extrude::ExtrudePlan<'_>>,
     ) -> Result<Self, CodecError> {
+        let sketches = &sketch_plan.items;
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
         if extrude.is_some() {
@@ -185,6 +191,7 @@ impl Roster {
             next = next.checked_add(1).ok_or_else(overflow)?;
         }
         let mut roster = SketchRoster::default();
+        let mut planes = Vec::<PlaneRecords>::new();
         let mut extrude_records = None;
         for (position, planned) in sketches.iter().enumerate() {
             if let Some(plan) = extrude.filter(|plan| plan.after == position) {
@@ -192,7 +199,27 @@ impl Roster {
                 extrude_records = Some(records);
                 next = after;
             }
-            next = roster.allocate(planned, next, &mut entries)?;
+            for _ in sketch_plan
+                .planes
+                .iter()
+                .filter(|plane| plane.first == position)
+            {
+                let (records, after) = PlaneRecords::allocate(position, next, &mut entries)?;
+                planes.push(records);
+                next = after;
+            }
+            let plane_scope = match planned.support {
+                super::sketch::Support::Origin(_) => None,
+                super::sketch::Support::Construction(index) => Some(
+                    planes
+                        .get(index)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!("construction plane {index}"))
+                        })?
+                        .scope,
+                ),
+            };
+            next = roster.allocate(planned, plane_scope, next, &mut entries)?;
         }
         if let Some(plan) = extrude.filter(|plan| plan.after == sketches.len()) {
             let (records, _) = ExtrudeRecords::allocate(plan, next, &mut entries)?;
@@ -202,6 +229,7 @@ impl Roster {
             bodies: indices,
             parameters: parameter_indices,
             sketches: roster,
+            planes,
             extrude: extrude_records,
             rows: entries,
         })
@@ -239,6 +267,8 @@ pub(super) struct Context<'a> {
     pub(super) bodies: Vec<RosterBody<'a>>,
     /// The `Sketch` items, in the order of [`Roster::sketches`].
     pub(super) sketches: &'a [super::sketch::PlannedSketch<'a>],
+    /// The construction planes, in the order of [`Roster::planes`].
+    pub(super) planes: &'a [super::sketch::PlannedPlane<'a>],
     /// The `Extrude` written in place of the `Base Feature`.
     pub(super) extrude: Option<&'a super::extrude::ExtrudePlan<'a>>,
     pub(super) timeline_value: ContextValue,
@@ -256,42 +286,60 @@ pub(super) enum ContextValue {
 
 impl ContextValue {
     /// The value of a design whose parameters are named `names` and whose
-    /// timeline holds `sketches` and `extrude`, or a `Base Feature` without
-    /// `extrude`.
+    /// timeline holds `planes`, `sketches` and `extrude`, or a `Base Feature`
+    /// without `extrude`.
     pub(super) fn of<'n>(
         names: impl IntoIterator<Item = &'n str>,
         sketches: &[super::sketch::PlannedSketch<'_>],
+        planes: &[super::sketch::PlannedPlane<'_>],
         extrude: Option<&super::extrude::ExtrudePlan<'_>>,
     ) -> Self {
-        let dimensions = sketches
-            .iter()
-            .flat_map(|sketch| &sketch.dimensions)
-            .map(|dimension| dimension.parameter.ordinal);
-        let Some(extrude) = extrude else {
+        let largest = || {
+            let dimensions = sketches
+                .iter()
+                .flat_map(|sketch| &sketch.dimensions)
+                .map(|dimension| dimension.parameter.ordinal);
+            let planes = planes
+                .iter()
+                .filter_map(|plane| plane.parameters.as_ref())
+                .flat_map(|parameters| parameters.iter().map(|parameter| parameter.ordinal));
+            let extrude = extrude
+                .into_iter()
+                .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
+            dimensions
+                .chain(planes)
+                .chain(extrude)
+                .max()
+                .map_or(0, u64::from)
+        };
+        if !planes.is_empty() {
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds WorkPlane items".to_owned(),
+            };
+        }
+        if extrude.is_none() {
             if sketches.is_empty() {
                 return Self::Stated(0);
             }
             return Self::Chosen {
-                value: dimensions.max().map_or(0, u64::from),
+                value: largest(),
                 outside: "the timeline holds Sketch items and a Base Feature".to_owned(),
             };
-        };
-        let mut largest = 0;
+        }
+        let mut largest_number = 0;
         let mut renamed = Vec::new();
         for name in names {
             match owned_number(name) {
-                Some(number) => largest = largest.max(number),
+                Some(number) => largest_number = largest_number.max(number),
                 None => renamed.push(name),
             }
         }
         if renamed.is_empty() {
-            return Self::Stated(largest);
+            return Self::Stated(largest_number);
         }
         Self::Chosen {
-            value: dimensions
-                .chain([extrude.along.ordinal, extrude.taper.ordinal])
-                .max()
-                .map_or(0, u64::from),
+            value: largest(),
             outside: format!("parameters not named d<n>: {}", renamed.join(" ")),
         }
     }
@@ -348,6 +396,9 @@ impl Context<'_> {
         for sketch in &self.roster.sketches.items {
             parameters.extend(sketch.parameters());
         }
+        for plane in &self.roster.planes {
+            parameters.extend([plane.along[0], plane.extra[0]]);
+        }
         if let Some(records) = &self.roster.extrude {
             parameters.extend([records.along[1], records.taper[1]]);
         }
@@ -387,6 +438,9 @@ pub(super) fn type_table(roster: &Roster, sheet: bool) -> Result<TypeTable, Code
     if roster.sketches.has_dimensions() {
         known.extend(super::types::DIMENSION_ANCESTORS);
     }
+    if !roster.planes.is_empty() {
+        known.extend(super::types::WORKPLANE_ANCESTORS);
+    }
     TypeTable::new(roster.rows(), &known)
 }
 
@@ -417,6 +471,7 @@ pub(super) fn archive(
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
+    planes::write(ctx, &mut records)?;
     sketches::write(ctx, ctx.sketches, &mut records)?;
     if let Some(plan) = ctx.extrude {
         extrude::write(ctx, plan, &mut records)?;
@@ -538,12 +593,12 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         "stores the box of each body's vertex points as its axis-aligned bounding box in the Scene records, the HOME camera and the scene radius; a curved face can extend past its vertices",
         ctx.bodies.iter().map(|body| body.id.to_string()),
     ));
+    let item = if ctx.roster.extrude.is_some() {
+        "Extrude"
+    } else {
+        "Base Feature"
+    };
     if !ctx.roster.sketches.is_empty() {
-        let item = if ctx.roster.extrude.is_some() {
-            "Extrude"
-        } else {
-            "Base Feature"
-        };
         notes.extend(record_residual_unavailable(
             "F3D",
             &format!(
@@ -567,6 +622,26 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                     super::base_feature::DURATION
                 ),
             ],
+        ));
+    }
+    if !ctx.roster.planes.is_empty() {
+        let entries = vec![
+            "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
+            format!(
+                "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
+                super::base_feature::EPOCH,
+                super::base_feature::DURATION
+            ),
+            "placements and frame records of the sketches on construction planes (origin at the plane entity's origin)".to_owned(),
+            "record 11 (construction collection: its entities in timeline order)".to_owned(),
+            "parameter source ordinals (one counter from 1 over the WorkPlane and Sketch items in timeline order: each WorkPlane item's AlongDistance parameter takes the ordinal after the parameters of the WorkPlane and Sketch items before it, the dimension parameters of the Sketch item after it continue from its ExtraOffset parameter's ordinal plus one, and an Extrude item's two parameters take the last two ordinals)".to_owned(),
+        ];
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            &format!(
+                "writes the WorkPlane items of the timeline whose geometry item is the {item} with these values where f3d-open-items.md DR-1004 leaves their meaning open and DR-901 leaves the rule of items before a timeline's geometry item open"
+            ),
+            entries,
         ));
     }
     notes.extend(record_residual_unavailable(

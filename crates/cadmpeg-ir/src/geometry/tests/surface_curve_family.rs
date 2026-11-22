@@ -2,10 +2,11 @@
 //! Each surface-curve family carries its own tail flags type, so the
 //! parametric-only `second_flag` has no wire form on the other three.
 
-use crate::geometry::{
-    CacheFirstCurveParameterization, IntcurveSupportContext, IntcurveSupportSide,
-    ParametricSurfaceCurveFlags, RevisionCacheForm, SurfaceCurveCacheFirst, SurfaceCurveFamily,
-    SurfaceCurveTail,
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use crate::geometry::revision_forms::RevisionCacheForm;
+use crate::geometry::surface_curves::{
+    CacheFirstCurveParameterization, ParametricSurfaceCurveFlags, SurfaceCurveCacheFirst,
+    SurfaceCurveFamily, SurfaceCurveTail,
 };
 
 fn support_context() -> IntcurveSupportContext {
@@ -101,7 +102,10 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
     );
 }
 
-fn degenerate_tail(family: usize, value: f64) -> crate::geometry::SurfaceCurveTailWire {
+fn degenerate_tail(
+    family: usize,
+    value: f64,
+) -> crate::geometry::surface_curves::SurfaceCurveTailWire {
     let mut support_bounds = [[None; 4]; 2];
     support_bounds[0][0] = Some(0.0);
     let mut solved_range = [Some(-1.0), Some(2.0)];
@@ -111,7 +115,7 @@ fn degenerate_tail(family: usize, value: f64) -> crate::geometry::SurfaceCurveTa
         1 => solved_range[0] = Some(value),
         _ => interval[1] = Some(value),
     }
-    crate::geometry::SurfaceCurveTailWire {
+    crate::geometry::surface_curves::SurfaceCurveTailWire {
         extension: 7,
         revision: crate::scalar::PositiveI64::new(23_100).expect("positive revision"),
         cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
