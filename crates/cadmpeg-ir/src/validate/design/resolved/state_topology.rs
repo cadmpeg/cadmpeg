@@ -118,6 +118,9 @@ pub(super) fn check_state_topology(
         .filter(|(_, located)| std::ptr::eq(located.topology, delta))
         .map(|(&id, _)| id)
         .collect();
+    if restated.is_empty() {
+        return Ok(());
+    }
     let mut inherited = Breaches::default();
     check_topology(ctx, linear, &Records::of(base, &restated), &mut inherited)?;
     let inherited: BTreeSet<String> = inherited.0.into_iter().collect();

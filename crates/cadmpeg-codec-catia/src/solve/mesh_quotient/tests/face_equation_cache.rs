@@ -1,6 +1,9 @@
-use crate::solve::mesh_quotient::possible_face_choices_within;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
+use crate::solve::mesh_quotient::selection_state::possible_face_choices_within;
+use crate::solve::mesh_quotient::selection_state::{
+    possible_face_choices, possible_face_equations, MeshSelectionSearch,
+};
 use crate::solve::mesh_quotient::{
-    possible_face_choices, possible_face_equations, MeshQuotient, MeshSelectionSearch,
     SearchOutcome, MAX_FACE_EQUATION_CACHE_ENTRIES, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};

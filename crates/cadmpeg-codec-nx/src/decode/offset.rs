@@ -19,11 +19,11 @@ use cadmpeg_ir::eval::{
     nurbs_surface_partials,
 };
 use cadmpeg_ir::features::geometry::FiniteVector3;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsPoleGrid, NurbsSurface},
-    pcurve::PcurveGeometry,
-    IntcurveSupportSide, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide;
+use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2558,7 +2558,7 @@ mod tests {
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::ids::SurfaceId;

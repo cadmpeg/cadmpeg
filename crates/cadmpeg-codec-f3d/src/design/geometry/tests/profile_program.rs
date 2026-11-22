@@ -5,6 +5,7 @@ use super::*;
 const PROFILE_PROGRAM_TOLERANCE: f64 = 1.0e-7;
 
 mod arrangement_islands;
+mod counted_rings;
 mod identity_unique;
 
 fn divided_circle(two_dividers: bool) -> (Sketch, Vec<SketchEntity>) {
@@ -826,7 +827,10 @@ fn a_circle_edge_across_two_pi_boxes_its_axis_extreme() {
         nodes: [0, 1],
         boundary: cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
             entity: circle.id().clone(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap(),
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                range,
+            )
+            .unwrap(),
             reversed: false,
         },
         polyline: vec![end(range[0]), end(range[1])],
@@ -1772,8 +1776,13 @@ fn crossing_run_matching_preserves_the_exact_arrangement_budget() {
         .unwrap();
         assert!(super::super::match_member_rings(
             &faces,
-            &rings,
+            super::super::MemberRings {
+                uses: &rings,
+                counted: None,
+            },
             &std::collections::HashSet::new(),
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
             &exact,
             false,
         )

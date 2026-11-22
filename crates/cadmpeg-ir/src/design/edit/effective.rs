@@ -6,6 +6,8 @@
 //! Each occurrence of a path resolves, outermost first, through the
 //! configuration that applies to it: the one its parent occurrence selects
 //! for the prototype that owns it, else its scope's active configuration.
+//! Its prototype is the one that configuration puts in place, else its base
+//! prototype, and the occurrences below it resolve in that prototype.
 //! Its suppression, visibility, and placement are its base values resolved
 //! through that configuration, then through the arrangements in force in it,
 //! then through the nested overrides of the occurrences above it, applied
@@ -57,12 +59,14 @@ impl Resolved {
 }
 
 /// One step of a path being resolved: its occurrence, the scope that states
-/// its design, and the configuration of that scope that applies to it.
+/// its design, the configuration of that scope that applies to it, and the
+/// prototype in force in that configuration.
 struct Level<'a> {
     occurrence: &'a OccurrenceId,
     record: &'a Occurrence,
     scope: Option<&'a DesignScope>,
     configuration: Option<ConfigurationId>,
+    prototype: &'a ProductDefinitionId,
 }
 
 /// The records an occurrence path resolves through: the design, and the
@@ -405,7 +409,7 @@ impl PathResolver<'_> {
                 None => scope.and_then(|scope| scope.active_configuration.clone()),
                 Some(parent) => {
                     let own_scope =
-                        scope.is_some_and(|scope| scope.definition == parent.record.prototype);
+                        scope.is_some_and(|scope| &scope.definition == parent.prototype);
                     if own_scope {
                         let stated = path.0[at - 1].configuration.as_ref();
                         let selected = self.selected_configuration(parent, stated)?;
@@ -423,11 +427,13 @@ impl PathResolver<'_> {
                     }
                 }
             };
+            let prototype = self.prototype_in_force(occurrence, record, configuration.as_ref())?;
             levels.push(Level {
                 occurrence,
                 record,
                 scope,
                 configuration,
+                prototype,
             });
         }
         let mut resolved = Vec::with_capacity(levels.len());
@@ -435,6 +441,33 @@ impl PathResolver<'_> {
             resolved.push(self.resolve_level(&levels, &ids, at)?);
         }
         Ok(Some(resolved))
+    }
+
+    /// The prototype of an occurrence in `configuration`, the configuration
+    /// of its scope that applies to it: the `prototype` of its override in
+    /// that configuration, else in its parent's, else its base prototype
+    /// (§5.11). An arrangement's override states no prototype (part 10).
+    fn prototype_in_force<'a>(
+        &'a self,
+        occurrence: &OccurrenceId,
+        record: &'a Occurrence,
+        configuration: Option<&ConfigurationId>,
+    ) -> Result<&'a ProductDefinitionId, EditError> {
+        let Some(configuration) = configuration else {
+            return Ok(&record.prototype);
+        };
+        Ok(self
+            .design
+            .configuration_chain(configuration)?
+            .into_iter()
+            .find_map(|state| {
+                state
+                    .overrides
+                    .occurrences
+                    .get(occurrence)
+                    .and_then(|entry| entry.prototype.as_ref())
+            })
+            .unwrap_or(&record.prototype))
     }
 
     /// Resolves the occurrence at `at` of a path whose levels are `levels`.
@@ -527,7 +560,7 @@ impl PathResolver<'_> {
         let mut in_force: Vec<&Arrangement> = Vec::new();
         if let (Some(parent), Some(scope)) = (at.checked_sub(1).map(|up| &levels[up]), level.scope)
         {
-            if scope.definition == parent.record.prototype {
+            if &scope.definition == parent.prototype {
                 let named = parent
                     .scope
                     .and_then(|holder| holder.occurrences.get(parent.occurrence))

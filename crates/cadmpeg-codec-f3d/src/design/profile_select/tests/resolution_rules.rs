@@ -342,7 +342,10 @@ fn explicit_precedence_when_merged_region_trimmed() {
     let trimmed = SketchProfileRegion::trimmed(
         vec![SketchProfileBoundaryUse {
             entity: SketchEntityId::mint("synthetic:test:id#entity1").unwrap(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
+                [0.0, 1.0],
+            )
+            .unwrap(),
             reversed: false,
         }],
         Vec::new(),

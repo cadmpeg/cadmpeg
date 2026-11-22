@@ -18,11 +18,11 @@ use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
 use crate::families::b5::transfer::{curve_on_parameter_range, transfer, SurfacePlan};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -689,7 +689,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             .iter()
             .map(|coedge| coedge.pcurves[0]
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints))
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints))
             .collect::<Vec<_>>(),
         [None, Some([1.0, 0.5]), None]
     );
@@ -842,8 +842,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range().endpoints() == [0.0, 1.0]
-            && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
-            && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
+            && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
+            && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(
@@ -860,7 +860,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
             if family.context().parameter_range().endpoints() == [0.0, 8.0]
-            && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
+            && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
     ));
 }
 
