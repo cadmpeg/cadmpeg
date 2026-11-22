@@ -364,7 +364,7 @@ macro_rules! topology_arenas {
         }
 
         /// Calls `visit` with the id of every record of `topology`.
-        pub(crate) fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
+        fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
             $(for record in &topology.$field {
                 visit(record.identity());
             })*
@@ -373,25 +373,6 @@ macro_rules! topology_arenas {
         /// Removes from `geometry` every record whose id `ids` holds.
         pub(crate) fn remove_records<V>(geometry: &mut Topology, ids: &BTreeMap<String, V>) {
             $(geometry.$field.retain(|record| !ids.contains_key(record.identity()));)*
-        }
-
-        /// Adds to `geometry` each record of `records` whose id it does not
-        /// hold.
-        pub(crate) fn append_records(geometry: &mut Topology, records: &Topology) {
-            $(
-                let held = geometry
-                    .$field
-                    .iter()
-                    .map(|record| record.identity().to_owned())
-                    .collect::<HashSet<_>>();
-                geometry.$field.extend(
-                    records
-                        .$field
-                        .iter()
-                        .filter(|record| !held.contains(record.identity()))
-                        .cloned(),
-                );
-            )*
         }
     };
 }

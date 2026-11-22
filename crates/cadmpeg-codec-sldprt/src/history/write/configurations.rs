@@ -188,10 +188,7 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design state requires retained feature-input lanes".into(),
         ));
     };
-    // The configuration states project from the geometry of every stored
-    // configuration state, as the decode projects them.
     let mut current_projection = ir.clone();
-    let restored = crate::decode::retired_states::restore(&mut current_projection);
     let design_bytes = native
         .feature_input_lanes
         .iter()
@@ -236,7 +233,6 @@ fn sync_configuration_design_state(
             "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
         ));
     }
-    crate::decode::retired_states::retire_model(&mut current_projection, &restored);
     let current_parameter_hash =
         configuration_parameter_value_hash(&hash_ctx, &current_projection.model.configurations)?;
     let current_feature_hash =
@@ -302,7 +298,6 @@ fn sync_configuration_design_state(
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
-    let restored = crate::decode::retired_states::restore(&mut projected);
     let design_bytes = native
         .feature_input_lanes
         .iter()
@@ -347,7 +342,6 @@ fn sync_configuration_design_state(
             "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
         ));
     }
-    crate::decode::retired_states::retire_model(&mut projected, &restored);
     if configuration_parameter_value_hash(&hash_ctx, &projected.model.configurations)?
         != configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
         || configuration_feature_state_hash(&hash_ctx, &projected.model.configurations)?

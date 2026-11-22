@@ -9,8 +9,6 @@
 //! model says of them: the body membership and feature outputs that the
 //! evaluation states, and the presentation records on them, which a
 //! model-class target cannot yet name in an evaluation (interim, §8).
-//! [`restore`] gives a writer the model as the decode projects it, before
-//! [`retire_model`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,13 +17,12 @@ use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::evaluation::StateBase;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
-use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 
-use crate::design_v11::states::{append_records, remove_records, topology_ids};
+use crate::design_v11::states::remove_records;
 use crate::loss::SldprtLossCode;
 
 /// Removes the `retired` geometry records, which the evaluations of
@@ -140,7 +137,7 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
 /// outputs and configuration feature-state outputs that name them, and the
 /// body list of each configuration whose bodies they are, since its
 /// evaluation states them.
-pub(crate) fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, ConfigurationId>) {
+fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, ConfigurationId>) {
     let gone = |id: &str| retired.contains_key(id);
     remove_records(&mut ir.geometry, retired);
     for feature in &mut ir.model.features {
@@ -174,36 +171,6 @@ pub(crate) fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, Configurat
             }
         }
     }
-}
-
-/// Puts the stored state of each configuration that is not active back into
-/// `ir.geometry`, and its bodies back on its model record: the model as the
-/// decode projects its configuration states. Returns the records it put
-/// back, by id, with their configuration, for [`retire_model`].
-pub(crate) fn restore(ir: &mut CadIr) -> BTreeMap<String, ConfigurationId> {
-    let mut restored = BTreeMap::new();
-    for index in 0..ir.model.configurations.len() {
-        let Some((configuration, records)) = stored_state(ir, &ir.model.configurations[index])
-            .map(|(configuration, records)| (configuration.clone(), records.clone()))
-        else {
-            continue;
-        };
-        ir.model.configurations[index].bodies = Some(
-            records
-                .bodies
-                .iter()
-                .map(|body| body.id.clone())
-                .collect::<DistinctMembers<_>>(),
-        );
-        append_records(&mut ir.geometry, &records);
-        topology_ids(&records, |id| {
-            restored
-                .entry(id.to_owned())
-                .or_insert_with(|| configuration.clone());
-        });
-    }
-    ir.geometry.finalize();
-    restored
 }
 
 /// The state the design stores for a model configuration whose body list
