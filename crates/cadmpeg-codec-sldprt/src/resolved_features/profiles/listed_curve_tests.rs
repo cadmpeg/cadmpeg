@@ -127,6 +127,27 @@ fn projected_curve(
     payload: Vec<u8>,
     curve: usize,
 ) -> (SketchInputKind, Option<SketchEntity>, Vec<LossNote>) {
+    let (kind, marker_id, entities, held, losses) = projection(payload, curve);
+    let entity = entities
+        .into_iter()
+        .chain(held.handles)
+        .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()));
+    (kind, entity, losses)
+}
+
+/// What `project_marker_backed_sketches` emits for a sketch whose curve
+/// record at `curve` is a marker: the marker's input kind and reference, the
+/// projected entities, the held geometry, and the projection losses.
+fn projection(
+    payload: Vec<u8>,
+    curve: usize,
+) -> (
+    SketchInputKind,
+    String,
+    Vec<SketchEntity>,
+    HeldMarkerGeometry,
+    Vec<LossNote>,
+) {
     let mut markers = sketch_input_entities(&payload, "lane");
     for marker in &mut markers {
         marker.feature_ref = Some("feature-native".into());
@@ -222,11 +243,33 @@ fn projected_curve(
         &mut losses,
     )
     .expect("projection fits service policy");
-    let entity = entities
-        .into_iter()
-        .chain(held.handles)
-        .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()));
-    (kind, entity, losses)
+    (kind, marker_id, entities, held, losses)
+}
+
+/// `docs/formats/sldprt.md` §2: a curve record of state `0` is a curve
+/// outside the sketch's profile, and the projection hands its entity on as
+/// one; a curve record of state `1` is a curve of the profile.
+#[test]
+fn a_curve_record_of_state_zero_is_handed_on_as_outside_the_profile() {
+    for (state, outside) in [(0u16, true), (1, false)] {
+        let (mut payload, curve) = sketch_with_line(0, 4, [0, 1], 0, 7);
+        let at = curve + crate::layout::sketch_record_head::STATE;
+        payload[at..at + 2].copy_from_slice(&state.to_le_bytes());
+        let (_, marker_id, entities, held, _) = projection(payload, curve);
+        let line = entities
+            .iter()
+            .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()))
+            .expect("the line record is projected");
+        assert!(matches!(
+            line.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ));
+        assert_eq!(
+            held.outside_profile.contains(line.id()),
+            outside,
+            "state {state}"
+        );
+    }
 }
 
 /// `docs/formats/sldprt.md` §2.3: the curve type selects the curve; the +17

@@ -423,6 +423,36 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     assert_eq!(losses.len(), 1);
 }
 
+/// A placeholder that takes the held geometry of a curve record of state `0`
+/// is handed on as a curve outside its sketch's profile.
+#[test]
+fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .unwrap();
+    let read = entity("read", placeholder("sldprt:marker-geometry:1"));
+    let id = read.id().clone();
+    let mut held = HeldMarkerGeometry::default();
+    held.listed.insert(
+        (read.sketch.clone(), "marker-read".to_owned()),
+        (
+            ListedEntity {
+                geometry: line,
+                endpoints: None,
+                construction: false,
+                outside_profile: true,
+                index_basis_loss: None,
+            },
+            Vec::new(),
+        ),
+    );
+    let mut entities = vec![read];
+    let outside = finalize_unread_marker_entities(&mut entities, held, &mut Vec::new());
+    assert_eq!(outside, std::collections::HashSet::from([id]));
+}
+
 /// Agreement, in sketch millimetres, of an arc with its point records.
 const EPS_TEST_MM: f64 = 1.0e-9;
 

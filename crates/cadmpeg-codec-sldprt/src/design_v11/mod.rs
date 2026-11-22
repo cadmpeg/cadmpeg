@@ -18,6 +18,7 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod region;
 mod sketch;
 mod states;
 #[cfg(test)]
@@ -26,7 +27,7 @@ mod tree;
 mod typed;
 mod units;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -43,6 +44,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
@@ -65,6 +67,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length: Option<UnitSymbol>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
+    /// The sketch entities read from a curve record of state `0`: curves
+    /// outside their sketch's profile.
+    pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
@@ -86,6 +91,7 @@ pub(crate) fn project(
         persistent,
         length,
         rollback,
+        outside_profile,
     } = part;
     let mut timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
@@ -100,10 +106,15 @@ pub(crate) fn project(
         lanes,
         &mut timeline,
         &entries,
-        &definition,
+        &typed::Scope {
+            definition: &definition,
+            outside_profile,
+        },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
+    losses.extend(typed.state_construction);
+    losses.extend(typed.whole_sketch);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,

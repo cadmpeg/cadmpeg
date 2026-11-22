@@ -7,8 +7,9 @@
 //! that plane precedes the sketch and the stored frame lies in it, else the
 //! `Unread` input of §5.9, with the stored frame as its value. A point record
 //! that several curves name is one point entity with a role for each, so a
-//! coincidence of two of its ends is that entity's. The decoder reads the
-//! construction flag where it sets it, so an entity it does not mark states
+//! coincidence of two of its ends is that entity's. An entity is
+//! construction where the decoder marks it construction or reads it from a
+//! curve record of state `0`, which no profile uses; another entity states
 //! no flag. A dimension binds the parameter that holds its value, and states
 //! that parameter's quantity; a reference dimension makes the tree parameter
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
@@ -73,6 +74,9 @@ pub(super) struct Sketches {
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     /// The sketch features left `Unresolved`, with the reason.
     pub(super) unprojected: Vec<(FeatureId, &'static str)>,
+    /// The entities stated construction because their curve record has
+    /// state `0`, whose construction the decoder does not mark.
+    pub(super) outside_profile: Vec<SketchEntityId>,
 }
 
 /// What the projection reads besides the v10 sketch records.
@@ -83,6 +87,8 @@ pub(super) struct Context<'a> {
     /// The datum feature of the built-in plane each sketch feature's profile
     /// names, with that plane's principal entity.
     pub(super) supports: &'a HashMap<FeatureId, (FeatureId, PrincipalEntity)>,
+    /// The entities read from a curve record of state `0`.
+    pub(super) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// Type each `Unresolved` sketch feature of `features` whose sketch the
@@ -144,17 +150,22 @@ fn sketch(
     let roles = Roles::new(&entities);
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
+    let mut outside_profile = Vec::new();
     for entity in &entities {
         let Some(form) = curve(&entity.geometry) else {
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
         };
+        let outside = context.outside_profile.contains(entity.id());
+        if outside && !entity.construction {
+            outside_profile.push(entity.id().clone());
+        }
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: entity.construction.then_some(true),
+            construction: (entity.construction || outside).then_some(true),
             centerline: None,
             native: None,
             native_options: NativeOptions::new(),
@@ -225,6 +236,7 @@ fn sketch(
         native_ref: record.native_ref.clone(),
     });
     out.entities.extend(sketch_entities);
+    out.outside_profile.extend(outside_profile);
     out.measured.extend(
         constraints
             .iter()

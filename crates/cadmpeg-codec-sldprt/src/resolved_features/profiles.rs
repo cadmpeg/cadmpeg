@@ -1123,6 +1123,9 @@ pub(crate) struct HeldMarkerGeometry {
     /// with that geometry: the entity charges it when it keeps the geometry.
     index_basis_assumptions:
         HashMap<SketchEntityId, (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
+    /// The entities of the kept marker sketches read from a curve record of
+    /// state `0`.
+    outside_profile: HashSet<SketchEntityId>,
 }
 
 impl HeldMarkerGeometry {
@@ -1151,12 +1154,13 @@ impl HeldMarkerGeometry {
 /// where it has them, and otherwise the marker role as its native kind with
 /// one loss per entity, charges one loss for each line whose curve record
 /// states another form, and one for each marker that only its record admits
-/// and whose record gives no entity.
+/// and whose record gives no entity. Returns the entities read from a curve
+/// record of state `0`: curves outside their sketch's profile.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> HashSet<SketchEntityId> {
     use crate::loss::SldprtLossCode;
     let HeldMarkerGeometry {
         handles,
@@ -1166,6 +1170,7 @@ pub(crate) fn finalize_unread_marker_entities(
         finalized,
         unread_admitted,
         mut index_basis_assumptions,
+        mut outside_profile,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1185,6 +1190,9 @@ pub(crate) fn finalize_unread_marker_entities(
         {
             entity.geometry = read.geometry;
             entity.construction = read.construction;
+            if read.outside_profile {
+                outside_profile.insert(entity.id().clone());
+            }
             losses.extend(charges);
             continue;
         }
@@ -1254,6 +1262,7 @@ pub(crate) fn finalize_unread_marker_entities(
             "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
         )));
     }
+    outside_profile
 }
 
 impl From<CodecError> for MarkerGeometryFailure {
@@ -2806,6 +2815,7 @@ pub(crate) fn project_marker_backed_sketches(
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
             sketch_entities.extend(projected);
+            held_geometry.outside_profile.extend(outside_profile);
             held_geometry.handles.extend(held);
             held_geometry.listed.extend(
                 listed_elsewhere
