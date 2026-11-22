@@ -522,6 +522,7 @@ pub(crate) fn bind_extrusion_operations(
                 *op = first;
             }
         });
+        crate::history::extrude_direction::settle_reversal(feature);
     }
 }
 
@@ -592,6 +593,7 @@ pub(crate) fn inherit_configuration_operations(
                 _ => {}
             }
         });
+        crate::history::extrude_direction::settle_reversal(feature);
     }
 }
 
