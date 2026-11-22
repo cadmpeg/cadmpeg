@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The Keywords member of a native history: the retained source text, or a
-//! regenerated text that the reader reads back.
-//!
-//! A regenerated text holds only what XML and the reader admit. A name XML
-//! cannot hold, or one the writer writes itself, is left out; a feature tag
-//! the reader would take for another record is written as `Feature`, which
-//! keeps the kind in `Type`; a character XML cannot hold is left out of its
-//! value. Each is charged. The text is then parsed as the decoder parses it,
-//! and a text the parser refuses is not written: the source member takes its
-//! place, or no member is written, and that is charged too.
+//! regenerated text that the reader reads back, with what it leaves out
+//! charged.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -40,11 +33,13 @@ const ROOT: &str = "the Keywords root";
 /// no member is written.
 ///
 /// An unchanged history writes its retained source member. A changed one is
-/// regenerated; when the regenerated text cannot be built or does not read
-/// back, `source_block` (the retained source block of the member) or the
-/// retained member is written in its place, and without either no member is
-/// written. Every name, character or edit the bytes do not hold is charged to
-/// `losses`.
+/// regenerated: a name XML cannot hold, or one the writer writes itself, is
+/// left out, a feature tag the reader takes for another record is written as
+/// `Feature`, and a character XML cannot hold is left out of its value. When
+/// the regenerated text cannot be built or does not read back, the retained
+/// member, else `source_block` (the retained source block of the member), is
+/// written in its place, and without either no member is written. Every name,
+/// character or edit the bytes do not hold is charged to `losses`.
 pub(crate) fn history_member(
     history: &FeatureHistory,
     section: &str,

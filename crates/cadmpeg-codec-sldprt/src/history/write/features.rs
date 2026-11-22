@@ -845,6 +845,48 @@ mod tests {
     }
 
     #[test]
+    fn a_source_tag_xml_cannot_hold_keeps_the_record_tag_and_is_charged() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        for (tag, written, charged) in [
+            ("Pattern Geometry", "Feature", true),
+            ("PartDesign::Pad", "Feature", true),
+            ("Schlüssel", "Schlüssel", false),
+        ] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].source_tag = Some(tag.into());
+            let mut native = Some(sldprt_native(decoded.ir()));
+            let mut losses = Vec::new();
+            sync_neutral_features(
+                &ir,
+                &ir.model.parameters,
+                &ir.geometry.bodies,
+                &mut native,
+                &mut losses,
+            )
+            .expect("the history is written");
+            let record = &native.expect("native history").feature_histories[0].features[0];
+            assert_eq!(record.xml_tag, written, "{tag}");
+            assert_eq!(losses.len(), usize::from(charged), "{tag}");
+            if charged {
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.kind()
+                );
+                assert!(
+                    losses[0].message.contains(&format!("{tag:?} as <Feature>")),
+                    "{}",
+                    losses[0].message
+                );
+            }
+        }
+    }
+
+    #[test]
     fn generated_feature_identities_escape_embedded_separators() {
         let feature =
             FeatureId::mint("test:model:feature#original%23key").expect("fixture identity");
