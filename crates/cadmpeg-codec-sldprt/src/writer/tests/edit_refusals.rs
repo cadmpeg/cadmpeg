@@ -374,10 +374,42 @@ fn a_rename_keeps_every_other_record(source_part: &DecodeResult, selected: fn(&F
     );
 }
 
-/// An edit of a fillet's compact edge selection keeps the stored lane; the
-/// write names it and calls nothing written.
-#[test]
-fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
+fn is_fillet(feature: &Feature) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+    )
+}
+
+/// Edits the wire form of `feature`'s definition.
+fn edit_definition(feature: &mut Feature, edit: impl FnOnce(&mut serde_json::Value)) {
+    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    edit(&mut wire);
+    feature
+        .evaluation
+        .set_definition(serde_json::from_value(wire).unwrap());
+}
+
+/// Adds one to the first nonzero real number under `value`, depth first.
+fn bump_first_real(value: &mut serde_json::Value) -> bool {
+    use serde_json::Value;
+    match value {
+        Value::Number(number) if number.is_f64() => {
+            let Some(real) = number.as_f64().filter(|real| *real != 0.0) else {
+                return false;
+            };
+            *value = serde_json::json!(real + 1.0);
+            true
+        }
+        Value::Array(items) => items.iter_mut().any(bump_first_real),
+        Value::Object(fields) => fields.values_mut().any(bump_first_real),
+        _ => false,
+    }
+}
+
+/// FTC-08 with the first fillet's compact edge selection edited, which the
+/// writer cannot write, and with `edit` applied to the fillet.
+fn ftc_08_with_fillet_selection_edited(edit: impl FnOnce(&mut Feature)) -> EditableDecodeResult {
     use cadmpeg_ir::features::selections::EdgeSelection;
 
     let mut decoded = EditableDecodeResult::from(ftc_08().clone());
@@ -387,12 +419,7 @@ fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
             .model
             .features
             .iter_mut()
-            .find(|feature| {
-                matches!(
-                    feature.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-                )
-            })
+            .find(|feature| is_fillet(feature))
             .unwrap();
         let FeatureDefinition::Operation(FeatureOperation::Fillet { mut groups }) =
             feature.evaluation.definition().clone()
@@ -405,7 +432,16 @@ fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups,
             }));
+        edit(feature);
     }
+    decoded
+}
+
+/// An edit of a fillet's compact edge selection keeps the stored lane; the
+/// write names it and calls nothing written.
+#[test]
+fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
+    let decoded = ftc_08_with_fillet_selection_edited(|_| {});
 
     let unwritten =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
@@ -413,6 +449,160 @@ fn a_fillet_edge_selection_edit_is_named_and_not_called_written() {
     assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     assert!(
         unwritten[0].contains("compact edge selection"),
+        "{}",
+        unwritten[0]
+    );
+}
+
+/// A fillet whose selection edit keeps its stored record does not carry a
+/// radius edit of the same definition either; its one loss names both.
+#[test]
+fn a_kept_fillet_names_its_radius_edit_beside_the_selection() {
+    let decoded = ftc_08_with_fillet_selection_edited(|fillet| {
+        edit_definition(fillet, |wire| {
+            assert!(bump_first_real(
+                wire.pointer_mut("/value/value/groups/0/radius").unwrap()
+            ));
+        });
+    });
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("compact edge selection")
+            && unwritten[0].contains("definition groups[0].radius")
+            && unwritten[0].contains("definition groups[0].edges"),
+        "{}",
+        unwritten[0]
+    );
+}
+
+/// A fillet whose selection edit keeps its stored record keeps its stored
+/// source properties: a property edit beside it is named, and no stale-solid
+/// loss calls the fillet written.
+#[test]
+fn a_kept_fillet_names_its_source_property_edit_beside_the_selection() {
+    let decoded = ftc_08_with_fillet_selection_edited(|fillet| {
+        fillet.source_properties.insert(
+            cadmpeg_core::text::NonBlankString::new("Probe".to_owned()).unwrap(),
+            "x".into(),
+        );
+    });
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("compact edge selection")
+            && unwritten[0].contains("source property Probe"),
+        "{}",
+        unwritten[0]
+    );
+}
+
+/// A fillet radius edited in the definition alone is written: the write
+/// names no unwritten edit, the stored solid is named stale, and the radius
+/// reads back as edited.
+#[test]
+fn a_fillet_radius_definition_edit_is_written() {
+    const RADIUS: &str = "/value/value/groups/0/radius";
+    let mut decoded = EditableDecodeResult::from(ftc_08().clone());
+    let (name, radius) = {
+        let mut ir = decoded.ir_mut();
+        let fillet = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| is_fillet(feature))
+            .unwrap();
+        edit_definition(fillet, |wire| {
+            assert!(bump_first_real(wire.pointer_mut(RADIUS).unwrap()));
+        });
+        let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+        (
+            fillet.name.clone().unwrap(),
+            wire.pointer(RADIUS).unwrap().clone(),
+        )
+    };
+
+    let (report, output) = write(&decoded);
+
+    assert_eq!(unwritten(&report), Vec::<&str>::new());
+    assert_eq!(stale(&report).len(), 1, "{:?}", report.losses);
+    let written = decode(output);
+    let fillet = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name.as_str()))
+        .unwrap();
+    let wire = serde_json::to_value(fillet.evaluation.definition()).unwrap();
+    assert_eq!(wire.pointer(RADIUS), Some(&radius));
+}
+
+/// A hole's placement is read from its sketch, which a definition edit does
+/// not change: the write names the edit, and the hole reads back as stored.
+#[test]
+fn a_hole_placement_edit_the_records_do_not_state_is_named() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let hole = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| is_hole(feature))
+            .unwrap();
+        edit_definition(hole, |wire| {
+            assert!(bump_first_real(
+                wire.pointer_mut("/value/value/placements/0/origin")
+                    .unwrap()
+            ));
+        });
+    }
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("definition placements[0].origin"),
+        "{}",
+        unwritten[0]
+    );
+}
+
+/// A reference axis's origin is read from its feature-input lane, which a
+/// definition edit does not change: the write names the edit, and the axis
+/// reads back as stored.
+#[test]
+fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
+    let mut decoded = EditableDecodeResult::from(ftc_08().clone());
+    {
+        let mut ir = decoded.ir_mut();
+        let axis = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("Axis1"))
+            .unwrap();
+        edit_definition(axis, |wire| {
+            assert!(bump_first_real(
+                wire.pointer_mut("/value/value/axis/origin").unwrap()
+            ));
+        });
+    }
+
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("definition axis.origin"),
         "{}",
         unwritten[0]
     );
@@ -620,5 +810,48 @@ fn an_edit_writes_each_configuration_lane_to_its_own_stream() {
     assert_eq!(
         payload("Contents/Config-0-ResolvedFeatures").len(),
         resolved.len()
+    );
+}
+
+/// A lane the caller did not edit is written as stored, even where the
+/// writer, binding the lane alone, would derive other scalar owners than the
+/// decoder did. A lane whose records differ from the stored lane is checked
+/// against its bytes.
+#[test]
+fn an_unedited_lane_is_written_as_stored() {
+    use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
+    use crate::test_support::history::resolved_features_payload;
+    use crate::test_support::native::sldprt_native;
+    use crate::test_support::parasolid::triangle_body;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    let decoded = decode(native_envelope_fixture(&source));
+    let native = sldprt_native(decoded.ir());
+    let decoded_lane = native.feature_input_lanes[0].clone();
+    // The decoder's owner of the scalar differs from the one the writer
+    // derives from the lane alone.
+    let mut lane = decoded_lane.clone();
+    lane.scalars[0].feature_ref = Some("sldprt:test:other-owner".into());
+
+    let written =
+        crate::writer::lane_payload(&lane, Some(&lane), &native.feature_histories, &[]).unwrap();
+    assert_eq!(written, lane.native_payload.to_vec());
+
+    let error =
+        crate::writer::lane_payload(&lane, Some(&decoded_lane), &native.feature_histories, &[])
+            .unwrap_err();
+    assert!(
+        error.to_string().contains("edited named scalars"),
+        "{error}"
     );
 }

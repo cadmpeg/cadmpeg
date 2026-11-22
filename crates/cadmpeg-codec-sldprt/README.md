@@ -129,13 +129,19 @@ that snapshot which the model does not state gets a
 records cannot carry keeps the stored record or value: an edit of a
 display-only relation parameter or a parameter value that the written
 expression does not state gets a `writer.parameter-edit-unwritten` loss, and
-an edited compact selection or a feature definition that the encoder cannot
-restate gets a `writer.feature-edit-unwritten` loss. A record field that no
+an edited compact selection, a feature definition that the encoder cannot
+restate, or a construction edit that the written records read back as stored
+gets a `writer.feature-edit-unwritten` loss. A feature that keeps its stored
+definition record keeps its stored operands and source properties too, and its
+loss names each edit of its definition, dependencies and source properties
+that the record does not carry. A record field that no
 edit moves keeps its stored state: an unedited feature or parameter is written
 as stored, and a rename changes only the name and the references that name it.
 The writer has no compound-file serializer: an edited compound-file part is
 written as its stored part, and a `writer.compound-file-edit-unwritten` loss
-(severity error) states that no edit is written.
+(severity error) states that no edit is written. `cadmpeg convert
+--reject-lossy=export` refuses such a write; `--reject-errors` does not, because
+it judges the written file's check findings, not export losses.
 
 With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It

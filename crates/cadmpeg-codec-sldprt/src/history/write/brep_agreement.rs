@@ -27,8 +27,8 @@ use crate::native::SldprtNative;
 /// that shapes the solid, and one loss per snapshot edit the model does not
 /// state. The writer has no modeling kernel, so the output keeps the stored
 /// solid and its caches as they were before the edit. `unwritten` names the
-/// edits the write does not carry: a feature in its `kept_definitions` is
-/// written with its stored definition record and stored operands, and a part
+/// edits the write does not carry: the construction edit of a feature in its
+/// `kept_definitions` is not written, and a part
 /// of a parameter edit it names does not reach the written history, so no
 /// stale-solid loss calls them written.
 pub(crate) fn stale_solid_losses(
@@ -144,7 +144,8 @@ fn feature_edits(
         let definition_written = !kept_definitions.contains(&feature.id);
         if !definition_written
             && (original.evaluation.definition() != feature.evaluation.definition()
-                || original.dependencies != feature.dependencies)
+                || original.dependencies != feature.dependencies
+                || original.source_properties != feature.source_properties)
         {
             // The definition edit is not written; an unwritten-edit loss
             // names it.
@@ -614,14 +615,15 @@ fn feature_directly_affects_brep(feature: &Feature) -> bool {
 }
 
 /// Whether the written construction of `current` differs from `original`.
-/// The definition and the dependencies count only when the definition is
-/// written: a stored definition record states its stored operands.
+/// The definition, the dependencies and the source properties count only
+/// when the definition is written: a stored definition record states its
+/// stored operands and properties.
 fn construction_changed(original: &Feature, current: &Feature, definition_written: bool) -> bool {
     (definition_written
         && (original.evaluation.definition() != current.evaluation.definition()
-            || original.dependencies != current.dependencies))
+            || original.dependencies != current.dependencies
+            || original.source_properties != current.source_properties))
         || original.suppressed != current.suppressed
-        || original.source_properties != current.source_properties
         || original.source_tag != current.source_tag
         || original.source_text != current.source_text
         || original.source_content != current.source_content

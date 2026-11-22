@@ -203,7 +203,12 @@ pub(crate) fn write_semantic_with_records(
                 .transpose()
         },
     )?;
-    let (mut unwritten, written, edited_parameters) = edits.into_parts();
+    let crate::history::write::edits::EditOutcome {
+        mut unwritten,
+        written,
+        edited_parameters,
+        source_lanes,
+    } = edits.into_parts();
     let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
     if !validation.is_ok() {
@@ -405,7 +410,12 @@ pub(crate) fn write_semantic_with_records(
             &mut sections,
             &original_metadata_sections,
             section,
-            resolved_feature_payload(lane, histories, &feature_input_renames)?,
+            lane_payload(
+                lane,
+                source_lanes.get(&lane.id),
+                histories,
+                &feature_input_renames,
+            )?,
         )?;
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
@@ -1806,6 +1816,25 @@ fn patch_active_configuration_xml(
 /// changes that `synchronize_feature_input_names` derived from the neutral
 /// feature names; the splice loop at the end of this function writes each one
 /// into the emitted payload.
+/// The payload written for `lane`. A lane equal to `stored`, the lane of the
+/// same id in the decoded source, is the decoder's reading of its own bytes,
+/// so nothing in it is edited: it is written as stored, with the renamed
+/// object names spliced in. Every other lane is checked against its payload
+/// first.
+fn lane_payload(
+    lane: &crate::records::FeatureInputLane,
+    stored: Option<&crate::records::FeatureInputLane>,
+    histories: &[crate::records::FeatureHistory],
+    renames: &[crate::history::write::features::FeatureInputRename],
+) -> Result<Vec<u8>, CodecError> {
+    if stored == Some(lane) {
+        let mut payload = lane.native_payload.to_vec();
+        splice_renamed_names(lane, &mut payload, renames)?;
+        return Ok(payload);
+    }
+    resolved_feature_payload(lane, histories, renames)
+}
+
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
@@ -2064,6 +2093,18 @@ fn resolved_feature_payload(
             }
         }
     }
+    let mut payload = payload.into_inner();
+    splice_renamed_names(lane, &mut payload, renames)?;
+    Ok(payload)
+}
+
+/// Writes each of `renames` that names an object of `lane` into `payload`,
+/// the lane's payload.
+fn splice_renamed_names(
+    lane: &crate::records::FeatureInputLane,
+    payload: &mut Vec<u8>,
+    renames: &[crate::history::write::features::FeatureInputRename],
+) -> Result<(), CodecError> {
     let mut lane_renames = renames
         .iter()
         .filter(|rename| rename.lane == lane.id)
@@ -2104,7 +2145,7 @@ fn resolved_feature_payload(
         }
         payload.splice(start..end, replacement);
     }
-    Ok(payload.into_inner())
+    Ok(())
 }
 
 /// Whether `entity` states a field the lane writer writes differently from

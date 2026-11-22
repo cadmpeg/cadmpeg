@@ -378,6 +378,9 @@ pub(in crate::history) fn sync_neutral_features(
     // Features whose stored content items are kept: the caller did not edit
     // their source content.
     let mut content_kept = HashSet::new();
+    // The construction edits of each feature, by position, that move no
+    // record field.
+    let mut unmoved_edits = HashMap::<FeatureId, HashSet<usize>>::new();
     for feature in features {
         if feature
             .source_tag
@@ -408,6 +411,16 @@ pub(in crate::history) fn sync_neutral_features(
                 continue;
             }
         }
+        // The source feature with each construction edit applied alone.
+        let applied_edits = match original {
+            Some(original) if !edits.feature_edit_unwritten(&feature.id) => {
+                super::edits::construction_edits(original, feature)
+                    .iter()
+                    .map(|edit| edit.applied(original, feature))
+                    .collect::<Vec<_>>()
+            }
+            _ => Vec::new(),
+        };
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
@@ -435,6 +448,29 @@ pub(in crate::history) fn sync_neutral_features(
         let baseline = original.map(|original| {
             encoder(original, source_contradicted_travel.contains(&original.id)).encode()
         });
+        // A construction edit that, applied alone to the source feature,
+        // encodes as the source does moves no record field.
+        if let (Some(original), Some(Ok(baseline))) = (original, baseline.as_ref()) {
+            let unmoved = applied_edits
+                .iter()
+                .enumerate()
+                .filter_map(|(index, applied)| {
+                    let encoding = encoder(
+                        applied.as_ref()?,
+                        source_contradicted_travel.contains(&original.id),
+                    )
+                    .encode()
+                    .ok()?;
+                    (encoding.kind == baseline.kind
+                        && encoding.parameters == baseline.parameters
+                        && encoding.properties == baseline.properties)
+                        .then_some(index)
+                })
+                .collect::<HashSet<_>>();
+            if !unmoved.is_empty() {
+                unmoved_edits.insert(feature.id.clone(), unmoved);
+            }
+        }
         // A stored record the encoder cannot restate from the neutral
         // definition is written as stored.
         let mut kept = false;
@@ -446,7 +482,7 @@ pub(in crate::history) fn sync_neutral_features(
             (Ok(encoding), _) => encoding,
             (Err(CodecError::NotImplemented(reason)), Some(record)) if edits.has_source() => {
                 if original.is_none_or(|original| {
-                    original.evaluation.definition() != feature.evaluation.definition()
+                    !super::edits::construction_edits(original, feature).is_empty()
                 }) {
                     edits.feature_unwritten(&feature.id, reason)?;
                 }
@@ -638,9 +674,77 @@ pub(in crate::history) fn sync_neutral_features(
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
         .collect::<HashMap<_, _>>();
-    // A stored record keeps its stored operands.
+    // An edited leaf of a feature's construction is not written when it
+    // moves no record field, or when the written records read back as the
+    // source states it.
+    let mut dependencies_unwritten = HashSet::new();
+    for feature in features {
+        if edits.operands_kept(&feature.id) || feature.native_ref.is_none() {
+            continue;
+        }
+        let Some(original) = edits.source_feature(&feature.id) else {
+            continue;
+        };
+        let construction = super::edits::construction_edits(original, feature);
+        if construction.is_empty() {
+            continue;
+        }
+        let written = projected_features.get(&neutral_feature_id(&record_ids[&feature.id])?);
+        let source_dependencies = original
+            .dependencies
+            .iter()
+            .map(|dependency| match record_ids.get(dependency) {
+                Some(record) => neutral_feature_id(record),
+                None => Ok(dependency.clone()),
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let dependencies_as_source =
+            written.is_some_and(|written| written.dependencies.as_slice() == source_dependencies);
+        // The definitions in wire form; `None` when one cannot be read back.
+        let definitions = written.and_then(|written| {
+            Some((
+                serde_json::to_value(original.evaluation.definition()).ok()?,
+                written,
+                serde_json::to_value(written.evaluation.definition()).ok()?,
+            ))
+        });
+        let unmoved = unmoved_edits.get(&feature.id);
+        let unwritten = construction
+            .iter()
+            .enumerate()
+            .filter(|(index, edit)| {
+                unmoved.is_some_and(|unmoved| unmoved.contains(index))
+                    || definitions.as_ref().is_some_and(
+                        |(source_definition, written, written_definition)| {
+                            edit.reads_back_as_source(
+                                (original, source_definition),
+                                (written, written_definition),
+                                dependencies_as_source,
+                            )
+                        },
+                    )
+            })
+            .map(|(_, edit)| edit.label.clone())
+            .collect::<Vec<_>>();
+        if original.dependencies != feature.dependencies
+            && unwritten.iter().any(|label| label == "dependencies")
+        {
+            dependencies_unwritten.insert(feature.id.clone());
+        }
+        if !unwritten.is_empty() {
+            edits.construction_reads_back_as_stored(
+                &feature.id,
+                &unwritten,
+                unwritten.len() == construction.len(),
+            );
+        }
+    }
+    // A stored record keeps its stored operands, and a dependency edit that
+    // reads back as the source is named above.
     for feature in features.iter().filter(|feature| {
-        !edits.operands_kept(&feature.id) && !edits.feature_construction_unedited(feature)
+        !edits.operands_kept(&feature.id)
+            && !dependencies_unwritten.contains(&feature.id)
+            && !edits.feature_construction_unedited(feature)
     }) {
         let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
         let expected = feature
