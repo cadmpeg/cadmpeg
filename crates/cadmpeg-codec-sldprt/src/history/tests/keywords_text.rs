@@ -2,13 +2,19 @@
 //! Keywords member text: what is read, and what is named when it is not.
 #![allow(clippy::unwrap_used)]
 
+use crate::history::MAX_APPLICATION_LEVELS;
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, HistoryContent, HistoryElement, HistoryElementContent};
-use crate::test_support::container::{make_block, outer_header};
+use crate::test_support::container::{make_block, outer_header, sldprt_with_body};
+use crate::test_support::native::sldprt_native;
+use crate::test_support::parasolid::triangle_body;
+use crate::SldprtCodec;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::io::Cursor;
 
 struct Decoded {
     histories: Vec<FeatureHistory>,
@@ -36,6 +42,7 @@ fn codes(losses: &[LossNote]) -> Vec<SldprtLossCode> {
     [
         SldprtLossCode::HistoryUnread,
         SldprtLossCode::HistoryApplicationNotTransferred,
+        SldprtLossCode::HistoryApplicationNestingCut,
     ]
     .into_iter()
     .flat_map(|code| {
@@ -138,6 +145,120 @@ fn application_element_is_not_a_feature_and_is_named() {
             && message.contains("kept in the native history"),
         "{message}"
     );
+}
+
+/// A Keywords text whose `Application` element holds a chain of `Group`
+/// elements `levels` deep, the `Application` element being level 1 and the
+/// deepest element holding text.
+fn nested_application(levels: usize) -> String {
+    let mut text = String::from(r#"<Keywords Name="Part"><Application Name="Simulation">"#);
+    text.push_str(&"<Group>".repeat(levels - 1));
+    text.push_str("leaf");
+    text.push_str(&"</Group>".repeat(levels - 1));
+    text.push_str(
+        r#"</Application><Feature id="1" Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    );
+    text
+}
+
+/// Element levels of a stored element, the element itself being level 1.
+fn levels(element: &HistoryElement) -> usize {
+    1 + element
+        .content
+        .iter()
+        .filter_map(|item| match item {
+            HistoryElementContent::Element(child) => Some(levels(child)),
+            HistoryElementContent::Text(_) => None,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+fn stored_application(history: &FeatureHistory) -> &HistoryElement {
+    match &history.content[0] {
+        HistoryContent::Element(application) => application,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn application_element_is_kept_to_the_level_bound_and_the_cut_is_named() {
+    let at_bound = decode(
+        "swXmlContents/KeyWords",
+        nested_application(MAX_APPLICATION_LEVELS).as_bytes(),
+    );
+    let application = stored_application(&at_bound.histories[0]);
+    assert_eq!(levels(application), MAX_APPLICATION_LEVELS);
+    let mut deepest = application;
+    while let [HistoryElementContent::Element(child)] = deepest.content.as_slice() {
+        deepest = child;
+    }
+    assert_eq!(
+        deepest.content,
+        [HistoryElementContent::Text("leaf".into())]
+    );
+    assert_eq!(
+        codes(&at_bound.losses),
+        [SldprtLossCode::HistoryApplicationNotTransferred]
+    );
+
+    let past = decode(
+        "swXmlContents/KeyWords",
+        nested_application(MAX_APPLICATION_LEVELS + 1).as_bytes(),
+    );
+    let history = &past.histories[0];
+    assert_eq!(levels(stored_application(history)), MAX_APPLICATION_LEVELS);
+    assert_eq!(history.features.len(), 1);
+    assert_eq!(
+        codes(&past.losses),
+        [
+            SldprtLossCode::HistoryApplicationNotTransferred,
+            SldprtLossCode::HistoryApplicationNestingCut,
+        ]
+    );
+    let cut = past
+        .losses
+        .iter()
+        .find(|loss| loss.code == SldprtLossCode::HistoryApplicationNestingCut.kind())
+        .unwrap();
+    assert!(
+        cut.message.contains(r#"Application element "Simulation" nests 17 element levels"#)
+            && cut
+                .message
+                .contains("1 element below level 16 is not kept, the first a Group element inside the level-16 Group element"),
+        "{}",
+        cut.message
+    );
+}
+
+#[test]
+fn a_nested_application_element_decodes_and_its_document_reads_back() {
+    for depth in [MAX_APPLICATION_LEVELS, MAX_APPLICATION_LEVELS + 1, 200] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            nested_application(depth).as_bytes(),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let text = decoded.ir().to_canonical_json().unwrap();
+        let reread = cadmpeg_ir::CadIr::from_json(&text).unwrap();
+        let history = &sldprt_native(&reread).feature_histories[0];
+        assert_eq!(
+            levels(stored_application(history)),
+            MAX_APPLICATION_LEVELS,
+            "{depth}"
+        );
+        let cut = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == SldprtLossCode::HistoryApplicationNestingCut.kind())
+            .count();
+        assert_eq!(cut, usize::from(depth > MAX_APPLICATION_LEVELS), "{depth}");
+    }
 }
 
 #[test]
