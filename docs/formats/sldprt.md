@@ -752,7 +752,7 @@ An `moRevolution_c` or `moRevCut_c` object consumes the immediately preceding pr
 
 The compact `moCompRefPlane_c` record binds profiles to a principal plane. Its nonzero little-endian u32 feature source identifier precedes an opaque u32 identity, `00 00 03 00` (u16 `0` and the principal-plane selector `3` of Front), 27 zero bytes, the little-endian f64 value `1`, three zero bytes, a roster count from `2` through `4`, three zero bytes, one byte `f9`, `fb`, or `ff`, three `ff` bytes, four zero bytes, and an object-kind byte of at least `65`. A feature-input lane that writes the class name `moCompRefPlane_c` writes it once, ahead of its first record of the class; a record that follows the name belongs to the object whose bytes hold it, whether or not that object holds the name. Other feature-input lanes hold records of the class and no class name: where a lane that writes the name holds the class declaration, they hold a class-reference word, a u16 with its high bit set, so the class was declared before the lane's bytes begin. A record inside the profile object applies to that profile. Otherwise a record spanning the immediately preceding object through the profile applies. A sole declared record in the complete feature-input lane is the lane default. A profile-local or immediately preceding component reference overrides that default; component references belonging to other profile objects do not make the declared default ambiguous. A principal-plane component record inside the profile object names the profile's plane ahead of a declared Front record of the same object, a record of the preceding object and the lane default. Which record binds a profile object that holds a principal-plane component record together with another declared or component record, or whose preceding object or own object holds a component frame record, is open item SF-01. A source identifier is the plane's feature number and resolves through the feature-object identifiers of the lane. The Front, Top, and Right principal planes have feature numbers `2`, `3`, and `4`, or `3`, `4`, and `5` in parts that number them from `3`. The Front model-space `(origin, normal, u-axis)` frame is `((0,0,0),(0,0,1),(1,0,0))`. The Top frame is `((0,0,0),(0,1,0),(1,0,0))`, the frame its principal-plane component record stores. The Right frame is `((0,0,0),(1,0,0),(0,0,-1))`. The v-axis is `normal × u-axis`. The Front compact profile stores its sketch coordinates `(u,v) = (x,y)`. A sketch point maps to `origin + u*u-axis + v*v-axis`.
 
-A principal-plane component record has the 138-byte extent in `compact_principal_plane_component` in `docs/layouts/sldprt.toml`. Its source identifier and selector are the plane's feature number and the principal-plane selector: selector `2` is Top and selector `1` is Right, with feature numbers `3` and `4`, or `4` and `5` in parts that number the principal planes from `3`. Reserved fields are zero. The matrix-present byte is `1`. The trailer-kind word is `2`, `3`, or `4`, and the trailer-sentinel word is `0xffffffff`. Its f64 matrix is row-major, with the principal frame's u-axis, v-axis, and normal as columns. Its translation is zero and its homogeneous scale is `1`. The Top matrix is `[1,0,0,0,0,1,0,-1,0]`, with U=+X, V=-Z and N=+Y. This record stores the referenced principal-plane frame. Section 3.3 defines its local profile placement.
+A principal-plane component record has the 138-byte extent in `compact_principal_plane_component` in `docs/layouts/sldprt.toml`. Its source identifier and selector are the plane's feature number and the principal-plane selector: selector `2` is Top and selector `1` is Right, with feature numbers `3` and `4`, or `4` and `5` in parts that number the principal planes from `3`. Reserved fields are zero. The matrix-present byte is `1`. The trailer-kind word is `2`, `3`, or `4`, and the trailer-sentinel word is `0xffffffff`. Its f64 matrix is row-major, with the principal frame's u-axis, v-axis, and normal as columns. Its translation is zero and its homogeneous scale is `1`. The Top matrix is `[1,0,0,0,0,1,0,-1,0]`, with U=+X, V=-Z and N=+Y. This record stores the referenced principal-plane frame. Section 3.3 gives the placement and the sketch coordinates of a profile on the plane the record names.
 
 An offset reference-plane object has a length-valued `D1`. An angular `D1` does not carry offset distance; a reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement. An offset reference-plane object identifies its source plane with the unique nonzero little-endian u32 source identifier immediately followed by `02 00 00 00 00 05 00 00 00 00 00 00 00 00 00 2d 80 2b 80`. The typed 46-byte form stores the source identifier at +0. A principal-plane target has signature `79 2a e1 3b` at +4, zero u16 at +8, and principal selector u32 `1` or `2` at +10. A constructed-plane target has signature `30 92 ab 53` at +4 and six zero bytes at +8. Both forms store u32 `1` at +14, u32 zero at +18, an identity word at +22, twelve zero bytes at +26, and terminator `c7 cf ff ff c7 cf ff ff` at +38. Exactly one known non-self source across the compact and typed forms identifies the reference. The object may instead carry one complete plane frame whose plane is parallel to exactly one decoded datum frame at the absolute `D1` distance; that datum is the source plane. Coincident or multiply matching frames do not identify a source. The offset plane inherits the source plane normal. `D1` is a magnitude: the offset plane's origin is the source origin translated by `D1` along the normal or against it. A complete frame the object stores parallel to the source plane at `D1` from it is the offset plane's own frame: its origin states the side, and its u-axis is the offset plane's u-axis. The dual-frame layout always stores such a frame. A single complete frame whose origin lies in the source plane is the source plane's frame (its origin, normal and u-axis are the source plane's) and states no side. An object without the offset plane's frame inherits the source plane u-axis; where it stores its side is open item DI-81. A legacy face-alias reference stores the support-face point, normal, and u-axis as its reference frame. A surface-component face selection stores the resulting plane frame; its support frame is that result frame translated by signed `D1` along the normal. Explicit face-frame records store the support frame directly.
 
@@ -2382,24 +2382,25 @@ streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 
 #### Principal-plane profile placement
 
-A marker or compact sketch profile in model space selects its local Top
-component when these conditions hold:
+A marker or compact sketch profile whose own feature-input object holds a
+principal-plane component record (§2) lies on the principal plane that the
+record's selector names: selector `2` names Top and selector `1` names Right.
+The record's source identifier is that plane's feature number, a feature-input
+object identifier: `3` for Top and `4` for Right, or `4` and `5` in parts that
+number their feature-input objects from `3`. The record names the profile's
+plane ahead of a declared Front record of the same object, the plane reference
+of the preceding object, and the lane default. Which record binds a profile
+object that holds another declared or component record as well, or whose
+preceding or own object holds a component frame record, is open item SF-01.
 
-- The declared reference selects the principal Front source `2`.
-- A complete declared reference record lies inside the profile object or its
-  immediately preceding context.
-- One or more complete principal component records lie inside the profile
-  object's byte interval. Each has source/selector `(3,2)`.
-- The generic component-placement count in the profile and enclosing context
-  is zero.
-
-The frame is
+The Top frame is
 `origin=(0,0,0)`, `u=(1,0,0)`, `v=(0,0,-1)`, `normal=(0,1,0)`.
+The Right frame is
+`origin=(0,0,0)`, `u=(0,0,-1)`, `v=(0,1,0)`, `normal=(1,0,0)`.
 The stored marker pair `(a,b)` supplies sketch coordinates `(u,v)=(a,b)`.
-A profile point maps to `(a,0,-b)` in model space. The local component selects
-this frame before the declared plane frame. The same coordinate mapping applies
-to profile curves, construction points, dimensions, constraints and
-profile-derived axes.
+A profile point maps to `(a,0,-b)` in model space on Top and to `(0,b,-a)` on
+Right. The same coordinate mapping applies to profile curves, construction
+points, dimensions, constraints and profile-derived axes.
 
 ---
 
