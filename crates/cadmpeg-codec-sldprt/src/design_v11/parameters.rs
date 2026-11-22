@@ -19,8 +19,9 @@
 //! `design.parameter-display-rounded` note names. Where it states none, a
 //! length display is no cache (§5.13). A parameter that a reference
 //! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
-//! archive class of the `ResolvedFeatures` scalar it is bound to, the
-//! parameter class that scalar's own record states, the kind the decoder's
+//! archive class of the `ResolvedFeatures` scalar it is bound to and the
+//! parameter class that scalar's own record states (where the two differ,
+//! the dimension has no kind and no value), the kind the decoder's
 //! own parameter took from a record, a relation, or the feature, or the
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
@@ -161,8 +162,9 @@ impl<'a> Decoded<'a> {
     /// value only where a stored record gave it: a bound scalar, or a value
     /// that is no reading of the display; else the stated parameter's value.
     /// `Ok(None)` where none of these states a kind. A bound scalar whose
-    /// class token the decoder's class sources name differently gives no kind
-    /// and no value, whatever its archive class or the earlier reading:
+    /// class token the decoder's class sources name differently, or whose
+    /// archive class differs from the class its record states, gives no kind
+    /// and no value, whatever the earlier reading:
     /// [`Unvalued::ClassesDisagree`].
     fn dimension(
         &self,
@@ -176,17 +178,22 @@ impl<'a> Decoded<'a> {
             return Ok(None);
         };
         let scalar = parameter.native_ref.as_deref();
+        let archive = scalar.and_then(|scalar| self.classes.get(scalar).copied().flatten());
         let stated = match scalar.and_then(|scalar| self.stated.get(scalar)) {
             Some(Statement::Contested) => return Err(Unvalued::ClassesDisagree),
             Some(Statement::Parameter(stated)) => Some(*stated),
             None => None,
+        };
+        if archive
+            .zip(stated)
+            .is_some_and(|(archive, stated)| archive != stated.class())
+        {
+            return Err(Unvalued::ClassesDisagree);
         }
-        .filter(|stated| {
+        let stated = stated.filter(|stated| {
             display.is_none_or(|display| agrees(*stated, display, unit) != Some(false))
         });
-        let class = scalar
-            .and_then(|scalar| self.classes.get(scalar).copied().flatten())
-            .or(stated.map(StatedParameter::class));
+        let class = archive.or(stated.map(StatedParameter::class));
         let kind = match (class, &parameter.value) {
             (Some(ArchiveParameterClass::Length), _) | (None, Some(V10::Length(_))) => {
                 ValueKind::Quantity(Quantity::LENGTH)
@@ -667,8 +674,10 @@ enum Unvalued {
     /// No record of a scalar under its name states a parameter class the
     /// decoder reads.
     ClassUnread,
-    /// The sources of the class of the class token of its bound scalar, or of
-    /// a scalar under its name, name different classes.
+    /// The decoder's sources of the parameter class of its bound scalar, or
+    /// of a scalar under its name, name different classes: the sources of a
+    /// class token, or a bound scalar's archive class and the class its record
+    /// states.
     ClassesDisagree,
     /// The dimension is a length and the part's length unit is not read.
     LengthUnit,
@@ -696,7 +705,7 @@ impl Unvalued {
                 "whose scalars' records state no parameter class the decoder reads"
             }
             Self::ClassesDisagree => {
-                "whose scalars' class tokens the decoder's class sources name differently"
+                "whose scalars' parameter classes the decoder's class sources name differently"
             }
             Self::LengthUnit => "lengths in a part whose length unit is not read",
             Self::Disagrees => "whose stored values differ from the display or from each other",
