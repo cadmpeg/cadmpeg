@@ -1030,15 +1030,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-109. Legacy external placement control and extended envelopes
 
-**Question.** Which native object does the auxiliary placement UUID and cross-segment metadata reference identify? What does the nonzero control word select, and how do alternate member preludes and change-category lists delimit the placement?
+**Question.** Which native objects do the auxiliary placement UUID and cross-segment metadata reference identify? What does the control word select, and how do change-category lists delimit the placement?
 
-**Known.** The zero-control envelope has an auxiliary metadata UUID, a source occurrence key, a cross-segment reference, equal legacy targets, a stored transform or identity flag, an occurrence role, and a local owner. Other short envelopes have a different sequence between the attribute block and the repeated target. A separate envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
+**Known.** `f3d.md` §1.4 defines the compact and attributed placement envelopes, their occurrence roles, and their local owners. A change-category envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
 
-**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and complete grammars for the alternate member preludes and change-category envelope.
+**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and the complete grammar of the change-category envelope.
 
 **Conflict.** None.
 
-**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes remain `xref.placement-undecoded` losses.
+**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. Extended control and change-category envelopes remain `xref.placement-undecoded` losses.
 
 ### DR-100. Rigid-group operand forms and root identities
 
