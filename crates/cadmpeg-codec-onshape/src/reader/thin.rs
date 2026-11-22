@@ -240,7 +240,11 @@ pub(super) fn feature(
     ))
 }
 
-pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mapping<()> {
+pub(super) fn install_scope(
+    ir: &mut CadIr,
+    report: &mut super::Report,
+    bar: &super::RollbackBar,
+) -> Mapping<()> {
     for source in &ir.model.features {
         if ir
             .design
@@ -276,9 +280,9 @@ pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mappi
             .iter()
             .position(|source| source.id == feature.id)
     });
-    let Some(last) = ir.design.features.last().map(|feature| feature.id.clone()) else {
+    if ir.design.features.is_empty() {
         return Ok(());
-    };
+    }
     let definition = owner(ir)?;
     let container = id("container", "Part Studio");
     let bodies: Vec<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
@@ -288,14 +292,37 @@ pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mappi
         .iter()
         .map(|feature| json!({"kind":"feature","value":feature.id}))
         .collect();
+    // The bar stands before the first kept member at or after the stored
+    // rollback feature. The current state is the state before the bar.
+    let barred = bar.0.iter().find_map(|native| {
+        let member = id("feature", native);
+        ir.design
+            .features
+            .iter()
+            .position(|feature| feature.id.as_str() == member)
+    });
+    let (rollback, at) = match barred {
+        Some(0) => (
+            json!({"kind":"before","value":members[0]}),
+            json!({"kind":"start","value":container}),
+        ),
+        Some(index) => (
+            json!({"kind":"before","value":members[index]}),
+            json!({"kind":"after","value":members[index - 1]}),
+        ),
+        None => (
+            json!({"kind":"end"}),
+            json!({"kind":"after","value":members[members.len() - 1]}),
+        ),
+    };
     push(
         &mut ir.design.containers,
-        json!({"kind":"ordered","value":{"id":container,"kind":"timeline","members":members,"folders":[],"rollback":{"kind":"end"}}}),
+        json!({"kind":"ordered","value":{"id":container,"kind":"timeline","members":members,"folders":[],"rollback":rollback}}),
     )?;
     push(
         &mut ir.design.scopes,
         json!({"definition":definition,"roots":[container],"active_arrangements":[],"occurrences":{},
-        "current":[{"at":{"kind":"after","value":{"kind":"feature","value":last}},"bodies":bodies,"poses":[],"status":"current"}]}),
+        "current":[{"at":at,"bodies":bodies,"poses":[],"status":"current"}]}),
     )?;
     Ok(())
 }

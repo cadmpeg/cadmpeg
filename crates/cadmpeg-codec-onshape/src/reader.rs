@@ -250,6 +250,52 @@ fn boolean_field(row: &Value, key: &str) -> Mapping<bool> {
         Some(_) => Err(format!("{key} must be Boolean")),
     }
 }
+/// The stored rollback bar: the IDs of the features at and after the bar,
+/// in timeline order. Empty states the bar after the last feature.
+#[derive(Debug, Default)]
+pub(super) struct RollbackBar(pub(super) Vec<String>);
+
+/// Reads `rollbackIndex`, the count of features before the rollback bar.
+fn rollback_bar(
+    response: &Value,
+    features: &[Value],
+    report: &mut Report,
+    path: &str,
+) -> RollbackBar {
+    let Some(index) = response.get("rollbackIndex") else {
+        if features.is_empty() {
+            return RollbackBar::default();
+        }
+        report.push_coded(
+            path,
+            OnshapeLossCode::RollbackUnread,
+            "rollbackIndex is absent; stated the rollback bar after the last feature",
+        );
+        return RollbackBar::default();
+    };
+    let Some(rest) = index
+        .as_u64()
+        .and_then(|index| usize::try_from(index).ok())
+        .and_then(|index| features.get(index..))
+    else {
+        report.push_coded(
+            path,
+            OnshapeLossCode::RollbackUnread,
+            format!(
+                "rollbackIndex {index} is not a position in the {} features; stated the rollback bar after the last feature",
+                features.len()
+            ),
+        );
+        return RollbackBar::default();
+    };
+    RollbackBar(
+        rest.iter()
+            .filter_map(|feature| feature.get("featureId").and_then(Value::as_str))
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
 fn suppression(feature: &Value) -> Mapping<bool> {
     Ok(boolean_field(feature, "suppressed")? | boolean_field(feature, "parentSuppressed")?)
 }
@@ -362,16 +408,19 @@ pub(super) fn read(
     }
     let prefix = format!("partstudios/{eid}");
     let history_path = format!("{prefix}/features.json");
-    let features = match bundle.json(&history_path) {
+    let (features, bar) = match bundle.json(&history_path) {
         Ok(response) => match rows(response, "features") {
-            Ok(features) => features,
+            Ok(features) => (
+                features,
+                rollback_bar(response, features, report, &history_path),
+            ),
             Err(reason) => {
                 report.push_coded(
                     &history_path,
                     OnshapeLossCode::HistoryNotSupported,
                     format!("{reason}; feature history is missing"),
                 );
-                &[]
+                (&[][..], RollbackBar::default())
             }
         },
         Err(error) => {
@@ -380,7 +429,7 @@ pub(super) fn read(
                 OnshapeLossCode::HistoryNotSupported,
                 format!("{error}; feature history is missing"),
             );
-            &[]
+            (&[][..], RollbackBar::default())
         }
     };
     let inputs = topology::Inputs::new(&bundle, &prefix, &mid, features, report);
@@ -746,7 +795,7 @@ pub(super) fn read(
         }
     }
     if model.ir.design.features.len() > original_design_features {
-        install_thin_scope(ctx, &mut model.ir, report, original_design)?;
+        install_thin_scope(ctx, &mut model.ir, report, original_design, &bar)?;
     }
     report
         .notes
@@ -764,10 +813,11 @@ fn install_thin_scope(
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut Report,
     original: cadmpeg_ir::document::Design,
+    bar: &RollbackBar,
 ) -> Result<(), Error> {
     let notes = report.notes.len();
     let result = thin::sketches::project(ctx, ir)
-        .and_then(|()| thin::install_scope(ir, report).map_err(Error::Decode));
+        .and_then(|()| thin::install_scope(ir, report, bar).map_err(Error::Decode));
     if let Err(reason) = result {
         ir.design = original;
         report.notes.truncate(notes);

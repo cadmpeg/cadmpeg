@@ -667,6 +667,7 @@ fn compressed_hole_locations_keep_only_the_selected_sketch_point() {
         response["features"].as_array_mut().unwrap().push(json!({"featureId":"hole","featureType":"hole","parameters":[
             {"parameterId":"locations","queries":[query]}, {"parameterId":"style","value":"SIMPLE"},
             {"parameterId":"endStyle","value":"THROUGH"},{"parameterId":"holeDiameter","expression":"1 mm"}]}));
+        response["rollbackIndex"] = json!(response["features"].as_array().unwrap().len());
     });
     let (wire, report) = read(&bytes);
     assert_eq!(
@@ -1642,6 +1643,7 @@ pub(super) fn stored_thin(open: bool, flip: bool, reversed: bool) -> Vec<u8> {
             return;
         }
         response["features"].as_array_mut().unwrap().truncate(2);
+        response["rollbackIndex"] = json!(2);
         let sketch = &mut response["features"][0];
         sketch["constraints"] = json!([]);
         if open {
@@ -1777,6 +1779,7 @@ fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
     let bytes = crate::test_support::review::edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             response["features"].as_array_mut().unwrap().truncate(2);
+            response["rollbackIndex"] = json!(2);
             response["features"][0]["entities"].as_array_mut().unwrap().push(json!({"btType":"BTMSketchPoint-158","entityId":"unselected-point","x":0.03,"y":0.04}));
             let feature = &mut response["features"][1];
             parameter(feature, "bodyType")["value"] = json!("THIN");

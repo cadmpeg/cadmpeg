@@ -86,6 +86,7 @@ fn thin_then(later: &str) -> Vec<u8> {
                 parameter(&mut feature, "wallShape")["parameterId"] = json!("entities");
             }
             features.push(feature);
+            response["rollbackIndex"] = json!(3);
         }
     });
     if later == "new-body" {

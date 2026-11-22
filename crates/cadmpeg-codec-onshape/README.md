@@ -58,3 +58,7 @@ that retains history after a STEP member failure.
 Rollback edges with unsupported curves or incomplete geometric fields retain their
 ids and carry `onshape/topology.edge-geometry-unsampled`. The loss names the edge
 and the sampling failure. Stored-value proofs that need its geometry refuse.
+
+The design timeline states the stored rollback bar. An absent or invalid
+`rollbackIndex` states the bar after the last feature and carries
+`onshape/history.rollback-unread`.

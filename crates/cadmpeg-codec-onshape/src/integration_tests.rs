@@ -7,5 +7,6 @@ mod pipeline;
 mod projection;
 mod rereview;
 mod review;
+mod rollback;
 mod second_review;
 mod thin_scope;

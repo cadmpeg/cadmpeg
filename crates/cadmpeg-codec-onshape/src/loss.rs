@@ -19,6 +19,7 @@ pub(super) enum OnshapeLossCode {
     TopologyTooLarge,
     EdgeGeometryUnsampled,
     StepUnreadable,
+    RollbackUnread,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -38,6 +39,7 @@ impl OnshapeLossCode {
             Self::TopologyTooLarge => "topology.too-large",
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
+            Self::RollbackUnread => "history.rollback-unread",
         }
     }
     pub(super) fn matches(self, note: &LossNote) -> bool {

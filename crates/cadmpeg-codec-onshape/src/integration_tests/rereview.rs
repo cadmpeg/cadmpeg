@@ -22,6 +22,7 @@ fn midpoint_sketch() -> Vec<u8> {
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             response["features"].as_array_mut().unwrap().truncate(1);
+            response["rollbackIndex"] = json!(response["features"].as_array().unwrap().len());
             let sketch = &mut response["features"][0];
             sketch["entities"] = json!([
                 {"btType":"BTMSketchPoint-158","entityId":"a","x":0.0,"y":0.0},

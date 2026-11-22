@@ -182,6 +182,7 @@ fn failed_thin_scope_restores_design_and_downgrades_wall_losses() {
         &mut model.ir,
         &mut report,
         original.clone(),
+        &super::RollbackBar::default(),
     )
     .unwrap();
     assert_eq!(model.ir.design, original);

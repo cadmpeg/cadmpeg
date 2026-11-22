@@ -51,7 +51,9 @@ a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
 `featureType` selects the operation. `name` carries its display label.
 `parameters` is an array with unique `parameterId` keys; `btType` names each
 REST record class. `suppressed` and `parentSuppressed` are Boolean fields
-that mark inactive features.
+that mark inactive features. `rollbackIndex` is the number of features before the
+rollback bar, from zero to the length of `features`. The bar stands before
+the feature at that position, or after the last feature at the length.
 
 A declared `sourceMicroversion` equals `document.microversion`. A
 microversion declaration is either the string or an object with string
