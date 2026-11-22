@@ -71,7 +71,8 @@ pub use budget::{
 pub use declared::declared_findings;
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
 pub use session::{
-    body_boxes, findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer,
+    body_boxes, check_findings, findings, Density, MeasureError, MeasureInput, MeasureOptions,
+    Measurer,
 };
 
 #[cfg(test)]
