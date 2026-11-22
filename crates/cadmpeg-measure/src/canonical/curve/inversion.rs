@@ -217,8 +217,9 @@ impl<'curve> CurveInverter<'curve> {
             if examined > MAX_CURVE_PARAMETER_INTERVALS {
                 return Ok(Search::Witness(None));
             }
-            let middle =
-                FiniteReal::new(start.get().midpoint(end.get())).expect("finite interval midpoint");
+            let Some(middle) = FiniteReal::new(start.get().midpoint(end.get())) else {
+                return Ok(Search::Witness(None));
+            };
             let Some(middle_distance) = self
                 .position(ctx, middle)?
                 .map(|position| position.distance(point))
