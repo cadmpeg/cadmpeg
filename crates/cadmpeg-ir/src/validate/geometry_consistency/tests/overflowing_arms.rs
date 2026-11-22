@@ -287,15 +287,15 @@ fn a_charted_tolerant_intersection_whose_end_overflows_misses_its_witnesses_by_n
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
-                crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
-                    construction: crate::geometry::TolerantIntersectionConstruction::try_new(
+                crate::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
+                    construction: crate::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         supports,
                         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                         1.0e-9,
                     )
                     .unwrap(),
                     parameterization: Some(
-                        crate::geometry::TolerantIntersectionParameterization::try_new(
+                        crate::geometry::intersection_curves::TolerantIntersectionParameterization::try_new(
                             [pcurve.clone(), pcurve],
                             [-1.0, 1.0],
                         )
@@ -409,13 +409,14 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
 /// the support's `u` partial overflows, so the section's support normal and
 /// every blend point between the contacts leave the finite range.
 fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::ids::SurfaceId) {
-    use crate::geometry::{
-        RevisionSurfaceParameterization, RollingBallSide, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry, VariableBlendConstruction, VariableBlendConvexity,
-        VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
-        VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendValue,
-        VariableBlendValuePayload,
+    use crate::geometry::blends::RollingBallSide;
+    use crate::geometry::revision_forms::RevisionSurfaceParameterization;
+    use crate::geometry::variable_blends::{
+        VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
+        VariableBlendRadii, VariableBlendRenderMode, VariableBlendSupportKind,
+        VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
     };
+    use crate::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
     let mint = |name: &str| crate::ids::SurfaceId::mint(format!("test:model:surface#{name}"));
     let first = mint("steep-support").expect("valid identity");
     let second = mint("wall-support").expect("valid identity");
@@ -489,7 +490,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
     };
     let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
-        surface: Some(crate::geometry::RollingBallSupportSurface {
+        surface: Some(crate::geometry::blends::RollingBallSupportSurface {
             surface,
             parameter_ranges: [[None, None], [None, None]],
         }),
@@ -527,7 +528,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         shape_parameter: 0.0,
         shape_length: 0.0,
         shape_tail: 0,
-        cache: crate::geometry::VariableBlendCache::Parameterization {
+        cache: crate::geometry::revision_forms::VariableBlendCache::Parameterization {
             shape_prefix: 1,
             parameterization: RevisionSurfaceParameterization {
                 u_interval: [Some(0.0), Some(1.0)],
@@ -549,7 +550,7 @@ fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::i
         .procedural_surfaces
         .push(crate::geometry::ProceduralSurface::new(
             construction,
-            crate::geometry::ProceduralSurfaceDefinition::VariableBlend(
+            crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition::VariableBlend(
                 crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
                     blend,
                 ))
@@ -644,15 +645,15 @@ fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_mi
             &curve,
             crate::geometry::ProceduralCurve::new(
                 crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
-                crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
-                    construction: crate::geometry::TolerantIntersectionConstruction::try_new(
+                crate::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
+                    construction: crate::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         supports,
                         [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
                         1.0e-9,
                     )
                     .unwrap(),
                     parameterization: Some(
-                        crate::geometry::TolerantIntersectionParameterization::try_new(
+                        crate::geometry::intersection_curves::TolerantIntersectionParameterization::try_new(
                             [pcurve.clone(), pcurve],
                             [0.0, 1.0],
                         )

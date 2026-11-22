@@ -1964,3 +1964,5 @@ fn pathless_occurrence_placements_bind_the_target_role_and_close() {
 mod legacy_insert_carrier;
 mod legacy_path_pose;
 mod reference_rows;
+
+mod compact_generation;

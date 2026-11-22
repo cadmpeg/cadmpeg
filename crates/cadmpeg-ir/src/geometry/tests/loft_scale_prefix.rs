@@ -1,4 +1,4 @@
-use super::super::{
+use super::super::lofts::{
     CompoundLoftConstruction, CompoundLoftDirection, CompoundLoftScale, CompoundLoftScales,
     CompoundLoftTail,
 };

@@ -6,11 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    pcurve::{Pcurve, PcurveGeometry},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
@@ -842,9 +841,9 @@ pub(super) fn cylinder_helix(
         let tangent = cross(axis, radial);
         let sweep = delta_angle.abs();
         let definition = ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+            cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
                 [0.0, sweep],
-                cadmpeg_ir::geometry::HelixFrame {
+                cadmpeg_ir::geometry::helix::HelixFrame {
                     center: point3(add(origin, scale(axis, endpoints[0][1]))),
                     major: vector(scale(radial, radius)),
                     minor: vector(scale(tangent, radius * delta_angle.signum())),

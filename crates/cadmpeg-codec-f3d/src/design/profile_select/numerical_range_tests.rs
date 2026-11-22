@@ -113,7 +113,7 @@ fn circles_inward_of_a_body_stop_when_the_next_circle_passes_the_wall() {
 #[test]
 fn concentric_ring_regions_emit_disjoint_annuli_with_hole_boundaries() {
     use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
-    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse};
 

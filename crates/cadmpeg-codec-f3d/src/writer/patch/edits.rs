@@ -14,11 +14,12 @@ use crate::records::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    BlendRadiusLaw, Curve, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface,
+    Curve, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
@@ -788,14 +789,14 @@ impl PcurveEdit {
 
 #[derive(Clone)]
 pub(super) struct ProceduralCurveEdit {
-    definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    definition: Option<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>,
     fit_tolerance: Option<f64>,
 }
 
 impl ProceduralCurveEdit {
     /// An edit that changes at least one of the definition and the fit tolerance.
     fn new(
-        definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+        definition: Option<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>,
         fit_tolerance: Option<f64>,
     ) -> Option<Self> {
         (definition.is_some() || fit_tolerance.is_some()).then_some(Self {
@@ -805,7 +806,9 @@ impl ProceduralCurveEdit {
     }
 
     /// Replacement procedural definition, when the edit changes it.
-    pub(super) fn definition(&self) -> Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+    pub(super) fn definition(
+        &self,
+    ) -> Option<&cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition> {
         self.definition.as_ref()
     }
 
@@ -3211,7 +3214,7 @@ pub(super) fn validate_pcurve_edits(
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
                     .flatten()
-                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                    .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             },
         };
         edits.insert(id.to_owned(), edit);
@@ -3531,12 +3534,12 @@ pub(super) fn validate_procedural_curve_edits(
         let after_definition = definition_without_legacy_cache(after.definition());
         let definition = match (&before_definition, &after_definition) {
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(_),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(_),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(_),
             ) if before_definition != after_definition => Some(after_definition.clone()),
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::VectorOffset(definition_payload_0),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::VectorOffset(definition_payload_1),
             ) if (definition_payload_0.source()) == (definition_payload_1.source())
                 && (definition_payload_0.roles()) == (definition_payload_1.roles())
                 && before_definition != after_definition =>
@@ -3544,18 +3547,18 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_0),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload_1),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(definition_payload_0),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(definition_payload_1),
             ) if (definition_payload_0.source()) == (definition_payload_1.source())
                 && before_definition != after_definition =>
             {
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TwoSidedOffset(
                     definition_payload_0,
                 ),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TwoSidedOffset(
                     definition_payload_1,
                 ),
             ) if (definition_payload_0.context()).sides()
@@ -3573,10 +3576,10 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceOffset(
                     definition_payload_0,
                 ),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceOffset(
                     definition_payload_1,
                 ),
             ) if (definition_payload_0.context()).sides()
@@ -3595,16 +3598,16 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(before_payload),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(after_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Spring(before_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Spring(after_payload),
             ) if spring_patch_shape_agrees(before_payload.layout(), after_payload.layout())
                 && before_definition != after_definition =>
             {
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(before_payload),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection(after_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Projection(before_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Projection(after_payload),
             ) if before_payload.context().sides() == after_payload.context().sides()
                 && before_payload
                     .context()
@@ -3620,11 +3623,11 @@ pub(super) fn validate_procedural_curve_edits(
                 && matches!(
                     (before_payload.tail(), after_payload.tail()),
                     (
-                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
-                        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { .. },
+                        cadmpeg_ir::geometry::surface_curves::ProjectionTail::EarlyClose { .. },
+                        cadmpeg_ir::geometry::surface_curves::ProjectionTail::EarlyClose { .. },
                     ) | (
-                        cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
-                        cadmpeg_ir::geometry::ProjectionTail::Ranged { .. },
+                        cadmpeg_ir::geometry::surface_curves::ProjectionTail::Ranged { .. },
+                        cadmpeg_ir::geometry::surface_curves::ProjectionTail::Ranged { .. },
                     )
                 )
                 && before_definition != after_definition =>
@@ -3632,11 +3635,11 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
                     context: before_context,
                     ..
                 },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
                     context: after_context,
                     ..
                 },
@@ -3651,10 +3654,10 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::ThreeSurfaceIntersection(
                     before_payload,
                 ),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::ThreeSurfaceIntersection(
                     after_payload,
                 ),
             ) if before_payload.context().sides() == after_payload.context().sides()
@@ -3674,10 +3677,10 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve {
                     family: before_family,
                 },
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve {
                     family: after_family,
                 },
             ) if before_family.has_same_form(after_family)
@@ -3697,8 +3700,8 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(before_payload),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(after_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Silhouette(before_payload),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Silhouette(after_payload),
             ) if before_payload.context() == after_payload.context()
                 && std::mem::discriminant(before_payload.silhouette())
                     == std::mem::discriminant(after_payload.silhouette())
@@ -3708,8 +3711,8 @@ pub(super) fn validate_procedural_curve_edits(
                 Some(after_definition.clone())
             }
             (
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(before_compound),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(after_compound),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Compound(before_compound),
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Compound(after_compound),
             ) if before_compound
                 .components()
                 .iter()
@@ -3746,7 +3749,7 @@ pub(super) fn validate_procedural_curve_edits(
         };
         if let Some(edit) = ProceduralCurveEdit::new(
             definition,
-            fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
+            fit_tolerance.map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         ) {
             edits.insert(id.to_owned(), edit);
         }
@@ -3757,33 +3760,33 @@ pub(super) fn validate_procedural_curve_edits(
 /// The definition with the solved-cache contract it states cleared, so two
 /// definitions compare on their construction fields alone.
 fn definition_without_legacy_cache(
-    definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
-) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
+    definition: &cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition,
+) -> cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition {
     let mut cleared = definition.clone();
     cleared.clear_legacy_cache();
     cleared
 }
 
 fn spring_patch_shape_agrees(
-    before: &cadmpeg_ir::geometry::SpringLayout<
+    before: &cadmpeg_ir::geometry::surface_curves::SpringLayout<
         cadmpeg_ir::scalar::FiniteReal,
         cadmpeg_ir::topology::ParameterInterval,
     >,
-    after: &cadmpeg_ir::geometry::SpringLayout<
+    after: &cadmpeg_ir::geometry::surface_curves::SpringLayout<
         cadmpeg_ir::scalar::FiniteReal,
         cadmpeg_ir::topology::ParameterInterval,
     >,
 ) -> bool {
     match (before, after) {
         (
-            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+            cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
                 supports: before_supports,
                 first_pcurve: before_first,
                 second_pcurve: before_second,
                 discontinuities: before_discontinuities,
                 ..
             },
-            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+            cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
                 supports: after_supports,
                 first_pcurve: after_first,
                 second_pcurve: after_second,
@@ -3800,11 +3803,11 @@ fn spring_patch_shape_agrees(
                     .eq(after_discontinuities.iter().map(Vec::len))
         }
         (
-            cadmpeg_ir::geometry::SpringLayout::CacheFirst {
+            cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst {
                 context: before_context,
                 ..
             },
-            cadmpeg_ir::geometry::SpringLayout::CacheFirst {
+            cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst {
                 context: after_context,
                 ..
             },

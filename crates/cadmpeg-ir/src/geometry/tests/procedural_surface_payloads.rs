@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail, ProceduralSurface,
-    ProceduralSurfaceDefinition,
-};
+use crate::geometry::laws::{LawExpression, LawFormula, LawSurfaceConstruction, LawSurfaceTail};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::ProceduralSurface;
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
 
 fn id() -> ProceduralSurfaceId {
@@ -11,7 +10,7 @@ fn id() -> ProceduralSurfaceId {
 
 fn subset(
     ranges: [[f64; 2]; 2],
-) -> Result<ProceduralSurfaceDefinition, crate::geometry::ProceduralGeometryError> {
+) -> Result<ProceduralSurfaceDefinition, crate::geometry::legacy_cache::ProceduralGeometryError> {
     Ok(ProceduralSurfaceDefinition::Subset(
         crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
             SurfaceId::mint("synthetic:test:surface#support").unwrap(),
@@ -149,13 +148,15 @@ fn linear_sweep_admission_requires_a_finite_nondegenerate_direction() {
 fn rejected_surface_definition_changes_preserve_serialized_owner() {
     let mut definition = subset([[0.0, 1.0], [0.0, 1.0]]).unwrap();
     definition
-        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .set_legacy_cache(Some(
+            crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap(),
+        ))
         .unwrap();
     let surface = ProceduralSurface::new(id(), definition, None);
     let before = serde_json::to_vec(&surface).unwrap();
     for tolerance in [-1.0, f64::NAN, f64::INFINITY] {
         let mut replacement = subset([[2.0, 3.0], [4.0, 5.0]]).unwrap();
-        assert!(crate::geometry::LegacyCache::try_new(tolerance).is_err());
+        assert!(crate::geometry::legacy_cache::LegacyCache::try_new(tolerance).is_err());
         assert!(replacement.set_cache_fit_tolerance(None).is_ok());
         assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
     }
@@ -172,7 +173,9 @@ fn rejected_surface_definition_changes_preserve_serialized_owner() {
         .unwrap(),
     );
     assert!(incompatible
-        .set_legacy_cache(Some(crate::geometry::LegacyCache::try_new(0.5).unwrap()))
+        .set_legacy_cache(Some(
+            crate::geometry::legacy_cache::LegacyCache::try_new(0.5).unwrap()
+        ))
         .is_err());
     assert_eq!(serde_json::to_vec(&surface).unwrap(), before);
 }

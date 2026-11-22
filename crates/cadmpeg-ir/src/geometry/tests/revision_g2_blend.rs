@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    ProceduralGeometryError, ProceduralSurfaceDefinition, RevisionCacheForm,
-    RevisionG2BlendConstruction, RevisionG2BlendConstructionWire, RevisionSurfaceParameterization,
+use crate::geometry::blends::{
     RollingBallRadiusSelector, RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface,
-    VariableBlendSupportKind,
 };
+use crate::geometry::legacy_cache::ProceduralGeometryError;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::{
+    RevisionCacheForm, RevisionG2BlendConstruction, RevisionG2BlendConstructionWire,
+    RevisionSurfaceParameterization,
+};
+use crate::geometry::variable_blends::VariableBlendSupportKind;
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Point3;
 use crate::scalar::PositiveI64;

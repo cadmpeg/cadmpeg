@@ -21,6 +21,59 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// The messages of a write's unwritten-attribute losses, by code.
+#[derive(Debug, Default)]
+pub(crate) struct UnwrittenLosses {
+    /// `export:edit.dropped`: records kept as the source stored them.
+    pub(crate) dropped: Vec<String>,
+    /// `WriterAttributesOmitted`: attributes with no record.
+    pub(crate) omitted: Vec<String>,
+}
+
+impl UnwrittenLosses {
+    pub(crate) fn of(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Self {
+        let mut found = Self::default();
+        for loss in losses {
+            if loss.code.namespace() == "export" && loss.code.local_code() == "edit.dropped" {
+                found.dropped.push(loss.message.clone());
+            } else if loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind() {
+                found.omitted.push(loss.message.clone());
+            }
+        }
+        found
+    }
+
+    /// One message of the code `held` selects states `reason` and names `id`
+    /// as a whole token, and no message of the other code names it.
+    pub(crate) fn assert_charged(&self, held: crate::writer::Held, reason: &str, id: &str) {
+        let (charged, other) = match held {
+            crate::writer::Held::Source => (&self.dropped, &self.omitted),
+            crate::writer::Held::Nothing => (&self.omitted, &self.dropped),
+        };
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            charged
+                .iter()
+                .any(|message| message.contains(reason) && names(message)),
+            "{held:?} {reason} {id}: {self:?}"
+        );
+        assert!(!other.iter().any(names), "{held:?} {id}: {self:?}");
+    }
+}
+
+/// Plans and writes an inherited write. Returns its bytes and its
+/// unwritten-attribute losses.
+pub(crate) fn write_with_unwritten_attributes(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> Result<(Vec<u8>, UnwrittenLosses), CodecError> {
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let losses = UnwrittenLosses::of(&plan.report().losses);
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)?;
+    Ok((bytes, losses))
+}
+
 /// Supply an authored native envelope for semantic fixture assertions.
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
@@ -126,21 +179,29 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Check public refusal, then exercise the internal history section encoder.
-pub(crate) fn serialize_history_in_native_envelope_after_refusal(
+/// Write an edit that shapes the solid through the public encoder, and check
+/// that the export report names the stored solid as stale.
+pub(crate) fn write_history_over_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+) -> Result<cadmpeg_ir::report::export::ExportReport, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
-    let error = plan_inherited_write(&ir, &fidelity, &mut Vec::new()).unwrap_err();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )?
+        .write_to(writer)?;
     assert!(
-        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-        "{error}"
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+        "{:?}",
+        report.losses
     );
-    let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
-        .map(|output| output.dialect)
+    Ok(report)
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
@@ -184,6 +245,7 @@ pub(crate) mod native;
 pub(crate) mod nist;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
+pub(crate) mod sketch_records;
 pub(crate) mod surfaces;
 pub(crate) mod swift;
 pub(crate) mod tessellation;

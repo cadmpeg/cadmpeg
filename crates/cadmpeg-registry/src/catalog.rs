@@ -219,7 +219,9 @@ impl InputCatalog {
                             feature = "iges",
                             feature = "sat",
                             feature = "pvz",
-                            feature = "usd"
+                            feature = "edrawings",
+                            feature = "usd",
+                            feature = "onshape"
                         ))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
@@ -493,6 +495,9 @@ mod tests {
         if cfg!(feature = "pvz") {
             expected.push("pvz");
         }
+        if cfg!(feature = "onshape") {
+            expected.push("onshape");
+        }
         assert_eq!(
             tie.candidates()
                 .iter()
@@ -533,6 +538,45 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "iges"
                 && descriptor.codec().is_some()));
+    }
+
+    /// A package whose leading member is an `eModel` stream that opens with
+    /// the HSF comment resolves to the read-only eDrawings codec at high
+    /// confidence.
+    #[cfg(feature = "edrawings")]
+    #[test]
+    fn an_edrawings_package_resolves_to_the_read_only_edrawings_codec() {
+        use super::Selection;
+        use cadmpeg_ir::codec::Confidence;
+        use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "edrawings")
+            .expect("eDrawings descriptor exists");
+        assert_eq!(descriptor.extensions(), ["easm", "eprt"]);
+
+        let package = archive(&[
+            RawEntry::stored(
+                "eModel",
+                b";; HSF V19.10\x20
+synthetic",
+            ),
+            RawEntry::stored("scene.xml", b"<SceneData/>"),
+        ]);
+        let ResolvedSource::Native { codec, selection } =
+            resolve(&catalog, &package, None).expect("detection")
+        else {
+            panic!("an eDrawings package resolves to a native codec");
+        };
+        assert_eq!(codec.id().as_str(), "edrawings");
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
     }
 
     /// A package whose leading member is a signed `.pvs` member resolves to

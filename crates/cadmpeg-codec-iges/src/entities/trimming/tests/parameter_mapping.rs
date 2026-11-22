@@ -6,11 +6,13 @@ use super::super::{
     ProceduralSourceParameterMap,
 };
 use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+use cadmpeg_ir::geometry::legacy_cache::CacheContract;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
-    analytic::{LineCurve, PlaneSurface},
-    surface_payloads::ExtrusionSurfaceConstruction,
-    CacheContract, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;

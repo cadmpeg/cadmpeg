@@ -185,7 +185,7 @@ pub(crate) fn measure_edge<'ir>(
         (Ok(chart), Ok(range)) => (
             settle(curve_length(eval, chart, *range, scale).map_err(|failure| failure.at(id)))?,
             match work {
-                Work::Row | Work::Box => {
+                Work::Row | Work::Body | Work::Box => {
                     settle(curve_box(eval, chart, *range).map_err(|failure| failure.at(id)))?
                 }
                 Work::Orientation => Err(Missing {
@@ -418,7 +418,7 @@ fn interval(
     let seed = domain.map_or(0.0, |[lower, _]| lower);
     let parameter = |point: Point3, seed: f64| -> Measure<f64> {
         chart
-            .parameter(eval, point, seed, alpha)?
+            .parameter(eval, point, seed, alpha, None)?
             .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
     };
     let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;

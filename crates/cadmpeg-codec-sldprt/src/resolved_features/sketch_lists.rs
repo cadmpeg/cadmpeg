@@ -4,11 +4,14 @@
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
-//! selector has bit 0 clear, except the current-prefix 92-byte selector-4
-//! line with locus `05 00 01 00` that §2 reads,
-//! the endpoint and centre fields are zero-based indices into the point
-//! records of its own sketch, and the sense word selects a line, a
-//! counterclockwise arc or a clockwise arc.
+//! selector has bit 0 clear, other than the current-prefix 92-byte
+//! selector-4 line with locus `05 00 01 00` that §2 reads, the endpoint and
+//! centre fields are zero-based indices into the point records of its own
+//! sketch, and the sense word selects a line, a counterclockwise arc or a
+//! clockwise arc. A curve record of state `0` stands outside the sketch's
+//! profile. A marker whose record is one of these records takes its geometry
+//! from the record (`docs/formats/sldprt.md` §2, "A marker whose record is a
+//! point record or a curve record").
 
 use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
@@ -17,12 +20,13 @@ use crate::layout::{
     sketch_record_head as head,
 };
 use crate::loss::SldprtLossCode;
+use crate::records::{FeatureInputLane, SketchInputEntity};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::f64::consts::TAU;
 
 /// The largest difference, in metres, between an arc's two endpoint radii.
@@ -49,14 +53,17 @@ const LEGACY_FIELDS: usize = legacy_arc::START;
 const SELECTOR: usize = head::SELECTOR;
 /// The selector bit of the curve records of open item EV-27.
 const SELECTOR_OPEN_BIT: u16 = 1;
-/// The selectors of the curve records that [`ListedReading::Roster`] reads.
+/// The selector bit of a construction curve.
+const SELECTOR_CONSTRUCTION_BIT: u16 = 8;
+/// Where a record's u16 state stands.
+const STATE: usize = head::STATE;
+/// The state of a curve record outside the sketch's profile.
+const STATE_OUTSIDE_PROFILE: u16 = 0;
+/// The selectors of the curve records whose kind [`framed_curve`] and
+/// [`SketchRecordLists::listed_curve`] decide.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+/// The locus at +23 of a geometry curve record.
 const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
-const CONSTRUCTION_SELECTOR_BIT: u16 = 0x08;
-/// Where a current-layout line record stores its trailer u32.
-const LINE_TRAILER: usize = line::TRAILER;
-/// Where a current-layout line record stores its identity.
-const LINE_IDENTITY: usize = line::RECORD_ID;
 /// Where a curve record's f64 `-1` stands after its fields start.
 const MINUS_ONE: usize = arc::MINUS_ONE - arc::START;
 /// Where a curve record's sense word stands after its fields start.
@@ -75,17 +82,6 @@ const LINE_TYPE_MASK: i32 = 0xffff;
 const PLANAR_POINT_MASKS: [u16; 6] = [0x12, 0x13, 0x16, 0x1a, 0x1e, 0x1f];
 /// A point record's coordinate masks that write three coordinates.
 const SPATIAL_POINT_MASKS: [u16; 2] = [0x0e, 0x0f];
-
-/// The curve records a listed reading takes geometry from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ListedReading {
-    /// Records of a sketch's first curve list in the current layout with
-    /// selector `4` or `12`, without a line's identifier trailer: the records
-    /// the sketch passes read before their own rules.
-    Roster,
-    /// Every curve record whose selector has bit 0 clear.
-    Complete,
-}
 
 /// A curve record's sense word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,16 +189,39 @@ impl SketchRecordLists {
         Self { lists, records }
     }
 
-    /// The form of the curve record of a list that starts at `offset`, when
-    /// it is a line or an arc ([`curve_form`]).
+    /// The offsets of the curve records that start in `range`.
+    pub(super) fn curves_in(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = usize> + '_ {
+        self.records
+            .range(range)
+            .filter(|(_, (_, place))| *place != RecordPlace::Point)
+            .map(|(&offset, _)| offset)
+    }
+
+    /// Whether a curve record starts at `offset`.
+    fn is_curve(&self, payload: &[u8], offset: usize) -> bool {
+        matches!(
+            self.records.get(&offset),
+            Some((_, RecordPlace::FirstCurveList | RecordPlace::LaterCurveList))
+        ) && curve_record(payload, offset)
+    }
+
+    /// The form of the curve record of a sketch's first curve list that
+    /// starts at `offset`, when it is in the current layout with selector `4`
+    /// or `12` and [`curve_form`] reads it as a line or an arc.
     pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
-        match self.record(offset)? {
-            ListedRecord::Curve { later: false, .. } => {
-                curve_form(payload, offset, ListedReading::Roster)
-            }
-            ListedRecord::Curve { later: true, .. } => None,
-            ListedRecord::Point => None,
+        let &(_, RecordPlace::FirstCurveList) = self.records.get(&offset)? else {
+            return None;
+        };
+        let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+        if curve_fields(payload, offset)? != offset.checked_add(CURRENT_FIELDS)?
+            || !ROSTER_SELECTORS.contains(&selector)
+        {
+            return None;
         }
+        curve_form(payload, offset)
     }
 
     /// The kind of the curve record of a list that starts at `offset`,
@@ -212,27 +231,6 @@ impl SketchRecordLists {
             ListedRecord::Curve { .. } => framed_curve(payload, offset).map(|(_, kind)| kind),
             ListedRecord::Point => None,
         }
-    }
-
-    /// The stream offsets of the point records at the two ends of the
-    /// listed line or arc at `offset`; `None` for a full circle, which has no
-    /// ends, and for a record that is not a readable curve.
-    pub(super) fn listed_curve_ends(&self, payload: &[u8], offset: usize) -> Option<[usize; 2]> {
-        let ListedRecord::Curve { sketch, .. } = self.record(offset)? else {
-            return None;
-        };
-        let (start, end) = match self.listed_curve(payload, offset)? {
-            CurveForm::Line { start, end } => (start, end),
-            CurveForm::Arc { start, end, .. } if start != end => (start, end),
-            CurveForm::Arc { .. } => return None,
-        };
-        Some([sketch.point(start)?, sketch.point(end)?])
-    }
-
-    /// Whether `offset` starts a curve record of a list whose form is a line
-    /// or an arc.
-    pub(super) fn readable_curve(&self, payload: &[u8], offset: usize) -> bool {
-        self.listed_curve(payload, offset).is_some()
     }
 
     /// The listed record that starts at `offset`.
@@ -251,6 +249,21 @@ impl SketchRecordLists {
             },
         })
     }
+}
+
+/// The ids of the markers of `lane` whose record is a curve record of an
+/// `sgSketch` object. Such a marker is a curve of its sketch, whatever its
+/// u32 at +17, and states no relation.
+pub(crate) fn curve_record_markers(lane: &FeatureInputLane) -> HashSet<&str> {
+    let lists = SketchRecordLists::new(&lane.native_payload);
+    lane.sketch_entities
+        .iter()
+        .filter(|marker| {
+            usize::try_from(marker.offset())
+                .is_ok_and(|offset| lists.is_curve(&lane.native_payload, offset))
+        })
+        .map(SketchInputEntity::id)
+        .collect()
 }
 
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
@@ -434,25 +447,14 @@ fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
 }
 
 /// The form of the curve record at `offset`, in either head layout, when its
-/// selector has bit 0 clear:
-/// a line when the low half of its sense word is `0`, and an arc when the
-/// word is `1` or `-1` and the centre index is
-/// followed by i32 `-2`. [`ListedReading::Roster`] also requires the current
-/// layout, a roster selector, and for a line no identifier trailer.
-pub(super) fn curve_form(
-    payload: &[u8],
-    offset: usize,
-    reading: ListedReading,
-) -> Option<CurveForm> {
+/// selector has bit 0 clear: a line when the low half of its sense word is
+/// `0`, its endpoint indices differ and it is not the object-index line that
+/// §2 reads ([`object_index_line`]), and an arc when the word is `1` or `-1`
+/// and the centre index is followed by i32 `-2`.
+pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
     let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
     if selector & SELECTOR_OPEN_BIT != 0 {
-        return None;
-    }
-    let roster = reading == ListedReading::Roster;
-    if roster
-        && (fields != offset.checked_add(CURRENT_FIELDS)? || !ROSTER_SELECTORS.contains(&selector))
-    {
         return None;
     }
     let start = usize::from(View::u16_le_at(payload, fields)?);
@@ -475,11 +477,11 @@ pub(super) fn curve_form(
     (sense & LINE_TYPE_MASK == 0
         && start != end
         && !(object_index_line(payload, offset, fields, selector)
-            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
-        && !(roster && identifier_trailer_line(payload, offset)?))
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some()))
     .then_some(CurveForm::Line { start, end })
 }
 
+/// Whether the record at `offset` has locus `05 00 01 00` at +23.
 fn object_index_locus(payload: &[u8], offset: usize) -> bool {
     offset.checked_add(head::LOCUS).is_some_and(|at| {
         at.checked_add(OBJECT_INDEX_LOCUS.len())
@@ -488,6 +490,9 @@ fn object_index_locus(payload: &[u8], offset: usize) -> bool {
     })
 }
 
+/// Whether the record at `offset` is a current-prefix 92-byte line with
+/// selector `4` and locus `05 00 01 00`, whose endpoint values plus one are
+/// object indices of point markers when §2 reads it.
 fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16) -> bool {
     let prefix_end = offset.checked_add(SKETCH_MARKER.len());
     let end = offset.checked_add(line::RECORD_ID + size_of::<u32>());
@@ -498,8 +503,10 @@ fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16
         && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
 }
 
+/// The loss of a curve record on locus `05 00 01 00` that [`curve_form`]
+/// reads: its indices are taken as zero-based point-record positions.
 pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
-    curve_form(payload, offset, ListedReading::Complete)?;
+    curve_form(payload, offset)?;
     object_index_locus(payload, offset).then(|| {
         SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
             "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
@@ -507,12 +514,18 @@ pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Op
     })
 }
 
-/// Whether the current-layout line record at `offset` stores a trailer u32
-/// `1`, or a zero trailer and an identity other than `0` and null.
-fn identifier_trailer_line(payload: &[u8], offset: usize) -> Option<bool> {
-    let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
-    let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
-    Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+/// Whether the record at `offset` is a current-layout line that [`curve_form`]
+/// reads and that has an identifier trailer: u32 `1` at +84, or u32 `0` at
+/// +84 and an identity other than `0` and null at +88 (§2.3).
+pub(super) fn identifier_trailer_line(payload: &[u8], offset: usize) -> bool {
+    let word = |at: usize| View::u32_le_at(payload, offset.checked_add(at)?);
+    curve_fields(payload, offset) == offset.checked_add(CURRENT_FIELDS)
+        && matches!(curve_form(payload, offset), Some(CurveForm::Line { .. }))
+        && match (word(line::TRAILER), word(line::RECORD_ID)) {
+            (Some(1), Some(_)) => true,
+            (Some(0), Some(identity)) => identity != 0 && identity != u32::MAX,
+            _ => false,
+        }
 }
 
 /// Whether bit 3 of the selector of the record at `offset` is set: the
@@ -521,31 +534,38 @@ pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
     offset
         .checked_add(SELECTOR)
         .and_then(|at| View::u16_le_at(payload, at))
-        .is_some_and(|selector| selector & CONSTRUCTION_SELECTOR_BIT != 0)
+        .is_some_and(|selector| selector & SELECTOR_CONSTRUCTION_BIT != 0)
 }
 
-/// What the `sgSketch` curve record of a marker gives in place of the
-/// straight chord a marker reading gave it.
+/// The entity a listed record gives the marker that stands on it.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) enum ChordRecord {
-    /// The record's arc, which runs between the chord's two endpoints.
-    Arc(SketchGeometry),
-    /// The record states an arc that the chord's endpoints do not carry.
-    Conflict(ChordConflict),
+pub(super) struct ListedEntity {
+    pub(super) geometry: SketchGeometry,
+    /// The stream offsets of the point records a line or an arc runs
+    /// between, the first at the start of [`Self::geometry`].
+    pub(super) endpoints: Option<[usize; 2]>,
+    /// The record is a curve record whose selector has bit 3 set.
+    pub(super) construction: bool,
+    /// The record is a curve record of state `0`: a curve outside the
+    /// sketch's profile.
+    pub(super) outside_profile: bool,
+    /// The record is a curve record on locus `05 00 01 00`
+    /// ([`point_record_index_basis_loss`]).
+    pub(super) index_basis_loss: Option<LossNote>,
 }
 
-/// Why the curve record of a marker leaves the line a marker reading gave it
-/// in place.
+/// Why the curve record of a marker gives it no entity, so that the marker
+/// keeps what another reading gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChordConflict {
-    /// A point record the record indexes writes no planar coordinates.
+    /// A point record the record indexes writes no planar coordinates, or an
+    /// index lies past the point records.
     PointUnread,
-    /// The two endpoint indices are equal.
-    FullCircle,
-    /// The record's endpoint point records stand at other positions.
-    OtherEndpoints,
     /// The record's endpoints and centre define no arc.
     NoArc,
+    /// The record's arc, placed in the sketch, ends off its endpoint point
+    /// records.
+    MissesChord,
     /// The record has sense `1` or `-1` and selector bit 0 set (open item
     /// EV-27).
     OpenSelector,
@@ -565,11 +585,10 @@ impl std::fmt::Display for ChordConflict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::PointUnread => f.write_str("states an arc whose point records are not all read"),
-            Self::FullCircle => {
-                f.write_str("states an arc whose equal endpoint indices make a full circle")
-            }
-            Self::OtherEndpoints => f.write_str("states an arc between point records at other positions"),
             Self::NoArc => f.write_str("states an arc whose endpoints and centre define no arc"),
+            Self::MissesChord => f.write_str(
+                "states an arc that, placed in the sketch, ends off its endpoint point records",
+            ),
             Self::OpenSelector => f.write_str(
                 "states an arc sense with selector bit 0 set, whose indices are open item EV-27",
             ),
@@ -587,70 +606,180 @@ impl std::fmt::Display for ChordConflict {
     }
 }
 
-/// The reading of the listed curve record at `offset` when a marker reading
-/// gave it the straight chord `chord`: for an arc record, the record's arc
-/// when its two endpoint point records project onto the chord's endpoints in
-/// either order within the linear resolution, and the conflict otherwise; for a record whose form
-/// [`curve_form`] does not read, the conflict its sense and selector give.
-/// `None` when the offset starts no listed curve record or the record states
-/// a line.
-pub(super) fn chord_record(
+/// The entity the listed record at `offset` gives its marker, read by
+/// point-record position: a point record's point, whatever its u32 at +17,
+/// or the line, arc or full circle of a curve record whose selector has
+/// bit 0 clear, between the point records at its indices, with selector bit 3
+/// marking construction and state `0` a curve outside the profile. `owns`
+/// admits the point records a curve record may index: those of the marker's
+/// own feature object. `project` maps a coordinate pair in metres to sketch
+/// coordinates.
+///
+/// `None` when the offset starts no listed record, a point record writes no
+/// planar coordinates, a curve record indexes a point record `owns` does not
+/// admit, a line's point records write no planar coordinates, or the record
+/// states a line [`curve_form`] does not read. The conflict when the record
+/// states another form that gives no entity: an arc whose point records are
+/// not all read, whose endpoints and centre define no arc, or whose arc ends
+/// off its endpoint point records by more than the linear resolution after
+/// the projection; and a form [`curve_form`] does not read.
+pub(super) fn listed_entity(
     payload: &[u8],
     lists: &SketchRecordLists,
     offset: usize,
-    chord: [Point2; 2],
+    owns: &impl Fn(usize) -> bool,
     project: &impl Fn([f64; 2]) -> Option<Point2>,
-) -> Option<ChordRecord> {
+) -> Option<Result<ListedEntity, ChordConflict>> {
+    read_listed_entity(payload, lists, offset, owns, project, ChordTest::Required)
+}
+
+/// The entity [`listed_entity`] reads at `offset` from the point records of
+/// any feature object, where an arc record that it refuses with
+/// [`ChordConflict::MissesChord`] reads all the same, without endpoints: the
+/// arc about its centre point record from its start point record, swept in
+/// its sense to the direction of its end point record.
+pub(super) fn off_chord_arc(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+) -> Option<ListedEntity> {
+    read_listed_entity(
+        payload,
+        lists,
+        offset,
+        &|_| true,
+        project,
+        ChordTest::Waived,
+    )?
+    .ok()
+}
+
+/// Whether an arc record must end on its endpoint point records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChordTest {
+    /// An arc that ends off them is [`ChordConflict::MissesChord`].
+    Required,
+    /// An arc that ends off them reads without endpoints.
+    Waived,
+}
+
+fn read_listed_entity(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+    owns: &impl Fn(usize) -> bool,
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+    chord: ChordTest,
+) -> Option<Result<ListedEntity, ChordConflict>> {
     let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
-        return None;
+        let position = project(point_coordinates(payload, offset)?)?;
+        return Some(Ok(ListedEntity {
+            geometry: SketchGeometry::try_from(SketchGeometryDefinition::Point { position })
+                .ok()?,
+            endpoints: None,
+            construction: false,
+            outside_profile: false,
+            index_basis_loss: None,
+        }));
     };
-    let (start, end, center, counterclockwise) =
-        match curve_form(payload, offset, ListedReading::Complete) {
-            Some(CurveForm::Arc {
-                start,
-                end,
-                center,
-                counterclockwise,
-            }) => (start, end, center, counterclockwise),
-            Some(CurveForm::Line { .. }) => return None,
-            None => return unread_form_conflict(payload, offset).map(ChordRecord::Conflict),
-        };
-    if start == end {
-        return Some(ChordRecord::Conflict(ChordConflict::FullCircle));
-    }
-    let point = |index: usize| point_coordinates(payload, sketch.point(index)?);
-    let (Some(start_m), Some(end_m), Some(center_m)) = (point(start), point(end), point(center))
+    let construction = construction_record(payload, offset);
+    let outside_profile =
+        View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
+    let entity = |geometry, endpoints| {
+        Some(Ok(ListedEntity {
+            geometry,
+            endpoints,
+            construction,
+            outside_profile,
+            index_basis_loss: point_record_index_basis_loss(payload, offset),
+        }))
+    };
+    let (start, end, center, counterclockwise) = match curve_form(payload, offset) {
+        None => return unread_form_conflict(payload, offset).map(Err),
+        Some(CurveForm::Line { start, end }) => {
+            let start = sketch.point(start).filter(|&at| owns(at))?;
+            let end = sketch.point(end).filter(|&at| owns(at))?;
+            let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: project(point_coordinates(payload, start)?)?,
+                end: project(point_coordinates(payload, end)?)?,
+            })
+            .ok()?;
+            return entity(geometry, Some([start, end]));
+        }
+        Some(CurveForm::Arc {
+            start,
+            end,
+            center,
+            counterclockwise,
+        }) => (start, end, center, counterclockwise),
+    };
+    let (Some(start_at), Some(end_at), Some(center_at)) =
+        (sketch.point(start), sketch.point(end), sketch.point(center))
     else {
-        return Some(ChordRecord::Conflict(ChordConflict::PointUnread));
+        return Some(Err(ChordConflict::PointUnread));
     };
-    let (Some(start_ir), Some(end_ir)) = (project(start_m), project(end_m)) else {
-        return Some(ChordRecord::Conflict(ChordConflict::PointUnread));
-    };
-    let joins_chord = |first: Point2, second: Point2| {
-        let near = |left: Point2, right: Point2| {
-            (left.u - right.u).hypot(left.v - right.v) <= LINEAR_RESOLUTION_MM
-        };
-        (near(first, chord[0]) && near(second, chord[1]))
-            || (near(first, chord[1]) && near(second, chord[0]))
-    };
-    if !joins_chord(start_ir, end_ir) {
-        return Some(ChordRecord::Conflict(ChordConflict::OtherEndpoints));
+    if ![start_at, end_at, center_at].into_iter().all(owns) {
+        return None;
     }
+    let (Some(start_m), Some(end_m), Some(center_m)) = (
+        point_coordinates(payload, start_at),
+        point_coordinates(payload, end_at),
+        point_coordinates(payload, center_at),
+    ) else {
+        return Some(Err(ChordConflict::PointUnread));
+    };
+    if start == end {
+        return match arc_geometry(center_m, start_m, end_m, ArcSweep::Full, project) {
+            Some(circle) => entity(circle, None),
+            None => Some(Err(ChordConflict::NoArc)),
+        };
+    }
+    let (Some(start_ir), Some(end_ir)) = (project(start_m), project(end_m)) else {
+        return Some(Err(ChordConflict::PointUnread));
+    };
     let sweep = if counterclockwise {
         ArcSweep::Counterclockwise
     } else {
         ArcSweep::Clockwise
     };
-    Some(
-        arc_geometry(center_m, start_m, end_m, sweep, project).map_or(
-            ChordRecord::Conflict(ChordConflict::NoArc),
-            ChordRecord::Arc,
-        ),
-    )
+    let Some(arc) = arc_geometry(center_m, start_m, end_m, sweep, project) else {
+        return Some(Err(ChordConflict::NoArc));
+    };
+    let SketchGeometryDefinition::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = *arc.definition()
+    else {
+        return Some(Err(ChordConflict::NoArc));
+    };
+    let (center, radius) = (center.get(), radius.get());
+    let at = |angle: f64| {
+        Point2::new(
+            center.u + radius * angle.cos(),
+            center.v + radius * angle.sin(),
+        )
+    };
+    let near = |left: Point2, right: Point2| {
+        (left.u - right.u).hypot(left.v - right.v) <= LINEAR_RESOLUTION_MM
+    };
+    let (first, last) = (at(start_angle.get()), at(end_angle.get()));
+    let endpoints = if near(first, start_ir) && near(last, end_ir) {
+        [start_at, end_at]
+    } else if near(first, end_ir) && near(last, start_ir) {
+        [end_at, start_at]
+    } else if chord == ChordTest::Waived {
+        return entity(arc, None);
+    } else {
+        return Some(Err(ChordConflict::MissesChord));
+    };
+    entity(arc, Some(endpoints))
 }
 
 /// The conflict of the listed curve record at `offset` with a line that a
-/// reading other than [`chord_record`] gave its marker: [`ChordConflict::Unchecked`]
+/// reading other than [`listed_entity`] gave its marker: [`ChordConflict::Unchecked`]
 /// for an arc record and the form conflict for a record whose form
 /// [`curve_form`] does not read. `None` when the offset starts no listed
 /// curve record or the record states a line.
@@ -662,7 +791,7 @@ pub(super) fn unchecked_record_conflict(
     let ListedRecord::Curve { .. } = lists.record(offset)? else {
         return None;
     };
-    match curve_form(payload, offset, ListedReading::Complete) {
+    match curve_form(payload, offset) {
         Some(CurveForm::Arc { .. }) => Some(ChordConflict::Unchecked),
         Some(CurveForm::Line { .. }) => None,
         None => unread_form_conflict(payload, offset),
@@ -687,75 +816,6 @@ fn unread_form_conflict(payload: &[u8], offset: usize) -> Option<ChordConflict> 
     } else {
         ChordConflict::Ellipse
     })
-}
-
-/// Whether the record at `offset` is a current-layout line with an
-/// identifier trailer, which [`ListedReading::Roster`] leaves to the marker
-/// readings of `sldprt.md` §2: whether its indices are point-record
-/// positions is open item EV-29.
-pub(super) fn identifier_trailer_line_record(payload: &[u8], offset: usize) -> bool {
-    curve_fields(payload, offset)
-        .is_some_and(|fields| Some(fields) == offset.checked_add(CURRENT_FIELDS))
-        && matches!(
-            curve_form(payload, offset, ListedReading::Complete),
-            Some(CurveForm::Line { .. })
-        )
-        && identifier_trailer_line(payload, offset) == Some(true)
-}
-
-/// The geometry of the listed record at `offset`, from the record and the
-/// point records of its own sketch: a point record's coordinates, a line
-/// between two point records, a full circle about a point record through
-/// another, or the arc about a point record from one to another in the
-/// record's sense.
-/// `project` maps a coordinate pair in metres to sketch coordinates. `None`
-/// when the offset starts no listed record, a referenced point record writes
-/// no coordinates, or `reading` does not admit the record.
-pub(super) fn listed_record_geometry(
-    payload: &[u8],
-    lists: &SketchRecordLists,
-    offset: usize,
-    project: &impl Fn([f64; 2]) -> Option<Point2>,
-    reading: ListedReading,
-) -> Option<SketchGeometry> {
-    let point =
-        |sketch: &SketchRecordList, index: usize| point_coordinates(payload, sketch.point(index)?);
-    match lists.record(offset)? {
-        ListedRecord::Point => {
-            let position = project(point_coordinates(payload, offset)?)?;
-            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).ok()
-        }
-        ListedRecord::Curve { later: true, .. } if reading == ListedReading::Roster => None,
-        ListedRecord::Curve { sketch, .. } => match curve_form(payload, offset, reading)? {
-            CurveForm::Line { start, end } => {
-                let start = project(point(sketch, start)?)?;
-                let end = project(point(sketch, end)?)?;
-                (start != end)
-                    .then(|| {
-                        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end })
-                    })?
-                    .ok()
-            }
-            CurveForm::Arc {
-                start,
-                end,
-                center,
-                counterclockwise,
-            } => {
-                let center_m = point(sketch, center)?;
-                let start_m = point(sketch, start)?;
-                let end_m = point(sketch, end)?;
-                let sweep = if start == end {
-                    ArcSweep::Full
-                } else if counterclockwise {
-                    ArcSweep::Counterclockwise
-                } else {
-                    ArcSweep::Clockwise
-                };
-                arc_geometry(center_m, start_m, end_m, sweep, project)
-            }
-        },
-    }
 }
 
 /// How an arc record runs from its start point to its end point.

@@ -7,12 +7,15 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{
+    Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2,
+};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
@@ -3454,7 +3457,7 @@ impl<'a> DecodeContext<'a> {
                             None,
                             extrusion.direction,
                             None,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                         )
                         .map_err(|error| CandidateError::Admission(error.to_string())).map(|admitted_payload| ProceduralSurface::new(
                                 procedure_id.clone(),
@@ -5415,7 +5418,7 @@ fn stage_curve_tree_indexed(
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
-                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
                     parameter,
                     component: stage_curve_tree_indexed(
                         procedural_admission,
@@ -5432,7 +5435,7 @@ fn stage_curve_tree_indexed(
                     record: Some(unknown.clone()),
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
                         parameters, components, None,
                     )
                     .map_err(crate::curves::GeometryError::unpositioned)?,
@@ -5997,7 +6000,7 @@ fn commit_curve_tree_indexed(
                 let parameter = parameter.get();
                 parameters.push(parameter);
                 let child_path = format!("{}.component-{index}", source.path);
-                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
                     parameter,
                     component: commit_curve_tree_indexed(
                         ctx,
@@ -6020,7 +6023,7 @@ fn commit_curve_tree_indexed(
                     record: source.record,
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
                         parameters, components, None,
                     )
                     .map_err(str::to_owned)?,

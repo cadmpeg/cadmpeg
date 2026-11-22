@@ -26,6 +26,7 @@ fn every_encoder_exports_a_document_with_history_bodies_as_one_without() {
     let mut plain = nested.clone();
     plain.model.history_bodies.clear();
     let mut written = Vec::new();
+    let mut deterministic = 0;
     for format in Format::all() {
         // CADIR serializes the whole document, history bodies included.
         if build_encoder(format).id().as_str() == "cadir" {
@@ -34,6 +35,9 @@ fn every_encoder_exports_a_document_with_history_bodies_as_one_without() {
         let baseline = export(format, &plain);
         let again = export(format, &plain);
         let with = export(format, &nested);
+        if baseline.is_ok() && baseline == again {
+            deterministic += 1;
+        }
         match (&baseline, &again, &with) {
             (Ok(base), Ok(repeat), Ok(found)) => {
                 // A writer that stamps its output varies between two runs of
@@ -47,10 +51,25 @@ fn every_encoder_exports_a_document_with_history_bodies_as_one_without() {
             _ => assert_eq!(baseline, with, "{format:?}"),
         }
     }
-    assert!(
-        written.len() >= 3,
-        "too few deterministic writers compared: {written:?}"
+    assert_eq!(
+        written.len(),
+        deterministic,
+        "all deterministic writers must be compared"
     );
+    let expected = [
+        #[cfg(feature = "step")]
+        Format::Step,
+        #[cfg(feature = "f3d")]
+        Format::F3d,
+        #[cfg(feature = "usd")]
+        Format::Usd,
+    ];
+    for format in expected {
+        assert!(
+            written.contains(&format),
+            "deterministic writer {format:?} was not compared: {written:?}"
+        );
+    }
 }
 
 #[test]

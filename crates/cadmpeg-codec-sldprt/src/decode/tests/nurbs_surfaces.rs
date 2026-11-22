@@ -149,9 +149,8 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
 
 #[test]
 fn faces_decode_nested_offset_surface_with_hidden_support() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let mut body = triangle_body();
     let bridge = body
@@ -239,7 +238,7 @@ fn blend_cache(body: &[u8]) -> DecodedBlend {
     });
     let fit_tolerance = result.ir().geometry.procedural_surfaces[0]
         .cache_fit_tolerance()
-        .map(cadmpeg_ir::geometry::FitTolerance::get);
+        .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
     assert_eq!(cached, fit_tolerance.is_some());
     let (losses, mut approximate): (Vec<_>, Vec<_>) = result
         .report()
@@ -328,9 +327,8 @@ fn a_blend_cache_past_a_quarter_of_the_radius_from_a_vertex_is_refused() {
 
 #[test]
 fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
-    use cadmpeg_ir::geometry::{
-        ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let result = SldprtCodec
         .decode(

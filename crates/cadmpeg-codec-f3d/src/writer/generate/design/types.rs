@@ -361,12 +361,7 @@ pub(super) const SKETCH_ANCESTORS: [TypeRow; 9] = [
         9,
         "Geometry",
     ),
-    row(
-        "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
-        "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
-        1,
-        "Fusion",
-    ),
+    PROFILE_GROUP,
     row(
         "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
         "E8BDB9D4-2E39-405C-B05E-E2206AD3F125",
@@ -403,4 +398,184 @@ pub(super) const SKETCH_ANCESTORS: [TypeRow; 9] = [
         1,
         "EntityTracking",
     ),
+];
+
+/// A construction-operand group: the base type of a sketch placement and
+/// the profile group of an `Extrude`.
+pub(super) const PROFILE_GROUP: TypeRow = row(
+    "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
+    "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
+    1,
+    "Fusion",
+);
+
+const SELECTION_BASE_GUID: &str = "FA85BB02-9D57-4E5E-A3A1-3D150C7ED082";
+const TRACKING_ENTRY_GUID: &str = "5C069ACB-169F-4555-9792-815B4671DDA0";
+const SCOPE_BASE_GUID: &str = "3FED63D9-CDC5-4334-A5C5-6C10271320D5";
+const SETTINGS_BASE_GUID: &str = "60F291CB-499B-4AB1-B0E5-340368671724";
+const OWNER_BASE_GUID: &str = "B24D5130-8751-4272-8143-D230D8757873";
+const ENTITY_TRACKING_GUID: &str = "70F5E801-1E8E-436E-8A09-36487F8A2859";
+
+/// The `Extrude` scope (f3d.md §3.1, "Records of a sketch-driven Extrude").
+pub(super) const EXTRUDE_SCOPE: TypeRow = row(
+    "DD405BC2-D673-44F0-8833-5CB2A1C186C7",
+    SCOPE_BASE_GUID,
+    8,
+    "Fusion",
+);
+/// The start record of an `Extrude`.
+pub(super) const START_RECORD: TypeRow = row(
+    "0897AF07-EF1B-42E5-BDD9-1C746A085CBC",
+    SETTINGS_BASE_GUID,
+    0,
+    "Fusion",
+);
+/// The compact profile-loop selection.
+pub(super) const PROFILE_SELECTION: TypeRow = row(
+    "4BD53E5A-0B3E-45E5-AE8B-02044306485A",
+    "6144EA59-3ACA-4172-9F14-A6531E94D69B",
+    0,
+    "Fusion",
+);
+/// The region identity record `N + 3` of a profile selection.
+pub(super) const PROFILE_REGIONS: TypeRow = row(
+    "0D57BD2F-D09B-43FC-AD57-1E89A118C453",
+    ENTITY_TRACKING_GUID,
+    1,
+    "Fusion",
+);
+/// A persistent selection identity.
+pub(super) const SELECTION_IDENTITY: TypeRow = row(
+    "C46D3EEB-40E1-43FA-83DC-9CB204335417",
+    SELECTION_BASE_GUID,
+    1,
+    "EntityTracking",
+);
+/// A parameter owner.
+pub(super) const PARAMETER_OWNER: TypeRow = row(
+    "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+    OWNER_BASE_GUID,
+    0,
+    "Fusion",
+);
+/// A side-face tracking entry.
+pub(super) const SIDE_ENTRY: TypeRow = row(
+    "335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A",
+    TRACKING_ENTRY_GUID,
+    0,
+    "EntityTracking",
+);
+/// The tracked sketch-curve identities of a side-face entry.
+pub(super) const CURVE_IDENTITIES: TypeRow = row(
+    "2DEE34BE-FA70-4D54-979C-164D86FDA786",
+    ENTITY_TRACKING_GUID,
+    2,
+    "EntityTracking",
+);
+/// The body tracking entry of an `Extrude`.
+pub(super) const BODY_ENTRY: TypeRow = row(
+    "ABA79BE7-D8D2-4C17-B59B-C2035E111F77",
+    TRACKING_ENTRY_GUID,
+    4,
+    "Fusion",
+);
+
+/// The base type of a parameter owner.
+const OWNER_BASE: TypeRow = row(
+    OWNER_BASE_GUID,
+    "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
+    4,
+    "Fusion",
+);
+
+const DIMENSION_FRAME_BASE_GUID: &str = "0C3F3829-F0DB-4379-9479-CFEF71087971";
+
+/// The type of a dimension frame's paired header (f3d.md §3.1, "Sketch
+/// dimensions").
+pub(super) const DIMENSION_FRAME_PAIRED: TypeRow = row(
+    "855F0A64-6286-4FFC-B918-BC394F600107",
+    PROPERTY_OWNER_GUID,
+    1,
+    "Dimension",
+);
+/// The linear dimension frame.
+pub(super) const LINEAR_FRAME: TypeRow = row(
+    "8C780195-72C0-4a56-A911-E43AB14357F2",
+    DIMENSION_FRAME_BASE_GUID,
+    3,
+    "Fusion",
+);
+/// The angular dimension frame.
+pub(super) const ANGULAR_FRAME: TypeRow = row(
+    "6EEAFDE5-59C4-424D-8EBE-77CDBC562017",
+    DIMENSION_FRAME_BASE_GUID,
+    1,
+    "Fusion",
+);
+/// The diameter dimension frame.
+pub(super) const DIAMETER_FRAME: TypeRow = row(
+    "664AD49F-207F-4CD5-8555-DD269E9F09EA",
+    DIMENSION_FRAME_BASE_GUID,
+    0,
+    "Fusion",
+);
+/// The radial dimension frame.
+pub(super) const RADIAL_FRAME: TypeRow = row(
+    "8EDAC24D-35D4-4591-B8E7-B3EA081C9DF0",
+    DIMENSION_FRAME_BASE_GUID,
+    0,
+    "Fusion",
+);
+
+/// The base types of the sketch dimension records that the other ancestor
+/// lists leave out, each listed with an empty entity-ID run.
+pub(super) const DIMENSION_ANCESTORS: [TypeRow; 3] = [
+    row(
+        DIMENSION_FRAME_BASE_GUID,
+        "855F0A64-6286-4FFC-B918-BC394F600107",
+        6,
+        "MSketch",
+    ),
+    DIMENSION_FRAME_PAIRED,
+    OWNER_BASE,
+];
+
+/// The `WorkPlane` scope (f3d.md §3.1, "Records of a construction-plane
+/// item").
+pub(super) const WORKPLANE_SCOPE: TypeRow = row(
+    "D869265F-F339-4751-A066-91D30F81FF08",
+    WORKPLANE_SCOPE_BASE_GUID,
+    3,
+    "Fusion",
+);
+const WORKPLANE_SCOPE_BASE_GUID: &str = "3CE194E6-A591-44AB-9AF1-C695B3DCF486";
+
+/// The base types of the `WorkPlane` records that the other ancestor lists
+/// leave out, each listed with an empty entity-ID run.
+pub(super) const WORKPLANE_ANCESTORS: [TypeRow; 2] = [
+    row(
+        WORKPLANE_SCOPE_BASE_GUID,
+        "A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB",
+        0,
+        "Fusion",
+    ),
+    OWNER_BASE,
+];
+
+/// The base types of the `Extrude` records that the other ancestor lists
+/// leave out, each listed with an empty entity-ID run.
+pub(super) const EXTRUDE_ANCESTORS: [TypeRow; 3] = [
+    row(
+        SCOPE_BASE_GUID,
+        "2EDC2536-D95B-4469-8ACA-DC07124D9C43",
+        1,
+        "Fusion",
+    ),
+    row(
+        SETTINGS_BASE_GUID,
+        "E8BDB9D4-2E39-405C-B05E-E2206AD3F125",
+        0,
+        "Fusion",
+    ),
+    OWNER_BASE,
 ];
