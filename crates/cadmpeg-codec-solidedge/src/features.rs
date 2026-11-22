@@ -413,14 +413,6 @@ pub(crate) fn project<'a>(
         return Ok(());
     }
     losses.extend(notes);
-    losses.push(SolidEdgeLossCode::FeatureOperandsPending.note(
-        "the operands of the features are not decoded; each feature states its operation family \
-         only",
-    ));
-    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
-        "the rollback position and suppressed state of the features are not read; the timeline \
-         states no rollback position",
-    ));
     let id = container_id();
     let container = Container::Ordered {
         id: id.clone(),
@@ -444,7 +436,30 @@ pub(crate) fn project<'a>(
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
-    crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)
+    crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)?;
+    crate::extents::project(&cluster, &types, &listed, ir, losses);
+    let pending = ir
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition.operation,
+                FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }
+            )
+        })
+        .count();
+    if pending > 0 {
+        losses.push(SolidEdgeLossCode::FeatureOperandsPending.note(format!(
+            "the operands of {pending} feature(s) are not decoded; each states its operation \
+             family only"
+        )));
+    }
+    losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
+        "the rollback position and suppressed state of the features are not read; the timeline \
+         states no rollback position",
+    ));
+    Ok(())
 }
 
 #[cfg(test)]

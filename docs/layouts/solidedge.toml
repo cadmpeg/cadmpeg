@@ -560,3 +560,78 @@ offset = 43
 type = "f64"
 source = "spec"
 anchor = "offsets 35 and 43 are the start and end angles, measured from the local x"
+
+[[record]]
+name = "double_value"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
+section = "6.1"
+anchor = "A `Double Value Object` stores its value"
+size = 16
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "§6.1 states no field before the value."
+
+[[record.field]]
+name = "value"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "as the `f64` at object offset 8."
+
+[[record]]
+name = "dimension"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
+section = "6.1"
+anchor = "A `CLSID_JDim` stores its value as the"
+size = 210
+
+[[record.gap]]
+offset = 0
+size = 202
+note = "§6.1 states no field before the value."
+
+[[record.field]]
+name = "value"
+offset = 202
+type = "f64"
+source = "spec"
+anchor = "`f64` at object offset 202."
+
+[[record]]
+name = "ref_axis"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
+section = "6.4"
+anchor = "The axis of a revolved feature is a `CLSID_JMRefAxis` object."
+size = 61
+
+[[record.gap]]
+offset = 0
+size = 12
+note = "§6.4 states no field before the axis marker."
+
+[[record.field]]
+name = "marker"
+offset = 12
+type = "u8"
+value = 3
+source = "spec"
+anchor = "object offset 12 is `3`."
+
+[[record.field]]
+name = "point"
+offset = 13
+type = "f64[3]"
+source = "spec"
+anchor = "The three `f64` at offset 13 are a point on the"
+
+[[record.field]]
+name = "direction"
+offset = 37
+type = "f64[3]"
+source = "spec"
+anchor = "axis in model space, and the three `f64` at offset 37 are the unit axis"
