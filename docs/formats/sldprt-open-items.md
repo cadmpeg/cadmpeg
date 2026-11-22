@@ -445,15 +445,15 @@ Each omitted owner-qualified construction circle can have its own current or ext
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
-### DI-16. Extrusion travel sense relative to the profile frame
+### DI-16. Travel sense of cuts and two-direction extrusions
 
-**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
+**Question.** Which native fields set the travel sense of a cut and of a two-direction extrusion relative to the profile frame?
 
-**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
+**Known.** The end-spec reversal flag at anchor +12 sets the first direction of a one-direction extrusion that adds material (`sldprt.md` §2). The flag does not predict the side of a cut. Of the one-sided cuts whose whole solid lies on one side of the sketch plane, the solid lies along the decoded normal for 62% of flag-`1` cuts and for 58% of flag-`0` cuts. Two-direction blind extrusions store flag `1` in 123 of 140 (38 of 54 joins, 85 of 86 cuts), and one-sided joins store it in 225 of 1,249. Of the two-direction joins with unequal depths, the first depth lies against the normal in 2 of 2 whose solid spans exactly the two depths. The Boolean word at anchor +8 and the nested face senses have no known meaning for the travel sense. A nested planar profile has a surface normal and a face sense.
 
-**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
+**Need.** A cut or a two-direction extrusion of the wrong sense writes a different shape. Final-cap witnesses of cuts and of two-direction extrusions with unequal depths must establish the field that sets each sense and its composition with the profile frame (SF-03).
 
-**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
+**Conflict.** For cuts, the reversal flag, the Boolean word at anchor +8 and the nested face senses each occur with both travel senses in final-cap witnesses.
 
 **Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
 
@@ -1171,6 +1171,16 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
 
 **Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+
+### SF-03. Sign of the decoded sketch normal off the principal planes
+
+**Question.** Which fields set the sign of a sketch normal, on a datum plane, on a plane off the model origin, and on an axis-aligned plane through the origin?
+
+**Known.** The end-spec reversal flag gives the travel of a one-direction extrusion that adds material relative to the decoded sketch normal (`sldprt.md` §2). Of the one-sided joins whose solid spans exactly their depth, the solid agrees with that rule in 428 of 433 where the sketch plane contains the model origin, and in 13 of 20 where it does not. Of the 12 joins that disagree, 3 have a datum plane on the sketch plane that faces opposite the decoded normal, 7 have a sketch plane off the origin, and 2 have neither. Where the stored flag is `1`, the solid lies against the decoded normal in 89 of 135 one-sided joins; where it is `0`, the solid lies along it in 493 of 532. Of the 45 flag-`1` one-sided joins whose whole solid lies along the decoded normal, 24 have a sketch plane off the model origin and 21 an axis-aligned sketch plane through it. Of those 21, 4 have a datum plane on the sketch plane that faces opposite the decoded normal, and 15 have no datum plane on the sketch plane.
+
+**Need.** A decoded normal of the wrong sign reverses the travel of each extrusion on that sketch. Sketches on datum planes of both orientations and sketches off the origin must establish the field that sets the sign.
+
+**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). Where the solid neither holds nor contradicts a decoded reversal, the decoder keeps the reversal and names it (`feature.extrude-reversal-assumed`). The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
 
 ### DI-69. Extrusion Boolean carriers
 
