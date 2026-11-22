@@ -82,11 +82,17 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }
 
-/// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
-    scope: Option<&records::feature::scope::DesignParameterScope>,
+    scope: Option<&DesignParameterScope>,
     operand: &records::topology::body_recipe::DesignBodyRecipeOperand,
 ) -> bool {
+    if operand.has_legacy_cut_frame() {
+        return operand.owner.group().is_some_and(|(group, _)| {
+            scope.and_then(|scope| {
+                scope.legacy_class_330_body_recipe_close(group, operand.record_index())
+            }) == Some(operand.next_record_index())
+        });
+    }
     !operand.references().is_empty()
         || matches!(
             operand.owner,
@@ -1527,7 +1533,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     }
 
     let mut scope_positions = HashMap::<&str, u64>::new();
-    match crate::design::feature_project::authored_scope_ordinals_per_stream(
+    match crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
     ) {
@@ -1559,7 +1565,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     if !ctx.holds_design_intent() {
         return Ok(());
     }
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+    let scope_history = crate::design::feature_project::scope_order::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -1574,7 +1580,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         match scope_history.predecessor(scope, |candidate| {
             scope_positions.contains_key(candidate.id.as_str())
         }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Scope(
+                predecessor,
+            )) => {
                 if scope_positions
                     .get(predecessor.id.as_str())
                     .is_some_and(|predecessor| *predecessor >= position)
@@ -1595,8 +1603,8 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                 Some(scope.id.clone()),
             ),
             Ok(
-                crate::design::feature_project::ScopeHistoryPredecessor::None
-                | crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous,
+                crate::design::feature_project::scope_order::ScopeHistoryPredecessor::None
+                | crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Ambiguous,
             ) => {}
         }
     }
@@ -1889,61 +1897,6 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
-fn placement_ordered_references_hold(
-    scope: &records::feature::scope::DesignParameterScope,
-    alignment: &records::feature::assembly::DesignAssemblyAlignment,
-    owners: &[(u32, u32)],
-) -> bool {
-    use crate::layout::assembly_as_built_scope_owner_run as layout;
-    let Some(count) = design::assembly::as_built_additional_owner_count(scope) else {
-        return false;
-    };
-    let Some(run) = &alignment.additional_owner_run else {
-        return false;
-    };
-    let table = scope.reference_members();
-    usize::try_from(run.count.value) == Ok(count)
-        && run.count.offset == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT)
-        && run.references.len() == count
-        && owners.len() == 4 + count
-        && owners
-            .iter()
-            .enumerate()
-            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
-        && alignment.owners.len() == 4
-        && alignment
-            .owners
-            .iter()
-            .zip(owners)
-            .all(|(reference, (_, index))| reference.value == *index)
-        && (design::assembly::compact_placement_as_built_scope(scope)
-            || (table.len() == 9 + count
-                && (count != 0
-                    || table.values_in(5..9).is_some_and(|values| {
-                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                    }))))
-        && run
-            .references
-            .iter()
-            .zip(owners.iter().skip(4))
-            .enumerate()
-            .all(|(ordinal, (reference, (_, index)))| {
-                reference.value == *index
-                    && reference.offset
-                        == scope.byte_offset()
-                            + u64_from_index(layout::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal)
-                    && table.values().any(|value| value == index)
-            })
-        && (0..table.len())
-            .filter(|&start| {
-                table.values_in(start..start + 4).is_some_and(|values| {
-                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
-                })
-            })
-            .count()
-            == 1
-}
-
 /// Validate feature parameter scopes and their paired feature-operation frames.
 /// The links resolve into design-intent records, so a document without them
 /// has nothing to check.
@@ -2094,9 +2047,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 ]) && scope.base_flange_profile().is_some_and(|profile| {
                     profile.record_index == operation.profile_record_index
                         && profile.scope_reference_ordinal == 1
-                }) && scope
-                    .byte_offset()
-                    .checked_add(123)
+                }) && u64::try_from(crate::layout::base_flange_scope::THICKNESS_COPY)
+                    .ok()
+                    .and_then(|offset| scope.byte_offset().checked_add(offset))
                     .is_some_and(|expected_offset| operation.thickness_offset == expected_offset)
                     && operation.thickness_offset < scope.paired_byte_offset()
             }
@@ -2899,7 +2852,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .map(|owner| (owner.local_ordinal(), owner.record_index()))
                         .collect::<Vec<_>>();
                     owners.sort_unstable();
-                    placement_ordered_references_hold(scope, alignment, &owners)
+                    design::assembly::placement_ordered_references_hold(scope, alignment, &owners)
                 } else {
                     scope
                         .reference_members()
@@ -3432,6 +3385,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 == 1
         };
         let valid = match scope.extrude_prologue() {
+            Some(_) if scope.is_legacy_class_330_blind_cut() => true,
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
             }
@@ -5591,7 +5545,11 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             records::feature::scope::DesignScopePayload::Loft(Some(construction)) => {
                 construction.section_records.is_empty()
-                    || design::feature_project::loft_groups(construction, &groups).is_ok()
+                    || crate::design::feature_project::sweep_loft::loft_groups(
+                        construction,
+                        &groups,
+                    )
+                    .is_ok()
             }
             records::feature::scope::DesignScopePayload::Sweep(Some(
                 records::feature::scope::DesignSweepScope {
@@ -7898,6 +7856,11 @@ fn validate_face_operands<'a>(
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
+                            Some(design::DesignFeatureFamily::SheetMetalBend) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X10
+                                })
+                            }
                             Some(design::DesignFeatureFamily::SurfaceTrim) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X9
@@ -8632,13 +8595,17 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
-        let owner_matches = matches!(
-            (
-                sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
-                relation.owner_entity_id.as_ref().map(cadmpeg_core::text::NonBlankString::as_str),
-            ),
-            (Some(expected), Some(actual)) if *expected == actual
-        );
+        let owner_matches = match (
+            sketch_owner_ids.get(&(native_stream, relation.owner_reference)),
+            relation
+                .owner_entity_id
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str),
+        ) {
+            (Some(expected), Some(actual)) => *expected == actual,
+            (None, None) => true,
+            _ => false,
+        };
         if !owner_matches {
             push_constant_finding(
                 findings,
@@ -8762,22 +8729,24 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
-    let typed_sketch_records = native
+    let owned_sketch_records = native
         .sketch_points
         .iter()
-        .map(|point| (design_stream(&point.id), point.record_index))
+        .map(|point| (&point.id, point.record_index, point.owner_reference))
         .chain(
             native
                 .sketch_curve_identities
                 .iter()
-                .map(|curve| (design_stream(&curve.id), curve.record_index)),
+                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
         )
         .chain(
             native
                 .sketch_surfaces
                 .iter()
-                .map(|surface| (design_stream(&surface.id), surface.record_index)),
+                .map(|surface| (&surface.id, surface.record_index, surface.owner_reference)),
         )
+        .filter(|(_, _, owner_reference)| owner_reference.is_some())
+        .map(|(id, record_index, _)| (design_stream(id), record_index))
         .collect::<std::collections::HashSet<_>>();
     let sketch_operands = native
         .sketch_points
@@ -8866,8 +8835,11 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 "Fusion sketch relation typed operands disagree with its indexed references",
             );
         }
+        if !sketch_owner_ids.contains_key(&(native_stream, relation.owner_reference)) {
+            continue;
+        }
         for member in relation.all_member_indices() {
-            if !typed_sketch_records.contains(&(native_stream, member)) {
+            if !owned_sketch_records.contains(&(native_stream, member)) {
                 continue;
             }
             if relation_owners
@@ -8892,7 +8864,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             continue;
         };
         for member in entity.member_values() {
-            if !typed_sketch_records.contains(&(native_stream, *member)) {
+            if !owned_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }
             if relation_owners

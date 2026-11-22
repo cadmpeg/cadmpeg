@@ -52,7 +52,7 @@ use crate::records::mesh::{
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -311,7 +311,6 @@ impl MeshBody {
             fusion_uuid: _,
             mesh_uuid: _,
             split_streams: _,
-            history_streams: _,
             face_group_metadata: _,
             vertices,
             triangles,
@@ -921,7 +920,12 @@ fn parse_mesh_collection_record(
         ) == Some(&[0; 9]))
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
-        (first_count == if flagged { 0 } else { body_records.len() }).then_some(())?;
+        (if flagged {
+            first_count == 0
+        } else {
+            first_count >= body_records.len()
+        })
+        .then_some(())?;
         let mut flagged_entries = Vec::new();
         let owner_at = if flagged
             && !body_records.is_empty()
@@ -961,22 +965,30 @@ fn parse_mesh_collection_record(
         if body_records.is_empty() {
             return Some(None);
         }
+        let collection = DesignMeshCollection::new(
+            identity,
+            base_record,
+            u32::try_from(body_records.len()).ok()?,
+            if flagged {
+                Some(DesignMeshFlaggedCollection {
+                    word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
+                    word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
+                    entries: flagged_entries,
+                })
+            } else {
+                None
+            },
+        )
+        .ok()?;
+        let collection = if flagged {
+            collection
+        } else {
+            collection
+                .with_received_count(u32::try_from(first_count).ok()?)
+                .ok()?
+        };
         Some(Some(MeshCollectionRecord {
-            collection: DesignMeshCollection::new(
-                identity,
-                base_record,
-                u32::try_from(body_records.len()).ok()?,
-                if flagged {
-                    Some(DesignMeshFlaggedCollection {
-                        word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
-                        word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
-                        entries: flagged_entries,
-                    })
-                } else {
-                    None
-                },
-            )
-            .ok()?,
+            collection,
             texture_table_record_index,
             body_records,
             owner_record_index,
@@ -2137,7 +2149,6 @@ where
                 scope_body_ordinal: scope_ordinals.get(body_record_index).copied(),
                 words: body.words,
                 split_streams: Vec::new(),
-                history_streams: Vec::new(),
                 face_group_metadata: None,
                 placement: body.placement,
                 entry: entry_name.entry,
@@ -2227,7 +2238,6 @@ where
                     scope_body_ordinal: None,
                     words: body.words,
                     split_streams: Vec::new(),
-                    history_streams: Vec::new(),
                     face_group_metadata: None,
                     placement: body.placement,
                     entry: entry.entry,
@@ -2429,19 +2439,6 @@ pub(crate) fn mesh_guid_byte_losses(
         })
 }
 
-pub(crate) fn mesh_split_stream_losses(
-    features: &[DesignMeshFeature],
-) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
-    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.split_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshSplitStreamAssumed.note(format!(
-                "mesh body {} stream {} reads its component segments in stored order; the native record retains the descriptor",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
-    })
-}
-
 pub(crate) fn mesh_component_flag_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
@@ -2450,24 +2447,11 @@ pub(crate) fn mesh_component_flag_losses(
             .iter()
             .filter(|stream| stream.component_flag)
             .map(|stream| {
-                crate::loss::F3dLossCode::MeshComponentFlagAssumed.note(format!(
-                    "mesh body {} stream {} reads its components flagged Z: true as unflagged f32 components; the native record retains the flag",
+                crate::loss::F3dLossCode::MeshComponentFlagUninterpreted.note(format!(
+                    "mesh body {} stream {} reads the payload of a component flagged Z: true as unflagged f32 components; the native record retains the flag",
                     body.placement.record().record_index(), stream.name
                 ))
             })
-    })
-}
-
-pub(crate) fn mesh_history_window_losses(
-    features: &[DesignMeshFeature],
-) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
-    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.history_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshHistoryWindowAssumed.note(format!(
-                "mesh body {} stream {} uses its declared output length as the LZMA history bound; the native record retains its encoding",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
     })
 }
 
@@ -2612,7 +2596,6 @@ pub(crate) fn decode_mesh_bodies(
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             body.container_mesh_uuid = Some(container.mesh_uuid.clone());
             body.split_streams.clone_from(&container.split_streams);
-            body.history_streams.clone_from(&container.history_streams);
             body.face_group_metadata
                 .clone_from(&container.face_group_metadata);
             let body = design_records[design_ordinal][feature_ordinal]
@@ -2703,7 +2686,7 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
 
     fn parse_mesh_design_records<F>(
@@ -4529,7 +4512,6 @@ mod tests {
         .unwrap();
         let container = || MeshContainer {
             split_streams: Vec::new(),
-            history_streams: Vec::new(),
             face_group_metadata: None,
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
             mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(

@@ -137,7 +137,8 @@ impl crate::SldprtCodec {
 
 struct EvaluatedFeatureState<'a> {
     feature: &'a cadmpeg_ir::features::Feature,
-    dependencies: &'a cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
+    dependencies:
+        &'a cadmpeg_ir::features::selections::DistinctMembers<cadmpeg_ir::features::FeatureId>,
     outputs: &'a [cadmpeg_ir::ids::BodyId],
     definition: &'a cadmpeg_ir::features::FeatureDefinition,
 }
@@ -387,7 +388,7 @@ fn decode_result(
 
 fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
     pattern: &cadmpeg_ir::features::patterns::PatternKind<C>,
-    incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
+    incomplete_path: &dyn Fn(&cadmpeg_ir::features::profiles::PathRef) -> bool,
 ) -> bool {
     use cadmpeg_ir::features::patterns::{PatternScaleCenter, PatternTransform};
 
@@ -410,22 +411,22 @@ fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
 }
 
 fn incomplete_binder_target(
-    target: &cadmpeg_ir::features::BinderTarget,
+    target: &cadmpeg_ir::features::binders::BinderTarget,
     feature_positions: &BTreeMap<&cadmpeg_ir::features::FeatureId, u64>,
     consumer_ordinal: u64,
     dependencies: &[cadmpeg_ir::features::FeatureId],
 ) -> bool {
     match target {
-        cadmpeg_ir::features::BinderTarget::Feature { feature } => {
+        cadmpeg_ir::features::binders::BinderTarget::Feature { feature } => {
             feature_positions
                 .get(feature)
                 .is_none_or(|ordinal| *ordinal >= consumer_ordinal)
                 || !dependencies.contains(feature)
         }
-        cadmpeg_ir::features::BinderTarget::External { document, object } => {
+        cadmpeg_ir::features::binders::BinderTarget::External { document, object } => {
             document.as_str().trim().is_empty() || object.as_str().trim().is_empty()
         }
-        cadmpeg_ir::features::BinderTarget::Native { .. } => true,
+        cadmpeg_ir::features::binders::BinderTarget::Native { .. } => true,
     }
 }
 
@@ -547,16 +548,17 @@ pub(crate) fn append_design_losses(
     ir: &CadIr,
     report: &mut DecodeBody,
 ) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::direct_edit::{SplitBodyTool, SplitFaceTool};
     use cadmpeg_ir::features::edge_treatments::{ChamferGroup, FullRoundSideSelection};
-    use cadmpeg_ir::features::{
-        AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
-        ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitBodyTool,
-        SplitFaceTool,
-    };
-    use cadmpeg_ir::features::{
-        ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
-    };
+    use cadmpeg_ir::features::extents::ExtrusionDirectionSource;
+    use cadmpeg_ir::features::extents::{AngularTermination, ExtrudeExtent, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BooleanOp};
+    use cadmpeg_ir::features::profiles::{LoftPointSection, LoftSection};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::revolve::RevolveExtent;
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FeatureSourceContent};
     use cadmpeg_ir::sketches::{SketchGeometryDefinition, SpatialSketchGeometryDefinition};
 
     let native = match ir.native.namespace("sldprt") {
@@ -961,7 +963,7 @@ pub(crate) fn append_design_losses(
             parameter.pmi.as_ref().is_some_and(|pmi| {
                 matches!(
                     pmi.subtype,
-                    cadmpeg_ir::features::PmiDimensionSubtype::Native(_)
+                    cadmpeg_ir::features::parameters::PmiDimensionSubtype::Native(_)
                 )
             })
         })
@@ -1294,13 +1296,14 @@ pub(crate) fn append_design_losses(
         PathRef::SketchCurves { .. } => false,
         PathRef::SpatialSketchCurves { .. } => false,
     };
-    let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
-        matches!(
-            selection,
-            cadmpeg_ir::features::VertexSelection::Unresolved
-                | cadmpeg_ir::features::VertexSelection::Native(_)
-        )
-    };
+    let incomplete_vertex_selection =
+        |selection: &cadmpeg_ir::features::selections::VertexSelection| {
+            matches!(
+                selection,
+                cadmpeg_ir::features::selections::VertexSelection::Unresolved
+                    | cadmpeg_ir::features::selections::VertexSelection::Native(_)
+            )
+        };
     let incomplete_linear_termination = |termination: &LinearTermination| match termination {
         LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, .. }
@@ -1345,7 +1348,7 @@ pub(crate) fn append_design_losses(
         }
     };
     let incomplete_chamfer_groups =
-        |groups: &cadmpeg_ir::features::NonEmptyMembers<ChamferGroup>| {
+        |groups: &cadmpeg_ir::features::selections::NonEmptyMembers<ChamferGroup>| {
             groups.is_empty()
                 || groups.iter().any(|group| {
                     incomplete_edge_selection(&group.edges) || group.spec.is_unresolved()
@@ -1366,7 +1369,7 @@ pub(crate) fn append_design_losses(
             matches!(
                 definition.operation(),
                 FeatureOperation::Extrude {
-                    direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                    direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
                     ..
                 }
             )
@@ -1392,7 +1395,7 @@ pub(crate) fn append_design_losses(
             matches!(
                 definition.operation(),
                 FeatureOperation::Extrude {
-                    start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                    start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
                     ..
                 }
             )
@@ -1448,7 +1451,7 @@ pub(crate) fn append_design_losses(
                                 .any(|candidate| candidate.id == *occurrence)
                         }) || matches!(
                             position.transform,
-                            cadmpeg_ir::features::CapturedPositionTransform::Native { .. }
+                            cadmpeg_ir::features::tree::CapturedPositionTransform::Native { .. }
                         )
                     })
                 }
@@ -1524,10 +1527,10 @@ pub(crate) fn append_design_losses(
                 } => {
                     matches!(
                         construction.placement,
-                        cadmpeg_ir::features::CoilPlacement::Native { .. }
+                        cadmpeg_ir::features::sweeps::CoilPlacement::Native { .. }
                     ) || match result {
-                        cadmpeg_ir::features::SolidFeatureResult::NewBody {} => false,
-                        cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. } => {
+                        cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {} => false,
+                        cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { targets, .. } => {
                             incomplete_body_selection(targets)
                         }
                     }
@@ -1547,11 +1550,11 @@ pub(crate) fn append_design_losses(
                 }
                 FeatureOperation::DatumOffsetPlane { reference, .. } => {
                     reference.as_ref().is_none_or(|reference| match reference {
-                        cadmpeg_ir::features::DatumPlaneReference::Feature { .. } => false,
-                        cadmpeg_ir::features::DatumPlaneReference::Face { face } => {
+                        cadmpeg_ir::features::datums::DatumPlaneReference::Feature { .. } => false,
+                        cadmpeg_ir::features::datums::DatumPlaneReference::Face { face } => {
                             incomplete_face_selection(face)
                         }
-                        cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. } => false,
+                        cadmpeg_ir::features::datums::DatumPlaneReference::ResolvedPlane { .. } => false,
                     })
                 }
                 FeatureOperation::ProjectedCurve {
@@ -1564,8 +1567,8 @@ pub(crate) fn append_design_losses(
                         || incomplete_face_selection(target_faces)
                         || matches!(
                             direction,
-                            cadmpeg_ir::features::CurveProjectionDirection::State(
-                                cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved
+                            cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::Unresolved
                             )
                         )
                         || bidirectional.is_none()
@@ -1590,20 +1593,20 @@ pub(crate) fn append_design_losses(
                     incomplete_profile(profile)
                         || matches!(
                             direction,
-                            cadmpeg_ir::features::ExtrudeDirection::Unresolved {}
+                            cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {}
                         )
                         || match start {
-                            cadmpeg_ir::features::ExtrudeStart::Unresolved {} => true,
-                            cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } => {
+                            cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {} => true,
+                            cadmpeg_ir::features::extents::ExtrudeStart::FromFace { face, .. } => {
                                 incomplete_face_selection(face)
                             }
-                            cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
-                            | cadmpeg_ir::features::ExtrudeStart::OffsetProfilePlane { .. }
-                            | cadmpeg_ir::features::ExtrudeStart::FromPlane { .. } => false,
+                            cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
+                            | cadmpeg_ir::features::extents::ExtrudeStart::OffsetProfilePlane { .. }
+                            | cadmpeg_ir::features::extents::ExtrudeStart::FromPlane { .. } => false,
                         }
                         || matches!(
                             direction,
-                            cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                            cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                                 source: Some(ExtrusionDirectionSource::Edge { reference }),
                                 ..
                             }
@@ -1613,8 +1616,8 @@ pub(crate) fn append_design_losses(
                         || *op == BooleanOp::Unresolved
                 }
                 FeatureOperation::Revolve { construction, op } => match construction {
-                    cadmpeg_ir::features::RevolveConstruction::Unresolved(_) => true,
-                    cadmpeg_ir::features::RevolveConstruction::Resolved {
+                    cadmpeg_ir::features::revolve::RevolveConstruction::Unresolved(_) => true,
+                    cadmpeg_ir::features::revolve::RevolveConstruction::Resolved {
                         profile, extent, ..
                     } => {
                         incomplete_planar_profile(profile)
@@ -1634,10 +1637,10 @@ pub(crate) fn append_design_losses(
                         || path.as_ref().is_none_or(incomplete_path)
                         || matches!(
                             orientation,
-                            Some(cadmpeg_ir::features::SweepOrientation::Auxiliary { path, .. })
+                            Some(cadmpeg_ir::features::sweeps::SweepOrientation::Auxiliary { path, .. })
                                 if incomplete_path(path)
                         )
-                        || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved {})
+                        || matches!(mode, cadmpeg_ir::features::sweeps::SweepMode::Unresolved {})
                 }
                 FeatureOperation::HelicalSweep { construction, op } => {
                     incomplete_planar_profile(&construction.profile) || *op == BooleanOp::Unresolved
@@ -1660,12 +1663,12 @@ pub(crate) fn append_design_losses(
                         })
                         || matches!(
                             construction,
-                            cadmpeg_ir::features::BinderConstruction::Shape { .. }
+                            cadmpeg_ir::features::binders::BinderConstruction::Shape { .. }
                                 if sources.len() != 1
                         )
                         || matches!(
                             construction,
-                            cadmpeg_ir::features::BinderConstruction::SubShape {
+                            cadmpeg_ir::features::binders::BinderConstruction::SubShape {
                                 context: Some(context),
                                 ..
                             } if incomplete_binder_target(
@@ -1708,7 +1711,7 @@ pub(crate) fn append_design_losses(
                         || construction.side.is_none()
                         || matches!(
                             construction.draft,
-                            cadmpeg_ir::features::RibDraft::Unresolved
+                            cadmpeg_ir::features::revolve::RibDraft::Unresolved
                         )
                         || *op == BooleanOp::Unresolved
                 }
@@ -1755,7 +1758,7 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::SheetMetalEdgeFlange(construction) => {
                     !construction.has_all_inputs()
                         || construction.edges.as_ref().is_none_or(incomplete_edge_selection)
-                        || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
+                        || matches!(construction.width, Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
                 }
                 FeatureOperation::SheetMetalHem { .. } => true,
                 FeatureOperation::Fillet { groups } => {
@@ -1848,7 +1851,7 @@ pub(crate) fn append_design_losses(
                     faces,
                     thickness,
                     side, result, .. } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none()
-                    || matches!(result, Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }) if incomplete_body_selection(targets)),
+                    || matches!(result, Some(cadmpeg_ir::features::operation_settings::SolidFeatureResult::Boolean { targets, .. }) if incomplete_body_selection(targets)),
                 FeatureOperation::OffsetSurface { faces, distance } => {
                     incomplete_face_selection(faces) || distance.is_none()
                 }
@@ -1884,7 +1887,7 @@ pub(crate) fn append_design_losses(
                 } => {
                     incomplete_face_selection(faces)
                         || distance.is_none()
-                        || *method == cadmpeg_ir::features::SurfaceExtension::Unresolved
+                        || *method == cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved
                 }
                 FeatureOperation::FilledSurface {
                     boundary,
@@ -1897,7 +1900,7 @@ pub(crate) fn append_design_losses(
                         SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
                         SurfaceBoundary::Path(path) => incomplete_path(path),
                     }) || if continuity.uniform_value()
-                        == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
+                        == Some(cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
@@ -1910,7 +1913,7 @@ pub(crate) fn append_design_losses(
                 } => {
                     incomplete_face_selection(faces)
                         || incomplete_path(tool)
-                        || *keep == cadmpeg_ir::features::TrimRegion::Unresolved
+                        || *keep == cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved
                 }
                 FeatureOperation::RuledSurface {
                     edges,
@@ -1921,7 +1924,7 @@ pub(crate) fn append_design_losses(
                     incomplete_edge_selection(edges)
                         || if matches!(
                             mode,
-                            cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }
+                            cadmpeg_ir::features::surface_inputs::RuledSurfaceMode::Direction { .. }
                         ) {
                             incomplete_optional_face_selection(support_faces)
                         } else {
@@ -1937,10 +1940,10 @@ pub(crate) fn append_design_losses(
                 } => {
                     incomplete_face_selection(faces)
                         || match anchor {
-                            cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, .. } => {
+                            cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane { plane, .. } => {
                                 incomplete_face_selection(plane)
                             }
-                            cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                            cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine { tool, .. } => {
                                 incomplete_face_selection(tool)
                             }
                         }
@@ -1948,7 +1951,7 @@ pub(crate) fn append_design_losses(
                         || angle.is_none()
                         || (matches!(
                             anchor,
-                            cadmpeg_ir::features::DraftAnchor::NeutralPlane { .. }
+                            cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane { .. }
                         ) && outward.is_none())
                 }
                 FeatureOperation::Combine {
@@ -1962,7 +1965,7 @@ pub(crate) fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || matches!(
                             destination,
-                            cadmpeg_ir::features::CombineDestination::NewComponent
+                            cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent
                         )
                 }
                 FeatureOperation::BoundaryFill { tools, cells, plane_tools, .. } => {
@@ -1983,11 +1986,11 @@ pub(crate) fn append_design_losses(
                     let tools = operands.tools();
                     incomplete_body_selection(targets)
                         || incomplete_body_selection(tools)
-                        || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                        || *keep == cadmpeg_ir::features::operation_settings::BodyTrimSide::Unresolved
                 }
                 FeatureOperation::TrimBodiesAtPlane { targets, keep, .. } => {
                     incomplete_body_selection(targets)
-                        || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                        || *keep == cadmpeg_ir::features::operation_settings::BodyTrimSide::Unresolved
                 }
                 FeatureOperation::SilhouetteSplit { target, direction, mode } => {
                     incomplete_body_selection(target)
@@ -2051,7 +2054,7 @@ pub(crate) fn append_design_losses(
                 }
                 FeatureOperation::Flex { axis, mode } => {
                     axis.is_none()
-                        || matches!(mode, cadmpeg_ir::features::FlexMode::Unresolved { .. })
+                        || matches!(mode, cadmpeg_ir::features::direct_edit::FlexMode::Unresolved { .. })
                 }
                 FeatureOperation::Scale {
                     bodies,
@@ -2060,7 +2063,7 @@ pub(crate) fn append_design_losses(
                 } => {
                     incomplete_body_selection(bodies)
                         || center.as_ref().is_none_or(|center| {
-                            matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
+                            matches!(center, cadmpeg_ir::features::direct_edit::ScaleCenter::Native(_))
                         })
                         || factors.resolved().is_none()
                 }
@@ -2203,7 +2206,7 @@ pub(crate) fn append_design_losses(
 
 pub(crate) fn configuration_source_needs_update(
     ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
 ) -> bool {
     let slot = configuration
         .properties
@@ -3409,6 +3412,8 @@ fn build_geometry_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3574,10 +3579,13 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &mut sketches,
-        &mut sketch_entities,
-        &mut held_handles,
+        crate::resolved_features::profiles::MarkerSketchEntities {
+            projected: &mut sketch_entities,
+            held: &mut held_handles,
+        },
         &histories,
         sketch_lanes,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
@@ -3856,6 +3864,17 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        &all_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
@@ -4271,7 +4290,7 @@ fn build_geometry_ir(
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4286,6 +4305,8 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -4705,6 +4726,8 @@ fn build_metadata_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -4895,10 +4918,13 @@ fn build_metadata_ir(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
-        &mut ir.model.sketch_entities,
-        &mut held_handles,
+        crate::resolved_features::profiles::MarkerSketchEntities {
+            projected: &mut ir.model.sketch_entities,
+            held: &mut held_handles,
+        },
         &histories,
         sketch_lanes,
+        &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
@@ -5081,6 +5107,17 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        sketch_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -5155,7 +5192,7 @@ fn build_metadata_ir(
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir
@@ -5176,6 +5213,8 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -5369,7 +5408,8 @@ fn mark_active_configuration(ir: &mut CadIr) {
 /// The position of the active configuration among `configurations`, each
 /// given by its name and partition index, as the document's active
 /// configuration name, else its active Parasolid block, selects it. A lone
-/// configuration is active unless the active partition is unresolved.
+/// configuration is active unless the active partition is unresolved; where
+/// the active block names no configuration, only a lone one without an index.
 pub(crate) fn active_configuration_position(
     source: Option<&cadmpeg_ir::document::SourceMeta>,
     configurations: &[(Option<&str>, Option<u32>)],
@@ -5398,7 +5438,8 @@ pub(crate) fn active_configuration_position(
                 .enumerate()
                 .filter(|(_, (_, candidate))| *candidate == Some(index))
                 .map(|(position, _)| position),
-        );
+        )
+        .or_else(|| matches!(configurations, [(_, None)]).then_some(0));
     }
     if attribute("sldprt_active_partition_unresolved").map(String::as_str) == Some("true") {
         return None;
@@ -5406,7 +5447,36 @@ pub(crate) fn active_configuration_position(
     (configurations.len() == 1).then_some(0)
 }
 
-fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
+/// The design state the decoder states for an active configuration whose
+/// native records state none: the value of every valued parameter and the
+/// state of every feature of the model.
+pub(crate) struct ModelSnapshot {
+    pub(crate) parameter_values: BTreeMap<
+        cadmpeg_ir::features::ParameterId,
+        cadmpeg_ir::features::parameters::ParameterValue,
+    >,
+    pub(crate) feature_states: BTreeMap<
+        cadmpeg_ir::features::FeatureId,
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState,
+    >,
+}
+
+pub(crate) fn model_snapshot(model: &cadmpeg_ir::document::Model) -> ModelSnapshot {
+    ModelSnapshot {
+        parameter_values: model
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
+            .collect(),
+        feature_states: model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.configuration_state()))
+            .collect(),
+    }
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -5415,10 +5485,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
-        return Ok(());
+        return;
     };
     if active.next().is_some() {
-        return Ok(());
+        return;
     }
     if !ir.model.configurations[configuration_index]
         .parameter_values
@@ -5427,29 +5497,13 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             .feature_states
             .is_empty()
     {
-        return Ok(());
+        return;
     }
 
-    let mut parameter_values = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let Some(value) = &parameter.value else {
-            continue;
-        };
-        let value = value.clone();
-        let id = cadmpeg_ir::features::ParameterId::mint(parameter.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        parameter_values.insert(id, value);
-    }
-    let mut feature_states = BTreeMap::new();
-    for feature in &ir.model.features {
-        let id = cadmpeg_ir::features::FeatureId::mint(feature.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        let state = feature.configuration_state();
-        feature_states.insert(id, state);
-    }
+    let snapshot = model_snapshot(&ir.model);
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = parameter_values;
-    configuration.feature_states = feature_states;
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.as_str().to_owned();
@@ -5459,7 +5513,6 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             id,
         );
     }
-    Ok(())
 }
 
 fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
@@ -5523,7 +5576,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             || extent.as_ref().is_none_or(|extent| {
                 matches!(
                     extent,
-                    cadmpeg_ir::features::LinearTermination::Unresolved {}
+                    cadmpeg_ir::features::extents::LinearTermination::Unresolved {}
                 )
             })
             || matches!(
@@ -5537,7 +5590,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             && resolved_extent.as_ref().is_some_and(|extent| {
                 !matches!(
                     extent,
-                    cadmpeg_ir::features::LinearTermination::Unresolved {}
+                    cadmpeg_ir::features::extents::LinearTermination::Unresolved {}
                 )
             })
             && !matches!(
@@ -5608,8 +5661,8 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             continue;
         };
         let complete = match resolved_face {
-            cadmpeg_ir::features::FaceSelection::Faces(selected)
-            | cadmpeg_ir::features::FaceSelection::Resolved {
+            cadmpeg_ir::features::selections::FaceSelection::Faces(selected)
+            | cadmpeg_ir::features::selections::FaceSelection::Resolved {
                 faces: selected, ..
             } => !selected.is_empty(),
             _ => false,
@@ -5635,8 +5688,8 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             && extent == resolved_extent
             && matches!(
                 face,
-                cadmpeg_ir::features::FaceSelection::Unresolved
-                    | cadmpeg_ir::features::FaceSelection::Native(_)
+                cadmpeg_ir::features::selections::FaceSelection::Unresolved
+                    | cadmpeg_ir::features::selections::FaceSelection::Native(_)
             )
         {
             *face = resolved_face.clone();
@@ -5646,8 +5699,11 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
                 reference:
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face {
-                        face: resolved_face @ cadmpeg_ir::features::FaceSelection::Faces(selected),
+                    Some(cadmpeg_ir::features::datums::DatumPlaneReference::Face {
+                        face:
+                            resolved_face @ cadmpeg_ir::features::selections::FaceSelection::Faces(
+                                selected,
+                            ),
                     }),
                 distance: resolved_distance,
             },
@@ -5664,7 +5720,9 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
                 reference:
-                    reference @ Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. }),
+                    reference @ Some(cadmpeg_ir::features::datums::DatumPlaneReference::ResolvedPlane {
+                        ..
+                    }),
                 distance,
             },
         ) = &mut state.definition
@@ -5672,7 +5730,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             continue;
         };
         if distance == resolved_distance {
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
+            *reference = Some(cadmpeg_ir::features::datums::DatumPlaneReference::Face {
                 face: resolved_face.clone(),
             });
         }
@@ -5778,16 +5836,18 @@ fn assign_configuration_bodies(
             // A native record without a decoded partition keeps its body
             // membership unresolved instead of resolving to an empty set.
             if let Some(bodies) = partition_map.remove(&source_index) {
-                configuration.bodies =
-                    Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+                configuration.bodies = Some(
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies)?,
+                );
             }
         }
     }
     if !scan.is_some_and(container::has_manifest_configuration_rows) {
         if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
             if let Some(bodies) = partition_map.remove(&active_index) {
-                ir.model.configurations[position].bodies =
-                    Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+                ir.model.configurations[position].bodies = Some(
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies)?,
+                );
             }
         }
     }
@@ -5814,7 +5874,7 @@ fn assign_configuration_bodies(
         };
         ir.model
             .configurations
-            .push(cadmpeg_ir::features::DesignConfiguration {
+            .push(cadmpeg_ir::features::parameters::DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId::compose(
                     &cadmpeg_ir::identity_namespace!("sldprt", "model", "configuration"),
                     cadmpeg_ir::identity_key!("partition:").then(source_index),
@@ -5825,7 +5885,9 @@ fn assign_configuration_bodies(
                 name: name.into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?),
+                bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                    bodies,
+                )?),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
@@ -5835,46 +5897,39 @@ fn assign_configuration_bodies(
     Ok(())
 }
 
-/// Bind the active configuration's partition identity from the two native
-/// selectors, without inferring body membership.
+/// Bind the active partition to the configuration the document selects as
+/// active, by its name or as the lone configuration without an index, when
+/// no configuration holds that partition, without inferring body membership.
 fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
-    let active_name = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"));
     let active_index = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
         .and_then(|section| crate::container::configuration_index(section))
-        .and_then(|index| u32::try_from(index).ok());
-    let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
-        return None;
-    };
-    let mut matches = ir
+        .and_then(|index| u32::try_from(index).ok())?;
+    if ir
         .model
         .configurations
         .iter()
-        .enumerate()
-        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
-        .map(|(position, _)| position);
-    let position = matches.next()?;
-    let source_identity_available = !ir
-        .model
-        .configurations
-        .iter()
-        .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some()
-        || ir.model.configurations[position].source_index.is_some()
-        || !source_identity_available
+        .any(|configuration| configuration.source_index == Some(active_index))
     {
         return None;
     }
+    let selectors = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_deref(), configuration.source_index))
+        .collect::<Vec<_>>();
+    let position = active_configuration_position(ir.source.as_ref(), &selectors)?;
+    if ir.model.configurations[position].source_index.is_some() {
+        return None;
+    }
 
-    // The container's active block and the native configuration name
-    // establish the partition identity even when that block yielded no
-    // decoded body list. Body membership remains unresolved until a decoded
-    // partition supplies its body identities.
+    // The container's active block and the selected configuration establish
+    // the partition identity even when that block yielded no decoded body
+    // list. Body membership remains unresolved until a decoded partition
+    // supplies its body identities.
     ir.model.configurations[position].source_index = Some(active_index);
     Some((active_index, position))
 }

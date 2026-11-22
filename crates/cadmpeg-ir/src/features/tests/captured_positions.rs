@@ -1,4 +1,5 @@
-use crate::features::{CapturedComponentPosition, CapturedPositionTransform, FeatureOperation};
+use crate::features::tree::{CapturedComponentPosition, CapturedPositionTransform};
+use crate::features::FeatureOperation;
 use crate::ids::{NativeId, OccurrenceId};
 use crate::transform::Transform;
 

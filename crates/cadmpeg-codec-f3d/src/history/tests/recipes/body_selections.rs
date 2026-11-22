@@ -5,10 +5,9 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 
 #[test]
 fn direct_body_recipe_selection_resolves_compact_coil_target() {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, ScaleCenter,
-        ScaleFactors,
-    };
+    use cadmpeg_ir::features::direct_edit::{ScaleCenter, ScaleFactors};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
@@ -41,10 +40,9 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::Resolved {
-            bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                "f3d:brep:body#1"
-            )
-            .expect("identity grammar")],)
+            bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                BodyId::mint("f3d:brep:body#1").expect("identity grammar")
+            ],)
             .expect("distinct bodies"),
             native: group_id.into(),
         }
@@ -196,8 +194,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {
-            members: cadmpeg_ir::features::BodyMembers::try_from_rows(vec![
-                cadmpeg_ir::features::BodyMember::new(
+            members: cadmpeg_ir::features::selections::BodyMembers::try_from_rows(vec![
+                cadmpeg_ir::features::selections::BodyMember::new(
                     body.id.clone(),
                     cadmpeg_core::text::NonBlankString::new(native)
                         .expect("non-blank native fixture"),
@@ -245,7 +243,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Scale {
                 bodies: BodySelection::Native(group_id.into()),
                 center: Some(ScaleCenter::ModelOrigin),
@@ -257,7 +255,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     feature.native_ref = Some(scale_scope.id.clone());
-    let losses = crate::history::bind_feature_body_selections(
+    let losses = crate::history::tests::bind_feature_body_selections(
         std::slice::from_mut(&mut feature),
         &scale_inputs,
     );
@@ -306,10 +304,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::MoveBody {
                 bodies: BodySelection::Native(group_id.into()),
-                translation: cadmpeg_ir::features::FiniteVector3::new(
+                translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
                     cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
                 )
                 .unwrap(),
@@ -320,7 +318,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         native_ref: None,
     };
     move_feature.native_ref = Some(move_scope.id.clone());
-    let losses = crate::history::bind_feature_body_selections(
+    let losses = crate::history::tests::bind_feature_body_selections(
         std::slice::from_mut(&mut move_feature),
         &move_inputs,
     );
@@ -336,9 +334,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
 
 #[test]
 fn base_feature_body_selection_uses_active_transition_outputs() {
-    use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
@@ -353,11 +350,11 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                 BodyId::mint("test:model:body#2").expect("identity grammar"),
                 BodyId::mint("test:model:body#1").expect("identity grammar"),
             ])
@@ -378,10 +375,10 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
 /// A `RemoveBody` in the coil fixture's scope whose operand resolved body
 /// slot `slot` through its recipe identity. Its face match selects the
 /// displayed fixture body, slot 1.
-fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection {
-    use cadmpeg_ir::features::{
-        BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::selections::BodySelection {
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     let (scope, group_id, group, mut operand, body, region, shell, face) = direct_body_fixture();
     operand.resolved_body_slot = slot;
     let mut feature = Feature {
@@ -395,7 +392,7 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection 
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id.into()),
                 mode: BodyRetentionMode::DeleteSelected,
@@ -415,7 +412,10 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection 
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
     };
-    crate::history::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    crate::history::tests::bind_feature_body_selections(
+        std::slice::from_mut(&mut feature),
+        &inputs,
+    );
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => bodies.clone(),
         definition => panic!("removal definition: {definition:?}"),
@@ -424,7 +424,7 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection 
 
 #[test]
 fn a_remove_keeps_its_selection_native_when_the_face_match_contradicts_the_recipe_slot() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     for slot in [None, Some(1)] {
         assert!(
             matches!(
@@ -445,7 +445,7 @@ fn a_remove_keeps_its_selection_native_when_the_face_match_contradicts_the_recip
 /// A body pattern in the coil fixture's scope whose seed operand resolved
 /// body slot `slot` through its recipe identity. Its face match selects the
 /// displayed fixture body, slot 1.
-fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySelection {
+fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::selections::BodySelection {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
         Feature, FeatureDefinition, FeatureId, FeatureOperation,
@@ -463,7 +463,7 @@ fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySele
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::UNRESOLVED_MIRROR,
@@ -508,7 +508,7 @@ fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::BodySele
 
 #[test]
 fn a_pattern_seed_stays_native_when_the_face_match_contradicts_the_recipe_slot() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     for slot in [None, Some(1)] {
         assert!(
             matches!(
@@ -529,9 +529,10 @@ fn a_pattern_seed_stays_native_when_the_face_match_contradicts_the_recipe_slot()
 #[test]
 fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body() {
     use crate::history_records::AsmDeltaState;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
+    use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::features::{
-        BodySelection, BooleanKind, CombineOperands, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation,
+        CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
@@ -608,7 +609,7 @@ fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body
             source_tag: None,
             source_text: None,
             source_content: Default::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Combine {
                     operands: CombineOperands::new(
                         BodySelection::Native(group_id.into()),
@@ -622,7 +623,10 @@ fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body
             ),
             native_ref: Some(scope.id.clone()),
         };
-        crate::history::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+        crate::history::tests::bind_feature_body_selections(
+            std::slice::from_mut(&mut feature),
+            &inputs,
+        );
         let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
             feature.evaluation.definition()
         else {

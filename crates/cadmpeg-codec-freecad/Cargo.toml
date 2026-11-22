@@ -25,14 +25,6 @@ roxmltree.workspace = true
 zip.workspace = true
 tempfile.workspace = true
 
-[[bin]]
-name = "fcstd-profile"
-path = "src/bin/fcstd_profile.rs"
-
-# Local census helper. cargo-dist would otherwise ship it as a release app.
-[package.metadata.dist]
-dist = false
-
 [dev-dependencies]
 # Test-only golden harness and round-trip helpers.
 cadmpeg-test-support = { workspace = true }

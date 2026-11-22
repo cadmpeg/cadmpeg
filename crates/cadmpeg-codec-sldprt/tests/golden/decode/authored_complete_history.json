@@ -142,7 +142,8 @@
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

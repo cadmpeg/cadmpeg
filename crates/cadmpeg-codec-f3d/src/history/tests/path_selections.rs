@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical path selection binding.
 
-use cadmpeg_ir::features::{FeatureId, PathRef};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::FeatureId;
 
 fn path_fixture() -> (
     crate::records::feature::scope::DesignParameterScope,

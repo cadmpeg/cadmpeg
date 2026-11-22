@@ -13,7 +13,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{
@@ -169,14 +170,15 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
-                match outcome {
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
                 SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
+                    matches!(error, CodecError::NotImplemented(detail) if detail == "semantic SLDPRT writing requires a B-rep"),
+                    "legacy history must refuse exactly the missing typed B-rep: {error:?}"
                 ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+                SemanticOutcome::Written { report, .. } => panic!(
+                    "legacy history has no typed B-rep to write: {:?}",
+                    report.write_path()
+                ),
             });
             continue;
         }
@@ -284,9 +286,10 @@ fn visit_blind_extrude_lengths(
     count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// A blind-depth edit is written as edited over the stored B-rep, which the
+/// export names as the state before the edit.
 #[test]
-fn edited_blind_depth_without_regenerated_brep_is_refused() {
+fn edited_blind_depth_is_written_over_the_stored_brep_and_named() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
@@ -308,7 +311,11 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                 }) != 0
             },
             |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
+                MutationOutcome::Written {
+                    edited,
+                    bytes,
+                    report,
+                } => {
                     let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
@@ -336,15 +343,20 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     assert_eq!(
                         arena_sizes(written.ir()),
                         arena_sizes(edited),
-                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
-                         written; entities were lost or invented"
+                        "fixture `{name}`: the written B-rep is not the stored one; entities were lost \
+                         or invented"
                     );
-                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
+                    assert!(
+                        report.losses.iter().any(|loss| loss.code
+                            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+                        "fixture `{name}`: the stored B-rep shows the depth before the edit, and no \
+                         loss says so: {:?}",
+                        report.losses
+                    );
                 }
-                MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-                    "fixture `{name}`: {error}"
-                ),
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a blind-depth edit was refused: {error}")
+                }
             },
         );
         if ran {
@@ -466,17 +478,12 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .expect("historical history fixture retains its source");
-    assert!(!result.ir().model.configurations.is_empty());
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .configurations
-            .iter()
-            .filter(|c| c.active)
-            .count(),
-        0
-    );
+    let [configuration] = result.ir().model.configurations.as_slice() else {
+        panic!("the lone Keywords configuration");
+    };
+    assert!(configuration.active);
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(configuration.bodies.is_none());
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();

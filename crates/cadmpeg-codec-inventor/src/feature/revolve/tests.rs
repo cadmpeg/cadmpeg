@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
 #[test]
 fn native_revolve_losses_identify_the_unresolved_form() {
@@ -65,9 +65,9 @@ fn dimension_records_require_the_complete_frame_and_preserve_the_parameter() {
 fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands() {
     let expected = Operands {
         axis: RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("origin"),
-            direction: cadmpeg_ir::features::FeatureDirection3::from(
+            direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(0.0, 1.0, 0.0))
                     .expect("axis"),
             ),
@@ -109,8 +109,9 @@ fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands(
         };
         match field {
             "axis" => {
-                axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                    .expect("shifted origin");
+                axis.origin =
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                        .expect("shifted origin");
             }
             "extent" => {
                 *extent = RevolveExtent::OneSided {

@@ -1,5 +1,6 @@
-use crate::features::PlanarProfileRef;
-use crate::features::{FeatureId, GeneratedCurveRef, PathRef, ProfileRef};
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::profiles::{GeneratedCurveRef, PathRef, ProfileRef};
+use crate::features::FeatureId;
 use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
 
@@ -122,9 +123,9 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
             "curves",
         ),
         (
-            crate::features::NativeSelections::try_from(vec!["group".into()])
+            crate::features::selections::NativeSelections::try_from(vec!["group".into()])
                 .map(
-                    |selections| crate::features::PathRef::SpatialSketchSelection {
+                    |selections| crate::features::profiles::PathRef::SpatialSketchSelection {
                         sketch: spatial.clone(),
                         selections,
                     },
@@ -165,14 +166,16 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
-        assert!(crate::features::NativeSelections::try_from(names)
-            .map(
-                |selections| crate::features::PathRef::SpatialSketchSelection {
-                    sketch: spatial.clone(),
-                    selections
-                }
-            )
-            .is_err());
+        assert!(
+            crate::features::selections::NativeSelections::try_from(names)
+                .map(
+                    |selections| crate::features::profiles::PathRef::SpatialSketchSelection {
+                        sketch: spatial.clone(),
+                        selections
+                    }
+                )
+                .is_err()
+        );
     }
     assert!(PathRef::historical_edges(state.clone(), vec![], "group".into(),).is_err());
     assert!(PathRef::historical_edges(
@@ -244,6 +247,6 @@ fn a_spatial_profile_where_a_planar_one_is_required_is_refused_as_an_unknown_var
         .expect_err("a spatial profile is not a planar profile");
     assert!(error.to_string().contains("unknown variant"), "{error}");
     let section = serde_json::json!({ "kind": "profile", "value": wire });
-    assert!(serde_json::from_value::<crate::features::SweepSection>(section).is_err());
+    assert!(serde_json::from_value::<crate::features::sweeps::SweepSection>(section).is_err());
     assert!(spatial.planar().is_none());
 }

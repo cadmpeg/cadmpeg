@@ -11,12 +11,11 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoles3},
-    Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::curve_offsets::{CurveOffsetDistanceLaw, CurveOffsetLawBasis};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
@@ -794,7 +793,8 @@ pub(super) fn project(
                     .integer(4)
                     .and_then(|value| u8::try_from(value).ok())
                     .and_then(|value| {
-                        cadmpeg_ir::geometry::CurveOffsetCoordinate::try_new(value).ok()
+                        cadmpeg_ir::geometry::curve_offsets::CurveOffsetCoordinate::try_new(value)
+                            .ok()
                     })
                 else {
                     super::push_geometry_loss(
@@ -1094,9 +1094,14 @@ pub(super) fn project(
             .transpose()
             .and_then(|distance_law| match distance_law {
                 Some(distance_law) => {
-                    cadmpeg_ir::geometry::CurveOffsetRange::variable([start, end], distance_law)
+                    cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::variable(
+                        [start, end],
+                        distance_law,
+                    )
                 }
-                None => cadmpeg_ir::geometry::CurveOffsetRange::uniform([start, end]),
+                None => {
+                    cadmpeg_ir::geometry::curve_offsets::CurveOffsetRange::uniform([start, end])
+                }
             });
         let payload = match range {
             Ok(range) => {

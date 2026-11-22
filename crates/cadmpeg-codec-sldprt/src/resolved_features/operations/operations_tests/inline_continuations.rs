@@ -1,7 +1,7 @@
 //! Inline extrusion continuation framing.
 
 use super::{feature_inline_operation, feature_inline_operation_fields, trailer_lane};
-use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
 
 fn continuation(family: u16, operation: u8) -> Vec<u8> {
     let mut bytes = vec![0; 40];

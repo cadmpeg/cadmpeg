@@ -1421,7 +1421,7 @@ fn standard_face_witness_requires_an_analytic_marker() {
     }
     assert_eq!(
         crate::families::standard::records::standard_face_witness(&record, 5)
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     record[6] = 0x32;
@@ -1590,7 +1590,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5)));
+        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5)));
 }
 
 #[test]
@@ -1728,7 +1728,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
                 source:
                     crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
-        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(_))
+        ) if matches!(definition.as_ref(), cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(_))
     ));
 }
 

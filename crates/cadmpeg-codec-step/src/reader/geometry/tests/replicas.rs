@@ -140,7 +140,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .geometry
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -312,14 +312,14 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
         assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
-                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
+                && match curve.definition() { cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
     assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                 if result.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#8")
                     && source.as_str() == "step:data:curve#6"
@@ -333,7 +333,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -343,7 +343,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             2.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(12.0, 0.0, 0.0))
     );
 
@@ -369,7 +369,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         .any(|curve| {
             matches!(
                 curve.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:curve#")
             )
         }));
@@ -491,7 +491,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
+                && match surface.definition() { cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss
@@ -507,7 +507,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#8")
                         && source.as_str() == "step:data:surface#9"
@@ -522,7 +522,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -533,7 +533,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             1.0,
             1.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(4.0, 4.0, 0.0))
     );
 
@@ -559,7 +559,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if source.as_str().starts_with("step:data:surface#")
             )
         }));
@@ -854,7 +854,7 @@ fn replicas_retain_bounded_parent_relations() {
     assert!(decoded.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Replica { source, .. }
                 if decoded.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#9")
                     && source.as_str() == "step:data:curve#7"
@@ -868,7 +868,7 @@ fn replicas_retain_bounded_parent_relations() {
         .any(|surface| {
             matches!(
                 surface.definition(),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Replica { source, .. }
                     if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#13")
                         && source.as_str() == "step:data:surface#12"
@@ -882,7 +882,7 @@ fn replicas_retain_bounded_parent_relations() {
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -893,7 +893,7 @@ fn replicas_retain_bounded_parent_relations() {
             0.0,
             0.0
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(Point3::new(3.0, 9.0, 0.0))
     );
 

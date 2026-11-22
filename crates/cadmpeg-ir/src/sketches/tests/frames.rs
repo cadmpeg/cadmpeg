@@ -3,7 +3,7 @@ use crate::math::{Point3, Vector3};
 
 #[test]
 fn a_sketch_frame_holds_its_admitted_origin_axes_and_pattern_direction() {
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::scalar::Length;
     use crate::sketches::{SketchPatternDirection, SketchPlacement};
     use crate::units::UnitVector2;

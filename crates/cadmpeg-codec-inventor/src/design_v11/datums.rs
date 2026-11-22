@@ -13,10 +13,9 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::selection::{PickTarget, PrincipalEntity};
-use cadmpeg_ir::features::{
-    DatumPlaneReference, DatumPointConstruction, FeatureDatumPlaneFrame,
-    FeatureOperation as LegacyOperation, PrincipalPlane,
-};
+use cadmpeg_ir::features::datums::{DatumPlaneReference, DatumPointConstruction};
+use cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame;
+use cadmpeg_ir::features::{FeatureOperation as LegacyOperation, PrincipalPlane};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 
@@ -144,7 +143,7 @@ fn point_inputs(
             vec![at]
         }
         DatumPointConstruction::SketchPoint { point } => {
-            use cadmpeg_ir::features::SketchPointSelection;
+            use cadmpeg_ir::features::datums::SketchPointSelection;
             let target = match point {
                 SketchPointSelection::Planar { sketch, point, .. }
                     if planar

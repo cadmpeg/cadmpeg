@@ -129,7 +129,7 @@ fn copied_body_output_preserves_resolved_body() {
 
 #[test]
 fn stored_body_map_requires_complete_unique_membership() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     let (scope, binding) = fixture();
     let selected = super::super::design_body_selection(
         &scope,

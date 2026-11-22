@@ -6,25 +6,28 @@ use crate::decode::append_design_losses;
 use crate::decode::complete_resolved_configuration_parameter_snapshots;
 use crate::decode::snapshot_active_configuration;
 use crate::decode::sync_active_configuration_resolutions;
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::holes::{HoleBottom, HoleKind, HolePlacement};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::parameters::{
+    ConfigurationFeatureState, DesignConfiguration, DesignParameter, ParameterValue,
+};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::{
-    features::{
-        holes::{HoleBottom, HoleKind, HolePlacement},
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
-        DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, LinearTermination, ParameterId, ParameterValue,
-    },
-    scalar::Length,
-};
 use std::collections::BTreeMap;
 
 #[test]
 fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let faces = FaceSelection::generated(
-        vec![cadmpeg_ir::features::GeneratedFaceRef::new(
+        vec![cadmpeg_ir::features::selections::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
             "1".into(),
         )
@@ -39,19 +42,21 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: faces.clone(),
-                anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
+                anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine {
                     tool: faces,
-                    pull: cadmpeg_ir::features::DraftPull::new(
-                        cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
-                            .unwrap(),
+                    pull: cadmpeg_ir::features::direct_edit::DraftPull::new(
+                        cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                            1.0, 0.0, 0.0,
+                        ))
+                        .unwrap(),
                         None,
                     ),
                 },
@@ -81,9 +86,9 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
         else {
             unreachable!();
         };
-        *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        *anchor = cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
             plane: FaceSelection::generated(
-                vec![cadmpeg_ir::features::GeneratedFaceRef::new(
+                vec![cadmpeg_ir::features::selections::GeneratedFaceRef::new(
                     FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
                     "2".into(),
                 )
@@ -91,8 +96,9 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 "native".into(),
             )
             .unwrap(),
-            pull: Some(cadmpeg_ir::features::DraftPull::new(
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            pull: Some(cadmpeg_ir::features::direct_edit::DraftPull::new(
+                cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
                 None,
             )),
         };
@@ -122,7 +128,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::from([(
             cadmpeg_core::nonblank_literal!("Scope"),
             "Body1".into(),
@@ -130,10 +136,10 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -154,10 +160,11 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                     BodySelection::Native("tools".into()),
                 )
                 .unwrap(),
-                op: cadmpeg_ir::features::BooleanKind::Join,
+                op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 keep_tools: false,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }),
         ),
         (
@@ -177,14 +184,14 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+            bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::from([(
                 feature_id.clone(),
                 ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::try_from(
+                    evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                             (ordinal == 0)
                                 .then(|| {
                                     BodyId::mint("test:model:entity#missing-output")
@@ -195,7 +202,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                         )
                         .unwrap(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
                         (ordinal == 0)
                             .then(|| {
                                 FeatureId::mint("synthetic:test:id#missing-dependency")
@@ -241,12 +248,12 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
         ordinal: 0,
         name: Some("Localized tree item".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("Feature".into()),
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Localized tree item".into(),
                 parameters: BTreeMap::new(),
@@ -281,22 +288,22 @@ fn active_configuration_inherits_late_feature_resolutions() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![seed.clone()],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                         1.0, 2.0, 3.0,
                     ))
                     .unwrap(),
-                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
-                    ))
+                    plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                 })
                 .unwrap(),
@@ -311,22 +318,26 @@ fn active_configuration_inherits_late_feature_resolutions() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 profile: None,
                 profile_filter: None,
                 face: None,
                 direction: None,
                 placements: Some(vec![HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
-                        .unwrap(),
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                        .unwrap(),
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        1.0, 2.0, 3.0,
+                    ))
+                    .unwrap(),
+                    axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
                 }]),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
@@ -352,17 +363,17 @@ fn active_configuration_inherits_late_feature_resolutions() {
         name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::from([
             (
                 feature_id.clone(),
                 ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                    evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     definition: FeatureDefinition::Operation(FeatureOperation::Pattern {
                         seeds: vec![seed],
                         pattern: PatternKind::UNRESOLVED,
@@ -372,10 +383,10 @@ fn active_configuration_inherits_late_feature_resolutions() {
             (
                 hole_id.clone(),
                 ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: cadmpeg_ir::features::DistinctMembers::default(),
+                    evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     definition: FeatureDefinition::Operation(FeatureOperation::Hole {
                         profile: None,
                         profile_filter: None,
@@ -479,15 +490,15 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -501,7 +512,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "1".into(),
         display: None,
         value: Some(ParameterValue::Integer(1)),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -515,7 +526,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         expression: "native text".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -528,7 +539,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         name: Some("Configuration".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -580,21 +591,20 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         ordinal: 0,
         name: None,
         suppressed: Some(true),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-            "synthetic:test:id#dependency",
-        )
-        .expect("identity grammar")])
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar"),
+        ])
         .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "test:model:entity#body",
             )
             .expect("identity grammar")])
@@ -611,7 +621,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -627,7 +637,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
             name: format!("Configuration {ordinal}").into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+            bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -635,7 +645,7 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         });
     }
 
-    snapshot_active_configuration(&mut ir).unwrap();
+    snapshot_active_configuration(&mut ir);
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -644,15 +654,14 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     assert_eq!(
         ir.model.configurations[0].feature_states[&feature_id],
         ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:id#dependency"
-            )
-            .expect("identity grammar")],)
+            evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Suppressed {},
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                FeatureId::mint("synthetic:test:id#dependency").expect("identity grammar")
+            ],)
             .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         }
     );
@@ -667,10 +676,10 @@ fn active_configuration_snapshots_final_neutral_design_state() {
         .feature_states
         .get_mut(&feature_id)
         .expect("active feature state")
-        .evaluation = cadmpeg_ir::features::ConfigurationEvaluation::Active {
-        outputs: cadmpeg_ir::features::DistinctMembers::default(),
+        .evaluation = cadmpeg_ir::features::parameters::ConfigurationEvaluation::Active {
+        outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
     };
-    snapshot_active_configuration(&mut ir).unwrap();
+    snapshot_active_configuration(&mut ir);
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
         ParameterValue::Length(Length::new(25.0).unwrap())
@@ -694,7 +703,8 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         name: "D1".into(),
         expression: "12mm".into(),
         value: Some(value),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
         display: None,
         properties: BTreeMap::new(),
         pmi: None,
@@ -725,7 +735,7 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values,
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),

@@ -12,10 +12,9 @@ use crate::records::feature::fixed_parameters::{
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, LinearTermination,
-    PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn distance(
     value: f64,
@@ -301,7 +300,7 @@ fn two_sided_distance_with_a_zero_side_travels_the_other_side() {
     };
     assert_eq!(
         direction,
-        cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {}
     );
     assert!(
         matches!(side.termination, LinearTermination::Blind { length } if length.get() == 12.0)
@@ -416,6 +415,53 @@ fn multiple_native_sketch_profiles_project_with_a_native_profile() {
     assert!(
         matches!(second.termination, LinearTermination::Blind { length } if length.get() == 20.0)
     );
+}
+
+/// Two region selections of one Sketch project as that Sketch. Profile
+/// selection later replaces the whole Sketch with the merged regions.
+#[test]
+fn same_sketch_profile_group_projects_an_extrude() {
+    let mut scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(1.0, 11))),
+            against_distance: Some(distance(2.0, 17)),
+            ..Default::default()
+        },
+    );
+    let region_selection = |record_index| {
+        crate::records::topology::sketch_profile::DesignSketchProfileRegionSelection {
+            record_index,
+            byte_offset: u64::from(record_index) * 10,
+            class_tag: crate::records::references::DesignClassTag::try_from("309".to_owned())
+                .unwrap(),
+            region_count_offset: u64::from(record_index) * 10 + 8,
+            regions: Vec::new(),
+            atomic_regions: Vec::new(),
+            companion_class_tag: crate::records::references::DesignClassTag::try_from(
+                "310".to_owned(),
+            )
+            .unwrap(),
+            companion_byte_offset: u64::from(record_index) * 10 + 16,
+        }
+    };
+    let mut first = scope.extrude_profile().unwrap().clone();
+    first.region_selection = Some(region_selection(300));
+    let mut second = first.clone();
+    second.record_index = 200;
+    second.region_selection = Some(region_selection(400));
+    let extrude = scope.extrude_mut().unwrap();
+    extrude.extrude_profile = None;
+    extrude.extrude_native_profiles = Some(vec![first, second]);
+    let definition = projected(&scope).expect("same-sketch profile group");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
+        ..
+    }) = definition
+    else {
+        panic!("whole-sketch Extrude: {definition:?}");
+    };
+    assert_eq!(profile, neutral_sketch_id(&placement()));
 }
 
 /// The measurement word, when present, states whether each side travels the
@@ -541,3 +587,91 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
 }
 
 mod through_all;
+
+#[test]
+fn signed_distance_lanes_project_positive_travel_on_each_side() {
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    for (along, against, first_length, second_length, reversed) in [
+        (4.4, 3.7, 44.0, 37.0, false),
+        (-4.4, 3.7, 44.0, 37.0, true),
+        (4.4, -3.7, 44.0, 37.0, false),
+        (-4.4, -3.7, 44.0, 37.0, true),
+    ] {
+        let scope = fixed_extrude(
+            DesignExtrudeExtent::TwoSidedDistance,
+            DesignFixedExtrudeParameters {
+                along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(along, 11))),
+                against_distance: Some(distance(against, 17)),
+                ..Default::default()
+            },
+        );
+        let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+            direction,
+            extent: ExtrudeExtent::TwoSided { first, second },
+            ..
+        })) = projected(&scope)
+        else {
+            panic!("two blind sides");
+        };
+        assert_eq!(
+            matches!(direction, ExtrudeDirection::ReversedProfileNormal {}),
+            reversed
+        );
+        assert!(
+            matches!(first.termination, LinearTermination::Blind { length } if length.get() == first_length)
+        );
+        assert!(
+            matches!(second.termination, LinearTermination::Blind { length } if length.get() == second_length)
+        );
+    }
+}
+
+#[test]
+fn zero_first_side_uses_the_reversed_second_side_magnitude() {
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters::default(),
+    );
+    let parameter = |kind: &str, value| {
+        crate::design::decode::parameters::parse_design_parameter_record(
+            &crate::design::test_support::parameter_record(
+                Some(44),
+                "value",
+                kind,
+                Some("mm"),
+                "d1",
+                value,
+            ),
+        )
+        .unwrap()
+    };
+    let along = parameter("AlongDistance", 0.0);
+    let placement = placement();
+    for against in [-3.7, 3.7] {
+        let against = parameter("AgainstDistance", against);
+        let definition = crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[(0, &along), (1, &against)],
+                &[],
+                &[],
+                std::slice::from_ref(&placement),
+                &[],
+            )
+        })
+        .unwrap();
+        assert!(matches!(
+            definition,
+            Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ReversedProfileNormal {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind { length }, ..
+                    }
+                }, ..
+            })) if length.get() == 37.0
+        ));
+    }
+}

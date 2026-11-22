@@ -5,13 +5,10 @@ use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureTreeNodeRole, ParameterId, ParameterValue,
-    },
-    scalar::{Angle, FiniteReal, Length},
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -92,7 +89,7 @@ pub(crate) fn project_parameters(
                     expression: expression.clone(),
                     display,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     native_ref: None,
                     pmi: None,
                 };
@@ -287,6 +284,7 @@ pub(crate) fn native_parameter_is_length(
                 || cosmetic_thread
         }
         "D2" if cosmetic_thread => true,
+        "D2" if is_extrude(feature) && extrude_second_side_blind(feature) => true,
         "D2" if is_chamfer(feature) => {
             expression.is_none_or(|value| parse_angle_rad(value).is_none())
         }
@@ -307,6 +305,13 @@ pub(crate) fn native_parameter_is_length(
                 && feature.parameters.contains_key(name)
         }
     }
+}
+
+/// Whether an extrude's second side is blind, its depth the `D2` dimension:
+/// a second end condition `Blind`, or a `TwoSided` end condition.
+fn extrude_second_side_blind(feature: &Feature) -> bool {
+    feature.properties.get("EndCondition2").map(String::as_str) == Some("Blind")
+        || feature.properties.get("EndCondition").map(String::as_str) == Some("TwoSided")
 }
 
 /// The expression of a native scalar `value` in metres or radians, in the
@@ -343,8 +348,8 @@ pub(crate) fn format_native_scalar(
 fn project_parameter_dependencies(
     parameter: &DesignParameter,
     aliases: ParameterAliasView<'_>,
-) -> cadmpeg_ir::features::DistinctMembers<ParameterId> {
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+) -> cadmpeg_ir::features::selections::DistinctMembers<ParameterId> {
+    let mut dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     let Some(tokens) = expression_identifier_tokens(&parameter.expression) else {
         return dependencies;
     };
@@ -649,7 +654,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
@@ -703,7 +708,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
@@ -741,16 +746,23 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
 
 fn parameter_value_states(
     parameters: &[DesignParameter],
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     include_global: bool,
 ) -> Result<Vec<HashMap<ParameterId, ParameterValue>>, CodecError> {
-    let make_state = |configuration: Option<&cadmpeg_ir::features::DesignConfiguration>| -> Result<_, CodecError> {
+    let make_state = |configuration: Option<
+        &cadmpeg_ir::features::parameters::DesignConfiguration,
+    >|
+     -> Result<_, CodecError> {
         let mut values = HashMap::new();
         for parameter in parameters {
-            if let Some(value) = &parameter.value { insert_parameter_value(&mut values, &parameter.id, value); }
+            if let Some(value) = &parameter.value {
+                insert_parameter_value(&mut values, &parameter.id, value);
+            }
         }
         if let Some(configuration) = configuration {
-            for (id, value) in &configuration.parameter_values { insert_parameter_value(&mut values, id, value); }
+            for (id, value) in &configuration.parameter_values {
+                insert_parameter_value(&mut values, id, value);
+            }
         }
         Ok(values)
     };

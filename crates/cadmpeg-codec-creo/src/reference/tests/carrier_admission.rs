@@ -2,7 +2,7 @@
 use crate::reference::{
     ReferenceCircle, ReferenceCircleCenter, ReferenceEllipse, ReferenceLine, ReferenceLineKind,
 };
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use cadmpeg_ir::units::UnitVector3;
 

@@ -2,17 +2,18 @@
 //! One boundary piece: a parameter interval with its image in the carrier's
 //! parameter plane and in model space.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Coedge;
 
 use super::pcurve::Span;
 use crate::canonical::curve::CurveChart;
-use crate::canonical::surface::Chart;
+use crate::canonical::surface::{Chart, Partials};
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::reason::UnavailableReason;
@@ -108,6 +109,9 @@ pub(crate) struct Piece<'ir> {
     held: [Option<(f64, f64)>; 2],
     /// The parameters where the piece crosses an interior `v` knot.
     knot_crossings: OnceCell<Vec<f64>>,
+    /// Cached unshifted samples keyed by `t.to_bits()` for inverted NURBS /
+    /// extrusion curve pieces shared across area and flux quadratures.
+    sample_cache: RefCell<HashMap<u64, Sample>>,
 }
 
 impl<'ir> Piece<'ir> {
@@ -131,6 +135,7 @@ impl<'ir> Piece<'ir> {
             alpha: 0.0,
             held: [None, None],
             knot_crossings: OnceCell::new(),
+            sample_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -157,6 +162,7 @@ impl<'ir> Piece<'ir> {
             alpha: use_.alpha,
             held: [None, None],
             knot_crossings: OnceCell::new(),
+            sample_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -275,7 +281,9 @@ impl<'ir> Piece<'ir> {
             for index in 0..=count {
                 let t = interpolate(t0, t1, index, count);
                 let point = curve.point(eval, t)?;
-                let Some(raw) = chart.invert(eval, point, seed, alpha)? else {
+                let Some((raw, maybe_partials)) =
+                    chart.invert_with_partials(eval, point, seed, alpha)?
+                else {
                     return Err(MeasureFailure::unavailable(
                         UnavailableReason::BoundaryInversionFailed,
                         None,
@@ -283,7 +291,11 @@ impl<'ir> Piece<'ir> {
                     ));
                 };
                 seed = Some(raw);
-                let distance = chart.partials(eval, raw[0], raw[1])?.point.distance(point);
+                let surface_point = match maybe_partials {
+                    Some(partials) => partials.point,
+                    None => chart.partials(eval, raw[0], raw[1])?.point,
+                };
+                let distance = surface_point.distance(point);
                 if distance.is_nan() || distance > alpha {
                     return Err(MeasureFailure::unavailable(
                         UnavailableReason::BoundaryInversionFailed,
@@ -329,6 +341,7 @@ impl<'ir> Piece<'ir> {
             alpha,
             held,
             knot_crossings: OnceCell::new(),
+            sample_cache: RefCell::new(HashMap::new()),
         })))
     }
 
@@ -379,6 +392,38 @@ impl<'ir> Piece<'ir> {
         [a[0] + (b[0] - a[0]) * local, a[1] + (b[1] - a[1]) * local]
     }
 
+    /// The lifted parameters of a curve point at `t`, whether the point is
+    /// singular, and the surface partials at the inverted parameters when
+    /// already computed. At a singular point `u` is the reference lift.
+    fn lifted_with_partials(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        t: f64,
+        point: Point3,
+    ) -> Measure<([f64; 2], bool, Option<Partials>)> {
+        let reference = self.reference_at(t);
+        let seed = domain_seed(chart, self.periods, reference);
+        let Some((raw, maybe_partials)) =
+            chart.invert_with_partials(eval, point, Some(seed), self.alpha)?
+        else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryInversionFailed,
+                None,
+                "a boundary point does not invert onto the surface",
+            ));
+        };
+        Ok(if let Some(u) = self.held_u(t) {
+            let partials = maybe_partials.filter(|_| u == raw[0]);
+            ([u, raw[1]], true, partials)
+        } else if chart.singular_at(point, self.alpha) {
+            let partials = maybe_partials.filter(|_| reference[0] == raw[0]);
+            ([reference[0], raw[1]], true, partials)
+        } else {
+            (nearest(self.periods, raw, reference), false, maybe_partials)
+        })
+    }
+
     /// The lifted parameters of a curve point at `t`, and whether the point
     /// is singular. At a singular point `u` is the reference lift.
     fn lifted(
@@ -388,22 +433,8 @@ impl<'ir> Piece<'ir> {
         t: f64,
         point: Point3,
     ) -> Measure<([f64; 2], bool)> {
-        let reference = self.reference_at(t);
-        let seed = domain_seed(chart, self.periods, reference);
-        let Some(raw) = chart.invert(eval, point, Some(seed), self.alpha)? else {
-            return Err(MeasureFailure::unavailable(
-                UnavailableReason::BoundaryInversionFailed,
-                None,
-                "a boundary point does not invert onto the surface",
-            ));
-        };
-        Ok(if let Some(u) = self.held_u(t) {
-            ([u, raw[1]], true)
-        } else if chart.singular_at(point, self.alpha) {
-            ([reference[0], raw[1]], true)
-        } else {
-            (nearest(self.periods, raw, reference), false)
-        })
+        let (uv, singular, _) = self.lifted_with_partials(eval, chart, t, point)?;
+        Ok((uv, singular))
     }
 
     /// The piece at parameter `t`.
@@ -421,15 +452,33 @@ impl<'ir> Piece<'ir> {
                 })
             }
             Source::Curve(curve) => {
-                let point = curve.point(eval, t)?;
-                let tangent = curve.tangent(eval, t)?;
-                let (lifted, singular) = self.lifted(eval, chart, t, point)?;
-                let partials = chart.partials(eval, lifted[0], lifted[1])?;
+                let cacheable = matches!(chart, Chart::Nurbs(_) | Chart::Extrusion(_));
+                if cacheable {
+                    if let Some(&cached) = self.sample_cache.borrow().get(&t.to_bits()) {
+                        return Ok(Sample {
+                            uv: [cached.uv[0] + self.shift[0], cached.uv[1] + self.shift[1]],
+                            duv: cached.duv,
+                        });
+                    }
+                }
+                let (point, tangent) = curve.point_and_tangent(eval, t)?;
+                let (lifted, singular, maybe_partials) =
+                    self.lifted_with_partials(eval, chart, t, point)?;
+                let partials = match maybe_partials {
+                    Some(partials) => partials,
+                    None => chart.partials(eval, lifted[0], lifted[1])?,
+                };
                 let duv = if singular {
                     singular_velocity(partials.dv, tangent)?
                 } else {
                     parameter_velocity(partials.du, partials.dv, tangent)?
                 };
+                if cacheable {
+                    let mut cache = self.sample_cache.borrow_mut();
+                    if cache.len() < 512 {
+                        cache.insert(t.to_bits(), Sample { uv: lifted, duv });
+                    }
+                }
                 Ok(Sample {
                     uv: [lifted[0] + self.shift[0], lifted[1] + self.shift[1]],
                     duv,
@@ -546,7 +595,16 @@ impl<'ir> Piece<'ir> {
         scan.dedup();
         let mut samples = Vec::with_capacity(scan.len());
         for t in scan {
-            samples.push((t, self.uv(eval, chart, t)?[axis]));
+            let value = if let Some((_, uv)) = self
+                .reference
+                .iter()
+                .find(|(ref_t, _)| ref_t.to_bits() == t.to_bits())
+            {
+                uv[axis] + self.shift[axis]
+            } else {
+                self.uv(eval, chart, t)?[axis]
+            };
+            samples.push((t, value));
         }
         let mut crossings = Vec::new();
         for pair in samples.windows(2) {

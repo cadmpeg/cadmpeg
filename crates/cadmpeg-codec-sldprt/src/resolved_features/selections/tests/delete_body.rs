@@ -73,7 +73,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     assert_eq!(selection.body_state_ids, [287]);
     assert_eq!(
         selection.mode,
-        Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected)
+        Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected)
     );
 
     assert!(selection.feature_ref.starts_with("sldprt:history:feature#"));
@@ -88,10 +88,10 @@ fn decode_and_validate_compact_delete_body_selection() {
         delete_feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode })
             if bodies
-            == &cadmpeg_ir::features::BodySelection::local(
+            == &cadmpeg_ir::features::selections::BodySelection::local(
                 vec!["287".into(), "115".into()], "sldprt:feature-input:body-ids:287,115".into()
             ).unwrap()
-            && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+            && *mode == cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected
     ));
     crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
@@ -143,7 +143,7 @@ fn decode_and_validate_compact_delete_body_selection() {
                 else {
                     panic!("typed delete-body feature");
                 };
-                *bodies = cadmpeg_ir::features::BodySelection::Native(
+                *bodies = cadmpeg_ir::features::selections::BodySelection::Native(
                     "sldprt:feature-input:body-ids:287".into(),
                 );
             });
@@ -175,12 +175,12 @@ fn decode_and_validate_compact_delete_body_selection() {
                 else {
                     unreachable!("typed delete-body feature");
                 };
-                *bodies = cadmpeg_ir::features::BodySelection::local(
+                *bodies = cadmpeg_ir::features::selections::BodySelection::local(
                     vec!["287".into(), "115".into()],
                     "sldprt:feature-input:body-ids:287,115".into(),
                 )
                 .unwrap();
-                *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
+                *mode = cadmpeg_ir::features::operation_settings::BodyRetentionMode::KeepSelected;
             });
         }
         let error = crate::test_support::plan_fixture_write_with_native_envelope(
@@ -211,7 +211,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     native.feature_input_lanes[0].body_selections[0].body_state_ids = vec![287];
 
     native.feature_input_lanes[0].body_selections[0].mode =
-        Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected);
+        Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::KeepSelected);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
@@ -224,7 +224,7 @@ fn decode_and_validate_compact_delete_body_selection() {
             && error.to_string().contains("inconsistent ownership")
     );
     native.feature_input_lanes[0].body_selections[0].mode =
-        Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected);
+        Some(cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected);
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();

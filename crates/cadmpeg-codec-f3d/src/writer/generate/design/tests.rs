@@ -151,6 +151,7 @@ fn scoped_cube() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     let mut owned = parameter(
         "d1",
@@ -225,7 +226,8 @@ fn decoded(ir: &CadIr, name: &str) -> Option<(String, f64)> {
         .parameters
         .iter()
         .find(|parameter| parameter.name == name)?;
-    let Some(cadmpeg_ir::features::ParameterValue::Length(length)) = &parameter.value else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) = &parameter.value
+    else {
         return None;
     };
     Some((parameter.expression.clone(), length.get()))
@@ -448,12 +450,22 @@ struct DesignStream {
 impl DesignStream {
     fn read(archive: &[u8]) -> Self {
         let mut zip = zip::ZipArchive::new(Cursor::new(archive)).expect("a ZIP archive");
+        let folder = ["FusionDesignSegmentType1", "Design1"]
+            .into_iter()
+            .find(|folder| {
+                zip.by_name(&format!(
+                    "{}/{folder}/BulkStream.dat",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                ))
+                .is_ok()
+            })
+            .expect("a Design segment");
         let mut entry = |name: &str| {
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(
                 &mut zip
                     .by_name(&format!(
-                        "{}/Design1/{name}",
+                        "{}/{folder}/{name}",
                         crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                     ))
                     .expect("the Design stream"),
@@ -524,8 +536,10 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one Base Feature: {:#?}", ir.model.features);
     };
     let resolved = match bodies {
-        cadmpeg_ir::features::BodySelection::Bodies(bodies)
-        | cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } => bodies.as_slice(),
+        cadmpeg_ir::features::selections::BodySelection::Bodies(bodies)
+        | cadmpeg_ir::features::selections::BodySelection::Resolved { bodies, .. } => {
+            bodies.as_slice()
+        }
         other => panic!("the Base Feature resolves its body: {other:?}"),
     };
     assert_eq!(resolved, [ir.geometry.bodies[0].id.clone()]);
@@ -534,7 +548,7 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one timeline");
     };
     assert_eq!(timeline.frame().items().len(), 1);
-    assert!(loss(&report, "export/record.residual-unavailable")
+    assert!(!loss(&report, "export/record.residual-unavailable")
         .iter()
         .any(|message| message.contains("component aggregate")));
 }
@@ -690,6 +704,26 @@ fn a_document_with_no_body_writes_the_timeline_with_no_item() {
 }
 
 #[test]
+fn a_document_with_no_body_charges_the_fixed_clock_of_its_component_table_only() {
+    let mut ir = scoped_cube();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    ir.design.scopes[0].current[0].bodies.clear();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one fixed-clock note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("(component record-timestamp table)"),
+        "{note}"
+    );
+    assert!(!note.contains("Base Feature"), "{note}");
+}
+
+#[test]
 fn a_container_or_attribute_parameter_is_written_without_its_owner() {
     let mut ir = scoped_cube();
     let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
@@ -807,6 +841,7 @@ fn place_part_scope(ir: &mut CadIr) -> (ProductDefinitionId, ContainerId) {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     let mut depth = parameter(
         "depth",
@@ -922,7 +957,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
     // A v10 design record: the export wrapper then charges no design arena.
     ir.model
         .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
             product_definition: None,
             id: parameter_id("legacy"),
             owner: None,
@@ -931,7 +966,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             expression: "1 mm".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -1141,3 +1176,23 @@ fn a_parameter_display_flag_and_unstated_body_visibility_are_charged() {
         report.losses
     );
 }
+
+#[test]
+fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
+    let mut ir = scoped_cube();
+    let body = ir.geometry.bodies[0].id.to_string();
+    for (visible, charged) in [(Some(false), true), (Some(true), false)] {
+        ir.geometry.bodies[0].visible = visible;
+        let (report, _) = write(&ir);
+        let named = loss(&report, "export/value.unwritable")
+            .into_iter()
+            .any(|message| message.contains("as visible") && message.contains(&body));
+        assert_eq!(named, charged, "{visible:?}: {:#?}", report.losses);
+    }
+}
+
+mod dimensions;
+mod extrude;
+mod planes;
+mod roster;
+mod sketch;

@@ -6,6 +6,7 @@ mod mesh_bodies;
 mod profile_data;
 mod root_definition;
 mod scalar_relation_values;
+mod sweep_path_section;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -483,7 +484,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -659,6 +660,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     assert_eq!(classify(written), claimed);
 }
 
+mod inch_feature_lengths;
 mod mass_property_conformance;
 mod nist_pmi_conformance;
 mod terminal_edge_ownership;

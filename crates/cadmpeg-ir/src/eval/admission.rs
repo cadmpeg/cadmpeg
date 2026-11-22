@@ -582,9 +582,8 @@ mod tests {
 
     #[test]
     fn model_work_slice_keeps_cycles_distinct_from_resource_refusal() {
-        use crate::geometry::{
-            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-        };
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
         let mut ir = crate::CadIr::empty();
         let id = crate::ids::CurveId::mint("test:model:curve#cycle").unwrap();
         ir.geometry.curves.push(Curve {
@@ -624,13 +623,16 @@ mod tests {
     /// two axis revolutions of the curve below, so a point of the top curve
     /// reads the bottom line `2^levels` times.
     fn doubling_model(levels: usize) -> (crate::CadIr, crate::ids::CurveId) {
+        use crate::geometry::intersection_curves::{
+            TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+        };
         use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
         use crate::geometry::surface_payloads::AxisRevolutionSurfaceConstruction;
         use crate::geometry::{
-            Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-            ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-            SurfaceGeometry, TolerantIntersectionConstruction,
-            TolerantIntersectionParameterization,
+            Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+            SolvedSurfaceGeometry, Surface, SurfaceGeometry,
         };
         use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
         use crate::math::{Point2, Point3, Vector3};
@@ -730,7 +732,8 @@ mod tests {
         admission: EvaluationAdmission<'_, '_>,
         levels: usize,
         work: &WorkBudget,
-    ) -> Result<crate::features::FinitePoint3, EvaluationFailure<crate::math::Point3>> {
+    ) -> Result<crate::features::geometry::FinitePoint3, EvaluationFailure<crate::math::Point3>>
+    {
         let (ir, curve) = doubling_model(levels);
         let index = crate::index::ModelIndex::build(&ir);
         admission.within_model_work(work, |admission| {

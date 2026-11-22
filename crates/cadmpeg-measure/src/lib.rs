@@ -10,7 +10,8 @@
 //!
 //! Measurement is an oracle on decoded output. A decoder or encoder never
 //! selects a layout, carrier, sense, unit or interpretation by measuring
-//! geometry, so no codec crate depends on this crate outside its tests.
+//! geometry. The source policy admits one production use in a codec: the
+//! Fusion writer may call [`body_boxes`] for the boxes it writes.
 //!
 //! ```
 //! use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
@@ -69,7 +70,10 @@ pub use budget::{
 };
 pub use declared::declared_findings;
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
-pub use session::{findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer};
+pub use session::{
+    body_boxes, check_findings, findings, Density, MeasureError, MeasureInput, MeasureOptions,
+    Measurer,
+};
 
 #[cfg(test)]
 mod integration_tests;

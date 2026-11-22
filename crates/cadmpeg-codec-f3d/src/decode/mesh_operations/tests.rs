@@ -260,7 +260,7 @@ fn feature(id: &str, kind: &str, native_ref: Option<String>) -> Feature {
         source_tag: Some(kind.into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(if kind == "Sketch" {
                 FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -457,7 +457,7 @@ fn removal_scope_projects_ordered_input_local_body_deletions() {
     assert_eq!(bodies.as_slice(), ["9", "3"]);
     assert_eq!(
         *mode,
-        cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+        cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected
     );
     assert_eq!(
         codes,
@@ -492,7 +492,7 @@ fn removal_missing_member_keeps_its_reference_and_later_body() {
     assert!(matches!(features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Native(source),
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
         }) if source == &native));
     let properties = &features[0].source_properties;
     assert_eq!(properties["mesh-member-reference:0"], "40");
@@ -516,7 +516,7 @@ fn removal_missing_body_definition_keeps_both_body_references() {
     assert!(matches!(features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Native(source),
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
         }) if source == &native));
     let properties = &features[0].source_properties;
     assert_eq!(properties["mesh-body-reference:0"], "9");
@@ -539,7 +539,7 @@ fn removal_truncated_source_keeps_its_kind_without_a_placeholder_group() {
     assert!(matches!(features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Native(source),
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
         }) if source == &native));
     assert!(!features[0]
         .source_properties
@@ -566,7 +566,7 @@ fn removal_without_a_scope_still_projects_a_typed_deletion() {
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
             bodies: BodySelection::Unresolved,
-            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
         })
     ));
     assert_eq!(codes, ["feature.mesh-operation-scope-unparsed"]);

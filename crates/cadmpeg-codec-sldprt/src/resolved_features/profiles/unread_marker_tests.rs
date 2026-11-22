@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry, ListedGeometry,
+    HeldMarkerGeometry, MarkerSketchEntities,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -98,12 +98,12 @@ fn projected_entities(
         ordinal: 0,
         name: Some("generated-profile".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
@@ -140,10 +140,13 @@ fn projected_entities(
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut held,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut held,
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
     (entities, held)
@@ -329,11 +332,43 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
     assert!(losses[0].message.contains(id.as_str()));
 }
 
-/// A placeholder whose marker has held `sgSketch` curve-record geometry in
-/// its sketch takes that geometry and charges no loss; the same marker in
-/// another sketch keeps its role and its loss.
+/// A placeholder that takes held `sgSketch` record geometry charges the
+/// losses held with it.
 #[test]
-fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
+fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
+    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(1.0).unwrap(),
+    })
+    .unwrap();
+    let mut entities = vec![entity("off-chord", placeholder("sldprt:marker-geometry:1"))];
+    let mut held = HeldMarkerGeometry::default();
+    held.listed.insert(
+        (entities[0].sketch.clone(), "marker-off-chord".to_owned()),
+        (
+            arc.clone(),
+            vec![SldprtLossCode::SketchArcRecordOffChord.note("off chord")],
+        ),
+    );
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    assert_eq!(entities[0].geometry, arc);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        vec![SldprtLossCode::SketchArcRecordOffChord.kind()]
+    );
+}
+
+/// A placeholder whose marker has held `sgSketch` record geometry in its
+/// sketch takes that geometry and charges no loss; the same marker in another
+/// sketch keeps its role and its loss.
+#[test]
+fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 0.0),
@@ -345,10 +380,7 @@ fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        ListedGeometry {
-            geometry: line.clone(),
-            identifier_trailer: false,
-        },
+        (line.clone(), Vec::new()),
     );
     let mut entities = vec![read, other_sketch];
     let mut losses = Vec::new();
@@ -427,8 +459,15 @@ fn sensed_arc_sketch() -> (Vec<u8>, [u64; 3], u64) {
 /// its arc record, linked to the two named point markers.
 fn sensed_arc_projection(
     endpoints: [&str; 2],
+    selector: u16,
+    sense: i32,
 ) -> (Vec<SketchEntity>, Vec<cadmpeg_ir::report::loss::LossNote>) {
-    let (payload, points, arc) = sensed_arc_sketch();
+    let (mut payload, points, arc) = sensed_arc_sketch();
+    let arc_offset = usize::try_from(arc).unwrap();
+    let selector_at = arc_offset + crate::layout::sketch_record_head::SELECTOR;
+    payload[selector_at..selector_at + 2].copy_from_slice(&selector.to_le_bytes());
+    let sense_at = arc_offset + crate::layout::sketch_arc_record::SENSE;
+    payload[sense_at..sense_at + 4].copy_from_slice(&sense.to_le_bytes());
     let mut markers = Vec::new();
     for (ordinal, ((id, offset), coordinates)) in ["p0", "p1", "p2"]
         .into_iter()
@@ -469,11 +508,18 @@ fn marker_entity<'a>(entities: &'a [SketchEntity], marker: &str) -> &'a SketchEn
         .unwrap_or_else(|| panic!("marker {marker} is projected"))
 }
 
-/// A line whose linked endpoints are the endpoint point records of its
-/// `sgSketch` arc record takes that arc.
+/// A curve marker whose `sgSketch` record is an arc takes that arc, between
+/// the point records at the record's positions, whatever endpoints its marker
+/// links name.
 #[test]
-fn a_line_whose_curve_record_is_an_arc_between_its_endpoints_takes_the_arc() {
-    let (entities, losses) = sensed_arc_projection(["p1", "p2"]);
+fn a_curve_marker_takes_the_arc_of_its_record() {
+    for links in [["p1", "p2"], ["p0", "p1"]] {
+        a_curve_marker_takes_the_arc_of_its_record_with_links(links);
+    }
+}
+
+fn a_curve_marker_takes_the_arc_of_its_record_with_links(links: [&str; 2]) {
+    let (entities, losses) = sensed_arc_projection(links, 68, 1);
     let position = |marker: &str| match marker_entity(&entities, marker).geometry.definition() {
         SketchGeometryDefinition::Point { position } => position.get(),
         other => panic!("marker {marker} is not a point: {other:?}"),
@@ -490,69 +536,143 @@ fn a_line_whose_curve_record_is_an_arc_between_its_endpoints_takes_the_arc() {
     let arc_center = arc_center.get();
     assert!((arc_center.u - center.u).hypot(arc_center.v - center.v) < EPS_TEST_MM);
     assert!((radius.get() - (end.u - center.u).hypot(end.v - center.v)).abs() < EPS_TEST_MM);
+    assert_eq!(
+        marker_entity(&entities, "curve").endpoint_refs,
+        ["p1", "p2"]
+    );
     assert!(losses.is_empty(), "{losses:?}");
 }
 
-/// A line whose `sgSketch` arc record joins other point records keeps the
-/// line and charges one loss naming the entity and the reason.
-#[test]
-fn a_line_whose_curve_record_is_an_arc_between_other_points_keeps_the_line() {
-    let (entities, losses) = sensed_arc_projection(["p0", "p1"]);
-    let curve = marker_entity(&entities, "curve");
-    assert!(matches!(
-        curve.geometry.definition(),
-        SketchGeometryDefinition::Line { .. }
-    ));
-    let [loss] = losses.as_slice() else {
-        panic!("one loss: {losses:?}");
-    };
-    assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
-    assert!(loss.message.contains(curve.id().as_str()));
-    assert!(loss.message.contains("point records at other positions"));
+/// A lane payload holding one `sgSketch` object with point records at
+/// `points` (metres) and curve records `(start, end, selector)` that are
+/// lines. Returns the payload and the record offsets.
+fn framed_line_sketch(
+    points: &[[f64; 2]],
+    lines: &[(u16, u16, u16)],
+) -> (Vec<u8>, Vec<u64>, Vec<u64>) {
+    let offset = |payload: &Vec<u8>| u64::try_from(payload.len()).unwrap();
+    let mut payload = vec![0; 7];
+    payload.extend_from_slice(&u32::try_from(points.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(&[0; 6]);
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    let mut point_offsets = Vec::new();
+    for [u, v] in points {
+        point_offsets.push(offset(&payload));
+        sketch_record_head(&mut payload);
+        payload.extend_from_slice(&0x1eu16.to_le_bytes());
+        payload.extend_from_slice(&u.to_le_bytes());
+        payload.extend_from_slice(&v.to_le_bytes());
+        payload.extend_from_slice(&[0; 10]);
+        payload.extend_from_slice(&(-2i32).to_le_bytes());
+        payload.extend_from_slice(&[0; 46]);
+    }
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let mut line_offsets = Vec::new();
+    for &(start, end, selector) in lines {
+        let at = payload.len();
+        line_offsets.push(offset(&payload));
+        sketch_record_head(&mut payload);
+        payload[at + 37..at + 39].copy_from_slice(&selector.to_le_bytes());
+        payload.extend_from_slice(&start.to_le_bytes());
+        payload.extend_from_slice(&end.to_le_bytes());
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        payload.extend_from_slice(&(-1.0f64).to_le_bytes());
+        payload.extend_from_slice(&0i32.to_le_bytes());
+        payload.extend_from_slice(&[0; 12]);
+    }
+    (payload, point_offsets, line_offsets)
 }
 
-/// Held curve-record geometry from a line with an identifier trailer, or
-/// replacing a handle whose read endpoints coincide, still types the entity
-/// and charges `sketch.handle-reading-assumed`.
+/// A 460 x 60 mm box whose point records are listed corner by corner and
+/// whose curve records join them edge by edge, with a construction diagonal
+/// (selector `12`). Two point markers carry the curve code `1` at +17, one
+/// curve marker the point code `0`: the record, not the marker code, decides.
+/// No marker stands on the last edge's record; it is read all the same. The
+/// four edges form one closed chain through the corner markers, and the
+/// diagonal is construction.
 #[test]
-fn held_geometry_of_a_trailer_line_or_a_degenerate_handle_charges_the_assumed_reading() {
-    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0),
-        end: Point2::new(1.0, 0.0),
-    })
-    .unwrap();
-    let mut entities = vec![
-        entity("trailer", placeholder("sldprt:marker-geometry:1")),
-        entity(
-            "degenerate",
-            placeholder("sldprt:marker-geometry:degenerate-line"),
-        ),
-        entity("positional", placeholder("sldprt:marker-geometry:2")),
-    ];
-    let mut held = HeldMarkerGeometry::default();
-    for (entity, identifier_trailer) in entities.iter().zip([true, false, false]) {
-        held.listed.insert(
-            (entity.sketch.clone(), entity.native_ref.clone().unwrap()),
-            ListedGeometry {
-                geometry: line.clone(),
-                identifier_trailer,
-            },
-        );
-    }
-    let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, held, &mut losses);
-    assert!(entities.iter().all(|entity| entity.geometry == line));
-    assert_eq!(
-        losses
-            .iter()
-            .map(|loss| loss.code.clone())
-            .collect::<Vec<_>>(),
-        vec![SldprtLossCode::SketchHandleReadingAssumed.kind(); 2]
+fn a_framed_box_projects_the_rectangle_of_its_records() {
+    let corners = [[0.0, 0.0], [0.46, 0.06], [0.0, 0.06], [0.46, 0.0]];
+    let (payload, points, lines) = framed_line_sketch(
+        &corners,
+        &[(0, 3, 4), (0, 2, 4), (2, 1, 4), (3, 1, 4), (0, 1, 12)],
     );
-    assert!(losses[0].message.contains(entities[0].id().as_str()));
-    assert!(losses[0].message.contains("identifier trailer"));
-    assert!(losses[1].message.contains(entities[1].id().as_str()));
-    assert!(losses[1].message.contains("coincide"));
+    let mut markers = Vec::new();
+    for (index, (offset, coordinates)) in points.iter().zip(corners).enumerate() {
+        let kind = if index < 2 {
+            SketchInputKind::Point
+        } else {
+            SketchInputKind::LineOrCircle
+        };
+        markers.push(marker_at(
+            &format!("corner{index}"),
+            u32::try_from(index).unwrap(),
+            *offset,
+            kind,
+            Some(coordinates),
+        ));
+    }
+    for (index, offset) in lines.iter().enumerate() {
+        if index == 3 {
+            continue;
+        }
+        let kind = if index == 0 {
+            SketchInputKind::Point
+        } else {
+            SketchInputKind::LineOrCircle
+        };
+        markers.push(marker_at(
+            &format!("edge{index}"),
+            u32::try_from(4 + index).unwrap(),
+            *offset,
+            kind,
+            None,
+        ));
+    }
+    let (entities, _) = projected_entities(markers, payload);
+    for index in 0..4 {
+        assert!(matches!(
+            marker_entity(&entities, &format!("corner{index}"))
+                .geometry
+                .definition(),
+            SketchGeometryDefinition::Point { .. }
+        ));
+    }
+    let mut incidence = BTreeMap::<String, usize>::new();
+    for index in 0..4 {
+        let edge = if index == 3 {
+            entities
+                .iter()
+                .find(|entity| {
+                    entity
+                        .id()
+                        .as_str()
+                        .ends_with(&format!(":record:{}", lines[3]))
+                })
+                .expect("the unmarked edge record is read")
+        } else {
+            marker_entity(&entities, &format!("edge{index}"))
+        };
+        let SketchGeometryDefinition::Line { start, end } = *edge.geometry.definition() else {
+            panic!("edge {index} is a line: {:?}", edge.geometry);
+        };
+        let (start, end) = (start.get(), end.get());
+        assert!(
+            (start.u - end.u).abs() < EPS_TEST_MM || (start.v - end.v).abs() < EPS_TEST_MM,
+            "edge {index} runs along an axis: {start:?} {end:?}"
+        );
+        assert!(!edge.construction);
+        for endpoint in &edge.endpoint_refs {
+            *incidence.entry(endpoint.clone()).or_default() += 1;
+        }
+    }
+    assert_eq!(
+        incidence,
+        (0..4)
+            .map(|index| (format!("corner{index}"), 2))
+            .collect::<BTreeMap<_, _>>()
+    );
+    assert!(marker_entity(&entities, "edge4").construction);
 }
 
 /// A line that a later reading gives a marker whose curve record states
@@ -582,4 +702,76 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
     assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
     assert!(loss.message.contains(entities[1].id().as_str()));
     assert!(loss.message.contains("does not compare the record"));
+}
+
+#[test]
+fn geometry_locus_arc_projection_reports_its_point_record_index_basis() {
+    for end in [1u16, 2] {
+        let (mut payload, points, arc) = sensed_arc_sketch();
+        let offset = usize::try_from(arc).unwrap();
+        payload[offset + 23..offset + 27].copy_from_slice(&[5, 0, 1, 0]);
+        payload[offset + 66..offset + 68].copy_from_slice(&end.to_le_bytes());
+        let mut markers = Vec::new();
+        for (ordinal, ((id, offset), coordinates)) in ["p0", "p1", "p2"]
+            .into_iter()
+            .zip(points)
+            .zip(SENSED_ARC_POINTS)
+            .enumerate()
+        {
+            markers.push(marker_at(
+                id,
+                u32::try_from(ordinal).unwrap(),
+                offset,
+                SketchInputKind::Point,
+                Some(coordinates),
+            ));
+        }
+        markers.push(marker_at(
+            "curve",
+            3,
+            arc,
+            SketchInputKind::LineOrCircle,
+            None,
+        ));
+        let (mut entities, held) = projected_entities(markers, payload);
+        let mut losses = Vec::new();
+        finalize_unread_marker_entities(&mut entities, held, &mut losses);
+        let geometry = marker_entity(&entities, "curve").geometry.definition();
+        assert!(matches!(
+            (end, geometry),
+            (1, SketchGeometryDefinition::Circle { .. })
+                | (2, SketchGeometryDefinition::Arc { .. })
+        ));
+        assert_eq!(
+            losses
+                .iter()
+                .filter(
+                    |loss| loss.code == SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+                )
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn a_roster_curve_precedes_marker_links_and_keeps_its_clockwise_sense() {
+    let (entities, losses) = sensed_arc_projection(["p0", "p1"], 12, -1);
+    let curve = marker_entity(&entities, "curve");
+    let SketchGeometryDefinition::Arc {
+        radius,
+        start_angle,
+        end_angle,
+        ..
+    } = curve.geometry.definition()
+    else {
+        panic!("the roster record gives its arc before the linked chord");
+    };
+    assert!(curve.construction);
+    assert!((radius.get() - 10.0).abs() < EPS_TEST_MM);
+    assert!(
+        (end_angle.get() - start_angle.get() - 3.0 * std::f64::consts::FRAC_PI_2).abs()
+            < super::super::SKETCH_ANGLE_TOLERANCE
+    );
+    assert!(losses.is_empty(), "{losses:?}");
 }

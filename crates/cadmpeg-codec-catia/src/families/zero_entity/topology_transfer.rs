@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{u64_from_index, WorkBudget};
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -872,7 +872,7 @@ pub(super) fn transfer_closed_face_topology(
                             pcurve: copied_id!(pcurve.id, PcurveId),
                             isoparametric: None,
                             parameter_range: Some(
-                                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
+                                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(range).ok()?,
                             ),
                         })
                     } else {
@@ -1128,7 +1128,7 @@ mod tests {
     use super::super::records::ZeroEntitySupportRun;
     use super::{transfer_closed_face_topology, ZeroEntityClosedTopology};
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;

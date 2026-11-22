@@ -12,13 +12,17 @@ type E5CurvePlans<'a> = (
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
+};
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -2378,7 +2382,7 @@ fn emit_e5_faces_loops_coedges(
                     .or_default()
                     .push(arena_index);
                 let Ok(parameter_range) = pcurve_parameter_range
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                    .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                     .transpose()
                 else {
                     return Ok(false);
@@ -4297,13 +4301,13 @@ mod route_tests {
         ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -4369,7 +4373,7 @@ mod route_tests {
         assert_eq!(
             ir.geometry.coedges[0].pcurves[0]
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
             Some([1.0, 0.0])
         );
         let vertex_uses = ir.geometry.loops[0].anchored_vertex_uses();

@@ -39,10 +39,11 @@ pub(super) fn bind_extrude_work_plane_targets(
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) {
-    use cadmpeg_ir::features::{
-        ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlaneTargetSource,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeExtent, ExtrudeStart, LinearTermination, PlaneTargetSource,
     };
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
     else {
@@ -108,10 +109,13 @@ pub(super) fn project_extrude(
     placements: &[DesignSketchPlacement],
     body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength};
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
@@ -162,8 +166,22 @@ pub(super) fn project_extrude(
         construction_groups
     )?);
     let prologue = or_none!(scope.extrude_prologue());
-    let profile_ref = if scope.extrude_native_profiles().is_some() {
+    let native_profiles = scope.extrude_native_profiles();
+    let shared_profile = native_profiles
+        .filter(|profiles| crate::design::decode::operands::composable_sketch_profiles(profiles))
+        .and_then(<[_]>::first);
+    let profile_ref = if native_profiles.is_some() && shared_profile.is_none() {
         ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
+    } else if let Some(profile) = shared_profile {
+        match placements.iter().find(|placement| {
+            native_stream(&placement.id) == native_stream(&scope.id)
+                && placement.entity_id == profile.entity_id
+        }) {
+            Some(placement) => ProfileRef::Planar(PlanarProfileRef::Sketch(
+                crate::ids::neutral_sketch_id(placement),
+            )),
+            None => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
+        }
     } else if !prologue.solid_operation()
         && scope.extrude_profile().is_none()
         && profile_groups.is_empty()
