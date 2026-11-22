@@ -207,3 +207,6 @@ impl crate::SldprtCodec {
         scan
     }
 }
+
+#[cfg(test)]
+mod tests;
