@@ -16,9 +16,9 @@ use crate::test_support::test_streams::topology_partition_stream;
 use crate::NxCodec;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::geometry::BlendCrossSection;
-use cadmpeg_ir::geometry::BlendRadiusLaw;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::blends::BlendCrossSection;
+use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::report::loss::LossCategory;
@@ -494,11 +494,13 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(
         procedural
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.01)
     );
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = procedural.definition()
     else {
         panic!("typed surface intersection");
     };
@@ -541,8 +543,10 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         crate::intersection::BlendBoundFraming::PartitionDirect
     );
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };

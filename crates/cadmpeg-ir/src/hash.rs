@@ -981,7 +981,8 @@ mod tests {
     }
     #[test]
     fn procedural_digest_indexes_thousands_of_owners_with_linear_work() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut ir = CadIr::empty();
@@ -1021,7 +1022,8 @@ mod tests {
 
     #[test]
     fn procedural_digest_still_rejects_orphan_and_ambiguous_owners() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         for count in [0, 2, 3] {

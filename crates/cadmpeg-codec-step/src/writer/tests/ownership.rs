@@ -143,11 +143,11 @@ fn independent_curve_preserves_its_active_parameter_interval() {
 
 #[test]
 fn independent_exact_surface_preserves_its_active_uv_rectangle() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload;
     use cadmpeg_ir::geometry::{
-        nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-        surface_payloads::ExactSurfacePayload,
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-        SurfaceGeometry,
+        ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     let nurbs = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 5.0, 5.0], false),
@@ -220,10 +220,9 @@ fn independent_exact_surface_preserves_its_active_uv_rectangle() {
 
 #[test]
 fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
-    use cadmpeg_ir::geometry::{
-        surface_payloads::SubsetSurfaceConstruction, ProceduralSurface,
-        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction;
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface, SurfaceGeometry};
     for senses in [Some(true), None] {
         for independent in [false, true] {
             let mut ir = CadIr::empty();
@@ -320,9 +319,9 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
 
 #[test]
 fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
-    use cadmpeg_ir::geometry::{
-        curve_payloads::SubsetCurveConstruction, ProceduralCurve, ProceduralCurveDefinition,
-    };
+    use cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::ProceduralCurve;
     let mut ir = CadIr::empty();
     let basis: CurveId = "test:model:curve#basis".try_into().unwrap();
     let construction = ProceduralCurve::new(

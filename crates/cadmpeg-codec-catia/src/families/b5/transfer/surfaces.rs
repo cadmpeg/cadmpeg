@@ -10,11 +10,12 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -213,7 +214,7 @@ pub(in crate::families) fn copy_rolling_ball_definition(
     };
     let stations = jet.stations().to_vec();
     Ok(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(jet.degree(), stations)
             .map_err(CodecError::malformed)?,
     ))
 }
@@ -711,7 +712,7 @@ pub(super) fn emit_surfaces(
                         Some(revolution.angular_parameter_interval),
                         Some(revolution.parameter_interval),
                         false,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .map(|admitted_payload| {
                         ProceduralSurface::new(
@@ -944,8 +945,8 @@ mod tests {
     use super::{append_quadratic_span_knots, emit_extrusion_procedure};
     use crate::families::b5::transfer::surfaces::revolve_nurbs;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::Surface;

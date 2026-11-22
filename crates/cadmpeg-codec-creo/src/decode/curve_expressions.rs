@@ -11,9 +11,8 @@ use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureOperation as IrFeatureOperation, FeatureSourceContent, ParameterId,
 };
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
@@ -95,9 +94,9 @@ fn curve_expression_helix_definition(
         tangent_direction
     };
     Some(ProceduralCurveDefinition::Helix(
-        cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+        cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
             [0.0, helix.revolutions.get() * std::f64::consts::TAU],
-            cadmpeg_ir::geometry::HelixFrame {
+            cadmpeg_ir::geometry::helix::HelixFrame {
                 center: Point3::new(
                     origin.x + axis.x * helix.z_start.get(),
                     origin.y + axis.y * helix.z_start.get(),

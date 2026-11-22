@@ -43,22 +43,45 @@ pub(super) trait Walk {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError>;
 }
 
-/// The selections and constructions one walk reaches.
+/// Where an expression occurs inside a walked feature operation or sheet-metal
+/// rule.
+#[derive(Clone, Copy)]
+pub(super) enum ExpressionPlace<'a> {
+    /// A `Law::Expression`.
+    Law,
+    /// An `AngleRange.value`.
+    BendAllowance,
+    /// A pattern instance's expression for the seed parameter it names.
+    Seed(&'a str),
+}
+
+/// The selections, constructions, and expressions one walk reaches.
 pub(super) struct Collect<'a, 'c> {
     ctx: &'c DecodeContext<'c>,
     /// The selections, construction references included, in walk order.
     pub(super) selections: Vec<SelectionView<'a>>,
     /// The constructions, nested ones included, in walk order.
     pub(super) constructions: Vec<ConstructionView<'a>>,
+    /// The expressions held inside feature operations and sheet-metal rules.
+    pub(super) expressions: Vec<(ExpressionPlace<'a>, &'a Expression)>,
 }
 
-impl<'c> Collect<'_, 'c> {
+impl<'a, 'c> Collect<'a, 'c> {
     pub(super) const fn new(ctx: &'c DecodeContext<'c>) -> Self {
         Self {
             ctx,
             selections: Vec::new(),
             constructions: Vec::new(),
+            expressions: Vec::new(),
         }
+    }
+
+    pub(super) fn push_expression(
+        &mut self,
+        place: ExpressionPlace<'a>,
+        expression: &'a Expression,
+    ) {
+        self.expressions.push((place, expression));
     }
 
     /// Enters one level of a recursive design type.

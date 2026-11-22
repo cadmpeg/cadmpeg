@@ -3607,7 +3607,7 @@ pub(super) fn concentric_ring_regions(
     innermost_hole: Option<&ConcentricCircle<'_>>,
 ) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
     use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
-    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 
     let circle_use = |circle: &ConcentricCircle<'_>, reversed: bool| {
         Some(SketchProfileBoundaryUse {
