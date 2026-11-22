@@ -610,20 +610,12 @@ pub(super) fn project_extrude(
                 (Some(along), Some(against)) => (
                     ExtentShape::TwoSided {
                         first: blind(along),
-                        second: LinearTermination::Blind {
-                            length: if along.get() < 0.0 {
-                                or_none!(NonZeroLength::new(-against.get()))
-                            } else {
-                                against
-                            },
-                        },
+                        second: blind(against),
                     },
                     along.get() < 0.0,
                 ),
                 (Some(along), None) => (ExtentShape::OneSided(blind(along)), along.get() < 0.0),
-                (None, Some(against)) => {
-                    (ExtentShape::OneSided(blind(against)), against.get() > 0.0)
-                }
+                (None, Some(against)) => (ExtentShape::OneSided(blind(against)), true),
                 (None, None) => return Ok(None),
             }
         }

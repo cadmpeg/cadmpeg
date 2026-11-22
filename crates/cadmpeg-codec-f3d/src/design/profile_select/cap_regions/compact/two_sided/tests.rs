@@ -177,28 +177,39 @@ fn select_with_ambiguity(
 }
 
 #[test]
-fn each_blind_side_starts_at_the_profile_plane() {
-    let run = |first, second, direction| {
-        travel(Sweep {
-            operation: &BooleanOp::Join,
-            start: &ExtrudeStart::ProfilePlane {},
-            direction,
-            extent: &extent(first, second),
-        })
+fn parallel_plane_offsets_select_one_positive_travel_reading() {
+    let run = |first, second, direction, offsets: &[f64]| {
+        let planes: Vec<_> = offsets
+            .iter()
+            .map(|offset| PlaneSides {
+                offset: *offset,
+                before: Vec::new(),
+                after: Vec::new(),
+            })
+            .collect();
+        travel(
+            Sweep {
+                operation: &BooleanOp::Join,
+                start: &ExtrudeStart::ProfilePlane {},
+                direction,
+                extent: &extent(first, second),
+            },
+            &planes,
+            TOLERANCE,
+        )
     };
-    assert_eq!(
-        run(3.0, 2.0, &ExtrudeDirection::ProfileNormal {}),
-        Some((-2.0, 3.0))
-    );
-    assert_eq!(
-        run(3.0, 2.0, &ExtrudeDirection::ReversedProfileNormal {}),
-        Some((-3.0, 2.0))
-    );
-    assert_eq!(run(-3.0, 2.0, &ExtrudeDirection::ProfileNormal {}), None);
-    assert_eq!(
-        run(3.0, -2.0, &ExtrudeDirection::ProfileNormal {}),
-        Some((2.0, 3.0))
-    );
+    let normal = ExtrudeDirection::ProfileNormal {};
+    let reversed = ExtrudeDirection::ReversedProfileNormal {};
+    assert_eq!(run(3.0, 2.0, &normal, &[-2.0, 3.0]), Some((-2.0, 3.0)));
+    assert_eq!(run(3.0, 2.0, &reversed, &[-3.0, 2.0]), Some((-3.0, 2.0)));
+    assert_eq!(run(3.0, 2.0, &normal, &[2.0, 3.0]), Some((2.0, 3.0)));
+    assert_eq!(run(3.0, 2.0, &reversed, &[-3.0, -2.0]), Some((-3.0, -2.0)));
+    assert_eq!(run(-3.0, 2.0, &normal, &[-2.0, 3.0]), None);
+    assert_eq!(run(3.0, -2.0, &normal, &[2.0, 3.0]), None);
+    assert_eq!(run(3.0, 2.0, &normal, &[-2.0, 2.0, 3.0]), None);
+    assert_eq!(run(3.0, 2.0, &normal, &[-1.0, 3.0]), None);
+    assert_eq!(run(3.0, 3.0, &normal, &[3.0]), None);
+    assert_eq!(run(3.0, 3.0, &normal, &[-3.0, 3.0]), Some((-3.0, 3.0)));
 }
 
 #[test]
@@ -299,27 +310,38 @@ fn a_join_checks_deleted_faces_and_inserted_replacements() {
 }
 
 #[test]
-fn signed_blind_sides_can_bound_a_sweep_beyond_the_profile_plane() {
+fn positive_blind_sides_can_certify_either_geometric_interval() {
     let empty = AsmHistoricalTopology::default;
     assert!(select(
         empty(),
         prism(2.0, 3.0),
-        &extent(3.0, -2.0),
+        &extent(3.0, 2.0),
         &ExtrudeDirection::ProfileNormal {}
     )
     .is_some());
     assert!(select(
         empty(),
         prism(-3.0, -2.0),
-        &extent(3.0, -2.0),
+        &extent(3.0, 2.0),
         &ExtrudeDirection::ReversedProfileNormal {}
     )
     .is_some());
     assert!(select(
         empty(),
         prism(-3.0, 2.0),
-        &extent(3.0, -2.0),
+        &extent(3.0, 2.0),
         &ExtrudeDirection::ReversedProfileNormal {}
+    )
+    .is_some());
+}
+
+#[test]
+fn ambiguous_end_offsets_retain_the_native_selection() {
+    assert!(select(
+        AsmHistoricalTopology::default(),
+        prism(-TOLERANCE / 4.0, 3.0),
+        &extent(3.0, TOLERANCE / 4.0),
+        &ExtrudeDirection::ProfileNormal {},
     )
     .is_none());
 }

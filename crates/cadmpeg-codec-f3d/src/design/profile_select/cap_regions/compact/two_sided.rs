@@ -18,7 +18,7 @@ use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::Sketch;
 
-fn travel(sweep: Sweep<'_>) -> Option<(f64, f64)> {
+fn travel(sweep: Sweep<'_>, planes: &[PlaneSides], tolerance: f64) -> Option<(f64, f64)> {
     if !matches!(sweep.operation, BooleanOp::Join | BooleanOp::NewBody)
         || !matches!(sweep.start, ExtrudeStart::ProfilePlane {})
     {
@@ -32,15 +32,28 @@ fn travel(sweep: Sweep<'_>) -> Option<(f64, f64)> {
         _ => None,
     };
     let (first, second) = (length(first)?, length(second)?);
-    if first <= 0.0 {
+    if first <= 0.0 || second <= 0.0 {
         return None;
     }
-    let (a, b) = match sweep.direction {
-        ExtrudeDirection::ProfileNormal {} => (first, -second),
-        ExtrudeDirection::ReversedProfileNormal {} => (-first, second),
+    let sign = match sweep.direction {
+        ExtrudeDirection::ProfileNormal {} => 1.0,
+        ExtrudeDirection::ReversedProfileNormal {} => -1.0,
         _ => return None,
     };
-    (a != b).then_some((a.min(b), a.max(b)))
+    let first = sign * first;
+    let mut matching = [-sign * second, sign * second]
+        .into_iter()
+        .map(|second| (first.min(second), first.max(second)))
+        .filter(|(low, high)| {
+            high - low > tolerance
+                && [low, high].into_iter().all(|height| {
+                    planes
+                        .iter()
+                        .any(|plane| (plane.offset - height).abs() <= tolerance)
+                })
+        });
+    let interval = matching.next()?;
+    matching.next().is_none().then_some(interval)
 }
 
 fn difference(plane: &PlaneSides, point: Point2) -> bool {
@@ -228,9 +241,6 @@ pub(super) fn added_candidate(
     state_ids: (i64, i64),
     sweep: Sweep<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    let Some(travel) = travel(sweep) else {
-        return Ok(None);
-    };
     let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
         return Ok(None);
     };
@@ -299,6 +309,9 @@ pub(super) fn added_candidate(
         }
     }
     let Some(planes) = changed_planes(sketch, (before, after), &faces, tolerance) else {
+        return Ok(None);
+    };
+    let Some(travel) = travel(sweep, &planes, tolerance) else {
         return Ok(None);
     };
     let work = ProfileGeometryWork::new();

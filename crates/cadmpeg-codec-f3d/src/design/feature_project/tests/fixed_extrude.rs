@@ -589,12 +589,12 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
 mod through_all;
 
 #[test]
-fn signed_distance_lanes_keep_both_end_heights_relative_to_the_profile_plane() {
+fn signed_distance_lanes_project_positive_travel_on_each_side() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     for (along, against, first_length, second_length, reversed) in [
         (4.4, 3.7, 44.0, 37.0, false),
-        (-4.4, 3.7, 44.0, -37.0, true),
-        (4.4, -3.7, 44.0, -37.0, false),
+        (-4.4, 3.7, 44.0, 37.0, true),
+        (4.4, -3.7, 44.0, 37.0, false),
         (-4.4, -3.7, 44.0, 37.0, true),
     ] {
         let scope = fixed_extrude(
@@ -611,7 +611,7 @@ fn signed_distance_lanes_keep_both_end_heights_relative_to_the_profile_plane() {
             ..
         })) = projected(&scope)
         else {
-            panic!("two signed blind sides");
+            panic!("two blind sides");
         };
         assert_eq!(
             matches!(direction, ExtrudeDirection::ReversedProfileNormal {}),
@@ -623,5 +623,55 @@ fn signed_distance_lanes_keep_both_end_heights_relative_to_the_profile_plane() {
         assert!(
             matches!(second.termination, LinearTermination::Blind { length } if length.get() == second_length)
         );
+    }
+}
+
+#[test]
+fn zero_first_side_uses_the_reversed_second_side_magnitude() {
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters::default(),
+    );
+    let parameter = |kind: &str, value| {
+        crate::design::decode::parameters::parse_design_parameter_record(
+            &crate::design::test_support::parameter_record(
+                Some(44),
+                "value",
+                kind,
+                Some("mm"),
+                "d1",
+                value,
+            ),
+        )
+        .unwrap()
+    };
+    let along = parameter("AlongDistance", 0.0);
+    let placement = placement();
+    for against in [-3.7, 3.7] {
+        let against = parameter("AgainstDistance", against);
+        let definition = crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[(0, &along), (1, &against)],
+                &[],
+                &[],
+                std::slice::from_ref(&placement),
+                &[],
+            )
+        })
+        .unwrap();
+        assert!(matches!(
+            definition,
+            Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ReversedProfileNormal {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Blind { length }, ..
+                    }
+                }, ..
+            })) if length.get() == 37.0
+        ));
     }
 }
