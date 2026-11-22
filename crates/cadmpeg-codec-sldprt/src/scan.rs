@@ -122,13 +122,14 @@ fn native(
             budget.check()?;
             decoded.push(char::from(byte.rotate_left(4)));
         }
-        if !history_name(&decoded) {
-            reader.seek(next)?;
-            continue;
-        }
         let end = name_end
             .checked_add(index_from_u32(compressed))
             .ok_or_else(|| malformed("SolidWorks block extent"))?;
+        if !history_name(&decoded) {
+            // A complete block is skipped whole, so its payload is never read as a marker.
+            reader.seek(if end <= source.end() { end } else { next })?;
+            continue;
+        }
         if end > source.end() {
             return Err(StopReason::Truncated(
                 "SolidWorks history block extent".into(),

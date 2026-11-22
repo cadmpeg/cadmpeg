@@ -199,6 +199,15 @@ fn scan_sldprt_truncated_non_history_block_is_skipped() {
 }
 
 #[test]
+fn scan_sldprt_complete_non_history_block_ending_in_a_marker_prefix_is_skipped() {
+    let mut bytes = source(LIST);
+    let mut other = make_block(0x42, "Preview/Thumbnail", LIST);
+    *other.last_mut().expect("block bytes") = 0x14;
+    bytes.extend(other);
+    assert_complete_history_listing(&bytes);
+}
+
+#[test]
 fn scan_sldprt_history_block_cut_in_its_header_is_truncated() {
     let preview = make_block(0x42, "Preview/Thumbnail", LIST);
     for (lead, cut) in [&[][..], &preview[..], &[0][..]]
