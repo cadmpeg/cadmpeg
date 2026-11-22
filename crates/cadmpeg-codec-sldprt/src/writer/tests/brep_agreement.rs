@@ -62,6 +62,15 @@ fn stale_messages(report: &ExportReport) -> Vec<&str> {
         .collect()
 }
 
+fn unwritten_messages(report: &ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::WriterConfigurationSnapshotEditUnwritten.kind())
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
 fn named<'a>(decoded: &'a EditableDecodeResult, name: &str) -> &'a Feature {
     decoded
         .ir()
@@ -384,6 +393,17 @@ fn native_extrusion_depth_edit_is_written_and_named() {
     let stale = stale_messages(&report);
     assert_eq!(stale.len(), 1, "{:?}", report.losses);
     assert!(stale[0].contains(&native_id), "{}", stale[0]);
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output.clone()), &DecodeOptions::default())
+        .unwrap();
+    let depth = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    assert_eq!(depth.expression, "50mm");
     assert_eq!(partition(&output), partition(&source));
 }
 
@@ -454,5 +474,204 @@ fn native_feature_name_edit_keeps_retained_brep() {
     });
     let (report, output) = write(&decoded);
     assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    assert_eq!(partition(&output), partition(&source));
+}
+
+#[test]
+fn a_model_suppression_with_an_unedited_snapshot_is_written_and_named_once() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode(&source);
+    let boss = named(&decoded, "Boss").id.clone();
+    decoded
+        .ir_mut()
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id == boss)
+        .unwrap()
+        .suppressed = Some(true);
+
+    let (report, output) = write(&decoded);
+
+    let stale = stale_messages(&report);
+    assert_eq!(stale.len(), 1, "{:?}", report.losses);
+    assert!(
+        stale[0].contains(boss.as_str()) && stale[0].contains("written suppressed"),
+        "{}",
+        stale[0]
+    );
+    assert!(
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
+    let written = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert_eq!(named(&written, "Boss").suppressed, Some(true));
+}
+
+#[test]
+fn a_suppression_edited_only_in_the_synthesized_snapshot_is_named_unwritten() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode(&source);
+    let boss = named(&decoded, "Boss").id.clone();
+    decoded
+        .ir_mut()
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.active)
+        .unwrap()
+        .feature_states
+        .get_mut(&boss)
+        .unwrap()
+        .evaluation = cadmpeg_ir::features::parameters::ConfigurationEvaluation::Suppressed {};
+
+    let (report, output) = write(&decoded);
+
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    let unwritten = unwritten_messages(&report);
+    assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
+    assert!(
+        unwritten[0].contains(boss.as_str()) && unwritten[0].contains("does not write"),
+        "{}",
+        unwritten[0]
+    );
+    let written = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(output.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert_ne!(named(&written, "Boss").suppressed, Some(true));
+    assert_eq!(partition(&output), partition(&source));
+}
+
+#[test]
+fn a_parameter_value_edited_only_in_the_synthesized_snapshot_is_named_unwritten() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode(&source);
+    let depth = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .id
+        .clone();
+    *decoded
+        .ir_mut()
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.active)
+        .unwrap()
+        .parameter_values
+        .get_mut(&depth)
+        .unwrap() = cadmpeg_ir::features::parameters::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+    );
+
+    let (report, output) = write(&decoded);
+
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    let unwritten = unwritten_messages(&report);
+    assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
+    assert!(
+        unwritten[0].contains(depth.as_str()) && unwritten[0].contains("does not write"),
+        "{}",
+        unwritten[0]
+    );
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output.clone()), &DecodeOptions::default())
+        .unwrap();
+    let written_depth = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    assert_eq!(written_depth.expression, "12.5mm");
+    assert_eq!(partition(&output), partition(&source));
+}
+
+#[test]
+fn a_suppressed_feature_an_active_feature_depends_on_is_refused_as_the_decoder_states_it() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords Name="Bracket"><Configuration Name="Default" SourceIndex="0" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension></Extrusion><Extrusion Name="Cut" Type="CutExtrude" id="9" Scope="Body1"><Dimension Name="Depth">2mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = decode(&source);
+    let boss = named(&decoded, "Boss").id.clone();
+    let cut = named(&decoded, "Cut").id.clone();
+    {
+        let mut edit = decoded.ir_mut();
+        for feature in &mut edit.model.features {
+            if feature.id == boss {
+                feature.suppressed = Some(true);
+            }
+            if feature.id == cut {
+                let mut dependencies = feature.dependencies.to_vec();
+                dependencies.push(boss.clone());
+                feature.dependencies =
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+                        .unwrap();
+            }
+        }
+    }
+
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("suppressed dependency state"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_rename_beside_a_bound_profile_sketch_reports_no_stale_solid() {
+    let mut source =
+        crate::test_support::history::sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords Name="Bracket"><Configuration Name="Default" SourceIndex="0" Material="Steel" DisplayState="Shaded"/><Sketch Name="Sketch1" Type="ProfileFeature"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = decode(&source);
+    assert!(matches!(
+        named(&decoded, "Sketch1").evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(_)),
+        })
+    ));
+    let boss = named(&decoded, "Boss").id.clone();
+    decoded
+        .ir_mut()
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id == boss)
+        .unwrap()
+        .name = Some("RenamedBoss".into());
+
+    let (report, output) = write(&decoded);
+
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    assert!(
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
     assert_eq!(partition(&output), partition(&source));
 }

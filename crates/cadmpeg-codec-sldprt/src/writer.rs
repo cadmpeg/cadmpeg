@@ -608,9 +608,10 @@ pub(crate) fn configurations_without_synthesized_snapshot(
     configurations
 }
 
-/// Validate `ir` with the suppressed features of the current model stated in
-/// its synthesized active snapshot, as the decoder states them, and then
-/// cleared again for the write.
+/// Validate `ir` as its written part decodes when the model suppresses a
+/// feature: the decoder restates the synthesized active snapshot from the
+/// model, and validation requires the active configuration to state each
+/// suppression. The snapshot is cleared again for the write.
 fn validate_with_model_snapshot(
     ir: &mut CadIr,
 ) -> Result<cadmpeg_ir::report::check::ValidationReport, CodecError> {
@@ -619,24 +620,30 @@ fn validate_with_model_snapshot(
             .attributes
             .get("sldprt_configuration_snapshot_synthesized")
     });
-    let Some(index) = synthesized.and_then(|id| {
-        ir.model
-            .configurations
-            .iter()
-            .position(|configuration| configuration.id.as_str() == id)
-    }) else {
+    let Some(index) = synthesized
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .position(|configuration| configuration.id.as_str() == id)
+        })
+        .filter(|_| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.suppressed == Some(true))
+        })
+    else {
         return cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
     };
-    let states = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature.suppressed == Some(true))
-        .map(|feature| (feature.id.clone(), feature.configuration_state()))
-        .collect();
-    ir.model.configurations[index].feature_states = states;
+    let snapshot = crate::decode::model_snapshot(&ir.model);
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
-    ir.model.configurations[index].feature_states.clear();
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values.clear();
+    configuration.feature_states.clear();
     validation
 }
 

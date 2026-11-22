@@ -122,7 +122,10 @@ structural edits it cannot safely rewrite. The writer has no modeling kernel.
 An edit of a feature, a parameter, a suppression state, or a configuration
 state that shapes the solid is written as edited over the stored solid, and a
 `writer.solid-stale-after-edit` loss names each edited feature and states that
-the solid shows the state before the edit.
+the solid shows the state before the edit. The writer does not write the active
+configuration snapshot that the decoder synthesizes from the model; an edit of
+that snapshot which the model does not state gets a
+`writer.configuration-snapshot-edit-unwritten` loss.
 
 With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It

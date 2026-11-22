@@ -3,6 +3,8 @@
 //!
 //! The writer cannot regenerate a solid. An edit that shapes it is written as
 //! edited over the stored solid, and `writer.solid-stale-after-edit` names it.
+//! The baseline of every comparison is the retained source image decoded
+//! again, which is the document the caller edited.
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::Cursor;
@@ -10,351 +12,316 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::parameters::DesignParameter;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::history::hash::{
-    configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
-    feature_hash, history_hash, parameter_hash,
-};
-use crate::history::parameters::project_parameters;
+use crate::history::hash::{configuration_hash, feature_hash, history_hash, parameter_hash};
 use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
 
-use super::project_features_with_native_inputs;
-
-/// The stale-solid losses of one write: one per construction edit that shapes
-/// the solid. The writer has no modeling kernel, so the output keeps the stored
-/// solid and its caches as they were before the edit, and each loss names what
-/// was edited. The source history is the baseline for native edits.
+/// The losses of one write that the stored solid and the synthesized
+/// configuration snapshot cause: one stale-solid loss per construction edit
+/// that shapes the solid, and one loss per snapshot edit the model does not
+/// state. The writer has no modeling kernel, so the output keeps the stored
+/// solid and its caches as they were before the edit.
 pub(crate) fn stale_solid_losses(
-    ir: &cadmpeg_ir::CadIr,
-    native: Option<&crate::native::SldprtNative>,
-    source_scan: Option<&crate::container::ContainerScan<'_>>,
+    ir: &CadIr,
+    native: Option<&SldprtNative>,
+    source_image: &[u8],
 ) -> Result<Vec<LossNote>, CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source_scan.map_or(&[][..], |scan| scan.source_image),
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-
+    let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
+        return Ok(Vec::new());
+    };
+    let hash_arena = DecodeArena::new();
+    let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy::service())?;
+    let features_changed = differs(source, "sldprt_neutral_feature_local_sha256", || {
+        feature_hash(&hash_ctx, &ir.model)
+    })?;
+    let parameters_changed = differs(source, "sldprt_neutral_parameter_local_sha256", || {
+        parameter_hash(&hash_ctx, &ir.model.parameters)
+    })?;
+    let native_changed = differs(source, "sldprt_native_history_sha256", || {
+        history_hash(&hash_ctx, &native.feature_histories)
+    })?;
+    let configurations_changed =
+        differs(source, "sldprt_neutral_configuration_local_sha256", || {
+            configuration_hash(&hash_ctx, &ir.model.configurations)
+        })?;
+    if !(features_changed || parameters_changed || native_changed || configurations_changed) {
+        return Ok(Vec::new());
+    }
+    let decoded = crate::SldprtCodec
+        .decode(&mut Cursor::new(source_image), &DecodeOptions::default())
+        .map_err(|failure| match failure {
+            cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
+            other => CodecError::malformed(format_args!(
+                "SLDPRT retained source cannot be decoded: {other}"
+            )),
+        })?;
+    let baseline = decoded.ir();
     let mut losses = Vec::new();
-    // Features a model-level loss names; the active configuration mirrors the
-    // model, so its state edit of the same feature is the same edit.
+    // Features a model-level loss names; an active configuration with stated
+    // states mirrors the model, so its state edit of the same feature is the
+    // same edit.
     let mut named = HashSet::new();
-    let Some(source) = ir.source.as_ref() else {
-        return Ok(losses);
-    };
-    let Some(native) = native else {
-        return Ok(losses);
-    };
-    let neutral_feature_baseline = source.attributes.get("sldprt_neutral_feature_local_sha256");
-    let neutral_features_changed = match neutral_feature_baseline {
-        Some(baseline) => baseline != &feature_hash(&hash_ctx, &ir.model)?,
-        None => false,
-    };
-    let neutral_parameters_changed = match source
-        .attributes
-        .get("sldprt_neutral_parameter_local_sha256")
-    {
-        Some(baseline) => baseline != &parameter_hash(&hash_ctx, &ir.model.parameters)?,
-        None => false,
-    };
-    if neutral_features_changed {
-        let baseline = project_features_with_native_inputs(native)?;
-        // Whether a construction edit, a removal or an output edit explains the
-        // changed feature digest; only an unexplained change is a tree edit.
-        let mut explained = false;
-        for feature in &ir.model.features {
-            let Some(original) = baseline.iter().find(|original| original.id == feature.id) else {
-                explained = true;
-                if feature_affects_brep(feature, &ir.model.features) {
-                    named.insert(feature.id.clone());
-                    losses.push(stale(format!(
-                        "Feature {} is added to the written history, and the stored solid does not include it.",
-                        feature_label(feature)
-                    )));
-                }
-                continue;
-            };
-            if original.evaluation.outputs() != feature.evaluation.outputs() {
-                explained = true;
-                named.insert(feature.id.clone());
-                losses.push(stale(format!(
-                    "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
-                    feature_label(feature)
-                )));
-                continue;
-            }
-            if !construction_changed(original, feature) {
-                continue;
-            }
-            explained = true;
-            if feature_affects_brep(feature, &ir.model.features) {
-                let edit = match feature.suppressed {
-                    Some(true) if original.suppressed != feature.suppressed => {
-                        "written suppressed as edited"
-                    }
-                    Some(false) if original.suppressed != feature.suppressed => {
-                        "written unsuppressed as edited"
-                    }
-                    _ => "written as edited",
-                };
-                named.insert(feature.id.clone());
-                losses.push(stale(format!(
-                    "Feature {} is {edit}, and the stored solid shows the state before the edit.",
-                    feature_label(feature)
-                )));
-            }
-        }
-        for removed in baseline.iter().filter(|original| {
-            !ir.model
-                .features
-                .iter()
-                .any(|feature| feature.id == original.id)
-        }) {
-            explained = true;
-            if feature_affects_brep(removed, &baseline) {
-                named.insert(removed.id.clone());
-                losses.push(stale(format!(
-                    "Feature {} is removed from the written history, and the stored solid still includes it.",
-                    feature_label(removed)
-                )));
-            }
-        }
-        if !explained {
-            let mut naming_only = ir.model.clone();
-            for feature in &mut naming_only.features {
-                if let Some(original) = baseline.iter().find(|original| original.id == feature.id) {
-                    feature.name.clone_from(&original.name);
-                }
-            }
-            let residual_change = match neutral_feature_baseline {
-                Some(expected) => expected != &feature_hash(&hash_ctx, &naming_only)?,
-                None => false,
-            };
-            let shaping = ir
-                .model
-                .features
-                .iter()
-                .filter(|feature| feature_affects_brep(feature, &ir.model.features))
-                .collect::<Vec<_>>();
-            if residual_change && !shaping.is_empty() {
-                let moved = shaping
-                    .iter()
-                    .filter(|feature| {
-                        baseline
-                            .iter()
-                            .find(|original| original.id == feature.id)
-                            .is_some_and(|original| {
-                                original.ordinal != feature.ordinal
-                                    || original.native_ref != feature.native_ref
-                            })
-                    })
-                    .collect::<Vec<_>>();
-                if moved.is_empty() {
-                    losses.push(stale(
-                        "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
-                    ));
-                }
-                for feature in moved {
-                    losses.push(stale(format!(
-                        "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
-                        feature_label(feature)
-                    )));
-                }
-            }
-        }
+    if features_changed {
+        feature_edits(ir, baseline, &hash_ctx, &mut named, &mut losses)?;
     }
-    if neutral_parameters_changed {
-        let lane_bytes = native
-            .feature_input_lanes
-            .iter()
-            .flat_map(|lane| lane.native_payload.iter().copied())
-            .collect::<Vec<_>>();
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&lane_bytes, &arena, &DecodePolicy::service())?;
-        let baseline = project_parameters(&ctx, &native.feature_histories)?;
-        for parameter in &ir.model.parameters {
-            let original = baseline.iter().find(|original| original.id == parameter.id);
-            if original.is_some_and(|original| !driving_parameter_changed(original, parameter)) {
-                continue;
-            }
-            let driven = driven_features(parameter, ir);
-            if !driven.is_empty() {
-                losses.push(stale(format!(
-                    "Parameter {} is written as edited ({}), and the stored solid shows {} before the edit.",
-                    parameter_label(parameter),
-                    parameter.expression,
-                    features_label(&driven)
-                )));
-            }
-        }
-        for removed in baseline.iter().filter(|original| {
-            !ir.model
-                .parameters
-                .iter()
-                .any(|parameter| parameter.id == original.id)
-        }) {
-            let driven = driven_features(removed, ir);
-            if !driven.is_empty() {
-                losses.push(stale(format!(
-                    "Parameter {} is removed from the written history, and the stored solid shows {} before the edit.",
-                    parameter_label(removed),
-                    features_label(&driven)
-                )));
-            }
-        }
+    if parameters_changed {
+        parameter_edits(ir, baseline, &mut losses);
     }
-    let native_history_changed = match source.attributes.get("sldprt_native_history_sha256") {
-        Some(baseline) => baseline != &history_hash(&hash_ctx, &native.feature_histories)?,
-        None => false,
-    };
-    if let Some(scan) = source_scan.filter(|_| native_history_changed) {
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(scan.source_image, &arena, &DecodePolicy::service())?;
-        let mut annotations = cadmpeg_ir::Annotations::default();
-        let mut decode_losses = Vec::new();
-        let baseline = crate::history::histories(&ctx, scan, &mut annotations, &mut decode_losses)?;
-        for feature in native
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-        {
-            let original = baseline
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|original| original.id == feature.id);
-            let modeling = ir
-                .model
-                .features
-                .iter()
-                .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))
-                .is_none_or(|neutral| feature_affects_brep(neutral, &ir.model.features));
-            if modeling
-                && original.is_none_or(|original| native_construction_changed(original, feature))
-            {
-                losses.push(stale(format!(
-                    "Native feature {} is written as edited, and the stored solid shows the state before the edit.",
-                    native_label(feature)
-                )));
-            }
-        }
-        let removed = baseline
-            .iter()
-            .flat_map(|history| &history.features)
-            .filter(|original| {
-                !native
-                    .feature_histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .any(|feature| feature.id == original.id)
-            })
-            .collect::<Vec<_>>();
-        if !removed.is_empty() {
-            let baseline_features = crate::history::project::project_features(&baseline)?;
-            for removed in removed {
-                let neutral = ir
-                    .model
-                    .features
-                    .iter()
-                    .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()))
-                    .or_else(|| {
-                        baseline_features.iter().find(|feature| {
-                            feature.native_ref.as_deref() == Some(removed.id.as_str())
-                        })
-                    });
-                if neutral.is_none_or(|feature| feature_affects_brep(feature, &baseline_features)) {
-                    losses.push(stale(format!(
-                        "Native feature {} is removed from the written history, and the stored solid still includes it.",
-                        native_label(removed)
-                    )));
-                }
-            }
-        }
-    } else if native_history_changed
-        && native
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .any(|feature| {
-                ir.model.features.iter().any(|neutral| {
-                    neutral.native_ref.as_deref() == Some(feature.id.as_str())
-                        && feature_affects_brep(neutral, &ir.model.features)
-                })
-            })
-    {
-        losses.push(stale(
-            "The native feature history is edited, and without the retained source image the writer cannot tell which record changed; the stored solid shows the state before the edit.",
-        ));
+    if native_changed {
+        native_edits(ir, native, baseline, &mut losses)?;
     }
-    if let Some(expected) = source
-        .attributes
-        .get("sldprt_neutral_configuration_local_sha256")
-    {
-        if expected != &configuration_hash(&hash_ctx, &ir.model.configurations)? {
-            if let Some(scan) = source_scan {
-                configuration_design_edits(ir, scan, &named, &mut losses)?;
-            } else {
-                let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);
-                if expected == &configuration_hash(&hash_ctx, &configurations)? {
-                    return Ok(losses);
-                }
-                let parameter_values_changed = match source
-                    .attributes
-                    .get("sldprt_configuration_parameter_values_local_sha256")
-                {
-                    Some(baseline) => {
-                        baseline != &configuration_parameter_value_hash(&hash_ctx, &configurations)?
-                    }
-                    None => false,
-                };
-                let feature_states_changed = match source
-                    .attributes
-                    .get("sldprt_configuration_feature_states_local_sha256")
-                {
-                    Some(baseline) => {
-                        baseline != &configuration_feature_state_hash(&hash_ctx, &configurations)?
-                    }
-                    None => false,
-                };
-                if parameter_values_changed
-                    || feature_states_changed
-                    || configurations
-                        .iter()
-                        .any(|configuration| !configuration.parameter_overrides.is_empty())
-                {
-                    losses.push(stale(
-                        "A configuration design state is edited, and without the retained source image the writer cannot tell which; the stored configuration solids show the state before the edit.",
-                    ));
-                }
-            }
-        }
+    if configurations_changed {
+        configuration_design_edits(ir, baseline, &named, &mut losses);
     }
     Ok(losses)
 }
 
-fn configuration_design_edits(
-    ir: &cadmpeg_ir::CadIr,
-    source_scan: &crate::container::ContainerScan<'_>,
-    named: &HashSet<FeatureId>,
+/// Whether the digest `current` computes differs from the baseline digest the
+/// decoder stamped as `attribute`; `false` without a stamped baseline.
+fn differs(
+    source: &SourceMeta,
+    attribute: &str,
+    current: impl FnOnce() -> Result<String, CodecError>,
+) -> Result<bool, CodecError> {
+    match source.attributes.get(attribute) {
+        Some(expected) => Ok(expected != &current()?),
+        None => Ok(false),
+    }
+}
+
+fn feature_edits(
+    ir: &CadIr,
+    source: &CadIr,
+    hash_ctx: &DecodeContext<'_>,
+    named: &mut HashSet<FeatureId>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let source = crate::SldprtCodec
-        .decode(
-            &mut Cursor::new(source_scan.source_image),
-            &DecodeOptions::default(),
-        )
-        .map_err(|failure| match failure {
-            cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-            other => CodecError::malformed(format_args!(
-                "SLDPRT retained configuration source cannot be decoded: {other}"
-            )),
-        })?;
-    let baseline = source.ir();
+    let baseline = &source.model.features;
+    // Whether a construction edit, a removal or an output edit explains the
+    // changed feature digest; only an unexplained change is a tree edit.
+    let mut explained = false;
+    for feature in &ir.model.features {
+        let Some(original) = baseline.iter().find(|original| original.id == feature.id) else {
+            explained = true;
+            if feature_affects_brep(feature, &ir.model.features) {
+                named.insert(feature.id.clone());
+                losses.push(stale(format!(
+                    "Feature {} is added to the written history, and the stored solid does not include it.",
+                    feature_label(feature)
+                )));
+            }
+            continue;
+        };
+        if original.evaluation.outputs() != feature.evaluation.outputs() {
+            explained = true;
+            named.insert(feature.id.clone());
+            losses.push(stale(format!(
+                "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
+                feature_label(feature)
+            )));
+            continue;
+        }
+        if !construction_changed(original, feature) {
+            continue;
+        }
+        explained = true;
+        if feature_affects_brep(feature, &ir.model.features) {
+            let edit = match feature.suppressed {
+                Some(true) if original.suppressed != feature.suppressed => {
+                    "written suppressed as edited"
+                }
+                Some(false) if original.suppressed != feature.suppressed => {
+                    "written unsuppressed as edited"
+                }
+                _ => "written as edited",
+            };
+            named.insert(feature.id.clone());
+            losses.push(stale(format!(
+                "Feature {} is {edit}, and the stored solid shows the state before the edit.",
+                feature_label(feature)
+            )));
+        }
+    }
+    for removed in baseline.iter().filter(|original| {
+        !ir.model
+            .features
+            .iter()
+            .any(|feature| feature.id == original.id)
+    }) {
+        explained = true;
+        if feature_affects_brep(removed, baseline) {
+            named.insert(removed.id.clone());
+            losses.push(stale(format!(
+                "Feature {} is removed from the written history, and the stored solid still includes it.",
+                feature_label(removed)
+            )));
+        }
+    }
+    if explained {
+        return Ok(());
+    }
+    let mut naming_only = ir.model.clone();
+    for feature in &mut naming_only.features {
+        if let Some(original) = baseline.iter().find(|original| original.id == feature.id) {
+            feature.name.clone_from(&original.name);
+        }
+    }
+    let residual_change = match ir
+        .source
+        .as_ref()
+        .and_then(|meta| meta.attributes.get("sldprt_neutral_feature_local_sha256"))
+    {
+        Some(expected) => expected != &feature_hash(hash_ctx, &naming_only)?,
+        None => false,
+    };
+    let shaping = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature_affects_brep(feature, &ir.model.features))
+        .collect::<Vec<_>>();
+    if !residual_change || shaping.is_empty() {
+        return Ok(());
+    }
+    let moved = shaping
+        .iter()
+        .filter(|feature| {
+            baseline
+                .iter()
+                .find(|original| original.id == feature.id)
+                .is_some_and(|original| {
+                    original.ordinal != feature.ordinal || original.native_ref != feature.native_ref
+                })
+        })
+        .collect::<Vec<_>>();
+    if moved.is_empty() {
+        losses.push(stale(
+            "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
+        ));
+    }
+    for feature in moved {
+        losses.push(stale(format!(
+            "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
+            feature_label(feature)
+        )));
+    }
+    Ok(())
+}
+
+fn parameter_edits(ir: &CadIr, source: &CadIr, losses: &mut Vec<LossNote>) {
+    let baseline = &source.model.parameters;
+    for parameter in &ir.model.parameters {
+        let original = baseline.iter().find(|original| original.id == parameter.id);
+        if original.is_some_and(|original| !driving_parameter_changed(original, parameter)) {
+            continue;
+        }
+        let driven = driven_features(parameter, ir);
+        if !driven.is_empty() {
+            losses.push(stale(format!(
+                "Parameter {} is written as edited ({}), and the stored solid shows {} before the edit.",
+                parameter_label(parameter),
+                parameter.expression,
+                features_label(&driven)
+            )));
+        }
+    }
+    for removed in baseline.iter().filter(|original| {
+        !ir.model
+            .parameters
+            .iter()
+            .any(|parameter| parameter.id == original.id)
+    }) {
+        let driven = driven_features(removed, ir);
+        if !driven.is_empty() {
+            losses.push(stale(format!(
+                "Parameter {} is removed from the written history, and the stored solid shows {} before the edit.",
+                parameter_label(removed),
+                features_label(&driven)
+            )));
+        }
+    }
+}
+
+fn native_edits(
+    ir: &CadIr,
+    native: &SldprtNative,
+    source: &CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let source_native = source
+        .native
+        .namespace("sldprt")
+        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+        .transpose()?;
+    let baseline = source_native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let records = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    for feature in &records {
+        let original = baseline.iter().find(|original| original.id == feature.id);
+        let modeling = ir
+            .model
+            .features
+            .iter()
+            .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))
+            .is_none_or(|neutral| feature_affects_brep(neutral, &ir.model.features));
+        if modeling
+            && original.is_none_or(|original| native_construction_changed(original, feature))
+        {
+            losses.push(stale(format!(
+                "Native feature {} is written as edited, and the stored solid shows the state before the edit.",
+                native_label(feature)
+            )));
+        }
+    }
+    for removed in baseline
+        .iter()
+        .filter(|original| !records.iter().any(|feature| feature.id == original.id))
+    {
+        let neutral = ir
+            .model
+            .features
+            .iter()
+            .chain(&source.model.features)
+            .find(|feature| feature.native_ref.as_deref() == Some(removed.id.as_str()));
+        if neutral.is_none_or(|feature| feature_affects_brep(feature, &source.model.features)) {
+            losses.push(stale(format!(
+                "Native feature {} is removed from the written history, and the stored solid still includes it.",
+                native_label(removed)
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn configuration_design_edits(
+    ir: &CadIr,
+    baseline: &CadIr,
+    named: &HashSet<FeatureId>,
+    losses: &mut Vec<LossNote>,
+) {
+    // The writer writes no synthesized snapshot; the written part decodes with
+    // the snapshot restated from the written model.
+    let synthesized = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("sldprt_configuration_snapshot_synthesized")
+        })
+        .map(|id| (id, crate::decode::model_snapshot(&ir.model)));
     for configuration in &ir.model.configurations {
         let original = baseline
             .model
@@ -365,6 +332,10 @@ fn configuration_design_edits(
             Some(name) => format!("\"{name}\" ({})", configuration.id.as_str()),
             None => configuration.id.as_str().to_owned(),
         };
+        let mirror = synthesized
+            .as_ref()
+            .filter(|(id, _)| configuration.id.as_str() == id.as_str())
+            .map(|(_, snapshot)| snapshot);
         let parameter_ids = configuration
             .parameter_values
             .keys()
@@ -381,26 +352,30 @@ fn configuration_design_edits(
             )
             .collect::<BTreeSet<_>>();
         for id in parameter_ids {
-            let changed = original.is_none_or(|value| {
+            let mut value_edited = original.is_none_or(|value| {
                 configuration.parameter_values.get(id) != value.parameter_values.get(id)
-                    || configuration.parameter_overrides.get(id)
-                        != value.parameter_overrides.get(id)
             });
-            if !changed {
+            if let Some(mirror) = mirror.filter(|_| value_edited) {
+                value_edited = false;
+                if configuration.parameter_values.get(id) != mirror.parameter_values.get(id) {
+                    losses.push(snapshot_unwritten(format!(
+                        "The value of parameter {} in configuration {configuration_label} is edited only in the configuration snapshot the decoder synthesized from the model. The writer does not write that snapshot, and the written configuration states the value of the model parameter.",
+                        parameter_id_label(id, ir, baseline)
+                    )));
+                }
+            }
+            let override_edited = original.is_none_or(|value| {
+                configuration.parameter_overrides.get(id) != value.parameter_overrides.get(id)
+            });
+            if !(value_edited || override_edited) {
                 continue;
             }
             let parameter = ir
                 .model
                 .parameters
                 .iter()
-                .find(|parameter| &parameter.id == id)
-                .or_else(|| {
-                    baseline
-                        .model
-                        .parameters
-                        .iter()
-                        .find(|parameter| &parameter.id == id)
-                });
+                .chain(&baseline.model.parameters)
+                .find(|parameter| &parameter.id == id);
             match parameter {
                 None => losses.push(stale(format!(
                     "Parameter {} in configuration {configuration_label} is written as edited, and that configuration's stored solid shows the state before the edit.",
@@ -428,10 +403,10 @@ fn configuration_design_edits(
             )
             .collect::<BTreeSet<_>>();
         for id in feature_ids {
-            let changed = original.is_none_or(|value| {
+            let edited = original.is_none_or(|value| {
                 configuration.feature_states.get(id) != value.feature_states.get(id)
             });
-            if !changed || (configuration.active && named.contains(id)) {
+            if !edited {
                 continue;
             }
             let current = ir.model.features.iter().find(|feature| &feature.id == id);
@@ -440,6 +415,20 @@ fn configuration_design_edits(
                 .features
                 .iter()
                 .find(|feature| &feature.id == id);
+            let label = current
+                .or(baseline_feature)
+                .map_or_else(|| id.as_str().to_owned(), feature_label);
+            if let Some(mirror) = mirror {
+                if configuration.feature_states.get(id) != mirror.feature_states.get(id) {
+                    losses.push(snapshot_unwritten(format!(
+                        "The state of feature {label} in configuration {configuration_label} is edited only in the configuration snapshot the decoder synthesized from the model. The writer does not write that snapshot, and the written configuration states the feature as the model states it."
+                    )));
+                }
+                continue;
+            }
+            if configuration.active && named.contains(id) {
+                continue;
+            }
             let modeling = current
                 .map(|feature| feature_affects_brep(feature, &ir.model.features))
                 .or_else(|| {
@@ -448,21 +437,31 @@ fn configuration_design_edits(
                 })
                 .unwrap_or(true);
             if modeling {
-                let label = current
-                    .or(baseline_feature)
-                    .map_or_else(|| id.as_str().to_owned(), feature_label);
                 losses.push(stale(format!(
                     "Feature {label} in configuration {configuration_label} is written with its edited state, and that configuration's stored solid shows the state before the edit."
                 )));
             }
         }
     }
-    Ok(())
 }
 
 /// One stale-solid loss.
 fn stale(message: impl Into<String>) -> LossNote {
     SldprtLossCode::WriterSolidStaleAfterEdit.note(message)
+}
+
+/// One loss for a synthesized-snapshot edit that the model does not state.
+fn snapshot_unwritten(message: impl Into<String>) -> LossNote {
+    SldprtLossCode::WriterConfigurationSnapshotEditUnwritten.note(message)
+}
+
+fn parameter_id_label(id: &ParameterId, ir: &CadIr, baseline: &CadIr) -> String {
+    ir.model
+        .parameters
+        .iter()
+        .chain(&baseline.model.parameters)
+        .find(|parameter| &parameter.id == id)
+        .map_or_else(|| id.as_str().to_owned(), parameter_label)
 }
 
 fn feature_label(feature: &Feature) -> String {
