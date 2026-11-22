@@ -2944,6 +2944,8 @@ pub(crate) mod sketch_record_head {
 /// A curve record with curve type `0` after a 64-byte head. The endpoint indices are zero-based positions in the point records of the same `sgSketch` object.
 /// ```
 pub(crate) mod sketch_line_record {
+    /// Offset of `trailer` (`u32`, little-endian). Spec §Sketch objects.
+    pub(crate) const TRAILER: usize = 84;
     /// Offset of `record_id` (`u32`, little-endian). Spec §Sketch objects.
     pub(crate) const RECORD_ID: usize = 88;
 }

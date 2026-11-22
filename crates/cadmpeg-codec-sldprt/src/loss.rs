@@ -166,6 +166,9 @@ pub(crate) enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Sweep path geometry keeps its native reference after an unreadable record.
     FeatureSweepPathRetained,
+    /// Unframed spatial sweep path lines with an identifier trailer use their
+    /// primary-point roster.
+    FeatureSweepPathRosterAssumed,
     /// A sweep path component source follows a u32 header word.
     FeatureSweepPathHeaderAssumed,
     /// A generated solid sweep uses the Merge reading of its Boolean operation.
@@ -432,6 +435,7 @@ impl SldprtLossCode {
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureSweepPathRetained,
+        Self::FeatureSweepPathRosterAssumed,
         Self::FeatureSweepPathHeaderAssumed,
         Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
@@ -580,6 +584,7 @@ impl SldprtLossCode {
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
+            Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
             Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
             Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
@@ -763,6 +768,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
@@ -992,6 +998,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
@@ -1231,6 +1238,7 @@ mod tests {
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
                 "feature.sweep-path-retained",
+                "feature.sweep-path-roster-assumed",
                 "feature.sweep-path-header-assumed",
                 "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
