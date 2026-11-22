@@ -22,7 +22,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the `u32` of the `I` record and the flag byte of the `B` record mean? Which other wrapper tags occur?
 
-**Known.** `edrawings.md` §2.1 gives the layout. Both samples hold 4 and 0. The reader accepts only the tags `I`, `B`, and `Z`.
+**Known.** `edrawings.md` §2.1 gives the layout. Both samples hold 4 and 0. The reader accepts only the tags `I`, `B`, and `Z`. Both samples hold the order `I`, `B`, `Z`, and the reader accepts any order of `I` and `B`. The comment line of both samples is 15 bytes, and the zlib stream starts at offset 47.
 
 **Need.** We must know whether a file with another value or another tag changes how we read the model stream.
 
@@ -30,14 +30,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** In which unit and which frame are the bounds of the `B` record?
 
-**Known.** The six values form a small box near the origin in both samples.
+**Known.** The six values form a small box near the origin in both samples, and each minimum value is at most the matching maximum value.
 
 **Need.** We must convert the lengths of the model stream to millimetres.
 
 ### EDR-03. Records with unknown meaning
 **Question.** What do these fields mean: the constant byte after the `S` opcode of a shell, the first mask byte of the `~` record, the flag byte of the `&` record, the `u32` of the `0` record, the `0xff` flag of the `-` and `0x0d` records, the symbol code of the `@` record, and the content of the header block, the camera, and the texture matrix?
 
-**Known.** `edrawings.md` §3.3 gives the length of each record. The decoder checks the length and ignores the values. The symbol code 9 occurs in `star` segments and the code 7 in `plus` segments.
+**Known.** `edrawings.md` §3.3 gives the length of each record. The decoder checks the length and ignores the values. The symbol code 9 occurs in `star` segments and the code 7 in `plus` segments. The conditional form of the `{` record and the `0x00` pad record are not in any sample.
 
 **Need.** We must know whether a value other than the observed one changes how we read the geometry or the colour.
 
@@ -45,7 +45,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which stream versions other than `19.10`, `19.00`, and `18.00` occur, and do they change the wrapper or the model stream?
 
-**Known.** `edrawings.md` §2.2 maps `19.10`, `19.00`, and `18.00` to a dialect. Any other version is read with the rules of `19.10` and reported as `edrawings/source.dialect-unverified`.
+**Known.** `edrawings.md` §2.2 maps `19.10`, `19.00`, and `18.00` to a dialect. The re-saved samples declare `19.10`. The files that SolidWorks wrote declare `18.00` or `19.00`. Any other version is read with the rules of `19.10` and reported as `edrawings/source.dialect-unverified`.
 
 **Need.** We must know whether the dialect rows `edrawings:hsf-19-10`, `edrawings:hsf-19-00`, and `edrawings:hsf-18-00` cover other files.
 
@@ -53,7 +53,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the zero byte after the zlib stream mean, and can the tail be longer?
 
-**Known.** `edrawings.md` §2.3 gives one zero byte in both samples.
+**Known.** `edrawings.md` §2.3 gives the tail rule. Both samples hold one zero byte after the stream, and the zlib header is `78 da`. The inflated length is 282452 bytes (member size 87723) for the assembly sample and 122379 bytes (member size 46485) for the part sample.
 
 **Need.** We must know whether the tail carries data that the codec must transfer.
 
@@ -61,7 +61,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the grammars of `scene.xml`, `materials.xml`, `FileProperties.xml`, and `OLE`, and how do they relate to the model stream?
 
-**Known.** `edrawings.md` §1.2 names the members. The codec lists them and does not read them.
+**Known.** `edrawings.md` §1.2 names the members. The codec lists them and does not read them. Both samples use the DEFLATE method for every member. The member order of both samples is `eModel`, `preview.jpg`, `OLE`, `materials.xml` (assembly), `scene.xml`, `FileProperties.xml` (assembly), so a part has four members and an assembly has six. The `OLE` member holds `38 4a 00 00` and eight zero bytes.
 
 **Need.** We must know them to transfer materials, document properties, and lighting.
 
@@ -83,7 +83,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ### EDR-09. Sub-assembly matrices and display configurations
 **Question.** Can a sub-assembly node carry a matrix, and how do the matrices of the instances below it combine with it? How do configurations other than the current display state change the tree?
 
-**Known.** `edrawings.md` §3.8 gives the rule that the observed files follow. No sub-assembly carries a matrix. The decoder applies only the current display state, or the default state when the stream names no current state.
+**Known.** `edrawings.md` §3.8 gives the rule that the observed files follow. No sub-assembly of any sample carries a matrix. If a sub-assembly had a matrix, it would apply after the matrices of its children. The decoder takes a matrix of a sub-assembly as the transform of the sub-assembly occurrence and reports it as `edrawings/structure.subassembly-placement-assumed`. The decoder applies only the current display state, or the default state when the stream names no current state, and reports the other states as `edrawings/structure.display-states-dropped`.
 
 **Need.** We must place the instances of a file with such a matrix, and show the visibility of every state.
 
@@ -118,14 +118,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 ### EDR-14. Visibility inheritance
 **Question.** Does a part below a sub-assembly with `vis=off` stay hidden when a state lists the part with `vis=on`? Does a sub-assembly with `vis=on` show a part with `defaultvisibility=off` that no state lists?
 
-**Known.** `edrawings.md` §3.11 gives the rule that the decoder follows: the listing of the part decides, then `defaultvisibility=off`, then the nearest listed ancestor. The observed file has no case that separates the readings.
+**Known.** The decoder reads the visibility of a part in `edrawings:hsf-18-00` and `edrawings:hsf-19-00` in this order: the listing of the part in the state that `default=` names decides; if the state does not list the part, `defaultvisibility=off` hides it; otherwise the nearest listed ancestor decides, and a state that lists a sub-assembly with `vis=off` hides its unlisted parts; a part below no listed ancestor and without the option is not hidden. A sub-assembly shows only its own listing. The decoder reports a value from `defaultvisibility` or from an ancestor as `edrawings/structure.visibility-inferred`. The observed file has no case that separates the readings.
 
 **Need.** We must show the visibility of every part as the source application shows it.
 
 ### EDR-15. Unexercised length forms
 **Question.** What index width does a shell with 255 to 260 vertices use? Does a text object with the length byte `0xfe` occur in a SolidWorks stream?
 
-**Known.** `edrawings.md` §3.6 gives width 8 up to 254 vertices and width 16 from 261. The reader takes the width from the face list and decodes both.
+**Known.** `edrawings.md` §3.6 gives width 8 up to 254 vertices and width 16 from 261. The width of a shell with 255 to 260 vertices is not known. The reader takes the width from the face list and decodes both.
 
 **Need.** We must know whether the face list of such a shell is read correctly.
 
