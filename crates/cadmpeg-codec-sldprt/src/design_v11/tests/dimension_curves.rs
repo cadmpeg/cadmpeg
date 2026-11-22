@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circles the decoder builds from a dimension record (open item DI-83). One
-//! on a stored circle or arc of its radius is left out and its dimension
-//! names that curve; one no relation names is left out; another is
-//! construction unless a cylinder of the solid lies on it.
+//! that repeats a stored circle or arc, or that no cylinder of the solid
+//! lies on and whose center lies on a stored curve of its radius, is left
+//! out and its dimension names that curve; one no relation names is left
+//! out; another is construction unless a cylinder of the solid lies on it.
 
 use std::collections::HashSet;
 
@@ -17,6 +18,10 @@ use super::state_zero::{entity, project, set_profiles};
 use crate::loss::SldprtLossCode;
 
 const DIAMETER: &str = "sldprt:model:sketch-constraint#test:4";
+/// The fixture's native relation without a value.
+const NATIVE: &str = "sldprt:model:sketch-constraint#test:3";
+/// The fixture's native distance dimension, which has a value.
+const NATIVE_DISTANCE: &str = "sldprt:model:sketch-constraint#test:2";
 
 /// The fixture's rectangle and circle as the stored profile, and a circle
 /// `built` from a dimension record at `center` with `radius`, which the
@@ -65,13 +70,13 @@ fn push(ir: &mut CadIr, mut value: serde_json::Value) {
         .push(serde_json::from_value(value).unwrap());
 }
 
-/// Makes the fixture's native relation without a value name `key`.
-fn name_by_native(ir: &mut CadIr, key: &str) {
+/// Makes the fixture's native relation `constraint` name `key`.
+fn name_by_native(ir: &mut CadIr, constraint: &str, key: &str) {
     let native = ir
         .model
         .sketch_constraints
         .iter_mut()
-        .find(|constraint| constraint.id.as_str().ends_with("test:3"))
+        .find(|candidate| candidate.id.as_str() == constraint)
         .unwrap();
     let mut value = serde_json::to_value(&*native).unwrap();
     value["definition"]["entities"] = serde_json::json!([entity(key).as_str()]);
@@ -94,16 +99,29 @@ fn in_design(ir: &CadIr, key: &str) -> bool {
         .any(|candidate| candidate.id == entity(key))
 }
 
-/// The entity the design's diameter dimension names.
-fn dimensioned(ir: &CadIr) -> String {
-    let relation = ir
-        .design
+/// The design's relation `id`, serialized.
+fn relation(ir: &CadIr, id: &str) -> serde_json::Value {
+    ir.design
         .sketch_constraints
         .iter()
-        .find(|constraint| constraint.id.as_str() == DIAMETER)
+        .find(|constraint| constraint.id.as_str() == id)
         .map(|constraint| serde_json::to_value(&constraint.relation).unwrap())
-        .unwrap();
-    relation["value"]["of"].as_str().unwrap().to_owned()
+        .unwrap()
+}
+
+/// The entity the design's diameter dimension names.
+fn dimensioned(ir: &CadIr) -> String {
+    relation(ir, DIAMETER)["value"]["of"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// Whether the design's relation `id` names the entity `key`.
+fn relation_names(ir: &CadIr, id: &str, key: &str) -> bool {
+    relation(ir, id)
+        .to_string()
+        .contains(&format!("\"{}\"", entity(key).as_str()))
 }
 
 /// The note's entry for `key`: its id and the parenthesized text.
@@ -207,8 +225,8 @@ fn push_arc(ir: &mut CadIr) {
 
 /// A built circle centered on the end of a stored arc of its radius: the
 /// dimension names the arc. One centered on the arc's carrier off the arc
-/// stays a construction circle, and the note says a curve of its radius
-/// lies elsewhere.
+/// stays a construction circle, and the note says no face of the solid lies
+/// on it.
 #[test]
 fn a_dimension_circle_at_an_arc_end_names_the_arc_and_one_off_the_arc_stays() {
     let mut ir = with_dimension_circle([13.0, 10.0], 3.0);
@@ -276,8 +294,8 @@ fn a_dimension_circle_no_face_lies_on_is_construction_and_its_unnamed_twin_is_le
         ),
         entry(
             "twin",
-            "no curve of its sketch has its radius and no face of the solid lies on it, so the \
-             profile lacks the circle its dimension measures; left out; no relation names it",
+            "no curve of its sketch has its radius and no face of the solid lies on it; left \
+             out; no relation names it",
         ),
     ] {
         assert!(message.contains(&expected), "{message}");
@@ -296,7 +314,7 @@ fn a_dimension_circle_no_face_lies_on_is_construction_and_its_unnamed_twin_is_le
 fn a_dimension_circle_repeating_an_earlier_one_is_construction() {
     let mut ir = with_dimension_circle([10.0, 10.0], 3.0);
     push_built(&mut ir, "again", 9, [10.0, 10.0], 3.0);
-    name_by_native(&mut ir, "again");
+    name_by_native(&mut ir, NATIVE, "again");
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "again"), Some(true));
     assert!(note(&typed).contains(&entry(
@@ -311,14 +329,139 @@ fn a_dimension_circle_repeating_an_earlier_one_is_construction() {
 #[test]
 fn a_dimension_circle_another_relation_names_stays_construction() {
     let mut ir = with_dimension_circle([25.0, 15.0], 5.0);
-    name_by_native(&mut ir, "built");
+    name_by_native(&mut ir, NATIVE, "built");
     let (_, typed) = project(&mut ir, &HashSet::new());
     assert_eq!(construction(&ir, "built"), Some(true));
     assert_eq!(dimensioned(&ir), entity("built").as_str());
-    assert!(note(&typed).contains(&entry(
-        "built",
-        &format!("it repeats {}; construction", entity("hole").as_str())
-    )));
+    let message = note(&typed);
+    assert!(
+        message.contains(&entry(
+            "built",
+            &format!(
+                "it repeats {}; construction; the relation {NATIVE} names it and does not move \
+                 to that curve",
+                entity("hole").as_str()
+            )
+        )),
+        "{message}"
+    );
+}
+
+/// A native distance names the built circle that repeats the stored
+/// circle, whose center is the built circle's: the distance moves with the
+/// diameter, and the note names both.
+#[test]
+fn a_native_distance_moves_to_the_curve_its_circle_repeats() {
+    let mut ir = with_dimension_circle([25.0, 15.0], 5.0);
+    name_by_native(&mut ir, NATIVE_DISTANCE, "built");
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert!(!in_design(&ir, "built"));
+    assert_eq!(dimensioned(&ir), entity("hole").as_str());
+    assert!(relation_names(&ir, NATIVE_DISTANCE, "hole"));
+    assert!(!relation_names(&ir, NATIVE_DISTANCE, "built"));
+    let message = note(&typed);
+    assert!(
+        message.contains(&entry(
+            "built",
+            &format!(
+                "it repeats {}; left out; the dimensions {NATIVE_DISTANCE}, {DIAMETER} name \
+                 that curve",
+                entity("hole").as_str()
+            )
+        )),
+        "{message}"
+    );
+    assert_no_design_findings(&ir);
+}
+
+/// A native distance names the built circle whose center lies on the stored
+/// circle: it measures from that center, one radius from the stored
+/// circle's, so neither it nor the diameter moves, and the circle stays,
+/// construction.
+#[test]
+fn a_native_distance_keeps_a_circle_centered_on_a_stored_curve() {
+    let mut ir = with_dimension_circle([30.0, 15.0], 5.0);
+    name_by_native(&mut ir, NATIVE_DISTANCE, "built");
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert_eq!(construction(&ir, "built"), Some(true));
+    assert_eq!(dimensioned(&ir), entity("built").as_str());
+    assert!(relation_names(&ir, NATIVE_DISTANCE, "built"));
+    let message = note(&typed);
+    assert!(
+        message.contains(&entry(
+            "built",
+            &format!(
+                "its center lies on {}, of its radius; construction; the relation \
+                 {NATIVE_DISTANCE} names it and does not move to that curve",
+                entity("hole").as_str()
+            )
+        )),
+        "{message}"
+    );
+    assert_no_design_findings(&ir);
+}
+
+/// A cylinder of its radius on the built circle's own center confirms it
+/// although its center lies on a stored circle: it stays profile geometry
+/// and keeps its dimension. A built circle that repeats the stored circle
+/// moves its dimension there although a cylinder lies on it.
+#[test]
+fn a_cylinder_keeps_a_circle_centered_on_a_stored_curve_but_not_a_repeat() {
+    // The fixture's sketch lies in the plane y = 0 with u along x, so
+    // (u, v) is (u, 0, -v).
+    let mut ir = with_dimension_circle([30.0, 15.0], 5.0);
+    ir.geometry
+        .surfaces
+        .push(cylinder("bore", [30.0, 5.0, -15.0], [0.0, -1.0, 0.0], 5.0));
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert_eq!(construction(&ir, "built"), None);
+    assert_eq!(dimensioned(&ir), entity("built").as_str());
+    assert!(
+        typed.dimension_circles.is_none(),
+        "{:?}",
+        typed.dimension_circles
+    );
+
+    let mut ir = with_dimension_circle([25.0, 15.0], 5.0);
+    ir.geometry
+        .surfaces
+        .push(cylinder("bore", [25.0, 5.0, -15.0], [0.0, -1.0, 0.0], 5.0));
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert!(!in_design(&ir, "built"));
+    assert_eq!(dimensioned(&ir), entity("hole").as_str());
+    assert!(note(&typed).contains(&format!("it repeats {}", entity("hole").as_str())));
+}
+
+/// Two stored arcs on the built circle's carrier: the file does not say
+/// which the dimension measured, so it names the first, and the note says
+/// so.
+#[test]
+fn a_dimension_circle_repeating_two_arcs_names_the_first() {
+    let mut ir = with_dimension_circle([10.0, 10.0], 3.0);
+    push_arc(&mut ir);
+    push(
+        &mut ir,
+        serde_json::json!({
+            "id": entity("arc2").as_str(), "construction": true, "endpoint_refs": [],
+            "geometry": {"kind": "arc", "center": {"u": 10.0, "v": 10.0}, "radius": 3.0,
+                "start_angle": std::f64::consts::PI,
+                "end_angle": 1.5 * std::f64::consts::PI}}),
+    );
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert!(!in_design(&ir, "built"));
+    assert_eq!(dimensioned(&ir), entity("arc").as_str());
+    let message = note(&typed);
+    assert!(
+        message.contains(&entry(
+            "built",
+            &format!(
+                "it repeats {}, the first of 2 such curves on one carrier; left out; the \
+                 dimension {DIAMETER} names that curve",
+                entity("arc").as_str()
+            )
+        )),
+        "{message}"
+    );
 }
 
 /// A built circle the decoder already marks construction stays so, and the

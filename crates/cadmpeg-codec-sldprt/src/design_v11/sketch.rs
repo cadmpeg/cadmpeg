@@ -13,11 +13,16 @@
 //! where another curve closes a loop only with the curves of state `0`;
 //! another entity states no flag. A circle the decoder built from a
 //! dimension record (open item DI-83) is left out where it repeats a stored
-//! circle or arc of its sketch, or its center lies on a stored curve of its
-//! radius, and the dimensions that named it name that curve; it is left out
-//! where no relation names it, and otherwise it is construction unless a
-//! cylindrical face of the solid lies on it. A dimension binds the parameter that
-//! holds its value, and states that parameter's quantity; a reference
+//! circle or arc of its sketch, or where no cylindrical face of the solid
+//! lies on it and its center lies on a stored curve of its radius; the
+//! dimensions that named it then name that curve. Only radial dimensions
+//! move to a curve the center lies on, where the center is a point of that
+//! curve; a native dimension also moves to a curve the circle repeats, which
+//! has its center. Where another relation names it, it is construction. A
+//! built circle no relation names is left out, and any other is
+//! construction unless a cylindrical face of the solid lies on it. A
+//! dimension binds the parameter that holds its value, and states that
+//! parameter's quantity; a reference
 //! dimension makes the tree parameter it binds `Driven`, and one whose
 //! parameter no tree node lists binds a `Driven` parameter minted for it. A
 //! sketch with a dimension that binds no parameter, or with an entity that
@@ -109,9 +114,10 @@ pub(super) struct DimensionCircle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Reading {
     /// It has the center and radius of this stored circle or arc.
-    Repeats(SketchEntityId),
-    /// Its center lies on this stored circle or arc, which has its radius.
-    OnCurve(SketchEntityId),
+    Repeats(Candidate),
+    /// Its center lies on this stored circle or arc, which has its radius,
+    /// and no cylindrical face of the solid is found on it.
+    OnCurve(Candidate),
     /// It has the center and radius of this earlier built circle.
     RepeatsBuilt(SketchEntityId),
     /// No stored curve of its sketch has its radius, and no cylindrical face
@@ -124,6 +130,15 @@ enum Reading {
     Unplaced,
 }
 
+/// The stored curve a built circle is read on: the first of `among` stored
+/// curves on one carrier, in record order. The file does not say which of
+/// several the dimension measured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Candidate {
+    curve: SketchEntityId,
+    among: usize,
+}
+
 /// What the design does with a built circle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Outcome {
@@ -131,19 +146,40 @@ enum Outcome {
     Redirected(Vec<String>),
     /// Left out; no relation of the sketch names it.
     Unnamed,
-    /// Stated construction; the relations that name it keep it.
+    /// Stated construction although it is read on a stored curve: these
+    /// relations name it and do not move to that curve.
+    Kept(Vec<String>),
+    /// Stated construction.
     Construction,
+}
+
+impl Outcome {
+    fn left_out(&self) -> bool {
+        matches!(self, Self::Redirected(_) | Self::Unnamed)
+    }
 }
 
 impl DimensionCircle {
     /// The circle, the reading and the outcome, for a loss note.
     pub(super) fn text(&self) -> String {
+        let first = |among: usize| match among {
+            1 => String::new(),
+            _ => format!(", the first of {among} such curves on one carrier"),
+        };
         let reading = match &self.reading {
-            Reading::Repeats(curve) => format!("it repeats {}", curve.as_str()),
-            Reading::OnCurve(curve) => {
-                format!("its center lies on {}, of its radius", curve.as_str())
+            Reading::Repeats(Candidate { curve, among }) => {
+                format!("it repeats {}{}", curve.as_str(), first(*among))
             }
+            Reading::OnCurve(Candidate { curve, among }) => format!(
+                "its center lies on {}, of its radius{}",
+                curve.as_str(),
+                first(*among)
+            ),
             Reading::RepeatsBuilt(circle) => format!("it repeats {}", circle.as_str()),
+            Reading::NoCurveOfRadius if self.outcome == Outcome::Unnamed => {
+                "no curve of its sketch has its radius and no face of the solid lies on it"
+                    .to_owned()
+            }
             Reading::NoCurveOfRadius => "no curve of its sketch has its radius and no face of \
                                          the solid lies on it, so the profile lacks the circle \
                                          its dimension measures"
@@ -162,6 +198,16 @@ impl DimensionCircle {
                 ),
             },
             Outcome::Unnamed => "left out; no relation names it".to_owned(),
+            Outcome::Kept(relations) => match relations.as_slice() {
+                [relation] => format!(
+                    "construction; the relation {relation} names it and does not move to that \
+                     curve"
+                ),
+                _ => format!(
+                    "construction; the relations {} name it and do not move to that curve",
+                    relations.join(", ")
+                ),
+            },
             Outcome::Construction => "construction".to_owned(),
         };
         format!("{} ({reading}; {outcome})", self.entity.as_str())
@@ -332,7 +378,7 @@ fn sketch(
     sketch_entities.retain(|kept| {
         dimension_circles
             .iter()
-            .all(|(_, circle)| circle.outcome == Outcome::Construction || circle.entity != kept.id)
+            .all(|(_, circle)| !circle.outcome.left_out() || circle.entity != kept.id)
     });
     out.records.push(Sketch {
         id: record.id.clone(),
@@ -352,9 +398,7 @@ fn sketch(
     out.dimension_circles.extend(
         dimension_circles
             .into_iter()
-            .filter(|(construction, circle)| {
-                !construction || circle.outcome != Outcome::Construction
-            })
+            .filter(|(construction, circle)| !construction || circle.outcome.left_out())
             .map(|(_, circle)| circle),
     );
     out.measured.extend(
@@ -556,9 +600,10 @@ impl Roles {
 /// circle built from a dimension record that the design does not keep as
 /// decoded; `None` for another entity and for a built circle a cylindrical
 /// face of the solid witnesses. A stored circle or arc the circle repeats
-/// comes first, then one its center lies on, each where the candidates share
-/// one carrier; then an earlier built circle it repeats, of those `earlier`
-/// does not read on a stored curve; then the faces of the solid.
+/// comes first, then an earlier built circle it repeats, of those `earlier`
+/// does not read on a stored curve, then the faces of the solid, then a
+/// stored circle or arc its center lies on; the stored candidates count
+/// where they share one carrier.
 fn reading(
     index: usize,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
@@ -566,11 +611,8 @@ fn reading(
     record: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) -> Option<Reading> {
-    let (center, radius) = dimension_circle(entities.get(index)?)?;
-    let same_carrier = |(at, size): ([f64; 2], f64)| {
-        (at[0] - center[0]).hypot(at[1] - center[1]) <= LINEAR_RESOLUTION_MM
-            && (size - radius).abs() <= LINEAR_RESOLUTION_MM
-    };
+    let circle = dimension_circle(entities.get(index)?)?;
+    let (center, radius) = circle;
     let stored = entities
         .iter()
         .filter(|candidate| !built(candidate))
@@ -578,11 +620,40 @@ fn reading(
         .collect::<Vec<_>>();
     let repeated = stored
         .iter()
-        .filter(|(_, at)| same_carrier(*at))
+        .filter(|(_, at)| same_carrier(*at, circle))
         .copied()
         .collect::<Vec<_>>();
-    if let Some(curve) = one_carrier(&repeated, center) {
-        return Some(Reading::Repeats(curve));
+    if let Some(candidate) = one_carrier(&repeated) {
+        return Some(Reading::Repeats(candidate));
+    }
+    let repeats_built = entities[..index]
+        .iter()
+        .zip(earlier)
+        .find(|(candidate, reading)| {
+            !matches!(reading, Some(Reading::Repeats(_) | Reading::OnCurve(_)))
+                && dimension_circle(candidate).is_some_and(|at| same_carrier(at, circle))
+        });
+    if let Some((circle, _)) = repeats_built {
+        return Some(Reading::RepeatsBuilt(circle.id().clone()));
+    }
+    let placement = record.resolved_placement();
+    if let Some((origin, normal, u_axis)) = placement {
+        let v_axis = [
+            normal.y * u_axis.z - normal.z * u_axis.y,
+            normal.z * u_axis.x - normal.x * u_axis.z,
+            normal.x * u_axis.y - normal.y * u_axis.x,
+        ];
+        let at = [
+            origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
+            origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
+            origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
+        ];
+        if surfaces
+            .iter()
+            .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
+        {
+            return None;
+        }
     }
     let of_radius = stored
         .iter()
@@ -594,73 +665,43 @@ fn reading(
         .filter(|(candidate, _)| passes_through(&candidate.geometry, center))
         .copied()
         .collect::<Vec<_>>();
-    if let Some(curve) = one_carrier(&through, center) {
-        return Some(Reading::OnCurve(curve));
+    if let Some(candidate) = one_carrier(&through) {
+        return Some(Reading::OnCurve(candidate));
     }
-    let repeats_built = entities[..index]
-        .iter()
-        .zip(earlier)
-        .find(|(candidate, reading)| {
-            !matches!(reading, Some(Reading::Repeats(_) | Reading::OnCurve(_)))
-                && dimension_circle(candidate).is_some_and(same_carrier)
-        });
-    if let Some((circle, _)) = repeats_built {
-        return Some(Reading::RepeatsBuilt(circle.id().clone()));
-    }
-    let Some((origin, normal, u_axis)) = record.resolved_placement() else {
-        return Some(Reading::Unplaced);
-    };
-    let v_axis = [
-        normal.y * u_axis.z - normal.z * u_axis.y,
-        normal.z * u_axis.x - normal.x * u_axis.z,
-        normal.x * u_axis.y - normal.y * u_axis.x,
-    ];
-    let at = [
-        origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
-        origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
-        origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
-    ];
-    if surfaces
-        .iter()
-        .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
-    {
-        return None;
-    }
-    Some(if of_radius.is_empty() {
+    Some(if placement.is_none() {
+        Reading::Unplaced
+    } else if of_radius.is_empty() {
         Reading::NoCurveOfRadius
     } else {
         Reading::Unwitnessed
     })
 }
 
-/// The one curve of `candidates`, each with its carrier, that a dimension
-/// whose handle is at `handle` measures: where all lie on one carrier, the
-/// first with an end at `handle`, else the first; `None` where there are
-/// none or their carriers differ.
+/// The first curve of `candidates`, each with its carrier, and how many
+/// there are, where all lie on one carrier; `None` where there are none or
+/// their carriers differ.
 fn one_carrier(
     candidates: &[(&cadmpeg_ir::sketches::SketchEntity, ([f64; 2], f64))],
-    handle: [f64; 2],
-) -> Option<SketchEntityId> {
-    let (first, (at, size)) = candidates.first()?;
-    let one = candidates.iter().all(|(_, (other, other_size))| {
-        (other[0] - at[0]).hypot(other[1] - at[1]) <= LINEAR_RESOLUTION_MM
-            && (other_size - size).abs() <= LINEAR_RESOLUTION_MM
-    });
-    if !one {
-        return None;
-    }
-    let at_end = candidates.iter().find(|(candidate, _)| {
-        curve_ends(&candidate.geometry).is_some_and(|ends| {
-            ends.iter()
-                .any(|end| (end[0] - handle[0]).hypot(end[1] - handle[1]) <= LINEAR_RESOLUTION_MM)
+) -> Option<Candidate> {
+    let (first, at) = candidates.first()?;
+    candidates
+        .iter()
+        .all(|(_, other)| same_carrier(*other, *at))
+        .then(|| Candidate {
+            curve: first.id().clone(),
+            among: candidates.len(),
         })
-    });
-    Some(
-        at_end
-            .map_or(first, |(candidate, _)| candidate)
-            .id()
-            .clone(),
-    )
+}
+
+/// Whether two circles or arcs, each as its center and radius, lie on one
+/// carrier.
+fn same_carrier((a, a_radius): ([f64; 2], f64), (b, b_radius): ([f64; 2], f64)) -> bool {
+    near(a, b) && (a_radius - b_radius).abs() <= LINEAR_RESOLUTION_MM
+}
+
+/// Whether two points of a sketch are one within the linear resolution.
+fn near(a: [f64; 2], b: [f64; 2]) -> bool {
+    (a[0] - b[0]).hypot(a[1] - b[1]) <= LINEAR_RESOLUTION_MM
 }
 
 /// Whether `point` lies on the circle or arc `geometry`.
@@ -681,19 +722,16 @@ fn passes_through(geometry: &cadmpeg_ir::sketches::SketchGeometry, point: [f64; 
     else {
         return true;
     };
-    let at_end = curve_ends(geometry).is_some_and(|ends| {
-        ends.iter()
-            .any(|end| (end[0] - point[0]).hypot(end[1] - point[1]) <= LINEAR_RESOLUTION_MM)
-    });
+    let at_end = curve_ends(geometry).is_some_and(|ends| ends.iter().any(|end| near(*end, point)));
     let tau = std::f64::consts::TAU;
     let turn = (offset[1].portable_atan2(offset[0]) - start_angle.get()).rem_euclid(tau);
     at_end || turn <= (end_angle.get() - start_angle.get()).rem_euclid(tau)
 }
 
 /// The built circles of `entities` with a reading, each with whether the
-/// decoder marks it construction and what the design does with it: a
-/// dimension that names a circle read on a stored curve names that curve
-/// instead, where only dimensions name the circle.
+/// decoder marks it construction and what the design does with it: the
+/// dimensions that name a circle read on a stored curve name that curve
+/// instead, where every relation that names the circle `moves` there.
 fn settle(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     readings: Vec<Option<Reading>>,
@@ -708,22 +746,29 @@ fn settle(
         let naming = (0..constraints.len())
             .filter(|at| names(&constraints[*at].relation, id))
             .collect::<Vec<_>>();
+        let listed = |at: &[usize]| {
+            at.iter()
+                .map(|at| constraints[*at].id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        };
         let outcome = match &reading {
             _ if naming.is_empty() => Outcome::Unnamed,
-            Reading::Repeats(curve) | Reading::OnCurve(curve)
-                if naming
+            Reading::Repeats(Candidate { curve, .. })
+            | Reading::OnCurve(Candidate { curve, .. }) => {
+                let kept = naming
                     .iter()
-                    .all(|at| measures(&constraints[*at].relation, id)) =>
-            {
-                for at in &naming {
-                    redirect(&mut constraints[*at].relation, id, curve);
+                    .copied()
+                    .filter(|at| !moves(&reading, &constraints[*at].relation, id))
+                    .collect::<Vec<_>>();
+                if kept.is_empty() {
+                    let redirected = listed(&naming);
+                    for at in &naming {
+                        redirect(&mut constraints[*at].relation, id, curve);
+                    }
+                    Outcome::Redirected(redirected)
+                } else {
+                    Outcome::Kept(listed(&kept))
                 }
-                Outcome::Redirected(
-                    naming
-                        .iter()
-                        .map(|at| constraints[*at].id.as_str().to_owned())
-                        .collect(),
-                )
             }
             _ => Outcome::Construction,
         };
@@ -757,19 +802,26 @@ fn names(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
     }
 }
 
-/// Whether `relation` is a dimension that measures `entity`: a radial
-/// dimension of it, or a native relation with a value that names it.
-fn measures(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
+/// Whether `relation`, which names the built circle `entity`, moves to the
+/// stored curve `reading` gives: a radial dimension of the circle moves to
+/// either curve; a native relation with a value moves only to a curve the
+/// circle repeats. Such a relation measures from the circle's center, which
+/// a curve the center lies on does not share.
+fn moves(reading: &Reading, relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
     match relation {
         SketchRelation::Radial { of, .. } => of == entity,
         SketchRelation::Native {
             operands, values, ..
-        } => !values.is_empty() && operands.contains(&Operand::Entity(entity.clone())),
+        } => {
+            matches!(reading, Reading::Repeats(_))
+                && !values.is_empty()
+                && operands.contains(&Operand::Entity(entity.clone()))
+        }
         _ => false,
     }
 }
 
-/// Make the dimension `relation`, which `measures` `from`, name `to`.
+/// Make the dimension `relation`, which `moves` from `from`, name `to`.
 fn redirect(relation: &mut SketchRelation<Planar>, from: &SketchEntityId, to: &SketchEntityId) {
     match relation {
         SketchRelation::Radial { of, .. } => *of = to.clone(),
