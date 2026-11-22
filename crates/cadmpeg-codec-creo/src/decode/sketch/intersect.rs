@@ -5,7 +5,7 @@ use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};

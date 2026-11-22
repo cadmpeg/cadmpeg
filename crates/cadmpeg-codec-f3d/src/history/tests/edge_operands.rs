@@ -556,8 +556,10 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
             operand.resolved_axis,
             expected.and_then(
                 |_| crate::records::feature::patterns::DesignAxis::from_parts(
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))?,
-                    cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 1.0, 0.0))?,
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))?,
+                    cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+                        0.0, 1.0, 0.0
+                    ))?,
                 )
             ),
             "{second_token}"

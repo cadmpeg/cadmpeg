@@ -212,7 +212,7 @@ fn concatenation_preserves_degree_zero_spans() {
                     parameter
                 )
                 .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get),
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 Some(point)
             );
         }
@@ -509,7 +509,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
             range[0]
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -519,7 +519,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
             range[1]
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
 }
@@ -570,7 +570,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
             1.5
         )
         .ok()
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());

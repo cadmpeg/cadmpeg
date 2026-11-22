@@ -37,7 +37,7 @@ use crate::scalar;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::RevolutionAxis;
+use cadmpeg_ir::features::revolve::RevolutionAxis;
 use cadmpeg_ir::geometry::analytic::CircleCurve;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},

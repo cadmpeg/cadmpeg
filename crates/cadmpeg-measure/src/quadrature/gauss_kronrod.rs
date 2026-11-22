@@ -7,6 +7,9 @@
 //! or the work slice runs out. Values are summed left to right with Neumaier
 //! compensation, so equal inputs give equal bits.
 
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
 use crate::failure::Measure;
 use crate::tolerance::{
     INNER_QUADRATURE_RELATIVE_TARGET, QUADRATURE_ACCEPTANCE_RELATIVE, QUADRATURE_RELATIVE_TARGET,
@@ -160,6 +163,79 @@ fn compensated(values: impl Iterator<Item = f64>) -> f64 {
     sum + compensation
 }
 
+/// Candidate panel in the subdivision priority queue.
+/// Ordered by largest `ratio`, then smallest `a`, matching left-to-right tie
+/// breaking.
+#[derive(Clone, Copy)]
+struct HeapEntry {
+    ratio: f64,
+    a: f64,
+    index: usize,
+    generation: usize,
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.ratio
+            .total_cmp(&other.ratio)
+            .then_with(|| other.a.total_cmp(&self.a))
+            .then_with(|| self.index.cmp(&other.index))
+            .then_with(|| self.generation.cmp(&other.generation))
+    }
+}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for HeapEntry {}
+
+fn panel_ratio<const N: usize>(panel: &Panel<N>, goal: &[f64; N], active: &[usize]) -> f64 {
+    let mut best = 0.0_f64;
+    for &k in active {
+        let ratio = if goal[k] > 0.0 {
+            panel.error[k] / goal[k]
+        } else {
+            panel.error[k]
+        };
+        best = best.max(ratio);
+    }
+    best
+}
+
+fn goals_drifted<const N: usize>(goal: &[f64; N], heap_goal: &[f64; N], active: &[usize]) -> bool {
+    active.iter().any(|&k| {
+        let (current, cached) = (goal[k], heap_goal[k]);
+        if current == cached {
+            return false;
+        }
+        if current == 0.0 || cached == 0.0 {
+            return true;
+        }
+        (current - cached).abs() > 1.0e-3 * cached.abs()
+    })
+}
+
+fn sum_active<const N: usize>(
+    panels: &[Panel<N>],
+    active: &[usize],
+    value: &mut [f64; N],
+    error: &mut [f64; N],
+) {
+    for &k in active {
+        value[k] = compensated(panels.iter().map(|panel| panel.value[k]));
+        error[k] = panels.iter().map(|panel| panel.error[k]).sum();
+    }
+}
+
 /// Integrate `f` from `start` to `end` over the panels between consecutive
 /// `breaks` inside the interval. `charge` pays one unit per integrand node.
 /// An integrand failure ends the integral with that failure.
@@ -194,60 +270,151 @@ pub(crate) fn integrate<const N: usize>(
         charge(NODES)?;
         panels.push(rule(f, pair[0], pair[1])?);
     }
+    let mut active_indices = [0_usize; N];
+    let mut active_len = 0_usize;
+    for k in 0..N {
+        if target.active[k] {
+            active_indices[active_len] = k;
+            active_len += 1;
+        }
+    }
+    let active = &active_indices[..active_len];
+
+    let mut value = [0.0_f64; N];
+    let mut error = [0.0_f64; N];
+    sum_active(&panels, active, &mut value, &mut error);
+    let mut goal = [0.0_f64; N];
+    for &k in active {
+        goal[k] = target.relative * value[k].abs().max(target.scale[k]);
+    }
+    if active.iter().all(|&k| error[k] <= goal[k]) || panels.len() >= MAX_QUADRATURE_INTERVALS {
+        return Ok(finish(&panels, target, sign));
+    }
+
+    let mut sums = ActiveSums { value, error, goal };
+    subdivide(charge, f, &mut panels, active, &mut sums, target)?;
+    Ok(finish(&panels, target, sign))
+}
+
+struct ActiveSums<const N: usize> {
+    value: [f64; N],
+    error: [f64; N],
+    goal: [f64; N],
+}
+
+fn subdivide<const N: usize>(
+    charge: &mut dyn FnMut(usize) -> Measure<()>,
+    f: &mut dyn FnMut(f64) -> Measure<[f64; N]>,
+    panels: &mut Vec<Panel<N>>,
+    active: &[usize],
+    sums: &mut ActiveSums<N>,
+    target: Target<N>,
+) -> Measure<()> {
+    const RESUM_PERIOD: usize = 512;
+
+    let mut heap_goal = sums.goal;
+    let mut generations = vec![0_usize; panels.len()];
+    let mut heap: BinaryHeap<HeapEntry> = panels
+        .iter()
+        .enumerate()
+        .map(|(index, panel)| HeapEntry {
+            ratio: panel_ratio(panel, &heap_goal, active),
+            a: panel.a,
+            index,
+            generation: 0,
+        })
+        .collect();
+    let mut splits_since_resum = 0_usize;
+
     loop {
-        let value: [f64; N] =
-            std::array::from_fn(|k| compensated(panels.iter().map(|panel| panel.value[k])));
-        let error: [f64; N] =
-            std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum());
-        let goal: [f64; N] =
-            std::array::from_fn(|k| target.relative * value[k].abs().max(target.scale[k]));
-        let met = (0..N).all(|k| !target.active[k] || error[k] <= goal[k]);
-        if met || panels.len() >= MAX_QUADRATURE_INTERVALS {
-            return Ok(finish(&panels, target, sign));
+        for &k in active {
+            sums.goal[k] = target.relative * sums.value[k].abs().max(target.scale[k]);
         }
-        let ratio = |panel: &Panel<N>| {
-            (0..N)
-                .filter(|k| target.active[*k])
-                .map(|k| {
-                    if goal[k] > 0.0 {
-                        panel.error[k] / goal[k]
-                    } else {
-                        panel.error[k]
-                    }
-                })
-                .fold(0.0, f64::max)
+        let near_or_due = splits_since_resum >= RESUM_PERIOD
+            || (splits_since_resum > 0
+                && active
+                    .iter()
+                    .all(|&k| sums.error[k] <= sums.goal[k] * 1.01 || !sums.error[k].is_finite()));
+        if near_or_due {
+            sum_active(panels, active, &mut sums.value, &mut sums.error);
+            splits_since_resum = 0;
+            for &k in active {
+                sums.goal[k] = target.relative * sums.value[k].abs().max(target.scale[k]);
+            }
+        }
+        if active.iter().all(|&k| sums.error[k] <= sums.goal[k])
+            || panels.len() >= MAX_QUADRATURE_INTERVALS
+        {
+            return Ok(());
+        }
+        if goals_drifted(&sums.goal, &heap_goal, active) {
+            heap_goal = sums.goal;
+            heap.clear();
+            heap.extend(panels.iter().enumerate().map(|(index, panel)| HeapEntry {
+                ratio: panel_ratio(panel, &heap_goal, active),
+                a: panel.a,
+                index,
+                generation: generations[index],
+            }));
+        }
+        let worst = loop {
+            let Some(entry) = heap.pop() else {
+                return Ok(());
+            };
+            if entry.generation == generations[entry.index] {
+                break entry.index;
+            }
         };
-        let Some(worst) = panels
-            .iter()
-            .enumerate()
-            .max_by(|(_, left), (_, right)| {
-                ratio(left)
-                    .total_cmp(&ratio(right))
-                    .then(right.a.total_cmp(&left.a))
-            })
-            .map(|(index, _)| index)
-        else {
-            return Ok(finish(&panels, target, sign));
-        };
-        let panel = panels[worst];
-        let middle = panel.a.midpoint(panel.b);
-        if middle <= panel.a || middle >= panel.b {
-            return Ok(finish(&panels, target, sign));
+        let (a, b) = (panels[worst].a, panels[worst].b);
+        let middle = a.midpoint(b);
+        if middle <= a || middle >= b || charge(2 * NODES).is_err() {
+            return Ok(());
         }
-        if charge(2 * NODES).is_err() {
-            return Ok(finish(&panels, target, sign));
+        let left = rule(f, a, middle)?;
+        let right = rule(f, middle, b)?;
+        let old = &panels[worst];
+        for &k in active {
+            sums.value[k] += (left.value[k] + right.value[k]) - old.value[k];
+            sums.error[k] += (left.error[k] + right.error[k]) - old.error[k];
         }
-        let left = rule(f, panel.a, middle)?;
-        let right = rule(f, middle, panel.b)?;
+        splits_since_resum += 1;
+
         panels[worst] = left;
-        panels.insert(worst + 1, right);
+        generations[worst] += 1;
+        heap.push(HeapEntry {
+            ratio: panel_ratio(&panels[worst], &heap_goal, active),
+            a: panels[worst].a,
+            index: worst,
+            generation: generations[worst],
+        });
+        let right_index = panels.len();
+        panels.push(right);
+        generations.push(0);
+        heap.push(HeapEntry {
+            ratio: panel_ratio(&panels[right_index], &heap_goal, active),
+            a: panels[right_index].a,
+            index: right_index,
+            generation: 0,
+        });
     }
 }
 
 fn finish<const N: usize>(panels: &[Panel<N>], target: Target<N>, sign: f64) -> Integral<N> {
-    let value: [f64; N] =
-        std::array::from_fn(|k| sign * compensated(panels.iter().map(|panel| panel.value[k])));
-    let error: [f64; N] = std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum());
+    let (value, error): ([f64; N], [f64; N]) = if panels.len() <= 1 {
+        (
+            std::array::from_fn(|k| sign * compensated(panels.iter().map(|panel| panel.value[k]))),
+            std::array::from_fn(|k| panels.iter().map(|panel| panel.error[k]).sum()),
+        )
+    } else {
+        let mut order: Vec<usize> = (0..panels.len()).collect();
+        order.sort_by(|&left, &right| panels[left].a.total_cmp(&panels[right].a));
+        (
+            std::array::from_fn(|k| {
+                sign * compensated(order.iter().map(|&index| panels[index].value[k]))
+            }),
+            std::array::from_fn(|k| order.iter().map(|&index| panels[index].error[k]).sum()),
+        )
+    };
     let converged = (0..N)
         .all(|k| !target.active[k] || error[k] <= QUADRATURE_ACCEPTANCE_RELATIVE * target.scale[k]);
     Integral {
@@ -399,5 +566,28 @@ mod tests {
         let exact = (1.0 - 5.0_f64.cos()) / 5.0;
         assert!((integral.value[1] - exact).abs() <= integral.error[1] + 1.0e-14);
         assert_eq!(evaluations.len() % super::NODES, 0);
+    }
+
+    #[test]
+    fn adaptive_heap_subdivision_converges_on_many_panels_with_mixed_active_mask() {
+        // Peak near x = 0.37 requires many local subdivisions while inactive
+        // channel 2 carries a high-frequency oscillation.
+        let mut f = |x: f64| -> Measure<[f64; 3]> {
+            let peak = 1.0 / ((x - 0.37).powi(2) + 1.0e-4);
+            let smooth = (3.0 * x).exp();
+            let noise = if (x * 1.0e5).fract() < 0.5 { 1.0 } else { -1.0 };
+            Ok([peak, smooth, noise])
+        };
+        let target = Target::outer([1.0; 3]).with_active([true, true, false]);
+        let forward = integrate(&mut free(), &mut f, 0.0, 1.0, &[], target).unwrap();
+        let reversed = integrate(&mut free(), &mut f, 1.0, 0.0, &[], target).unwrap();
+        assert!(forward.converged);
+        let exact_peak =
+            (((1.0_f64 - 0.37) / 1.0e-2).atan() - ((-0.37_f64) / 1.0e-2).atan()) / 1.0e-2;
+        let exact_smooth = (3.0_f64.exp() - 1.0) / 3.0;
+        assert!((forward.value[0] - exact_peak).abs() <= forward.error[0] + 1.0e-8);
+        assert!((forward.value[1] - exact_smooth).abs() <= forward.error[1] + 1.0e-10);
+        assert_eq!(reversed.value[0], -forward.value[0]);
+        assert_eq!(reversed.value[1], -forward.value[1]);
     }
 }

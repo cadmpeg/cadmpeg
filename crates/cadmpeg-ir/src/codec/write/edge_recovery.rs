@@ -425,7 +425,7 @@ fn existing_curve(
     let range = first_use.parameter_range.endpoints();
     let at = |t| {
         work.evaluate(|admission| model_curve_point_by_id(admission, index, &curve.id, t))
-            .map(crate::features::FinitePoint3::get)
+            .map(crate::features::geometry::FinitePoint3::get)
     };
     let (first, last) = (at(range[0])?, at(range[1])?);
     let forward = first.distance(start) <= tolerance && last.distance(end) <= tolerance;
@@ -466,7 +466,7 @@ fn candidate_point(
     work.evaluate(|admission| {
         model_surface_point_by_id(admission, index, &candidate.surface, uv.u, uv.v)
     })
-    .map(crate::features::FinitePoint3::get)
+    .map(crate::features::geometry::FinitePoint3::get)
 }
 
 fn coedge_curves_agree(
@@ -488,7 +488,7 @@ fn coedge_curves_agree(
         let mut range = use_.parameter_range.endpoints();
         let at = |t| {
             work.evaluate(|admission| model_curve_point_by_id(admission, index, &curve.id, t))
-                .map(crate::features::FinitePoint3::get)
+                .map(crate::features::geometry::FinitePoint3::get)
         };
         let (Some(first), Some(last)) = (at(range[0]), at(range[1])) else {
             return false;

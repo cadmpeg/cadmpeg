@@ -2,10 +2,10 @@
 //! Split-face, cosmetic-thread, and sketch-block projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    CosmeticThreadExtent, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
-    SplitFaceTool,
-};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{CosmeticThreadExtent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::transform::Transform;
 
 use crate::history::literals::{

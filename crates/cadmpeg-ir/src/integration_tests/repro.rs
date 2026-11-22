@@ -134,7 +134,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: [(
             cadmpeg_core::text::NonBlankString::new("PLANTED_PROPERTY_PATH/member.cad").unwrap(),
             "PLANTED_PROPERTY_VALUE".into(),
@@ -143,7 +143,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(
                 crate::features::FeatureOperation::Native {
                     kind: "scope".into(),

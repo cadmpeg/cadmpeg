@@ -6,9 +6,9 @@ use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, PathRef, SweepMode, SweepSection, SweepShape,
-};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::{SweepMode, SweepSection, SweepShape};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::io::Cursor;
 
 #[test]

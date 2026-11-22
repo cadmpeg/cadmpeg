@@ -1533,7 +1533,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     }
 
     let mut scope_positions = HashMap::<&str, u64>::new();
-    match crate::design::feature_project::authored_scope_ordinals_per_stream(
+    match crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
     ) {
@@ -1565,7 +1565,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     if !ctx.holds_design_intent() {
         return Ok(());
     }
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+    let scope_history = crate::design::feature_project::scope_order::ScopeHistoryGraph::new(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -1580,7 +1580,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         match scope_history.predecessor(scope, |candidate| {
             scope_positions.contains_key(candidate.id.as_str())
         }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
+            Ok(crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Scope(
+                predecessor,
+            )) => {
                 if scope_positions
                     .get(predecessor.id.as_str())
                     .is_some_and(|predecessor| *predecessor >= position)
@@ -1601,8 +1603,8 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                 Some(scope.id.clone()),
             ),
             Ok(
-                crate::design::feature_project::ScopeHistoryPredecessor::None
-                | crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous,
+                crate::design::feature_project::scope_order::ScopeHistoryPredecessor::None
+                | crate::design::feature_project::scope_order::ScopeHistoryPredecessor::Ambiguous,
             ) => {}
         }
     }
@@ -5543,7 +5545,11 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             records::feature::scope::DesignScopePayload::Loft(Some(construction)) => {
                 construction.section_records.is_empty()
-                    || design::feature_project::loft_groups(construction, &groups).is_ok()
+                    || crate::design::feature_project::sweep_loft::loft_groups(
+                        construction,
+                        &groups,
+                    )
+                    .is_ok()
             }
             records::feature::scope::DesignScopePayload::Sweep(Some(
                 records::feature::scope::DesignSweepScope {

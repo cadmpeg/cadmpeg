@@ -5,6 +5,7 @@ use super::*;
 const PROFILE_PROGRAM_TOLERANCE: f64 = 1.0e-7;
 
 mod arrangement_islands;
+mod counted_rings;
 mod identity_unique;
 
 fn divided_circle(two_dividers: bool) -> (Sketch, Vec<SketchEntity>) {
@@ -268,8 +269,8 @@ fn single_region(
     entities: &[SketchEntity],
     rings: &[Vec<(&SketchEntity, bool)>],
 ) -> (
-    Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
-    Vec<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>>,
+    Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>,
+    Vec<Vec<cadmpeg_ir::features::profiles::SketchProfileBoundaryUse>>,
 ) {
     let regions = member_regions(sketch, entities, rings).expect("one region");
     let [SketchProfileRegion::Trimmed {
@@ -288,7 +289,9 @@ fn single_region(
     )
 }
 
-fn ring_entities(ring: &[cadmpeg_ir::features::SketchProfileBoundaryUse]) -> Vec<SketchEntityId> {
+fn ring_entities(
+    ring: &[cadmpeg_ir::features::profiles::SketchProfileBoundaryUse],
+) -> Vec<SketchEntityId> {
     let mut entities = ring
         .iter()
         .map(|use_| use_.entity.clone())
@@ -822,7 +825,7 @@ fn a_circle_edge_across_two_pi_boxes_its_axis_extreme() {
     let end = |angle: f64| Point2::new(angle.cos(), angle.sin());
     let edge = SketchArrangementEdge {
         nodes: [0, 1],
-        boundary: cadmpeg_ir::features::SketchProfileBoundaryUse {
+        boundary: cadmpeg_ir::features::profiles::SketchProfileBoundaryUse {
             entity: circle.id().clone(),
             parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap(),
             reversed: false,
@@ -1770,8 +1773,13 @@ fn crossing_run_matching_preserves_the_exact_arrangement_budget() {
         .unwrap();
         assert!(super::super::match_member_rings(
             &faces,
-            &rings,
+            super::super::MemberRings {
+                uses: &rings,
+                counted: None,
+            },
             &std::collections::HashSet::new(),
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
             &exact,
             false,
         )

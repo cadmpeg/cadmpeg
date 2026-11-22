@@ -54,8 +54,10 @@ impl WritableEdgeCurve<'_> {
     pub(super) fn point(
         self,
         parameter: FiniteReal,
-    ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
-    {
+    ) -> Result<
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::eval::EvaluationFailure<Point3>,
+    > {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,

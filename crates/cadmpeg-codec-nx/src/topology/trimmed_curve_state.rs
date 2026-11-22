@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Non-null trim basis and finite endpoint payloads.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_parasolid::xmt::NonNullXmt;

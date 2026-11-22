@@ -557,13 +557,29 @@ pub(super) fn check_resolved_states(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir;
+    let has_names = !ir.design.names.entries().is_empty();
+    let has_evaluations = ir
+        .design
+        .evaluations
+        .iter()
+        .any(|evaluation| evaluation.content.is_some());
+    if !has_names && !has_evaluations {
+        return Ok(());
+    }
+    let geometry = locate(&ir.geometry);
+    if !has_evaluations {
+        check_current_names(ir, &geometry, findings);
+        return Ok(());
+    }
     let resolver = Resolver {
         ctx,
         index,
-        geometry: locate(&ir.geometry),
+        geometry,
         children: ir.geometry.child_lists(),
     };
-    check_current_names(&resolver, findings);
+    if has_names {
+        check_current_names(ir, &resolver.geometry, findings);
+    }
     let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
     for evaluation in &ir.design.evaluations {
         if let Some(content) = &evaluation.content {
@@ -605,11 +621,14 @@ pub(super) fn check_resolved_states(
 }
 
 /// Every name entry of the current geometry names an entity of it.
-fn check_current_names(resolver: &Resolver<'_, '_, '_>, findings: &mut Vec<Finding>) {
-    for entity in resolver.index.ir.design.names.entries().keys() {
+fn check_current_names(
+    ir: &crate::document::CadIr,
+    geometry: &BTreeMap<&str, Located<'_>>,
+    findings: &mut Vec<Finding>,
+) {
+    for entity in ir.design.names.entries().keys() {
         let (arena, id) = Arena::of_entity(entity);
-        let held = resolver
-            .geometry
+        let held = geometry
             .get(id)
             .is_some_and(|located| located.arena == arena);
         if !held {

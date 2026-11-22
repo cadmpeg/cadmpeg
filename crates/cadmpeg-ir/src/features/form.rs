@@ -1,4 +1,4 @@
-use crate::features::NonEmptyMembers;
+use crate::features::selections::NonEmptyMembers;
 use crate::ids::{NativeId, SubdId};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;

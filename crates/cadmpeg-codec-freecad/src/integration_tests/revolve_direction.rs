@@ -4,7 +4,10 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::features::{AngularTermination, BooleanOp, FeatureOperation, RevolveExtent};
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
@@ -45,7 +48,10 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
         };
         assert_eq!(*op, BooleanOp::NewBody);
         let axis = construction.axis().expect("axis");
-        assert_eq!(axis.origin, cadmpeg_ir::features::FinitePoint3::ZERO);
+        assert_eq!(
+            axis.origin,
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO
+        );
         assert!((axis.direction.z - 1.0).abs() < EPS_RECIPE_ANGLE);
         assert!(axis.reference.is_some());
         let extent = construction.extent().expect("extent");

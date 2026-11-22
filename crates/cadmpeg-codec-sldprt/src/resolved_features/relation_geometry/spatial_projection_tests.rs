@@ -2,9 +2,10 @@ use super::ownership_tests::relation_lane;
 use super::project_spatial_relation_bindings;
 use crate::records::relation_scalars::RelationScalars;
 use crate::records::{FeatureInputOperand, FeatureInputOperandKind};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 use std::collections::BTreeMap;

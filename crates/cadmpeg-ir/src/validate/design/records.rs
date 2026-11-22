@@ -4,7 +4,7 @@
 //! Every lookup keeps the first record of an identity; a repeated identity is
 //! reported by the scope-and-linkage rules and does not stop the others.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use crate::design::configuration::{Arrangement, DesignConfiguration};
@@ -19,7 +19,7 @@ use crate::features::ConfigurationId;
 use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in crate::validate) enum MemberKey<'a> {
     /// A feature.
     Feature(&'a str),
@@ -52,7 +52,7 @@ impl fmt::Display for MemberKey<'_> {
 }
 
 /// A position, by identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in crate::validate) enum PositionKey<'a> {
     /// The start of an ordered container.
     Start(&'a str),
@@ -115,6 +115,8 @@ pub(in crate::validate) struct DesignRecords<'a> {
     pub(in crate::validate) roots: BTreeMap<&'a str, &'a str>,
     /// The configurations of each scope.
     pub(in crate::validate) scope_configurations: BTreeMap<&'a str, Vec<&'a DesignConfiguration>>,
+    /// The first product definition that lists each occurrence id.
+    occurrence_owners: HashMap<&'a str, &'a str>,
 }
 
 /// A container's members: in order for an ordered container.
@@ -162,6 +164,15 @@ impl<'a> DesignRecords<'a> {
                 .or_default()
                 .push(configuration);
         }
+        let mut occurrence_owners: HashMap<&'a str, &'a str> = HashMap::new();
+        for definition in &ir.model.product_definitions {
+            let def_id = definition.id.as_str();
+            for occurrence in &definition.occurrences {
+                occurrence_owners
+                    .entry(occurrence.as_str())
+                    .or_insert(def_id);
+            }
+        }
         Self {
             ir,
             scopes: by_id(&design.scopes, |scope| scope.definition.as_str()),
@@ -180,7 +191,13 @@ impl<'a> DesignRecords<'a> {
             parents,
             roots,
             scope_configurations,
+            occurrence_owners,
         }
+    }
+
+    /// The first product definition that lists `occurrence`.
+    pub(in crate::validate) fn occurrence_owner(&self, occurrence: &str) -> Option<&'a str> {
+        self.occurrence_owners.get(occurrence).copied()
     }
 
     /// Whether the member's record exists.
@@ -380,5 +397,14 @@ impl<'a> DesignRecords<'a> {
             }
         }
         spanned
+    }
+}
+
+impl CadIr {
+    pub(crate) fn spanned_definitions(
+        &self,
+        scope: &crate::ids::ProductDefinitionId,
+    ) -> BTreeSet<&str> {
+        DesignRecords::new(self).spanned_definitions(scope.as_str())
     }
 }

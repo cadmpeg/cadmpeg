@@ -5,7 +5,7 @@ use super::{sketch_profile_member_entity, ScopedExtrudeProfileResolution};
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::PlanarProfileRef;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityUse};
 
 pub(super) fn resolve(
@@ -35,14 +35,17 @@ pub(super) fn resolve(
             else {
                 return Ok(None);
             };
-            members.push(SketchEntityUse {
-                entity: entity.clone(),
-                reversed: member.incidence_flag,
-            });
+            members.push((
+                SketchEntityUse {
+                    entity: entity.clone(),
+                    reversed: member.incidence_flag,
+                },
+                member.incidence_values.map(u32::from),
+            ));
         }
         rings.push(members);
     }
-    let Some(selected) = crate::design::geometry::arrangement_regions_matching_member_rings(
+    let Some(selected) = crate::design::geometry::arrangement_regions_matching_counted_rings(
         sketch,
         entities,
         &rings,
@@ -72,6 +75,9 @@ pub(super) fn resolve(
         }
         if selected.island_absence {
             resolution.profile_work.note_island_absence_assumed();
+        }
+        if selected.joined_rings != 0 {
+            resolution.profile_work.note_piece_partition_assumed();
         }
     }
     Ok(profile)
@@ -237,12 +243,12 @@ pub(super) fn resolve_stale(
 fn assign_region(
     index: usize,
     owned: &[Vec<cadmpeg_ir::sketches::SketchEntityId>],
-    regions: &[cadmpeg_ir::features::SketchProfileRegion],
+    regions: &[cadmpeg_ir::features::profiles::SketchProfileRegion],
     assignments: &mut [Option<usize>],
     visited: &mut [bool],
 ) -> bool {
     for (target, region) in regions.iter().enumerate() {
-        let cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+        let cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
             outer_boundary,
             hole_boundaries,
         } = region

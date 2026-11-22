@@ -272,6 +272,145 @@ fn a_configuration_nested_entry_stands_before_the_base_list() {
     assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 6.0, 0.0]));
 }
 
+/// `assembly()` with a replacement for definition 2: definition 5, whose
+/// occurrence 5 of definition 6 sits at y 7. 5's active configuration 51
+/// places occurrence 5 at y 8, and its configuration 52 places it at y 9
+/// and hides it. The root also holds configuration 12, which is not active.
+fn with_replacement() -> CadIr {
+    let mut document = assembly();
+    for key in [5, 6] {
+        document
+            .model
+            .product_definitions
+            .push(ProductDefinition::new(definition(key), Storage::Embedded));
+    }
+    let (_, record) = placement(5, 5, 6, shift(0.0, 7.0, 0.0));
+    document.model.product_definitions[4]
+        .occurrences
+        .push(record.id.clone());
+    document.model.occurrences.push(record);
+    document.design.scopes.push(scope(5, Some(51)));
+    for (key, scope) in [(12, 1), (51, 5), (52, 5)] {
+        document
+            .design
+            .configurations
+            .push(configuration_of(key, scope));
+    }
+    for (key, y, visible) in [(51, 8.0, None), (52, 9.0, Some(false))] {
+        configured(&mut document, key).occurrences.insert(
+            occurrence(5),
+            OccurrenceOverride {
+                transform: Some(shift(0.0, y, 0.0)),
+                visible,
+                ..OccurrenceOverride::default()
+            },
+        );
+    }
+    document
+}
+
+/// Whether the body at `keys` is shown in the current geometry.
+fn shown_at(document: &CadIr, keys: &[u32]) -> bool {
+    document
+        .effective_visibility(&InstanceTarget {
+            entity: AppearanceTarget::Body(id("body", 1)),
+            path: Some(path(keys)),
+            state: None,
+        })
+        .unwrap()
+}
+
+/// The override of configuration `key` that replaces occurrence 1's
+/// prototype with definition 5, selecting `selects` of it where stated.
+fn replace_in(document: &mut CadIr, key: u32, selects: Option<u32>) {
+    configured(document, key).occurrences.insert(
+        occurrence(1),
+        OccurrenceOverride {
+            prototype: Some(definition(5)),
+            configuration: selects.map(|key| ConfigurationRef::Local(configuration(key))),
+            ..OccurrenceOverride::default()
+        },
+    );
+}
+
+#[test]
+fn an_occurrence_whose_prototype_the_active_configuration_replaces_resolves_in_the_replacement() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 11, Some(52));
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 9.0, 0.0]));
+    assert!(!shown_at(&document, &[1, 5]));
+
+    replace_in(&mut document, 11, None);
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 8.0, 0.0]));
+    assert!(shown_at(&document, &[1, 5]));
+}
+
+#[test]
+fn an_occurrence_whose_prototype_only_another_configuration_replaces_keeps_its_prototype() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 12, Some(52));
+    configured(&mut document, 21).occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            transform: Some(shift(0.0, 2.0, 0.0)),
+            visible: Some(false),
+            ..OccurrenceOverride::default()
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 2.0, 0.0]));
+    assert!(!shown_at(&document, &[1, 2]));
+}
+
+#[test]
+fn a_base_selection_of_the_replaced_prototype_resolves_as_no_selection() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 11, None);
+    document.design.scopes[0].occurrences.insert(
+        occurrence(1),
+        OccurrenceDesign {
+            configuration: Some(ConfigurationRef::Local(configuration(22))),
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 8.0, 0.0]));
+    assert!(shown_at(&document, &[1, 5]));
+}
+
+#[test]
+fn a_replacement_in_a_parent_configuration_applies_until_the_child_states_its_own() {
+    let mut document = with_replacement();
+    replace_in(&mut document, 12, Some(52));
+    document
+        .design
+        .configurations
+        .iter_mut()
+        .find(|candidate| candidate.id == configuration(11))
+        .unwrap()
+        .parent = Some(configuration(12));
+    assert_eq!(transform_at(&document, &[1, 5]), Some([10.0, 9.0, 0.0]));
+    assert!(!shown_at(&document, &[1, 5]));
+
+    configured(&mut document, 11).occurrences.insert(
+        occurrence(1),
+        OccurrenceOverride {
+            prototype: Some(definition(2)),
+            configuration: Some(ConfigurationRef::Local(configuration(22))),
+            ..OccurrenceOverride::default()
+        },
+    );
+    configured(&mut document, 22).occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            transform: Some(shift(0.0, 3.0, 0.0)),
+            ..OccurrenceOverride::default()
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 3.0, 0.0]));
+}
+
 fn posed(keys: &[u32], at: Transform) -> CurrentState {
     CurrentState {
         at: Position::After(Member::Feature(id("feature", 1))),

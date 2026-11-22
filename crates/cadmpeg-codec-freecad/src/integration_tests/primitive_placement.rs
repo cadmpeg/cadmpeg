@@ -3,9 +3,9 @@
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, ParameterValue, PrimitiveSolidKind,
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::primitives::PrimitiveSolidKind;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -606,7 +606,8 @@ fn primitive_placement_composes_body_and_validator_rejects_changed_frame() {
     let features = value["model"]["features"].as_array_mut().unwrap();
     let feature = features.iter_mut().find(|f| f["name"] == "Box").unwrap();
     feature["definition"]["value"]["value"]["placement"] =
-        serde_json::to_value(cadmpeg_ir::features::FeatureRigidPlacement::identity()).unwrap();
+        serde_json::to_value(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity())
+            .unwrap();
     let changed = serde_json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
@@ -696,9 +697,9 @@ fn primitive_placement_all_eight_additive_and_subtractive_families() {
             assert_eq!(
                 *op,
                 if prefix == "Additive" {
-                    cadmpeg_ir::features::BooleanOp::Join
+                    cadmpeg_ir::features::operation_settings::BooleanOp::Join
                 } else {
-                    cadmpeg_ir::features::BooleanOp::Cut
+                    cadmpeg_ir::features::operation_settings::BooleanOp::Cut
                 }
             );
             assert_valid_document(decoded.ir());

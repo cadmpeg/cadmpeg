@@ -27,7 +27,14 @@ pub(super) fn check_tolerances(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             | None => {}
         }
     }
-    for definition in &index.ir.model.product_definitions {
+    check_definition_general_tolerances(index.ir, findings);
+}
+
+pub(super) fn check_definition_general_tolerances(
+    ir: &crate::document::CadIr,
+    findings: &mut Vec<Finding>,
+) {
+    for definition in &ir.model.product_definitions {
         if let Some(general) = &definition.general_tolerance {
             check_general_rule(definition.id.as_str(), general, findings);
         }

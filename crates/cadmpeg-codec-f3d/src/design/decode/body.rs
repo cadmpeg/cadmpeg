@@ -22,7 +22,7 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
