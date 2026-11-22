@@ -284,3 +284,62 @@ byte. The function names are:
 | `JMFlangeFunction` | sheet-metal flange |
 
 A `CLSID_JMGroup` feature is a mirror copy or a pattern.
+
+## 5. Sketches
+
+### 5.1 Profile objects
+
+A profile is a group of cluster-0 objects with consecutive identifiers: a
+`CLSID_JProfileSet` object `S`, the `CLSID_JProfile` object `S` + 1, and
+the `CLSID_JProfile2d` object `S` + 2. A profile is stored only when a
+feature consumes it. All lengths are metres and all angles are radians.
+
+A `CLSID_JProfile` object stores the sketch frame:
+
+| Offset | Field |
+| ---: | --- |
+| 26 | three `f64`: origin in model space |
+| 50 | three `f64`: vector `A`, the plane normal |
+| 74 | three `f64`: vector `B`, the local x axis |
+| 127 | `u32` identifier of the `CLSID_JProfile2d` object |
+| 292 | `u32` `0x10`, `u32` `0x80000000`, `u32` identifier of the plane |
+
+The local y axis is `A` × `B`. A point (x, y) of the profile is the model
+point origin + x·`B` + y·(`A` × `B`). The plane is a `ReferencePlaneObject`.
+The origin, `A` and `B` of the profile equal those of its plane.
+
+A `CLSID_JProfile2d` object lists the profile members. The `u32` at object
+offset 8 is the member count `n`, and `n` `u32` member identifiers follow
+it.
+
+### 5.2 Profile curves
+
+A member of class `CLSID_JLine2d` is a line segment. The four `f64` at
+object offsets 10, 18, 26 and 34 are x0, y0, x1 and y1 in the profile
+frame: the segment runs from (x0, y0) to (x1, y1).
+
+A member of class `CLSID_JCircle2d` is a full circle. The `f64` at object
+offsets 10 and 18 are the centre x and y in the profile frame, and the
+`f64` at offset 26 is the radius.
+
+A member of class `CLSID_JArc2d` is a circular arc. The `f64` at object
+offsets 10, 18 and 26 are the centre x, y and the radius. The `f64` at
+offsets 35 and 43 are the start and end angles, measured from the local x
+axis towards the local y axis. The arc runs from the start angle to the end
+angle in that sense.
+
+A member of class `CLSID_JKeyPoint2d` joins two curves and stores no
+coordinate. Members of other classes are constraints, dimensions and other
+profile items.
+
+### 5.3 Feature profile
+
+A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
+`JMCutoutFunction`, `JMRevolvedProtrusionFunction`,
+`JMMultiSweepProtrusionFunction`, `JMLoftedProtrusionFunction` or
+`JMBaseTabFunction` stores the identifier of its profile as the `u32` 72
+bytes after the end of its function name (§4.2). A feature with function
+`JMHoleFunction`, `JMFlangeFunction` or `JMFastPatternFunction` stores it 68
+bytes after the end of its function name. The identifier names a
+`CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
+profile. At most one feature names a profile.
