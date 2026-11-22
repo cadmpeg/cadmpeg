@@ -479,3 +479,45 @@ fn identity_grammar_admits_only_three_components_and_one_key() {
         );
     }
 }
+
+#[test]
+fn inline_identity_keys_match_owned_and_borrowed_across_operations() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let hash_of = |key: &IdentityKey| {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        hasher.finish()
+    };
+
+    for (key, expected) in [
+        (IdentityKey::from(0_u64), "0"),
+        (IdentityKey::from(42_u32), "42"),
+        (IdentityKey::from(u64::MAX), "18446744073709551615"),
+        (IdentityKey::from(i64::MIN), "-9223372036854775808"),
+        (IdentityKey::from(i64::MAX), "9223372036854775807"),
+        (IdentityKey::from(-1_i8), "-1"),
+        (IdentityKey::from(123_usize).dash(456_u64), "123-456"),
+        (IdentityKey::from(123_usize).colon(456_u64), "123:456"),
+        (
+            IdentityKey::from(u64::MAX).dash(u64::MAX),
+            "18446744073709551615-18446744073709551615",
+        ),
+    ] {
+        assert_eq!(key.as_str(), expected);
+        let owned = IdentityKey::try_new(expected.to_owned()).unwrap();
+        assert_eq!(key, owned);
+        assert_eq!(key.cmp(&owned), std::cmp::Ordering::Equal);
+        assert_eq!(hash_of(&key), hash_of(&owned));
+        assert_eq!(key.clone().into_string(), expected);
+    }
+
+    let borrowed = crate::identity_key!("42");
+    let inline = IdentityKey::from(42_u64);
+    let owned = IdentityKey::try_new("42".to_owned()).unwrap();
+    assert_eq!(borrowed, inline);
+    assert_eq!(inline, owned);
+    assert_eq!(hash_of(&borrowed), hash_of(&inline));
+    assert_eq!(hash_of(&inline), hash_of(&owned));
+}
