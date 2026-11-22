@@ -4,10 +4,16 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch as IrSketch, SketchGeometryDefinition};
+use cadmpeg_ir::sketches::{
+    Sketch as IrSketch, SketchEntityId, SketchGeometryDefinition, SketchLocus,
+};
 
-use super::sketch::{Curve, Point, Sketch};
+use super::sketch::{Curve, Dimension, Operand, Point, Relation, Sketch};
 use super::tree::Plane;
+use crate::records::SketchRelationKind;
+use crate::resolved_features::write_generate::{
+    generated_dimension, generated_marker_relations, GeneratedDimension, GeneratedMarkerRelation,
+};
 use crate::resolved_features::write_prepare::{
     generated_profile_stream, generated_sketch_owner_id, generated_sketch_owner_record,
     unique_planar_sketch_owner, GENERATED_NAME,
@@ -78,7 +84,11 @@ pub(in crate::writer) fn sketches(
             record.name.as_str()
         };
         let name = GENERATED_NAME.fit(name).text.to_owned();
-        let (plane, points, curves) = match geometry(ir, sketch) {
+        let geometry = geometry(ir, sketch).and_then(|(plane, points, curves, handles)| {
+            let (relations, dimensions) = constraints(ir, sketch, &handles)?;
+            Ok((plane, points, curves, relations, dimensions))
+        });
+        let (plane, points, curves, relations, dimensions) = match geometry {
             Ok(geometry) => geometry,
             Err(reason) => {
                 return Ok(Sketches::Lane(format!(
@@ -95,6 +105,8 @@ pub(in crate::writer) fn sketches(
                 plane,
                 points,
                 curves,
+                relations,
+                dimensions,
                 body: generated_profile_stream(ir, sketch)?,
             },
         ));
@@ -105,11 +117,39 @@ pub(in crate::writer) fn sketches(
     ))
 }
 
-/// The sketch's plane and its point and curve records, or why it has none.
-fn geometry(
-    ir: &cadmpeg_ir::CadIr,
-    sketch: &IrSketch,
-) -> Result<(Plane, Vec<Point>, Vec<Curve>), String> {
+/// The operand handle of each entity and of each locus that is a point.
+#[derive(Debug, Default)]
+struct Handles {
+    entities: Vec<(SketchEntityId, Operand)>,
+    loci: Vec<(SketchLocus, usize)>,
+}
+
+impl Handles {
+    fn entity(&self, entity: &SketchEntityId) -> Result<Operand, String> {
+        self.entities
+            .iter()
+            .find(|(candidate, _)| candidate == entity)
+            .map(|(_, operand)| *operand)
+            .ok_or_else(|| format!("relation operand {} is no written entity", entity.as_str()))
+    }
+
+    fn locus(&self, locus: &SketchLocus) -> Result<Operand, String> {
+        if let SketchLocus::Entity(entity) = locus {
+            return self.entity(entity);
+        }
+        self.loci
+            .iter()
+            .find(|(candidate, _)| candidate == locus)
+            .map(|(_, point)| Operand::Point(*point))
+            .ok_or_else(|| format!("relation locus {locus:?} is no written point"))
+    }
+}
+
+type Geometry = (Plane, Vec<Point>, Vec<Curve>, Handles);
+
+/// The sketch's plane, its point and curve records and the operand handles
+/// of its entities, or why it has none.
+fn geometry(ir: &cadmpeg_ir::CadIr, sketch: &IrSketch) -> Result<Geometry, String> {
     let (origin, normal, u_axis) = sketch
         .resolved_placement()
         .map(|(origin, normal, u_axis)| (origin.get(), unit(normal.get()), unit(u_axis.get())))
@@ -150,6 +190,7 @@ fn geometry(
     };
     let mut lines = Vec::new();
     let mut arcs = Vec::new();
+    let mut handles = Handles::default();
     for entity in ir
         .model
         .sketch_entities
@@ -164,11 +205,21 @@ fn geometry(
         }
         match entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
-                point(to_plane(position.get()), 0);
+                let at = point(to_plane(position.get()), 0);
+                handles
+                    .entities
+                    .push((entity.id().clone(), Operand::Point(at)));
             }
             SketchGeometryDefinition::Line { start, end } => {
                 let start = point(to_plane(start.get()), 1);
                 let end = point(to_plane(end.get()), 1);
+                handles
+                    .entities
+                    .push((entity.id().clone(), Operand::Line(lines.len())));
+                handles.loci.extend([
+                    (SketchLocus::Start(entity.id().clone()), start),
+                    (SketchLocus::End(entity.id().clone()), end),
+                ]);
                 lines.push(Curve::Line { start, end });
             }
             SketchGeometryDefinition::Circle { center, radius } => {
@@ -176,6 +227,12 @@ fn geometry(
                 let radius = radius.get() * METRES_PER_MILLIMETRE;
                 let on = point([centre[0] + radius, centre[1]], 1);
                 let centre = point(centre, 1);
+                handles
+                    .entities
+                    .push((entity.id().clone(), Operand::Arc(arcs.len())));
+                handles
+                    .loci
+                    .push((SketchLocus::Center(entity.id().clone()), centre));
                 arcs.push(Curve::Circle { on, centre });
             }
             SketchGeometryDefinition::Arc {
@@ -201,6 +258,15 @@ fn geometry(
                 let start = point(first, 2);
                 let end = point(second, 2);
                 let centre = point(to_plane(center), 2);
+                let (at_start, at_end) = if flipped { (end, start) } else { (start, end) };
+                handles
+                    .entities
+                    .push((entity.id().clone(), Operand::Arc(arcs.len())));
+                handles.loci.extend([
+                    (SketchLocus::Start(entity.id().clone()), at_start),
+                    (SketchLocus::End(entity.id().clone()), at_end),
+                    (SketchLocus::Center(entity.id().clone()), centre),
+                ]);
                 arcs.push(Curve::Arc { start, end, centre });
             }
             _ => {
@@ -212,7 +278,140 @@ fn geometry(
         }
     }
     lines.extend(arcs);
-    Ok((plane, points, lines))
+    Ok((plane, points, lines, handles))
+}
+
+/// The sketch's relations and dimensions as native relation-table rows and
+/// dimension objects, or why the native sketch cannot hold one of them.
+/// Coincidences the shared point records carry write no row.
+fn constraints(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &IrSketch,
+    handles: &Handles,
+) -> Result<(Vec<Relation>, Vec<Dimension>), String> {
+    let mut relations = Vec::new();
+    let mut dimensions = Vec::new();
+    for constraint in ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.sketch == sketch.id)
+    {
+        let definition = constraint.definition.kind();
+        for relation in generated_marker_relations(definition) {
+            let (kind, operands) = match relation {
+                GeneratedMarkerRelation::Unary(kind, entity) => {
+                    (kind, vec![handles.entity(entity)?])
+                }
+                GeneratedMarkerRelation::Binary(kind, first, second) => {
+                    (kind, vec![handles.entity(first)?, handles.entity(second)?])
+                }
+                GeneratedMarkerRelation::Loci(kind, first, second) => {
+                    (kind, vec![handles.locus(first)?, handles.locus(second)?])
+                }
+                GeneratedMarkerRelation::Midpoint(point, entity) => (
+                    SketchRelationKind::Midpoint,
+                    vec![handles.locus(point)?, handles.entity(entity)?],
+                ),
+                GeneratedMarkerRelation::AtIntersection(..)
+                | GeneratedMarkerRelation::Symmetric(..) => {
+                    return Err(format!(
+                        "constraint {} has three operands",
+                        constraint.id.as_str()
+                    ))
+                }
+            };
+            relations.push(Relation {
+                code: kind.native_code(),
+                operands,
+            });
+        }
+        let Some(dimension) = generated_dimension(ir, definition) else {
+            continue;
+        };
+        let dimension = dimension.map_err(|error| error.to_string())?;
+        let radius = matches!(
+            definition,
+            cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Radius { .. }
+        );
+        let (class, code, operands, parameter) = match dimension {
+            GeneratedDimension::PointPoint(first, second, parameter) => (
+                "sgPntPntDist",
+                SketchRelationKind::Distance,
+                vec![handles.locus(first)?, handles.locus(second)?],
+                parameter,
+            ),
+            GeneratedDimension::PointLine(point, line, parameter) => (
+                "sgPntLineDist",
+                SketchRelationKind::Distance,
+                vec![handles.locus(point)?, handles.entity(line)?],
+                parameter,
+            ),
+            GeneratedDimension::LineLine(first, second, parameter) => (
+                "sgLLDist",
+                SketchRelationKind::Distance,
+                vec![handles.entity(first)?, handles.entity(second)?],
+                parameter,
+            ),
+            GeneratedDimension::Horizontal(first, second, parameter) => (
+                "sgPntPntHorDist",
+                SketchRelationKind::Distance,
+                vec![handles.locus(first)?, handles.locus(second)?],
+                parameter,
+            ),
+            GeneratedDimension::Vertical(first, second, parameter) => (
+                "sgPntPntVertDist",
+                SketchRelationKind::Distance,
+                vec![handles.locus(first)?, handles.locus(second)?],
+                parameter,
+            ),
+            GeneratedDimension::Angle(first, second, parameter) => (
+                "sgAnglDim",
+                SketchRelationKind::Angle,
+                vec![handles.entity(first)?, handles.entity(second)?],
+                parameter,
+            ),
+            GeneratedDimension::Circle(entity, parameter) => (
+                "sgCircleDim",
+                if radius {
+                    SketchRelationKind::Radius
+                } else {
+                    SketchRelationKind::Diameter
+                },
+                vec![handles.entity(entity)?],
+                parameter,
+            ),
+        };
+        let parameter = ir
+            .model
+            .parameters
+            .iter()
+            .find(|candidate| candidate.id == *parameter)
+            .ok_or_else(|| format!("dimension parameter {} is missing", parameter.as_str()))?;
+        let (value, angle) = match &parameter.value {
+            Some(cadmpeg_ir::features::ParameterValue::Length(value)) if class != "sgAnglDim" => {
+                (value.get() * METRES_PER_MILLIMETRE, false)
+            }
+            Some(cadmpeg_ir::features::ParameterValue::Angle(value)) if class == "sgAnglDim" => {
+                (value.get(), true)
+            }
+            _ => {
+                return Err(format!(
+                    "dimension parameter {} has no value of its measure",
+                    parameter.id.as_str()
+                ))
+            }
+        };
+        dimensions.push(Dimension {
+            class,
+            name: GENERATED_NAME.fit(&parameter.name).text.to_owned(),
+            value,
+            angle,
+            code: code.native_code(),
+            operands,
+        });
+    }
+    Ok((relations, dimensions))
 }
 
 fn unit(vector: Vector3) -> Vector3 {

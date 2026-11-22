@@ -140,7 +140,7 @@ fn tree_identifiers_follow_the_identifier_base() {
 
 /// A sketch on the Top plane: a line, an arc from its end and a circle.
 fn top_sketch() -> super::sketch::Sketch {
-    use super::sketch::{Curve, Point, Sketch};
+    use super::sketch::{Curve, Dimension, Operand, Point, Relation, Sketch};
     let point = |at: [f64; 2], kind: u32| Point { at, kind };
     Sketch {
         name: "Sketch1".into(),
@@ -162,6 +162,34 @@ fn top_sketch() -> super::sketch::Sketch {
                 centre: 0,
             },
             Curve::Circle { on: 4, centre: 5 },
+        ],
+        relations: vec![
+            Relation {
+                code: 4,
+                operands: vec![Operand::Line(0)],
+            },
+            Relation {
+                code: 6,
+                operands: vec![Operand::Line(0), Operand::Arc(0)],
+            },
+        ],
+        dimensions: vec![
+            Dimension {
+                class: "sgCircleDim",
+                name: "d1".into(),
+                value: 0.01,
+                angle: false,
+                code: 15,
+                operands: vec![Operand::Arc(1)],
+            },
+            Dimension {
+                class: "sgPntPntDist",
+                name: "d2".into(),
+                value: 0.01,
+                angle: false,
+                code: 1,
+                operands: vec![Operand::Point(0), Operand::Point(1)],
+            },
         ],
         body: b"PS\0\0 profile body".repeat(8),
     }

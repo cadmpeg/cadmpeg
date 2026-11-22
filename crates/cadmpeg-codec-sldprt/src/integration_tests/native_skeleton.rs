@@ -318,3 +318,153 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
         ],
     );
 }
+
+/// `cube_with_sketches` with the rectangle's first line horizontal, its second
+/// vertical, the arc's radius dimensioned 3 and the circle's diameter
+/// dimensioned 4.
+fn cube_with_constrained_sketches() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{
+        DesignParameter, DimensionDisplay, FeatureId, ParameterId, ParameterValue,
+    };
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntityId, SketchId,
+    };
+    let mut ir = cube_with_sketches();
+    let entity = |key: &str| SketchEntityId::mint(format!("synthetic:test:sketch-entity#{key}"));
+    let line0 = entity("Rectangle-0-0").expect("id");
+    let line1 = entity("Rectangle-0-1").expect("id");
+    let arc = entity("Arcs-0-0").expect("id");
+    let circle = entity("Arcs-1-0").expect("id");
+    let parameter = |ir: &mut cadmpeg_ir::CadIr,
+                     key: &str,
+                     owner: &str,
+                     display: DimensionDisplay,
+                     expression: &str,
+                     value: f64| {
+        let id = ParameterId::mint(format!("synthetic:test:parameter#{key}")).expect("id");
+        let ordinal = u32::try_from(ir.model.parameters.len()).expect("ordinal");
+        ir.model.parameters.push(DesignParameter {
+            product_definition: None,
+            id: id.clone(),
+            owner: Some(FeatureId::mint(format!("synthetic:test:feature#{owner}")).expect("id")),
+            ordinal,
+            name: key.into(),
+            expression: expression.into(),
+            display: Some(display),
+            value: Some(ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(value).expect("length"),
+            )),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        id
+    };
+    let turn = parameter(
+        &mut ir,
+        "Turn",
+        "Arcs",
+        DimensionDisplay::Radius,
+        "R3mm",
+        3.0,
+    );
+    let bore = parameter(
+        &mut ir,
+        "Bore",
+        "Arcs",
+        DimensionDisplay::Diameter,
+        "<MOD-DIAM>4mm",
+        4.0,
+    );
+    let constraints = [
+        (
+            "Rectangle",
+            "horizontal",
+            SketchConstraintDefinitionInput::Horizontal { entity: line0 },
+        ),
+        (
+            "Rectangle",
+            "vertical",
+            SketchConstraintDefinitionInput::Vertical { entity: line1 },
+        ),
+        (
+            "Arcs",
+            "turn",
+            SketchConstraintDefinitionInput::Radius {
+                entity: arc,
+                parameter: turn,
+            },
+        ),
+        (
+            "Arcs",
+            "bore",
+            SketchConstraintDefinitionInput::Diameter {
+                entity: circle,
+                parameter: bore,
+            },
+        ),
+    ];
+    for (sketch, key, definition) in constraints {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{key}")).expect("id"),
+            sketch: SketchId::mint(format!("synthetic:test:sketch#{sketch}")).expect("id"),
+            definition: SketchConstraintDefinition::try_from(definition).expect("constraint"),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+    }
+    ir
+}
+
+#[test]
+fn native_sketch_relations_and_dimensions_decode_back() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Def;
+    let bytes = write(&cube_with_constrained_sketches());
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    // The relation-table rows decode as native relations of their codes:
+    // horizontal `4` and vertical `5`.
+    let codes = decoded
+        .ir()
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| match constraint.definition.kind() {
+            Def::Native { native_kind, .. } => Some(native_kind.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for code in ["sldprt:sketch-relation:4", "sldprt:sketch-relation:5"] {
+        assert!(codes.iter().any(|kind| kind == code), "{code} in {codes:?}");
+    }
+    let lengths = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| match parameter.value {
+            Some(cadmpeg_ir::features::ParameterValue::Length(length)) => Some(length.get()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for expected in [3.0, 4.0] {
+        assert!(
+            lengths
+                .iter()
+                .any(|length| (length - expected).abs() < 1.0e-9),
+            "{expected} in {lengths:?}"
+        );
+    }
+}

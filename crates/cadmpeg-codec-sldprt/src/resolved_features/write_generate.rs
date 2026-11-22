@@ -23,7 +23,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::HashMap;
 
-pub(super) enum GeneratedMarkerRelation<'a> {
+pub(crate) enum GeneratedMarkerRelation<'a> {
     Unary(SketchRelationKind, &'a SketchEntityId),
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
     Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
@@ -32,7 +32,7 @@ pub(super) enum GeneratedMarkerRelation<'a> {
     Symmetric(&'a SketchLocus, &'a SketchLocus, &'a SketchEntityId),
 }
 
-pub(super) fn generated_marker_relations(
+pub(crate) fn generated_marker_relations(
     definition: &SketchConstraintDefinitionInput,
 ) -> Vec<GeneratedMarkerRelation<'_>> {
     match definition {
@@ -122,7 +122,7 @@ pub(super) fn generated_marker_relations(
     }
 }
 
-enum GeneratedDimension<'a> {
+pub(crate) enum GeneratedDimension<'a> {
     PointPoint(
         &'a SketchLocus,
         &'a SketchLocus,
@@ -545,7 +545,7 @@ fn constraint_named(
     }
 }
 
-fn generated_dimension<'a>(
+pub(crate) fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
     definition: &'a SketchConstraintDefinitionInput,
 ) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
@@ -627,7 +627,7 @@ fn generated_dimension<'a>(
     }
 }
 
-pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEntityId) -> bool {
+pub(crate) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEntityId) -> bool {
     ir.model
         .sketch_entities
         .iter()

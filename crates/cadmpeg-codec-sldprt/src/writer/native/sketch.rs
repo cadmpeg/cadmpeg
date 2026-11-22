@@ -49,13 +49,12 @@ const SELECTOR: u16 = 4;
 /// The coordinate mask of a two-coordinate point record.
 const TWO_COORDINATES: u16 = 0x1e;
 
-/// The handle class of a curve.
-const fn handle_class(curve: &Curve) -> &'static str {
-    match curve {
-        Curve::Line { .. } => "sgLineHandle",
-        Curve::Arc { .. } | Curve::Circle { .. } => "sgArcHandle",
-    }
-}
+/// The slot of a placeholder entity handle.
+const PLACEHOLDER_SLOT: u16 = 0x777f;
+
+/// The bytes a dimension writes after its parameter: ten zero bytes, f64 `1`
+/// and sixteen zero bytes.
+const DIMENSION_TAIL_ZEROS: (usize, usize) = (10, 16);
 
 /// The wrapper magic of a compressed body (`zlb_wrapper_header`).
 const BODY_MAGIC: [u8; 16] = crate::layout::zlb_wrapper_header::MAGIC_VALUE;
@@ -83,8 +82,40 @@ pub(in crate::writer) struct Sketch {
     pub(in crate::writer) points: Vec<Point>,
     /// The curve records, lines first.
     pub(in crate::writer) curves: Vec<Curve>,
+    /// The relations, in the relation table's order.
+    pub(in crate::writer) relations: Vec<Relation>,
+    /// The dimensions.
+    pub(in crate::writer) dimensions: Vec<Dimension>,
     /// The nested Parasolid stream of the profile body.
     pub(in crate::writer) body: Vec<u8>,
+}
+
+/// An operand handle: a point, line or arc by its position among the
+/// records of its kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::writer) enum Operand {
+    Point(usize),
+    Line(usize),
+    Arc(usize),
+}
+
+/// A geometric relation (`SketchRelationKind` code) and its operands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::writer) struct Relation {
+    pub(in crate::writer) code: u32,
+    pub(in crate::writer) operands: Vec<Operand>,
+}
+
+/// A driving dimension: its class, its parameter's name and value (metres or
+/// radians), the relation code of its measure and its operands.
+#[derive(Debug, Clone, PartialEq)]
+pub(in crate::writer) struct Dimension {
+    pub(in crate::writer) class: &'static str,
+    pub(in crate::writer) name: String,
+    pub(in crate::writer) value: f64,
+    pub(in crate::writer) angle: bool,
+    pub(in crate::writer) code: u32,
+    pub(in crate::writer) operands: Vec<Operand>,
 }
 
 /// A point record.
@@ -118,6 +149,20 @@ pub(in crate::writer) enum Curve {
 }
 
 impl Curve {
+    /// The handle of the curve at `index` among `curves`.
+    fn operand(curves: &[Self], index: usize) -> Operand {
+        let rank = |line: bool| {
+            curves[..index]
+                .iter()
+                .filter(|curve| matches!(curve, Self::Line { .. }) == line)
+                .count()
+        };
+        match curves[index] {
+            Self::Line { .. } => Operand::Line(rank(true)),
+            Self::Arc { .. } | Self::Circle { .. } => Operand::Arc(rank(false)),
+        }
+    }
+
     /// The point positions its ends stand at, twice for a circle.
     fn ends(self) -> [usize; 2] {
         match self {
@@ -128,7 +173,12 @@ impl Curve {
 }
 
 /// Writes `sketch` as a top-level `moProfileFeature_c`.
-pub(super) fn profile_feature(archive: &mut Archive, sketch: &Sketch) -> Result<(), CodecError> {
+/// Dimension parameters take object identifiers from `next_id` on.
+pub(super) fn profile_feature(
+    archive: &mut Archive,
+    sketch: &Sketch,
+    next_id: &mut u32,
+) -> Result<(), CodecError> {
     archive.object("moProfileFeature_c");
     named(
         archive,
@@ -149,8 +199,8 @@ pub(super) fn profile_feature(archive: &mut Archive, sketch: &Sketch) -> Result<
         point_record(archive, sketch, index, point);
     }
     curve_lists(archive, sketch);
-    // Three empty dimension groups, eight empty relation groups and a u16 0.
-    archive.zeros(2 * (3 + 8 + 1));
+    dimension_groups(archive, sketch, next_id);
+    relation_groups(archive, sketch);
     archive.object("suObList");
     archive.u16(0);
     // The in-context block of a sketch with no external references.
@@ -191,7 +241,8 @@ fn record_head(archive: &mut Archive, kind: u32, state: u16) {
 /// A point record: the head, the mask and coordinates, the count of curve
 /// ends at the point, the handles of the curves that meet there (at most
 /// three, then null pointers), i32 `-2`, 36 zero bytes, u32 `0`, u16 `0` and
-/// the record identifier (its position plus one).
+/// the identifier of the next record (its position plus two; the sketch's
+/// u32 before the first record is that record's identifier, `1`).
 fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Point) {
     record_head(archive, point.kind, 0);
     archive.u16(TWO_COORDINATES);
@@ -213,53 +264,157 @@ fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Po
         .filter(|(_, curve)| curve.ends().contains(&index))
         .take(3)
         .collect::<Vec<_>>();
-    for &(curve_index, curve) in &meeting {
-        curve_handle(archive, curve_index, curve);
+    for &(curve_index, _) in &meeting {
+        handle(archive, Curve::operand(&sketch.curves, curve_index));
     }
     for _ in meeting.len()..3 {
         archive.null();
     }
     archive.u32(0xffff_fffe);
     archive.zeros(36);
-    archive.u32(0);
+    // The last point record's u32 here is the count of the line array that
+    // follows, which stands 14 bytes before the first line record.
+    let next_array = if index + 1 == sketch.points.len() {
+        lines(sketch)
+    } else {
+        0
+    };
+    let next_array = archive.count32(next_array, "line count");
+    archive.u32(next_array);
     archive.u16(0);
-    let id = archive.count32(index + 1, "point identifier");
+    let id = archive.count32(index + 2, "point identifier");
     archive.u32(id);
 }
 
-/// The handle of the curve at `index`: its identifier, i32 `-1` and u32 `0`.
-fn curve_handle(archive: &mut Archive, index: usize, curve: &Curve) {
-    archive.object(handle_class(curve));
-    let slot = archive.count16(index + 1, "curve identifier");
+/// An operand handle: its position among the records of its kind, i32 `-1`
+/// and u32 `0`.
+fn handle(archive: &mut Archive, operand: Operand) {
+    let (class, position) = match operand {
+        Operand::Point(position) => ("sgPointHandle", position),
+        Operand::Line(position) => ("sgLineHandle", position),
+        Operand::Arc(position) => ("sgArcHandle", position),
+    };
+    archive.object(class);
+    let slot = archive.count16(position, "handle slot");
     archive.u16(slot);
     archive.u32(u32::MAX);
     archive.u32(0);
 }
 
+/// The dimension groups: every dimension in the first, then two empty groups.
+fn dimension_groups(archive: &mut Archive, sketch: &Sketch, next_id: &mut u32) {
+    let count = archive.count16(sketch.dimensions.len(), "dimension count");
+    archive.u16(count);
+    for dimension in &sketch.dimensions {
+        archive.object(dimension.class);
+        archive.u32(0);
+        archive.object(if dimension.angle {
+            "moAngleParameter_c"
+        } else {
+            "moLengthParameter_c"
+        });
+        named(
+            archive,
+            Some(&dimension.name),
+            Schema::Plain,
+            Oid::Plain(u32::MAX),
+        );
+        archive.u16(0);
+        archive.f64(dimension.value);
+        archive.u8(0);
+        archive.null();
+        archive.u32(*next_id);
+        *next_id = next_id.saturating_add(1);
+        archive.zeros(16);
+        archive.u32(dimension.code);
+        let placeholder = dimension.operands.len() == 1;
+        let operands = archive.count16(
+            dimension.operands.len() + usize::from(placeholder),
+            "dimension operand count",
+        );
+        archive.u16(operands);
+        archive.u32(1);
+        archive.u16(0);
+        for &operand in &dimension.operands {
+            handle(archive, operand);
+        }
+        if placeholder {
+            archive.object("sgEntHandle");
+            archive.u16(PLACEHOLDER_SLOT);
+            archive.u32(0xffff_fffe);
+            archive.u32(u32::MAX);
+            archive.u16(0);
+        }
+        archive.zeros(DIMENSION_TAIL_ZEROS.0);
+        archive.f64(1.0);
+        archive.zeros(DIMENSION_TAIL_ZEROS.1);
+    }
+    archive.u16(0);
+    archive.u16(0);
+}
+
+/// The eight relation groups and a u16 `0`: relations on one operand in the
+/// first group, the others in the second. A relation writes eight zero bytes,
+/// i32 `-1`, sixteen zero bytes, its code, u32 `2`, u16 `0`, u32 `0xfffe` and
+/// its operand handles; one with two operands then writes six zero bytes,
+/// u16 `0`, eight `ff` bytes and 24 zero bytes.
+fn relation_groups(archive: &mut Archive, sketch: &Sketch) {
+    for unary in [true, false] {
+        let group = sketch
+            .relations
+            .iter()
+            .filter(|relation| (relation.operands.len() == 1) == unary)
+            .collect::<Vec<_>>();
+        let count = archive.count16(group.len(), "relation count");
+        archive.u16(count);
+        for relation in group {
+            archive.zeros(8);
+            archive.i32(-1);
+            archive.zeros(16);
+            archive.u32(relation.code);
+            archive.u32(2);
+            archive.u16(0);
+            archive.u32(0xfffe);
+            for &operand in &relation.operands {
+                handle(archive, operand);
+            }
+            if relation.operands.len() == 2 {
+                archive.zeros(6);
+                archive.u16(0);
+                archive.bytes(&[0xff; 8]);
+                archive.zeros(24);
+            }
+        }
+    }
+    archive.zeros(2 * (6 + 1));
+}
+
 /// The curve lists: u32 `-1` and the lines, then, when arcs follow, the
-/// 12-byte list header (`0`, the arc count, `1`) and the arcs and circles;
-/// a sketch with arcs only opens with u32 `0x10000`. The list trailer is 36
-/// zero bytes after a line and 22 after an arc.
+/// 12-byte list header (`0`, `1`, `1`) and the arcs and circles; a sketch
+/// with arcs only opens with the arc count in the high half of its lead
+/// word. The list trailer is 36 zero bytes after a line and 22 after an arc.
 fn curve_lists(archive: &mut Archive, sketch: &Sketch) {
-    let lines = sketch
-        .curves
-        .iter()
-        .take_while(|curve| matches!(curve, Curve::Line { .. }))
-        .count();
+    let lines = lines(sketch);
     let arcs = sketch.curves.len() - lines;
+    let arc_count = archive.count16(arcs, "arc count");
+    // An array's count stands 14 bytes before its first record: the arc
+    // count is the high half of the u32 that ends two bytes before the list
+    // header, the lead word without lines and the last line's last word
+    // with them.
+    let arc_count_high = u32::from(arc_count) << 16;
     archive.u32(if lines == 0 && arcs != 0 {
-        0x1_0000
+        arc_count_high
     } else {
         u32::MAX
     });
     for (index, curve) in sketch.curves.iter().enumerate() {
         if index == lines {
             archive.u32(0);
-            let count = archive.count32(arcs, "arc count");
-            archive.u32(count);
+            archive.u32(1);
             archive.u32(1);
         }
-        curve_record(archive, index, *curve);
+        let last_line = index + 1 == lines && arcs != 0;
+        curve_record(archive, index, *curve, last_line.then_some(arc_count_high));
     }
     archive.zeros(if arcs == 0 { 36 } else { 22 });
 }
@@ -267,8 +422,9 @@ fn curve_lists(archive: &mut Archive, sketch: &Sketch) {
 /// A curve record: the head, the two endpoint positions, u32 `1`, f64 `-1`,
 /// the curve type (`0` a line; `1` and u16 `0`, the sense `+1`, for an arc),
 /// for an arc its centre's position and four i32 `-2`, then u16 `0`, u32 `0`
-/// and the record identifier (its position plus one).
-fn curve_record(archive: &mut Archive, index: usize, curve: Curve) {
+/// and the identifier of the next record (its position plus two), or
+/// `last_word` in its place.
+fn curve_record(archive: &mut Archive, index: usize, curve: Curve, last_word: Option<u32>) {
     record_head(archive, 0, 1);
     let [start, end] = curve.ends();
     let start = archive.count16(start, "curve endpoint");
@@ -289,8 +445,17 @@ fn curve_record(archive: &mut Archive, index: usize, curve: Curve) {
     }
     archive.u16(0);
     archive.u32(0);
-    let id = archive.count32(index + 1, "curve identifier");
-    archive.u32(id);
+    let id = archive.count32(index + 2, "curve identifier");
+    archive.u32(last_word.unwrap_or(id));
+}
+
+/// The count of the sketch's lines, which stand before its arcs.
+fn lines(sketch: &Sketch) -> usize {
+    sketch
+        .curves
+        .iter()
+        .take_while(|curve| matches!(curve, Curve::Line { .. }))
+        .count()
 }
 
 /// The settings block: 76 bytes, an empty `CString`, 42 bytes, u32 `4`,
@@ -331,7 +496,8 @@ fn profile_body(archive: &mut Archive, stream: &[u8]) -> Result<(), CodecError> 
 
 /// The sketch's plane: a `moCompRefPlane_c` naming the default plane by its
 /// feature number, with the identity frame and the trailer of a user sketch
-/// (three zero bytes, u32 `4`, i32 `-1`, u32 `0`, u32 `0`, u32 `1`, no hops).
+/// (three zero bytes, u32 `4`, i32 `-1`, u32 `0`, the first body identifier,
+/// u32 `1`, no hops).
 fn plane(archive: &mut Archive, plane: Plane) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
@@ -347,7 +513,7 @@ fn plane(archive: &mut Archive, plane: Plane) {
     archive.u32(4);
     archive.i32(-1);
     archive.u32(0);
-    archive.u32(0);
+    archive.u32(super::config::FIRST_BODY_ID);
     archive.u32(1);
     archive.u16(0);
     archive.u16(0);

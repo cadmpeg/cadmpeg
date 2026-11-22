@@ -122,8 +122,12 @@ pub(super) fn resolved_features(
         plane_data(&mut archive, plane);
     }
     origin(&mut archive);
+    // Dimension parameters take identifiers after the stored bodies' and the
+    // user features'.
+    let features = archive.count32(facts.bodies.len() + facts.sketches.len(), "feature count");
+    let mut next_id = archive.tree_id(ids::MARKUPS + 1).saturating_add(features);
     for sketch in facts.sketches {
-        super::sketch::profile_feature(&mut archive, sketch)?;
+        super::sketch::profile_feature(&mut archive, sketch, &mut next_id)?;
     }
     for (body, &component) in facts.bodies.iter().zip(&part.bodies) {
         base_body(&mut archive, body, component);

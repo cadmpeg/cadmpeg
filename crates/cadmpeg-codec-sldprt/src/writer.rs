@@ -562,6 +562,10 @@ fn native_skeleton(
         native::from_ir::Sketches::Native(sketches) => (sketches, None),
         native::from_ir::Sketches::Lane(reason) => (Vec::new(), Some(reason)),
     };
+    let native_sketches = sketches
+        .iter()
+        .map(|sketch| sketch.feature_id)
+        .collect::<HashSet<_>>();
     let facts = native::Facts {
         id_base,
         name: &name,
@@ -587,10 +591,6 @@ fn native_skeleton(
             sections.push((stream, payload));
         }
     }
-    let native_sketches = sketches
-        .iter()
-        .map(|sketch| sketch.feature_id)
-        .collect::<HashSet<_>>();
     let summarized = sections
         .iter()
         .any(|(stream, _)| stream.starts_with("Contents/Keywords"))

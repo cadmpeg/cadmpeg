@@ -141,6 +141,6 @@ pub(crate) mod typed_relations;
 
 pub(crate) mod validate;
 
-mod write_generate;
+pub(crate) mod write_generate;
 
 pub(crate) mod write_prepare;
