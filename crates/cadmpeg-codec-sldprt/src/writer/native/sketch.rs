@@ -515,8 +515,8 @@ fn one_circle_records(archive: &mut Archive, sketch: &Sketch, reference: u32) {
 /// 54-byte block (u32 `0`, the sketch's plane-reference identifier,
 /// twelve zero bytes, three i32 `-12345`, u32 `0`, the version and fourteen
 /// zero bytes), a `moPointBackedUpData_c` at the origin, six zero bytes and
-/// the name, as the native one-circle sketch of `swVersion` 14000 holds it
-/// (sldprt.md §2.3).
+/// the name, as the native one-circle sketch whose block holds version
+/// `14000` holds it (sldprt.md §2.3).
 fn origin_projection(archive: &mut Archive, reference: u32) {
     archive.object("sgExtEnt_c");
     archive.object("moSketchExtRef_w");
