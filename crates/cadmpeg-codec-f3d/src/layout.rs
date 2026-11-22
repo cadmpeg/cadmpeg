@@ -426,8 +426,10 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
 pub(crate) mod design_parameter_discriminated_prefix {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 31;
-    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `header_flag` (`u8`). Spec §3.1.
+    pub(crate) const HEADER_FLAG: usize = 21;
     /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FAMILY_DISCRIMINATOR: usize = 22;
     /// Offset of `reserved_26` (`u8`). Spec §3.1.
