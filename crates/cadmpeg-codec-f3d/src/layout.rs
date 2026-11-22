@@ -2706,7 +2706,7 @@ pub(crate) mod combine_extended_reference_operation_prefix {
 /// Spec §3.1. Record length 58 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
+/// Offsets are relative to the primary indexed scope header, without a property block or companion references, and with one operation entry whose ordinary local reference is present. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length.
 /// ```
 pub(crate) mod combine_operand_list_operation_prefix {
     /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
@@ -2721,8 +2721,8 @@ pub(crate) mod combine_operand_list_operation_prefix {
     pub(crate) const KEEP_TOOLS: usize = 29;
     /// Offset of `new_component` (`u8`). Spec §3.1.
     pub(crate) const NEW_COMPONENT: usize = 30;
-    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const CONSTANT_ONE: usize = 31;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTRY_COUNT: usize = 31;
     /// Offset of `reference_marker` (`u8`). Spec §3.1.
     pub(crate) const REFERENCE_MARKER: usize = 35;
     /// Offset of `stamp` (`u64`, little-endian). Spec §3.1.
@@ -12185,6 +12185,64 @@ pub(crate) mod sketch_item_geometry_member_run_head {
     pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
     /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
     pub(crate) const MEMBER_COUNT: usize = 1;
+}
+
+/// Byte offsets for the `sketch_item_dimension_frame_linear` record.
+///
+/// Spec §Records of a Sketch item. Record length 129 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the property block.
+/// ```
+pub(crate) mod sketch_item_dimension_frame_linear {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 129;
+    /// Offset of `value` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const VALUE: usize = 97;
+}
+
+/// Byte offsets for the `sketch_item_dimension_frame_radial` record.
+///
+/// Spec §Records of a Sketch item. Record length 153 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the property block.
+/// ```
+pub(crate) mod sketch_item_dimension_frame_radial {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 153;
+    /// Offset of `radius` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const RADIUS: usize = 145;
+}
+
+/// Byte offsets for the `sketch_item_dimension_frame_angular` record.
+///
+/// Spec §Records of a Sketch item. Record length 146 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the property block.
+/// ```
+pub(crate) mod sketch_item_dimension_frame_angular {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 146;
+    /// Offset of `angle` (`f64`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const ANGLE: usize = 0;
+}
+
+/// Byte offsets for the `sketch_item_dimension_frame_text` record.
+///
+/// Spec §Records of a Sketch item. Record length 91 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18.
+/// ```
+pub(crate) mod sketch_item_dimension_frame_text {
+    /// Offset of `style_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const STYLE_BYTE: usize = 0;
+    /// Offset of `marker` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const MARKER: usize = 17;
+    /// Offset of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE: usize = 18;
 }
 
 /// Byte offsets for the `base_feature_zero_record` record.

@@ -625,6 +625,9 @@ pub(crate) enum F3dLossCode {
     ParameterTrailerFlagUninterpreted,
     /// Decoded parameters set the uninterpreted header flag at offset 21.
     ParameterHeaderFlagUninterpreted,
+    /// Decoded parameters set the flag byte of a nine-byte or ten-byte
+    /// expression trailer that the decoder reads as the driven flag.
+    ParameterDrivenFlagAssumed,
     /// Decoded parameter owners store a set final flag byte in the compact trailer.
     ParameterOwnerTrailerFlagUninterpreted,
     /// Decoded compact null-owner parameters have no owner binding.
@@ -994,6 +997,10 @@ pub(crate) enum F3dLossCode {
     /// prologue, and whose lists do not complete that prologue, is read in the
     /// standard prologue.
     FeatureCombinePrologueAssumed,
+    /// An operand-list Combine prologue stores an operation-entry form other
+    /// than one entry or a null-first two-entry pair; its tool list is read
+    /// after the last stored entry.
+    FeatureCombineOperationEntriesAssumed,
     FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
     /// the operand-list prologue or cannot be checked, and which no prologue
@@ -1794,6 +1801,7 @@ impl F3dLossCode {
         Self::ParameterRecordUnparsed,
         Self::ParameterTrailerFlagUninterpreted,
         Self::ParameterHeaderFlagUninterpreted,
+        Self::ParameterDrivenFlagAssumed,
         Self::ParameterOwnerTrailerFlagUninterpreted,
         Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
@@ -2007,6 +2015,7 @@ impl F3dLossCode {
         Self::FeatureCombineOperandBodyUnbound,
         Self::FeatureCombineToolRecipeReplacementAssumed,
         Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineOperationEntriesAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
@@ -2823,6 +2832,7 @@ impl F3dLossCode {
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
             Self::ParameterHeaderFlagUninterpreted => "parameter.header-flag-uninterpreted",
+            Self::ParameterDrivenFlagAssumed => "parameter.driven-flag-assumed",
             Self::ParameterOwnerTrailerFlagUninterpreted => {
                 "parameter.owner-trailer-flag-uninterpreted"
             }
@@ -3170,6 +3180,9 @@ impl F3dLossCode {
                 "feature.combine-tool-recipe-replacement-assumed"
             }
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineOperationEntriesAssumed => {
+                "feature.combine-operation-entries-assumed"
+            }
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineToolConsumptionAssumed => {
@@ -3895,6 +3908,7 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
             | Self::ParameterHeaderFlagUninterpreted
+            | Self::ParameterDrivenFlagAssumed
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -4106,6 +4120,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperationEntriesAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -4679,6 +4694,7 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
             | Self::ParameterHeaderFlagUninterpreted
+            | Self::ParameterDrivenFlagAssumed
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -4870,6 +4886,7 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
             | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperationEntriesAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
@@ -5577,6 +5594,7 @@ mod tests {
                 "parameter.record-unparsed",
                 "parameter.trailer-flag-uninterpreted",
                 "parameter.header-flag-uninterpreted",
+                "parameter.driven-flag-assumed",
                 "parameter.owner-trailer-flag-uninterpreted",
                 "parameter.owner-unstored",
                 "parameter.owner-unrecognized",
@@ -5790,6 +5808,7 @@ mod tests {
                 "feature.combine-operand-body-unbound",
                 "feature.combine-tool-recipe-replacement-assumed",
                 "feature.combine-prologue-assumed",
+                "feature.combine-operation-entries-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",

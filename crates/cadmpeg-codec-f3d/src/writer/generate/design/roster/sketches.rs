@@ -91,24 +91,32 @@ pub(in crate::writer::generate::design) struct SketchRecords {
     transform: u32,
     target: u32,
     second_identity: u32,
-    /// Each dimension's frame, parameter, owner and companion.
-    dimensions: Vec<[u32; 4]>,
+    dimensions: Vec<DimensionRecords>,
     /// The scope of the `WorkPlane` item whose plane the sketch lies on.
     pub(in crate::writer::generate::design) plane_scope: Option<u32>,
+}
+
+/// The record indices of one sketch dimension.
+#[derive(Clone, Copy, Debug)]
+struct DimensionRecords {
+    frame: u32,
+    parameter: u32,
+    owner: u32,
+    companion: u32,
+    /// Whether it is a driven dimension.
+    driven: bool,
 }
 
 impl SketchRecords {
     /// The owners of the sketch's dimension parameters, in local-ordinal
     /// order.
     pub(in crate::writer::generate::design) fn owners(&self) -> impl Iterator<Item = u32> + '_ {
-        self.dimensions.iter().map(|[_, _, owner, _]| *owner)
+        self.dimensions.iter().map(|dimension| dimension.owner)
     }
 
     /// The parameters of the sketch's dimensions.
     pub(in crate::writer::generate::design) fn parameters(&self) -> impl Iterator<Item = u32> + '_ {
-        self.dimensions
-            .iter()
-            .map(|[_, parameter, _, _]| *parameter)
+        self.dimensions.iter().map(|dimension| dimension.parameter)
     }
 }
 
@@ -202,12 +210,13 @@ impl SketchRoster {
             plane_scope,
         };
         for dimension in &planned.dimensions {
-            records.dimensions.push([
-                take(dimensions::frame_row(dimension.kind))?,
-                take(types::PARAMETER)?,
-                take(types::PARAMETER_OWNER)?,
-                take(types::RECORD_TIMESTAMPS)?,
-            ]);
+            records.dimensions.push(DimensionRecords {
+                frame: take(dimensions::frame_row(dimension.kind))?,
+                parameter: take(types::PARAMETER)?,
+                owner: take(types::PARAMETER_OWNER)?,
+                companion: take(types::RECORD_TIMESTAMPS)?,
+                driven: dimension.driven,
+            });
         }
         self.items.push(records);
         Ok(next)
@@ -472,7 +481,7 @@ impl Item<'_> {
         let frames = records
             .dimensions
             .iter()
-            .map(|[frame, ..]| *frame)
+            .map(|dimension| dimension.frame)
             .collect::<Vec<_>>();
         out.byte(1).u32(count(frames.len())?);
         for frame in &frames {

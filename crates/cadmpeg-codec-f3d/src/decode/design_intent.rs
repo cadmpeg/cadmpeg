@@ -940,14 +940,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         shells: geometry.shells,
         faces: geometry.faces,
     };
-    losses.extend(crate::history::bind_feature_body_selections(
-        &mut model.features,
-        &body_selection_inputs,
-    ));
-    losses.extend(crate::history::combine_history_tools::bind(
+    let (selection_losses, operand_refusals) =
+        crate::history::bind_feature_body_selections_with_refusals(
+            &mut model.features,
+            &body_selection_inputs,
+        );
+    losses.extend(selection_losses);
+    let (tool_losses, replaced_tools) = crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
+    );
+    losses.extend(tool_losses);
+    losses.extend(crate::history::native_combine_operand_refusal_notes(
+        &model.features,
+        operand_refusals,
     ));
     model
         .feature_result_topologies
@@ -958,6 +965,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    losses.extend(
+        crate::history::combine_history_tools::align_with_result_states(
+            &mut model.features,
+            &model.feature_result_topologies,
+            replaced_tools,
+        ),
+    );
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
@@ -1399,6 +1413,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )
     };
     model.sketch_constraints.extend(dimension_constraints);
+    crate::design::dimensions::mark_driven_parameters(
+        &mut model.parameters,
+        &constraint_inputs,
+        &design.design_dimension_presentation_frames,
+    );
     let spatial_dimension_constraints =
         crate::design::dimensions::project_spatial_dimension_constraints(
             &constraint_inputs,

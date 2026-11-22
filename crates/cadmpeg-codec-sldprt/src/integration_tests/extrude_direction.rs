@@ -423,6 +423,12 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
 
     let again = decode(written);
     let (feature, direction, word) = extrusion_state(again.ir(), anchor);
@@ -451,12 +457,12 @@ fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     ));
 
     let (written, write_losses) = clear_and_write(decoded);
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
     let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
-    let extrude = stale
-        .iter()
-        .filter(|message| message.contains("Feature \"Extrude\" ("))
-        .count();
-    assert_eq!(extrude, 1, "{write_losses:?}");
+    assert!(
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
+        "{write_losses:?}"
+    );
     assert!(!has(
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
