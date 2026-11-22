@@ -618,13 +618,14 @@ fn native_skeleton(
         .filter_map(crate::records::Feature::source_value)
         .max()
         .unwrap_or_default();
-    let (features, unwritten_extrusion, lane_reason) =
+    let (features, unwritten_extrusion, driven, lane_reason) =
         match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
             native::from_ir::Features::Native {
                 features,
                 unwritten_extrusion,
-            } => (features, unwritten_extrusion, None),
-            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Some(reason)),
+                driven,
+            } => (features, unwritten_extrusion, driven, None),
+            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Vec::new(), Some(reason)),
         };
     // The body a native extrusion makes is not also written as a stored body.
     let extruded = features
@@ -704,12 +705,23 @@ fn native_skeleton(
             unwritten_extrusion,
         )
     });
-    Ok(native_skeleton_losses(
+    let mut losses = native_skeleton_losses(
         summarized,
         lane_reason.filter(|_| lane_merged),
         !features.is_empty(),
         extruded.then_some(left_out),
-    ))
+    );
+    if !driven.is_empty() {
+        losses.push(
+            crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.note(format!(
+                "the native sketches write each dimension as a driving one, so they leave out \
+                 {} driven (reference) sketch dimension(s): {}",
+                driven.len(),
+                driven.join(", ")
+            )),
+        );
+    }
+    Ok(losses)
 }
 
 /// Whether the native tree writes `feature`: its history record's source id

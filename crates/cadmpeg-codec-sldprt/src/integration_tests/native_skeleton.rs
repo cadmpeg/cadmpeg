@@ -524,6 +524,35 @@ fn native_sketch_relations_and_dimensions_decode_back() {
     }
 }
 
+/// A driven (reference) dimension is no native sketch dimension, which is
+/// driving: the sketch leaves it out and names it.
+#[test]
+fn a_native_sketch_leaves_out_a_driven_dimension() {
+    let mut ir = cube_with_constrained_sketches();
+    for constraint in &mut ir.model.sketch_constraints {
+        if constraint.id.as_str() == "synthetic:test:constraint#bore" {
+            constraint.driving = Some(false);
+        }
+    }
+    let (bytes, losses) = write_with_losses(&ir);
+    let (walk, _) = walk(&bytes);
+    let names = walk
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"Turn"), "{names:?}");
+    assert!(!names.contains(&"Bore"), "{names:?}");
+    let driven = loss(&losses, "writer.driven-dimensions-omitted");
+    assert!(
+        driven
+            .message
+            .ends_with("1 driven (reference) sketch dimension(s): synthetic:test:constraint#bore"),
+        "{}",
+        driven.message
+    );
+}
+
 /// `cube_with_sketches` with the rectangle made the cube's 10 by 10 base
 /// and extruded 10 into a new body, which is the cube.
 fn cube_with_extrusion() -> cadmpeg_ir::CadIr {

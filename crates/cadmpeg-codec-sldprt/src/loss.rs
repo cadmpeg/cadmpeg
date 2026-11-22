@@ -302,6 +302,8 @@ pub(crate) enum SldprtLossCode {
     WriterAppearanceBindingsOmitted,
     /// Export omits records named by the counted loss message.
     WriterAttributesOmitted,
+    /// Export omits the driven (reference) dimensions of a generated sketch.
+    WriterDrivenDimensionsOmitted,
     /// Export omits records named by the counted loss message.
     WriterUnboundAppearancesOmitted,
     /// Export writes no `SWObjects` material for the appearances or bodies
@@ -530,6 +532,7 @@ impl SldprtLossCode {
         Self::WriterSphereSeamCurvesOmitted,
         Self::WriterAppearanceBindingsOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterDrivenDimensionsOmitted,
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
@@ -699,6 +702,7 @@ impl SldprtLossCode {
             Self::WriterSphereSeamCurvesOmitted => "writer.sphere-seam-curves-omitted",
             Self::WriterAppearanceBindingsOmitted => "writer.appearance-bindings-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterDrivenDimensionsOmitted => "writer.driven-dimensions-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
             Self::WriterMaterialsOmitted => "writer.materials-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
@@ -796,6 +800,7 @@ impl SldprtLossCode {
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
+            Self::WriterDrivenDimensionsOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
             Self::WriterSphereSeamCurvesOmitted => Severity::Warning,
             Self::WriterCoedgePcurveUsesOmitted => Severity::Warning,
@@ -964,6 +969,7 @@ impl SldprtLossCode {
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterDrivenDimensionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterSphereSeamCurvesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterCoedgePcurveUsesOmitted => LossTaxonomy::TopologyNotTransferred,
@@ -1395,6 +1401,7 @@ mod tests {
                 "writer.sphere-seam-curves-omitted",
                 "writer.appearance-bindings-omitted",
                 "writer.attributes-omitted",
+                "writer.driven-dimensions-omitted",
                 "writer.unbound-appearances-omitted",
                 "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
