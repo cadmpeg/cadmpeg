@@ -138,9 +138,21 @@ and its loss names each edit of its definition, dependencies and source
 properties that the written part does not read back as edited. A record field
 that no edit moves keeps its stored state: an unedited feature or parameter is
 written as stored, and a rename changes only the name and the references that
-name it. The decoder fills some property groups of a record from the
-feature-input lane as one unit (a revolution axis, a coordinate-system or
-reference-plane frame); an edit of one member writes the whole group.
+name it. The decoder fills some field groups of a record from the
+feature-input lane as one unit while the record states none of the group's
+gate (a revolution axis; a coordinate-system or reference-axis frame; a
+reference-plane frame with the plane's reference; a move-face translation; an
+extrusion's end conditions and depths; the two directions of a linear
+pattern); an edit of one member writes every member the encoding states. An
+extrusion depth is written under the dimension name the record holds. The
+written part, decoded again, is compared with the document as a whole, every
+feature and parameter by name: when a record that no edit touches reads back
+changed (a sibling default plane that changes kind, a feature placed on an
+edited plane), or an edited feature reads back with a parameter added or
+removed or a source property missing, each edited feature is written with its
+stored definition record and its `writer.feature-edit-unwritten` loss names
+what read back changed. A change that remains with every edit kept as stored
+is named in a `writer.feature-edit-unwritten` loss.
 The writer has no compound-file serializer: an edited compound-file part is
 written as its stored part, and a `writer.compound-file-edit-unwritten` loss
 (severity error) states that no edit is written. `cadmpeg convert
