@@ -272,7 +272,7 @@ fn no_occurrence_adds_no_visibility_loss() {
 fn document_without_a_collection_adds_nothing() {
     let result = decode(mirror_document(&MirrorSpec {
         count: 1,
-        seed: 10,
+        seeds: &[10],
         plane: None,
     }));
     assert!(occurrences(&result).is_empty());

@@ -5,11 +5,10 @@
 //! A `CLSID_JMGroup` feature whose parameters do not resolve, or hold a value
 //! the specification does not state, stays unresolved and adds
 //! `feature.pattern-unread`. A pattern states its instances as the pattern's
-//! result only. The rotation sense of a circular pattern is not established:
-//! the layout states a positive step about the profile normal, and a pattern
-//! that does not fill a full turn adds `feature.pattern-sense-unread`. Stored
-//! lengths are metres and stored angles are radians; the design states
-//! millimetres.
+//! result only. The instances of a circular pattern turn counter-clockwise
+//! about the profile normal, which is a positive step about the axis
+//! direction. Stored lengths are metres and stored angles are radians; the
+//! design states millimetres.
 
 use std::collections::BTreeMap;
 
@@ -43,6 +42,10 @@ const PATTERN_2D_CLASS: &str = "CLSID_JPattern2d";
 /// The classes of the sketch geometry a pattern references.
 const LINE_CLASS: &str = "CLSID_JLine2d";
 const ARC_CLASS: &str = "CLSID_JArc2d";
+/// Object offset of the word that precedes the mirror plane identifier for a
+/// group of no seeds; the identifier stands at this offset plus 4 per seed
+/// (§8.2).
+const MIRROR_PLANE_BASE: usize = 325;
 /// The class of a mirror plane.
 const PLANE_CLASS: &str = "ReferencePlaneObject";
 
@@ -73,17 +76,6 @@ const REAL: usize = 8;
 
 /// A stored plane normal has unit length within this distance.
 const EPS_NORMAL_UNIT: f64 = 1e-6;
-/// A pattern fills a full turn when its extent is within this many radians of
-/// one.
-const EPS_FULL_TURN: f64 = 1e-9;
-
-/// What one group reads as.
-struct Read {
-    operation: FeatureOperation,
-    /// The pattern turns about its axis in a sense the document does not
-    /// establish and fills less than a full turn.
-    sense_unread: bool,
-}
 
 fn word(object: &Object<'_>, at: usize, what: &str) -> Result<u32, String> {
     View::u32_le_at(object.bytes, at)
@@ -250,7 +242,7 @@ fn read_pattern(
     group: &Object<'_>,
     part: &Object<'_>,
     end: usize,
-) -> Result<Read, String> {
+) -> Result<FeatureOperation, String> {
     let seed = seed_of(listed, word(group, pattern_group::SEED, "seed")?)?;
     let profile = slot(part, end, PROFILE_AFTER_NAME_SHORT)?;
     let frame = profile_frame(cluster, types, profile)
@@ -305,10 +297,7 @@ fn read_pattern(
                 )?),
                 seed_only: Some(Dimension::Literal(false)),
             };
-            Ok(Read {
-                operation: pattern(seeds, layout),
-                sense_unread: false,
-            })
+            Ok(pattern(seeds, layout))
         }
         KIND_CIRCULAR => {
             let arcs = referenced(cluster, types, &object, ARC_CLASS);
@@ -327,7 +316,6 @@ fn read_pattern(
             }
             let step = Angle::new(first_step)
                 .ok_or_else(|| "the angle between instances is not finite".to_owned())?;
-            let extent = f64::from(first_count) * first_step.abs();
             let layout = PatternLayout::Circular {
                 axis: Construction::<kinds::Axis> {
                     resolved: Some(axis),
@@ -337,10 +325,7 @@ fn read_pattern(
                 radial: None,
                 orientation: None,
             };
-            Ok(Read {
-                operation: pattern(seeds, layout),
-                sense_unread: extent < std::f64::consts::TAU - EPS_FULL_TURN,
-            })
+            Ok(pattern(seeds, layout))
         }
         other => Err(format!("the pattern kind {other} is not 1 or 2")),
     }
@@ -386,22 +371,40 @@ fn mirror_plane(object: &Object<'_>) -> Result<Construction<kinds::Plane>, Strin
     })
 }
 
+/// The seed identifiers of a mirror group, in stored order, and the offset
+/// of the plane identifier that follows them (§8.2).
+fn mirror_seeds(listed: &[Listed], group: &Object<'_>) -> Result<(Vec<u32>, usize), String> {
+    let count = usize::try_from(word(group, mirror_group::SEED_COUNT, "seed count")?)
+        .map_err(|_| "the seed count does not fit".to_owned())?;
+    if count == 0 {
+        return Err("the mirror has no seed".to_owned());
+    }
+    let overflow = || "a seed offset overflows".to_owned();
+    let bytes = count.checked_mul(WORD).ok_or_else(overflow)?;
+    let plane_at = MIRROR_PLANE_BASE.checked_add(bytes).ok_or_else(overflow)?;
+    let mut ids = Vec::new();
+    for index in 0..count {
+        let at = index
+            .checked_mul(WORD)
+            .and_then(|offset| offset.checked_add(mirror_group::FIRST_SEED))
+            .ok_or_else(overflow)?;
+        ids.push(seed_of(listed, word(group, at, "seed")?)?);
+    }
+    Ok((ids, plane_at))
+}
+
 /// The mirror of a group (§8.2).
 fn read_mirror(
     cluster: &Cluster<'_>,
     types: &TypeTable,
     listed: &[Listed],
     group: &Object<'_>,
-) -> Result<Read, String> {
-    let seed_count = word(group, mirror_group::SEED_COUNT, "seed count")?;
-    if seed_count != 1 {
-        return Err(format!("the mirror has {seed_count} seeds, not one"));
-    }
-    let seed = seed_of(listed, word(group, mirror_group::FIRST_SEED, "seed")?)?;
+) -> Result<FeatureOperation, String> {
+    let (ids, plane_at) = mirror_seeds(listed, group)?;
     let (plane, class) = named(
         cluster,
         types,
-        word(group, mirror_group::PLANE, "mirror plane")?,
+        word(group, plane_at, "mirror plane")?,
         "mirror plane",
     )?;
     if class != PLANE_CLASS {
@@ -411,10 +414,7 @@ fn read_mirror(
         plane: mirror_plane(&plane)?,
         stitch_tolerance: None,
     };
-    Ok(Read {
-        operation: pattern(seeds(&[seed])?, layout),
-        sense_unread: false,
-    })
+    Ok(pattern(seeds(&ids)?, layout))
 }
 
 /// The `JMFastPatternFunction` part the group names, with the offset after
@@ -435,8 +435,7 @@ fn fast_pattern_part<'a>(
 
 /// State the operation of each pattern and mirror group that reads. A group
 /// that does not read keeps its unresolved operation and adds
-/// `feature.pattern-unread`; a circular pattern that fills less than a full
-/// turn adds `feature.pattern-sense-unread`.
+/// `feature.pattern-unread`.
 pub(crate) fn project(
     cluster: &Cluster<'_>,
     types: &TypeTable,
@@ -456,18 +455,10 @@ pub(crate) fn project(
             None => (read_mirror(cluster, types, listed, &group), "mirror"),
         };
         match read {
-            Ok(read) => {
+            Ok(operation) => {
                 let id = feature_id(entry.object);
                 if let Some(feature) = ir.design.features.iter_mut().find(|f| f.id == id) {
-                    feature.definition.operation = read.operation;
-                }
-                if read.sense_unread {
-                    losses.push(SolidEdgeLossCode::FeaturePatternSenseUnread.note(format!(
-                        "the circular pattern feature object {:#x} fills less than a full turn; \
-                         its rotation sense about the profile normal is not established, and the \
-                         layout states a positive step",
-                        entry.object
-                    )));
+                    feature.definition.operation = operation;
                 }
             }
             Err(reason) => losses.push(SolidEdgeLossCode::FeaturePatternUnread.note(format!(

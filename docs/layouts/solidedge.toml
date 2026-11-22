@@ -763,6 +763,84 @@ source = "spec"
 anchor = "values at object offsets 8 and 16 are the position x and y in the profile"
 
 [[record]]
+name = "hole_thread"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/dressup.rs"
+section = "7.2"
+anchor = "A hole of type `3` is threaded with the stored thread."
+size = 1073
+
+[[record.gap]]
+offset = 0
+size = 1053
+note = "§7.2 states the fields before the thread in the hole_prop_data record."
+
+[[record.field]]
+name = "minor_diameter"
+offset = 1053
+type = "f64"
+source = "spec"
+anchor = "| 1053 | `f64` thread minor diameter, in millimetres |"
+
+[[record.field]]
+name = "major_diameter"
+offset = 1061
+type = "f64"
+source = "spec"
+anchor = "| 1061 | `f64` thread major diameter, in millimetres |"
+
+[[record.field]]
+name = "designation_length"
+offset = 1069
+type = "u32"
+source = "spec"
+anchor = "| 1069 | `u32` thread designation length `k`, in UTF-16 code units |"
+
+[[record]]
+name = "topology_proxy_edge"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/edge.rs"
+section = "7.6"
+anchor = "A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge."
+size = 559
+
+[[record.gap]]
+offset = 0
+size = 121
+note = "§7.6 states no field before the edge start point."
+
+[[record.field]]
+name = "start"
+offset = 121
+type = "f64[3]"
+source = "spec"
+anchor = "`f64` values at object offsets 121, 129 and 137 are the edge start point,"
+
+[[record.field]]
+name = "direction"
+offset = 145
+type = "f64[3]"
+source = "spec"
+anchor = "the `f64` values at offsets 145, 153 and 161 are the unit edge direction,"
+
+[[record.gap]]
+offset = 169
+size = 8
+note = "§7.6 states no field between the edge direction and the edge length."
+
+[[record.field]]
+name = "length"
+offset = 177
+type = "f64"
+source = "spec"
+anchor = "and the `f64` at offset 177 is the edge length."
+
+[[record.gap]]
+offset = 185
+size = 374
+note = "§7.6 states no field after the edge length."
+
+[[record]]
 name = "ref_axis"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
@@ -835,7 +913,7 @@ kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/patterns.rs"
 section = "8.2"
 anchor = "A mirror is a `CLSID_JMGroup` entry of the navigator whose group object"
-size = 333
+size = 329
 
 [[record.gap]]
 offset = 0
@@ -859,14 +937,7 @@ anchor = "| 96 | `c` `u32` seed feature identifiers |"
 [[record.gap]]
 offset = 100
 size = 229
-note = "§8.2 states no field between the seed list's first word and the mirror plane."
-
-[[record.field]]
-name = "plane"
-offset = 329
-type = "u32"
-source = "spec"
-anchor = "| 329 | for `c` = 1, `u32` identifier of the mirror plane |"
+note = "§8.2 states the mirror plane identifier at 325 + 4·c, after the seed list, and no other field."
 
 [[record]]
 name = "reference_plane"

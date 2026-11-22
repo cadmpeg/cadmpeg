@@ -44,9 +44,13 @@ const KEYPOINT_CLASS: &str = "CLSID_JKeyPoint2d";
 
 /// Bytes from the end of a function name to the profile identifier of the
 /// functions that consume a profile of a sketch (§5.3).
-const PROFILE_AFTER_NAME: usize = 72;
+pub(crate) const PROFILE_AFTER_NAME: usize = 72;
 /// The same offset for a hole, a flange and a fast pattern.
 pub(crate) const PROFILE_AFTER_NAME_SHORT: usize = 68;
+/// Bytes from the end of a function name to the section profile identifier of
+/// a swept protrusion (§5.3). The profile at [`PROFILE_AFTER_NAME`] is its
+/// path.
+pub(crate) const SWEEP_SECTION_AFTER_NAME: usize = 104;
 
 /// Millimetres per metre.
 const MM_PER_M: f64 = 1000.0;
@@ -61,24 +65,24 @@ const NO_MEMBER: u32 = 0xFFFF_FFFF;
 /// Bytes of one member identifier.
 const WORD: usize = 4;
 
-/// The offset after a function name at which the profile identifier of
-/// `function` is stored, or `None` for a function that stores no profile.
-fn profile_offset(function: &str) -> Option<usize> {
+/// The offsets after a function name at which the profile identifiers of
+/// `function` are stored, empty for a function that stores no profile.
+fn profile_offsets(function: &str) -> &'static [usize] {
     match function {
         "JMProtrusionFunction"
         | "JMCutoutFunction"
         | "JMRevolvedProtrusionFunction"
-        | "JMMultiSweepProtrusionFunction"
         | "JMLoftedProtrusionFunction"
-        | "JMBaseTabFunction" => Some(PROFILE_AFTER_NAME),
+        | "JMBaseTabFunction" => &[PROFILE_AFTER_NAME],
+        "JMMultiSweepProtrusionFunction" => &[PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME],
         "JMHoleFunction" | "JMFlangeFunction" | "JMFastPatternFunction" => {
-            Some(PROFILE_AFTER_NAME_SHORT)
+            &[PROFILE_AFTER_NAME_SHORT]
         }
-        _ => None,
+        _ => &[],
     }
 }
 
-fn sketch_id(profile: u32) -> SketchId {
+pub(crate) fn sketch_id(profile: u32) -> SketchId {
     SketchId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "sketch"),
         profile,
@@ -291,17 +295,21 @@ pub(crate) fn profile_frame(
     frame(object.bytes)
 }
 
-/// The profile identifier a feature object stores. `None` where the object's
-/// function stores no profile; the inner `None` where the stored block is too
-/// short to hold it.
-fn profile_word(object: &Object<'_>) -> Option<Result<u32, ()>> {
-    let (function, end) = function_span(object)?;
-    let after = profile_offset(&function)?;
-    Some(
-        end.checked_add(after)
-            .and_then(|at| View::u32_le_at(object.bytes, at))
-            .ok_or(()),
-    )
+/// The profile identifiers a feature object stores, in offset order. An
+/// error stands for a stored block that is too short to hold one. Empty where
+/// the object's function stores no profile.
+fn profile_words(object: &Object<'_>) -> Vec<Result<u32, ()>> {
+    let Some((function, end)) = function_span(object) else {
+        return Vec::new();
+    };
+    profile_offsets(&function)
+        .iter()
+        .map(|after| {
+            end.checked_add(*after)
+                .and_then(|at| View::u32_le_at(object.bytes, at))
+                .ok_or(())
+        })
+        .collect()
 }
 
 /// State the profile of each listed feature as a design sketch owned by that
@@ -329,76 +337,75 @@ pub(crate) fn project(
         if types.class_name(object.form, object.flags) != Some(PART_CLASS) {
             continue;
         }
-        let Some(stored) = profile_word(&object) else {
-            continue;
-        };
-        let Ok(profile_id) = stored else {
-            losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
-                "feature object {:#x} stores no profile identifier; no sketch is stated",
-                entry.object
-            )));
-            continue;
-        };
-        if !claimed.insert(profile_id) {
-            losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
-                "profile object {profile_id:#x} is named by more than one feature; the sketch is \
-                 stated once"
-            )));
-            continue;
-        }
-        let profile = match read_profile(cluster, types, profile_id) {
-            Ok(profile) => profile,
-            Err(reason) => {
+        for stored in profile_words(&object) {
+            let Ok(profile_id) = stored else {
                 losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
-                    "profile object {profile_id:#x} of feature object {:#x} does not read: \
-                     {reason}; no sketch is stated",
+                    "feature object {:#x} stores no profile identifier; no sketch is stated",
                     entry.object
                 )));
                 continue;
+            };
+            if !claimed.insert(profile_id) {
+                losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
+                    "profile object {profile_id:#x} is named by more than one feature; the sketch is \
+                     stated once"
+                )));
+                continue;
             }
-        };
-        if profile.unread > 0 {
-            losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
-                "profile object {profile_id:#x} has {} curve member(s) that do not read; they \
-                 are not stated",
-                profile.unread
-            )));
-        }
-        unstated = unstated
-            .checked_add(profile.unstated)
-            .ok_or_else(|| CodecError::malformed("sketch member count overflows"))?;
-        ctx.charge_entities(1, "project Solid Edge sketch")?;
-        let id = sketch_id(profile_id);
-        sketches.push(Sketch {
-            id: id.clone(),
-            owner: feature_id(entry.object),
-            name: None,
-            plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
-                resolved: Some(profile.frame),
-                ..Construction::default()
-            })),
-            solve: SketchSolve {
-                state: None,
-                status: EvaluationStatus::Current,
-            },
-            native_options: BTreeMap::new(),
-            source_settings: BTreeMap::new(),
-            native_ref: None,
-        });
-        for (member_id, curve) in profile.curves {
-            ctx.charge_entities(1, "project Solid Edge sketch entity")?;
-            entities.push(SketchEntity::<Planar> {
-                id: entity_id(member_id),
-                sketch: id.clone(),
-                definition: EntityDefinition::Free(curve),
-                roles: Vec::new(),
-                construction: None,
-                centerline: None,
-                native: None,
+            let profile = match read_profile(cluster, types, profile_id) {
+                Ok(profile) => profile,
+                Err(reason) => {
+                    losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
+                        "profile object {profile_id:#x} of feature object {:#x} does not read: \
+                         {reason}; no sketch is stated",
+                        entry.object
+                    )));
+                    continue;
+                }
+            };
+            if profile.unread > 0 {
+                losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
+                    "profile object {profile_id:#x} has {} curve member(s) that do not read; they \
+                     are not stated",
+                    profile.unread
+                )));
+            }
+            unstated = unstated
+                .checked_add(profile.unstated)
+                .ok_or_else(|| CodecError::malformed("sketch member count overflows"))?;
+            ctx.charge_entities(1, "project Solid Edge sketch")?;
+            let id = sketch_id(profile_id);
+            sketches.push(Sketch {
+                id: id.clone(),
+                owner: feature_id(entry.object),
+                name: None,
+                plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
+                    resolved: Some(profile.frame),
+                    ..Construction::default()
+                })),
+                solve: SketchSolve {
+                    state: None,
+                    status: EvaluationStatus::Current,
+                },
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
                 native_ref: None,
             });
+            for (member_id, curve) in profile.curves {
+                ctx.charge_entities(1, "project Solid Edge sketch entity")?;
+                entities.push(SketchEntity::<Planar> {
+                    id: entity_id(member_id),
+                    sketch: id.clone(),
+                    definition: EntityDefinition::Free(curve),
+                    roles: Vec::new(),
+                    construction: None,
+                    centerline: None,
+                    native: None,
+                    native_options: BTreeMap::new(),
+                    source_settings: BTreeMap::new(),
+                    native_ref: None,
+                });
+            }
         }
     }
     if unstated > 0 {

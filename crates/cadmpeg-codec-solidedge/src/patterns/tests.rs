@@ -237,17 +237,29 @@ fn circular_full_turn_has_no_sense_note() {
 }
 
 #[test]
-fn circular_partial_turn_adds_the_sense_note() {
+fn circular_partial_turn_has_no_sense_note() {
     let result = circular(3, FRAC_PI_6, [0.020, 0.015]);
-    assert!(matches!(
-        pattern(&result).layout,
-        PatternLayout::Circular { .. }
+    let PatternLayout::Circular { axis, angular, .. } = &pattern(&result).layout else {
+        panic!("expected a circular layout");
+    };
+    // Instances turn counter-clockwise about the profile normal, which is a
+    // positive step about the axis direction +Z.
+    let direction = axis.resolved.as_ref().unwrap().direction.as_raw();
+    assert!(near3(
+        [direction.x, direction.y, direction.z],
+        [0.0, 0.0, 1.0]
     ));
-    let sense = codes(&result)
-        .iter()
-        .filter(|code| code.as_str() == "feature.pattern-sense-unread")
-        .count();
-    assert_eq!(sense, 1);
+    match &angular.spacing {
+        Spacing::Pitch {
+            count: Dimension::Literal(count),
+            pitch: Dimension::Literal(step),
+        } => {
+            assert_eq!(*count, 3);
+            assert!(near(step.get(), FRAC_PI_6));
+        }
+        other => panic!("expected a literal pitch, found {other:?}"),
+    }
+    assert!(!codes(&result).contains(&"feature.pattern-sense-unread".to_owned()));
 }
 
 fn plane_of(result: &DecodeResult) -> ([f64; 3], [f64; 3]) {
@@ -270,7 +282,7 @@ fn plane_of(result: &DecodeResult) -> ([f64; 3], [f64; 3]) {
 fn mirror_about_x_20() {
     let result = decode(mirror_document(&MirrorSpec {
         count: 1,
-        seed: 10,
+        seeds: &[10],
         plane: Some(([0.020, 0.0, 0.0], [1.0, 0.0, 0.0])),
     }));
     assert_seed(pattern(&result));
@@ -283,7 +295,7 @@ fn mirror_about_x_20() {
 fn mirror_about_y_15_with_negative_normal() {
     let result = decode(mirror_document(&MirrorSpec {
         count: 1,
-        seed: 10,
+        seeds: &[10],
         plane: Some(([0.0, 0.015, 0.0], [0.0, -1.0, 0.0])),
     }));
     let (origin, normal) = plane_of(&result);
@@ -292,10 +304,36 @@ fn mirror_about_y_15_with_negative_normal() {
 }
 
 #[test]
-fn mirror_of_two_seeds_is_unread() {
+fn mirror_of_two_seeds_reads_the_plane_at_333() {
     let result = decode(mirror_document(&MirrorSpec {
         count: 2,
-        seed: 10,
+        seeds: &[10, 13],
+        plane: Some(([0.0, 0.0, 0.025], [0.0, 0.0, 1.0])),
+    }));
+    let PatternSeeds::Features { features, .. } = &pattern(&result).seeds else {
+        panic!("expected feature seeds");
+    };
+    let Picks::Named(members) = &features.picks else {
+        panic!("expected named picks");
+    };
+    let targets: Vec<_> = members.as_slice().iter().map(|pick| &pick.target).collect();
+    assert_eq!(
+        targets,
+        [
+            &PickTarget::FeatureResult(feature_id(10)),
+            &PickTarget::FeatureResult(feature_id(13))
+        ]
+    );
+    let (origin, normal) = plane_of(&result);
+    assert!(near3(origin, [0.0, 0.0, 25.0]));
+    assert!(near3(normal, [0.0, 0.0, 1.0]));
+}
+
+#[test]
+fn mirror_without_a_seed_is_unread() {
+    let result = decode(mirror_document(&MirrorSpec {
+        count: 0,
+        seeds: &[],
         plane: Some(([0.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
     }));
     assert!(unresolved(&result));
@@ -306,7 +344,7 @@ fn mirror_of_two_seeds_is_unread() {
 fn mirror_with_an_unlisted_seed_is_unread() {
     let result = decode(mirror_document(&MirrorSpec {
         count: 1,
-        seed: 999,
+        seeds: &[999],
         plane: Some(([0.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
     }));
     assert!(unresolved(&result));

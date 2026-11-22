@@ -60,7 +60,7 @@
 
 **Question.** Which faces does a `CLSID_JMTopologyProxy` object select, how does an edge proxy select a curved edge, and how does a proxy name the topology of its creating feature?
 
-**Known.** A 559-byte proxy selects one straight edge by its start point, direction and length (§7.6), and references the feature that created the edge. A byte at object offset 70 differs between edges of one feature. An 827-byte proxy selects the reference face of a chamfer or the open faces of a thin wall.
+**Known.** A 559-byte proxy selects one straight edge by its start point, direction and length (§7.6), and holds `16`, `0x80000000` and the identifier of a `CLSID_JMPart` feature at object offset 360. In every read proxy that feature is the only feature before the selecting feature, so whether it is the feature that created the edge is not established. A byte at object offset 70 differs between edges of one feature. An 827-byte proxy selects the reference face of a chamfer or the open faces of a thin wall.
 
 **Need.** A round on a circular edge, a thin wall with two open faces, and a chamfer on an edge that a cut created.
 

@@ -437,6 +437,7 @@ pub(crate) fn project<'a>(
     ir.design.features.extend(features);
     crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)?;
     crate::extents::project(&cluster, &types, &listed, ir, losses);
+    crate::sweeps::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
     crate::patterns::project(&cluster, &types, &listed, ir, losses);
     let pending = ir

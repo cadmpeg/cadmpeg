@@ -11,6 +11,7 @@ mod decode;
 mod dialect;
 mod dimension;
 mod dressup;
+mod edge;
 mod extents;
 mod features;
 mod layout;
@@ -19,6 +20,7 @@ mod patterns;
 mod psm;
 mod settings;
 mod sketches;
+mod sweeps;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
