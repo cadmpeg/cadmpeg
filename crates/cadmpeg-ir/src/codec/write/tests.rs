@@ -374,6 +374,20 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
     .unwrap()
 }
 
+/// `omitted` names each omitted arena by the label its `arena.omitted` loss
+/// uses.
+#[test]
+fn omitted_names_each_omitted_arena_by_its_label() {
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    assert!(dispositions.omitted().is_empty());
+    dispositions.semantic_annotations = ArenaDisposition::Omitted;
+    dispositions.design.spreadsheets = ArenaDisposition::Omitted;
+    assert_eq!(
+        dispositions.omitted(),
+        ["semantic_annotations", "design.spreadsheets"]
+    );
+}
+
 /// While a document holds a v10 design record, an omitted design-home arena
 /// restates what the v10 path writes and is charged nothing.
 #[test]

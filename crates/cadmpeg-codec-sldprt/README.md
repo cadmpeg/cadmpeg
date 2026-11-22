@@ -145,14 +145,33 @@ reference-plane frame with the plane's reference; a move-face translation; an
 extrusion's end conditions and depths; the two directions of a linear
 pattern); an edit of one member writes every member the encoding states. An
 extrusion depth is written under the dimension name the record holds. The
-written part, decoded again, is compared with the document as a whole, every
-feature and parameter by name: when a record that no edit touches reads back
-changed (a sibling default plane that changes kind, a feature placed on an
-edited plane), or an edited feature reads back with a parameter added or
-removed or a source property missing, each edited feature is written with its
-stored definition record and its `writer.feature-edit-unwritten` loss names
-what read back changed. A change that remains with every edit kept as stored
-is named in a `writer.feature-edit-unwritten` loss.
+full decoder reads the written part again, and the read-back compares the whole
+document with it: every record of every arena of the geometry, model, design
+and process homes, the units, the tolerances and the source attributes. The
+native namespaces hold the encoding, and the read-back leaves them out. A
+write moves the block and lane offsets and the history indices that ids embed,
+so records pair by content: a record pairs with the record whose wire form is
+the same once each paired id is replaced by its pair. The edit accounts for
+the records the caller changed, the expression, value and display of a
+parameter of an edited feature, the design records and configuration entries
+keyed by an edited record, the definition of a feature that owns an edited
+parameter, and text that names a renamed feature. The source part written with
+no edit and decoded again gives the differences that every write of the part
+has, and those are accounted for as well. Any other difference (a sibling
+default plane that changes kind, a sketch on an edited plane that moves) is
+caused by a written edit: that feature is written with its stored definition
+record, and its `writer.feature-edit-unwritten` loss names each differing
+record and the place in it. With several written edits, each one in turn is
+withheld alone, and the one whose withholding removes the difference is kept
+as stored; when no single edit removes it, every written edit is. An edited
+feature that reads back with a parameter added or removed or a source property
+missing is written with its stored definition record in the same way. A
+variant edit (a change of termination kind, of a list, or of a field that is
+present or absent) writes the record in the shape of the new variant, and a
+`writer.feature-record-reshaped` loss names each parameter that shape adds or
+drops. A difference that remains with every edit kept as stored, or that a
+parameter or rename edit causes, is named in a `writer.feature-edit-unwritten`
+loss.
 The writer has no compound-file serializer: an edited compound-file part is
 written as its stored part, and a `writer.compound-file-edit-unwritten` loss
 (severity error) states that no edit is written. `cadmpeg convert

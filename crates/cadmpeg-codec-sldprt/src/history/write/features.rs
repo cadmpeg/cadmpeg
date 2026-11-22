@@ -809,9 +809,11 @@ pub(in crate::history) fn sync_neutral_features(
         );
     }
     // A stored record keeps its stored operands, and a dependency edit that
-    // reads back as the source is named above.
+    // reads back as the source is named above. With a decoded source, the
+    // full decoder reads the written part back and judges its dependencies.
     for feature in features.iter().filter(|feature| {
-        !edits.operands_kept(&feature.id)
+        !edits.has_source()
+            && !edits.operands_kept(&feature.id)
             && !dependencies_unwritten.contains(&feature.id)
             && !edits.feature_construction_unedited(feature)
     }) {

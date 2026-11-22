@@ -187,14 +187,16 @@ fn decode_bytes(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .unwrap()
 }
 
-/// Writes through the public encoder with an authored native envelope a
-/// document whose feature edits the output keeps as stored, and checks that
-/// no stale-solid loss calls an edit written. Returns the messages of the
-/// unwritten feature edits and the written part read back.
-pub(crate) fn write_unwritten_feature_edits(
+/// Writes through the public encoder with an authored native envelope, and
+/// checks that no stale-solid loss calls an edit written. Returns the report
+/// and the written part read back.
+fn write_without_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+) -> (
+    cadmpeg_ir::report::export::ExportReport,
+    cadmpeg_ir::codec::DecodeResult,
+) {
     let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
@@ -203,21 +205,43 @@ pub(crate) fn write_unwritten_feature_edits(
     .unwrap()
     .write_to(&mut output)
     .unwrap();
-    let messages = |code: crate::loss::SldprtLossCode| {
-        report
-            .losses
-            .iter()
-            .filter(|loss| loss.code == code.kind())
-            .map(|loss| loss.message.clone())
-            .collect::<Vec<_>>()
-    };
     assert_eq!(
-        messages(crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit),
+        loss_messages(
+            &report,
+            crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit
+        ),
         Vec::<String>::new()
     );
+    (report, decode_bytes(output))
+}
+
+fn loss_messages(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    code: crate::loss::SldprtLossCode,
+) -> Vec<String> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+/// Writes through the public encoder with an authored native envelope a
+/// document whose feature edits the output keeps as stored, and checks that
+/// no stale-solid loss calls an edit written. Returns the messages of the
+/// unwritten feature edits and the written part read back.
+pub(crate) fn write_unwritten_feature_edits(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+    let (report, written) = write_without_stale_solid(ir, fidelity);
     (
-        messages(crate::loss::SldprtLossCode::WriterFeatureEditUnwritten),
-        decode_bytes(output),
+        loss_messages(
+            &report,
+            crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
+        ),
+        written,
     )
 }
 
@@ -227,42 +251,52 @@ pub(crate) fn write_unwritten_feature_edits(
 /// source document under the edited names, and no stale-solid loss calls the
 /// edit written.
 pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
-    let (unwritten, written) = write_unwritten_feature_edits(ir, fidelity);
-    let source = fidelity
+    let (report, written) = write_without_stale_solid(ir, fidelity);
+    let unwritten = loss_messages(
+        &report,
+        crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
+    );
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The write reads the source image the authored envelope wraps.
+    let (_, written_from) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .expect("the authored envelope context");
+    let source = written_from
         .retained_record(crate::SOURCE_IMAGE_ID)
         .and_then(|record| record.data())
         .unwrap()
         .to_vec();
-    let mut expected = decode_bytes(source).ir().clone();
-    for feature in &mut expected.model.features {
-        let Some(name) = ir
-            .model
-            .features
-            .iter()
-            .find(|edited| edited.id == feature.id)
-            .and_then(|edited| edited.name.clone())
-        else {
-            continue;
-        };
-        let Some(old) = feature
-            .name
-            .replace(name.clone())
-            .filter(|old| *old != name)
-        else {
-            continue;
-        };
-        // A reference `name@feature` names the feature by name.
-        let (from, to) = (format!("@{old}"), format!("@{name}"));
-        for parameter in &mut expected.model.parameters {
-            parameter.expression = parameter.expression.replace(&from, &to);
-            for value in parameter.properties.values_mut() {
-                *value = value.replace(&from, &to);
-            }
-        }
-    }
+    let source = decode_bytes(source);
+    let renames = source
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let name = ir
+                .model
+                .features
+                .iter()
+                .find(|edited| edited.id == feature.id)?
+                .name
+                .clone()?;
+            let old = feature.name.clone().filter(|old| *old != name)?;
+            Some((feature.id.as_str().to_owned(), old, name))
+        })
+        .collect::<Vec<_>>();
+    let expected = readback::renamed(source.ir(), &renames);
     assert_eq!(
-        readback::differences(&expected, written.ir(), &[]),
-        Vec::<String>::new()
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(&expected, written.ir()),
+                &readback::baseline(&source)
+            ),
+            &messages
+        ),
+        Vec::new()
     );
     unwritten
 }

@@ -347,6 +347,18 @@ impl UnwrittenLosses {
             .extend(notes.into_iter().map(PendingLoss::Note));
     }
 
+    /// Replaces the reason `old` that feature `id` keeps its stored record for
+    /// with `new`.
+    pub(crate) fn restate(&mut self, id: &FeatureId, old: &str, new: &str) {
+        if let Some(loss) = self.features.get_mut(id) {
+            for reason in &mut loss.reasons {
+                if reason == old {
+                    new.clone_into(reason);
+                }
+            }
+        }
+    }
+
     /// The losses, with each edit that `read_back` finds carried left out and
     /// each edit it reads back as neither the source nor the edit named.
     pub(crate) fn render(self, read_back: &ReadBack) -> Vec<LossNote> {
@@ -399,6 +411,17 @@ impl UnwrittenLosses {
             SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
                 "SLDPRT feature {id} changes {}, and its written part reads them back as neither the source nor the edit states.",
                 listed(labels)
+            ))
+        }));
+        notes.extend(
+            read_back.unkept.iter().map(|reason| {
+                SldprtLossCode::WriterFeatureEditUnwritten.note(format!("{reason}."))
+            }),
+        );
+        notes.extend(read_back.reshaped.iter().map(|(id, changes)| {
+            SldprtLossCode::WriterFeatureRecordReshaped.note(format!(
+                "SLDPRT feature {id} is written in the record shape of its edited variant, which {}.",
+                listed(changes)
             ))
         }));
         if !read_back.changed.is_empty() {
@@ -575,22 +598,6 @@ impl<'source> SourceEdits<'source> {
             claims: ReadBackClaims::default(),
         };
         let affected_parameters = affected_parameters(input, &edits.edited_parameters);
-        let affected_owners = input
-            .model
-            .parameters
-            .iter()
-            .filter(|parameter| affected_parameters.contains(&parameter.id))
-            .filter_map(|parameter| parameter.owner.clone())
-            .collect::<HashSet<_>>();
-        edits.claims.unedited = input
-            .model
-            .features
-            .iter()
-            .filter(|feature| {
-                !affected_owners.contains(&feature.id) && edits.feature_unedited(input, feature)
-            })
-            .map(|feature| feature.id.clone())
-            .collect();
         edits.claims.affected_parameters = affected_parameters;
         for (id, reason) in withheld {
             edits.feature_unwritten(id, reason.clone())?;

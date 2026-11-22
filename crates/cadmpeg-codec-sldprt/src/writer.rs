@@ -81,6 +81,9 @@ pub(crate) struct SemanticOutput {
     /// The construction edits of the written features and what the rest of
     /// the document reads back as.
     pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
+    /// The retained source image decoded again, when the write compared the
+    /// document with it.
+    pub(crate) source: Option<cadmpeg_ir::codec::Decoded>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -488,6 +491,7 @@ pub(crate) fn write_semantic_with_records(
         unwritten_edits,
         written,
         claims,
+        source: source_baseline,
     })
 }
 

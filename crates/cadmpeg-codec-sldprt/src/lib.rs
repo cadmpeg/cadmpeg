@@ -263,28 +263,37 @@ impl SldprtCodec {
         // An edit the full decoder does not read back from the written part,
         // or that changes what no edit touches, is written again with its
         // feature's stored record.
-        let mut withheld = Vec::new();
-        let (bytes, output, read_back) = loop {
+        let image = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data);
+        let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
             let mut bytes = Vec::new();
-            let output = writer::write_semantic_with_records(
-                ir,
-                annotations,
+            writer::write_semantic_with_records(
+                &source.ir,
+                &source.source_fidelity.annotations,
                 records,
-                &withheld,
+                &[],
                 &mut bytes,
-            )?;
-            let read_back =
-                history::write::read_back::ReadBack::of_written(ir, &output.claims, &bytes);
-            let before = withheld.len();
-            for (id, reason) in &read_back.withhold {
-                if !withheld.iter().any(|(withheld, _)| withheld == id) {
-                    withheld.push((id.clone(), reason.clone()));
-                }
-            }
-            if withheld.len() == before {
-                break (bytes, output, read_back);
-            }
+            )
+            .ok()?;
+            (image != Some(bytes.as_slice())).then_some(bytes)
         };
+        let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
+            ir,
+            &mut |withheld| {
+                let mut bytes = Vec::new();
+                let output = writer::write_semantic_with_records(
+                    ir,
+                    annotations,
+                    records,
+                    withheld,
+                    &mut bytes,
+                )?;
+                Ok((bytes, output))
+            },
+            &round_trip,
+        )?;
         writer.write_all(&bytes)?;
         let writer::SemanticOutput {
             dialect,
@@ -294,6 +303,7 @@ impl SldprtCodec {
             unwritten_edits,
             written,
             claims: _,
+            source: _,
         } = output;
         let unwritten_edits = unwritten_edits.render(&read_back);
         let native = ir

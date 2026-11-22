@@ -16,6 +16,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::SldprtLossCode;
 use crate::test_support::nist::{ftc_06, ftc_08};
+use crate::test_support::readback;
 use crate::SldprtCodec;
 
 /// Writes through the public encoder: the export report and the bytes.
@@ -43,6 +44,17 @@ fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {
         .losses
         .iter()
         .filter(|loss| loss.code == code.kind())
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// The message of every loss but the stale-solid notes, which name an edit
+/// as written and name no difference of the read-back.
+fn all_messages(report: &ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code != SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .map(|loss| loss.message.as_str())
         .collect()
 }
@@ -202,9 +214,16 @@ fn an_edited_display_only_relation_parameter_is_named_and_kept_as_solved() {
     assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
     assert_eq!(stale(&report), Vec::<&str>::new());
     let written = decode(output);
+    let source = source(&decoded);
     assert_eq!(
-        crate::test_support::readback::differences(source(&decoded).ir(), written.ir(), &[]),
-        Vec::<String>::new()
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(source.ir(), written.ir()),
+                &readback::baseline(&source)
+            ),
+            &all_messages(&report)
+        ),
+        Vec::new()
     );
     let parameter = named_parameter(written.ir(), &owner, &name);
     assert!(
@@ -313,13 +332,28 @@ fn a_parameter_edit_keeps_every_other_record(source_part: &DecodeResult) {
     assert_eq!(unwritten(&report), Vec::<&str>::new());
     let written = decode(output);
     assert!((length(named_parameter(written.ir(), &owner, &name)) - value).abs() <= 1.0e-9);
-    let edited_feature = format!("F:{owner}");
-    let edited_parameter = format!("P:F:{owner}.{name}");
+    let source = source(&decoded);
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(owner.as_str()))
+        .unwrap()
+        .id
+        .clone();
     assert_eq!(
-        crate::test_support::readback::differences(
-            source(&decoded).ir(),
-            written.ir(),
-            &[&edited_feature, &edited_parameter],
+        readback::unaccounted(
+            decoded.ir(),
+            &[feature.as_str()],
+            &["definition", "source_properties", "source_content"],
+            readback::unnamed(
+                readback::beyond(
+                    readback::diff(decoded.ir(), written.ir()),
+                    &readback::baseline(&source)
+                ),
+                &all_messages(&report)
+            ),
         ),
         Vec::<String>::new()
     );
@@ -359,18 +393,27 @@ fn a_rename_keeps_every_other_record(source_part: &DecodeResult, selected: fn(&F
     assert_eq!(unwritten(&report), Vec::<&str>::new());
     assert_eq!(stale(&report), Vec::<&str>::new());
     let written = decode(output);
-    // A reference `name@feature` names the feature by name.
-    let mut expected = decoded.ir().clone();
-    let (from, to) = (format!("@{old}"), format!("@{new}"));
-    for parameter in &mut expected.model.parameters {
-        parameter.expression = parameter.expression.replace(&from, &to);
-        for value in parameter.properties.values_mut() {
-            *value = value.replace(&from, &to);
-        }
-    }
+    let source = source(&decoded);
+    let id = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(new.as_str()))
+        .unwrap()
+        .id
+        .as_str()
+        .to_owned();
+    let expected = readback::renamed(source.ir(), &[(id, old, new)]);
     assert_eq!(
-        crate::test_support::readback::differences(&expected, written.ir(), &[]),
-        Vec::<String>::new()
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(&expected, written.ir()),
+                &readback::baseline(&source)
+            ),
+            &all_messages(&report)
+        ),
+        Vec::new()
     );
 }
 
@@ -791,9 +834,16 @@ fn a_value_the_expression_does_not_state_is_named_and_not_called_written() {
     assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
     assert!(unwritten[0].contains(id.as_str()), "{}", unwritten[0]);
     assert_eq!(stale(&report), Vec::<&str>::new());
+    let source = source(&decoded);
     assert_eq!(
-        crate::test_support::readback::differences(source(&decoded).ir(), decode(output).ir(), &[],),
-        Vec::<String>::new()
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(source.ir(), decode(output).ir()),
+                &readback::baseline(&source)
+            ),
+            &all_messages(&report)
+        ),
+        Vec::new()
     );
 }
 
@@ -953,4 +1003,161 @@ fn an_unedited_lane_is_written_as_stored() {
         error.to_string().contains("edited named scalars"),
         "{error}"
     );
+}
+
+/// The JSON pointer of the first place in `value` whose pointer ends with
+/// `suffix`.
+fn place(value: &serde_json::Value, pointer: &str, suffix: &str) -> Option<String> {
+    if pointer.ends_with(suffix) {
+        return Some(pointer.to_owned());
+    }
+    match value {
+        serde_json::Value::Object(fields) => fields
+            .iter()
+            .find_map(|(key, value)| place(value, &format!("{pointer}/{key}"), suffix)),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .enumerate()
+            .find_map(|(index, value)| place(value, &format!("{pointer}/{index}"), suffix)),
+        _ => None,
+    }
+}
+
+/// Changes the first place of feature `name`'s definition whose pointer ends
+/// with `suffix`; the feature's id and the place's pointer.
+fn edit_definition_at(
+    decoded: &mut EditableDecodeResult,
+    name: &str,
+    suffix: &str,
+    change: impl FnOnce(&mut serde_json::Value),
+) -> (cadmpeg_ir::features::FeatureId, String) {
+    let mut ir = decoded.ir_mut();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap();
+    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let pointer = place(&wire, "", suffix).unwrap();
+    change(wire.pointer_mut(&pointer).unwrap());
+    feature
+        .evaluation
+        .set_definition(serde_json::from_value(wire).unwrap());
+    (feature.id.clone(), pointer)
+}
+
+fn plus_one(value: &mut serde_json::Value) {
+    *value = serde_json::json!(value.as_f64().unwrap() + 1.0);
+}
+
+/// `Sketch4` is placed on `Plane3`, and a `Plane3` distance edit written as
+/// edited would move it. The written part reads back as the source, and a
+/// loss names the edit.
+#[test]
+fn a_plane_distance_edit_reads_back_as_the_source_or_as_edited() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let (plane, _) = edit_definition_at(&mut decoded, "Plane3", "/distance", plus_one);
+
+    let (report, output) = write(&decoded);
+
+    let unwritten = messages(&report, SldprtLossCode::WriterFeatureEditUnwritten);
+    assert!(
+        unwritten
+            .iter()
+            .any(|message| message.contains(plane.as_str())),
+        "{unwritten:?}"
+    );
+    let source = source(&decoded);
+    assert_eq!(
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(source.ir(), decode(output).ir()),
+                &readback::baseline(&source)
+            ),
+            &all_messages(&report)
+        ),
+        Vec::new()
+    );
+}
+
+/// Two edits in one save, one of which is written with its stored record:
+/// its loss names it alone, and the other edit is written as edited.
+#[test]
+fn a_held_back_edit_names_only_its_own_feature() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let (plane, _) = edit_definition_at(&mut decoded, "Plane3", "/distance", plus_one);
+    let (extrusion, pointer) =
+        edit_definition_at(&mut decoded, "Boss-Extrude1", "/length", plus_one);
+    let edited = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id == extrusion)
+        .map(|feature| serde_json::to_value(feature.evaluation.definition()).unwrap())
+        .unwrap();
+
+    let (report, output) = write(&decoded);
+
+    let unwritten = messages(&report, SldprtLossCode::WriterFeatureEditUnwritten);
+    assert!(
+        unwritten
+            .iter()
+            .any(|message| message.contains(plane.as_str())),
+        "{unwritten:?}"
+    );
+    assert!(
+        unwritten
+            .iter()
+            .all(|message| !message.contains(extrusion.as_str())),
+        "{unwritten:?}"
+    );
+    let written = decode(output);
+    let read = written
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
+        .map(|feature| serde_json::to_value(feature.evaluation.definition()).unwrap())
+        .unwrap();
+    assert_eq!(read.pointer(&pointer), edited.pointer(&pointer));
+}
+
+/// A through-all cut edited to a blind depth is written in the blind record
+/// shape, which states the depth under a parameter the record did not hold:
+/// the edit is written, and a loss names the added parameter.
+#[test]
+fn a_variant_edit_names_the_parameter_its_record_gains() {
+    let mut decoded = EditableDecodeResult::from(ftc_08().clone());
+    let (cut, _) = edit_definition_at(&mut decoded, "Cut-Extrude2", "/termination", |value| {
+        *value = serde_json::json!({"kind": "blind", "length": 5.0});
+    });
+
+    let (report, output) = write(&decoded);
+
+    let reshaped = messages(&report, SldprtLossCode::WriterFeatureRecordReshaped);
+    assert!(
+        reshaped
+            .iter()
+            .any(|message| message.contains(cut.as_str())
+                && message.contains("adds parameter Depth")),
+        "{:?}",
+        report.losses
+    );
+    assert!(
+        unwritten(&report)
+            .iter()
+            .all(|message| !message.contains(cut.as_str())),
+        "{:?}",
+        report.losses
+    );
+    let written = decode(output);
+    assert!(written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Depth"));
 }

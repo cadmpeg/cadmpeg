@@ -1,85 +1,277 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Read-back comparison of a written part with the document it was written
-//! from: every feature and parameter keyed by name, because ids move across a
-//! write.
+//! Read-back comparison for tests, independent of the writer's judgement: the
+//! test decodes the written part itself, the written ids are renamed to the
+//! ids of the records they pair with, and the IR diff library compares the
+//! two documents arena by arena. The native namespaces, which are the
+//! encoding, are left out.
 
+use std::collections::HashMap;
+
+use cadmpeg_ir::diff::ArenaKind;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
-use crate::history::write::read_back::{same_read_back, PartSummary};
+use crate::history::write::read_back::document::{pair, Document};
 
-/// The definition of feature `key` (`F:<feature name>`) in `expected` and in
-/// `written`, with ids replaced by names, when the two differ.
-pub(crate) fn definition_difference(
-    expected: &CadIr,
-    written: &CadIr,
-    key: &str,
-) -> Option<(Value, Value)> {
-    let definition = |ir: &CadIr| {
-        PartSummary::of(ir)
-            .features
-            .get(key)
-            .and_then(|feature| feature.get("definition"))
-            .cloned()
-            .unwrap_or(Value::Null)
-    };
-    let (expected, written) = (definition(expected), definition(written));
-    (!same_read_back(&expected, &written, false)).then_some((expected, written))
+/// One record that two decodes of a part do not state the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Entry {
+    pub(crate) arena: String,
+    /// The stated id; for an added record, its written id where it does not
+    /// pair.
+    pub(crate) id: String,
+    pub(crate) change: EntryChange,
 }
 
-/// Every feature and parameter of `expected` that `written` does not state
-/// the same way, other than the features and parameters `skipped` names
-/// (`F:<feature name>`, `P:F:<owner name>.<parameter name>`); empty when the
-/// write kept everything else.
-pub(crate) fn differences(expected: &CadIr, written: &CadIr, skipped: &[&str]) -> Vec<String> {
-    let expected = PartSummary::of(expected);
-    let written = PartSummary::of(written);
-    let mut differences = Vec::new();
-    for (arena, expected, written) in [
-        ("feature", &expected.features, &written.features),
-        ("parameter", &expected.parameters, &written.parameters),
-    ] {
-        for (key, value) in expected {
-            if skipped.contains(&key.as_str()) {
-                continue;
-            }
-            match written.get(key) {
-                None => differences.push(format!("{arena} {key} is missing")),
-                Some(read) if !same_read_back(read, value, false) => {
-                    differences.push(format!("{arena} {key}: {value} reads back {read}"));
-                }
-                Some(_) => {}
-            }
-        }
-        for key in written.keys() {
-            if !expected.contains_key(key) && !skipped.contains(&key.as_str()) {
-                differences.push(format!("{arena} {key} is added"));
-            }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum EntryChange {
+    Added,
+    Removed,
+    /// The top-level fields that differ.
+    Modified(Vec<String>),
+}
+
+/// Every record of `stated` that `written` does not state the same way.
+pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
+    let left = Document::of(stated).expect("the stated document serializes");
+    let right = Document::of(written).expect("the written document serializes");
+    let pairing = pair(&left, &right);
+    let mut renames = pairing.renames().clone();
+    for id in right.ids().filter(|id| id.starts_with("sldprt:")) {
+        if !renames.contains_key(id) {
+            renames.insert(id.to_owned(), format!("{id}:written"));
         }
     }
-    differences
+    let mut value = serde_json::to_value(written).expect("the written document serializes");
+    rename(&mut value, &renames);
+    let renamed: CadIr = serde_json::from_value(value).expect("the renamed document reads");
+    let diff = cadmpeg_ir::diff::diff(stated, &renamed);
+    let mut entries = Vec::new();
+    for arena in diff.per_arena {
+        if matches!(arena.kind, ArenaKind::Native { .. }) {
+            continue;
+        }
+        let name = arena.kind.to_string();
+        let entry = |id: String, change| Entry {
+            arena: name.clone(),
+            id,
+            change,
+        };
+        entries.extend(
+            arena
+                .added
+                .into_iter()
+                .map(|id| entry(id, EntryChange::Added)),
+        );
+        entries.extend(
+            arena
+                .removed
+                .into_iter()
+                .map(|id| entry(id, EntryChange::Removed)),
+        );
+        // A native reference names a record of a native namespace, which is
+        // left out.
+        entries.extend(arena.modified.into_iter().filter_map(|modified| {
+            let fields = modified
+                .fields
+                .iter()
+                .filter(|field| field.as_str() != "native_ref")
+                .cloned()
+                .collect::<Vec<_>>();
+            (!fields.is_empty()).then(|| entry(modified.id, EntryChange::Modified(fields)))
+        }));
+    }
+    // A digest attribute digests encoded bytes; the records they encode are
+    // compared instead.
+    entries.extend(
+        diff.source
+            .attributes
+            .into_iter()
+            .filter(|change| !change.key.as_str().ends_with("_sha256"))
+            .map(|change| Entry {
+                arena: "source.attributes".into(),
+                id: change.key.to_string(),
+                change: EntryChange::Modified(vec!["value".into()]),
+            }),
+    );
+    entries
 }
 
-/// Each source property of feature `key` (`F:<feature name>`) in `expected`
-/// that `written` does not state.
-pub(crate) fn missing_source_properties(
-    expected: &CadIr,
-    written: &CadIr,
-    key: &str,
-) -> Vec<String> {
-    let properties = |ir: &CadIr| {
-        PartSummary::of(ir)
-            .features
-            .get(key)
-            .and_then(|feature| feature.get("source_properties"))
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default()
-    };
-    let written = properties(written);
-    properties(expected)
-        .keys()
-        .filter(|property| !written.contains_key(*property))
-        .cloned()
+/// The entries of `entries` that `baseline` does not hold: the same arena,
+/// record and change. An added record is matched by arena alone, because its
+/// written id is the written part's own.
+pub(crate) fn beyond(entries: Vec<Entry>, baseline: &[Entry]) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter(|entry| {
+            !baseline
+                .iter()
+                .any(|base| match (&base.change, &entry.change) {
+                    (EntryChange::Added, EntryChange::Added) => base.arena == entry.arena,
+                    _ => base == entry,
+                })
+        })
         .collect()
+}
+
+/// The entries of `entries` that no loss of `messages` names: by the
+/// record's id, or by an `arena.omitted` loss for its arena.
+pub(crate) fn unnamed(entries: Vec<Entry>, messages: &[&str]) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let arena = format!("arena `{}`", entry.arena);
+            !messages
+                .iter()
+                .any(|message| message.contains(&entry.id) || message.contains(&arena))
+        })
+        .collect()
+}
+
+/// Every string and key of `value` that `renames` names, renamed.
+fn rename(value: &mut Value, renames: &HashMap<String, String>) {
+    match value {
+        Value::String(text) => {
+            if let Some(renamed) = renames.get(text.as_str()) {
+                renamed.clone_into(text);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(|item| rename(item, renames)),
+        Value::Object(entries) => {
+            let taken = std::mem::take(entries);
+            for (key, mut item) in taken {
+                rename(&mut item, renames);
+                let key = renames.get(&key).cloned().unwrap_or(key);
+                entries.insert(key, item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// What `part` reads back as when the semantic writer writes it with no
+/// edit: the differences every edited write of it has as well.
+pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::sync::Mutex;
+
+    static BASELINES: Mutex<Vec<(String, Vec<Entry>)>> = Mutex::new(Vec::new());
+    let key = part
+        .ir()
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("document_local_sha256"))
+        .cloned();
+    if let Some(key) = &key {
+        let baselines = BASELINES.lock().expect("baseline cache");
+        if let Some((_, entries)) = baselines.iter().find(|(cached, _)| cached == key) {
+            return entries.clone();
+        }
+    }
+    let part = cadmpeg_test_support::EditableDecodeResult::from(part.clone());
+    let records = crate::source_records(part.ir(), part.source_fidelity())
+        .expect("the part's retained records");
+    let mut bytes = Vec::new();
+    // A part the semantic writer cannot write unedited has no differences of
+    // its own.
+    let entries = crate::writer::write_semantic_with_records(
+        part.ir(),
+        &part.source_fidelity().annotations,
+        &records,
+        &[],
+        &mut bytes,
+    )
+    .map(|_| {
+        let written = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("the unedited write decodes");
+        diff(part.ir(), written.ir())
+    })
+    .unwrap_or_default();
+    if let Some(key) = key {
+        BASELINES
+            .lock()
+            .expect("baseline cache")
+            .push((key, entries.clone()));
+    }
+    entries
+}
+
+/// The entries of `entries` that an edit of the features `features` of
+/// `stated` does not account for. The edit moves the fields `feature_fields`
+/// of the features' own records, the value, expression and display of their
+/// parameters, their design records, and the configurations' feature states
+/// and parameter values. It adds and drops no record.
+pub(crate) fn unaccounted(
+    stated: &CadIr,
+    features: &[&str],
+    feature_fields: &[&str],
+    entries: Vec<Entry>,
+) -> Vec<String> {
+    let owned = stated
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| features.contains(&owner.as_str()))
+        })
+        .map(|parameter| parameter.id.as_str().to_owned())
+        .collect::<std::collections::HashSet<_>>();
+    let within = |fields: &[String], allowed: &[&str]| {
+        fields.iter().all(|field| allowed.contains(&field.as_str()))
+    };
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let EntryChange::Modified(fields) = &entry.change else {
+                return true;
+            };
+            let own = features.contains(&entry.id.as_str());
+            let parameter = owned.contains(&entry.id);
+            !match entry.arena.as_str() {
+                "features" => own && within(fields, feature_fields),
+                "design.features" => own,
+                "parameters" => parameter && within(fields, &["expression", "value", "display"]),
+                "design.parameters" => parameter,
+                "configurations" => within(fields, &["feature_states", "parameter_values"]),
+                _ => false,
+            }
+        })
+        .map(|entry| format!("{entry:?}"))
+        .collect()
+}
+
+/// `ir` as a part written with feature renames `renames` (id, source name,
+/// edited name) reads back: each record of a renamed feature states its
+/// edited name, and a reference `name@feature` names the feature by it.
+pub(crate) fn renamed(ir: &CadIr, renames: &[(String, String, String)]) -> CadIr {
+    fn walk(value: &mut Value, renames: &[(String, String, String)]) {
+        match value {
+            Value::String(text) => {
+                for (_, old, new) in renames {
+                    *text = text.replace(&format!("@{old}"), &format!("@{new}"));
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|item| walk(item, renames)),
+            Value::Object(entries) => {
+                let id = entries.get("id").and_then(Value::as_str).map(str::to_owned);
+                if let Some((_, old, new)) = renames
+                    .iter()
+                    .find(|(renamed, _, _)| id.as_deref() == Some(renamed.as_str()))
+                {
+                    if entries.get("name").and_then(Value::as_str) == Some(old.as_str()) {
+                        entries.insert("name".into(), Value::String(new.clone()));
+                    }
+                }
+                entries.values_mut().for_each(|item| walk(item, renames));
+            }
+            _ => {}
+        }
+    }
+    let mut value = serde_json::to_value(ir).expect("the document serializes");
+    walk(&mut value, renames);
+    serde_json::from_value(value).expect("the renamed document reads")
 }

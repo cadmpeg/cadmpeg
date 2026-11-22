@@ -202,38 +202,37 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
         .pointer(&job.pointer)
         .cloned()
         .unwrap_or(Value::Null);
-    let edited_feature = format!("F:{}", job.feature);
+    // A stale-solid note names the edited feature as written, so it names
+    // no difference of the read-back.
+    let messages = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code != SldprtLossCode::WriterSolidStaleAfterEdit.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let baseline = crate::test_support::readback::baseline(part);
+    let baseline = baseline.as_slice();
     let (differences, outcome) = if unwritten == 0 {
-        // A carried edit moves its own feature's records: the source
-        // property values and content that mirror them, and its parameter
-        // values. It adds and drops none of them.
-        let own_parameters = format!("parameter P:{edited_feature}.");
-        let mut differences = crate::test_support::readback::differences(
-            decoded.ir(),
-            written.ir(),
-            &[&edited_feature],
+        let entries = crate::test_support::readback::unnamed(
+            crate::test_support::readback::beyond(
+                crate::test_support::readback::diff(decoded.ir(), written.ir()),
+                baseline,
+            ),
+            &messages,
         );
-        differences.retain(|difference| {
-            !difference.starts_with(&own_parameters)
-                || difference.ends_with(" is added")
-                || difference.ends_with(" is missing")
-        });
+        let mut differences = crate::test_support::readback::unaccounted(
+            decoded.ir(),
+            &[feature_id.as_str()],
+            &["source_properties", "source_content"],
+            entries,
+        );
+        let stated = &named(&decoded.ir().model.features, &job.feature)[0].source_properties;
         differences.extend(
-            crate::test_support::readback::missing_source_properties(
-                decoded.ir(),
-                written.ir(),
-                &edited_feature,
-            )
-            .into_iter()
-            .map(|property| format!("source property {property} is missing")),
+            stated
+                .keys()
+                .filter(|key| !read.source_properties.contains_key(*key))
+                .map(|key| format!("source property {key} is missing")),
         );
-        if let Some((expected, read)) = crate::test_support::readback::definition_difference(
-            decoded.ir(),
-            written.ir(),
-            &edited_feature,
-        ) {
-            differences.push(format!("definition {expected} reads back {read}"));
-        }
         (differences, Outcome::Carried)
     } else {
         if stale != 0 {
@@ -241,7 +240,16 @@ fn run(part: &DecodeResult, job: &Job) -> Result<Outcome, String> {
                 "{label}: a loss names the edit, and a stale note calls it written"
             ));
         }
-        let differences = crate::test_support::readback::differences(part.ir(), written.ir(), &[]);
+        let differences = crate::test_support::readback::unnamed(
+            crate::test_support::readback::beyond(
+                crate::test_support::readback::diff(part.ir(), written.ir()),
+                baseline,
+            ),
+            &messages,
+        )
+        .into_iter()
+        .map(|entry| format!("{entry:?}"))
+        .collect::<Vec<_>>();
         (differences, Outcome::Named)
     };
     if !differences.is_empty() {
@@ -291,6 +299,10 @@ fn sweep(part: &'static DecodeResult) -> (Vec<String>, [usize; 3]) {
 
 fn assert_every_leaf_edit_is_carried_or_named(part: &'static DecodeResult) {
     let (wrong, [invalid, carried, named]) = sweep(part);
+    eprintln!(
+        "leaf sweep: {invalid} invalid, {carried} carried, {named} named, {} wrong",
+        wrong.len()
+    );
     assert!(
         wrong.is_empty(),
         "{} wrong saves ({invalid} invalid edits, {carried} carried, {named} named):\n{}",

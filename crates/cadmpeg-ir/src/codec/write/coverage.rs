@@ -183,6 +183,21 @@ macro_rules! declare_arena_dispositions {
                     .is_none_or(|disposition| disposition.carries())
             }
 
+            /// The label of each arena whose disposition is
+            /// [`ArenaDisposition::Omitted`]: a model arena by its field name,
+            /// a design or process arena as `design.<field>` or
+            /// `process.<field>`.
+            #[must_use]
+            pub fn omitted(&self) -> Vec<&'static str> {
+                let mut labels = Vec::new();
+                $(
+                    if disposition!(self, $field, $home) == ArenaDisposition::Omitted {
+                        labels.push(crate::document::arena_label!($field, $home));
+                    }
+                )*
+                labels
+            }
+
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path

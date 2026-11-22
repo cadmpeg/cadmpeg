@@ -338,6 +338,9 @@ pub(crate) enum SldprtLossCode {
     /// An edit of a feature's definition or selection that the native record
     /// cannot encode is not written; the output keeps the stored record.
     WriterFeatureEditUnwritten,
+    /// A variant edit of a feature is written in the record shape of the
+    /// edited variant, which adds or drops a parameter of the feature.
+    WriterFeatureRecordReshaped,
     /// A compound-file part edited since decode is written as its stored
     /// part: the writer has no compound-file serializer, so no edit of the
     /// document is written.
@@ -534,6 +537,7 @@ impl SldprtLossCode {
         Self::WriterConfigurationSnapshotEditUnwritten,
         Self::WriterParameterEditUnwritten,
         Self::WriterFeatureEditUnwritten,
+        Self::WriterFeatureRecordReshaped,
         Self::WriterCompoundFileEditUnwritten,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
@@ -699,6 +703,7 @@ impl SldprtLossCode {
             }
             Self::WriterParameterEditUnwritten => "writer.parameter-edit-unwritten",
             Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
+            Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
             Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
@@ -751,6 +756,7 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterParameterEditUnwritten => Severity::Warning,
             Self::WriterFeatureEditUnwritten => Severity::Warning,
+            Self::WriterFeatureRecordReshaped => Severity::Warning,
             Self::WriterCompoundFileEditUnwritten => Severity::Error,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
@@ -912,6 +918,7 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterParameterEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterCompoundFileEditUnwritten => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1371,6 +1378,7 @@ mod tests {
                 "writer.configuration-snapshot-edit-unwritten",
                 "writer.parameter-edit-unwritten",
                 "writer.feature-edit-unwritten",
+                "writer.feature-record-reshaped",
                 "writer.compound-file-edit-unwritten",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
