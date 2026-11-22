@@ -2376,6 +2376,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         let instances = lane
             .relation_instances
             .iter()
@@ -2405,6 +2406,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .feature_ref
                 .as_deref()
                 .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                && !curve_markers.contains(marker.id())
                 && crate::resolved_features::typed_relations::marker_owns_constraint(
                     marker,
                     &markers_by_id,
@@ -2443,11 +2445,14 @@ fn multiply_projected_sketch_relation_records(
         for relation in &lane.relation_instances {
             native_relation_ids.insert(relation.id.as_str());
         }
+        let curve_markers = crate::resolved_features::sketch_lists::curve_record_markers(lane);
         for marker in &lane.sketch_entities {
-            if crate::resolved_features::typed_relations::marker_owns_constraint(
-                marker,
-                &markers_by_id,
-            ) {
+            if !curve_markers.contains(marker.id())
+                && crate::resolved_features::typed_relations::marker_owns_constraint(
+                    marker,
+                    &markers_by_id,
+                )
+            {
                 native_relation_ids.insert(marker.id());
             }
         }
@@ -3412,6 +3417,8 @@ fn build_geometry_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -3586,8 +3593,16 @@ fn build_geometry_ir(
             projected: &mut sketch_entities,
             held: &mut held_handles,
         },
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                &brep.edges,
+                &brep.vertices,
+                &brep.points,
+                &brep.curves,
+            ),
+        },
         &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
@@ -3658,7 +3673,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -3867,6 +3882,17 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        &all_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
@@ -3880,6 +3906,11 @@ fn build_geometry_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -4282,7 +4313,7 @@ fn build_geometry_ir(
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4297,6 +4328,8 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -4716,6 +4749,8 @@ fn build_metadata_ir(
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let length_unit = crate::design_v11::length_unit(scan);
+    let equation_managers = crate::design_v11::equation_managers(scan);
+    let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -4915,8 +4950,11 @@ fn build_metadata_ir(
             projected: &mut ir.model.sketch_entities,
             held: &mut held_handles,
         },
-        &histories,
-        sketch_lanes,
+        crate::resolved_features::profiles::MarkerSources {
+            histories: &histories,
+            lanes: sketch_lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut pmi_losses,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
@@ -5072,7 +5110,7 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5100,6 +5138,17 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::resolved_features::sweeps::bind(
+        &mut ir.model.features,
+        &histories,
+        sketch_lanes,
+        crate::resolved_features::sweeps::Geometry {
+            sketches: &ir.model.sketches,
+            entities: &mut ir.model.sketch_entities,
+            spatial_entities: &mut ir.model.spatial_sketch_entities,
+        },
+        &mut pmi_losses,
+    );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -5111,6 +5160,11 @@ fn build_metadata_ir(
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
+    crate::resolved_features::stream_readings::note_stream_readings(
+        &ir.model,
+        &unbound_readings,
+        &mut pmi_losses,
+    );
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
@@ -5174,7 +5228,7 @@ fn build_metadata_ir(
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir)?;
+    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir
@@ -5195,6 +5249,8 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                equations: equation_managers,
+                length_places,
                 rollback,
             },
             &mut pmi_losses,
@@ -5388,7 +5444,8 @@ fn mark_active_configuration(ir: &mut CadIr) {
 /// The position of the active configuration among `configurations`, each
 /// given by its name and partition index, as the document's active
 /// configuration name, else its active Parasolid block, selects it. A lone
-/// configuration is active unless the active partition is unresolved.
+/// configuration is active unless the active partition is unresolved; where
+/// the active block names no configuration, only a lone one without an index.
 pub(crate) fn active_configuration_position(
     source: Option<&cadmpeg_ir::document::SourceMeta>,
     configurations: &[(Option<&str>, Option<u32>)],
@@ -5417,7 +5474,8 @@ pub(crate) fn active_configuration_position(
                 .enumerate()
                 .filter(|(_, (_, candidate))| *candidate == Some(index))
                 .map(|(position, _)| position),
-        );
+        )
+        .or_else(|| matches!(configurations, [(_, None)]).then_some(0));
     }
     if attribute("sldprt_active_partition_unresolved").map(String::as_str) == Some("true") {
         return None;
@@ -5425,7 +5483,36 @@ pub(crate) fn active_configuration_position(
     (configurations.len() == 1).then_some(0)
 }
 
-fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
+/// The design state the decoder states for an active configuration whose
+/// native records state none: the value of every valued parameter and the
+/// state of every feature of the model.
+pub(crate) struct ModelSnapshot {
+    pub(crate) parameter_values: BTreeMap<
+        cadmpeg_ir::features::ParameterId,
+        cadmpeg_ir::features::parameters::ParameterValue,
+    >,
+    pub(crate) feature_states: BTreeMap<
+        cadmpeg_ir::features::FeatureId,
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState,
+    >,
+}
+
+pub(crate) fn model_snapshot(model: &cadmpeg_ir::document::Model) -> ModelSnapshot {
+    ModelSnapshot {
+        parameter_values: model
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
+            .collect(),
+        feature_states: model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.configuration_state()))
+            .collect(),
+    }
+}
+
+fn snapshot_active_configuration(ir: &mut CadIr) {
     let mut active = ir
         .model
         .configurations
@@ -5434,10 +5521,10 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
         .filter(|(_, configuration)| configuration.active)
         .map(|(index, _)| index);
     let Some(configuration_index) = active.next() else {
-        return Ok(());
+        return;
     };
     if active.next().is_some() {
-        return Ok(());
+        return;
     }
     if !ir.model.configurations[configuration_index]
         .parameter_values
@@ -5446,29 +5533,13 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             .feature_states
             .is_empty()
     {
-        return Ok(());
+        return;
     }
 
-    let mut parameter_values = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let Some(value) = &parameter.value else {
-            continue;
-        };
-        let value = value.clone();
-        let id = cadmpeg_ir::features::ParameterId::mint(parameter.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        parameter_values.insert(id, value);
-    }
-    let mut feature_states = BTreeMap::new();
-    for feature in &ir.model.features {
-        let id = cadmpeg_ir::features::FeatureId::mint(feature.id.as_str().to_owned())
-            .map_err(CodecError::malformed)?;
-        let state = feature.configuration_state();
-        feature_states.insert(id, state);
-    }
+    let snapshot = model_snapshot(&ir.model);
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = parameter_values;
-    configuration.feature_states = feature_states;
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
     let id = configuration.id.as_str().to_owned();
@@ -5478,7 +5549,6 @@ fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
             id,
         );
     }
-    Ok(())
 }
 
 fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
@@ -5863,46 +5933,39 @@ fn assign_configuration_bodies(
     Ok(())
 }
 
-/// Bind the active configuration's partition identity from the two native
-/// selectors, without inferring body membership.
+/// Bind the active partition to the configuration the document selects as
+/// active, by its name or as the lone configuration without an index, when
+/// no configuration holds that partition, without inferring body membership.
 fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
-    let active_name = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"));
     let active_index = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
         .and_then(|section| crate::container::configuration_index(section))
-        .and_then(|index| u32::try_from(index).ok());
-    let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
-        return None;
-    };
-    let mut matches = ir
+        .and_then(|index| u32::try_from(index).ok())?;
+    if ir
         .model
         .configurations
         .iter()
-        .enumerate()
-        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
-        .map(|(position, _)| position);
-    let position = matches.next()?;
-    let source_identity_available = !ir
-        .model
-        .configurations
-        .iter()
-        .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some()
-        || ir.model.configurations[position].source_index.is_some()
-        || !source_identity_available
+        .any(|configuration| configuration.source_index == Some(active_index))
     {
         return None;
     }
+    let selectors = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_deref(), configuration.source_index))
+        .collect::<Vec<_>>();
+    let position = active_configuration_position(ir.source.as_ref(), &selectors)?;
+    if ir.model.configurations[position].source_index.is_some() {
+        return None;
+    }
 
-    // The container's active block and the native configuration name
-    // establish the partition identity even when that block yielded no
-    // decoded body list. Body membership remains unresolved until a decoded
-    // partition supplies its body identities.
+    // The container's active block and the selected configuration establish
+    // the partition identity even when that block yielded no decoded body
+    // list. Body membership remains unresolved until a decoded partition
+    // supplies its body identities.
     ir.model.configurations[position].source_index = Some(active_index);
     Some((active_index, position))
 }

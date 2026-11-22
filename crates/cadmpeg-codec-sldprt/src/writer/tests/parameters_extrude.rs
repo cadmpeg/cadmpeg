@@ -252,7 +252,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -296,7 +296,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
             "D3@Sketch1".into(),
         );
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -425,7 +425,7 @@ fn semantic_writer_preserves_empty_dimensions() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -462,7 +462,7 @@ fn semantic_writer_preserves_keywords_attributes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -506,7 +506,7 @@ fn semantic_writer_preserves_keywords_child_order() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -524,6 +524,60 @@ fn semantic_writer_preserves_keywords_child_order() {
             HistoryContent::Configuration(_),
             HistoryContent::Feature(_),
         ] if text == "between"
+    ));
+}
+
+#[test]
+fn edited_history_write_keeps_the_application_element() {
+    use crate::records::HistoryContent;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Application Name="Simulation"><Keyword Name="Analysis type">Static</Keyword><Keyword Name="Mesh type">Solid Mesh</Keyword></Application><Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let application = sldprt_native(decoded.ir()).feature_histories[0].content[0].clone();
+    assert!(
+        matches!(&application, HistoryContent::Element(element) if element.tag == "Application")
+    );
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        let depth = ir_edit
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.name == "Depth")
+            .unwrap();
+        depth.expression = "20mm".into();
+        depth.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
+    }
+
+    let mut encoded = Vec::new();
+    crate::test_support::write_history_over_stale_solid(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(regenerated.ir()).feature_histories[0];
+    assert_eq!(history.features[0].parameters["Depth"], "20mm");
+    assert!(matches!(
+        history.content.as_slice(),
+        [
+            element,
+            HistoryContent::Configuration(_),
+            HistoryContent::Feature(_),
+        ] if *element == application
     ));
 }
 
@@ -549,7 +603,7 @@ fn semantic_writer_applies_history_root_ordinals() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -573,7 +627,7 @@ fn semantic_writer_applies_history_root_ordinals() {
                 .iter()
                 .find(|configuration| configuration.id == *id)
                 .map(|configuration| configuration.name.as_str()),
-            HistoryContent::Text(_) => None,
+            HistoryContent::Text(_) | HistoryContent::Element(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(names, vec!["Second", "B", "First", "A"]);
@@ -839,7 +893,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -908,7 +962,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     regenerated.ir_mut().model.parameters[0].value =
         Some(ParameterValue::Length(Length::new(225.0).unwrap()));
     let mut parameter_encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut parameter_encoded,
@@ -975,7 +1029,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1152,7 +1206,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1224,7 +1278,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1385,7 +1439,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1498,7 +1552,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1595,7 +1649,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1628,7 +1682,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1737,7 +1791,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

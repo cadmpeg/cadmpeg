@@ -140,7 +140,10 @@ pub(super) fn resolve(
     Ok(boundaries_agree(&initial.regions, regions).then_some(candidate))
 }
 
-fn boundaries_agree(initial: &[SketchProfileRegion], selected: &[SketchProfileRegion]) -> bool {
+pub(super) fn boundaries_agree(
+    initial: &[SketchProfileRegion],
+    selected: &[SketchProfileRegion],
+) -> bool {
     match (outline(initial), outline(selected)) {
         (Some(initial), Some(selected)) => initial == selected,
         _ => false,
@@ -185,7 +188,7 @@ fn outline(regions: &[SketchProfileRegion]) -> Option<Vec<SketchProfileBoundaryU
         };
         uses.push(SketchProfileBoundaryUse {
             entity: entity.clone(),
-            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(
+            parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new(
                 range.map(f64::from_bits),
             )
             .ok()?,
@@ -212,7 +215,10 @@ fn outline(regions: &[SketchProfileRegion]) -> Option<Vec<SketchProfileBoundaryU
             }
             if next == end {
                 last.parameter_range =
-                    cadmpeg_ir::geometry::DirectedParameterRange::new([start, far]).ok()?;
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                        start, far,
+                    ])
+                    .ok()?;
                 continue;
             }
         }

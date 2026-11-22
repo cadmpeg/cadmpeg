@@ -16,6 +16,7 @@ use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::check::Check;
 
+use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::history::resolved_feature_classes_with_ids;
 use crate::test_support::parasolid::triangle_body;
@@ -228,422 +229,12 @@ fn part_without_a_history_states_no_design() {
     );
 }
 
-fn parameter_named<'a>(
-    ir: &'a CadIr,
-    name: &str,
-) -> &'a cadmpeg_ir::design::parameter::DesignParameter {
-    ir.design
-        .parameters
-        .iter()
-        .find(|parameter| {
-            parameter
-                .name
-                .as_ref()
-                .map(cadmpeg_core::text::NonBlankString::as_str)
-                == Some(name)
-        })
-        .unwrap()
-}
-
 /// The canonical text of a parameter's neutral expression, or its source
 /// tokens' JSON.
 fn expression_json(
     parameter: &cadmpeg_ir::design::parameter::DesignParameter,
 ) -> serde_json::Value {
     serde_json::to_value(&parameter.definition).unwrap()["value"].clone()
-}
-
-#[test]
-fn dimensions_and_global_variables_are_parameters_of_the_scope() {
-    use cadmpeg_ir::design::parameter::{ParameterOwner, ParameterValue};
-    use cadmpeg_ir::design::units::{Quantity, ValueKind};
-
-    let ir = part_with_history(
-        br#"<Keywords Name="Bracket">
-            <Feature Name="Equations" Type="EquationDriven" id="16">
-                <Dimension Name="wall">5</Dimension>
-            </Feature>
-            <Extrusion Name="Boss" Type="BossExtrude" id="7">
-                <Dimension Name="D1">12.5mm</Dimension>
-                <Dimension Name="D2" Value="10mm">"wall" * 2</Dimension>
-                <Dimension Name="D3">0.5in</Dimension>
-                <Dimension Name="D4">90deg</Dimension>
-                <Dimension Name="D5">D1@Boss * 2</Dimension>
-                <Dimension Name="D6">25</Dimension>
-            </Extrusion>
-        </Keywords>"#,
-        &[],
-    );
-    let [scope] = ir.design.scopes.as_slice() else {
-        panic!("one scope");
-    };
-    let boss = feature_named(&ir, "Boss").id.clone();
-    assert!(ir
-        .design
-        .features
-        .iter()
-        .all(|feature| feature.name.as_deref() != Some("Equations")));
-    for parameter in &ir.design.parameters {
-        assert_eq!(parameter.scope, scope.definition);
-    }
-
-    let wall = parameter_named(&ir, "wall");
-    assert_eq!(wall.owner, None);
-    assert_eq!(wall.kind, ValueKind::Quantity(Quantity::REAL));
-    assert_eq!(
-        wall.value,
-        Some(ParameterValue::Number(5.0.try_into().unwrap()))
-    );
-    assert_eq!(expression_json(wall)["value"]["text"], "5");
-
-    let d1 = parameter_named(&ir, "D1");
-    assert_eq!(d1.owner, Some(ParameterOwner::Feature(boss.clone())));
-    assert_eq!(
-        d1.id.as_str(),
-        ir.model
-            .parameters
-            .iter()
-            .find(|parameter| parameter.name == "D1")
-            .unwrap()
-            .id
-            .as_str()
-    );
-    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
-    assert_eq!(
-        d1.value,
-        Some(ParameterValue::Number(12.5.try_into().unwrap()))
-    );
-    assert_eq!(expression_json(d1)["value"]["text"], "12.5[mm]");
-
-    let d3 = parameter_named(&ir, "D3");
-    assert_eq!(expression_json(d3)["value"]["text"], "0.5[in]");
-    assert!(matches!(
-        d3.value,
-        Some(ParameterValue::Number(value)) if (value.get() - 12.7).abs() < 1.0e-9
-    ));
-
-    let d4 = parameter_named(&ir, "D4");
-    assert_eq!(d4.kind, ValueKind::Quantity(Quantity::ANGLE));
-    assert_eq!(expression_json(d4)["value"]["text"], "90[deg]");
-    assert!(matches!(
-        d4.value,
-        Some(ParameterValue::Number(value))
-            if (value.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
-    ));
-
-    let d2 = parameter_named(&ir, "D2");
-    assert_eq!(d2.kind, ValueKind::Quantity(Quantity::LENGTH));
-    assert_eq!(
-        d2.value,
-        Some(ParameterValue::Number(10.0.try_into().unwrap()))
-    );
-    let source = expression_json(d2);
-    assert_eq!(source["kind"], "source");
-    assert_eq!(source["value"]["dialect"]["kind"], "solid_works");
-    let tokens = &source["value"]["tokens"];
-    assert_eq!(tokens[0]["kind"], "reference");
-    assert_eq!(tokens[0]["value"]["target"]["value"], wall.id.as_str());
-    assert_eq!(tokens[1]["value"], " * 2");
-
-    let d5 = parameter_named(&ir, "D5");
-    let tokens = &expression_json(d5)["value"]["tokens"];
-    assert_eq!(tokens[0]["value"]["target"]["value"], d1.id.as_str());
-    assert_eq!(d5.value, None);
-
-    let d6 = parameter_named(&ir, "D6");
-    assert!(matches!(&d6.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
-    assert_eq!(d6.value, None);
-    assert_eq!(expression_json(d6)["value"]["tokens"][0]["value"], "25");
-    assert_no_design_findings(&ir);
-}
-
-#[test]
-fn a_bare_display_is_no_cache() {
-    use cadmpeg_ir::design::units::{Quantity, ValueKind};
-
-    let ir = part_with_history(
-        br#"<Keywords Name="Bracket">
-            <Extrusion Name="Boss" Type="BossExtrude" id="7">
-                <Dimension Name="D1">25</Dimension>
-            </Extrusion>
-        </Keywords>"#,
-        &[],
-    );
-    let v10 = ir
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.name == "D1")
-        .unwrap();
-    assert!(matches!(
-        v10.value,
-        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) if length.get() == 25.0
-    ));
-    let d1 = parameter_named(&ir, "D1");
-    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
-    assert_eq!(d1.value, None);
-    assert_eq!(expression_json(d1)["kind"], "source");
-    assert_eq!(expression_json(d1)["value"]["tokens"][0]["value"], "25");
-    assert_no_design_findings(&ir);
-}
-
-/// The v11 parameters of a part whose decoder read each dimension named in
-/// `readings` as the value and bound scalar given there, with the scalar
-/// classes `classes`.
-fn parameters_with_readings(
-    keywords: &[u8],
-    readings: &[(
-        &str,
-        &str,
-        cadmpeg_ir::features::parameters::ParameterValue,
-        Option<&str>,
-    )],
-    classes: &[(&str, crate::records::ArchiveParameterClass)],
-    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
-) -> (
-    CadIr,
-    Vec<cadmpeg_ir::design::parameter::DesignParameter>,
-    Option<cadmpeg_ir::report::loss::LossNote>,
-) {
-    let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
-    let mut v10 = ir.model.parameters.clone();
-    for (feature, name, value, scalar) in readings {
-        let owner = &ir
-            .model
-            .features
-            .iter()
-            .find(|candidate| candidate.name.as_deref() == Some(*feature))
-            .unwrap()
-            .id;
-        let parameter = v10
-            .iter_mut()
-            .find(|parameter| parameter.owner.as_ref() == Some(owner) && parameter.name == *name)
-            .unwrap();
-        parameter.value = Some(value.clone());
-        parameter.native_ref = scalar.map(str::to_owned);
-    }
-    let decoded = super::parameters::Decoded {
-        parameters: v10
-            .iter()
-            .map(|parameter| (parameter.id.as_str(), parameter))
-            .collect(),
-        classes: classes
-            .iter()
-            .map(|(scalar, class)| (*scalar, Some(*class)))
-            .collect(),
-    };
-    let timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, rounded) =
-        super::parameters::Entries::new(&native.feature_histories, &timeline)
-            .unwrap()
-            .parameters(
-                &ir.design.scopes[0].definition,
-                &super::parameters::Readings {
-                    decoded,
-                    length_unit,
-                    bound: std::collections::HashMap::new(),
-                    measured: std::collections::HashMap::new(),
-                    driven: std::collections::HashSet::new(),
-                },
-            );
-    (ir, parameters, rounded)
-}
-
-#[test]
-fn a_dimension_caches_the_stored_value_not_its_display() {
-    use crate::records::ArchiveParameterClass;
-    use cadmpeg_ir::design::parameter::{DimensionDisplay, ParameterValue};
-    use cadmpeg_ir::design::units::{Quantity, ValueKind};
-    use cadmpeg_ir::features::parameters::ParameterValue as V10;
-    use cadmpeg_ir::scalar::Length;
-
-    let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters, rounded) = parameters_with_readings(
-        br#"<Keywords Name="Bracket">
-            <Extrusion Name="Inch" Type="BossExtrude" id="7">
-                <Dimension Name="D1">1</Dimension>
-            </Extrusion>
-            <Extrusion Name="Centimetre" Type="BossExtrude" id="8">
-                <Dimension Name="D1">1.5</Dimension>
-            </Extrusion>
-            <Extrusion Name="Rounded" Type="BossExtrude" id="9">
-                <Dimension Name="D1">14.39</Dimension>
-            </Extrusion>
-            <Extrusion Name="Display" Type="BossExtrude" id="10">
-                <Dimension Name="D1">12</Dimension>
-            </Extrusion>
-            <Fillet Name="Round" id="11">
-                <Dimension Name="D1">R0.25</Dimension>
-            </Fillet>
-            <Feature Name="Pattern" Type="LPattern" id="12">
-                <Dimension Name="D1">4</Dimension>
-                <Dimension Name="D2">2.5</Dimension>
-            </Feature>
-        </Keywords>"#,
-        &[
-            ("Inch", "D1", length(25.4), None),
-            ("Centimetre", "D1", length(15.0), None),
-            ("Rounded", "D1", length(365.4552), Some("scalar-rounded")),
-            ("Display", "D1", length(12.0), None),
-            ("Round", "D1", length(6.35), None),
-            ("Pattern", "D1", V10::Integer(4), Some("scalar-count")),
-            ("Pattern", "D2", V10::Real(2.5.try_into().unwrap()), None),
-        ],
-        &[
-            ("scalar-rounded", ArchiveParameterClass::Length),
-            ("scalar-count", ArchiveParameterClass::Integer),
-        ],
-        None,
-    );
-    let named = |feature: &str, name: &str| {
-        let owner = cadmpeg_ir::design::parameter::ParameterOwner::Feature(
-            feature_named(&ir, feature).id.clone(),
-        );
-        parameters
-            .iter()
-            .find(|parameter| {
-                parameter.owner.as_ref() == Some(&owner)
-                    && parameter
-                        .name
-                        .as_ref()
-                        .map(cadmpeg_core::text::NonBlankString::as_str)
-                        == Some(name)
-            })
-            .unwrap_or_else(|| panic!("{feature} {name}: {parameters:#?}"))
-    };
-    for (feature, millimetres) in [
-        ("Inch", Some(25.4)),
-        ("Centimetre", Some(15.0)),
-        ("Rounded", Some(365.4552)),
-        ("Display", None),
-        ("Round", Some(6.35)),
-    ] {
-        let parameter = named(feature, "D1");
-        assert_eq!(
-            parameter.kind,
-            ValueKind::Quantity(Quantity::LENGTH),
-            "{feature}"
-        );
-        let value = match parameter.value {
-            Some(ParameterValue::Number(value)) => Some(value.get()),
-            _ => None,
-        };
-        assert_eq!(value, millimetres, "{feature}");
-        assert_eq!(expression_json(parameter)["kind"], "source", "{feature}");
-    }
-    assert_eq!(named("Round", "D1").display, Some(DimensionDisplay::Radius));
-    let count = named("Pattern", "D1");
-    assert_eq!(count.kind, ValueKind::Integer);
-    assert_eq!(count.value, Some(ParameterValue::Integer(4)));
-    let unread = named("Pattern", "D2");
-    assert!(matches!(&unread.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
-    assert_eq!(unread.value, None);
-    assert!(rounded.is_none(), "{rounded:?}");
-}
-
-#[test]
-fn a_length_display_is_a_literal_in_the_part_length_unit() {
-    use crate::records::ArchiveParameterClass;
-    use cadmpeg_ir::design::parameter::{DimensionDisplay, ParameterValue};
-    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
-    use cadmpeg_ir::features::parameters::ParameterValue as V10;
-    use cadmpeg_ir::scalar::Length;
-
-    let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters, rounded) = parameters_with_readings(
-        br#"<Keywords Name="Bracket">
-            <Extrusion Name="Stored" Type="BossExtrude" id="7">
-                <Dimension Name="D1">1</Dimension>
-            </Extrusion>
-            <Extrusion Name="Rounded" Type="BossExtrude" id="9">
-                <Dimension Name="D1">14.39</Dimension>
-            </Extrusion>
-            <Extrusion Name="Display" Type="BossExtrude" id="10">
-                <Dimension Name="D1">12</Dimension>
-            </Extrusion>
-            <Fillet Name="Round" id="11">
-                <Dimension Name="D1">R0.25</Dimension>
-            </Fillet>
-            <Feature Name="Pattern" Type="LPattern" id="12">
-                <Dimension Name="D1">4</Dimension>
-            </Feature>
-        </Keywords>"#,
-        &[
-            ("Stored", "D1", length(25.4), None),
-            ("Rounded", "D1", length(365.4552), Some("scalar-rounded")),
-            ("Display", "D1", length(12.0), None),
-            ("Round", "D1", length(6.35), None),
-            ("Pattern", "D1", V10::Integer(4), Some("scalar-count")),
-        ],
-        &[
-            ("scalar-rounded", ArchiveParameterClass::Length),
-            ("scalar-count", ArchiveParameterClass::Integer),
-        ],
-        Some(UnitSymbol::In),
-    );
-    let named = |feature: &str| {
-        let owner = cadmpeg_ir::design::parameter::ParameterOwner::Feature(
-            feature_named(&ir, feature).id.clone(),
-        );
-        parameters
-            .iter()
-            .find(|parameter| parameter.owner.as_ref() == Some(&owner))
-            .unwrap_or_else(|| panic!("{feature}: {parameters:#?}"))
-    };
-    for (feature, literal, millimetres) in [
-        ("Stored", "1[in]", 25.4),
-        ("Rounded", "14.388[in]", 365.4552),
-        ("Display", "12[in]", 12.0 * 25.4),
-        ("Round", "0.25[in]", 6.35),
-    ] {
-        let parameter = named(feature);
-        assert_eq!(
-            parameter.kind,
-            ValueKind::Quantity(Quantity::LENGTH),
-            "{feature}"
-        );
-        let expression = expression_json(parameter);
-        assert_eq!(expression["kind"], "neutral", "{feature}");
-        assert_eq!(expression["value"]["text"], literal, "{feature}");
-        let Some(ParameterValue::Number(value)) = parameter.value else {
-            panic!("{feature} has no value");
-        };
-        assert!(
-            (value.get() - millimetres).abs() <= 1e-9 * millimetres,
-            "{feature}"
-        );
-    }
-    assert_eq!(named("Round").display, Some(DimensionDisplay::Radius));
-    assert_eq!(expression_json(named("Pattern"))["kind"], "source");
-    let rounded = rounded.expect("the displayed literal is charged");
-    assert_eq!(
-        rounded.code,
-        crate::loss::SldprtLossCode::DesignParameterDisplayRounded.kind()
-    );
-    assert!(
-        rounded.message.starts_with("1 parameters")
-            && rounded
-                .message
-                .ends_with(&format!(": {}", named("Display").id.as_str())),
-        "{}",
-        rounded.message
-    );
-}
-
-#[test]
-fn a_bare_display_number_states_no_unit() {
-    use super::parameters::bare_display_number;
-
-    assert_eq!(bare_display_number("14.39"), Some(14.39));
-    assert_eq!(bare_display_number("R0.25"), Some(0.25));
-    assert_eq!(bare_display_number("<MOD-DIAM>3.7(72t gear)"), Some(3.7));
-    assert_eq!(bare_display_number("&lt;MOD-DIAM&gt;12"), Some(12.0));
-    assert_eq!(bare_display_number("4X <MOD-DIAM>6"), Some(6.0));
-    assert_eq!(bare_display_number("12.5mm"), None);
-    assert_eq!(bare_display_number("<MOD-DIAM>12.7mm"), None);
-    assert_eq!(bare_display_number("\"wall\" * 2"), None);
-    assert_eq!(bare_display_number("17/32\""), None);
 }
 
 #[test]
@@ -698,6 +289,45 @@ fn configurations_mark_the_active_one() {
             && material.material == MaterialRef::Named(cadmpeg_core::nonblank_literal!("Aluminum"))
     ));
     assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_lone_configuration_without_source_index_is_the_active_one() {
+    let keywords: [&[u8]; 2] = [
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default" id="0"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+    ];
+    for keywords in keywords {
+        let ir = part_with_history(keywords, &[]);
+        let [configuration] = ir.model.configurations.as_slice() else {
+            panic!("one configuration: {:#?}", ir.model.configurations);
+        };
+        assert!(configuration.active);
+        assert!(configuration.native_ref.is_some());
+        assert_eq!(configuration.source_index, Some(0));
+        assert_eq!(
+            configuration.bodies.as_deref().map(|bodies| bodies
+                .iter()
+                .map(|body| body.as_str().to_owned())
+                .collect::<Vec<_>>()),
+            Some(body_ids(&ir))
+        );
+        let [scope] = ir.design.scopes.as_slice() else {
+            panic!("one scope");
+        };
+        let [design] = ir.design.configurations.as_slice() else {
+            panic!("one design configuration: {:#?}", ir.design.configurations);
+        };
+        assert_eq!(design.name, "Default");
+        assert_eq!(scope.active_configuration.as_ref(), Some(&design.id));
+        assert_no_design_findings(&ir);
+    }
 }
 
 /// The triangle body whose face carries the `FACE_ID_2001` list `face` and
@@ -1287,9 +917,12 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     for parameter in &parameters {
@@ -1488,9 +1121,12 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
             bound: typed.bound,
             measured: typed.measured,
             driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
         },
     );
     let diameter = parameters
@@ -1857,4 +1493,5 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
+mod parameters;
 mod rollback;

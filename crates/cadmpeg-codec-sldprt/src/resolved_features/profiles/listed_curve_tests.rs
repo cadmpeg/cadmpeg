@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinitio
 
 use super::{
     marker_is_construction, project_marker_backed_sketches, HeldMarkerGeometry,
-    MarkerSketchEntities, SketchRecordLists,
+    MarkerSketchEntities, MarkerSources, SketchRecordLists,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -230,8 +230,11 @@ fn projected_curve_in(
             projected: &mut entities,
             held: &mut held,
         },
-        &histories,
-        &lanes,
+        MarkerSources {
+            histories: &histories,
+            lanes: &lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut losses,
     )
     .expect("projection fits service policy");
@@ -263,16 +266,27 @@ fn assert_unresolved_line_handle(payload: Vec<u8>, curve: usize) {
     ));
 }
 
+/// `docs/formats/sldprt.md` §2.3: a line with an identifier trailer indexes
+/// the point records of its sketch by position like every other curve record,
+/// so it is the line between them and its +17 value is no relation code.
 #[test]
-fn an_object_identifier_line_with_a_relation_code_is_a_line_handle() {
-    let (payload, curve) = sketch_with_line(CODE_FOUR, 4, [0, 1], 0, 7);
-    assert_unresolved_line_handle(payload, curve);
-}
-
-#[test]
-fn a_direct_identifier_line_with_a_relation_code_is_a_line_handle() {
-    let (payload, curve) = sketch_with_line(CODE_FOUR, 12, [0, 1], 1, 7);
-    assert_unresolved_line_handle(payload, curve);
+fn an_identifier_trailer_line_with_a_relation_code_is_a_line() {
+    for (selector, trailer) in [(4, 0), (12, 1)] {
+        let (payload, curve) = sketch_with_line(CODE_FOUR, selector, [0, 1], trailer, 7);
+        let (kind, entity, losses) = projected_curve(payload, curve);
+        assert_eq!(kind, SketchInputKind::LineOrCircle);
+        assert!(matches!(
+            entity.expect("the line is projected").geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ));
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss.code == SldprtLossCode::SketchListedCurveRelationDropped.kind())
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]
@@ -406,7 +420,7 @@ fn selector_twelve_role_one_circle_construction_agrees_between_projection_paths(
     }
     payload.extend_from_slice(&[0; 10]);
     let lists = SketchRecordLists::new(&payload);
-    assert!(lists.readable_curve(&payload, curve));
+    assert!(lists.listed_curve(&payload, curve).is_some());
     let (_, entity, losses) = projected_curve(payload.clone(), curve);
     let entity = entity.expect("the listed circle is projected");
     assert!(matches!(
@@ -418,7 +432,7 @@ fn selector_twelve_role_one_circle_construction_agrees_between_projection_paths(
     let held = SketchGeometry::native(cadmpeg_core::nonblank_const!("sldprt:synthetic-circle"));
     for geometry in [&entity.geometry, &held] {
         assert_eq!(
-            marker_is_construction(&payload, &lists, curve, geometry),
+            marker_is_construction(&payload, &lists, curve, geometry, None),
             (entity.construction, false)
         );
     }
@@ -443,7 +457,7 @@ fn selector_twelve_roster_line_is_construction() {
         SldprtLossCode::SketchListedCurveRelationDropped.kind()
     );
     assert_eq!(
-        marker_is_construction(&payload, &lists, curve, &entity.geometry),
+        marker_is_construction(&payload, &lists, curve, &entity.geometry, None),
         (true, false)
     );
 }
@@ -462,7 +476,7 @@ fn selector_twelve_role_one_line_is_construction_on_both_paths() {
             let entity = entity.expect("the listed line keeps an entity");
             assert!(entity.construction);
             assert_eq!(
-                marker_is_construction(&payload, &lists, curve, &entity.geometry),
+                marker_is_construction(&payload, &lists, curve, &entity.geometry, None),
                 (true, true)
             );
             assert_eq!(losses.len(), if code == CODE_FOUR { 2 } else { 1 });
@@ -489,4 +503,30 @@ fn selector_twelve_role_one_line_is_construction_on_both_paths() {
             assert!(loss.message.contains("selector bit 3"));
         }
     }
+}
+
+/// A curve that its `sgSketch` record gives takes its construction mark from
+/// the record's selector, also where the marker layout of the same bytes
+/// reads a selected construction line.
+#[test]
+fn a_record_read_curve_takes_construction_from_its_selector_alone() {
+    let (mut payload, curve) = sketch_with_line(2, 4, [0, 1], 0, u32::MAX);
+    let prefix = crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+    payload[curve..curve + prefix.len()].copy_from_slice(prefix);
+    let role = curve + crate::layout::current_extended_zero_tail_92_profile_curve::ROLE;
+    payload[role..role + 2].copy_from_slice(&2u16.to_le_bytes());
+    let lists = SketchRecordLists::new(&payload);
+    let geometry = SketchGeometry::native(cadmpeg_core::nonblank_const!("sldprt:synthetic-line"));
+    assert_eq!(
+        marker_is_construction(&payload, &lists, curve, &geometry, None),
+        (true, false)
+    );
+    assert_eq!(
+        marker_is_construction(&payload, &lists, curve, &geometry, Some(false)),
+        (false, false)
+    );
+    assert_eq!(
+        marker_is_construction(&payload, &lists, curve, &geometry, Some(true)),
+        (true, false)
+    );
 }

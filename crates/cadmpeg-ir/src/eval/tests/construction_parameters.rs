@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::geometry::legacy_cache::CacheContract;
+use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use crate::geometry::{
-    nurbs::NurbsCurve, CacheContract, Curve, CurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};

@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/sldprt.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
 ///
@@ -46,6 +46,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const REFERENCE_SENTINEL: usize = 4;
     /// Offset of `zero_trailer` (`bytes[4]`). Spec §2.
     pub(crate) const ZERO_TRAILER: usize = 8;
+}
+
+/// Byte offsets for the `feature_input_scalar_class_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// ```
+pub(crate) mod feature_input_scalar_class_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
 }
 
 /// Byte offsets for the `outer_header` record.
@@ -1949,6 +1963,8 @@ pub(crate) mod extrusion_sparse_long_zero_operation_trailer {
 ///
 /// Spec §2. Record length 48 B.
 pub(crate) mod component_source_two_handle_record {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 48;
     /// Offset of `feature_id` (`u32`, little-endian). Spec §2.
     pub(crate) const FEATURE_ID: usize = 0;
     /// Offset of `stamp` (`u32`, little-endian). Spec §2.
@@ -1975,6 +1991,8 @@ pub(crate) mod component_source_two_handle_record {
 ///
 /// Spec §2. Record length 52 B.
 pub(crate) mod component_source_three_handle_record {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 52;
     /// Offset of `third_handle` (`u32`, little-endian). Spec §2.
     pub(crate) const THIRD_HANDLE: usize = 40;
     /// Offset of `handle_end` (`u32`, little-endian). Spec §2.
@@ -2906,6 +2924,36 @@ pub(crate) mod named_object_header {
     pub(crate) const OBJECT_ID: usize = 8;
 }
 
+/// Byte offsets for the `length_user_units_base` record.
+///
+/// Spec §Configuration objects. Record length 48 B.
+///
+/// ```text
+/// The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+/// ```
+pub(crate) mod length_user_units_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `precision` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const PRECISION: usize = 0;
+    /// Offset of `last_word` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const LAST_WORD: usize = 44;
+    /// Stated value of `last_word` (`u32`). Spec §Configuration objects.
+    pub(crate) const LAST_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `length_user_units_block_base` record.
+///
+/// Spec §Configuration objects. Record length 62 B.
+///
+/// ```text
+/// The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+/// ```
+pub(crate) mod length_user_units_block_base {
+    /// Record length in bytes. Spec §Configuration objects.
+    pub(crate) const LEN: usize = 62;
+}
+
 /// Byte offsets for the `sketch_record_head` record.
 ///
 /// Spec §Sketch objects. Record length 64 B.
@@ -2920,6 +2968,10 @@ pub(crate) mod sketch_record_head {
     pub(crate) const ATTRIBUTE_MINUS_ONE: usize = 13;
     /// Offset of `locus` (`bytes[4]`). Spec §Sketch objects.
     pub(crate) const LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §Sketch objects.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §Sketch objects.
+    pub(crate) const STATE: usize = 29;
     /// Offset of `minus_one` (`f32`, little-endian). Spec §Sketch objects.
     pub(crate) const MINUS_ONE: usize = 31;
     /// Offset of `object_pointer` (`u16`, little-endian). Spec §Sketch objects.
@@ -3384,6 +3436,51 @@ pub(crate) mod weldment_xt_entry_prefix {
     pub(crate) const STREAM_LEN: usize = 4;
 }
 
+/// Byte offsets for the `equation_token_words` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words.
+/// ```
+pub(crate) mod equation_token_words {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 16;
+}
+
+/// Byte offsets for the `equation_expression_separator` record.
+///
+/// Spec §2. Record length 10 B.
+///
+/// ```text
+/// The expression side's class tag and token count follow.
+/// ```
+pub(crate) mod equation_expression_separator {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 10;
+    /// Stated value of `separator_lead` (`bytes[8]`). Spec §2.
+    pub(crate) const SEPARATOR_LEAD_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `equation_dimension_reference_token` record.
+///
+/// Spec §2. Record length 16 B.
+///
+/// ```text
+/// The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value.
+/// ```
+pub(crate) mod equation_dimension_reference_token {
+    /// Offset of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD: usize = 2;
+    /// Stated value of `dimension_pad` (`bytes[4]`). Spec §2.
+    pub(crate) const DIMENSION_PAD_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `wrapper_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const WRAPPER_CLASS_TOKEN: usize = 6;
+    /// Offset of `stored_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STORED_VALUE: usize = 8;
+}
+
 /// Byte offsets for the `draft_declared_neutral_frame` record.
 ///
 /// Spec §2. Record length 120 B.
@@ -3498,4 +3595,135 @@ pub(crate) mod pmark_record_head {
     pub(crate) const FORM: usize = 4;
     /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM_WORD: usize = 8;
+}
+
+/// Byte offsets for the `sweep_wire_contact` record.
+///
+/// Spec §2. Record length 62 B.
+pub(crate) mod sweep_wire_contact {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 62;
+    /// Offset of `first_vector` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const FIRST_VECTOR: usize = 0;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 24;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `one` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE: usize = 28;
+    /// Stated value of `one` (`u32`). Spec §2.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `sentinel` (`i32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 32;
+    /// Stated value of `sentinel` (`i32`). Spec §2.
+    pub(crate) const SENTINEL_VALUE: i32 = -1;
+    /// Offset of `dimension` (`u16`, little-endian). Spec §2.
+    pub(crate) const DIMENSION: usize = 36;
+    /// Stated value of `dimension` (`u16`). Spec §2.
+    pub(crate) const DIMENSION_VALUE: u16 = 0x0002;
+    /// Offset of `second_vector` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const SECOND_VECTOR: usize = 38;
+}
+
+/// Byte offsets for the `sweep_component_tail` record.
+///
+/// Spec §2. Record length 33 B.
+pub(crate) mod sweep_component_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `leading_zeros` (`bytes[12]`). Spec §2.
+    pub(crate) const LEADING_ZEROS: usize = 0;
+    /// Stated value of `leading_zeros` (`bytes[12]`). Spec §2.
+    pub(crate) const LEADING_ZEROS_VALUE: [u8; 12] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `reference_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL: usize = 12;
+    /// Stated value of `reference_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL_VALUE: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+    /// Offset of `second_zeros` (`bytes[8]`). Spec §2.
+    pub(crate) const SECOND_ZEROS: usize = 16;
+    /// Stated value of `second_zeros` (`bytes[8]`). Spec §2.
+    pub(crate) const SECOND_ZEROS_VALUE: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `unit` (`f64`, little-endian). Spec §2.
+    pub(crate) const UNIT: usize = 24;
+    /// Offset of `body_flag` (`u8`). Spec §2.
+    pub(crate) const BODY_FLAG: usize = 32;
+}
+
+/// Byte offsets for the `sweep_component_suffix` record.
+///
+/// Spec §2. Record length 14 B.
+pub(crate) mod sweep_component_suffix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `sentinel` (`bytes[8]`). Spec §2.
+    pub(crate) const SENTINEL: usize = 0;
+    /// Stated value of `sentinel` (`bytes[8]`). Spec §2.
+    pub(crate) const SENTINEL_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    /// Offset of `zeros` (`bytes[6]`). Spec §2.
+    pub(crate) const ZEROS: usize = 8;
+    /// Stated value of `zeros` (`bytes[6]`). Spec §2.
+    pub(crate) const ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `sweep_reference_blob_prefix` record.
+///
+/// Spec §2. Record length 10 B.
+pub(crate) mod sweep_reference_blob_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 10;
+    /// Offset of `first_zero` (`u8`). Spec §2.
+    pub(crate) const FIRST_ZERO: usize = 0;
+    /// Stated value of `first_zero` (`u8`). Spec §2.
+    pub(crate) const FIRST_ZERO_VALUE: u8 = 0;
+    /// Offset of `outer_length` (`u32`, little-endian). Spec §2.
+    pub(crate) const OUTER_LENGTH: usize = 1;
+    /// Offset of `second_zero` (`u8`). Spec §2.
+    pub(crate) const SECOND_ZERO: usize = 5;
+    /// Stated value of `second_zero` (`u8`). Spec §2.
+    pub(crate) const SECOND_ZERO_VALUE: u8 = 0;
+    /// Offset of `inner_length` (`u32`, little-endian). Spec §2.
+    pub(crate) const INNER_LENGTH: usize = 6;
+}
+
+/// Byte offsets for the `sweep_options` record.
+///
+/// Spec §2. Record length 105 B.
+pub(crate) mod sweep_options {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 105;
+    /// Offset of `circular_section` (`u16`, little-endian). Spec §2.
+    pub(crate) const CIRCULAR_SECTION: usize = 86;
+    /// Offset of `section_word` (`u16`, little-endian). Spec §2.
+    pub(crate) const SECTION_WORD: usize = 88;
+    /// Stated value of `section_word` (`u16`). Spec §2.
+    pub(crate) const SECTION_WORD_VALUE: u16 = 0x0000;
+    /// Offset of `diameter` (`f64`, little-endian). Spec §2.
+    pub(crate) const DIAMETER: usize = 90;
+}
+
+/// Byte offsets for the `sweep_reference_blob_trailer` record.
+///
+/// Spec §2. Record length 8 B.
+pub(crate) mod sweep_reference_blob_trailer {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+}
+
+/// Byte offsets for the `sweep_component_profile_extended_prefix` record.
+///
+/// Spec §2. Record length 85 B.
+pub(crate) mod sweep_component_profile_extended_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 85;
+    /// Offset of `reference_sentinel` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL: usize = 45;
+    /// Stated value of `reference_sentinel` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL_VALUE: [u8; 16] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff,
+    ];
+    /// Offset of `header_word` (`u32`, little-endian). Spec §2.
+    pub(crate) const HEADER_WORD: usize = 81;
 }

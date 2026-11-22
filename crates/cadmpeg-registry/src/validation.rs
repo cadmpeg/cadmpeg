@@ -38,10 +38,7 @@ pub fn check_with_context(
     };
     report
         .findings
-        .extend(cadmpeg_measure::findings(ctx, document, options)?);
-    report
-        .findings
-        .extend(cadmpeg_measure::declared_findings(ctx, document, options)?);
+        .extend(cadmpeg_measure::check_findings(ctx, document, options)?);
     Ok(report)
 }
 

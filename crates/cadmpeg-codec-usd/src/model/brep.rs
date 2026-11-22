@@ -20,19 +20,21 @@ use cadmpeg_ir::geometry::nurbs::{
 use cadmpeg_ir::geometry::pcurve::{
     CirclePcurve, EllipsePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs,
 };
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::{
     AxisRevolutionSurfaceConstruction, LinearSweepSurfaceConstruction,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
-    BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse,
-    Point, Region, Sense, Shell, Vertex,
+    AnchoredVertexUse, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
+    LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
 
 use crate::brep::{
@@ -62,6 +64,10 @@ pub(crate) struct Imported {
 
 /// Why a B-rep has no neutral form.
 type Refusal = String;
+
+/// A pole of a loop: the position of the coedge before it, when one comes
+/// before it, the pole vertex, and its pcurve with the pcurve's identity.
+type PoleUse = (Option<usize>, usize, Option<(Reference, PcurveId)>);
 
 fn vector(values: [f64; 3]) -> Vector3 {
     Vector3::new(values[0], values[1], values[2])
@@ -418,6 +424,59 @@ fn pcurve_geometry(
     }
 }
 
+/// Whether edge `edge` is degenerate (spec §17.2): its ends are one vertex
+/// and its curve, when it has one, stays within the tolerance of that vertex.
+fn degenerate(brep: &Brep, edge: usize) -> bool {
+    let Some(record) = brep.edges.get(edge) else {
+        return false;
+    };
+    let [start, end] = record.vertices;
+    if start != end {
+        return false;
+    }
+    let Some(position) = brep.vertices.get(start) else {
+        return false;
+    };
+    match record.curve {
+        None => true,
+        Some((Catalog::Nurbs, curve)) => brep.nurbs_curves.get(curve).is_some_and(|curve| {
+            curve.points.iter().all(|point| {
+                (0..3)
+                    .map(|axis| (point[axis] - position[axis]).powi(2))
+                    .sum::<f64>()
+                    .sqrt()
+                    <= brep.tolerance
+            })
+        }),
+        Some((Catalog::Analytic, _)) => false,
+    }
+}
+
+/// Adds pcurve `pcurve` as `pcurve_id` and returns its use.
+fn pcurve_use(
+    out: &mut Imported,
+    brep: &Brep,
+    pcurve: Reference,
+    pcurve_id: PcurveId,
+    chart: [f64; 2],
+    scale: f64,
+) -> Result<PcurveUse, Refusal> {
+    let (geometry, parameter_range) = pcurve_geometry(brep, pcurve, chart, scale)?;
+    out.pcurves.push(Pcurve {
+        id: pcurve_id.clone(),
+        geometry,
+        metadata: PcurveMetadata::General {
+            form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
+        },
+        native_ref: None,
+    });
+    Ok(PcurveUse {
+        pcurve: pcurve_id,
+        isoparametric: None,
+        parameter_range,
+    })
+}
+
 fn catalog_name(catalog: Catalog) -> &'static str {
     catalog.token()
 }
@@ -489,7 +548,9 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     };
     let mut used_edges = BTreeSet::new();
     for oriented in &brep.oriented_edges {
-        used_edges.insert(oriented.edge);
+        if !degenerate(brep, oriented.edge) {
+            used_edges.insert(oriented.edge);
+        }
     }
     for edge in &used_edges {
         if let Some((catalog, index)) = brep.edges[*edge].curve {
@@ -564,6 +625,12 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
     }
     for loop_ in &brep.loops {
         used_vertices.extend(loop_.vertex);
+        used_vertices.extend(loop_.poles.iter().map(|pole| pole.vertex));
+    }
+    for oriented in &brep.oriented_edges {
+        if degenerate(brep, oriented.edge) {
+            used_vertices.insert(brep.edges[oriented.edge].vertices[0]);
+        }
     }
     for vertex in &used_vertices {
         let point = id::point(key, *vertex);
@@ -659,28 +726,39 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let face_record = &brep.faces[face];
         let surface_chart = chart(brep, face_record.surface, scale);
         let mut coedge_ids = Vec::new();
+        let mut poles: Vec<PoleUse> = record
+            .poles
+            .iter()
+            .enumerate()
+            .map(|(position, pole)| {
+                let pcurve = pole
+                    .pcurve
+                    .map(|pcurve| (pcurve, id::pole_pcurve(key, loop_, position)));
+                (Some(pole.after), pole.vertex, pcurve)
+            })
+            .collect();
         for oriented in &record.oriented_edges {
             let use_ = &brep.oriented_edges[*oriented];
             let edge = &brep.edges[use_.edge];
+            if degenerate(brep, use_.edge) {
+                let pcurve = use_
+                    .pcurve
+                    .map(|pcurve| (pcurve, id::pcurve(key, catalog_name(pcurve.0), *oriented)));
+                poles.push((coedge_ids.len().checked_sub(1), edge.vertices[0], pcurve));
+                continue;
+            }
             let coedge_id = id::coedge(key, *oriented);
             let mut pcurves = Vec::new();
             if let Some(pcurve) = use_.pcurve {
-                let (geometry, parameter_range) =
-                    pcurve_geometry(brep, pcurve, surface_chart, scale)?;
                 let pcurve_id: PcurveId = id::pcurve(key, catalog_name(pcurve.0), *oriented);
-                out.pcurves.push(Pcurve {
-                    id: pcurve_id.clone(),
-                    geometry,
-                    metadata: PcurveMetadata::General {
-                        form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
-                    },
-                    native_ref: None,
-                });
-                pcurves.push(PcurveUse {
-                    pcurve: pcurve_id,
-                    isoparametric: None,
-                    parameter_range,
-                });
+                pcurves.push(pcurve_use(
+                    &mut out,
+                    brep,
+                    pcurve,
+                    pcurve_id,
+                    surface_chart,
+                    scale,
+                )?);
             }
             radial.entry(use_.edge).or_default().push(out.coedges.len());
             out.coedges.push(Coedge {
@@ -699,7 +777,45 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             });
             coedge_ids.push(coedge_id);
         }
-        let ring = LoopRing::new(coedge_ids, Vec::new())
+        let mut vertex_uses = Vec::new();
+        for (after, vertex, pcurve) in poles {
+            let mut pcurves = Vec::new();
+            if let Some((pcurve, pcurve_id)) = pcurve {
+                pcurves.push(pcurve_use(
+                    &mut out,
+                    brep,
+                    pcurve,
+                    pcurve_id,
+                    surface_chart,
+                    scale,
+                )?);
+            }
+            let Some(last) = coedge_ids.len().checked_sub(1) else {
+                out.loops.push(Loop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    boundary: LoopBoundary::Vertex {
+                        vertex: id::vertex(key, vertex),
+                        pcurves,
+                    },
+                    native_ref: None,
+                });
+                break;
+            };
+            let after = coedge_ids
+                .get(after.unwrap_or(last))
+                .cloned()
+                .ok_or_else(|| format!("loop {loop_} has a pole after no oriented edge"))?;
+            vertex_uses.push(AnchoredVertexUse {
+                vertex: id::vertex(key, vertex),
+                after,
+                pcurves,
+            });
+        }
+        if coedge_ids.is_empty() {
+            continue;
+        }
+        let ring = LoopRing::new(coedge_ids, vertex_uses)
             .map_err(|error| format!("loop {loop_}: {error}"))?;
         out.loops.push(Loop {
             id: loop_id,
