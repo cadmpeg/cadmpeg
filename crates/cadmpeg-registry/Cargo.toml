@@ -73,8 +73,6 @@ toml.workspace = true
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only byte-fixture writers shared with the codec crates.
 cadmpeg-test-support = { workspace = true }
-cadmpeg-codec-nx.workspace = true
-cadmpeg-codec-sldprt.workspace = true
 cadmpeg-parasolid.workspace = true
 zip.workspace = true
 
