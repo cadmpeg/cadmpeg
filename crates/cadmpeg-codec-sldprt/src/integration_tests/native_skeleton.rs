@@ -745,8 +745,8 @@ fn a_part_whose_write_leaves_out_a_feature_keeps_its_stored_body() {
     let summary = loss(&losses, "writer.native-history-summary");
     assert!(
         summary.message.contains(
-            "the tree writes no extrusion natively because the write leaves out source \
-             feature(s) other:model:feature#insert"
+            "the tree writes no extrusion natively because the write leaves out source feature \
+             other:model:feature#insert, which records no body it makes or changes"
         ),
         "{}",
         summary.message
@@ -792,6 +792,53 @@ fn a_second_extrusion_keeps_the_stored_body() {
             summary.message
         );
     }
+}
+
+/// A part the tree cannot write the extrusion of keeps the native sketches,
+/// the skeleton and the stored body, and names why.
+fn assert_stored_body_because(ir: &cadmpeg_ir::CadIr, reason: &str) {
+    let (bytes, losses) = write_with_losses(ir);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "writer.native-skeleton-omitted"),
+        "{losses:#?}"
+    );
+    let (walk, _) = walk(&bytes);
+    let classes = classes(&walk);
+    assert!(classes.contains(&"moBaseBody_c"), "{classes:?}");
+    assert!(!classes.contains(&"moExtrusion_c"), "{classes:?}");
+    assert_eq!(walk.sketch_profiles.len(), 2, "both sketches stay native");
+    let summary = loss(&losses, "writer.native-history-summary");
+    assert!(summary.message.contains(reason), "{}", summary.message);
+}
+
+#[test]
+fn an_extrusion_before_its_sketch_in_the_source_order_keeps_the_stored_body() {
+    let mut ir = cube_with_extrusion();
+    for feature in &mut ir.model.features {
+        match feature.id.as_str() {
+            "synthetic:test:feature#Rectangle" => feature.ordinal = 2,
+            "synthetic:test:feature#Boss" => feature.ordinal = 0,
+            _ => {}
+        }
+    }
+    assert_stored_body_because(
+        &ir,
+        "extrusion synthetic:test:feature#Boss does not follow its sketch \
+         synthetic:test:sketch#Rectangle in the source order",
+    );
+}
+
+#[test]
+fn a_suppressed_extrusion_keeps_the_stored_body() {
+    let mut ir = cube_with_extrusion();
+    for feature in &mut ir.model.features {
+        if feature.id.as_str() == "synthetic:test:feature#Boss" {
+            feature.suppressed = Some(true);
+        }
+    }
+    assert_stored_body_because(&ir, "extrusion synthetic:test:feature#Boss is suppressed");
 }
 
 /// An extrusion along the normal of a sketch whose normal opposes its

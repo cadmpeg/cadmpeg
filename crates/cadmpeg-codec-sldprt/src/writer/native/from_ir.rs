@@ -34,6 +34,13 @@ const POINT_MERGE_TOLERANCE_M: f64 = 1.0e-9;
 /// Millimetres to metres.
 const METRES_PER_MILLIMETRE: f64 = 0.001;
 
+/// A source feature and the bodies its evaluation makes or changes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::writer) struct SourceFeature {
+    pub(in crate::writer) id: String,
+    pub(in crate::writer) outputs: Vec<String>,
+}
+
 /// The user features of a generated part, or why the tree writes none of
 /// them.
 #[derive(Debug)]
@@ -54,12 +61,12 @@ pub(in crate::writer) enum Features {
 /// as a native sketch, when each lies on a default plane and holds only
 /// points, lines, arcs and circles that are not construction geometry, and
 /// the part holds no spatial sketch; and the extrusion that makes the part's
-/// body (see [`extrusion`]). `left_out` names the source features the write
+/// body (see [`extrusion`]). `left_out` holds the source features the write
 /// leaves out.
 pub(in crate::writer) fn features(
     ir: &cadmpeg_ir::CadIr,
     native: Option<&crate::native::SldprtNative>,
-    left_out: &[String],
+    left_out: &[SourceFeature],
 ) -> Result<Features, CodecError> {
     if let Some(spatial) = ir.model.spatial_sketches.first() {
         return Ok(Features::Lane(format!(
@@ -118,6 +125,7 @@ pub(in crate::writer) fn features(
         };
         written.push(WrittenSketch {
             id: sketch.id.clone(),
+            ordinal: owner.ordinal,
             feature_id,
             flipped,
         });
@@ -150,27 +158,29 @@ pub(in crate::writer) fn features(
     })
 }
 
-/// A sketch the tree writes: its id, its object identifier and whether its
-/// normal opposes its plane's.
+/// A sketch the tree writes: its id, its owner's ordinal, its object
+/// identifier and whether its normal opposes its plane's.
 struct WrittenSketch {
     id: cadmpeg_ir::sketches::SketchId,
+    ordinal: u64,
     feature_id: u32,
     flipped: bool,
 }
 
 /// The extrusion of `ir` with its ordinal and the sketch it extrudes, none
 /// when `ir` holds no extrusion, or why the tree writes none: the tree writes
-/// an extrusion when the write keeps every source feature, the part holds one
-/// body, and its features are written sketches and one extrusion that makes
+/// an extrusion when every source feature the write leaves out made only
+/// bodies the write omits (see [`left_out_reason`]), the part holds one body,
+/// and its features are written sketches and one active extrusion that makes
 /// that body, one-sided and blind, from the plane of every profile of one
-/// written sketch along its normal, without draft. A second extrusion would
-/// take the part's one `moAtom_c` as its input too, which no native part
-/// does.
+/// written sketch that precedes it, along its normal, without draft. A second
+/// extrusion would take the part's one `moAtom_c` as its input too, which no
+/// native part does.
 fn extrusion(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
     sketches: &[WrittenSketch],
-    left_out: &[String],
+    left_out: &[SourceFeature],
 ) -> Result<Option<(u64, Feature)>, String> {
     use cadmpeg_ir::features::{
         extents::{ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination},
@@ -198,12 +208,24 @@ fn extrusion(
         return Ok(None);
     };
     let id = feature.id.as_str();
-    if !left_out.is_empty() {
-        return Err(format!(
-            "the write leaves out source feature(s) {}, so the native features would not make \
-             the part's current body",
-            left_out.join(", ")
-        ));
+    let made = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .chain(
+            feature
+                .evaluation
+                .outputs()
+                .iter()
+                .map(cadmpeg_ir::ids::BodyId::as_str),
+        )
+        .collect::<Vec<_>>();
+    if let Some(reason) = left_out_reason(left_out, &made) {
+        return Err(reason);
+    }
+    if feature.suppressed == Some(true) {
+        return Err(format!("extrusion {id} is suppressed"));
     }
     if let Some((second, _)) = extrusions.next() {
         return Err(format!(
@@ -255,6 +277,14 @@ fn extrusion(
         .iter()
         .find(|candidate| candidate.id == *sketch)
         .ok_or_else(|| format!("extrusion {id} extrudes a sketch the tree does not write"))?;
+    // The tree writes features in source order, and an extrusion names its
+    // sketch as an earlier object.
+    if sketch.ordinal >= feature.ordinal {
+        return Err(format!(
+            "extrusion {id} does not follow its sketch {} in the source order",
+            sketch.id.as_str()
+        ));
+    }
     let ExtrudeExtent::OneSided { side } = extent else {
         return Err(format!("extrusion {id} is not one-sided"));
     };
@@ -305,6 +335,35 @@ fn extrusion(
             reversed: against ^ sketch.flipped ^ (depth < 0.0),
         }),
     )))
+}
+
+/// Why the native features would not make the part's current body when the
+/// write leaves out `left_out`, or none when every body a left-out feature
+/// makes or changes is one the write omits; `made` names the bodies the write
+/// keeps and the bodies the extrusion makes. A left-out feature that records
+/// no body may have changed the kept one.
+fn left_out_reason(left_out: &[SourceFeature], made: &[&str]) -> Option<String> {
+    left_out.iter().find_map(|feature| {
+        if feature.outputs.is_empty() {
+            return Some(format!(
+                "the write leaves out source feature {}, which records no body it makes or \
+                 changes, so the native features may not make the part's current body",
+                feature.id
+            ));
+        }
+        feature
+            .outputs
+            .iter()
+            .find(|body| made.contains(&body.as_str()))
+            .map(|body| {
+                format!(
+                    "the write leaves out source feature {}, which makes or changes body {body} \
+                     that the extrusion makes, so the native extrusion would not make the \
+                     part's current body",
+                    feature.id
+                )
+            })
+    })
 }
 
 /// The operand handle of each entity and of each locus that is a point.
@@ -631,4 +690,43 @@ fn dot(vector: Vector3, axis: [f64; 3]) -> f64 {
 
 fn dot_point(point: Point3, axis: [f64; 3]) -> f64 {
     point.x * axis[0] + point.y * axis[1] + point.z * axis[2]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{left_out_reason, SourceFeature};
+
+    fn left_out(id: &str, outputs: &[&str]) -> SourceFeature {
+        SourceFeature {
+            id: id.into(),
+            outputs: outputs.iter().map(ToString::to_string).collect(),
+        }
+    }
+
+    #[test]
+    fn a_left_out_feature_that_made_only_omitted_bodies_keeps_the_extrusion() {
+        let coil = left_out("feature#coil", &["body#coil"]);
+        assert_eq!(left_out_reason(&[coil], &["body#boss"]), None);
+    }
+
+    #[test]
+    fn a_left_out_feature_that_changed_the_extruded_body_keeps_the_stored_body() {
+        let draft = left_out("feature#draft", &["body#boss"]);
+        let reason = left_out_reason(&[draft], &["body#boss"]).expect("a reason");
+        assert!(
+            reason.contains("feature#draft, which makes or changes body body#boss"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn a_left_out_feature_with_no_recorded_body_keeps_the_stored_body() {
+        let coil = left_out("feature#coil", &["body#coil"]);
+        let insert = left_out("feature#insert", &[]);
+        let reason = left_out_reason(&[coil, insert], &["body#boss"]).expect("a reason");
+        assert!(
+            reason.contains("feature#insert, which records no body"),
+            "{reason}"
+        );
+    }
 }

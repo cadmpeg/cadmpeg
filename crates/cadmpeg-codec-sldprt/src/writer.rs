@@ -109,7 +109,15 @@ pub(crate) fn write_semantic_with_records(
         .model
         .features
         .iter()
-        .map(|feature| feature.id.as_str().to_owned())
+        .map(|feature| native::from_ir::SourceFeature {
+            id: feature.id.as_str().to_owned(),
+            outputs: feature
+                .evaluation
+                .outputs()
+                .iter()
+                .map(|body| body.as_str().to_owned())
+                .collect(),
+        })
         .collect::<Vec<_>>();
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
@@ -468,7 +476,7 @@ pub(crate) fn write_semantic_with_records(
             .collect::<HashSet<_>>();
         let left_out = source_features
             .iter()
-            .filter(|feature| !kept.contains(feature.as_str()))
+            .filter(|feature| !kept.contains(feature.id.as_str()))
             .cloned()
             .collect::<Vec<_>>();
         let written = native_skeleton(
@@ -566,7 +574,7 @@ const SKELETON_RESOLVED: &str = "Contents/Config-0-ResolvedFeatures";
 /// the skeleton states, or why it is not written; `sections` is then
 /// unchanged.
 ///
-/// `left_out` names the source features the write leaves out.
+/// `left_out` holds the source features the write leaves out.
 /// `solidworks_history` states that the input holds a feature history or
 /// lane of a `SolidWorks` part. Its lane's class tags index the class map of
 /// that part's `Contents/Config-0`, which a write without the source's
@@ -576,7 +584,7 @@ fn native_skeleton(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     solidworks_history: bool,
-    left_out: &[String],
+    left_out: &[native::from_ir::SourceFeature],
     sections: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, String> {
     if solidworks_history {
@@ -700,7 +708,7 @@ fn native_skeleton(
         summarized,
         lane_reason.filter(|_| lane_merged),
         !features.is_empty(),
-        extruded,
+        extruded.then_some(left_out),
     ))
 }
 
@@ -737,12 +745,14 @@ fn native_part_name(name: &str) -> String {
 
 /// The losses of a written native skeleton. `summarized` holds the history
 /// summary streams and the features written only in them, when the write
-/// holds one.
+/// holds one. `features` states that the tree writes native sketches;
+/// `extruded` holds, when it writes a native extrusion, the source features
+/// the write leaves out.
 fn native_skeleton_losses(
     summarized: Option<(String, Vec<String>, Option<String>)>,
     lane_follows: Option<String>,
     features: bool,
-    extruded: bool,
+    extruded: Option<&[native::from_ir::SourceFeature]>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
     let mut losses = Vec::new();
@@ -791,17 +801,39 @@ fn native_skeleton_losses(
              natively because {reason}"
         )));
     }
-    if extruded {
-        losses.push(SldprtLossCode::WriterNativeBodyIdentityOmitted.note(
-            "the native extrusion names no face of the body it makes: its \
-             moPerBodyChooserData_c holds no face reference, where native parts of swVersion \
-             14000 hold two whose hops name the extrusion and a sketch entity, and the \
-             partition's faces carry no FACE_ID_2001 attribute naming the feature that made them; \
-             its moBBoxCenterData_c writes a zero point, a zero length and identifier 0, where \
-             native parts hold the centre of the body's box, a non-zero length and a non-zero \
-             identifier",
+    if features {
+        losses.push(SldprtLossCode::WriterNativeSketchProfileBodyKept.note(
+            "each native sketch writes, after its u32 3, flag byte 0, its profile body and no \
+             edge reference, a form no native sketch of swVersion 14000 holds: a native top-level \
+             sketch writes flag byte 1 and no body, and a sketch written in place writes flag \
+             byte 0, the body and one or more edge references; the body stays because cadmpeg \
+             reads a written sketch's geometry and placement from it",
         ));
     }
+    let Some(left_out) = extruded else {
+        return losses;
+    };
+    if !left_out.is_empty() {
+        losses.push(SldprtLossCode::WriterBodiesOmitted.note(format!(
+            "the native extrusion makes the written part's one body; {} source feature(s) the \
+             write leaves out made only bodies it omits with them, which the native tree does \
+             not hold: {}",
+            left_out.len(),
+            left_out
+                .iter()
+                .map(|feature| format!("{} made {}", feature.id, feature.outputs.join(", ")))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )));
+    }
+    losses.push(SldprtLossCode::WriterNativeBodyIdentityOmitted.note(
+        "the native extrusion names no face of the body it makes: its moPerBodyChooserData_c \
+         holds no face reference, where native parts of swVersion 14000 hold two whose hops name \
+         the extrusion and a sketch entity, and the partition's faces carry no FACE_ID_2001 \
+         attribute naming the feature that made them; its moBBoxCenterData_c writes a zero point, \
+         a zero length and identifier 0, where native parts hold the centre of the body's box, a \
+         non-zero length and a non-zero identifier",
+    ));
     losses
 }
 

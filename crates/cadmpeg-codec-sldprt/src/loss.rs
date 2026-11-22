@@ -328,6 +328,9 @@ pub(crate) enum SldprtLossCode {
     WriterNativeSketchLaneOrphan,
     /// Export writes a native extrusion with no face references and a zero bounding box.
     WriterNativeBodyIdentityOmitted,
+    /// Export writes each native sketch with its profile body, which native top-level sketches
+    /// do not hold.
+    WriterNativeSketchProfileBodyKept,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -538,6 +541,7 @@ impl SldprtLossCode {
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
         Self::WriterNativeBodyIdentityOmitted,
+        Self::WriterNativeSketchProfileBodyKept,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -708,6 +712,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
+            Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -773,6 +778,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
+            Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -940,6 +946,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1399,6 +1406,7 @@ mod tests {
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
                 "writer.native-body-identity-omitted",
+                "writer.native-sketch-profile-body-kept",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",

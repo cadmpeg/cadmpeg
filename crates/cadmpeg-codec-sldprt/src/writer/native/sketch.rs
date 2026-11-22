@@ -253,12 +253,14 @@ impl Curve {
 }
 
 /// Writes `sketch` as a top-level `moProfileFeature_c`.
-/// Dimension parameters take object identifiers from `next_id` on. Returns
-/// the map index of the `moProfileFeature_c`.
+/// Dimension parameters take object identifiers from `next_id` on, and the
+/// plane reference's trailer holds `reference`. Returns the map index of the
+/// `moProfileFeature_c`.
 pub(super) fn profile_feature(
     archive: &mut Archive,
     sketch: &Sketch,
     next_id: &mut u32,
+    reference: u32,
 ) -> Result<u32, CodecError> {
     let index = archive.object("moProfileFeature_c");
     named(
@@ -299,7 +301,7 @@ pub(super) fn profile_feature(
     archive.u32(NO_CONTOUR_GROUPS);
     archive.u16(0);
     archive.null();
-    plane(archive, sketch.plane);
+    plane(archive, sketch.plane, reference);
     Ok(index)
 }
 
@@ -642,8 +644,8 @@ fn profile_body(archive: &mut Archive, stream: &[u8]) -> Result<(), CodecError> 
 /// feature number and its u16 word, with its frame (flag `0` and three zero
 /// f64 for Front; flag `1`, the rotation and a zero translation for Top and
 /// Right), f64 `1` and the trailer of a user sketch (three zero bytes, u32
-/// `4`, i32 `-1`, u32 `0`, the first body identifier, u32 `1`, no hops).
-fn plane(archive: &mut Archive, plane: Plane) {
+/// `4`, i32 `-1`, u32 `0`, the identifier `reference`, u32 `1`, no hops).
+fn plane(archive: &mut Archive, plane: Plane, reference: u32) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
     let feature = archive.tree_id(plane.tree_id());
@@ -664,7 +666,7 @@ fn plane(archive: &mut Archive, plane: Plane) {
     archive.u32(4);
     archive.i32(-1);
     archive.u32(0);
-    archive.u32(super::config::FIRST_BODY_ID);
+    archive.u32(reference);
     archive.u32(1);
     archive.u16(0);
     archive.u16(0);

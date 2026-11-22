@@ -130,12 +130,24 @@ pub(super) fn resolved_features(
         Some(id) => id,
         None => archive.count32(usize::MAX, "object identifier"),
     };
+    // A user sketch's plane reference holds an identifier in its trailer,
+    // which in native parts exceeds the origin sketch's (`101` and up) and
+    // differs from every body identifier (sldprt.md, EV-16). The tree numbers
+    // the sketches' from one past the last body identifier it writes, and
+    // from `102` in a part with no body.
+    let body_ids = archive.count32(facts.bodies.len().max(1), "body count");
+    let mut plane_reference = match super::config::FIRST_BODY_ID.checked_add(body_ids) {
+        Some(id) => id,
+        None => archive.count32(usize::MAX, "object identifier"),
+    };
     // The map index of each sketch written, by its object identifier.
     let mut profiles = Vec::new();
     for feature in facts.features {
         match feature {
             Feature::Sketch(sketch) => {
-                let profile = super::sketch::profile_feature(&mut archive, sketch, &mut next_id)?;
+                let reference = super::sketch::take_id(&mut archive, &mut plane_reference);
+                let profile =
+                    super::sketch::profile_feature(&mut archive, sketch, &mut next_id, reference)?;
                 profiles.push((sketch.feature_id, profile));
             }
             Feature::Extrusion(extrusion) => {

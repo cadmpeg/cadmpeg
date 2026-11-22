@@ -304,12 +304,20 @@ fn a_top_plane_sketch_references_its_plane_with_the_plane_rotation() {
             .chain([0.0, 0.0, 0.0, 1.0])
             .flat_map(f64::to_le_bytes),
     );
+    // The trailer: three zero bytes, u32 `4`, i32 `-1`, u32 `0`, an
+    // identifier past the extruded body's `101`, u32 `1`.
+    reference.extend([0, 0, 0]);
+    reference.extend(
+        [4_u32, u32::MAX, 0, 102, 1]
+            .iter()
+            .flat_map(|word| word.to_le_bytes()),
+    );
     let sketch = cstring_at(&resolved, "Sketch1");
     assert!(
         resolved[sketch..]
             .windows(reference.len())
             .any(|window| window == reference),
-        "the sketch's moCompRefPlane_c names the Top plane with its rotation"
+        "the sketch's moCompRefPlane_c names the Top plane with its rotation and identifier 102"
     );
 }
 
