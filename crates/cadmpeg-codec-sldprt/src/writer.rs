@@ -732,10 +732,20 @@ fn native_skeleton(
             unwritten_extrusion,
         )
     });
+    let origin_relations = features
+        .iter()
+        .filter_map(|feature| match feature {
+            native::Feature::Sketch(sketch) if native::sketch::one_circle_about_origin(sketch) => {
+                Some(sketch.name.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     Ok(native_skeleton_losses(
         summarized,
         lane_reason.filter(|_| lane_merged),
         !features.is_empty(),
+        &origin_relations,
         extruded.then_some(left_out),
     ))
 }
@@ -774,12 +784,14 @@ fn native_part_name(name: &str) -> String {
 /// The losses of a written native skeleton. `summarized` holds the history
 /// summary streams and the features written only in them, when the write
 /// holds one. `features` states that the tree writes native sketches;
-/// `extruded` holds, when it writes a native extrusion, the source features
-/// the write leaves out.
+/// `origin_relations` names those it writes with the centre's coincidence
+/// with the origin point; `extruded` holds, when it writes a native
+/// extrusion, the source features the write leaves out.
 fn native_skeleton_losses(
     summarized: Option<(String, Vec<String>, Option<String>)>,
     lane_follows: Option<String>,
     features: bool,
+    origin_relations: &[String],
     extruded: Option<&[native::from_ir::SourceFeature]>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
@@ -837,6 +849,18 @@ fn native_skeleton_losses(
              byte 0, the body and one or more edge references; the body stays because cadmpeg \
              reads a written sketch's geometry and placement from it",
         ));
+    }
+    if !origin_relations.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterNativeSketchOriginRelationAdded.note(format!(
+                "{} native sketch(es) hold one circle whose centre lies at the origin; each is \
+                 written as native sketches of one circle about the origin are, with the origin \
+                 point's projection and a coincidence (relation type 9) of the projection and \
+                 the circle's centre, a relation the document does not state: {}",
+                origin_relations.len(),
+                origin_relations.join(", ")
+            )),
+        );
     }
     let Some(left_out) = extruded else {
         return losses;

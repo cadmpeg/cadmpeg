@@ -364,6 +364,9 @@ pub(crate) enum SldprtLossCode {
     /// Export writes each native sketch with its profile body, which native top-level sketches
     /// do not hold.
     WriterNativeSketchProfileBodyKept,
+    /// Export writes the named native sketches of one circle about the origin with a
+    /// coincidence of the circle's centre and the origin point that the document does not state.
+    WriterNativeSketchOriginRelationAdded,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -631,6 +634,7 @@ impl SldprtLossCode {
         Self::WriterNativeSketchLaneOrphan,
         Self::WriterNativeBodyIdentityOmitted,
         Self::WriterNativeSketchProfileBodyKept,
+        Self::WriterNativeSketchOriginRelationAdded,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -827,6 +831,9 @@ impl SldprtLossCode {
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
             Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
+            Self::WriterNativeSketchOriginRelationAdded => {
+                "writer.native-sketch-origin-relation-added"
+            }
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -908,6 +915,7 @@ impl SldprtLossCode {
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
             Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
+            Self::WriterNativeSketchOriginRelationAdded => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -1104,6 +1112,7 @@ impl SldprtLossCode {
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchOriginRelationAdded => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1616,6 +1625,7 @@ mod tests {
                 "writer.native-sketch-lane-orphan",
                 "writer.native-body-identity-omitted",
                 "writer.native-sketch-profile-body-kept",
+                "writer.native-sketch-origin-relation-added",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",

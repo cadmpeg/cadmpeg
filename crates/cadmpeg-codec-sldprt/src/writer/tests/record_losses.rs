@@ -287,7 +287,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
             .map(|loss| loss.code.clone())
             .collect::<Vec<_>>()
     };
-    let bare = crate::writer::native_skeleton_losses(None, None, false, None);
+    let bare = crate::writer::native_skeleton_losses(None, None, false, &[], None);
     assert_eq!(
         codes(&bare),
         [
@@ -303,6 +303,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
         )),
         Some("sketch#c holds an ellipse".to_owned()),
         true,
+        &["Disc".to_owned()],
         Some(&[crate::writer::native::from_ir::SourceFeature {
             id: "feature#coil".to_owned(),
             outputs: vec!["body#coil".to_owned()],
@@ -316,6 +317,7 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
             SldprtLossCode::WriterNativeStreamsOmitted.kind(),
             SldprtLossCode::WriterNativeSketchLaneOrphan.kind(),
             SldprtLossCode::WriterNativeSketchProfileBodyKept.kind(),
+            SldprtLossCode::WriterNativeSketchOriginRelationAdded.kind(),
             SldprtLossCode::WriterBodiesOmitted.kind(),
             SldprtLossCode::WriterNativeBodyIdentityOmitted.kind(),
         ]
@@ -333,9 +335,12 @@ fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
     assert!(full[4]
         .message
         .contains("a native top-level sketch writes flag byte 1 and no body"));
-    assert!(full[5].message.ends_with("feature#coil made body#coil"));
-    assert!(full[6].message.contains("FACE_ID_2001"));
-    assert!(full[6]
+    assert!(full[5]
+        .message
+        .ends_with("a relation the document does not state: Disc"));
+    assert!(full[6].message.ends_with("feature#coil made body#coil"));
+    assert!(full[7].message.contains("FACE_ID_2001"));
+    assert!(full[7]
         .message
         .contains("moBBoxCenterData_c writes a zero point, a zero length and identifier 0"));
     assert!(full[1].message.contains("each native sketch's 76-byte"));

@@ -409,10 +409,11 @@ fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Po
 }
 
 /// Whether `sketch` is one circle about the origin: its records are the
-/// centre, at the origin, and the circle's point. The 5 native sketches of
-/// one circle hold the centre there and the origin point's projection, and
-/// the writer writes them in that form ([`one_circle_records`]).
-fn one_circle_about_origin(sketch: &Sketch) -> bool {
+/// centre, at the origin, and the circle's point. Native sketches of one
+/// circle hold the centre there, the origin point's projection and the
+/// centre's coincidence with it, and the writer writes them in that form
+/// ([`one_circle_records`], [`relation_groups`]).
+pub(in crate::writer) fn one_circle_about_origin(sketch: &Sketch) -> bool {
     matches!(
         sketch.curves.as_slice(),
         [Curve::Circle { on: 1, centre: 0 }]

@@ -378,9 +378,9 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
     );
 }
 
-#[test]
-fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() {
-    use cadmpeg_ir::math::{Point2, Vector3};
+/// The unit cube with a sketch `Disc` of one 5 mm circle about `center`.
+fn cube_with_one_circle(center: cadmpeg_ir::math::Point2) -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let radius = cadmpeg_ir::scalar::Length::new(5.0).expect("length");
@@ -388,12 +388,24 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
         &mut ir,
         "Disc",
         Vector3::new(0.0, 0.0, 1.0),
-        vec![vec![SketchGeometryDefinition::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius,
-        }]],
+        vec![vec![SketchGeometryDefinition::Circle { center, radius }]],
     );
-    let bytes = write(&ir);
+    ir
+}
+
+#[test]
+fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    let ir = cube_with_one_circle(Point2::new(0.0, 0.0));
+    let (bytes, losses) = write_with_losses(&ir);
+    // The centre's coincidence with the origin point is written, and named.
+    let added = loss(&losses, "writer.native-sketch-origin-relation-added");
+    assert!(
+        added.message.starts_with("1 native sketch(es)") && added.message.ends_with(": Disc"),
+        "{}",
+        added.message
+    );
     let (walk, resolved) = walk(&bytes);
     let classes = classes(&walk);
     for class in [
@@ -458,6 +470,23 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
             if centre.u.abs() < 1.0e-9 && centre.v.abs() < 1.0e-9 && (radius - 5.0).abs() < 1.0e-9),
         "{circles:?}"
     );
+}
+
+/// A circle away from the origin is written without the origin point's
+/// projection and without the coincidence, so no note names an added
+/// relation.
+#[test]
+fn a_circle_away_from_the_origin_adds_no_relation() {
+    let ir = cube_with_one_circle(cadmpeg_ir::math::Point2::new(20.0, 0.0));
+    let (bytes, losses) = write_with_losses(&ir);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "writer.native-sketch-origin-relation-added"),
+        "{losses:#?}"
+    );
+    let (walk, _) = walk(&bytes);
+    assert!(!classes(&walk).contains(&"sgExtEnt_c"));
 }
 
 /// `cube_with_sketches` with the rectangle's first line horizontal, its second
