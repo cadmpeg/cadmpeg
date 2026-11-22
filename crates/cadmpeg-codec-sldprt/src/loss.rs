@@ -173,6 +173,9 @@ pub(crate) enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Sweep path geometry keeps its native reference after an unreadable record.
     FeatureSweepPathRetained,
+    /// Unframed spatial sweep path lines with an identifier trailer use their
+    /// primary-point roster.
+    FeatureSweepPathRosterAssumed,
     /// A sweep path component source follows a u32 header word.
     FeatureSweepPathHeaderAssumed,
     /// A generated solid sweep uses the Merge reading of its Boolean operation.
@@ -329,6 +332,13 @@ pub(crate) enum SldprtLossCode {
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// A construction edit that shapes the solid is written as edited, and the
+    /// output keeps the stored solid, which shows the state before the edit.
+    WriterSolidStaleAfterEdit,
+    /// An edit of the active configuration snapshot that the decoder
+    /// synthesized from the model is not written; the written configuration
+    /// states the model's state.
+    WriterConfigurationSnapshotEditUnwritten,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -366,9 +376,19 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
+    /// Parameters whose dimension text is a bare number and that hold no
+    /// value: no record types the dimension or binds it to a stored value,
+    /// or the part's length unit is not read.
+    DesignParameterValueUnread,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
+    /// Equation-manager lines that the decoder does not read into the
+    /// expression of the parameter they assign.
+    DesignEquationUnread,
+    /// Parameters whose equation-manager line is stated as `SolidWorks`
+    /// source text.
+    DesignEquationSource,
 }
 
 impl SldprtLossCode {
@@ -440,6 +460,7 @@ impl SldprtLossCode {
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureSweepPathRetained,
+        Self::FeatureSweepPathRosterAssumed,
         Self::FeatureSweepPathHeaderAssumed,
         Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
@@ -507,6 +528,8 @@ impl SldprtLossCode {
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterSolidStaleAfterEdit,
+        Self::WriterConfigurationSnapshotEditUnwritten,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -521,7 +544,10 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
+        Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
+        Self::DesignEquationUnread,
+        Self::DesignEquationSource,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -589,6 +615,7 @@ impl SldprtLossCode {
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
+            Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
             Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
             Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
@@ -662,6 +689,10 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterSolidStaleAfterEdit => "writer.solid-stale-after-edit",
+            Self::WriterConfigurationSnapshotEditUnwritten => {
+                "writer.configuration-snapshot-edit-unwritten"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -696,7 +727,10 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignEquationUnread => "design.equation-unread",
+            Self::DesignEquationSource => "design.equation-source",
         }
     }
 
@@ -706,6 +740,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterSolidStaleAfterEdit => Severity::Warning,
+            Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -773,6 +809,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
@@ -843,7 +880,10 @@ impl SldprtLossCode {
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
-            | Self::DesignExtrudeDepthAssumed => Severity::Warning,
+            | Self::DesignParameterValueUnread
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignEquationUnread
+            | Self::DesignEquationSource => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -859,6 +899,8 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterSolidStaleAfterEdit => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -896,11 +938,14 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
-            Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
-            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
-            Self::DesignParameterDisplayRounded | Self::DesignExtrudeDepthAssumed => {
-                LossTaxonomy::DecodeDiagnostic
+            Self::DesignFeatureUnresolved | Self::DesignEquationUnread => {
+                LossTaxonomy::RecordNotTyped
             }
+            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterDisplayRounded
+            | Self::DesignParameterValueUnread
+            | Self::DesignExtrudeDepthAssumed
+            | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1003,6 +1048,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
+            | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
@@ -1243,6 +1289,7 @@ mod tests {
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
                 "feature.sweep-path-retained",
+                "feature.sweep-path-roster-assumed",
                 "feature.sweep-path-header-assumed",
                 "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
@@ -1310,6 +1357,8 @@ mod tests {
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.solid-stale-after-edit",
+                "writer.configuration-snapshot-edit-unwritten",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
@@ -1324,7 +1373,10 @@ mod tests {
                 "design.feature-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
+                "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
+                "design.equation-unread",
+                "design.equation-source",
             ]
         );
     }

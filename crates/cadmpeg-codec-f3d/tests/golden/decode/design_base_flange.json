@@ -1693,6 +1693,18 @@
           "kind": "namespaced",
           "value": {
             "namespace": "f3d",
+            "code": "feature.base-flange-side-assumed",
+            "kind": "feature_history_retained"
+          }
+        },
+        "severity": "warning",
+        "message": "Base flange f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3088 assumes the Forward material side; its operation frame stores no readable side (DR-67)."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
             "code": "feature.edge-reference-lost",
             "kind": "attributes_not_transferred"
           }

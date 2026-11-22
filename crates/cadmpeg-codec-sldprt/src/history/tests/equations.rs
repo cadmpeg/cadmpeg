@@ -583,7 +583,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -911,7 +911,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         .is_none());
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         &edited,
         decoded.source_fidelity(),
         &mut encoded,

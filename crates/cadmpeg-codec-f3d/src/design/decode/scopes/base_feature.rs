@@ -1344,24 +1344,71 @@ fn exact_wide_shifted_zero_body_base_feature(
     })
 }
 
+/// Body entity suffixes of each Base Feature in one Design `BulkStream` whose
+/// ordinary result run stores `1` in the byte before its shared metadata record.
+pub(crate) fn flagged_base_feature_body_entities(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> Result<std::collections::HashSet<u64>, CodecError> {
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+    let mut entities = std::collections::HashSet::new();
+    for header in super::parameter_scope::parameter_scope_candidate_headers(bytes, &records)? {
+        let type_guid = header
+            .class_tag
+            .as_str()
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| metadata.types.get(ordinal))
+            .map(|row| row.type_guid.as_str());
+        let Some(scope) = super::parameter_scope::parse_parameter_scope_with_type_guid(
+            bytes,
+            &records,
+            header.record_index,
+            &header.class_tag,
+            header.byte_offset,
+            type_guid,
+        )?
+        else {
+            continue;
+        };
+        if let Some((construction, true)) = exact_base_feature_construction_flagged(bytes, &scope)?
+        {
+            entities.extend(construction.body_entity_suffixes());
+        }
+    }
+    Ok(entities)
+}
+
 pub(super) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    exact_base_feature_construction_flagged(bytes, scope).map(|found| found.map(|(value, _)| value))
+}
+
+/// The construction of a Base Feature scope and whether its ordinary result-run
+/// form stores `1` in the byte before the shared metadata record.
+pub(in crate::design::decode) fn exact_base_feature_construction_flagged(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Result<Option<(DesignBaseFeatureConstruction, bool)>, CodecError> {
     use crate::records::feature::base_feature::{
         DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults,
     };
+    let mut edited = false;
+    let edited_flag = &mut edited;
     if scope.kind() != scope::DesignFeatureKind::BaseFeature {
         return Ok(None);
     }
     if let Some(snapshot) = exact_base_feature_body_snapshot(bytes, scope)? {
-        return Ok(Some(snapshot));
+        return Ok(Some((snapshot, false)));
     }
     if let Some(value) = exact_base_feature_legacy_body_based_on_faces(bytes, scope)? {
-        return Ok(Some(value));
+        return Ok(Some((value, false)));
     }
     if let Some(value) = exact_base_feature_direct_body_based_on_faces(bytes, scope)? {
-        return Ok(Some(value));
+        return Ok(Some((value, false)));
     }
     (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
@@ -1705,7 +1752,8 @@ pub(super) fn exact_base_feature_construction(
             );
             cursor += compact_entry::LEN;
         }
-        if bytes.get(cursor) != Some(&0) {
+        let result_run_flag = *bytes.get(cursor)?;
+        if result_run_flag > u8::from(ordinary_metadata_width.is_some()) {
             return None;
         }
         cursor += 1;
@@ -1761,6 +1809,7 @@ pub(super) fn exact_base_feature_construction(
                 .get(cursor..uuid_offset)
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
         let first = first?;
+        *edited_flag = admitted && result_run_flag == 1;
         admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
             null_reference_flag_offset,
             repeats_body_suffixes,
@@ -1772,10 +1821,11 @@ pub(super) fn exact_base_feature_construction(
     })()
     .transpose()
     .map(|construction| {
-        construction.or_else(|| {
+        construction.map(|value| (value, edited)).or_else(|| {
             usize::try_from(scope.byte_offset())
                 .ok()
                 .and_then(|start| exact_suffix_result_bodies(bytes, scope, start))
+                .map(|value| (value, false))
         })
     })
 }

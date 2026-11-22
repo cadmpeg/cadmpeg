@@ -32,6 +32,7 @@ use crate::layout::move_transform_frame_284 as move_frame_284;
 use crate::layout::move_transform_frame_293 as move_frame_293;
 use crate::layout::move_transform_omitted_matrix_frame_125 as omitted_move_125;
 use crate::layout::move_transform_omitted_matrix_frame_126 as omitted_move_126;
+use crate::layout::move_transform_omitted_matrix_frame_128 as omitted_move_128;
 use crate::layout::move_transform_v3_frame_256 as move_v3_frame_256;
 use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
 use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
@@ -589,7 +590,7 @@ fn move_transform_at(
                     .window()
                     .len()
                     .checked_sub(form_at.checked_sub(move_frame::FORM)?)?,
-                omitted_move_125::LEN | omitted_move_126::LEN
+                omitted_move_125::LEN | omitted_move_126::LEN | omitted_move_128::LEN
             ))
     {
         return None;
@@ -773,7 +774,9 @@ fn rigid_transform_rule_breaks(
     };
     let version_3 = version == Some(RIGID_TRANSFORM_TYPE_VERSION_3);
     let length_form = match frame_length {
-        move_v3_frame_256::LEN if version_3 => direct_face::DesignMoveForm::Form5,
+        move_v3_frame_256::LEN | omitted_move_128::LEN if version_3 => {
+            direct_face::DesignMoveForm::Form5
+        }
         move_v3_frame_276::LEN if version_3 => direct_face::DesignMoveForm::Form1,
         move_v3_frame_286::LEN if version_3 => direct_face::DesignMoveForm::Form0,
         move_v3_frame_296::LEN if version_3 => direct_face::DesignMoveForm::Form2,

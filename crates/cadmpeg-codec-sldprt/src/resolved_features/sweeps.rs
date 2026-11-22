@@ -45,7 +45,7 @@ fn bind_path(
     native: &str,
     lane: &FeatureInputLane,
     geometry: &mut Geometry<'_>,
-) -> Option<PathRef> {
+) -> Option<(PathRef, Vec<paths::Assumption>)> {
     match producer.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(Some(sketch)),
@@ -56,6 +56,7 @@ fn bind_path(
                 .find(|value| &value.id == sketch)?
                 .resolved_placement()?;
             let curves = paths::planar(lane, native)?;
+            let assumed = assumptions(&curves);
             let mut ids = Vec::with_capacity(curves.len());
             let mut pending = Vec::new();
             for curve in curves {
@@ -92,12 +93,13 @@ fn bind_path(
             }
             let path = PathRef::sketch_curves(sketch.clone(), ids).ok()?;
             geometry.entities.extend(pending);
-            Some(path)
+            Some((path, assumed))
         }
         FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
             sketch: Some(sketch),
         }) => {
             let curves = paths::spatial(lane, native)?;
+            let assumed = assumptions(&curves);
             let mut ids = Vec::with_capacity(curves.len());
             let mut pending = Vec::new();
             for curve in curves {
@@ -138,10 +140,20 @@ fn bind_path(
             }
             let path = PathRef::spatial_sketch_curves(sketch.clone(), ids).ok()?;
             geometry.spatial_entities.extend(pending);
-            Some(path)
+            Some((path, assumed))
         }
         _ => None,
     }
+}
+
+fn assumptions<G>(curves: &[paths::Curve<G>]) -> Vec<paths::Assumption> {
+    let mut assumed = curves
+        .iter()
+        .filter_map(|curve| curve.assumed)
+        .collect::<Vec<_>>();
+    assumed.sort_unstable();
+    assumed.dedup();
+    assumed
 }
 
 fn same_curves<G: PartialEq>(
@@ -289,12 +301,29 @@ pub(crate) fn bind(
                 bind_path(feature, native, lane, &mut geometry)
             });
             let dependency = selected.map(|(feature, _)| feature.id.clone());
-            let path = resolved.unwrap_or_else(|| PathRef::Native(native.clone()));
+            let (path, assumed) =
+                resolved.unwrap_or_else(|| (PathRef::Native(native.clone()), Vec::new()));
             if matches!(path, PathRef::Native(_)) {
                 losses.push(
                     SldprtLossCode::FeatureSweepPathRetained
                         .note(format!("{} retains its path record {native}.", feature.id)),
                 );
+            }
+            for assumption in assumed {
+                losses.push(match assumption {
+                    paths::Assumption::IndexBasis => {
+                        SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
+                            "{} reads path curve records on locus 05 00 01 00 by assumed zero-based point-record positions in their sgSketch.",
+                            feature.id
+                        ))
+                    }
+                    paths::Assumption::Roster => {
+                        SldprtLossCode::FeatureSweepPathRosterAssumed.note(format!(
+                            "{} reads path-line endpoints as positions in its sketch point roster.",
+                            feature.id
+                        ))
+                    }
+                });
             }
             if operand.header_assumed {
                 losses.push(SldprtLossCode::FeatureSweepPathHeaderAssumed.note(format!(
