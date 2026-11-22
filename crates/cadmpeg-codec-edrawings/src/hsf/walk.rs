@@ -2,7 +2,7 @@
 //! The deterministic record walker of the inflated model stream.
 //!
 //! Every record has its own length rule (docs/formats/edrawings.md, section
-//! 4). The walker never resynchronises: a byte that no rule explains, a
+//! 3). The walker never resynchronises: a byte that no rule explains, a
 //! record that does not fit its template, an unbalanced segment close, or
 //! bytes after the end record stop the walk with a [`WalkError`] that names
 //! the byte offset of the record.
@@ -10,6 +10,10 @@
 use cadmpeg_core::decode::{u64_from_index, View};
 
 use crate::dialect::Grammar;
+use crate::layout::{
+    shell_face_list_head as face_list, shell_head, shell_normals_head as normals,
+    shell_range_head as range,
+};
 
 /// Deepest segment nesting the walker accepts.
 pub(super) const MAX_SEGMENT_DEPTH: usize = 256;
@@ -73,12 +77,6 @@ const GEOMETRY_ITEMS: [(u8, usize); 4] = [(b'X', 3), (b'l', 6), (b'C', 9), (b'c'
 const GEOMETRY_ZERO_ENDED: [u8; 2] = *b"Cc";
 /// Bytes of an `f32`.
 const F32_BYTES: usize = 4;
-/// Opcode of the range block after the normals of a shell.
-const SHELL_RANGE: u8 = 3;
-/// The two bytes after the opcode of the range block of a shell.
-const SHELL_RANGE_HEAD: [u8; 2] = [1, 2];
-/// Marker byte of the range block before its length.
-const SHELL_RANGE_MARK: u8 = 8;
 /// Opcode of the face tag after the range block of a shell.
 const SHELL_FACE_TAG: u8 = 0x63;
 /// Opcode of the narrow user option inside the face tag.
@@ -86,7 +84,8 @@ const NARROW_USER_OPTION: u8 = b'U';
 /// Final bytes of the stream: the trailer closes with these.
 const STREAM_END: [u8; 2] = *b"]z";
 
-/// Opaque `V` records, as the bytes that follow the opcode.
+/// Opaque `V` records, as the bytes that follow the opcode. A form outside the
+/// tables is refused (open item EDR-07).
 const V_TEMPLATES: [&[u8]; 3] = [
     &[0xff, 0x00, 0xff, 0xff, 0x00, 0x00, 0x07, 0x00],
     &[0xdf, 0x56, 0x0e, 0x20, 0x00, 0x00],
@@ -127,7 +126,8 @@ const TEXTURE_PREFIX: [u8; 3] = [0x40, 0x00, 0x74];
 /// Bytes that follow the two strings of a texture definition.
 const TEXTURE_SUFFIX: usize = 6;
 
-/// Extra bytes of an `H` record by mask word list.
+/// Extra bytes of an `H` record by mask word list. A list outside the table
+/// is refused (open item EDR-07).
 const H_EXTRA: [(&[u32], usize); 5] = [
     (&[0x8000, 0x0002], 0),
     (&[0x0002], 0),
@@ -135,7 +135,8 @@ const H_EXTRA: [(&[u32], usize); 5] = [
     (&[0x8004, 0x0200], 1),
     (&[0x0004], 1),
 ];
-/// Extra bytes of an `R` record by mask word list.
+/// Extra bytes of an `R` record by mask word list. A list outside the table
+/// is refused (open item EDR-07).
 const R_EXTRA: [(&[u32], usize); 7] = [
     (&[0x8001_0000, 0x8000_0000, 0x0000_0002], 1),
     (&[0x8000_0000, 0x0008_0000], 1),
@@ -145,6 +146,33 @@ const R_EXTRA: [(&[u32], usize); 7] = [
     (&[0x8000_0000, 0x8000_0000, 0x0000_0002], 0),
     (&[0x8101_0000, 0x0000_0010], 13),
 ];
+
+/// The bytes of a fixed record, read at the record-relative offsets of the
+/// layout table (`docs/layouts/edrawings.toml`). The first `consumed` bytes of
+/// the record were read before the rest was taken.
+struct Fixed<'a> {
+    bytes: &'a [u8],
+    consumed: usize,
+}
+
+impl Fixed<'_> {
+    fn u8_at(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(offset.checked_sub(self.consumed)?).copied()
+    }
+
+    fn u32_at(&self, offset: usize) -> Option<u32> {
+        View::u32_le_at(self.bytes, offset.checked_sub(self.consumed)?)
+    }
+
+    fn f32_at(&self, offset: usize) -> Option<f32> {
+        View::f32_le_at(self.bytes, offset.checked_sub(self.consumed)?)
+    }
+
+    fn bytes_at(&self, offset: usize, count: usize) -> Option<&[u8]> {
+        let start = offset.checked_sub(self.consumed)?;
+        self.bytes.get(start..start.checked_add(count)?)
+    }
+}
 
 /// A walk failure: the byte offset of the record and what was wrong.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +353,27 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// The fixed record of `length` bytes whose first `consumed` bytes were
+    /// read already.
+    fn fixed(&mut self, length: usize, consumed: usize) -> Result<Fixed<'a>, WalkError> {
+        let Some(rest) = length.checked_sub(consumed) else {
+            return self.fail("record is truncated");
+        };
+        Ok(Fixed {
+            bytes: self.take(rest)?,
+            consumed,
+        })
+    }
+
+    /// A length read from a fixed record, as an index.
+    fn layout_len(&self, value: Option<u32>) -> Result<usize, WalkError> {
+        match value.map(usize::try_from) {
+            Some(Ok(length)) => Ok(length),
+            Some(Err(_)) => self.fail("length exceeds the address space"),
+            None => self.fail("record is truncated"),
+        }
+    }
+
     fn len32(&mut self) -> Result<usize, WalkError> {
         let value = self.u32()?;
         match usize::try_from(value) {
@@ -437,9 +486,20 @@ impl<'a> Walker<'a> {
     }
 
     fn shell(&mut self) -> Result<Record<'a>, WalkError> {
-        let id = self.u32()?;
-        self.require_byte(0, "shell: byte after the id is not zero")?;
-        let count = self.len32()?;
+        let head = self.fixed(shell_head::LEN, 1)?;
+        let (Some(id), Some(zero), Some(count)) = (
+            head.u32_at(shell_head::ID),
+            head.u8_at(shell_head::ZERO),
+            head.u32_at(shell_head::VERTEX_COUNT),
+        ) else {
+            return self.fail("record is truncated");
+        };
+        if zero != shell_head::ZERO_VALUE {
+            return self.fail("shell: byte after the id is not zero");
+        }
+        let Ok(count) = usize::try_from(count) else {
+            return self.fail("length exceeds the address space");
+        };
         if count == 0 || count > MAX_SHELL_VERTICES {
             return self.fail("shell: vertex count is zero or exceeds the cap");
         }
@@ -454,15 +514,21 @@ impl<'a> Walker<'a> {
             return self.fail("shell: vertex bytes overflow");
         };
         let points = self.take(size)?;
-        self.require_byte(1, "shell: no face list marker")?;
-        let length = self.len32()?;
+        let head = self.fixed(face_list::LEN, 0)?;
+        if head.u8_at(face_list::MARKER) != Some(face_list::MARKER_VALUE) {
+            return self.fail("shell: no face list marker");
+        }
+        let length = self.layout_len(head.u32_at(face_list::LENGTH))?;
         let facelist = self.take(length)?;
-        if self.take(3)? != [0x01, 0x07, 0x0c] {
+        let head = self.fixed(normals::LEN, 0)?;
+        if head.bytes_at(normals::MARKER, normals::MARKER_VALUE.len())
+            != Some(&normals::MARKER_VALUE[..])
+        {
             return self.fail("shell: no normals marker");
         }
-        let normals = self.len32()?;
-        self.skip(normals)?;
-        if self.peek() == Some(SHELL_RANGE) {
+        let length = self.layout_len(head.u32_at(normals::LENGTH))?;
+        self.skip(length)?;
+        if self.peek() == Some(range::OPCODE_VALUE) {
             self.shell_range(count)?;
         }
         if self.peek() == Some(SHELL_FACE_TAG) {
@@ -479,16 +545,23 @@ impl<'a> Walker<'a> {
     /// The range block after the normals: two `(u, v)` pairs with `u` zero and
     /// one 16-bit value per vertex.
     fn shell_range(&mut self, count: usize) -> Result<(), WalkError> {
-        self.skip(1)?;
-        if self.take(SHELL_RANGE_HEAD.len())? != SHELL_RANGE_HEAD {
+        let head = self.fixed(range::LEN, 0)?;
+        if head.bytes_at(range::HEAD, range::HEAD_VALUE.len()) != Some(&range::HEAD_VALUE[..]) {
             return self.fail("shell: bad range block head");
         }
-        let [u0, _, u1, _] = self.f32s::<4>()?;
+        let (Some(u0), Some(u1)) = (
+            head.f32_at(range::RANGE),
+            head.f32_at(range::RANGE + 2 * F32_BYTES),
+        ) else {
+            return self.fail("record is truncated");
+        };
         if u0 != 0.0 || u1 != 0.0 {
             return self.fail("shell: range block u is not zero");
         }
-        self.require_byte(SHELL_RANGE_MARK, "shell: no range block marker")?;
-        let length = self.len32()?;
+        if head.u8_at(range::MARKER) != Some(range::MARKER_VALUE) {
+            return self.fail("shell: no range block marker");
+        }
+        let length = self.layout_len(head.u32_at(range::LENGTH))?;
         if count.checked_mul(2) != Some(length) {
             return self.fail("shell: range block length is not twice the vertex count");
         }
@@ -512,7 +585,9 @@ impl<'a> Walker<'a> {
         self.require_byte(0, "shell: no zero byte after the face tag")
     }
 
-    /// The items of a geometry side object, up to the implicit close.
+    /// The items of a geometry side object, up to the implicit close. The items
+    /// are skipped: their order and the meaning of their bytes are open item
+    /// EDR-18.
     fn geometry_items(&mut self) -> Result<(), WalkError> {
         loop {
             let Some(opcode) = self.peek() else {
@@ -794,8 +869,7 @@ impl<'a> Walker<'a> {
                 self.previous = self.opaque_v()?;
                 return Ok(Record::Ignored);
             }
-            b'S' if self.peek() == Some(0x0e) => {
-                self.skip(1)?;
+            shell_head::OPCODE_VALUE if self.peek() == Some(shell_head::CONSTANT_VALUE) => {
                 self.shell()?
             }
             b'S' => {

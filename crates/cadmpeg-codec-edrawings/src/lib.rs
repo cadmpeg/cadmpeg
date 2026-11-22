@@ -44,6 +44,8 @@ mod dialect;
 mod hsf;
 mod ids;
 mod inspect;
+/// Byte-offset constants generated from `docs/layouts/edrawings.toml`.
+mod layout;
 mod loss;
 mod mesh_brep;
 mod package;

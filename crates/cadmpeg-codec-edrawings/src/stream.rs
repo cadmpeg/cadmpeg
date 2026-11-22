@@ -19,18 +19,24 @@ use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 
+use crate::layout::{
+    wrapper, wrapper_bounds as bounds_record, wrapper_comment as comment, wrapper_info as info,
+};
+
 /// Bytes that open the comment line, up to the version number.
-pub(crate) const COMMENT_PREFIX: &[u8] = b";; HSF V";
+pub(crate) const COMMENT_PREFIX: &[u8] = &comment::PREFIX_VALUE;
 /// The byte that ends the comment line.
 const COMMENT_END: u8 = b'\n';
+/// Bytes of one `f32`.
+const F32_BYTES: usize = 4;
 /// The longest comment line the reader accepts, version number included.
 const MAX_COMMENT_LEN: usize = 64;
 /// Tag of the info record.
-const TAG_INFO: u8 = b'I';
+const TAG_INFO: u8 = info::TAG_VALUE;
 /// Tag of the bounds record.
-const TAG_BOUNDS: u8 = b'B';
+const TAG_BOUNDS: u8 = bounds_record::TAG_VALUE;
 /// Tag of the body record.
-const TAG_BODY: u8 = b'Z';
+const TAG_BODY: u8 = wrapper::BODY_TAG_VALUE;
 /// The most wrapper records read before the body record.
 const MAX_WRAPPER_RECORDS: usize = 8;
 /// Tail the observed files carry after the zlib stream: one zero byte.
@@ -132,23 +138,34 @@ pub(crate) fn read_wrapper(member: View<'_>) -> Result<Wrapper, CodecError> {
     let mut bounds = None;
     for _ in 0..MAX_WRAPPER_RECORDS {
         let tag_offset = cursor.position();
+        let mut record = cursor;
         match cursor.req_u8()? {
             TAG_INFO => {
-                if info.replace(cursor.req_u32_le()?).is_some() {
+                let bytes = record.req_take(info::LEN)?;
+                cursor.req_take(info::LEN - 1)?;
+                let value = View::u32_le_at(bytes, info::VALUE).ok_or_else(|| truncated("I"))?;
+                if info.replace(value).is_some() {
                     return Err(repeated("I", tag_offset));
                 }
             }
             TAG_BOUNDS => {
-                let flag = cursor.req_u8()?;
-                let mut corners = [0.0_f32; 6];
-                for value in &mut corners {
-                    *value = cursor.req_f32_le()?;
-                }
-                let [min_x, min_y, min_z, max_x, max_y, max_z] = corners;
+                let bytes = record.req_take(bounds_record::LEN)?;
+                cursor.req_take(bounds_record::LEN - 1)?;
+                let flag = *bytes
+                    .get(bounds_record::FLAG)
+                    .ok_or_else(|| truncated("B"))?;
+                let corner = |first: usize| -> Result<[f32; 3], CodecError> {
+                    let mut values = [0.0_f32; 3];
+                    for (index, value) in values.iter_mut().enumerate() {
+                        let offset = first + index * F32_BYTES;
+                        *value = View::f32_le_at(bytes, offset).ok_or_else(|| truncated("B"))?;
+                    }
+                    Ok(values)
+                };
                 let parsed = Bounds {
                     flag,
-                    min: [min_x, min_y, min_z],
-                    max: [max_x, max_y, max_z],
+                    min: corner(bounds_record::MIN)?,
+                    max: corner(bounds_record::MAX)?,
                 };
                 if bounds.replace(parsed).is_some() {
                     return Err(repeated("B", tag_offset));
@@ -172,6 +189,10 @@ pub(crate) fn read_wrapper(member: View<'_>) -> Result<Wrapper, CodecError> {
     Err(CodecError::malformed(format_args!(
         "eModel wrapper holds no body record within {MAX_WRAPPER_RECORDS} records"
     )))
+}
+
+fn truncated(tag: &str) -> CodecError {
+    CodecError::malformed(format_args!("eModel wrapper record {tag} is truncated"))
 }
 
 fn repeated(tag: &str, offset: usize) -> CodecError {
@@ -240,6 +261,25 @@ mod tests {
         let (body, tail) = parsed(&member, &DecodePolicy::default()).unwrap();
         assert_eq!(body, b"stream body");
         assert_eq!(tail, [0]);
+    }
+
+    /// The layout table of section 2.1: 15, 5, and 26 bytes, then the `Z` tag
+    /// and the zlib stream at offset 47.
+    #[test]
+    fn the_wrapper_offsets_follow_the_layout_table() {
+        use crate::layout::{wrapper, wrapper_bounds, wrapper_comment, wrapper_info};
+        assert_eq!(wrapper::COMMENT, 0);
+        assert_eq!(wrapper::INFO, wrapper_comment::LEN);
+        assert_eq!(wrapper::BOUNDS, wrapper::INFO + wrapper_info::LEN);
+        assert_eq!(wrapper::BODY_TAG, wrapper::BOUNDS + wrapper_bounds::LEN);
+        assert_eq!(wrapper::LEN, wrapper::BODY_TAG + 1);
+        let member = emodel(b"x");
+        assert_eq!(
+            member.get(wrapper::BODY_TAG),
+            Some(&wrapper::BODY_TAG_VALUE)
+        );
+        let parsed = read_wrapper(View::over_retained(&member)).unwrap();
+        assert_eq!(parsed.body_offset, wrapper::LEN);
     }
 
     #[test]
