@@ -70,6 +70,10 @@ mod ids {
 
 /// What the skeleton states about the part.
 pub(super) struct Facts<'a> {
+    /// What the default tree's object identifiers add to their `ids` values:
+    /// the largest identifier of the history summary, so the two never
+    /// share an identifier.
+    pub(super) id_base: u32,
     /// The part's name.
     pub(super) name: &'a str,
     /// The name of the configuration the skeleton writes.
@@ -92,12 +96,14 @@ pub(super) struct Body {
 
 impl Body {
     /// The `index`-th body (from zero): `Imported<index + 1>`, with
-    /// identifiers after the default tree's and a GUID derived from the part
+    /// identifiers after the default tree's (offset by `id_base`) and a GUID derived from the part
     /// name and index.
-    pub(super) fn numbered(part: &str, index: usize) -> Result<Self, CodecError> {
+    pub(super) fn numbered(part: &str, id_base: u32, index: usize) -> Result<Self, CodecError> {
         let ordinal = u32::try_from(index).ok();
         let id = ordinal.and_then(|ordinal| config::FIRST_BODY_ID.checked_add(ordinal));
-        let feature_id = ordinal.and_then(|ordinal| (ids::MARKUPS + 1).checked_add(ordinal));
+        let feature_id = ordinal
+            .and_then(|ordinal| (ids::MARKUPS + 1).checked_add(ordinal))
+            .and_then(|feature| feature.checked_add(id_base));
         let (Some(id), Some(feature_id)) = (id, feature_id) else {
             return Err(CodecError::malformed(
                 "SLDPRT native skeleton: the body count exceeds the identifier space",

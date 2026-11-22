@@ -5,7 +5,7 @@
 use cadmpeg_core::CodecError;
 
 use super::archive::{Archive, ClassMap};
-use super::block::{block, block_close, block_open, named, named_with, Schema, Tail, TAIL};
+use super::block::{block, block_close, block_open, named, named_with, Oid, Schema, Tail, TAIL};
 use super::detailing::{Detail, DETAILING_14000};
 use super::tree::{unit_component, PartRefs};
 use super::{ids, Body, Facts, FILETIME, PLANE_HALF_EXTENT, TIME_STAMP, VERSION};
@@ -124,13 +124,19 @@ const VIEWS: [(&str, Option<[f64; 9]>); 10] = [
 /// Writes the stream and returns it with the class map it ends with and the
 /// indices the tree refers to.
 pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs), CodecError> {
-    let mut a = Archive::new();
+    let mut a = Archive::new(facts.id_base);
     a.object("moPart_c");
     let first_section = a.len();
     a.u32(0);
     a.u32(0);
     a.u32(VERSION);
-    named_with(&mut a, Some(facts.name), Schema::Plain, 0, PART_HEAD_WORD);
+    named_with(
+        &mut a,
+        Some(facts.name),
+        Schema::Plain,
+        Oid::Plain(0),
+        PART_HEAD_WORD,
+    );
     a.u32(0);
     a.object("moVisualProperties_c");
     visual(&mut a);
@@ -211,7 +217,7 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     block_manager(&mut a);
     a.zeros(THREAD_DATA_RUN);
     a.object("moPrtExplViewManager_c");
-    named(&mut a, None, Schema::Plain, ids::EXPLODED_VIEWS);
+    named(&mut a, None, Schema::Plain, Oid::Tree(ids::EXPLODED_VIEWS));
     block(&mut a, Tail { word64: 0, ..TAIL });
     a.zeros(8);
     a.bytes(&[0xff; 8]);
@@ -510,7 +516,7 @@ fn transformed_planes(a: &mut Archive) {
 fn material(a: &mut Archive, bodies: usize) {
     a.object("moMaterial_c");
     a.object("moDensityParameter_c");
-    named_with(a, None, Schema::Plain, u32::MAX, 0);
+    named_with(a, None, Schema::Plain, Oid::Plain(u32::MAX), 0);
     a.u16(0);
     a.f64(DENSITY);
     a.u8(0);
@@ -660,13 +666,13 @@ fn environment(a: &mut Archive) -> u32 {
         a,
         Some("Lights, Cameras and Scene"),
         Schema::Plain,
-        ids::LIGHTS,
+        Oid::Tree(ids::LIGHTS),
     );
     let lights = a.count16(LIGHTS.len(), "light count");
     block_open(a, lights);
     for light in &LIGHTS {
         a.object(light.class);
-        named(a, Some(light.name), Schema::Geometric, light.id);
+        named(a, Some(light.name), Schema::Geometric, Oid::Tree(light.id));
         block(a, Tail { word64: 0, ..TAIL });
         a.f64s(&light.colour);
         a.u32s(&light.flags);
@@ -734,7 +740,7 @@ fn annotation_view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u
 /// notes-area view, u32 and two `CString` values.
 fn block_manager(a: &mut Archive) {
     a.object("moSketchBlockMgr_c");
-    named_with(a, None, Schema::Plain, u32::MAX, 0);
+    named_with(a, None, Schema::Plain, Oid::Plain(u32::MAX), 0);
     block(a, TAIL);
     a.zeros(12);
     a.u32(0);

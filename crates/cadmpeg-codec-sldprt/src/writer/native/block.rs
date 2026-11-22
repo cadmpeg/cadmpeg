@@ -25,8 +25,17 @@ impl Schema {
 /// A named object's head: its `moNodeName_c` object (`None` for an unnamed
 /// object), u32 `0`, u16 family `0`, Boolean byte `0`, the schema byte, the
 /// object identifier, u32 `0` and an empty `CString`.
-pub(super) fn named(archive: &mut Archive, name: Option<&str>, schema: Schema, id: u32) {
+pub(super) fn named(archive: &mut Archive, name: Option<&str>, schema: Schema, id: Oid) {
     named_with(archive, name, schema, id, 0);
+}
+
+/// A named object's identifier.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Oid {
+    /// A default-tree node by its `ids` value.
+    Tree(u32),
+    /// An identifier as written.
+    Plain(u32),
 }
 
 /// [`named`] with the u32 after the identifier.
@@ -34,9 +43,13 @@ pub(super) fn named_with(
     archive: &mut Archive,
     name: Option<&str>,
     schema: Schema,
-    id: u32,
+    id: Oid,
     after_id: u32,
 ) {
+    let id = match id {
+        Oid::Tree(id) => archive.tree_id(id),
+        Oid::Plain(id) => id,
+    };
     match name {
         Some(name) => {
             archive.object(super::NODE_NAME_CLASS);

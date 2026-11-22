@@ -46,11 +46,14 @@ pub(super) struct Archive {
     map: ClassMap,
     /// The first value that did not fit its field.
     overflow: Option<&'static str>,
+    /// What the default tree's object identifiers add to their `ids` values.
+    id_base: u32,
 }
 
 impl Archive {
-    /// A `Config-N` stream, its map starting at [`FIRST_INDEX`].
-    pub(super) fn new() -> Self {
+    /// A `Config-N` stream, its map starting at [`FIRST_INDEX`], whose tree
+    /// identifiers add `id_base`.
+    pub(super) fn new(id_base: u32) -> Self {
         Self {
             bytes: Vec::new(),
             map: ClassMap {
@@ -58,15 +61,28 @@ impl Archive {
                 next: FIRST_INDEX,
             },
             overflow: None,
+            id_base,
         }
     }
 
-    /// A stream that continues `map`.
-    pub(super) fn continuing(map: ClassMap) -> Self {
+    /// A stream that continues `map`, whose tree identifiers add `id_base`.
+    pub(super) fn continuing(map: ClassMap, id_base: u32) -> Self {
         Self {
             bytes: Vec::new(),
             map,
             overflow: None,
+            id_base,
+        }
+    }
+
+    /// The object identifier of the default-tree node `id` (an `ids` value).
+    pub(super) fn tree_id(&mut self, id: u32) -> u32 {
+        match self.id_base.checked_add(id) {
+            Some(id) => id,
+            None => {
+                self.overflow.get_or_insert("tree object identifier");
+                0
+            }
         }
     }
 

@@ -7,10 +7,11 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn streams(bodies: usize) -> Vec<(String, Vec<u8>)> {
     let bodies = (0..bodies)
-        .map(|index| Body::numbered("Bracket", index))
+        .map(|index| Body::numbered("Bracket", 0, index))
         .collect::<Result<Vec<_>, _>>()
         .expect("bodies number");
     skeleton(&Facts {
+        id_base: 0,
         name: "Bracket",
         active: "Default",
         bodies: &bodies,
@@ -109,4 +110,28 @@ fn keywords_group_records_by_tag_and_order_them_by_identifier_text() {
     ] {
         assert!(names.contains(&name), "{name}");
     }
+}
+
+#[test]
+fn tree_identifiers_follow_the_identifier_base() {
+    let bodies = [Body::numbered("Bracket", 40, 0).expect("body numbers")];
+    let streams = skeleton(&Facts {
+        id_base: 40,
+        name: "Bracket",
+        active: "Default",
+        bodies: &bodies,
+    })
+    .expect("the skeleton writes");
+    let keywords = stream(&streams, "swXmlContents/KeyWords");
+    let text = std::str::from_utf8(&keywords[1..]).expect("UTF-8");
+    let document = roxmltree::Document::parse(text).expect("XML");
+    let ids = document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.tag_name().name() != "Configuration")
+        .map(|node| node.attribute("id").and_then(|id| id.parse::<u32>().ok()))
+        .collect::<Option<Vec<_>>>()
+        .expect("numeric identifiers");
+    assert!(ids.iter().all(|&id| id > 40), "{ids:?}");
+    assert_eq!(bodies[0].feature_id, 40 + super::ids::MARKUPS + 1);
 }

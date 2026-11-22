@@ -450,7 +450,7 @@ pub(crate) fn write_semantic_with_records(
     );
     let skeleton = retained_records.is_empty();
     if skeleton {
-        losses.extend(native_skeleton(ir, &mut sections)?);
+        losses.extend(native_skeleton(ir, native.as_ref(), &mut sections)?);
     }
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
@@ -529,6 +529,7 @@ pub(crate) fn write_semantic_with_records(
 /// Returns the losses the skeleton states.
 fn native_skeleton(
     ir: &CadIr,
+    native: Option<&SldprtNative>,
     sections: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let name = ir
@@ -545,10 +546,20 @@ fn native_skeleton(
         .find(|value| value.active)
         .and_then(|value| value.name.clone())
         .unwrap_or_else(|| "Default".to_owned());
+    // The skeleton's object identifiers follow the history summary's, so the
+    // decoder binds no summary feature to a skeleton object.
+    let id_base = native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .filter_map(crate::records::Feature::source_value)
+        .max()
+        .unwrap_or_default();
     let bodies = (0..ir.geometry.bodies.len())
-        .map(|index| native::Body::numbered(&name, index))
+        .map(|index| native::Body::numbered(&name, id_base, index))
         .collect::<Result<Vec<_>, _>>()?;
     let facts = native::Facts {
+        id_base,
         name: &name,
         active: &active,
         bodies: &bodies,

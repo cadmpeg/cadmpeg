@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 
 use super::archive::{Archive, ClassMap};
 use super::block::{
-    block, block_close, block_open, body_head, named, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
+    block, block_close, block_open, body_head, named, Oid, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
 };
 use super::{ids, Body, Facts, PLANE_HALF_EXTENT, TIME_STAMP};
 
@@ -50,13 +50,13 @@ pub(super) fn resolved_features(
     part: &PartRefs,
 ) -> Result<Vec<u8>, CodecError> {
     let count = config.count();
-    let mut archive = Archive::continuing(config);
+    let mut archive = Archive::continuing(config, facts.id_base);
     let comments = Tail { word64: 0, ..TAIL };
     plain_folder(
         &mut archive,
         "moCommentsFolder_c",
         "Comments",
-        ids::COMMENTS,
+        Oid::Tree(ids::COMMENTS),
         comments,
     );
     favorites(&mut archive);
@@ -66,14 +66,14 @@ pub(super) fn resolved_features(
         &mut archive,
         "moSensorFolder_c",
         "Sensors",
-        ids::SENSORS,
+        Oid::Tree(ids::SENSORS),
         TAIL,
     );
     plain_folder(
         &mut archive,
         "moDocsFolder_c",
         "Design Binder",
-        ids::DESIGN_BINDER,
+        Oid::Tree(ids::DESIGN_BINDER),
         TAIL,
     );
     annotations(&mut archive);
@@ -81,14 +81,14 @@ pub(super) fn resolved_features(
         &mut archive,
         "moInkMarkupFolder_c",
         "Markups",
-        ids::MARKUPS,
+        Oid::Tree(ids::MARKUPS),
         ADDED_FOLDER_TAIL,
     );
     plain_folder(
         &mut archive,
         "moSurfaceBodyFolder_c",
         "Surface Bodies",
-        ids::SURFACE_BODIES,
+        Oid::Tree(ids::SURFACE_BODIES),
         TAIL,
     );
     archive.zeros(12);
@@ -96,7 +96,7 @@ pub(super) fn resolved_features(
         &mut archive,
         "moSolidBodyFolder_c",
         "Solid Bodies",
-        ids::SOLID_BODIES,
+        Oid::Tree(ids::SOLID_BODIES),
         TAIL,
     );
     archive.zeros(12);
@@ -105,14 +105,14 @@ pub(super) fn resolved_features(
         &mut archive,
         "moEqnFolder_c",
         "Equations",
-        ids::EQUATIONS,
+        Oid::Tree(ids::EQUATIONS),
         TAIL,
     );
     plain_folder(
         &mut archive,
         "moMaterialFolder_c",
         super::MATERIAL_NAME,
-        ids::MATERIAL,
+        Oid::Tree(ids::MATERIAL),
         TAIL,
     );
     archive.cstring("");
@@ -147,7 +147,7 @@ pub(super) struct PartRefs {
 
 /// A folder of `class` named `name`: its named head, its block and the
 /// folder's u32 `0`.
-fn plain_folder(archive: &mut Archive, class: &'static str, name: &str, id: u32, tail: Tail) {
+fn plain_folder(archive: &mut Archive, class: &'static str, name: &str, id: Oid, tail: Tail) {
     archive.object(class);
     named(archive, Some(name), Schema::Plain, id);
     block(archive, tail);
@@ -160,7 +160,7 @@ fn favorites(archive: &mut Archive) {
         archive,
         "moFavoriteFolder_c",
         "Favorites",
-        ids::FAVORITES,
+        Oid::Tree(ids::FAVORITES),
         TAIL,
     );
     archive.u32(0);
@@ -169,7 +169,13 @@ fn favorites(archive: &mut Archive) {
 
 /// `moHistoryFolder_c` with no items.
 fn history(archive: &mut Archive) {
-    plain_folder(archive, "moHistoryFolder_c", "History", ids::HISTORY, TAIL);
+    plain_folder(
+        archive,
+        "moHistoryFolder_c",
+        "History",
+        Oid::Tree(ids::HISTORY),
+        TAIL,
+    );
     archive.u16(0);
 }
 
@@ -179,7 +185,7 @@ fn selection_sets(archive: &mut Archive) {
         archive,
         "moSelectionSetFolder_c",
         "Selection Sets",
-        ids::SELECTION_SETS,
+        Oid::Tree(ids::SELECTION_SETS),
         ADDED_FOLDER_TAIL,
     );
     archive.u16(0);
@@ -196,11 +202,11 @@ fn annotations(archive: &mut Archive) {
         archive,
         Some("Annotations"),
         Schema::Plain,
-        ids::ANNOTATIONS,
+        Oid::Tree(ids::ANNOTATIONS),
     );
     block_open(archive, 2);
     let notes = archive.object("moNotesAreaFtrFolder_c");
-    named(archive, Some("Notes"), Schema::Plain, ids::NOTES);
+    named(archive, Some("Notes"), Schema::Plain, Oid::Tree(ids::NOTES));
     block(archive, ADDED_FOLDER_TAIL);
     archive.u32(0);
     archive.object("moNotesAreaFtrFolder_c");
@@ -208,7 +214,7 @@ fn annotations(archive: &mut Archive) {
         archive,
         Some("Notes1___EndTag___"),
         Schema::Plain,
-        ids::NOTES_END,
+        Oid::Tree(ids::NOTES_END),
     );
     block(archive, ADDED_FOLDER_TAIL);
     archive.u32(0);
@@ -242,11 +248,11 @@ impl Plane {
         }
     }
 
-    fn id(self) -> u32 {
+    fn id(self) -> Oid {
         match self {
-            Self::Front => ids::FRONT_PLANE,
-            Self::Top => ids::TOP_PLANE,
-            Self::Right => ids::RIGHT_PLANE,
+            Self::Front => Oid::Tree(ids::FRONT_PLANE),
+            Self::Top => Oid::Tree(ids::TOP_PLANE),
+            Self::Right => Oid::Tree(ids::RIGHT_PLANE),
         }
     }
 
@@ -320,7 +326,12 @@ fn plane_data(archive: &mut Archive, plane: Plane) {
 /// plane, as a `moCompRefPlane_c`.
 fn origin(archive: &mut Archive) {
     archive.object("moOriginProfileFeature_c");
-    named(archive, Some("Origin"), Schema::Geometric, ids::ORIGIN);
+    named(
+        archive,
+        Some("Origin"),
+        Schema::Geometric,
+        Oid::Tree(ids::ORIGIN),
+    );
     block(archive, Tail { word64: 0, ..TAIL });
     archive.zeros(10);
     archive.object("sgSketch");
@@ -405,7 +416,8 @@ fn origin_point(archive: &mut Archive) {
 fn origin_plane(archive: &mut Archive) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
-    archive.u32(ids::FRONT_PLANE);
+    let front = archive.tree_id(ids::FRONT_PLANE);
+    archive.u32(front);
     archive.u32(TIME_STAMP);
     archive.u16(0);
     archive.u16(3);
@@ -442,7 +454,12 @@ pub(super) fn unit_component(archive: &mut Archive, body: u32) {
 /// `CString`, u32 `1`, the feature name, and u32 `0`.
 fn base_body(archive: &mut Archive, body: &Body, component: u32) {
     archive.object("moBaseBody_c");
-    named(archive, Some(&body.name), Schema::Plain, body.feature_id);
+    named(
+        archive,
+        Some(&body.name),
+        Schema::Plain,
+        Oid::Plain(body.feature_id),
+    );
     block(archive, BASE_BODY_TAIL);
     body_head(archive, Some(std::slice::from_ref(&component)), &[body.id]);
     archive.object("moPMarkRecord_c");
