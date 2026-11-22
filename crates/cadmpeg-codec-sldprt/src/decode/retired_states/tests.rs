@@ -95,7 +95,7 @@ fn the_appearance_on_a_retired_face_goes_with_a_loss_naming_its_configuration() 
     assert!(loss.message.contains(configuration.as_str()), "{loss:#?}");
     assert!(
         loss.message
-            .contains("1 appearance binding(s) and 0 tessellation(s)"),
+            .contains("1 appearance binding(s) on the records of its state"),
         "{loss:#?}"
     );
 }

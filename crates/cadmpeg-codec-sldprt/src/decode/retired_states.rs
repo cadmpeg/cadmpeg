@@ -7,10 +7,12 @@
 //! states each other configuration's stored records in that configuration's
 //! evaluation. [`retire`] then removes them from the geometry, with what the
 //! model says of them: the body membership and feature outputs that the
-//! evaluation states, and the presentation records on them, which a
-//! model-class target cannot yet name in an evaluation (interim, §8).
+//! evaluation states, and the appearance bindings on them, which a
+//! model-class target cannot yet name in an evaluation (interim, §8). The
+//! display tables bind to the active configuration's faces only, so none
+//! names a retired record.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::AppearanceTarget;
@@ -27,9 +29,9 @@ use crate::loss::SldprtLossCode;
 
 /// Removes the `retired` geometry records, which the evaluations of
 /// configurations that are not active hold, with every model reference to
-/// them: [`retire_model`]; the appearance bindings and tessellations on
-/// them, and the appearances only those bindings used, with one loss per
-/// configuration; their annotations and the unknown-record links to them.
+/// them: [`retire_model`]; the appearance bindings on them, and the
+/// appearances only those bindings used, with one loss per configuration;
+/// their annotations and the unknown-record links to them.
 pub(super) fn retire(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -40,58 +42,56 @@ pub(super) fn retire(
     if retired.is_empty() {
         return;
     }
-    retire_model(ir, retired);
     let gone = |id: &str| retired.contains_key(id);
-    let mut presentation = BTreeMap::<&ConfigurationId, (usize, usize)>::new();
-    let mut tessellations = BTreeMap::new();
-    for tessellation in &ir.model.tessellations {
-        let configuration = tessellation
-            .body
-            .iter()
-            .map(cadmpeg_ir::ids::BodyId::as_str)
-            .chain(
-                tessellation
-                    .faces
-                    .iter()
-                    .map(cadmpeg_ir::ids::FaceId::as_str),
-            )
-            .find_map(|id| retired.get(id));
-        if let Some(configuration) = configuration {
-            presentation.entry(configuration).or_default().1 += 1;
-            tessellations.insert(tessellation.id.as_str().to_owned(), configuration);
-        }
-    }
-    let mut dropped = tessellations.keys().cloned().collect::<BTreeSet<_>>();
+    let mut dropped = BTreeSet::new();
     let mut unbound = BTreeSet::new();
-    for binding in &ir.model.appearance_bindings {
-        let configuration = match &binding.target.entity {
-            AppearanceTarget::Tessellation(tessellation)
-            | AppearanceTarget::TriangleGroup { tessellation, .. } => {
-                tessellations.get(tessellation).copied()
-            }
-            target => target_id(target).and_then(|id| retired.get(id)),
-        };
-        if let Some(configuration) = configuration {
-            presentation.entry(configuration).or_default().0 += 1;
+    {
+        let colours = ir
+            .geometry
+            .faces
+            .iter()
+            .filter_map(|face| Some((face.id.as_str(), face.color?)))
+            .collect::<HashMap<_, _>>();
+        let base_colours = ir
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| (&appearance.id, appearance.base_color))
+            .collect::<HashMap<_, _>>();
+        // Per configuration: the bindings, and the face bindings whose colour
+        // the face record states.
+        let mut bindings = BTreeMap::<&ConfigurationId, (usize, usize)>::new();
+        for binding in &ir.model.appearance_bindings {
+            let Some((id, configuration)) =
+                target_id(&binding.target.entity).and_then(|id| Some((id, retired.get(id)?)))
+            else {
+                continue;
+            };
+            let on_face = matches!(binding.target.entity, AppearanceTarget::Face(_))
+                && colours.get(id).is_some_and(|colour| {
+                    base_colours.get(&binding.appearance).copied().flatten() == Some(*colour)
+                });
+            let counts = bindings.entry(configuration).or_default();
+            counts.0 += 1;
+            counts.1 += usize::from(on_face);
             dropped.insert(binding.id.as_str().to_owned());
             unbound.insert(binding.appearance.clone());
         }
+        for (configuration, (count, on_faces)) in bindings {
+            losses.push(
+                SldprtLossCode::ConfigStatePresentationUnstated.note(format!(
+                "configuration {configuration}: {count} appearance binding(s) on the records of \
+                 its state are not stated, because a model target cannot name a state that is \
+                 not current; {on_faces} of them state the colour that their face's record \
+                 keeps."
+            )),
+            );
+        }
     }
-    for (configuration, (bindings, tessellations)) in presentation {
-        losses.push(
-            SldprtLossCode::ConfigStatePresentationUnstated.note(format!(
-            "configuration {configuration}: {bindings} appearance binding(s) and {tessellations} \
-             tessellation(s) on the records of its state are not stated, because a model target \
-             cannot name a state that is not current; the faces of its state keep their colours."
-        )),
-        );
-    }
+    retire_model(ir, retired);
     ir.model
         .appearance_bindings
         .retain(|binding| !dropped.contains(binding.id.as_str()));
-    ir.model
-        .tessellations
-        .retain(|tessellation| !dropped.contains(tessellation.id.as_str()));
     for binding in &ir.model.appearance_bindings {
         unbound.remove(&binding.appearance);
     }

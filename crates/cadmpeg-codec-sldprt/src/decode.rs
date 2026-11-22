@@ -3871,6 +3871,7 @@ fn build_geometry_ir(
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
+    let stored_bodies = stored_partition_bodies(&ir, &configuration_bodies);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -4121,15 +4122,25 @@ fn build_geometry_ir(
     ) {
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
-    let mut assigned_tessellations =
-        crate::tessellation::assign_face_key_owners(&mut ir, &brep.face_keys, &face_key_bindings);
+    // The display tables are the active configuration's faces (spec §8).
+    let mut assigned_tessellations = crate::tessellation::assign_face_key_owners(
+        &mut ir,
+        &brep.face_keys,
+        &face_key_bindings,
+        &stored_bodies,
+    );
     assigned_tessellations.extend(crate::tessellation::assign_persistent_owners(
         &mut ir,
         &face_identities,
         &persistent_face_bindings,
+        &stored_bodies,
     ));
-    let remaining_assignments =
-        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut pmi_losses)?;
+    let remaining_assignments = crate::tessellation::assign_unique_surface_owners(
+        ctx,
+        &mut ir,
+        &stored_bodies,
+        &mut pmi_losses,
+    )?;
     assigned_tessellations.extend(remaining_assignments);
     if native_appearance_plan.unresolved > 0 {
         pmi_losses.push(
@@ -4342,28 +4353,62 @@ fn active_partition_bodies(
     ir: &CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
-    let decoded = || ir.geometry.bodies.iter().map(|body| body.id.clone());
+    let decoded = ir.geometry.bodies.iter().map(|body| body.id.clone());
+    let Some(active) = active_partition(ir, configuration_bodies) else {
+        return decoded.collect();
+    };
+    let held = partition_bodies(configuration_bodies, |index| index == active);
+    decoded.filter(|body| held.contains(body)).collect()
+}
+
+/// The bodies that only the partitions of configurations that are not active
+/// hold; none where the decode holds one partition or cannot tell the active
+/// one.
+fn stored_partition_bodies(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> HashSet<cadmpeg_ir::ids::BodyId> {
+    let Some(active) = active_partition(ir, configuration_bodies) else {
+        return HashSet::new();
+    };
+    let current = partition_bodies(configuration_bodies, |index| index == active);
+    partition_bodies(configuration_bodies, |index| index != active)
+        .into_iter()
+        .filter(|body| !current.contains(body))
+        .cloned()
+        .collect()
+}
+
+/// The index of the active Parasolid partition, where the decode holds
+/// several partitions and the active one among them.
+fn active_partition(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> Option<usize> {
     let partitions = configuration_bodies
         .iter()
         .map(|(index, _)| *index)
         .collect::<BTreeSet<_>>();
     if partitions.len() < 2 {
-        return decoded().collect();
+        return None;
     }
-    let active = ir
-        .source
+    ir.source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
-    let Some(active) = active.filter(|index| partitions.contains(index)) else {
-        return decoded().collect();
-    };
-    let held = configuration_bodies
+        .and_then(|section| crate::container::configuration_index(section))
+        .filter(|index| partitions.contains(index))
+}
+
+/// The bodies of the partitions whose index `select` admits.
+fn partition_bodies(
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    select: impl Fn(usize) -> bool,
+) -> HashSet<&cadmpeg_ir::ids::BodyId> {
+    configuration_bodies
         .iter()
-        .filter(|(index, _)| *index == active)
+        .filter(|(index, _)| select(*index))
         .flat_map(|(_, bodies)| bodies)
-        .collect::<HashSet<_>>();
-    decoded().filter(|body| held.contains(body)).collect()
+        .collect()
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -5157,10 +5202,15 @@ fn build_metadata_ir(
             &mut ir,
             &[],
             &push.persistent_face_bindings,
+            &HashSet::new(),
         );
         let mut owner_losses = Vec::new();
-        let _assigned_unique =
-            crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut owner_losses)?;
+        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
+            ctx,
+            &mut ir,
+            &HashSet::new(),
+            &mut owner_losses,
+        )?;
         pmi_losses.append(&mut owner_losses);
         if push.mesh_count > 0 {
             pmi_losses.push(
