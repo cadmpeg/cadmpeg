@@ -62,13 +62,7 @@ fn difference(plane: &PlaneSides, point: Point2) -> bool {
 }
 
 fn difference_cap(plane: &PlaneSides, tolerance: f64) -> Option<Cap> {
-    let mut cap = Cap {
-        loops: Vec::new(),
-        pieces: Vec::new(),
-        corners: Vec::new(),
-        area: 0.0,
-        measured: Vec::new(),
-    };
+    let mut pieces = Vec::new();
     let sources = || plane.before.iter().chain(&plane.after);
     let endpoints: Vec<_> = sources()
         .flat_map(|source| &source.pieces)
@@ -85,12 +79,12 @@ fn difference_cap(plane: &PlaneSides, tolerance: f64) -> Option<Cap> {
             for fragment in split_piece(piece, &endpoints, tolerance) {
                 let (left, right) = fragment.sides_of_middle(SIDE_OFFSET * tolerance)?;
                 if difference(plane, left) != difference(plane, right) {
-                    cap.pieces.push(fragment);
+                    pieces.push(fragment);
                 }
             }
         }
     }
-    Some(cap)
+    Some(Cap::new(Vec::new(), pieces, Vec::new(), 0.0, Vec::new()))
 }
 
 fn changed_regions(plane: &PlaneSides, sampled: &[Sampled<'_>]) -> Vec<usize> {
