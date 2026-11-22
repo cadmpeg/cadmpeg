@@ -10720,28 +10720,68 @@ source = "spec"
 anchor = "name length at `+5`"
 
 [[record]]
-name = "revolution_line_reference_axis_line"
+name = "revolution_line_reference_record_tail"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
 kind = "byte"
 section = "2"
-anchor = "The record ends with the axis line"
-size = 48
+anchor = "The record ends with its tail"
+size = 57
 endianness = "little"
-note = "Offsets begin at the axis line, the last 48 bytes of an moLineRef_w scalar record of six to ten values."
+note = "Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them."
+
+[[record.field]]
+name = "scalar"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "one positive scalar at tail offset `+0`"
 
 [[record.field]]
 name = "point"
-offset = 0
+offset = 8
 type = "f64[3]"
 source = "spec"
-anchor = "a point on the axis in metres at line offset `+0`"
+anchor = "a point on the axis in metres at tail offset `+8`"
 
 [[record.field]]
 name = "direction"
-offset = 24
+offset = 32
 type = "f64[3]"
 source = "spec"
-anchor = "the unit axis direction at line offset `+24`"
+anchor = "the unit axis direction at tail offset `+32`"
+
+[[record.field]]
+name = "zero"
+offset = 56
+type = "bytes[1]"
+source = "spec"
+anchor = "one zero byte at tail offset `+56`"
+value = [0x0]
+
+[[record]]
+name = "revolution_line_reference_nested_end"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs"
+kind = "byte"
+section = "2"
+anchor = "Its end follows the seventh value"
+size = 6
+endianness = "little"
+note = "Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "five zero bytes at end offset `+0`"
+value = [0x0, 0x0, 0x0, 0x0, 0x0]
+
+[[record.field]]
+name = "selector"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "a nonzero selector byte at end offset `+5`"
 
 [[record]]
 name = "cosmetic_thread_component_edge_wrapper_prefix"

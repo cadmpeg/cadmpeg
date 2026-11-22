@@ -12,7 +12,8 @@ use super::grid::quantize;
 use super::scalars::FeatureObjectNames;
 use super::transforms::{feature_sketch_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
-use crate::layout::revolution_line_reference_axis_line as axis_line;
+use crate::layout::revolution_line_reference_nested_end as nested_end;
+use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::temporary_axis_compact_boundary as axis_compact_end;
 use crate::layout::temporary_axis_declared_boundary_prefix as axis_declared_end;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
@@ -52,6 +53,36 @@ fn stored_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
         return None;
     }
     square_sum_unit_direction(values)
+}
+
+/// The axis an `moLineRef_w` record tail states: its scalar is positive, its
+/// point is in metres and its direction has unit length.
+fn line_reference_tail_axis(
+    payload: &[u8],
+    tail: usize,
+) -> Option<(cadmpeg_ir::features::geometry::FinitePoint3, UnitVector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let value = |offset: usize| {
+        let value = View::f64_le_at(payload, tail.checked_add(offset)?)?;
+        (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
+    };
+    if value(record_tail::SCALAR)? <= 0.0 {
+        return None;
+    }
+    let point = record_tail::POINT;
+    let direction = record_tail::DIRECTION;
+    Some((
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+            value(point)? * NATIVE_TO_IR,
+            value(point + 8)? * NATIVE_TO_IR,
+            value(point + 16)? * NATIVE_TO_IR,
+        ))?,
+        stored_unit_direction([
+            value(direction)?,
+            value(direction + 8)?,
+            value(direction + 16)?,
+        ])?,
+    ))
 }
 
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
@@ -452,7 +483,6 @@ fn revolution_line_reference_inputs(
     UnitVector3,
 )> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
-    const NATIVE_TO_IR: f64 = 1000.0;
 
     let search_end = super::DeclaredEnd::of(object_end, payload.len())?;
     let search_end = search_end.get();
@@ -470,45 +500,29 @@ fn revolution_line_reference_inputs(
             && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
         .then_some(source)
     };
-    // The scalar record ends with the axis line: a point in metres and the
-    // unit direction.
     let axis_record = |frame: usize, scalar_count: usize| {
         let record_end = frame.checked_add(scalar_count.checked_mul(8)?)?;
-        let line = record_end.checked_sub(axis_line::LEN)?;
-        if line < frame {
+        let tail = record_end.checked_sub(record_tail::ZERO)?;
+        if tail < frame {
             return None;
         }
-        for offset in (frame..line).step_by(8) {
+        for offset in (frame..tail).step_by(8) {
             scalar(offset)?;
         }
-        let point = line + axis_line::POINT;
-        let direction = line + axis_line::DIRECTION;
-        Some((
-            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
-                scalar(point)? * NATIVE_TO_IR,
-                scalar(point + 8)? * NATIVE_TO_IR,
-                scalar(point + 16)? * NATIVE_TO_IR,
-            ))?,
-            stored_unit_direction([
-                scalar(direction)?,
-                scalar(direction + 8)?,
-                scalar(direction + 16)?,
-            ])?,
-        ))
+        line_reference_tail_axis(payload, tail)
     };
-    let next_class_after_zeros = |record_end: usize, maximum_padding: usize| {
+    let next_boundary_after_zeros = |record_end: usize, maximum_padding: usize| {
         (record_end..=record_end + maximum_padding).find(|offset| {
             payload.get(record_end..*offset).is_some_and(|padding| {
                 padding.iter().all(|byte| *byte == 0)
-                    && payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
+                    && (payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
+                        || View::u16_le_at(payload, *offset).is_some_and(is_class_token))
             })
         })
     };
-    // The longest structurally terminated read is the record: a record whose
-    // last values are zero also ends a shorter read with zero padding.
     let longest_terminated = |frame: usize, scalar_counts: &[usize]| {
         scalar_counts.iter().rev().find_map(|&scalar_count| {
-            next_class_after_zeros(frame + scalar_count * 8, 24)?;
+            next_boundary_after_zeros(frame + scalar_count * 8, 24)?;
             Some((scalar_count, axis_record(frame, scalar_count)?))
         })
     };
@@ -532,9 +546,7 @@ fn revolution_line_reference_inputs(
                 let handles_end = handle_start + 8;
                 let frame_gap = 16;
                 let frame = handles_end + frame_gap;
-                if let Some((scalar_count, (origin, direction))) =
-                    longest_terminated(frame, &[6, 7])
-                {
+                if let Some((scalar_count, (origin, direction))) = longest_terminated(frame, &[7]) {
                     candidates.push((handle_start, scalar_count, (source, origin, direction)));
                 }
             }
@@ -567,7 +579,7 @@ fn revolution_line_reference_inputs(
                     && View::u32_le_at(payload, handles_end + 4).is_some_and(|address| address != 0)
                     && payload.get(handles_end + 8..handles_end + 20) == Some(&[0; 12])
                     && payload.get(handles_end + 20..handles_end + 24) == Some(&[0xff; 4])
-                    && next_class_after_zeros(addressed_end, 24).is_some()
+                    && next_boundary_after_zeros(addressed_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(addressed_frame, 8) {
                         candidates.push((handle_start, 8, (source, axis.0, axis.1)));
@@ -605,8 +617,11 @@ fn revolution_line_reference_inputs(
             && View::u32_le_at(payload, handle_start + 12).is_some_and(|address| address != 0)
             && payload.get(handle_start + 16..handle_start + 24) == Some(&[0; 8])
             && payload
-                .get(handle_start + 80..handle_start + 88)
-                .is_some_and(|cell| cell.iter().any(|byte| *byte != 0))
+                .get(handle_start + 80..handle_start + 80 + nested_end::LEN)
+                .is_some_and(|record_end| {
+                    record_end[nested_end::ZERO..nested_end::SELECTOR] == nested_end::ZERO_VALUE
+                        && record_end[nested_end::SELECTOR] != 0
+                })
         {
             let source_offset = handle_start - 44;
             if let (Some(source), Some(axis)) = (
@@ -697,7 +712,7 @@ fn revolution_line_reference_inputs(
                     continue;
                 }
                 let frame = handles_end + 8 + frame_gap;
-                for scalar_count in [6usize, 8, 9] {
+                for scalar_count in [7usize, 8, 9] {
                     let record_end = frame + scalar_count * 8;
                     let Some(next_record) = (record_end..=record_end + 24).find(|offset| {
                         payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)

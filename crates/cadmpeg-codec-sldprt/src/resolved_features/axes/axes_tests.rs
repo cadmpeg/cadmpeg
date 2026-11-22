@@ -340,13 +340,19 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
         // zero values follow the eight written here.
         Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)))
     );
+    let mut tokened = declared.clone();
+    tokened[handles + 89..handles + 93].copy_from_slice(&[0x5e, 0x8d, 0x01, 0x00]);
+    assert_eq!(
+        revolution_line_reference_inputs(&tokened, 32, tokened.len(), &HashSet::from([42])),
+        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)))
+    );
 
     let mut nested = vec![0; 300];
     let handles = 132;
     let source = handles - 44;
     nested[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    nested[source + 4..source + 8].copy_from_slice(&0x4890_6465u32.to_le_bytes());
-    nested[source + 8..source + 10].copy_from_slice(&0x80b6u16.to_le_bytes());
+    nested[source + 4..source + 8].copy_from_slice(&0x58c3_17f2u32.to_le_bytes());
+    nested[source + 8..source + 10].copy_from_slice(&0x8964u16.to_le_bytes());
     nested[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
     nested[source + 16..source + 20].copy_from_slice(&7u32.to_le_bytes());
     nested[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
