@@ -358,6 +358,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-onshape"
+version = "0.6.12"
+dependencies = [
+ "base64",
+ "cadmpeg-codec-step",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
 name = "cadmpeg-codec-pvz"
 version = "0.6.12"
 dependencies = [
@@ -509,6 +526,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-layout-tables"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-core",
+ "proc-macro2",
+ "serde",
+ "syn 3.0.10",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "cadmpeg-measure"
 version = "0.6.12"
 dependencies = [
@@ -556,6 +585,7 @@ dependencies = [
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
+ "cadmpeg-codec-onshape",
  "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",

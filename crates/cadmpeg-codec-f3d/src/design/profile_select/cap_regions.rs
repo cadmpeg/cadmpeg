@@ -26,6 +26,7 @@
 //! reports `feature.profile-cap-outline-assumed`.
 
 pub(super) mod compact;
+pub(super) mod joined;
 pub(super) mod overlap;
 pub(super) mod spatial;
 

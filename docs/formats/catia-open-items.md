@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** An independent schema or behavior check must assign each opaque value's namespace and distinguish head-slot roles before those values can supply typed fields or neutral dependencies.
 
-**Note.** The 15 complete compact inline records in `v6-engine-hex-screw-m8x55.CATPart` select earlier lead-`12` anchors. Each anchor's second head reference equals its paired entity identity and exceeds the associated catalog's 495-entry range. The inline anchor incidence still selects an exact same-graph field. This does not establish a replacement head-role order. Repeated values, adjacent values, and a coincident catalog name do not establish a role for an opaque inline value.
+**Note.** The 15 complete compact inline records in one part select earlier lead-`12` anchors. Each anchor's second head reference equals its paired entity identity and exceeds the associated catalog's 495-entry range. The inline anchor incidence still selects an exact same-graph field. This does not establish a replacement head-role order. Repeated values, adjacent values, and a coincident catalog name do not establish a role for an opaque inline value.
 
 ### DI-05. Compact inline schema selectors
 
@@ -334,7 +334,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Identify another source-closed carrier relation before evaluating an unbound rectangle as owned geometry. Preserve the parameter and Cartesian lanes independently of whether that relation resolves.
 
-**Conflict.** All 112 tagged packets admit at least one A5 geometry candidate under domain, corner, and 25-by-25 interior checks; 40 admit multiple candidates. Candidate uniqueness supplies no serialized identity. In the spring witness, the alternative carrier at offset 52715 passes the corner-box test but fails at interior sites. Its U domain also ends 0.0010119222600337707 parameter units below the stored rectangle; the interior comparison uses the common domain. Neither numeric proximity nor envelope containment assigns a carrier.
+**Conflict.** All 112 tagged packets admit at least one A5 geometry candidate under domain, corner, and 25-by-25 interior checks; 40 admit multiple candidates. Candidate uniqueness supplies no serialized identity. In the 84-face part's witness, the alternative carrier at offset 52715 passes the corner-box test but fails at interior sites. Its U domain also ends 0.0010119222600337707 parameter units below the stored rectangle; the interior comparison uses the common domain. Neither numeric proximity nor envelope containment assigns a carrier.
 
 **Note.** The all-compact face-boundary predicate remains separate. Tagged alternating and width-coded envelopes do not bind a standard face by its AABB or by source position.
 
@@ -346,9 +346,9 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Resolve the referenced objects in their actual allocation or factory namespace and verify their geometry against the rolling-ball center and limiting loci before assigning those roles. Preserve every unassigned reference and addressing form.
 
-**Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. In the spray-bottle hand record, references 781, 778, and 780 have no retained outer alias-row target; the `[base+3,base,base+2]` numeric pattern alone supplies no locus identity.
+**Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. In one part's hand record, references 781, 778, and 780 have no retained outer alias-row target; the `[base+3,base,base+2]` numeric pattern alone supplies no locus identity.
 
-**Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
+**Note.** Independent standard-versus-STEP topology verifies all 134 faces of one part uniquely by joint adjacency refinement. A second part's graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
 ### SN-23. Class-`0x61` roster controls and member identities
 
@@ -386,7 +386,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Establish a source-closed allocation bridge to standard support identities. Assign the class-`5b` interval frame and suffix, class-`5c` item and terminal meanings, and the remaining owner-tail controls from an independent semantic relation. Broader counted-packet cycle projection requires its own complete endpoint and source-closure rules.
 
-**Conflict.** The proposed universal face-node offset `target − final_owner_reference = m + 1` for a second owned-child operand `m ≥ 2` has three source counterexamples: spray-bottle at `369117` gives `m=2`, difference `0`; NIST CTC 01 at `1887263` and `1920192` gives `m=6`, difference `−7`. The bounded `27 03`/`27 05` prelude with difference `+10` remains a separate admitted relation. Numerical overlap across source namespaces does not establish an identity join.
+**Conflict.** The proposed universal face-node offset `target − final_owner_reference = m + 1` for a second owned-child operand `m ≥ 2` has three source counterexamples: one part at `369117` gives `m=2`, difference `0`; NIST CTC 01 at `1887263` and `1920192` gives `m=6`, difference `−7`. The bounded `27 03`/`27 05` prelude with difference `+10` remains a separate admitted relation. Numerical overlap across source namespaces does not establish an identity join.
 
 **Note.** Existing native retention passes full model checking for 5,214 copied control frames and 19,277 copied owner frames. Both existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
 
@@ -427,7 +427,7 @@ The two groups match a tessellation chord tolerance that differs between files. 
 
 **Need.** Establish the terminal's writer-level meaning and selection rule through an independent source relation. Shared byte encodings alone do not assign allocation-addressing semantics.
 
-**Conflict.** The retained private air-filter quote at physical offset `571941` names face `45375` and loop `45372`; the source frame names face `45379` and loop `45376`. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
+**Conflict.** One part's retained quote at physical offset `571941` names face `45375` and loop `45372`; the source frame names face `45379` and loop `45376`. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
 
 ### OS-04. Object-stream body dimension
 

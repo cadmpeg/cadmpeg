@@ -2,7 +2,7 @@
 //! Byte-offset and value constants generated from `docs/layouts/inventor.toml`.
 //!
 //! Do not edit by hand. Regenerate with:
-//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
+//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg-layout-tables`.
 
 /// Byte offsets for the `pm_dc_751ade_label_owner_body_v25` record.
 ///
