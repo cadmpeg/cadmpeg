@@ -136,6 +136,10 @@ pub(crate) enum SldprtLossCode {
     /// A profile sketch is placed on the Top frame through the plane its
     /// feature-input reference names, a binding open item DI-73 questions.
     SketchTopPlaneBindingAssumed,
+    /// A profile sketch takes its plane from the preceding object's or the
+    /// lane's plane reference, or from the Front lane fallback frame, because
+    /// its own object holds no plane record the decoder reads (open item DI-73).
+    SketchPlaneBindingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A compact sketch profile failed neutral profile admission.
@@ -413,6 +417,7 @@ impl SldprtLossCode {
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
         Self::SketchTopPlaneBindingAssumed,
+        Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchProfileRejected,
         Self::SketchListedLineConstructionAssumed,
@@ -561,6 +566,7 @@ impl SldprtLossCode {
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchTopPlaneBindingAssumed => "sketch.top-plane-binding-assumed",
+            Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
@@ -738,6 +744,7 @@ impl SldprtLossCode {
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchTopPlaneBindingAssumed
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -963,6 +970,7 @@ impl SldprtLossCode {
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchTopPlaneBindingAssumed
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1198,6 +1206,7 @@ mod tests {
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
                 "sketch.top-plane-binding-assumed",
+                "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.profile-rejected",
                 "sketch.listed-line-construction-assumed",

@@ -621,7 +621,7 @@ pub(crate) fn project_configuration_sketch_states(
     lanes: &[crate::records::FeatureInputLane],
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
-    top_references: &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches,
+    plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     for (configuration_index, lane_index) in
@@ -720,7 +720,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
-            top_references.extend(
+            plane_bindings.extend(
                 crate::resolved_features::profiles::project_compact_sketch_profiles(
                     ctx,
                     &mut features,
@@ -732,7 +732,7 @@ pub(crate) fn project_configuration_sketch_states(
                 )?,
             );
             let mut held_handles = held_handles;
-            top_references.extend(
+            plane_bindings.extend(
                 crate::resolved_features::profiles::project_marker_backed_sketches(
                     ctx,
                     &mut features,

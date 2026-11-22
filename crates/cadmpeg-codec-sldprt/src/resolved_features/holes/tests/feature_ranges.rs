@@ -31,14 +31,12 @@ fn feature_object_ranges_preserve_equal_offset_history_order() {
 }
 
 #[test]
-fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
+fn own_principal_component_record_names_the_profile_plane() {
     use crate::resolved_features::compact_reference_planes::{
         principal_sketch_frame, CompactReferencePlaneIndex,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-    use crate::resolved_features::holes::{
-        feature_input_sketch_frame, principal_top_profile_frame,
-    };
+    use crate::resolved_features::holes::{feature_input_sketch_frame, principal_profile_frame};
     use cadmpeg_ir::features::PrincipalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::HashMap;
@@ -81,12 +79,19 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             Vector3::new(0.0, -1.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
         );
+        let plane = if selector == 2 {
+            PrincipalPlane::Top
+        } else {
+            PrincipalPlane::Right
+        };
+        let principal = Some((principal_sketch_frame(plane), plane));
+        // The profile's own principal record names its plane, whether the
+        // Front reference comes from the preceding object or the lane default.
+        // The support-frame table keeps the Front lane fallback frame.
         for context in [0, start] {
-            let expected_top =
-                (source == 3 && context == 0).then(|| principal_sketch_frame(PrincipalPlane::Top));
             assert_eq!(
-                principal_top_profile_frame(&frames, &index, context, start, payload.len()),
-                expected_top
+                principal_profile_frame(&frames, &index, context, start, payload.len()),
+                principal
             );
             assert_eq!(
                 feature_input_sketch_frame(
@@ -99,9 +104,9 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
                 ),
                 Some(expected)
             );
-            let frame = expected_top.unwrap_or(expected);
+            let frame = principal_sketch_frame(plane);
             let sketch = cadmpeg_ir::sketches::Sketch {
-                id: cadmpeg_ir::sketches::SketchId::mint("sldprt:model:sketch#synthetic-principal")
+                id: cadmpeg_ir::sketches::SketchId::mint("sldprt:model:sketch#markers:1:1")
                     .unwrap(),
                 name: None,
                 configuration: None,
@@ -125,15 +130,10 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
                 QUANTUM,
             )
             .unwrap();
-            if expected_top.is_some() {
-                assert_eq!(transform.apply(point), point.cells());
-            } else {
-                let fallback = crate::resolved_features::transforms::sketch_frame_marker_transform(
-                    &sketch, QUANTUM,
-                )
-                .unwrap();
-                assert_eq!(transform.apply(point), fallback.apply(point));
-            }
+            // Both frames read the marker pair as local sketch coordinates:
+            // Top through its principal record, Right as an on-axis `N=+X,
+            // U=-Z` frame.
+            assert_eq!(transform.apply(point), point.cells());
         }
         let declared = super::profile_reference_plane_payload(false);
         let declared_start = b"moCompRefPlane_c".len() + 11;
@@ -144,14 +144,8 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
         reused.extend(&payload[start..]);
         let reused_index = CompactReferencePlaneIndex::new(&reused);
         assert_eq!(
-            principal_top_profile_frame(
-                &frames,
-                &reused_index,
-                context,
-                profile_start,
-                reused.len()
-            ),
-            (source == 3).then(|| principal_sketch_frame(PrincipalPlane::Top))
+            principal_profile_frame(&frames, &reused_index, context, profile_start, reused.len()),
+            principal
         );
         let mut invalid = payload.clone();
         invalid[start + 15..start + 23].copy_from_slice(&2.0f64.to_le_bytes());
@@ -170,8 +164,8 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             Some(placed)
         );
         assert_eq!(
-            principal_top_profile_frame(&frames, &index, 0, start, payload.len()),
-            None
+            principal_profile_frame(&frames, &index, 0, start, payload.len()),
+            principal
         );
     }
 }
@@ -278,9 +272,7 @@ fn enclosing_custom_component_retains_its_profile_frame() {
         principal_sketch_frame, CompactReferencePlaneIndex,
     };
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
-    use crate::resolved_features::holes::{
-        feature_input_sketch_frame, principal_top_profile_frame,
-    };
+    use crate::resolved_features::holes::{feature_input_sketch_frame, principal_profile_frame};
     use cadmpeg_ir::features::PrincipalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::HashMap;
@@ -314,7 +306,7 @@ fn enclosing_custom_component_retains_its_profile_frame() {
         ),
     )]);
     assert_eq!(
-        principal_top_profile_frame(&frames, &index, 0, start, payload.len()),
+        principal_profile_frame(&frames, &index, 0, start, payload.len()),
         None
     );
     assert_eq!(
@@ -332,6 +324,7 @@ fn enclosing_custom_component_retains_its_profile_frame() {
 /// the Top frame is not that route.
 #[test]
 fn support_frame_records_a_principal_top_reference() {
+    use crate::resolved_features::compact_reference_planes::PlaneBinding;
     use crate::resolved_features::compact_reference_planes::{
         principal_sketch_frame, CompactReferencePlaneIndex,
     };
@@ -345,11 +338,14 @@ fn support_frame_records_a_principal_top_reference() {
     payload[source..source + 4].copy_from_slice(&3u32.to_le_bytes());
     let index = CompactReferencePlaneIndex::new(&payload);
     let top = principal_sketch_frame(PrincipalPlane::Top);
-    for (reference, top_reference) in [
-        (SketchPlaneFrame::principal(PrincipalPlane::Top), true),
+    for (reference, binding) in [
+        (
+            SketchPlaneFrame::principal(PrincipalPlane::Top),
+            PlaneBinding::TopReference,
+        ),
         (
             SketchPlaneFrame::from_frame(top, SketchPlaneUAxisSource::Native),
-            false,
+            PlaneBinding::Stored,
         ),
     ] {
         let frames = HashMap::from([(3, reference)]);
@@ -357,8 +353,42 @@ fn support_frame_records_a_principal_top_reference() {
             feature_input_support_frame(&payload, &frames, &index, 0, 0, payload.len()),
             Some(SupportFrame {
                 frame: top,
-                top_reference,
+                binding,
             })
         );
     }
+}
+
+/// A profile whose own object holds no plane record takes the reference of
+/// the preceding object or the lane default, and that binding is assumed; a
+/// record inside the profile is stored.
+#[test]
+fn support_frame_from_the_preceding_object_or_the_lane_is_assumed() {
+    use crate::resolved_features::compact_reference_planes::{
+        principal_sketch_frame, CompactReferencePlaneIndex, PlaneBinding,
+    };
+    use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
+    use crate::resolved_features::holes::feature_input_support_frame;
+    use cadmpeg_ir::features::PrincipalPlane;
+    use std::collections::HashMap;
+
+    let mut payload = super::profile_reference_plane_payload(false);
+    let record_end = payload.len();
+    payload.extend([0u8; 64]);
+    let index = CompactReferencePlaneIndex::new(&payload);
+    let front = principal_sketch_frame(PrincipalPlane::Front);
+    let frames = HashMap::from([(
+        2,
+        SketchPlaneFrame::from_frame(front, SketchPlaneUAxisSource::Native),
+    )]);
+    let binding = |context, start| {
+        feature_input_support_frame(&payload, &frames, &index, context, start, payload.len())
+            .map(|support| (support.frame, support.binding))
+    };
+    assert_eq!(binding(0, 0), Some((front, PlaneBinding::Stored)));
+    assert_eq!(binding(0, record_end), Some((front, PlaneBinding::Assumed)));
+    assert_eq!(
+        binding(record_end, record_end),
+        Some((front, PlaneBinding::Assumed))
+    );
 }

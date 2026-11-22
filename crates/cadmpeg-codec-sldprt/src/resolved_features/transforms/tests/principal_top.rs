@@ -111,7 +111,7 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
 /// longer lies on the Top frame.
 #[test]
 fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
-    use crate::resolved_features::compact_reference_planes::TopReferenceSketches;
+    use crate::resolved_features::compact_reference_planes::{PlaneBinding, PlaneBindings};
     let named = |id: &str, name: &str| Sketch {
         id: SketchId::mint(id).unwrap(),
         name: Some(name.into()),
@@ -119,10 +119,10 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
     };
     let marker = named("sldprt:model:sketch#markers:1:7", "Sketch3");
     let twin = named("sldprt:model:sketch#compact:1:7", "Sketch3");
-    let mut routes = TopReferenceSketches::default();
-    routes.record(&marker.id, false);
-    routes.record(&twin.id, false);
-    assert!(routes.note(&[marker.clone(), twin.clone()]).is_none());
+    let mut routes = PlaneBindings::default();
+    routes.record(&marker.id, PlaneBinding::Stored);
+    routes.record(&twin.id, PlaneBinding::Stored);
+    assert!(routes.notes(&[marker.clone(), twin.clone()]).is_empty());
 
     let referenced = named("sldprt:model:sketch#markers:1:9", "Sketch5");
     let moved = Sketch {
@@ -135,11 +135,12 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
         .unwrap(),
         ..referenced.clone()
     };
-    routes.record(&referenced.id, true);
-    routes.record(&moved.id, true);
-    let note = routes
-        .note(&[marker, twin, referenced, moved])
-        .expect("named");
+    routes.record(&referenced.id, PlaneBinding::TopReference);
+    routes.record(&moved.id, PlaneBinding::TopReference);
+    let notes = routes.notes(&[marker, twin, referenced, moved]);
+    let [note] = notes.as_slice() else {
+        panic!("one note: {notes:?}");
+    };
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.kind()
@@ -147,6 +148,39 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
     assert!(
         note.message
             .starts_with("1 profile sketch(es) (Sketch5) are placed on the Top plane"),
+        "{}",
+        note.message
+    );
+}
+
+/// A sketch whose plane comes from the preceding object's or the lane's
+/// reference is named by the assumed-binding loss wherever it lies; a later
+/// stored record of the same sketch clears it.
+#[test]
+fn assumed_plane_binding_names_the_sketches_of_the_default_routes() {
+    use crate::resolved_features::compact_reference_planes::{PlaneBinding, PlaneBindings};
+    let named = |id: &str, name: &str| Sketch {
+        id: SketchId::mint(id).unwrap(),
+        name: Some(name.into()),
+        ..sketch()
+    };
+    let lane = named("sldprt:model:sketch#markers:1:3", "Sketch1");
+    let restored = named("sldprt:model:sketch#markers:1:4", "Sketch2");
+    let mut routes = PlaneBindings::default();
+    routes.record(&lane.id, PlaneBinding::Assumed);
+    routes.record(&restored.id, PlaneBinding::Assumed);
+    routes.record(&restored.id, PlaneBinding::Stored);
+    let notes = routes.notes(&[lane, restored]);
+    let [note] = notes.as_slice() else {
+        panic!("one note: {notes:?}");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::SketchPlaneBindingAssumed.kind()
+    );
+    assert!(
+        note.message
+            .starts_with("1 profile sketch(es) (Sketch1) take their plane from"),
         "{}",
         note.message
     );
