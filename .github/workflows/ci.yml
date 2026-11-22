@@ -322,7 +322,7 @@ jobs:
             free -m | awk 'NR==2 {printf "memory used %s of %s MiB; ", $3, $2} NR==3 {printf "swap used %s of %s MiB; ", $3, $2}'
             awk '/^pswpin / {printf "swap pages in %s; ", $2} /^pswpout / {print "swap pages out " $2}' /proc/vmstat
           done) &
-          (vmstat -n 1 | awk 'NR > 3 && ($7 || $8) {print "swap activity in " $7 " out " $8 " KiB/s"; fflush()}') &
+          (stdbuf -oL vmstat -n 1 | awk 'NR > 3 && ($7 || $8) {print "swap activity in " $7 " out " $8 " KiB/s"; fflush()}') &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
