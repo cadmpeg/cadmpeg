@@ -5,7 +5,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch as IrSketch, SketchConstraint, SketchEntityId, SketchGeometryDefinition, SketchLocus,
+    Sketch as IrSketch, SketchEntityId, SketchGeometryDefinition, SketchLocus,
 };
 
 use super::extrude::Extrusion;
@@ -14,7 +14,8 @@ use super::tree::Plane;
 use super::Feature;
 use crate::records::SketchRelationKind;
 use crate::resolved_features::write_generate::{
-    generated_dimension, generated_marker_relations, GeneratedDimension, GeneratedMarkerRelation,
+    generated_dimension, generated_marker_relations, is_driven_dimension, GeneratedDimension,
+    GeneratedMarkerRelation,
 };
 use crate::resolved_features::write_prepare::{
     generated_profile_stream, generated_sketch_owner_id, generated_sketch_owner_record,
@@ -47,12 +48,10 @@ pub(in crate::writer) struct SourceFeature {
 pub(in crate::writer) enum Features {
     /// Every sketch and, when the part's body comes from its one extrusion,
     /// that extrusion, in source order; `unwritten_extrusion` names why the
-    /// tree writes no extrusion of a part that holds one, and `driven` the
-    /// driven (reference) dimensions the sketches leave out.
+    /// tree writes no extrusion of a part that holds one.
     Native {
         features: Vec<Feature>,
         unwritten_extrusion: Option<String>,
-        driven: Vec<String>,
     },
     /// The sketches stay in the generated lane; the text names the first
     /// sketch the tree cannot write and why.
@@ -80,7 +79,6 @@ pub(in crate::writer) fn features(
         return Ok(Features::Native {
             features: Vec::new(),
             unwritten_extrusion: None,
-            driven: Vec::new(),
         });
     }
     let Some(native) = native else {
@@ -88,7 +86,6 @@ pub(in crate::writer) fn features(
     };
     let mut out = Vec::new();
     let mut written = Vec::new();
-    let mut driven = Vec::new();
     for sketch in &ir.model.sketches {
         if sketch
             .configuration
@@ -127,13 +124,6 @@ pub(in crate::writer) fn features(
                 )))
             }
         };
-        driven.extend(
-            ir.model
-                .sketch_constraints
-                .iter()
-                .filter(|constraint| constraint.sketch == sketch.id && is_driven(ir, constraint))
-                .map(|constraint| constraint.id.as_str().to_owned()),
-        );
         written.push(WrittenSketch {
             id: sketch.id.clone(),
             ordinal: owner.ordinal,
@@ -166,7 +156,6 @@ pub(in crate::writer) fn features(
     Ok(Features::Native {
         features: out.into_iter().map(|(_, feature)| feature).collect(),
         unwritten_extrusion,
-        driven,
     })
 }
 
@@ -582,11 +571,10 @@ fn constraints(
 ) -> Result<(Vec<Relation>, Vec<Dimension>), String> {
     let mut relations = Vec::new();
     let mut dimensions = Vec::new();
-    for constraint in ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter(|constraint| constraint.sketch == sketch.id && !is_driven(ir, constraint))
+    for constraint in
+        ir.model.sketch_constraints.iter().filter(|constraint| {
+            constraint.sketch == sketch.id && !is_driven_dimension(ir, constraint)
+        })
     {
         let definition = constraint.definition.kind();
         for relation in generated_marker_relations(definition) {
@@ -691,31 +679,6 @@ fn constraints(
         });
     }
     Ok((relations, dimensions))
-}
-
-/// Whether `constraint` is a driven (reference) dimension: its record says it
-/// is not driving, or the design states its parameter `Driven`. A native
-/// sketch dimension is driving, so the sketch writes no driven one.
-fn is_driven(ir: &cadmpeg_ir::CadIr, constraint: &SketchConstraint) -> bool {
-    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
-    let (Definition::DistanceLoci { parameter, .. }
-    | Definition::Distance { parameter, .. }
-    | Definition::HorizontalDistance { parameter, .. }
-    | Definition::VerticalDistance { parameter, .. }
-    | Definition::Angle { parameter, .. }
-    | Definition::Radius { parameter, .. }
-    | Definition::Diameter { parameter, .. }) = constraint.definition.kind()
-    else {
-        return false;
-    };
-    constraint.driving == Some(false)
-        || ir.design.parameters.iter().any(|candidate| {
-            candidate.id.as_str() == parameter.as_str()
-                && matches!(
-                    candidate.definition,
-                    cadmpeg_ir::design::parameter::ParameterDefinition::Driven
-                )
-        })
 }
 
 fn unit(vector: Vector3) -> Vector3 {

@@ -583,7 +583,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -896,15 +896,20 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
 
     let mut unavailable_fidelity = decoded.source_fidelity().clone();
     crate::test_support::make_source_image_unavailable(&mut unavailable_fidelity);
-    let error =
-        crate::test_support::plan_inherited_write(&edited, &unavailable_fidelity, &mut Vec::new())
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &SldprtCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(&unavailable_fidelity)),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("SLDPRT writer cannot regenerate B-rep after"),
-        "{error}"
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss.message.contains("without the retained source image")),
+        "{:#?}",
+        report.losses
     );
 
     assert!(unavailable_fidelity
@@ -914,7 +919,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         .is_none());
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         &edited,
         decoded.source_fidelity(),
         &mut encoded,

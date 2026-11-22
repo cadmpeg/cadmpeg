@@ -18,6 +18,7 @@ mod blend_spine;
 mod chamfer_supports;
 
 mod body_candidates;
+pub(crate) mod body_history_tail;
 mod body_index;
 pub(crate) mod body_recipe_operands;
 mod cache;
@@ -32,6 +33,7 @@ pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
+mod face_envelopes;
 mod face_recipe;
 mod face_support;
 mod fallback_face;
@@ -2149,15 +2151,22 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
-pub(crate) fn bind_feature_body_selections(
+/// Bind the body selections of `features`, and return the browser-node
+/// refusals of `Combine` operands that stay native, for a later binding pass
+/// to settle.
+pub(crate) fn bind_feature_body_selections_with_refusals(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+) -> (
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    Vec<CombineOperandRefusal>,
+) {
     use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
     use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut operand_refusals = Vec::new();
     let scopes = inputs.scopes;
     let groups = inputs.groups;
     let body_recipe_operands = inputs.body_recipe_operands;
@@ -2326,7 +2335,6 @@ pub(crate) fn bind_feature_body_selections(
                             _ => None,
                         }
                     };
-                    let mut binding_losses = Vec::new();
                     let refusal =
                         combine_selection::refine(operands, feature_id, |target, tools| {
                             combine_binding::bind_combine_operands(
@@ -2336,10 +2344,9 @@ pub(crate) fn bind_feature_body_selections(
                                 pattern_bodies,
                                 inputs,
                                 &mut body_candidates,
-                                &mut binding_losses,
+                                (&mut operand_refusals, &mut losses),
                             );
                         });
-                    losses.extend(binding_losses);
                     if let Some(loss) = refusal {
                         losses.push(loss);
                     }
@@ -2542,7 +2549,7 @@ pub(crate) fn bind_feature_body_selections(
         });
     }
 
-    losses
+    (losses, operand_refusals)
 }
 
 fn pattern_combine_tool_slots(
@@ -2712,6 +2719,61 @@ pub(super) enum CombineOperandSide {
     Tools,
 }
 
+/// A browser-node slot refusal of one `Combine` operand. A refusal becomes a
+/// loss note only when its operand stays native after every binding pass.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CombineOperandRefusal {
+    pub(super) feature: cadmpeg_ir::features::FeatureId,
+    pub(super) side: CombineOperandSide,
+    /// The operand word of the note: `target`, `tool` or `tools`.
+    pub(super) operand: &'static str,
+    /// The native record of the refused selection.
+    pub(super) record: String,
+    pub(super) reason: &'static str,
+}
+
+impl CombineOperandRefusal {
+    fn note(&self) -> cadmpeg_ir::report::loss::LossNote {
+        crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+            "feature {} does not bind Combine {} {} through its browser node: {}",
+            self.feature, self.operand, self.record, self.reason
+        ))
+    }
+}
+
+/// The loss notes of the refusals whose operand stays native in `features`.
+pub(crate) fn native_combine_operand_refusal_notes(
+    features: &[cadmpeg_ir::features::Feature],
+    refusals: Vec<CombineOperandRefusal>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let native = |selection: &BodySelection| {
+        matches!(
+            selection,
+            BodySelection::Native(_) | BodySelection::NativeSet(_)
+        )
+    };
+    refusals
+        .into_iter()
+        .filter(|refusal| {
+            features
+                .iter()
+                .find(|feature| feature.id == refusal.feature)
+                .is_none_or(|feature| match feature.evaluation.definition() {
+                    FeatureDefinition::Operation(FeatureOperation::Combine {
+                        operands, ..
+                    }) => native(match refusal.side {
+                        CombineOperandSide::Target => operands.target(),
+                        CombineOperandSide::Tools => operands.tools(),
+                    }),
+                    _ => true,
+                })
+        })
+        .map(|refusal| refusal.note())
+        .collect()
+}
+
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
 /// The target binds when its node names a body of the preceding history
@@ -2731,7 +2793,7 @@ fn bind_operand_list_combine_bodies(
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
-    refusals: &mut Vec<(CombineOperandSide, cadmpeg_ir::report::loss::LossNote)>,
+    refusals: &mut Vec<CombineOperandRefusal>,
 ) -> Option<bool> {
     use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::selections::{BodyMembers, BodySelection};
@@ -2770,18 +2832,19 @@ fn bind_operand_list_combine_bodies(
             Err("its body is absent from the preceding history state")
         }
     };
-    let mut refuse = |operand: &str, record_index: u32, reason: &str| {
+    let mut refuse = |operand: &'static str, record_index: u32, reason: &'static str| {
         let side = if operand == "target" {
             CombineOperandSide::Target
         } else {
             CombineOperandSide::Tools
         };
-        refusals.push((
+        refusals.push(CombineOperandRefusal {
+            feature: feature_id.clone(),
             side,
-            crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
-                "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
-            )),
-        ));
+            operand,
+            record: format!("{stream}:design-record#{record_index}"),
+            reason,
+        });
     };
     let target_slot = match body_slot(operation.target_body_node) {
         Ok(slot) => Some(slot),
@@ -2791,7 +2854,16 @@ fn bind_operand_list_combine_bodies(
         }
     };
     let mut tool_slots = Some(Vec::new());
+    let mut tool_nodes = std::collections::HashSet::new();
+    let mut distinct_tools = Vec::new();
     for tool in operation.tools.iter() {
+        if tool
+            .body_node
+            .is_some_and(|node| !tool_nodes.insert(node.record_index))
+        {
+            continue;
+        }
+        distinct_tools.push(tool);
         match body_slot(tool.body_node) {
             Ok(slot) if Some(slot) == target_slot => {
                 refuse(
@@ -2823,7 +2895,7 @@ fn bind_operand_list_combine_bodies(
         .ok()?;
     }
     let mut rows = Vec::new();
-    for (slot, tool) in tool_slots?.into_iter().zip(operation.tools.iter()) {
+    for (slot, tool) in tool_slots?.into_iter().zip(distinct_tools) {
         rows.push(body_member(
             crate::ids::history_input_body_id(&prefix, slot),
             design_record(tool.record_index),
@@ -5825,11 +5897,9 @@ fn bind_historical_face_operand_candidates<'a>(
     } = caches;
     let stream = crate::ids::native_stream(&operand.id);
     let feature_family = crate::design::design_feature_family(&scope.kind());
-    let has_extrude_face_group = feature_family
-        == Some(crate::design::DesignFeatureFamily::Extrude)
-        && operand_groups
-            .iter()
-            .filter(|group| {
+    let (extrude_face_role, selected_start_group) =
+        if feature_family == Some(crate::design::DesignFeatureFamily::Extrude) {
+            let mut extrude_face_groups = operand_groups.iter().filter(|group| {
                 crate::ids::native_stream(&group.id) == stream
                     && group.scope_record_index == scope.record_index
                     && Some(group.record_index) == operand.group_record_index()
@@ -5839,9 +5909,38 @@ fn bind_historical_face_operand_candidates<'a>(
                         .and_then(|ordinal| usize::try_from(ordinal).ok())
                         .and_then(|ordinal| group.members().get(ordinal))
                         .is_some_and(|member| member.value == operand.record_index())
+            });
+            extrude_face_groups
+                .next()
+                .filter(|_| extrude_face_groups.next().is_none())
+                .map_or((None, false), |group| {
+                    (
+                        group.extrude_face_role(),
+                        group.role() == DesignOperandRole::ROLE_0X5,
+                    )
+                })
+        } else {
+            (None, false)
+        };
+    let has_extrude_face_group = extrude_face_role.is_some();
+    let alternate_start_face = if selected_start_group
+        && extrude_face_role
+            == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        recipe_record_indices
+            .get(operand.recipe_id.as_str())
+            .and_then(|record_index| {
+                recipe_topologies.get(topology).unique_alternate_face(
+                    &operand.recipe_references,
+                    *record_index,
+                    &operand.alternate_selector_candidate_faces,
+                    historical_brep_source(&history.id),
+                )
             })
-            .count()
-            == 1;
+    } else {
+        None
+    };
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
@@ -6182,6 +6281,35 @@ fn bind_historical_face_operand_candidates<'a>(
             operand.resolved_face_slots = vec![face];
         }
     }
+    let alternate_start_face = alternate_start_face.filter(|face| {
+        operand.resolved_face_slots.is_empty()
+            && operand.resolved_active_face.is_none()
+            && withdrawals.admits(
+                operand,
+                std::slice::from_ref(face),
+                topology,
+                topology_queries,
+            )
+    });
+    if let Some(face) = alternate_start_face {
+        let selected = vec![historical_face_id(face)?];
+        operand.preceding_candidate_faces.clone_from(&selected);
+        operand.changed_candidate_faces = if changed_faces.contains(&face) {
+            selected.clone()
+        } else {
+            Vec::new()
+        };
+        operand.historical_support_contexts = face_support::historical_face_support_contexts(
+            &selected,
+            history,
+            topology,
+            &changed_faces,
+            topology_queries,
+        );
+        operand.alternate_selector_candidate_faces = selected;
+        operand.resolved_face_slots = vec![face];
+    }
+
     Ok(())
 }
 
@@ -9344,7 +9472,10 @@ fn historical_topology(
         }
     }
 
+    let (face_envelopes, edge_envelopes) = face_envelopes::derive(brep);
     let mut topology = AsmHistoricalTopology {
+        face_envelopes: face_envelopes.into(),
+        edge_envelopes: edge_envelopes.into(),
         bodies: topology_some!(refs(brep.bodies.iter().map(|entity| entity.id.as_str()))),
         regions: topology_some!(refs(brep.regions.iter().map(|entity| entity.id.as_str()))),
         shells: topology_some!(refs(brep.shells.iter().map(|entity| entity.id.as_str()))),

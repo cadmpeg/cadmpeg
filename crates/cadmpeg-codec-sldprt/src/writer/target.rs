@@ -127,11 +127,13 @@ fn finish(
         .collect();
     if let Written::Semantic {
         coverage,
+        stale_solid,
         unwritten,
         losses: written_losses,
         ..
     } = written
     {
+        losses.extend(stale_solid.iter().cloned());
         losses.extend(written_losses.iter().cloned());
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.

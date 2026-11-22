@@ -5,10 +5,13 @@
 //! forms. Every other carrier is evaluated by the IR evaluators in its own
 //! coordinates and mapped by the body placement.
 
+mod inversion;
+
 use cadmpeg_ir::eval::decode::{curve_point, curve_tangent};
 use cadmpeg_ir::eval::model_curve_point_by_id;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use inversion::CurveInverter;
 
 use super::placement::Placement;
 use crate::context::Eval;
@@ -460,6 +463,12 @@ impl<'ir> CurveChart<'ir> {
         }
     }
 
+    pub(crate) fn inverter(&self) -> Option<CurveInverter<'ir>> {
+        let record: &'ir Curve = self.curve;
+        let (basis, _) = leaf(record.geometry.solved()?).ok()?;
+        CurveInverter::new(basis)
+    }
+
     /// The parameter of a model point on the curve within `tolerance`, near
     /// `seed`.
     pub(crate) fn parameter(
@@ -468,6 +477,7 @@ impl<'ir> CurveChart<'ir> {
         point: Point3,
         seed: f64,
         tolerance: f64,
+        inverter: Option<&mut CurveInverter<'_>>,
     ) -> Measure<Option<f64>> {
         if let Some(parameter) = self.closed_form_parameter(point) {
             let reached = self.point(eval, parameter)?;
@@ -482,13 +492,17 @@ impl<'ir> CurveChart<'ir> {
                         return Ok(None);
                     };
                     eval.charge(1)?;
-                    let found = cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
-                        eval.ctx,
-                        nurbs,
-                        local,
-                        tolerance / self.placement.scale,
-                        seed,
-                    )
+                    let found = match inverter {
+                        Some(inverter) if std::ptr::eq(inverter.curve(), nurbs) => inverter
+                            .parameter(eval.ctx, local, tolerance / self.placement.scale, seed),
+                        _ => cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                            eval.ctx,
+                            nurbs,
+                            local,
+                            tolerance / self.placement.scale,
+                            seed,
+                        ),
+                    }
                     .map_err(MeasureFailure::from_codec)?;
                     return Ok(found.map(cadmpeg_ir::scalar::FiniteReal::get));
                 }

@@ -607,7 +607,9 @@ fn native_sketch_relations_and_dimensions_decode_back() {
 }
 
 /// A driven (reference) dimension is no native sketch dimension, which is
-/// driving: the sketch leaves it out and names it.
+/// driving: the sketch leaves out the dimension and its parameter, the
+/// export charges both once, and the written part reads back with no
+/// editable parameter in its place.
 #[test]
 fn a_native_sketch_leaves_out_a_driven_dimension() {
     let mut ir = cube_with_constrained_sketches();
@@ -625,17 +627,48 @@ fn a_native_sketch_leaves_out_a_driven_dimension() {
         .collect::<Vec<_>>();
     assert!(names.contains(&"Turn"), "{names:?}");
     assert!(!names.contains(&"Bore"), "{names:?}");
-    let driven = loss(&losses, "writer.driven-dimensions-omitted");
-    assert_eq!(
-        driven.code,
-        crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
-    );
+    let driven = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(driven.len(), 2, "{driven:?}");
+    for prefix in [
+        "1 driven (reference) sketch dimension record(s)",
+        "1 driven (reference) dimension parameter record(s)",
+    ] {
+        assert!(
+            driven.iter().any(|message| message.starts_with(prefix)),
+            "{prefix}: {driven:?}"
+        );
+    }
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    let decoded = decoded.ir();
+    let names = decoded
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.contains("Turn")), "{names:?}");
+    assert!(!names.iter().any(|name| name.contains("Bore")), "{names:?}");
     assert!(
-        driven
-            .message
-            .ends_with("1 driven (reference) sketch dimension(s): synthetic:test:constraint#bore"),
-        "{}",
-        driven.message
+        !decoded.design.parameters.iter().any(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str().contains("Bore"))
+                && !matches!(
+                    parameter.definition,
+                    cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+                )
+        }),
+        "{:?}",
+        decoded.design.parameters
     );
 }
 

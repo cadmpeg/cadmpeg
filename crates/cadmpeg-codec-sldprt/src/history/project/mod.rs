@@ -1127,25 +1127,31 @@ fn project_feature_dependencies(
 ) -> Result<cadmpeg_ir::features::selections::DistinctMembers<FeatureId>, CodecError> {
     let owner = neutral_feature_id(&feature.id)?;
     let mut dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
-    for property in FEATURE_REFERENCE_PROPERTIES {
-        let Some(value) = feature.properties.get(*property) else {
+    for reference in referenced_sources(&feature.properties) {
+        let Some(dependency) = by_source.get(reference) else {
             continue;
         };
-        for reference in value
-            .split(|character: char| {
-                character == ',' || character == ';' || character.is_whitespace()
-            })
-            .filter(|reference| !reference.is_empty())
-        {
-            let Some(dependency) = by_source.get(reference) else {
-                continue;
-            };
-            if dependency != &owner {
-                dependencies.insert(dependency.clone());
-            }
+        if dependency != &owner {
+            dependencies.insert(dependency.clone());
         }
     }
     Ok(dependencies)
+}
+
+/// The feature source ids that the feature-reference properties of
+/// `properties` name, in property order.
+pub(crate) fn referenced_sources(
+    properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> impl Iterator<Item = &str> {
+    FEATURE_REFERENCE_PROPERTIES
+        .iter()
+        .filter_map(|property| properties.get(*property))
+        .flat_map(|value| {
+            value.split(|character: char| {
+                character == ',' || character == ';' || character.is_whitespace()
+            })
+        })
+        .filter(|reference| !reference.is_empty())
 }
 
 /// The neutral identity of the native configuration record `native_id`.
@@ -1176,7 +1182,7 @@ pub(crate) fn project_configurations(
                 id,
                 ordinal: configuration.ordinal,
                 active: false,
-                source_index: configuration.source_index,
+                source_index: configuration.partition_index(),
                 name: Some(name),
                 material,
                 properties,

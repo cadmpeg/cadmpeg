@@ -99,11 +99,11 @@ source = "spec"
 anchor = "the associated count is at offset 12"
 
 [[record.field]]
-name = "padding"
+name = "state_bytes"
 offset = 16
 type = "bytes[3]"
 source = "spec"
-anchor = "followed by a counted associated-reference list, three zero bytes"
+anchor = "followed by a counted associated-reference list, three state bytes"
 
 [[record.field]]
 name = "first_reference"
@@ -1152,49 +1152,56 @@ source = "spec"
 anchor = "Its LP-UTF16 expression begins at offset 81"
 
 [[record]]
-name = "design_parameter_wide_discriminated_prefix"
+name = "design_parameter_discriminated_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
 section = "3.1"
-anchor = "In the wide form, the nine bytes from offset 26 are"
-size = 35
-note = "Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length."
+anchor = "The discriminated form extends the indexed header with ten zero bytes, the header flag at offset 21, a u32 family discriminator"
+size = 31
+note = "Offsets are relative to the indexed header of a discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length. The wide discriminated form stores every field from the zero run on four bytes later."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "The wide discriminated form stores fifteen zero bytes there instead of eleven"
+anchor = "The discriminated form extends the indexed header with ten zero bytes"
 
 [[record.field]]
-name = "zero_run_15"
+name = "zero_run_10"
 offset = 11
-type = "bytes[15]"
+type = "bytes[10]"
 source = "spec"
-anchor = "The wide discriminated form stores fifteen zero bytes there instead of eleven"
+anchor = "The discriminated form extends the indexed header with ten zero bytes"
+
+[[record.field]]
+name = "header_flag"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "the header flag at offset 21"
 
 [[record.field]]
 name = "family_discriminator"
-offset = 26
+offset = 22
 type = "u32"
 source = "spec"
-anchor = "In the wide form, the nine bytes from offset 26 are"
+anchor = "the header flag at offset 21, a u32 family discriminator, a zero byte"
 
 [[record.field]]
-name = "reserved_30"
-offset = 30
+name = "reserved_26"
+offset = 26
 type = "u8"
 source = "spec"
-anchor = "In the wide form, the nine bytes from offset 26 are"
+anchor = "the header flag at offset 21, a u32 family discriminator, a zero byte"
 value = 0
 
 [[record.field]]
 name = "comment_length"
-offset = 31
+offset = 27
 type = "u32"
 source = "spec"
-anchor = "In the wide form, the nine bytes from offset 26 are"
+anchor = "the u32 code-unit count of the LP-UTF16 parameter comment at offset 27"
 
 [[record]]
 name = "design_parameter_comment_discriminated_prefix"
@@ -5918,6 +5925,112 @@ anchor = "the body reference starts at offset 99"
 
 
 [[record]]
+name = "mesh_tessellate_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `MeshTessellate` scope has type GUID"
+size = 69
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs"
+note = "The counted operand references, byte 01, the refinement selector, and four zero bytes follow the count."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "Its indexed header is followed by nine zero bytes and flag byte `00` at offset 20"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+value = 0
+source = "spec"
+anchor = "flag byte `00` at offset 20"
+
+[[record.field]]
+name = "edge_length_owner"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "the maximum-edge-length owner reference at offset 21"
+
+[[record.field]]
+name = "normal_deviation_owner"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "the normal-deviation owner reference at offset 32"
+
+[[record.field]]
+name = "aspect_ratio_owner"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "the aspect-ratio owner reference at offset 43"
+
+[[record.field]]
+name = "surface_deviation_owner"
+offset = 54
+type = "bytes[11]"
+source = "spec"
+anchor = "the surface-deviation owner reference at offset 54"
+
+[[record.field]]
+name = "operand_count"
+offset = 65
+type = "u32"
+source = "spec"
+anchor = "a u32 operand count at offset 65"
+
+[[record]]
+name = "mesh_tessellate_operand"
+kind = "byte"
+section = "3.1"
+anchor = "A tessellation operand has type GUID"
+size = 49
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/mesh_operations/tessellate.rs"
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes, a marked same-segment reference to a construction-operand group at offset 21"
+
+[[record.field]]
+name = "group_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment reference to a construction-operand group at offset 21"
+
+[[record.field]]
+name = "body_reference"
+offset = 32
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment reference to the mesh body that the operation produces at offset 32"
+
+[[record.field]]
+name = "tail"
+offset = 43
+type = "bytes[6]"
+source = "spec"
+anchor = "bytes `01 01 00 00 00 00` at offset 43"
+
+
+[[record]]
 name = "mesh_remove_scope_prefix"
 kind = "byte"
 section = "3.1"
@@ -9388,7 +9501,7 @@ kind = "byte"
 section = "3.1"
 anchor = "It stores nine zero bytes at offsets 11 through 19 and the property-block presence byte at offset 20"
 size = 58
-note = "Offsets are relative to the primary indexed scope header, without a property block or companion references, and with an ordinary present local reference. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length."
+note = "Offsets are relative to the primary indexed scope header, without a property block or companion references, and with one operation entry whose ordinary local reference is present. An empty property block moves later fields four bytes on; each companion advances later fields by its complete reference width. The tool list count is the last fixed field; the lists after it have variable length."
 
 [[record.field]]
 name = "indexed_header"
@@ -9440,11 +9553,11 @@ source = "spec"
 anchor = "the new-component Boolean at offset 30"
 
 [[record.field]]
-name = "constant_one"
+name = "entry_count"
 offset = 31
 type = "u32"
 source = "spec"
-anchor = "u32 one at offset 31, a marked nonzero"
+anchor = "the operation-entry count u32 at offset 31"
 
 [[record.field]]
 name = "reference_marker"
@@ -13195,11 +13308,11 @@ size = 16
 note = "Offsets are relative to the byte after the compact repeated body-entry run. The result-record run begins at offset 16."
 
 [[record.field]]
-name = "separator"
+name = "flag"
 offset = 0
 type = "u8"
 source = "spec"
-anchor = "One zero byte and one marked u64 shared metadata-record index"
+anchor = "One flag byte and one marked u64 shared metadata-record index"
 
 [[record.field]]
 name = "metadata_marker"
@@ -17693,6 +17806,253 @@ type = "bytes[11]"
 source = "spec"
 anchor = "a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate"
 
+
+[[record]]
+name = "sketch_extrude_circle_curve_record"
+kind = "byte"
+section = "Records of a sketch-driven Extrude"
+anchor = "The curve record of the side-face entry of a hole circle has the layout"
+size = 81
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 81. The sense is `0xffffffff` for a hole circle and `1` for an exterior circle."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 0
+
+[[record.field]]
+name = "curve_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 1
+
+[[record.field]]
+name = "entry_kind"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "it stores one entry of kind `3` with the primary identity of the circle"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "it stores one entry of kind `3` with the primary identity of the circle"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+
+[[record.field]]
+name = "sense"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+
+[[record.field]]
+name = "first_operand"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "second_operand"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "entry_zero_run_8"
+offset = 65
+type = "bytes[8]"
+source = "spec"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_list_count"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "then two empty curve-identity lists, each the u32 count `0`"
+value = 0
+
+[[record.field]]
+name = "second_list_count"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "then two empty curve-identity lists, each the u32 count `0`"
+value = 0
+
+
+[[record]]
+name = "sketch_extrude_loop_curve_record"
+kind = "byte"
+section = "Records of a sketch-and-extrude design"
+anchor = "a curve record of a side face of one of their curves whose entry stores operands `1` and `1` has the layout"
+size = 97
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The secondary identity is the one the loop entry stores. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 0
+
+[[record.field]]
+name = "curve_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "entry_kind"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+
+[[record.field]]
+name = "sense"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop"
+
+[[record.field]]
+name = "first_operand"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "second_operand"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "entry_zero_run_8"
+offset = 65
+type = "bytes[8]"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_list_count"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+value = 1
+
+[[record.field]]
+name = "first_end_curve_identity"
+offset = 77
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+
+[[record.field]]
+name = "second_list_count"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
+value = 1
+
+[[record.field]]
+name = "second_end_curve_identity"
+offset = 89
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
 
 [[record]]
 name = "early_distance_extrude_absent_prefix"
@@ -28366,11 +28726,32 @@ source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
 
 [[record.field]]
-name = "zero_run_15"
+name = "zero_word"
 offset = 4
-type = "bytes[15]"
+type = "bytes[4]"
 source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "label_length"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "zero_count"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+
+[[record.field]]
+name = "state_bytes"
+offset = 16
+type = "bytes[3]"
+source = "spec"
+anchor = "three state bytes, a 51-byte typed reference at tail offset 19"
 
 [[record.field]]
 name = "first_reference"
@@ -28415,11 +28796,18 @@ source = "spec"
 anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
 
 [[record.field]]
-name = "second_zero_run_2"
+name = "suppressed_flag"
 offset = 141
-type = "bytes[2]"
+type = "u8"
 source = "spec"
-anchor = "A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form"
+anchor = "the suppressed flag at tail offset 141"
+
+[[record.field]]
+name = "rolled_back_flag"
+offset = 142
+type = "u8"
+source = "spec"
+anchor = "the rolled-back flag at tail offset 142"
 
 [[record.field]]
 name = "third_reference"
@@ -28545,7 +28933,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
 size = 40
-note = "The entry kind is 2 with typed references and 3 with compact references."
+note = "The entry kind is 2 with typed references and 3 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries."
 
 [[record.field]]
 name = "kind"
@@ -28569,9 +28957,23 @@ source = "spec"
 anchor = "the u64 sketch-curve secondary identity"
 
 [[record.field]]
-name = "entry_fields"
+name = "traversal_flag"
 offset = 20
-type = "u32[3]"
+type = "u32"
+source = "spec"
+anchor = "The first operand of a compact entry is its traversal flag."
+
+[[record.field]]
+name = "second_operand"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "third_operand"
+offset = 28
+type = "u32"
 source = "spec"
 anchor = "three u32 operands, and eight zero bytes"
 
@@ -28649,6 +29051,40 @@ offset = 31
 type = "bytes[11]"
 source = "spec"
 anchor = "The compact profile-loop selection uses eleven-byte local references."
+
+[[record]]
+name = "compact_reference_sketchless_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+size = 42
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "A compact sketchless chain record stores fourteen zero bytes"
 
 [[record]]
 name = "compact_reference_profile_identity_record"
@@ -28823,6 +29259,83 @@ source = "spec"
 anchor = "The identity record at the record index plus three stores ten zero bytes"
 
 [[record]]
+name = "typed_reference_profile_status_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
+size = 29
+note = "Offsets are relative to the status record indexed header; the counted typed references begin at offset 29."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
+
+[[record.field]]
+name = "constant_one"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
+
+[[record.field]]
+name = "zero_byte"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
+
+[[record.field]]
+name = "lost_reference_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
+
+[[record]]
+name = "typed_reference_profile_lost_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+size = 51
+note = "Offsets are relative to the lost profile-reference record indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record.field]]
+name = "marker_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record.field]]
+name = "marker"
+offset = 29
+type = "bytes[22]"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record]]
 name = "typed_reference_companion_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
@@ -28920,6 +29433,68 @@ type = "bytes[42]"
 source = "spec"
 anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
 
+
+
+[[record]]
+name = "base_flange_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The fixed 416-byte `BaseFlange` form has four ordered references"
+size = 416
+
+[[record.gap]]
+offset = 0
+size = 82
+note = "Scope header and controls before the repeated settings index."
+
+[[record.field]]
+name = "settings_record_index"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 86
+size = 27
+note = "Controls before the repeated thickness-construction index."
+
+[[record.field]]
+name = "thickness_record_index"
+offset = 113
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 117
+size = 6
+note = "Marked-reference suffix."
+
+[[record.field]]
+name = "thickness_copy"
+offset = 123
+type = "f64"
+source = "spec"
+anchor = "A positive finite f64 at primary-record offset 123 stores a copy of a sheet thickness in centimetres"
+
+[[record.gap]]
+offset = 131
+size = 15
+note = "Controls before the repeated profile-group index."
+
+[[record.field]]
+name = "profile_group_record_index"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "The scope repeats references three, two, and zero at primary-record offsets 82, 113, and 146"
+
+[[record.gap]]
+offset = 150
+size = 266
+note = "Remaining scope controls and ordered references."
 
 [[record]]
 name = "sheet_metal_rule_v0_prefix"
@@ -29525,6 +30100,185 @@ offset = 307
 type = "bytes[2]"
 source = "spec"
 anchor = "The matrix form is 309 bytes"
+
+[[record]]
+name = "circular_pattern_axis_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 220-byte circular-pattern axis frame"
+size = 220
+note = "Offsets are relative to the direction record's primary indexed header. The paired header starts at offset 220."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "selection kind `8` at offset 21"
+value = 8
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component origin in centimetres at offset 25"
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "a three-component displacement in centimetres at offset 49"
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "Sixteen zero bytes follow the displacement."
+
+[[record.field]]
+name = "control"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 control `7` at offset 89"
+value = 7
+
+[[record.field]]
+name = "negative_ones"
+offset = 93
+type = "f64[3]"
+source = "spec"
+anchor = "offsets 93, 101, and 109 store f64 `-1.0`"
+
+[[record.field]]
+name = "selection_count"
+offset = 117
+type = "u32"
+source = "spec"
+anchor = "Offset 117 stores u32 `1`"
+
+[[record.field]]
+name = "selection_reference"
+offset = 121
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 132
+type = "bytes[2]"
+source = "spec"
+anchor = "the marked selection-operand reference starts at offset 121, followed by two zero bytes"
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 134
+type = "u32"
+source = "spec"
+anchor = "Offset 134 stores u32 `1`"
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 138
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference starts at offset 138"
+
+[[record.field]]
+name = "role"
+offset = 149
+type = "u64"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 157
+type = "bytes[10]"
+source = "spec"
+anchor = "Offset 149 stores u64 `0x0000000400000000`, followed by ten zero bytes."
+
+[[record.field]]
+name = "opaque_index"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "Offset 167 stores a nonzero u32"
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 171
+type = "f64"
+source = "spec"
+anchor = "offset 171 a finite f64"
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 179
+type = "u32"
+source = "spec"
+anchor = "offset 179 the same u32"
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 183
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "separator_flag"
+offset = 194
+type = "u8"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 195
+type = "bytes[2]"
+source = "spec"
+anchor = "`u8 1` and two zero bytes separate them"
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 197
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references to the direction record's index plus two and plus one start at offsets 183 and 197"
+
+[[record.field]]
+name = "scope_separator"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 209
+type = "bytes[11]"
+source = "spec"
+anchor = "One zero byte and the marked scope reference at offset 209 close the frame."
 
 [[record]]
 name = "rectangular_pattern_direction_record"
@@ -43058,6 +43812,98 @@ size = 78
 note = "The common native tail precedes the same-index paired header."
 
 [[record]]
+name = "move_transform_omitted_matrix_frame_128"
+kind = "byte"
+section = "3.1"
+anchor = "A version-3 rigid-transform record with this layout has a 128-byte omitted-matrix frame"
+size = 128
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 5
+
+[[record.field]]
+name = "matrix_omitted"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 1
+
+[[record.gap]]
+offset = 48
+size = 80
+note = "The common native tail precedes the same-index paired header."
+
+[[record]]
 name = "rigid_transform_leading_prefix"
 kind = "byte"
 section = "3.1"
@@ -48063,6 +48909,7 @@ anchor = "DR-917 the ordinal of the null locus"
 
 [[record]]
 name = "sketch_item_dimension_frame_linear"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a linear frame is 129 bytes"
@@ -48120,6 +48967,7 @@ anchor = "the f64 measured value, and the first anchor `A1`"
 
 [[record]]
 name = "sketch_item_dimension_frame_radial"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a radial or diameter frame is 153 bytes"
@@ -48163,6 +49011,7 @@ anchor = "a flag byte, and the f64 radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_angular"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of an angular frame is 146 bytes"
@@ -48242,6 +49091,7 @@ anchor = "the arc point, and the f64 arc radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_text"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The text frame is 91 bytes"
@@ -53530,6 +54380,38 @@ type = "bytes[11]"
 source = "spec"
 anchor = "`base_feature_browser_root_prefix`"
 
+[[record]]
+name = "manifest_reference_extension_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref/api_export.rs"
+kind = "byte"
+section = "1.4"
+anchor = "The reference-bearing prefix has flag"
+size = 9
+note = "Offsets are relative to the generation extension after the capability registry."
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[4]"
+value = [0, 0, 0, 0]
+source = "spec"
+anchor = "starts with four zero bytes and a u8 reference flag"
+
+[[record.field]]
+name = "reference_flag"
+offset = 4
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The reference-bearing prefix has flag `1`"
+
+[[record.field]]
+name = "reference_count"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "followed by a nonzero u32 reference count"
+
 # --- §3.1 Records of a Sketch item (serializer magic 1234) -----------------
 
 [[record]]
@@ -53654,6 +54536,30 @@ offset = 78
 type = "u32"
 source = "spec"
 anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record]]
+name = "local_component_occurrence_attributed_source_matrix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The two-byte prefix form also permits source flag `u8 0` after the ordinal"
+size = 129
+note = "Offsets are relative to the source flag after the occurrence ordinal. The carrier GUID follows this matrix."
+
+[[record.field]]
+name = "source_flag"
+offset = 0
+type = "u8"
+value = 0
+source = "spec"
+anchor = "The two-byte prefix form also permits source flag `u8 0` after the ordinal"
+
+[[record.field]]
+name = "source_matrix"
+offset = 1
+type = "bytes[128]"
+source = "spec"
+anchor = "The source matrix starts one byte after this flag and occupies 128 bytes."
 
 [[record]]
 name = "compact_legacy_external_placement_members"

@@ -37,9 +37,39 @@ pub(crate) fn file_root_id() -> ProductDefinitionId {
 pub(crate) fn state_root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
-) -> Result<(), CodecError> {
-    ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?;
-    Ok(())
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    if ctx.container_only() {
+        return Ok(losses);
+    }
+    let design = match ir.native.namespace("f3d") {
+        Some(namespace) => namespace
+            .arena_iter_as_for_decode::<crate::records::xref::XrefDesign>(ctx, "xref_designs")
+            .next()
+            .transpose()?,
+        None => None,
+    };
+    let document = design.as_ref().map(crate::xref::document_identity);
+    if let Some(root) =
+        ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
+    {
+        if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
+            // The manifest terminal supplies only the lineage; the version
+            // always comes from design ordinal zero.
+            if let (Some(kept), Some(other)) = (&document.document_id, &identity.document_id) {
+                if kept != other {
+                    losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                        "file root lineage {:?} (manifest terminal) disagrees with design ordinal 0 lineage {:?}; the manifest terminal supplies the root lineage",
+                        kept.as_str(),
+                        other.as_str()
+                    )));
+                }
+            }
+            document.document_id = document.document_id.take().or(identity.document_id);
+            document.version = document.version.take().or(identity.version);
+        }
+    }
+    Ok(losses)
 }
 
 /// The file's root definition in `model`, added when it is absent.
@@ -156,11 +186,15 @@ pub(crate) fn is_top_level(definitions: &[ProductDefinition], occurrence: &Occur
     cadmpeg_ir::products::owner(definitions, occurrence).is_none_or(ProductDefinition::is_root)
 }
 
-/// The occurrence `occurrence` sits in, or `None` at the top level.
-pub(crate) fn parent<'m>(
+/// The occurrence `occurrence` sits in, or `None` at the top level. Where
+/// the owning definition has several placements, the placement is the one
+/// whose identity `occurrence` extends, or whose archive member instance
+/// scope (`instance_scopes`) `occurrence` is in.
+fn parent<'m>(
     definitions: &[ProductDefinition],
     occurrences: &'m [Occurrence],
     occurrence: &OccurrenceId,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Option<&'m Occurrence> {
     let owner = cadmpeg_ir::products::owner(definitions, occurrence)?;
     if owner.is_root() {
@@ -173,10 +207,28 @@ pub(crate) fn parent<'m>(
     let Some(second) = placements.next() else {
         return Some(first);
     };
-    std::iter::once(first)
+    let candidates = std::iter::once(first)
         .chain(std::iter::once(second))
         .chain(placements)
+        .collect::<Vec<_>>();
+    candidates
+        .iter()
+        .copied()
         .find(|candidate| extends(occurrence, &candidate.id))
+        .or_else(|| {
+            let scope = instance_scope(occurrence.as_str())?;
+            let mut matching = candidates
+                .iter()
+                .copied()
+                .filter(|candidate| match instance_scopes.get(&candidate.id) {
+                    Some(instance) => instance == scope,
+                    None => instance_scope(candidate.id.as_str()) == Some(scope),
+                });
+            match (matching.next(), matching.next()) {
+                (Some(placement), None) => Some(placement),
+                _ => None,
+            }
+        })
 }
 
 /// The occurrence each nested occurrence sits in.
@@ -184,10 +236,22 @@ pub(crate) fn parent_ids(
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
 ) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
+    parent_ids_in_members(definitions, occurrences, &BTreeMap::new())
+}
+
+/// [`parent_ids`] for a model that places archive member instances:
+/// `instance_scopes` maps each occurrence that places one to the identity
+/// scope of that instance, which names the placement of a member's own
+/// occurrences below a definition several occurrences place.
+pub(crate) fn parent_ids_in_members(
+    definitions: &[ProductDefinition],
+    occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
+) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
     occurrences
         .iter()
         .filter_map(|occurrence| {
-            parent(definitions, occurrences, &occurrence.id)
+            parent(definitions, occurrences, &occurrence.id, instance_scopes)
                 .map(|parent| (occurrence.id.clone(), parent.id.clone()))
         })
         .collect()

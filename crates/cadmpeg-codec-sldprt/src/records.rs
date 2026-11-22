@@ -158,6 +158,18 @@ pub(crate) struct Configuration {
     pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
+impl Configuration {
+    /// The configuration's index `N`, which names its `Config-N` streams: the
+    /// stored `SourceIndex`, else the decimal Keywords `id` (`sldprt.md` §2).
+    pub(crate) fn partition_index(&self) -> Option<u32> {
+        self.source_index.or_else(|| {
+            self.properties
+                .get("id")
+                .and_then(|value| value.parse().ok())
+        })
+    }
+}
+
 fn default_feature_xml_tag() -> String {
     "Feature".into()
 }

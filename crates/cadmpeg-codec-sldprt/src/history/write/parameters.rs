@@ -14,8 +14,8 @@ use crate::history::literals::{
     parse_parameter_literal,
 };
 use crate::history::parameters::{
-    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters,
+    equivalent_parameter_values, expression_identifier_tokens, global_parameter_owners,
+    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -154,6 +154,14 @@ fn sync_neutral_parameters(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
     }
+    // A record entry is an editable dimension, so the parameter of a driven
+    // dimension whose reference relation the write does not write stays out
+    // of its feature's record; the export charges it.
+    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
+    let parameters = parameters
+        .into_iter()
+        .filter(|parameter| !omitted.contains(&parameter.id))
+        .collect::<Vec<_>>();
     let features = ir
         .model
         .features
@@ -181,7 +189,12 @@ fn sync_neutral_parameters(
             )));
         }
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
-            .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
+            .is_some_and(|literal| {
+                !parameter
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| equivalent_parameter_values(value, &literal))
+            })
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",

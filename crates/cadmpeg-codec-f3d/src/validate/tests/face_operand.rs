@@ -53,7 +53,7 @@ fn face_operand_rejects_overflowed_node_offset() {
     };
     let error = crate::test_support::with_decode_context(|service_ctx| {
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        super::super::validate_face_operands(&ctx, &mut Vec::new(), &[]).unwrap_err()
+        super::super::face_operands::validate_face_operands(&ctx, &mut Vec::new(), &[]).unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
@@ -106,39 +106,51 @@ fn full_round_face_selection_needs_a_resolved_or_candidate_face() {
         .unwrap()
     };
     let face = FaceId::mint("f3d:brep:entity#12").expect("identity grammar");
-    assert!(!super::super::full_round_face_is_selected(&operand()));
+    assert!(!super::super::fillets::full_round_face_is_selected(
+        &operand()
+    ));
     let mut resolved = operand();
     resolved.resolved_face_slots = vec![12];
-    assert!(super::super::full_round_face_is_selected(&resolved));
+    assert!(super::super::fillets::full_round_face_is_selected(
+        &resolved
+    ));
     let mut preceding = operand();
     preceding.preceding_candidate_faces = vec![face.clone()];
-    assert!(super::super::full_round_face_is_selected(&preceding));
+    assert!(super::super::fillets::full_round_face_is_selected(
+        &preceding
+    ));
     let mut changed = operand();
     changed.changed_candidate_faces = vec![face];
-    assert!(super::super::full_round_face_is_selected(&changed));
+    assert!(super::super::fillets::full_round_face_is_selected(&changed));
 }
 
 #[test]
 fn revolve_axis_admits_face_and_bounded_face_recipes() {
     use crate::records::recipes::ConstructionRecipeKind as Kind;
-    assert!(super::super::revolve_axis_recipe_kind_admitted(Kind::Face));
-    assert!(super::super::revolve_axis_recipe_kind_admitted(
+    assert!(super::super::fillets::revolve_axis_recipe_kind_admitted(
+        Kind::Face
+    ));
+    assert!(super::super::fillets::revolve_axis_recipe_kind_admitted(
         Kind::BoundedFace
     ));
-    assert!(!super::super::revolve_axis_recipe_kind_admitted(Kind::Body));
+    assert!(!super::super::fillets::revolve_axis_recipe_kind_admitted(
+        Kind::Body
+    ));
 }
 
 #[test]
 fn revolve_face_operands_belong_to_the_axis_or_a_target_group() {
     use crate::records::topology::extrude_selection::DesignOperandRole as Role;
-    assert!(super::super::revolve_face_group_role_admitted(
+    assert!(super::super::fillets::revolve_face_group_role_admitted(
         Role::ROLE_0X21
     ));
-    assert!(super::super::revolve_face_group_role_admitted(
+    assert!(super::super::fillets::revolve_face_group_role_admitted(
         Role::ROLE_0X5
     ));
     for role in [Role::PROFILE, Role::BODIES_A, Role::BODIES_B, Role::FACES] {
-        assert!(!super::super::revolve_face_group_role_admitted(role));
+        assert!(!super::super::fillets::revolve_face_group_role_admitted(
+            role
+        ));
     }
 }
 
@@ -152,32 +164,32 @@ fn mirror_admits_its_selection_runs_and_bounded_plane_operand() {
         Role::ROLE_0X5,
         Role::ROLE_0X10,
     ] {
-        assert!(super::super::mirror_group_role_admitted(role));
+        assert!(super::super::fillets::mirror_group_role_admitted(role));
     }
     for role in [Role::PROFILE, Role::FACES, Role::ROLE_0X21, Role::ROLE_0X7] {
-        assert!(!super::super::mirror_group_role_admitted(role));
+        assert!(!super::super::fillets::mirror_group_role_admitted(role));
     }
-    assert!(super::super::mirror_operand_recipe_admitted(
+    assert!(super::super::fillets::mirror_operand_recipe_admitted(
         Role::BODIES_B,
         Kind::Face
     ));
-    assert!(super::super::mirror_operand_recipe_admitted(
+    assert!(super::super::fillets::mirror_operand_recipe_admitted(
         Role::ROLE_0X5,
         Kind::BoundedFace
     ));
-    assert!(!super::super::mirror_operand_recipe_admitted(
+    assert!(!super::super::fillets::mirror_operand_recipe_admitted(
         Role::BODIES_B,
         Kind::BoundedFace
     ));
-    assert!(super::super::mirror_operand_recipe_admitted(
+    assert!(super::super::fillets::mirror_operand_recipe_admitted(
         Role::ROLE_0X5,
         Kind::Face
     ));
-    assert!(!super::super::mirror_operand_recipe_admitted(
+    assert!(!super::super::fillets::mirror_operand_recipe_admitted(
         Role::ROLE_0X5,
         Kind::Edge
     ));
-    assert!(!super::super::mirror_operand_recipe_admitted(
+    assert!(!super::super::fillets::mirror_operand_recipe_admitted(
         Role::ROLE_0X10,
         Kind::Face
     ));
@@ -185,7 +197,7 @@ fn mirror_admits_its_selection_runs_and_bounded_plane_operand() {
 
 #[test]
 fn a_face_operand_next_index_agrees_with_the_header_at_its_next_offset() {
-    use super::super::face_operand_next_header_matches as matches_next;
+    use super::super::face_operands::face_operand_next_header_matches as matches_next;
     assert!(matches_next(Some(104), 104, true));
     assert!(!matches_next(Some(104), 105, true));
     assert!(!matches_next(Some(104), 0, true));
