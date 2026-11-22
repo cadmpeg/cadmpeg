@@ -578,30 +578,37 @@ pub(crate) fn bind_extrude_profile_selections(
                         let live = typed_group.and_then(|group| {
                             live_profile_members(group, curve_resolution.profile_curves)
                         });
-                        let mut path_resolution = curve_resolution.path_resolution();
-                        let typed_group = match &live {
-                            Some(live) => {
-                                path_resolution.profile_curves = &live.profile_curves;
-                                (!live.group.members().is_empty()).then_some(&live.group)
-                            }
-                            None => typed_group,
-                        };
-                        let lost_member_losses = |losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>| {
-                            for record_index in live.iter().flat_map(|live| &live.lost_members) {
-                                losses.push(
-                                    crate::loss::F3dLossCode::FeatureProfileMemberReferenceLost.note(format!(
-                                        "Feature {} omits profile member record {record_index}: its status record references a lost profile-reference record.",
-                                        feature.id
-                                    )),
-                                );
-                            }
-                        };
-                        if let Some(group) = typed_group {
+                        for record_index in live.iter().flat_map(|live| &live.lost_members) {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureProfileMemberReferenceLost.note(format!(
+                                    "Feature {} profile member record {record_index}: its status record references a lost profile-reference record, and the member contributes a region only when the complete group resolves.",
+                                    feature.id
+                                )),
+                            );
+                        }
+                        let full_resolution = curve_resolution.path_resolution();
+                        let live_resolution = live
+                            .as_ref()
+                            .filter(|live| !live.group.members().is_empty())
+                            .map(|live| {
+                                let mut resolution = curve_resolution.path_resolution();
+                                resolution.profile_curves = &live.profile_curves;
+                                (&live.group, resolution)
+                            });
+                        let candidates: Vec<_> = typed_group
+                            .map(|group| (group, &full_resolution))
+                            .into_iter()
+                            .chain(
+                                live_resolution
+                                    .as_ref()
+                                    .map(|(group, resolution)| (*group, resolution)),
+                            )
+                            .collect();
+                        for &(group, path_resolution) in &candidates {
                             if let Some(selection) =
-                                resolve_entity_selection_profile(group, &path_resolution)
+                                resolve_entity_selection_profile(group, path_resolution)
                             {
                                 *profile = selection;
-                                lost_member_losses(&mut losses);
                                 if is_to_termination {
                                     if let (
                                         Some(state_id),
@@ -638,11 +645,10 @@ pub(crate) fn bind_extrude_profile_selections(
                             }
                             if let Some(selection) = resolve_profile_curve_arrangement_regions(
                                 group,
-                                &path_resolution,
+                                path_resolution,
                                 scoped_resolution,
                             )? {
                                 *profile = selection;
-                                lost_member_losses(&mut losses);
                                 break 'feature_edit;
                             }
                         }
@@ -655,33 +661,32 @@ pub(crate) fn bind_extrude_profile_selections(
                             &mut curved_face_note,
                         )? {
                             *profile = ProfileRef::Planar(selection);
-                        } else if let (Some(group), Some(states)) = (
-                            typed_group,
-                            scope
-                                .history_state_id()
-                                .zip(effective_previous_history_state_id),
-                        ) {
-                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
-                                group,
-                                &path_resolution,
-                                scoped_resolution,
-                                states,
-                                cap_regions::compact::Sweep {
-                                    operation: op,
-                                    start,
-                                    direction,
-                                    extent,
-                                },
-                            )? {
-                                *profile = ProfileRef::Planar(selection);
-                                lost_member_losses(&mut losses);
-                                for code in selection_losses {
-                                    losses.push(code.note(format!(
-                                        "{}: stored profile entries use their participating intervals on the certified cap boundary",
-                                        feature.id,
-                                    )));
+                        } else if let Some(states) = scope
+                            .history_state_id()
+                            .zip(effective_previous_history_state_id)
+                        {
+                            for &(group, path_resolution) in &candidates {
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep {
+                                        operation: op,
+                                        start,
+                                        direction,
+                                        extent,
+                                    },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                            feature.id,
+                                        )));
+                                    }
+                                    break 'feature_edit;
                                 }
-                                break 'feature_edit;
                             }
                         }
                     }

@@ -777,8 +777,9 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
-    /// A typed profile member whose status record lists a
-    /// `PROFILE_REFERENCE_LOST` record contributes no region.
+    /// The status record of a typed profile member lists a
+    /// `PROFILE_REFERENCE_LOST` record. The member contributes a region only
+    /// when its complete group resolves.
     FeatureProfileMemberReferenceLost,
     /// Extrude profile picks that exceed the carried regions of their Sketch
     /// name its text on the reading that each pick is one glyph.

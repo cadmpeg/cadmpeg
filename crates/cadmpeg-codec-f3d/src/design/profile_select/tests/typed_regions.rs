@@ -4,6 +4,7 @@ use super::*;
 
 mod compact_binding;
 mod compact_exterior;
+mod lost_member_binding;
 use crate::records::topology::entity_selection::{
     DesignProfileCurveEntry, DesignProfileCurveLoop, DesignProfileCurveSelection,
 };
@@ -385,8 +386,16 @@ fn compact_profile_loops_select_exact_subsets_and_the_full_profile_table() {
     assert!(resolve(&selections).is_none());
 }
 
-#[test]
-fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
+/// A profile group with members 10 and 11 and a placed Sketch whose circle
+/// curves 11 and 12 carry profiles 0 and 1.
+fn two_circle_profile_fixture() -> (
+    DesignConstructionOperandGroup,
+    [DesignSketchPlacement; 1],
+    SketchId,
+    [SketchCurveIdentity; 2],
+    Vec<SketchEntity>,
+    [Sketch; 1],
+) {
     let mut group = group();
     group.operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
@@ -434,6 +443,12 @@ fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
         .unwrap(),
         native_ref: None,
     }];
+    (group, placements, sketch_id, curves, entities, sketches)
+}
+
+#[test]
+fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
+    let (group, placements, sketch_id, curves, entities, sketches) = two_circle_profile_fixture();
     // Member 11 names curve 99, which no curve record of the Sketch carries.
     let mut selections = [selection(10, 0, 11, true), selection(11, 1, 99, true)];
     let resolve = |group: &DesignConstructionOperandGroup,
