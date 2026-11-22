@@ -446,18 +446,7 @@ pub(crate) fn write_semantic_with_records(
         members.push(&mut sections, &mut unwritten, section, payload);
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = match &lane.configuration {
-            Some(configuration)
-                if crate::resolved_features::assembly::is_supplemental_config_lane(lane) =>
-            {
-                format!("Contents/Config-{configuration}")
-            }
-            Some(configuration) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
-            None => annotations.provenance.get(&lane.id).map_or_else(
-                || "Contents/ResolvedFeatures".into(),
-                |provenance| provenance.stream().to_owned(),
-            ),
-        };
+        let section = lane_section(lane, annotations);
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
@@ -2012,6 +2001,36 @@ fn fit_feature_input_renames(
             None => false,
         }
     });
+}
+
+/// The member a feature-input lane is written to. A lane with provenance goes
+/// to the stream it was decoded from, with the configuration index the write
+/// gave the lane. A lane with no provenance (a write with no decode sidecar)
+/// goes to the member its family names: a config-objects lane is the whole
+/// `Contents/Config-N` member, any other lane of a configuration is its
+/// `Config-N-ResolvedFeatures` member. The family name also serves a lane
+/// whose source stream names no configuration but whose document gives it one.
+fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotations) -> String {
+    let family_section = |configuration: &str| {
+        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
+            format!("Contents/Config-{configuration}")
+        } else {
+            format!("Contents/Config-{configuration}-ResolvedFeatures")
+        }
+    };
+    let source = annotations
+        .provenance
+        .get(&lane.id)
+        .map(cadmpeg_ir::Provenance::stream);
+    match (source, lane.configuration.as_deref()) {
+        (Some(stream), None) => stream.to_owned(),
+        (Some(stream), Some(configuration)) => {
+            crate::resolved_features::names::renumbered_section(stream, configuration)
+                .unwrap_or_else(|| family_section(configuration))
+        }
+        (None, Some(configuration)) => family_section(configuration),
+        (None, None) => "Contents/ResolvedFeatures".into(),
+    }
 }
 
 /// The bytes written for one feature-input lane.

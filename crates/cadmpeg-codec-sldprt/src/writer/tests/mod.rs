@@ -12,6 +12,7 @@ mod foreign_constructions;
 mod helix_surfaces;
 mod history_names;
 mod homogeneous_poles;
+mod lane_members;
 mod metadata_members;
 mod native_skeleton;
 mod normalization;
