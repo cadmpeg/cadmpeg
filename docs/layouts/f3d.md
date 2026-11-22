@@ -4143,7 +4143,7 @@ Offsets are relative to the byte after the compact repeated body-entry run. The 
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `separator` | `u8` | little | spec | One zero byte and one marked u64 shared metadata-record index |
+| 0 | 1 | `flag` | `u8` | little | spec | One flag byte and one marked u64 shared metadata-record index |
 | 1 | 1 | `metadata_marker` | `u8` | little | spec | one marked u64 shared metadata-record index |
 | 2 | 8 | `metadata_record` | `u64` | little | spec | shared metadata-record index |
 | 10 | 2 | `metadata_field` | `bytes[2]` | little | spec | its shared metadata-record index has a two-byte trailing field |
