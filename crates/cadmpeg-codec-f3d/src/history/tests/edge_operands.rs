@@ -237,11 +237,12 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                     "next_record_index": 24,
                     "next_byte_offset": 160
                 })).unwrap();
-            operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-                &cadmpeg_core::decode::test_support::service_decode_context(),
-                &program,
-            )
-            .unwrap();
+            operand.recipe_structure =
+                crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    &program,
+                )
+                .unwrap();
             assert!(operand.recipe_structure.is_some());
             let relation = |owner_ref, member_refs| AsmHistoricalRelation {
                 owner_ref,
@@ -420,11 +421,12 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
                 "next_byte_offset": 160
             }))
             .unwrap();
-        operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_core::decode::test_support::service_decode_context(),
-            &program,
-        )
-        .unwrap();
+        operand.recipe_structure =
+            crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &program,
+            )
+            .unwrap();
         let relation = |owner_ref, member_refs| AsmHistoricalRelation {
             owner_ref,
             member_refs,
@@ -578,7 +580,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0, -1,
         0, 0, -1,
     ];
-    let structure = crate::design::decode::operands::edge_recipe_structure(
+    let structure = crate::design::decode::operands::recipe_structure::edge_recipe_structure(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
