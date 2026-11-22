@@ -10,6 +10,10 @@ Writing:
   - Good: "every value decodes"; "the decoder stores the word in `outer_version`"; cut the tail.
 - Specifications state the settled format model as fact: byte semantics and invariants only. They carry no corpus, sample, experiment, or provenance qualifiers, and no research history, project status, implementation bugs, or export behavior.
 - Genuine unknowns go in `docs/formats/*-open-items.md`, with the fields Question, Known, Need, Conflict, and Note only. Finite evidence is not an unknown. When an item is settled, write the answer into the specification and delete the item in the same change.
+- An open item is self-contained: a reader who holds no CAD file understands its Question, Known, and Need. State the stored form, its fields, their values, and the relations between records. Do not send the reader to a file: no file, design, or sample by name or by description ("one public design"), and no record index, stream offset, or feature label that has meaning only inside one file.
+  - Bad: "In `<name>.f3d`, C-Pattern 10 stores a 220-byte frame at record 4197"; the same sentence with "a public pulley design" in place of the name.
+  - Good: "A 220-byte frame stores control `7` at offset 89 and three consecutive marked references at offsets 97, 108, and 119."
+- Never write private information into the repository, a commit message, a pull request, or a review comment: no name, path, content, or description of a CAD file that is not committed under `corpus/`. Each author applies this rule to the text; the private-names preflight is a backstop.
 - Fixed byte offsets live in `docs/layouts/<format>.toml`. Read the table before you derive an offset, and record a settled fixed-offset layout there. `docs/layouts/README.md` gives the check and regeneration commands.
 
 Code:
