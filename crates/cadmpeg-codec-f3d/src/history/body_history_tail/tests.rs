@@ -128,6 +128,14 @@ fn definition() -> ProductDefinition {
     .unwrap()
 }
 
+/// One body history tail, and the body it retains, as `collect` finds it.
+pub(crate) fn one_tail() -> (BodyHistoryTails, BodyId) {
+    let scope = scope(59);
+    let found = collect(&[feature(&scope, 1)], &[scope], &[history()], None);
+    assert_eq!(found.tails.len(), 1);
+    (found, body(1))
+}
+
 #[test]
 fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     let scope = scope(59);

@@ -291,4 +291,4 @@ pub(crate) fn append(
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
