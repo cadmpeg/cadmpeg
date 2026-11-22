@@ -331,3 +331,43 @@ anchor = "`u16` value `V` at record offset 18"
 offset = 20
 size = 6
 note = "§3.2 states no field after the value."
+
+[[record]]
+name = "part_feature_object"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/features.rs"
+section = "4.3"
+anchor = "The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word."
+size = 12
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "The object frame (§3.1)."
+
+[[record.field]]
+name = "state"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The `u32` at object offset 8 of a `CLSID_JMPart` object is its state word."
+
+[[record]]
+name = "folder_object"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/features.rs"
+section = "4.3"
+anchor = "A `CLSID_JMFeatureGroup` object lists the features of one folder."
+size = 12
+
+[[record.gap]]
+offset = 0
+size = 8
+note = "The object frame (§3.1)."
+
+[[record.field]]
+name = "member_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The `u32`\nat object offset 8 is the member count `c`."
