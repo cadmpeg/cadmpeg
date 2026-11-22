@@ -63,7 +63,8 @@ pub(crate) struct Part<'a> {
     pub(crate) persistent: Persistent<'a>,
     /// The part's length unit.
     pub(crate) length: Option<UnitSymbol>,
-    /// The number of decimal places at which the part shows lengths.
+    /// The number of decimal places at which the part shows lengths: the
+    /// largest its configurations state.
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,

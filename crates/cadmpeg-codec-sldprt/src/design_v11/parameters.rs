@@ -26,9 +26,10 @@
 //! that none of these types takes the class and stored value of the scalar
 //! its feature holds under its name, where that value shows the display
 //! (Rule H1): a length at the part's length precision, where its units table
-//! states one, as Keywords drops trailing zeros. A dimension whose kind no
-//! record states keeps the number its bound scalar stores, as a `Native` kind
-//! holds it (§5.12). The
+//! states one, as Keywords rounds a length to that many places whether it
+//! drops trailing zeros or keeps them. A dimension whose kind no record states
+//! keeps the number its bound scalar stores, as a `Native` kind holds it
+//! (§5.12). The
 //! `design.parameter-value-unread` note names each dimension whose text is a
 //! bare number and that still has no value.
 
@@ -330,8 +331,9 @@ impl Shown {
         Some(Self { number, rounding })
     }
 
-    /// This display as a length the part shows at `places` decimal places,
-    /// trailing zeros dropped (`docs/formats/sldprt.md`): the value is within
+    /// This display as a length the part shows at `places` decimal places
+    /// (`docs/formats/sldprt.md`): the text is the value rounded to those
+    /// places, with trailing zeros dropped or kept, so the value is within
     /// half a unit in the last of those places, or in the display's own last
     /// place where that is finer. `None` keeps the display's own place.
     fn at_places(self, places: Option<u32>) -> Self {
@@ -491,7 +493,7 @@ pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
     pub(super) length_unit: Option<UnitSymbol>,
     /// The number of decimal places at which the part shows lengths, where
-    /// its units table states one.
+    /// its units tables state one (the largest, where they differ).
     pub(super) length_places: Option<u32>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it

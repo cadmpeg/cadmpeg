@@ -805,6 +805,74 @@ fn a_bare_length_display_shows_its_scalar_at_the_part_length_precision() {
 }
 
 #[test]
+fn a_bound_scalar_shows_a_bare_length_display_at_the_part_length_precision() {
+    use crate::resolved_features::parameter_classes::StatedParameter;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">6</Dimension>
+                <Dimension Name="D2">6.42</Dimension>
+            </Feature>
+        </Keywords>"#;
+    // The decoder's values carry no length, so only the bound scalars'
+    // records can make the dimensions lengths.
+    let real = || V10::Real(0.006_418_3.try_into().unwrap());
+    let bound = [
+        ("Sketch1", "D1", real(), Some("scalar-d1")),
+        ("Sketch1", "D2", real(), Some("scalar-d2")),
+    ];
+    let stated = [
+        ("scalar-d1", StatedParameter::Length(0.006_418_3)),
+        ("scalar-d2", StatedParameter::Length(0.006_418_3)),
+    ];
+    let read = |places| {
+        parameters_with_scalars(
+            keywords,
+            &bound,
+            &[],
+            &stated,
+            &[],
+            Some(UnitSymbol::Mm),
+            places,
+        )
+        .1
+    };
+    let reading = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
+        let parameter = parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"));
+        match (&parameter.kind, &parameter.value) {
+            (ValueKind::Quantity(Quantity::LENGTH), Some(ParameterValue::Number(value))) => {
+                assert!((value.get() - 6.418_3).abs() <= 1e-9, "{name}: {value:?}");
+                true
+            }
+            (ValueKind::Native(kind), _) if kind.as_str() == "sldprt:dimension" => false,
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+
+    // Two places: `6` is 6.00, which 6.4183 mm does not show; `6.42` is.
+    let parameters = read(Some(2));
+    assert!(!reading(&parameters, "D1"), "{parameters:#?}");
+    assert!(reading(&parameters, "D2"), "{parameters:#?}");
+
+    // None stated: the display's own last place, which 6.4183 mm shows.
+    let parameters = read(None);
+    assert!(reading(&parameters, "D1"), "{parameters:#?}");
+    assert!(reading(&parameters, "D2"), "{parameters:#?}");
+}
+
+#[test]
 fn a_bare_display_number_states_no_unit() {
     use super::super::parameters::bare_display_number;
 

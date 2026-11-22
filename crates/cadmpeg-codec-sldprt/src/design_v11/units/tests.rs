@@ -2,9 +2,12 @@
 use cadmpeg_ir::design::units::UnitSymbol;
 
 use super::{
-    configuration_length_places, configuration_length_unit, BLOCK_BASE, COMPOUND_BASE,
-    DENSITY_CLASS, LAST_WORD, LAST_WORD_VALUE, LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
+    configuration_length_places, configuration_length_unit, length_places, length_unit,
+    DENSITY_CLASS, LENGTH_DECLARATION, NEW_CLASS, TABLE_CLASS,
 };
+use crate::layout::length_user_units_base::{LAST_WORD, LAST_WORD_VALUE, LEN as COMPOUND_BASE};
+use crate::layout::length_user_units_block_base::LEN as BLOCK_BASE;
+use crate::test_support::container::{make_block, outer_header, scan};
 
 /// A configuration stream whose units table opens with a length unit of
 /// unit code `code` after a `base`-byte base.
@@ -127,4 +130,40 @@ fn the_length_precision_is_the_first_word_of_the_length_unit_base() {
     }
     let after_density = table_after(&[DENSITY_CLASS], BLOCK_BASE, 0);
     assert_eq!(configuration_length_places(&after_density), None);
+}
+
+#[test]
+fn configurations_that_state_different_precisions_give_the_largest() {
+    let part = |configurations: &[Option<u32>]| {
+        let mut source = outer_header();
+        for (index, places) in (0u32..).zip(configurations) {
+            let mut payload = table(BLOCK_BASE, 0);
+            let fields = payload.len() - 4 - BLOCK_BASE;
+            match places {
+                Some(places) => {
+                    payload[fields..fields + 4].copy_from_slice(&places.to_le_bytes());
+                }
+                None => payload[fields + LAST_WORD] = 0,
+            }
+            source.extend(make_block(
+                0x20 + index,
+                &format!("Contents/Config-{index}"),
+                &payload,
+            ));
+        }
+        source
+    };
+    for configurations in [[Some(2), Some(5)], [Some(5), Some(2)], [Some(5), Some(5)]] {
+        let source = part(&configurations);
+        let scanned = scan(&source);
+        assert_eq!(length_places(&scanned), Some(5), "{configurations:?}");
+        assert_eq!(
+            length_unit(&scanned),
+            Some(UnitSymbol::Mm),
+            "{configurations:?}"
+        );
+    }
+    let source = part(&[Some(2), None]);
+    assert_eq!(length_places(&scan(&source)), None);
+    assert_eq!(length_places(&scan(&part(&[]))), None);
 }

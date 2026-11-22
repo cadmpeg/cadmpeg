@@ -7,6 +7,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::units::UnitSymbol;
 
 use crate::container::{ContainerScan, Section};
+use crate::layout::length_user_units_base as length_base;
+use crate::layout::length_user_units_block_base as block_length_base;
 
 /// The units table class, as its declaration names it.
 const TABLE_CLASS: &[u8] = b"moUnitsTable_c";
@@ -20,51 +22,38 @@ const NEW_CLASS: &[u8] = b"\xff\xff\x01\x00";
 const UNIT_CLASS_SUFFIX: &[u8] = b"Units_c";
 /// The unit class besides the length unit that holds a length unit pointer.
 const DENSITY_CLASS: &[u8] = b"moDensityUnits_c";
-/// The bytes of a unit object's base before its unit code: in a compound
-/// document, and in a block-container document.
-const COMPOUND_BASE: usize = 48;
-const BLOCK_BASE: usize = 62;
-/// The offset in a unit object's fields of the last of the base's four u32
-/// words, and the value it holds.
-const LAST_WORD: usize = 44;
-const LAST_WORD_VALUE: u32 = 1;
-
 /// The length unit every configuration's units table states, or `None`
 /// where a configuration states none or two state different ones.
 pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
-    agreed(scan, configuration_length_unit)
+    let mut units =
+        configurations(scan).map(|(payload, base)| configuration_length_unit(payload, base));
+    let first = units.next()??;
+    units.try_fold(first, |unit, other| (other? == unit).then_some(unit))
 }
 
-/// The number of decimal places at which every configuration's units table
-/// shows lengths: the first u32 of the length unit object's base. `None`
-/// where a configuration states none or two state different ones.
+/// The number of decimal places at which the part shows lengths: the
+/// largest that a configuration's units table states, whose allowance is the
+/// narrowest. `None` where a configuration states none.
 pub(crate) fn length_places(scan: &ContainerScan) -> Option<u32> {
-    agreed(scan, |payload, _| configuration_length_places(payload))
+    configurations(scan)
+        .map(|(payload, _)| configuration_length_places(payload))
+        .try_fold(None, |largest, places| Some(largest.max(Some(places?))))
+        .flatten()
 }
 
-/// The value `read` takes from every configuration's stream, given the size
-/// of a unit object's base in its container: `None` where a configuration
-/// states none, or two configurations state different values.
-fn agreed<T: Copy + PartialEq>(
-    scan: &ContainerScan,
-    read: impl Fn(&[u8], usize) -> Option<T>,
-) -> Option<T> {
-    let mut found = None;
-    for section in scan.sections() {
-        if !section.name().is_some_and(is_configuration) {
-            continue;
-        }
-        let base = match section {
-            Section::Compound(_) => COMPOUND_BASE,
-            Section::Block(_) => BLOCK_BASE,
-        };
-        let value = read(section.payload(), base)?;
-        if found.is_some_and(|known| known != value) {
-            return None;
-        }
-        found = Some(value);
-    }
-    found
+/// The stream of each configuration and the size of a unit object's base in
+/// its container: the four-word base in a compound document, and that base
+/// with its three more fields in a block-container document.
+fn configurations<'a>(scan: &'a ContainerScan<'a>) -> impl Iterator<Item = (&'a [u8], usize)> {
+    scan.sections()
+        .filter(|section| section.name().is_some_and(is_configuration))
+        .map(|section| {
+            let base = match section {
+                Section::Compound(_) => length_base::LEN,
+                Section::Block(_) => block_length_base::LEN,
+            };
+            (section.payload(), base)
+        })
 }
 
 /// Whether `stream` is a configuration's own stream, `Contents/Config-N`,
@@ -85,15 +74,16 @@ fn is_configuration(stream: &str) -> bool {
 /// length unit class. The table writes it first, or after the other unit
 /// classes it declares; a class declared before it that is not a unit class,
 /// or that holds a length unit pointer itself, leaves the object unplaced. A
-/// base whose four u32 words do not end in [`LAST_WORD_VALUE`] is another
-/// form, which is not read.
+/// base whose four u32 words do not end in `1` is another form, which is not
+/// read.
 fn length_fields(payload: &[u8]) -> Option<usize> {
     let table = find(payload, TABLE_CLASS)?.checked_add(TABLE_CLASS.len())?;
     let objects = table.checked_add(2)?;
     let object = objects.checked_add(find(payload.get(objects..)?, LENGTH_DECLARATION)?)?;
     let fields = object.checked_add(LENGTH_DECLARATION.len())?;
     (declares_other_units(payload.get(objects..object)?)
-        && View::u32_le_at(payload, fields.checked_add(LAST_WORD)?) == Some(LAST_WORD_VALUE))
+        && View::u32_le_at(payload, fields.checked_add(length_base::LAST_WORD)?)
+            == Some(length_base::LAST_WORD_VALUE))
     .then_some(fields)
 }
 
@@ -110,7 +100,10 @@ fn configuration_length_unit(payload: &[u8], base: usize) -> Option<UnitSymbol> 
 /// of the length unit object's base, the number of decimal places at which
 /// the document shows lengths.
 fn configuration_length_places(payload: &[u8]) -> Option<u32> {
-    View::u32_le_at(payload, length_fields(payload)?)
+    View::u32_le_at(
+        payload,
+        length_fields(payload)?.checked_add(length_base::PRECISION)?,
+    )
 }
 
 /// Whether every class that `objects`, the table's objects before its length
