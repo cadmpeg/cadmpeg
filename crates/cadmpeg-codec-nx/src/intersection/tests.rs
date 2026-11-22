@@ -18,18 +18,16 @@ use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_w
 use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
 use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
 
-use cadmpeg_ir::geometry::{
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    ProceduralCurveDefinition,
-};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
-    use cadmpeg_ir::geometry::{
-        pcurve::Pcurve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::pcurve::Pcurve;
+    use cadmpeg_ir::geometry::ProceduralCurve;
     use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");

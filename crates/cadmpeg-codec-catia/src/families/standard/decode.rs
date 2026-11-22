@@ -31,13 +31,17 @@ use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, EntityRewrite};
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
-    pcurve::{Pcurve, PcurveGeometry},
-    surface_payloads::ExtrusionSurfaceConstruction,
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -450,9 +454,10 @@ mod consolidated_revolution_binding_tests {
     use super::bind_consolidated_revolution_faces_and_seams;
     use crate::families::freeform::ConsolidatedRevolutionBinding;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
         SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
@@ -2541,7 +2546,7 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_2d",
                     tag,
-                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
+                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None)).ok()?),
                     Exactness::Derived,
                 )
             }
@@ -6596,7 +6601,7 @@ refusal)?
                         edge_use
                             .reversed
                             .then_some([range[1], range[0]])
-                            .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                             .transpose()
                             .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
                                 pcurve,
