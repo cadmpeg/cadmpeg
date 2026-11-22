@@ -227,7 +227,7 @@ fn reversed_nurbs_edge(gap: f64) -> CadIr {
         if moved.contains(&point.id) {
             let p = point.position().get();
             let off = cadmpeg_ir::math::Point3::new(p.x + 0.6 * gap, p.y, p.z + 0.8 * gap);
-            point.set_position(cadmpeg_ir::features::FinitePoint3::new(off).unwrap());
+            point.set_position(cadmpeg_ir::features::geometry::FinitePoint3::new(off).unwrap());
         }
     }
     ir
