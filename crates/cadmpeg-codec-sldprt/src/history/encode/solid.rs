@@ -191,36 +191,50 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         .is_some_and(|names| names.contains("D2"))
                 }))
                 && !parameters.contains_key("Depth2");
-            // A depth goes under the record's dimension name when the record
-            // holds one, so the record never states a depth twice.
-            let depth_entry = |positional: bool,
-                               dimension: cadmpeg_core::text::NonBlankString,
+            // The record's name for the first depth: its dimension `D1`, or
+            // the one length parameter the projection reads as the depth.
+            let first_depth_name = if positional_depth {
+                Some(cadmpeg_core::nonblank_literal!("D1"))
+            } else {
+                existing.and_then(sole_length_parameter)
+            };
+            // A depth goes under the record's name for it when the record has
+            // one, so the record never states a depth twice.
+            let depth_entry = |stored: Option<cadmpeg_core::text::NonBlankString>,
                                named: cadmpeg_core::text::NonBlankString,
                                length: cadmpeg_ir::scalar::Length| {
-                if positional {
-                    let value = format_length_like(
-                        length,
-                        existing
-                            .and_then(|record| record.parameters.get(dimension.as_str()))
-                            .map(String::as_str),
-                    );
-                    (dimension, value)
-                } else {
-                    (named, format_length_mm(length))
+                match stored {
+                    Some(stored) => {
+                        let value = format_length_like(
+                            length,
+                            existing
+                                .and_then(|record| record.parameters.get(stored.as_str()))
+                                .map(String::as_str),
+                        );
+                        (stored, value)
+                    }
+                    None => (named, format_length_mm(length)),
                 }
             };
             let first_depth = |length: cadmpeg_ir::scalar::Length| {
                 depth_entry(
-                    positional_depth,
-                    cadmpeg_core::nonblank_literal!("D1"),
+                    first_depth_name.clone(),
+                    cadmpeg_core::nonblank_literal!("Depth"),
+                    length,
+                )
+            };
+            // A two-sided extent is read from `Depth` and `Depth2`, or from
+            // `D1` and `D2`.
+            let two_sided_first_depth = |length: cadmpeg_ir::scalar::Length| {
+                depth_entry(
+                    positional_depth.then(|| cadmpeg_core::nonblank_literal!("D1")),
                     cadmpeg_core::nonblank_literal!("Depth"),
                     length,
                 )
             };
             let second_depth = |length: cadmpeg_ir::scalar::Length| {
                 depth_entry(
-                    positional_depth2,
-                    cadmpeg_core::nonblank_literal!("D2"),
+                    positional_depth2.then(|| cadmpeg_core::nonblank_literal!("D2")),
                     cadmpeg_core::nonblank_literal!("Depth2"),
                     length,
                 )
@@ -262,11 +276,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 "Blind".into(),
                             );
                         }
-                        let key = if positional_depth {
-                            cadmpeg_core::nonblank_literal!("D1")
-                        } else {
-                            cadmpeg_core::nonblank_literal!("Depth")
-                        };
+                        let key = first_depth_name
+                            .clone()
+                            .unwrap_or(cadmpeg_core::nonblank_literal!("Depth"));
                         let value = format_length_like(
                             (*length).into(),
                             existing
@@ -356,9 +368,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                                 cadmpeg_core::nonblank_literal!("EndCondition"),
                                 "TwoSided".into(),
                             );
-                            for (key, value) in
-                                [first_depth((*first).into()), second_depth((*second).into())]
-                            {
+                            for (key, value) in [
+                                two_sided_first_depth((*first).into()),
+                                second_depth((*second).into()),
+                            ] {
                                 parameters.insert(key, value);
                             }
                         }
@@ -736,6 +749,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
         })
     }
+}
+
+/// The one parameter of an extrusion record, when it holds a length: the
+/// projection reads it as the first depth.
+fn sole_length_parameter(
+    record: &crate::records::Feature,
+) -> Option<cadmpeg_core::text::NonBlankString> {
+    let mut parameters = record.parameters.iter();
+    let (name, value) = parameters.next()?;
+    let length = crate::history::literals::parse_positive_length_mm(value)
+        .or_else(|| crate::history::literals::parse_positive_dimension_length_mm(value));
+    (parameters.next().is_none() && length.is_some()).then(|| name.clone())
 }
 
 #[cfg(test)]

@@ -300,26 +300,6 @@ pub(in crate::history) fn sync_neutral_features(
             (feature.id.clone(), record_id)
         })
         .collect::<HashMap<_, _>>();
-    // The decoder fills a lane depth the record does not hold under the
-    // dimension name `D1` or `D2`; the model's parameter of that name is it.
-    let mut resolved_parameter_names = resolved_parameter_names;
-    for parameter in parameters {
-        let name = match parameter.name.as_str() {
-            "D1" => cadmpeg_core::nonblank_literal!("D1"),
-            "D2" => cadmpeg_core::nonblank_literal!("D2"),
-            _ => continue,
-        };
-        if let Some(record) = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| record_ids.get(owner))
-        {
-            resolved_parameter_names
-                .entry(record.clone())
-                .or_default()
-                .insert(name);
-        }
-    }
     let desired_record_ids = record_ids
         .values()
         .cloned()
