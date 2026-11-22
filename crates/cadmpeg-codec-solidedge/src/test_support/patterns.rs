@@ -38,6 +38,8 @@ const PATTERN_GUID: [u8; 16] = [
 
 /// The seed feature, the pattern group and the fast-pattern part.
 const SEED: u32 = 10;
+/// The second seed feature of a mirror of two seeds.
+const SECOND_SEED: u32 = 13;
 const GROUP: u32 = 11;
 const FAST_PART: u32 = 12;
 /// The profile group of the fast-pattern part, and its first member.
@@ -93,8 +95,9 @@ fn group_body() -> Vec<u8> {
 }
 
 /// The document of `objects` plus the seed feature, the group `group` and the
-/// base planes, whose navigator lists the seed and the group.
-fn assemble(group: Vec<u8>, mut extra: Vec<Object>) -> Vec<u8> {
+/// base planes, whose navigator lists the seed, the group and the features
+/// `more`.
+fn assemble(group: Vec<u8>, mut extra: Vec<Object>, more: &[u32]) -> Vec<u8> {
     let mut objects = Vec::new();
     for id in 1..=3 {
         objects.push(Object {
@@ -122,11 +125,21 @@ fn assemble(group: Vec<u8>, mut extra: Vec<Object>) -> Vec<u8> {
         flags: 0,
         body: vec![0; 8],
     });
+    let mut listed = vec![SEED, GROUP];
+    for &id in more {
+        objects.push(Object {
+            id,
+            form: 1,
+            flags: 0,
+            body: part_body("JMProtrusionFunction"),
+        });
+        listed.push(id);
+    }
     objects.push(Object {
         id: 5000,
         form: 4,
         flags: 0,
-        body: navigator_body([1, 2, 3], &[SEED, GROUP]),
+        body: navigator_body([1, 2, 3], &listed),
     });
     objects.append(&mut extra);
     objects.sort_by_key(|object| object.id);
@@ -163,27 +176,30 @@ pub(crate) fn pattern_document(spec: &PatternSpec<'_>) -> Vec<u8> {
         flags: 0,
         body: part_body_with_profile("JMFastPatternFunction", 68, PATTERN_SET + 1),
     });
-    assemble(group, extra)
+    assemble(group, extra, &[])
 }
 
 /// A mirror group.
-pub(crate) struct MirrorSpec {
+pub(crate) struct MirrorSpec<'a> {
     /// The seed count the group stores.
     pub(crate) count: u32,
-    /// The seed identifier stored at offset 96.
-    pub(crate) seed: u32,
+    /// The seed identifiers stored from offset 96. Object 13 is a listed
+    /// feature as well as object 10.
+    pub(crate) seeds: &'a [u32],
     /// The point and normal of the plane object, in metres, or `None` for a
     /// group that names no plane.
     pub(crate) plane: Option<([f64; 3], [f64; 3])>,
 }
 
 /// A document with a mirror group over the seed feature.
-pub(crate) fn mirror_document(spec: &MirrorSpec) -> Vec<u8> {
+pub(crate) fn mirror_document(spec: &MirrorSpec<'_>) -> Vec<u8> {
     let mut group = group_body();
-    put_words(&mut group, 92, &[spec.count, spec.seed]);
+    put_words(&mut group, 92, &[spec.count]);
+    put_words(&mut group, 96, spec.seeds);
     let mut extra = Vec::new();
     if let Some((point, normal)) = spec.plane {
-        put_words(&mut group, 329, &[PLANE]);
+        let at = 325 + 4 * usize::try_from(spec.count).unwrap();
+        put_words(&mut group, at, &[PLANE]);
         let mut body = vec![0_u8; 61 - 8];
         put_reals(&mut body, 13, &point);
         put_reals(&mut body, 37, &normal);
@@ -194,5 +210,10 @@ pub(crate) fn mirror_document(spec: &MirrorSpec) -> Vec<u8> {
             body,
         });
     }
-    assemble(group, extra)
+    let more: &[u32] = if spec.seeds.contains(&SECOND_SEED) {
+        &[SECOND_SEED]
+    } else {
+        &[]
+    };
+    assemble(group, extra, more)
 }

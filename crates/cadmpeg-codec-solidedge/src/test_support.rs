@@ -806,6 +806,32 @@ fn feature_with_groups(body: Vec<u8>, extra: Vec<Object>, classes: &[&str]) -> V
     ])
 }
 
+/// The profile sets of [`sweep_document`]: the path and the section.
+pub(crate) const SWEEP_PATH_SET: u32 = 100;
+pub(crate) const SWEEP_SECTION_SET: u32 = 110;
+
+/// A document with one `JMMultiSweepProtrusionFunction` feature, object 10,
+/// whose path profile (72 bytes after the name) and section profile (104
+/// bytes after the name) are the groups given; a `None` leaves the slot `0`.
+pub(crate) fn sweep_document(
+    path: Option<(&ProfileFrame, &[Member2d])>,
+    section: Option<(&ProfileFrame, &[Member2d])>,
+) -> Vec<u8> {
+    let mut body = part_body("JMMultiSweepProtrusionFunction");
+    let end = body.len();
+    body.resize(end + 104 + 4, 0);
+    let mut extra = Vec::new();
+    if let Some((frame, members)) = path {
+        body[end + 72..end + 76].copy_from_slice(&(SWEEP_PATH_SET + 1).to_le_bytes());
+        extra.extend(profile_group(SWEEP_PATH_SET, frame, 1, 200, members));
+    }
+    if let Some((frame, members)) = section {
+        body[end + 104..end + 108].copy_from_slice(&(SWEEP_SECTION_SET + 1).to_le_bytes());
+        extra.extend(profile_group(SWEEP_SECTION_SET, frame, 1, 500, members));
+    }
+    feature_with_groups(body, extra, &SKETCH_CLASSES)
+}
+
 /// The class names of [`extent_document`], by form.
 pub(crate) const EXTENT_CLASSES: [&str; 17] = [
     "ReferencePlaneObject",
@@ -958,6 +984,9 @@ pub(crate) struct HoleProps {
     pub(crate) head_depth: f64,
     pub(crate) sink_degrees: f64,
     pub(crate) depth: f64,
+    /// The thread block at object offset 1053: minor and major diameter in
+    /// millimetres and the designation. `None` leaves the object 80 bytes.
+    pub(crate) thread: Option<(f64, f64, &'static str)>,
 }
 
 /// An object a hole, round or chamfer slot names.
@@ -965,8 +994,11 @@ pub(crate) struct HoleProps {
 pub(crate) enum Dress {
     /// A slot object of [`Slot`].
     Value(Slot),
-    /// A `CLSID_JMTopologyProxy`.
+    /// A `CLSID_JMTopologyProxy` that stores no straight edge.
     Proxy,
+    /// A 559-byte `CLSID_JMTopologyProxy` that stores a straight edge by its
+    /// start, unit direction and length, in metres (§7.6).
+    EdgeProxy([f64; 3], [f64; 3], f64),
     /// A `CLSID_JMHolePropData`.
     Props(HoleProps),
 }
@@ -1002,12 +1034,34 @@ pub(crate) fn dressup_document(
                 flags: 0,
                 body: vec![0; 8],
             }),
+            Dress::EdgeProxy(start, direction, length) => {
+                let mut bytes = vec![0_u8; 559 - 8];
+                put_reals(&mut bytes, 121, start);
+                put_reals(&mut bytes, 145, direction);
+                put_reals(&mut bytes, 177, &[*length]);
+                Some(Object {
+                    id,
+                    form: 19,
+                    flags: 0,
+                    body: bytes,
+                })
+            }
             Dress::Props(props) => {
                 let mut bytes = vec![0_u8; 80 - 8];
                 put_words(&mut bytes, 8, &[props.kind]);
                 put_reals(&mut bytes, 12, &[props.diameter, props.head_diameter]);
                 put_reals(&mut bytes, 28, &[props.head_depth, props.sink_degrees]);
                 put_reals(&mut bytes, 72, &[props.depth]);
+                if let Some((minor, major, designation)) = props.thread {
+                    let units: Vec<u16> = designation.encode_utf16().collect();
+                    bytes.resize(1073 - 8 + units.len() * 2, 0);
+                    put_reals(&mut bytes, 1053, &[minor, major]);
+                    put_words(&mut bytes, 1069, &[u32::try_from(units.len()).unwrap()]);
+                    for (index, unit) in units.iter().enumerate() {
+                        let at = 1073 - 8 + index * 2;
+                        bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+                    }
+                }
                 Some(Object {
                     id,
                     form: 18,

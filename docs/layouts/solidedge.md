@@ -315,6 +315,42 @@ Unstated regions:
 
 - `0..8` (8 B): §7.2 states no field before the position x.
 
+## `hole_thread`
+
+Spec §7.2 · layout: byte offsets · size: 1073 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/dressup.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 1053 | 8 | `minor_diameter` | `f64` | little | spec | \| 1053 \| `f64` thread minor diameter, in millimetres \| |
+| 1061 | 8 | `major_diameter` | `f64` | little | spec | \| 1061 \| `f64` thread major diameter, in millimetres \| |
+| 1069 | 4 | `designation_length` | `u32` | little | spec | \| 1069 \| `u32` thread designation length `k`, in UTF-16 code units \| |
+
+Unstated regions:
+
+- `0..1053` (1053 B): §7.2 states the fields before the thread in the hole_prop_data record.
+
+## `topology_proxy_edge`
+
+Spec §7.6 · layout: byte offsets · size: 559 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/edge.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 121 | 24 | `start` | `f64[3]` | little | spec | `f64` values at object offsets 121, 129 and 137 are the edge start point, |
+| 145 | 24 | `direction` | `f64[3]` | little | spec | the `f64` values at offsets 145, 153 and 161 are the unit edge direction, |
+| 177 | 8 | `length` | `f64` | little | spec | and the `f64` at offset 177 is the edge length. |
+
+Unstated regions:
+
+- `0..121` (121 B): §7.6 states no field before the edge start point.
+- `169..177` (8 B): §7.6 states no field between the edge direction and the edge length.
+- `185..559` (374 B): §7.6 states no field after the edge length.
+
 ## `ref_axis`
 
 Spec §6.4 · layout: byte offsets · size: 61 B
@@ -351,7 +387,7 @@ Unstated regions:
 
 ## `mirror_group`
 
-Spec §8.2 · layout: byte offsets · size: 333 B
+Spec §8.2 · layout: byte offsets · size: 329 B
 
 Parsed by:
 - `crates/cadmpeg-codec-solidedge/src/patterns.rs`
@@ -360,12 +396,11 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 92 | 4 | `seed_count` | `u32` | little | spec | \| 92 \| `u32` seed count `c` \| |
 | 96 | 4 | `first_seed` | `u32` | little | spec | \| 96 \| `c` `u32` seed feature identifiers \| |
-| 329 | 4 | `plane` | `u32` | little | spec | \| 329 \| for `c` = 1, `u32` identifier of the mirror plane \| |
 
 Unstated regions:
 
 - `0..92` (92 B): §8.2 states no field before the seed count.
-- `100..329` (229 B): §8.2 states no field between the seed list's first word and the mirror plane.
+- `100..329` (229 B): §8.2 states the mirror plane identifier at 325 + 4·c, after the seed list, and no other field.
 
 ## `reference_plane`
 

@@ -7,11 +7,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::dressup::ShellFeature;
 use cadmpeg_ir::design::ops::dressup::{
     Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
-use cadmpeg_ir::design::selection::Picks;
+use cadmpeg_ir::design::options::{Thickness, WallSide};
+use cadmpeg_ir::design::selection::{MemberOrder, PickTarget, Picks, Selection};
 use cadmpeg_ir::math::Vector3;
 
 use crate::test_support::{dressup_document, Dress, HoleProps, Member2d, ProfileFrame, Slot};
@@ -24,6 +26,7 @@ const EPS_VALUE: f64 = 1e-9;
 const HOLE: &str = "JMHoleFunction";
 const ROUND: &str = "JMRoundFunction";
 const CHAMFER: &str = "JMChamferFunction";
+const THINWALL: &str = "JMThinwallAssocFunctionNew";
 
 /// A profile on the XY plane with normal +Z.
 const XY: ProfileFrame = ProfileFrame {
@@ -63,6 +66,7 @@ fn props(kind: u32, diameter: f64) -> HoleProps {
         head_depth: 0.0,
         sink_degrees: 0.0,
         depth: 0.0,
+        thread: None,
     }
 }
 
@@ -486,4 +490,145 @@ fn unknown_chamfer_type_stays_unresolved() {
     let result = chamfer_with(44.0, Slot::Dim(0.003), Slot::Empty);
     assert!(unresolved(&result, OperationFamily::Chamfer));
     assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// A tapped hole of type `kind` that stores the thread block M6x1: minor
+/// diameter 4.917 mm and major diameter 6 mm.
+fn threaded(kind: u32) -> DecodeResult {
+    let mut stored = props(kind, 0.005);
+    stored.thread = Some((4.917, 6.0, "M6x1"));
+    hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[])
+}
+
+#[test]
+fn tapped_hole_states_its_thread() {
+    let result = threaded(3);
+    let thread = hole(&result).thread.as_ref().unwrap();
+    assert_eq!(thread.standard.as_ref().unwrap().standard.as_str(), "M6x1");
+    assert!(near(mm(thread.minor_diameter.as_ref()), 4.917));
+    assert!(near(mm(thread.major_diameter.as_ref()), 6.0));
+    assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+#[test]
+fn thread_values_of_a_hole_of_another_type_do_not_apply() {
+    for kind in [0, 1, 2] {
+        let mut stored = props(kind, 0.005);
+        stored.thread = Some((4.917, 6.0, "M6x1"));
+        stored.head_diameter = 0.010;
+        stored.head_depth = 0.004;
+        stored.sink_degrees = 90.0;
+        let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+        assert_eq!(hole(&result).thread, None);
+        assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+    }
+}
+
+#[test]
+fn a_designation_that_is_not_printable_ascii_leaves_the_thread_unread() {
+    let mut stored = props(3, 0.005);
+    stored.thread = Some((4.917, 6.0, "M6\u{e9}"));
+    let result = hole_with(stored, 16.0, 1.0, &[[0.0, 0.0]], &[]);
+    assert_eq!(hole(&result).thread, None);
+    assert!(codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+/// A thin wall of `kind` and `thickness` (metres).
+fn thinwall_with(kind: f64, thickness: Slot) -> DecodeResult {
+    decode(dressup_document(
+        THINWALL,
+        None,
+        &[
+            (68, Dress::Value(Slot::Double(kind))),
+            (96, Dress::Value(thickness)),
+            (124, Dress::Proxy),
+        ],
+    ))
+}
+
+fn shell(result: &DecodeResult) -> &ShellFeature {
+    match operation(result) {
+        FeatureOperation::Shell(shell) => shell,
+        other => panic!("expected a shell, found {other:?}"),
+    }
+}
+
+#[test]
+fn thin_wall_of_two_millimetres_hollows_inward() {
+    let result = thinwall_with(4.0, Slot::Dim(0.002));
+    let shell = shell(&result);
+    match shell.thickness.as_ref().unwrap() {
+        Thickness::OneSide {
+            value,
+            side: Some(WallSide::Inside),
+        } => assert!(near(mm(Some(value)), 2.0)),
+        other => panic!("expected an inward wall, found {other:?}"),
+    }
+    assert_eq!(shell.removed.picks, Picks::Unread);
+    assert!(codes(&result).contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn thin_wall_of_another_type_stays_unresolved() {
+    let result = thinwall_with(5.0, Slot::Dim(0.002));
+    assert!(unresolved(&result, OperationFamily::Shell));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
+/// The straight edge the proxies of the tests store, in metres.
+const EDGE_START: [f64; 3] = [0.010, 0.020, 0.030];
+const EDGE_DIRECTION: [f64; 3] = [0.0, 0.0, 1.0];
+const EDGE_LENGTH: f64 = 0.015;
+
+fn assert_edge_pick<O: MemberOrder + std::fmt::Debug>(selection: &Selection<O>) {
+    let Picks::Named(members) = &selection.picks else {
+        panic!("expected a named selection, found {:?}", selection.picks);
+    };
+    let [pick] = members.as_slice() else {
+        panic!("expected one pick");
+    };
+    assert!(matches!(pick.target, PickTarget::Native { within: None }));
+    let [start, end] = pick.witness.as_ref().unwrap().endpoints.unwrap();
+    let (start, end) = (start.get(), end.get());
+    assert!(near(start.x, 10.0) && near(start.y, 20.0) && near(start.z, 30.0));
+    assert!(near(end.x, 10.0) && near(end.y, 20.0) && near(end.z, 45.0));
+}
+
+#[test]
+fn chamfer_of_a_straight_edge_states_the_edge_line() {
+    let result = decode(dressup_document(
+        CHAMFER,
+        None,
+        &[
+            (68, Dress::Value(Slot::Double(41.0))),
+            (
+                128,
+                Dress::EdgeProxy(EDGE_START, EDGE_DIRECTION, EDGE_LENGTH),
+            ),
+            (156, Dress::Value(Slot::Dim(0.003))),
+        ],
+    ));
+    assert_edge_pick(&chamfer(&result).sets[0].edges);
+    assert!(!codes(&result).contains(&"feature.selection-unread".to_owned()));
+}
+
+#[test]
+fn round_of_a_straight_edge_states_the_edge_line() {
+    let result = decode(dressup_document(
+        ROUND,
+        None,
+        &[
+            (
+                72,
+                Dress::EdgeProxy(EDGE_START, EDGE_DIRECTION, EDGE_LENGTH),
+            ),
+            (104, Dress::Value(Slot::Double(1.0))),
+            (136, Dress::Value(Slot::Dim(0.002))),
+        ],
+    ));
+    match &fillet(&result).sets[0] {
+        FilletSet::Edges { edges, .. } => assert_edge_pick(edges),
+        other => panic!("expected an edge set, found {other:?}"),
+    }
+    assert!(!codes(&result).contains(&"feature.selection-unread".to_owned()));
 }

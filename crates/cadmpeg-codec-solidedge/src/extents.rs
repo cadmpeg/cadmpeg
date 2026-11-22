@@ -180,7 +180,7 @@ pub(crate) fn measure_slot(
 }
 
 /// A sweep boolean: a protrusion joins, a cutout cuts.
-fn output(cut: bool) -> SolidOutput {
+pub(crate) fn output(cut: bool) -> SolidOutput {
     SolidOutput {
         body: Some(BodyForm::Solid),
         boolean: Some(Boolean::Apply {
@@ -190,7 +190,7 @@ fn output(cut: bool) -> SolidOutput {
     }
 }
 
-fn profile_selection(sketch: &SketchId) -> Result<OrderedSelection, String> {
+pub(crate) fn profile_selection(sketch: &SketchId) -> Result<OrderedSelection, String> {
     let pick = Picked {
         target: PickTarget::Sketch(sketch.clone()),
         context: None,

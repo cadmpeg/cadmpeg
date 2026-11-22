@@ -28,7 +28,6 @@ pub(crate) enum SolidEdgeLossCode {
     FeatureThreadUnread,
     FeatureSelectionUnread,
     FeaturePatternUnread,
-    FeaturePatternSenseUnread,
     AssemblyOccurrenceUnread,
     AssemblyReferenceUnread,
     AssemblyVisibilityUnread,
@@ -70,9 +69,6 @@ impl SolidEdgeLossCode {
                 ("feature.selection-unread", LossTaxonomy::RecordNotTyped)
             }
             Self::FeaturePatternUnread => ("feature.pattern-unread", LossTaxonomy::RecordNotTyped),
-            Self::FeaturePatternSenseUnread => {
-                ("feature.pattern-sense-unread", LossTaxonomy::RecordNotTyped)
-            }
             Self::AssemblyOccurrenceUnread => {
                 ("assembly.occurrence-unread", LossTaxonomy::DecodeDiagnostic)
             }

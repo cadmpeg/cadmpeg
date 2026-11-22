@@ -1,26 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Holes, rounds and chamfers (`docs/formats/solidedge.md` §7), stated on the
-//! feature's design operation.
+//! Holes, rounds, chamfers and thin walls (`docs/formats/solidedge.md` §7),
+//! stated on the feature's design operation.
 //!
 //! A feature whose slots do not resolve, or hold a value the specification
 //! does not state, stays unresolved and adds `feature.dressup-unread`. The
-//! edges a round or a chamfer selects are stored as topology proxies that the
-//! decoder does not read; they are stated as unread selections and add one
-//! `feature.selection-unread` note for the document. Stored lengths are
-//! metres and stored angles are radians; the design states millimetres.
+//! edges a round or a chamfer selects are stated as picks with their line
+//! where the topology proxy stores a straight edge (§7.6). Every other
+//! selection is a topology proxy that the decoder does not read; it is stated
+//! as an unread selection and adds one `feature.selection-unread` note for
+//! the document. Stored lengths are metres and stored angles are radians; the
+//! design states millimetres, except the thread diameters, which are stored
+//! in millimetres.
 
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::dressup::{
     BlendControls, Bore, Chamfer, ChamferSet, ChamferSize, Cone, Fillet, FilletSection, FilletSet,
-    FilletSize, Hole, HoleHead, HolePositions, HoleShape,
+    FilletSize, Hole, HoleHead, HolePositions, HoleShape, ShellFeature, StandardSize, ThreadSpec,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
 use cadmpeg_ir::design::ops::sketch::SketchPlane;
+use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::design::selection::{Anchor, MemberOrder, Picks, Selection};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -31,13 +36,14 @@ use cadmpeg_ir::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
 use crate::construction;
+use crate::edge::edge_selection;
 use crate::extents::{
     dimension_value, double_slot, is, measure_slot, model_point, named, real_at, slot,
     DIMENSION_CLASS, KIND_AFTER_NAME_HOLE, KIND_FINITE, KIND_THROUGH_ALL, MM_PER_M, PART_CLASS,
     SIDE_AFTER_NAME_HOLE, SIDE_AGAINST, SIDE_ALONG,
 };
 use crate::features::{feature_id, function_span, Kind, Listed};
-use crate::layout::{hole_2d, hole_prop_data};
+use crate::layout::{hole_2d, hole_prop_data, hole_thread};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
 use crate::sketches::{profile_members, PROFILE_AFTER_NAME_SHORT};
@@ -68,6 +74,21 @@ const CHAMFER_REFERENCE_AFTER_NAME: usize = 96;
 const CHAMFER_EDGES_AFTER_NAME: usize = 128;
 const CHAMFER_FIRST_AFTER_NAME: usize = 156;
 const CHAMFER_SECOND_AFTER_NAME: usize = 184;
+
+/// Bytes from the end of a function name to each thin-wall slot (§7.5).
+const THINWALL_TYPE_AFTER_NAME: usize = 68;
+const THINWALL_THICKNESS_AFTER_NAME: usize = 96;
+const THINWALL_FACES_AFTER_NAME: usize = 124;
+/// The thin-wall type that hollows the body inward (§7.5).
+const THINWALL_INWARD: f64 = 4.0;
+
+/// Object offset of the first UTF-16 code unit of the thread designation,
+/// after its length word (§7.2).
+const DESIGNATION_AT: usize = 1073;
+/// Bytes of one UTF-16 code unit.
+const UNIT_BYTES: usize = 2;
+/// The printable ASCII code units of a thread designation.
+const DESIGNATION_UNITS: std::ops::RangeInclusive<u16> = 0x20..=0x7e;
 
 /// The hole types of `CLSID_JMHolePropData` (§7.2).
 const HOLE_SIMPLE: u32 = 0;
@@ -160,6 +181,62 @@ fn is_proxy(
         cluster
             .object(id)
             .is_some_and(|found| types.class_name(found.form, found.flags) == Some(PROXY_CLASS))
+    })
+}
+
+/// The selection of the edges the proxy a slot names stores, and whether the
+/// proxy stores a straight edge.
+fn edges_of<O: MemberOrder>(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+    after: usize,
+) -> Result<(Selection<O>, bool), String> {
+    let (proxy, _) = named(cluster, types, slot(object, end, after)?, "edge proxy")?;
+    Ok(edge_selection(&proxy))
+}
+
+/// The thread a tapped hole's properties object stores (§7.2): the diameters
+/// in millimetres and the designation, which stands as the thread's standard.
+/// `None` where a value does not read.
+fn thread_spec(prop: &Object<'_>) -> Option<ThreadSpec> {
+    let bytes = prop.bytes;
+    let diameter = |at: usize| {
+        View::f64_le_at(bytes, at)
+            .and_then(PositiveLength::new)
+            .map(Dimension::Literal)
+    };
+    let minor = diameter(hole_thread::MINOR_DIAMETER)?;
+    let major = diameter(hole_thread::MAJOR_DIAMETER)?;
+    let units = usize::try_from(View::u32_le_at(bytes, hole_thread::DESIGNATION_LENGTH)?).ok()?;
+    let size = units.checked_mul(UNIT_BYTES)?;
+    if size > bytes.len().checked_sub(DESIGNATION_AT)? {
+        return None;
+    }
+    let mut designation = String::new();
+    for index in 0..units {
+        let at = index.checked_mul(UNIT_BYTES)?.checked_add(DESIGNATION_AT)?;
+        let unit = View::u16_le_at(bytes, at)?;
+        if !DESIGNATION_UNITS.contains(&unit) {
+            return None;
+        }
+        designation.push(char::from(u8::try_from(unit).ok()?));
+    }
+    Some(ThreadSpec {
+        standard: Some(StandardSize {
+            standard: NonBlankString::new(designation)?,
+            kind: None,
+            size: None,
+            class: None,
+        }),
+        major_diameter: Some(major),
+        minor_diameter: Some(minor),
+        pitch_diameter: None,
+        pitch: None,
+        hand: None,
+        length: None,
+        modeled: None,
     })
 }
 
@@ -279,6 +356,7 @@ fn hole(
             depth: Some(length(head_depth, "counterbore depth")?),
         })
     };
+    let mut thread = None;
     let mut thread_unread = false;
     let head = match code {
         HOLE_SIMPLE => HoleHead::Plain,
@@ -304,7 +382,8 @@ fn hole(
         }
         HOLE_COUNTERBORE => counterbore()?,
         HOLE_TAPPED => {
-            thread_unread = true;
+            thread = thread_spec(&prop);
+            thread_unread = thread.is_none();
             if head_diameter > 0.0 && head_depth > 0.0 {
                 counterbore()?
             } else {
@@ -362,7 +441,7 @@ fn hole(
             }),
             extent: Some(extent),
             standard: None,
-            thread: None,
+            thread,
             targets: None,
             series: Vec::new(),
             native_options: BTreeMap::new(),
@@ -396,7 +475,16 @@ fn round(
         return Err("it names no edge set".to_owned());
     }
     let mut sets = Vec::new();
+    let mut selection_unread = false;
     for k in 0..count {
+        let (edges, stated) = edges_of(
+            cluster,
+            types,
+            object,
+            end,
+            stride(ROUND_PROXY_AFTER_NAME, k, ROUND_STRIDE)?,
+        )?;
+        selection_unread |= !stated;
         let kind_at = stride(
             ROUND_KIND_AFTER_NAME,
             count
@@ -419,7 +507,7 @@ fn round(
         let radius = dimension_slot(cluster, types, object, end, radius_at, "radius")?
             .ok_or_else(|| format!("set {k} has no radius"))?;
         sets.push(FilletSet::Edges {
-            edges: unread(),
+            edges,
             section: FilletSection {
                 size: Some(FilletSize::Radius(length(radius, "radius")?)),
                 profile: None,
@@ -436,7 +524,7 @@ fn round(
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         })),
-        selection_unread: true,
+        selection_unread,
         thread_unread: false,
     })
 }
@@ -452,6 +540,7 @@ fn chamfer(
     if !is_proxy(cluster, types, object, end, CHAMFER_EDGES_AFTER_NAME) {
         return Err("the edge slot names no topology proxy".to_owned());
     }
+    let (edges, stated) = edges_of(cluster, types, object, end, CHAMFER_EDGES_AFTER_NAME)?;
     let first = measure_slot(
         cluster,
         types,
@@ -483,13 +572,14 @@ fn chamfer(
     } else {
         return Err(format!("the chamfer type {kind} is not 41, 42 or 43"));
     };
-    if reference.is_some() && slot(object, end, CHAMFER_REFERENCE_AFTER_NAME).is_err() {
+    let has_reference = reference.is_some();
+    if has_reference && slot(object, end, CHAMFER_REFERENCE_AFTER_NAME).is_err() {
         return Err("the block has no reference slot".to_owned());
     }
     Ok(Read {
         operation: FeatureOperation::Chamfer(Box::new(Chamfer {
             sets: vec![ChamferSet {
-                edges: unread(),
+                edges,
                 size: Some(size),
                 reference,
                 flip: None,
@@ -499,12 +589,63 @@ fn chamfer(
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         })),
+        selection_unread: !stated || has_reference,
+        thread_unread: false,
+    })
+}
+
+/// The thin wall of a `JMThinwallAssocFunctionNew` feature (§7.5). The open
+/// faces are stored as a topology proxy that is not read.
+fn thinwall(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+) -> Result<Read, String> {
+    let kind = double_slot(
+        cluster,
+        types,
+        object,
+        end,
+        THINWALL_TYPE_AFTER_NAME,
+        "thin-wall type",
+    )?;
+    if !is(kind, THINWALL_INWARD) {
+        return Err(format!("the thin-wall type {kind} is not 4"));
+    }
+    let thickness = dimension_slot(
+        cluster,
+        types,
+        object,
+        end,
+        THINWALL_THICKNESS_AFTER_NAME,
+        "wall thickness",
+    )?
+    .ok_or_else(|| "the thickness slot names no object".to_owned())?;
+    if !is_proxy(cluster, types, object, end, THINWALL_FACES_AFTER_NAME) {
+        return Err("the open-face slot names no topology proxy".to_owned());
+    }
+    Ok(Read {
+        operation: FeatureOperation::Shell(Box::new(ShellFeature {
+            bodies: None,
+            removed: unread(),
+            thickness: Some(Thickness::OneSide {
+                value: length(thickness, "wall thickness")?,
+                side: Some(WallSide::Inside),
+            }),
+            faces: Vec::new(),
+            join: None,
+            face_meeting: None,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        })),
         selection_unread: true,
         thread_unread: false,
     })
 }
 
-/// State the operation of each hole, round and chamfer feature that reads. A
+/// State the operation of each hole, round, chamfer and thin-wall feature
+/// that reads. A
 /// feature that does not read keeps its unresolved operation and adds
 /// `feature.dressup-unread`. Unread selections add one
 /// `feature.selection-unread` note and tapped holes one
@@ -524,7 +665,10 @@ pub(crate) fn project(
         };
         if !matches!(
             function.as_str(),
-            "JMHoleFunction" | "JMRoundFunction" | "JMChamferFunction"
+            "JMHoleFunction"
+                | "JMRoundFunction"
+                | "JMChamferFunction"
+                | "JMThinwallAssocFunctionNew"
         ) {
             continue;
         }
@@ -543,7 +687,8 @@ pub(crate) fn project(
                 .ok_or_else(|| "its profile is not a stated sketch".to_owned())
                 .and_then(|frame| hole(cluster, types, &object, end, &frame)),
             "JMRoundFunction" => round(cluster, types, &object, end),
-            _ => chamfer(cluster, types, &object, end),
+            "JMChamferFunction" => chamfer(cluster, types, &object, end),
+            _ => thinwall(cluster, types, &object, end),
         };
         match read {
             Ok(read) => {
@@ -562,8 +707,8 @@ pub(crate) fn project(
     }
     if selections > 0 {
         losses.push(SolidEdgeLossCode::FeatureSelectionUnread.note(format!(
-            "{selections} feature(s) select edges that are not read; each states an unread \
-             selection"
+            "{selections} feature(s) select edges or faces that are not read; each states an \
+             unread selection"
         )));
     }
     if threads > 0 {

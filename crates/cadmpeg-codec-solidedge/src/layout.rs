@@ -250,6 +250,30 @@ pub(crate) mod hole_2d {
     pub(crate) const Y: usize = 16;
 }
 
+/// Byte offsets for the `hole_thread` record.
+///
+/// Spec §7.2. Record length 1073 B.
+pub(crate) mod hole_thread {
+    /// Offset of `minor_diameter` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const MINOR_DIAMETER: usize = 1053;
+    /// Offset of `major_diameter` (`f64`, little-endian). Spec §7.2.
+    pub(crate) const MAJOR_DIAMETER: usize = 1061;
+    /// Offset of `designation_length` (`u32`, little-endian). Spec §7.2.
+    pub(crate) const DESIGNATION_LENGTH: usize = 1069;
+}
+
+/// Byte offsets for the `topology_proxy_edge` record.
+///
+/// Spec §7.6. Record length 559 B.
+pub(crate) mod topology_proxy_edge {
+    /// Offset of `start` (`f64[3]`, little-endian). Spec §7.6.
+    pub(crate) const START: usize = 121;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §7.6.
+    pub(crate) const DIRECTION: usize = 145;
+    /// Offset of `length` (`f64`, little-endian). Spec §7.6.
+    pub(crate) const LENGTH: usize = 177;
+}
+
 /// Byte offsets for the `ref_axis` record.
 ///
 /// Spec §6.4. Record length 61 B.
@@ -276,14 +300,12 @@ pub(crate) mod pattern_group {
 
 /// Byte offsets for the `mirror_group` record.
 ///
-/// Spec §8.2. Record length 333 B.
+/// Spec §8.2. Record length 329 B.
 pub(crate) mod mirror_group {
     /// Offset of `seed_count` (`u32`, little-endian). Spec §8.2.
     pub(crate) const SEED_COUNT: usize = 92;
     /// Offset of `first_seed` (`u32`, little-endian). Spec §8.2.
     pub(crate) const FIRST_SEED: usize = 96;
-    /// Offset of `plane` (`u32`, little-endian). Spec §8.2.
-    pub(crate) const PLANE: usize = 329;
 }
 
 /// Byte offsets for the `reference_plane` record.
