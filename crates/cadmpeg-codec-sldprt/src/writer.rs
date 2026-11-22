@@ -319,6 +319,17 @@ pub(crate) fn write_semantic_with_records(
                 &mut unwritten,
             );
         }
+        if !materials.omitted.is_empty() {
+            // A source that does not decode leaves the note saying the write
+            // cannot tell; it does not refuse the write.
+            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+                .ok()
+                .flatten();
+            losses.extend(materials::retained_materials_omitted(
+                ir,
+                baseline.map(|baseline| &baseline.ir),
+            ));
+        }
         for attribute in metadata_attributes(ir) {
             if attribute.name != "source_linear_unit_code"
                 && annotations

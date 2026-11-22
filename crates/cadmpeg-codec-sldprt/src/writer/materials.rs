@@ -172,26 +172,71 @@ pub(super) fn materials_payload(ir: &CadIr) -> Result<MaterialsPayload, CodecErr
         cut.extend(name.unwritable_entry(material.source));
         bytes.extend(material_payload(name.text, material.color)?);
     }
-    let mut grouped = BTreeMap::<MaterialSkip, NamedCount>::new();
-    for (source, reason) in &materials.skipped {
-        grouped.entry(*reason).or_default().push(source);
-    }
-    let omitted = grouped
-        .into_iter()
-        .map(|(reason, named)| {
-            SldprtLossCode::WriterMaterialsOmitted.note(format!(
-                "{} appearance or body record(s) {}, so the SLDPRT semantic exporter wrote no \
-                 SWObjects material for them: {named}",
-                named.count(),
-                reason.stated()
-            ))
-        })
-        .collect();
+    let omitted = omitted_notes(
+        &materials.skipped,
+        "the SLDPRT semantic exporter wrote no SWObjects material for them",
+    );
     Ok(MaterialsPayload {
         bytes,
         cut,
         omitted,
     })
+}
+
+/// One `WriterMaterialsOmitted` note per skip reason of `skipped`, saying
+/// what follows for the write.
+fn omitted_notes(skipped: &[(&str, MaterialSkip)], outcome: &str) -> Vec<LossNote> {
+    let mut grouped = BTreeMap::<MaterialSkip, NamedCount>::new();
+    for (source, reason) in skipped {
+        grouped.entry(*reason).or_default().push(source);
+    }
+    grouped
+        .into_iter()
+        .map(|(reason, named)| {
+            SldprtLossCode::WriterMaterialsOmitted.note(format!(
+                "{} appearance or body record(s) {}, so {outcome}: {named}",
+                named.count(),
+                reason.stated()
+            ))
+        })
+        .collect()
+}
+
+/// The `WriterMaterialsOmitted` notes of a write that keeps the retained
+/// `SWObjects` materials. An appearance or body that gives no material record
+/// is named unless the `baseline` decode skips it for the same reason or holds
+/// a material record from it: the retained records keep what the source
+/// stated, and [`retained_materials_kept`] names a changed record. Without a
+/// baseline every one is named, and the note says the write cannot tell.
+pub(super) fn retained_materials_omitted(ir: &CadIr, baseline: Option<&CadIr>) -> Vec<LossNote> {
+    let current = swobjects_materials(ir);
+    let Some(baseline) = baseline else {
+        return omitted_notes(
+            &current.skipped,
+            "the SLDPRT write writes no material for them; it keeps the retained SWObjects \
+             materials and, with no source decode, cannot tell whether they hold one",
+        );
+    };
+    let original = swobjects_materials(baseline);
+    let skipped = current
+        .skipped
+        .into_iter()
+        .filter(|(source, reason)| {
+            !original
+                .skipped
+                .iter()
+                .any(|(known, known_reason)| known == source && known_reason == reason)
+                && !original
+                    .records
+                    .iter()
+                    .any(|record| record.source == *source)
+        })
+        .collect::<Vec<_>>();
+    omitted_notes(
+        &skipped,
+        "the SLDPRT write writes no material for them, and the retained SWObjects materials it \
+         keeps hold none",
+    )
 }
 
 /// One `moVisualProperties_c` record. `name` fits [`MATERIAL_NAME`].
