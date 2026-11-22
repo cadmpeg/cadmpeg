@@ -447,9 +447,9 @@ pub(crate) fn project(
                         Ok(chart)
                             if chart.supports.iter().all(|index| nodes.contains_key(index)) =>
                         {
-                            let context = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                            let context = cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                 chart.supports.map(|support| {
-                                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
                                         surface: Some(surface_id(stream, support)),
                                         pcurve: None,
                                     }
@@ -460,7 +460,7 @@ pub(crate) fn project(
                             .map_err(malformed)?;
                             definition = Some(cadmpeg_ir::geometry::ProceduralCurve::new(
                                 construction_id(stream, curve_index),
-                                cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
                                     context,
                                     discontinuity_flag: false,
                                     cache: chart.fit,
