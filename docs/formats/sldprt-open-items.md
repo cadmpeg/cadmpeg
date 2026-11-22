@@ -1242,3 +1242,11 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** The record ends with its tail, a scalar, a point and a unit direction (`sldprt.md` §2). The decoder keeps such an axis and names the revolution under `feature.revolve-axis-off-profile-plane`. Each such axis compared with the B-rep is the axis of a B-rep cylinder, cone or torus of the part, or passes through the centre of a B-rep sphere of the part. An axis runs parallel to the bound plane at an offset, along its normal, or oblique to it. The sketches are bound by the plane records of open item DI-73.
 
 **Need.** For each revolution named, the plane record of its profile sketch, compared with the plane through the stored axis that holds the most profile points on B-rep vertices.
+
+### DI-86. Words before the scalar record of a revolution `moLineRef_w` record
+
+**Question.** What do the words before the scalar record store in a revolution `moLineRef_w` record whose prefix the forms of `sldprt.md` §2 do not describe?
+
+**Known.** Each such record holds two `c7 cf ff ff` handle words, then a zero u32, a stream address, zero bytes, and the tail of `sldprt.md` §2 with its zero byte before a class declaration or an instance token. One prefix form has the source cell, the u32 values `0`, a nonzero variant, `1`, `0`, a nonzero stream address, and a nonzero u32 eight bytes before the handles. Another has a source cell with a null token and no `ff ff ff ff` word, in an interval that declares `moCompRefAxis_c`. The decoder reads the axis from the tail of such a record and names the revolution under `feature.revolve-axis-record-prefix-unread`. Where the tails of several such records in one interval state different axes, the decoder takes no axis from them.
+
+**Need.** For each prefix form, the profile object its source cell names, compared with the profile the revolution consumes, and the record that the u32 before the handles addresses.

@@ -5259,18 +5259,13 @@ fn project_design_history(
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
-    let ambiguous_body_features = crate::history::configuration::enrich_history_semantic(
+    losses.extend(crate::history::configuration::enrich_history_semantic(
         ctx,
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
-    )?;
-    if ambiguous_body_features > 0 {
-        losses.push(SldprtLossCode::FeatureBodyPathAmbiguous.note(format!(
-            "{ambiguous_body_features} feature(s) retain ambiguous compact body-path candidates because a local identifier also spells a complete tagged entry."
-        )));
-    }
+    )?);
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?

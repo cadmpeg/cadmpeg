@@ -38,8 +38,8 @@ fn compact_line_reference_directions_test(
 fn enrich_history_revolution_inputs_test(
     histories: &mut [FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    enrich_history_revolution_inputs(histories, lanes);
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    enrich_history_revolution_inputs(histories, lanes)
 }
 
 fn revolution_line_reference_inputs(
@@ -1372,4 +1372,136 @@ fn revolution_axis_outside_the_profile_plane_is_named_and_kept() {
     );
     assert!(note.message.starts_with("1 revolution(s) "));
     assert!(note.message.ends_with("DI-85): Revolve1."));
+}
+
+/// A profile object and a revolution object whose interval holds, at each
+/// handle offset, an `moLineRef_w` record without a source cell: two handle
+/// words, 24 zero bytes and a tail stating `point` (metres) and `direction`,
+/// with its zero byte before a class declaration.
+fn revolution_with_tail_records(
+    records: &[(usize, [f64; 3], [f64; 3])],
+) -> ([FeatureHistory; 1], FeatureInputLane) {
+    let feature = |id: &str, source: &str, class: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(FeatureSource::try_from(source).expect("test feature source id")),
+        ordinal: 0,
+        name: id.to_string(),
+        kind: String::new(),
+        input_class: Some(class.into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    };
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::default(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            feature("profile", "23", "moProfileFeature_c"),
+            feature("revolution", "28", "moRevolution_c"),
+        ],
+    }];
+    let mut payload = vec![0; 640];
+    for &(handles, point, direction) in records {
+        for offset in [handles, handles + 4] {
+            payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        let tail = handles + 8 + 24;
+        for (index, value) in std::iter::once(0.0437)
+            .chain(point)
+            .chain(direction)
+            .enumerate()
+        {
+            let offset = tail + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[tail + 57..tail + 61].copy_from_slice(CLASS_MARKER);
+    }
+    let name = |id: &str, ordinal, offset, source| FeatureInputName {
+        id: format!("{id}-name"),
+        parent: "lane".into(),
+        ordinal,
+        offset,
+        object_id: ObjectId::from_value(source),
+        value: id.into(),
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names: vec![name("profile", 0, 100, 23), name("revolution", 1, 200, 28)],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    (histories, lane)
+}
+
+#[test]
+fn revolution_takes_the_axis_from_the_tail_of_an_unread_line_reference_record() {
+    let (mut histories, lane) =
+        revolution_with_tail_records(&[(300, [0.0, 0.0319, 0.0], [0.0, 0.0, -1.0])]);
+
+    let notes = enrich_history_revolution_inputs_test(&mut histories, &[lane]);
+
+    let revolution = &histories[0].features[1];
+    assert_eq!(
+        revolution.properties.get("AxisOrigin"),
+        Some(&format!("0mm,{}mm,0mm", 0.0319 * 1000.0))
+    );
+    assert_eq!(
+        revolution.properties.get("AxisDirection"),
+        Some(&"0,0,-1".into())
+    );
+    let [note] = notes.as_slice() else {
+        panic!("one note: {notes:?}");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::FeatureRevolveAxisRecordPrefixUnread.kind()
+    );
+    assert!(note
+        .message
+        .starts_with("1 revolution(s) take their axis from the tail"));
+    assert!(note.message.ends_with("DI-86): revolution."));
+}
+
+#[test]
+fn unread_line_reference_records_with_different_tails_give_no_axis() {
+    let (mut histories, lane) = revolution_with_tail_records(&[
+        (300, [0.0, 0.0319, 0.0], [0.0, 0.0, -1.0]),
+        (420, [0.0, 0.0319, 0.0], [0.0, 1.0, 0.0]),
+    ]);
+
+    let notes = enrich_history_revolution_inputs_test(&mut histories, &[lane]);
+
+    let revolution = &histories[0].features[1];
+    assert_eq!(revolution.properties.get("AxisOrigin"), None);
+    assert_eq!(revolution.properties.get("AxisDirection"), None);
+    let [note] = notes.as_slice() else {
+        panic!("one note: {notes:?}");
+    };
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::FeatureRevolveAxisRecordPrefixUnread.kind()
+    );
+    assert!(note
+        .message
+        .starts_with("1 revolution(s) hold `moLineRef_w` records"));
+    assert!(note.message.ends_with("DI-86): revolution."));
 }
