@@ -57,6 +57,17 @@ pub(crate) enum EdrawingsLossCode {
     /// Part-level or display-state colour and transparency overrides were not
     /// transferred.
     AppearanceOverrideDropped,
+    /// An occurrence takes its visibility from `defaultvisibility=off` or from
+    /// a listed ancestor: a reading that the format does not settle.
+    StructureVisibilityInferred,
+    /// 2D annotation and image side objects were parsed and not transferred.
+    AnnotationNotTransferred,
+    /// A matrix on a sub-assembly was taken as the transform of its occurrence.
+    StructureSubassemblyPlacementAssumed,
+    /// Display states other than the current one were not applied.
+    StructureDisplayStatesDropped,
+    /// An instance left no occurrence because none of its bodies was built.
+    StructureOccurrenceDropped,
 }
 
 impl EdrawingsLossCode {
@@ -79,6 +90,11 @@ impl EdrawingsLossCode {
         Self::StructurePlacementInvalid,
         Self::AppearanceFaceColourReduced,
         Self::AppearanceOverrideDropped,
+        Self::StructureVisibilityInferred,
+        Self::AnnotationNotTransferred,
+        Self::StructureSubassemblyPlacementAssumed,
+        Self::StructureDisplayStatesDropped,
+        Self::StructureOccurrenceDropped,
     ];
 
     /// The stable `family.detail` string of this code.
@@ -101,6 +117,11 @@ impl EdrawingsLossCode {
             Self::StructurePlacementInvalid => "structure.placement-invalid",
             Self::AppearanceFaceColourReduced => "appearance.face-colour-reduced",
             Self::AppearanceOverrideDropped => "appearance.override-dropped",
+            Self::StructureVisibilityInferred => "structure.visibility-inferred",
+            Self::AnnotationNotTransferred => "annotation.not-transferred",
+            Self::StructureSubassemblyPlacementAssumed => "structure.subassembly-placement-assumed",
+            Self::StructureDisplayStatesDropped => "structure.display-states-dropped",
+            Self::StructureOccurrenceDropped => "structure.occurrence-dropped",
         }
     }
 
@@ -121,7 +142,12 @@ impl EdrawingsLossCode {
             | Self::GeometryBodyFailed
             | Self::StructurePlacementInvalid
             | Self::AppearanceFaceColourReduced
-            | Self::AppearanceOverrideDropped => Severity::Warning,
+            | Self::AppearanceOverrideDropped
+            | Self::StructureVisibilityInferred
+            | Self::AnnotationNotTransferred
+            | Self::StructureSubassemblyPlacementAssumed
+            | Self::StructureDisplayStatesDropped
+            | Self::StructureOccurrenceDropped => Severity::Warning,
             Self::StreamMalformed | Self::ModelMalformed => Severity::Blocking,
         }
     }
@@ -136,11 +162,17 @@ impl EdrawingsLossCode {
             | Self::ModelShellInvalid
             | Self::GeometryDegenerateTriangles
             | Self::GeometryBodyFailed => LossTaxonomy::GeometryNotTransferred,
-            Self::ModelObjectInvalid => LossTaxonomy::DecodeDiagnostic,
+            Self::ModelObjectInvalid | Self::StructureVisibilityInferred => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::GeometryReconstructedFromMesh
             | Self::GeometryOpenBody
             | Self::GeometryBodyReversed => LossTaxonomy::TopologyGaugeSubstituted,
-            Self::StructurePlacementInvalid => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::StructurePlacementInvalid
+            | Self::StructureSubassemblyPlacementAssumed
+            | Self::StructureOccurrenceDropped => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::AnnotationNotTransferred => LossTaxonomy::ObjectRecordsUntransferred,
+            Self::StructureDisplayStatesDropped => LossTaxonomy::AttributesNotTransferred,
             Self::AppearanceFaceColourReduced => LossTaxonomy::AppearanceReduced,
             Self::AppearanceOverrideDropped => LossTaxonomy::MaterialNotTransferred,
             Self::StreamTrailingBytes => LossTaxonomy::RecordNotTyped,
@@ -191,6 +223,11 @@ mod tests {
                 "structure.placement-invalid",
                 "appearance.face-colour-reduced",
                 "appearance.override-dropped",
+                "structure.visibility-inferred",
+                "annotation.not-transferred",
+                "structure.subassembly-placement-assumed",
+                "structure.display-states-dropped",
+                "structure.occurrence-dropped",
             ]
         );
     }

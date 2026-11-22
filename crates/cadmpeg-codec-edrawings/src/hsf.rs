@@ -45,6 +45,13 @@ pub(crate) fn decode_body(
             scene.orphan_slots, scene.duplicate_objects
         )));
     }
+    if scene.annotation_objects > 0 {
+        losses.push(EdrawingsLossCode::AnnotationNotTransferred.note(format!(
+            "{} geometry and image side objects, the 2D annotation of the model, were read and not \
+             transferred (EDR-18)",
+            scene.annotation_objects
+        )));
+    }
     let transferred = emit::emit(ctx, &scene, ir, losses)?;
     ir.finalize();
     Ok(transferred)

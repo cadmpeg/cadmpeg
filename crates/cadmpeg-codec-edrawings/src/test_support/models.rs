@@ -97,6 +97,7 @@ pub(crate) fn assembly() -> ModelSpec {
                             matrix: Some(rotated),
                             user_name: true,
                         }],
+                        matrix: None,
                     },
                     NodeSpec::Part {
                         segment: HIDDEN_SEGMENT.into(),
@@ -106,6 +107,7 @@ pub(crate) fn assembly() -> ModelSpec {
                         user_name: false,
                     },
                 ],
+                matrix: None,
             },
         ],
         state: Some((

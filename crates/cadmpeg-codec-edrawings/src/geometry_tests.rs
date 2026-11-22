@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::products::{owner, sole_placement, Occurrence, ProductDefinitionKind};
-use cadmpeg_ir::report::loss::LossKind;
+use cadmpeg_ir::report::loss::{LossKind, LossNote};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::transform::Transform;
@@ -18,9 +18,9 @@ use crate::test_support::hsf::{
     box_shells, matrix, translation, BodySpec, Item, ModelSpec, NodeSpec, Stream,
 };
 use crate::test_support::models::{
-    assembly, cube_part, solidworks_assembly, BOX_OFFSET, BOX_SIZE, CUBE_EDGE, CUBE_OFFSET, MM,
-    SW_BOX_OFFSET, SW_BOX_SIZE, SW_DEEP_SEGMENT, SW_DEFAULT_HIDDEN_SEGMENT, SW_HIDDEN_SEGMENT,
-    SW_HIDDEN_SUB_SEGMENT, SW_INHERITING_SEGMENT, SW_LISTED_SEGMENT,
+    annotation_stream, assembly, cube_part, solidworks_assembly, BOX_OFFSET, BOX_SIZE, CUBE_EDGE,
+    CUBE_OFFSET, MM, SW_BOX_OFFSET, SW_BOX_SIZE, SW_DEEP_SEGMENT, SW_DEFAULT_HIDDEN_SEGMENT,
+    SW_HIDDEN_SEGMENT, SW_HIDDEN_SUB_SEGMENT, SW_INHERITING_SEGMENT, SW_LISTED_SEGMENT,
 };
 use crate::test_support::{
     assembly_package, assembly_package_of, part_package, SOLIDWORKS_VERSION,
@@ -45,6 +45,16 @@ fn codes(result: &DecodeResult) -> Vec<LossKind> {
         .iter()
         .map(|loss| loss.code.clone())
         .collect()
+}
+
+/// The first loss note of `code`.
+fn note_of(result: &DecodeResult, code: EdrawingsLossCode) -> &LossNote {
+    result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == code.kind())
+        .unwrap_or_else(|| panic!("{} is not charged", code.code()))
 }
 
 fn assert_valid(ir: &CadIr) {
@@ -493,6 +503,8 @@ fn a_solidworks_assembly_decodes_under_its_own_dialect() {
             EdrawingsLossCode::GeometryReconstructedFromMesh.kind(),
             EdrawingsLossCode::AppearanceFaceColourReduced.kind(),
             EdrawingsLossCode::AppearanceOverrideDropped.kind(),
+            EdrawingsLossCode::StructureDisplayStatesDropped.kind(),
+            EdrawingsLossCode::StructureVisibilityInferred.kind(),
         ]
     );
     let messages: Vec<&str> = result
@@ -697,6 +709,20 @@ fn the_default_display_state_decides_visibility() {
             Some(segment)
         );
     }
+    // Pair-2 takes its value from `defaultvisibility=off` and Cube-3 from its
+    // listed ancestor (EDR-14). The other values come from the listing of the
+    // node itself and are not charged.
+    let note = note_of(&result, EdrawingsLossCode::StructureVisibilityInferred);
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(
+        note.message.starts_with("2 occurrences"),
+        "{}",
+        note.message
+    );
+    assert!(note.message.contains("Pair-2") && note.message.contains("Cube-3"));
+    for name in ["Pair-1", "Cube-4", "Group C"] {
+        assert!(!note.message.contains(name), "{name}");
+    }
 }
 
 #[test]
@@ -829,4 +855,110 @@ fn dropped_closed_components_are_counted_apart_from_triangles() {
         note.message,
         "1 closed components without a usable volume were dropped (1 zero-volume pieces; 2 triangles)"
     );
+}
+
+#[test]
+fn geometry_and_image_side_objects_are_charged_as_annotation() {
+    let result = decode(&part_package(&annotation_stream()));
+    let note = note_of(&result, EdrawingsLossCode::AnnotationNotTransferred);
+    assert_eq!(note.severity, Severity::Warning);
+    // The stream holds two geometry side objects and no image object.
+    assert!(note.message.starts_with("2 "), "{}", note.message);
+    assert!(!codes(&decode(&part_package(&cube_part().stream())))
+        .contains(&EdrawingsLossCode::AnnotationNotTransferred.kind()));
+
+    let mut s = Stream::new();
+    s.side_image(0, &[1, 2, 3]).close();
+    let mut point = b"X".to_vec();
+    point.extend_from_slice(&[0_u8; 12]);
+    s.side_geometry(1, &point).close();
+    s.side_empty(2).close();
+    s.raw(b"z");
+    let result = decode(&part_package(s.bytes()));
+    let note = note_of(&result, EdrawingsLossCode::AnnotationNotTransferred);
+    assert!(note.message.starts_with("2 "), "{}", note.message);
+}
+
+#[test]
+fn a_matrix_on_a_sub_assembly_is_the_occurrence_transform_and_is_charged() {
+    let mut spec = assembly();
+    let shift = translation([0.001, 0.0, 0.0]);
+    if let Some(NodeSpec::Sub { matrix, .. }) = spec.tree.get_mut(1) {
+        *matrix = Some(shift);
+    }
+    let result = decode(&assembly_package(&spec.stream()));
+    // The matrix holds 1 millimetre of translation along x.
+    let rows = occurrence_named(result.ir(), "Group A")
+        .transform
+        .unwrap()
+        .affine_rows();
+    let expected = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ];
+    for (row, want) in rows.iter().zip(expected) {
+        for (value, target) in row.iter().zip(want) {
+            assert!(near(*value, target), "{rows:?}");
+        }
+    }
+    let note = note_of(
+        &result,
+        EdrawingsLossCode::StructureSubassemblyPlacementAssumed,
+    );
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(
+        note.message.starts_with("1 sub-assemblies"),
+        "{}",
+        note.message
+    );
+    assert!(note.message.contains("Group A") && !note.message.contains("Group B"));
+    assert!(!codes(&decode(&assembly_package(&assembly().stream())))
+        .contains(&EdrawingsLossCode::StructureSubassemblyPlacementAssumed.kind()));
+}
+
+#[test]
+fn display_states_other_than_the_current_one_are_charged() {
+    // The model names three states and applies `disp0`.
+    let result = decode_solidworks(&solidworks_assembly());
+    let note = note_of(&result, EdrawingsLossCode::StructureDisplayStatesDropped);
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(
+        note.message.starts_with("2 display states"),
+        "{}",
+        note.message
+    );
+    assert!(note.message.contains("disp1") && note.message.contains("disp2"));
+    assert!(!note.message.contains("disp0"));
+    // A model with one state, which is the current one, loses none.
+    assert!(!codes(&decode(&assembly_package(&assembly().stream())))
+        .contains(&EdrawingsLossCode::StructureDisplayStatesDropped.kind()));
+}
+
+#[test]
+fn an_instance_whose_bodies_all_failed_charges_its_placement() {
+    let mut spec = assembly();
+    if let Some(body) = spec.bodies.get_mut(0) {
+        body.subs = vec![vec![Item::Shell {
+            points: vec![[0.0; 3]; 3],
+            strips: vec![vec![0, 1, 7]],
+        }]];
+    }
+    let result = decode(&assembly_package(&spec.stream()));
+    let note = note_of(&result, EdrawingsLossCode::StructureOccurrenceDropped);
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(note.message.starts_with("2 instances"), "{}", note.message);
+    assert!(note.message.contains("Cube-1") && note.message.contains("Cube-2"));
+    assert!(!note.message.contains("Box-1"));
+    let ir = result.ir();
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|o| o.name.as_deref() != Some("Cube-1")));
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .any(|o| o.name.as_deref() == Some("Box-1")));
 }

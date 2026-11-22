@@ -8,7 +8,7 @@
 //! `eModel` member whose comment line does not read, is `edrawings:unknown`,
 //! admitted on the residual path and charged
 //! [`EdrawingsLossCode::SourceDialectUnverified`]. The residual path walks the
-//! stream with the rules of the oldest admitted dialect.
+//! stream with the rules of `edrawings:hsf-19-10` (open item EDR-04).
 
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
 use cadmpeg_ir::report::loss::LossNote;
@@ -33,7 +33,8 @@ const VERSION_19_00: &str = "19.00";
 pub(crate) enum Grammar {
     /// Streams re-saved by the eDrawings viewer (`edrawings:hsf-19-10`).
     Resaved,
-    /// Streams written directly by `SolidWorks` (`edrawings:hsf-18-00`).
+    /// Streams written directly by `SolidWorks` (`edrawings:hsf-18-00`). The
+    /// version, and not the writer, selects the rules (open item EDR-10).
     SolidWorks,
     /// Streams written by `SolidWorks` with version 19.00
     /// (`edrawings:hsf-19-00`): the layout and tree of `SolidWorks`, the

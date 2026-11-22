@@ -142,36 +142,43 @@ fn listing<'a>(scene: &'a Scene<'_>, index: usize) -> Option<&'a Component> {
         .find(|c| &c.state == state && (c.path == node.segment || c.path.ends_with(&suffix)))
 }
 
-/// Visibility of tree node `index` in the active display state.
-fn visibility(scene: &Scene<'_>, index: usize) -> Option<bool> {
+/// Visibility of tree node `index` in the active display state, and whether
+/// the value comes from an inference (`defaultvisibility=off` or a listed
+/// ancestor) and not from the listing of the node itself.
+fn visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool) {
     if scene.grammar.is_some_and(Grammar::solidworks_layout) {
         return inherited_visibility(scene, index);
     }
-    listing(scene, index).map(|c| c.visible)
+    (listing(scene, index).map(|c| c.visible), false)
 }
 
 /// Visibility under the rules of `SolidWorks` streams. A leaf follows its own
 /// listing, then its own `defaultvisibility=off`, then the nearest listed
-/// ancestor. A sub-assembly shows only its own listing.
-fn inherited_visibility(scene: &Scene<'_>, index: usize) -> Option<bool> {
-    let node = scene.nodes.get(index)?;
+/// ancestor. A sub-assembly shows only its own listing. The second element is
+/// true when the value comes from `defaultvisibility` or from an ancestor.
+/// This order is one reading of the two that the observed files allow
+/// (EDR-14).
+fn inherited_visibility(scene: &Scene<'_>, index: usize) -> (Option<bool>, bool) {
+    let Some(node) = scene.nodes.get(index) else {
+        return (None, false);
+    };
     if let Some(component) = listing(scene, index) {
-        return Some(component.visible);
+        return (Some(component.visible), false);
     }
     if !node.is_instance {
-        return None;
+        return (None, false);
     }
     if node.hidden_by_default {
-        return Some(false);
+        return (Some(false), true);
     }
     let mut cursor = node.parent;
     while let Some(current) = cursor {
         if let Some(component) = listing(scene, current) {
-            return Some(component.visible);
+            return (Some(component.visible), true);
         }
         cursor = scene.nodes.get(current).and_then(|n| n.parent);
     }
-    None
+    (None, false)
 }
 
 /// The occurrence transform of a stream matrix: the column-vector form, in
@@ -258,7 +265,8 @@ fn body_sets(scene: &Scene<'_>, instances: &[usize]) -> BodySets {
     result
 }
 
-/// Appearance that the stream holds and the output cannot carry.
+/// Appearance that the stream holds and the output cannot carry: the colour
+/// precedence between body, sub-segment, and part is open item EDR-13.
 fn appearance_losses(scene: &Scene<'_>, built: &[usize], losses: &mut Vec<LossNote>) {
     if !scene.grammar.is_some_and(Grammar::solidworks_layout) {
         return;
@@ -583,6 +591,8 @@ pub(super) fn emit(
     }
 
     let mut invalid_placements = Vec::new();
+    let mut inferred_visibility = Vec::new();
+    let mut dropped_occurrences = Vec::new();
     for (index, node) in scene.nodes.iter().enumerate() {
         let definition = if node.is_instance {
             sets.of_instance
@@ -592,6 +602,9 @@ pub(super) fn emit(
             assembly_definition.get(&index)
         };
         let Some(&definition) = definition else {
+            if node.is_instance && sets.of_instance.contains_key(&index) {
+                dropped_occurrences.push(display_name(scene, index));
+            }
             continue;
         };
         let owner = node
@@ -609,7 +622,11 @@ pub(super) fn emit(
             Some(transform),
         );
         occurrence.name = Some(display_name(scene, index));
-        occurrence.visible = visibility(scene, index);
+        let (visible, inferred) = visibility(scene, index);
+        occurrence.visible = visible;
+        if inferred {
+            inferred_visibility.push(display_name(scene, index));
+        }
         occurrence.native_ref = Some(node.segment.clone());
         ir.model.product_definitions[owner]
             .occurrences
@@ -621,6 +638,56 @@ pub(super) fn emit(
             "{} placements hold a non-finite value and were set to the identity: {}",
             invalid_placements.len(),
             lead(&invalid_placements)
+        )));
+    }
+    if !dropped_occurrences.is_empty() {
+        losses.push(EdrawingsLossCode::StructureOccurrenceDropped.note(format!(
+            "{} instances have no occurrence because none of their bodies was built, and their \
+             placements were not transferred: {}",
+            dropped_occurrences.len(),
+            lead(&dropped_occurrences)
+        )));
+    }
+    // EDR-09: a matrix on a sub-assembly has no observed case.
+    let matrixed: Vec<String> = scene
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, node)| !node.is_instance && node.matrix.is_some())
+        .map(|(index, _)| display_name(scene, index))
+        .collect();
+    if !matrixed.is_empty() {
+        losses.push(
+            EdrawingsLossCode::StructureSubassemblyPlacementAssumed.note(format!(
+                "{} sub-assemblies hold a matrix that became the transform of their occurrence; \
+                 how it combines with the matrices of the instances below is not known: {}",
+                matrixed.len(),
+                lead(&matrixed)
+            )),
+        );
+    }
+    // EDR-09: only the current display state is applied.
+    let unapplied: Vec<String> = scene
+        .states
+        .iter()
+        .filter(|state| scene.current_state.as_ref() != Some(*state))
+        .cloned()
+        .collect();
+    if !unapplied.is_empty() {
+        losses.push(
+            EdrawingsLossCode::StructureDisplayStatesDropped.note(format!(
+                "{} display states other than the current one were not applied: {}",
+                unapplied.len(),
+                lead(&unapplied)
+            )),
+        );
+    }
+    if !inferred_visibility.is_empty() {
+        losses.push(EdrawingsLossCode::StructureVisibilityInferred.note(format!(
+            "{} occurrences take their visibility from defaultvisibility=off or from a listed \
+             ancestor, a reading that the format does not settle: {}",
+            inferred_visibility.len(),
+            lead(&inferred_visibility)
         )));
     }
     finish(ctx, ir, &mut admitted)

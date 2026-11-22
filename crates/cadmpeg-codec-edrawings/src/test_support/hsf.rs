@@ -483,6 +483,8 @@ pub(crate) enum NodeSpec {
         name: String,
         /// Children.
         children: Vec<NodeSpec>,
+        /// The modelling matrix, when the sub-assembly has one.
+        matrix: Option<[f32; 12]>,
     },
 }
 
@@ -594,11 +596,15 @@ impl Writer<'_> {
                 segment,
                 name,
                 children,
+                matrix,
             } => {
                 self.out.open(segment);
                 self.out.user_option(&format!("name=`{name}`"));
                 self.reference(name);
                 self.text_slot("name", name);
+                if let Some(values) = matrix {
+                    self.out.modelling_matrix(values);
+                }
                 for child in children {
                     self.node(child);
                 }

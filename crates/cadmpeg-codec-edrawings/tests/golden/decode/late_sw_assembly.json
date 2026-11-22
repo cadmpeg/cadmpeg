@@ -3706,6 +3706,30 @@
         },
         "message": "1 part colour overrides and 0 display state colour or transparency overrides were not transferred",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "structure.display-states-dropped",
+            "kind": "attributes_not_transferred",
+            "namespace": "edrawings"
+          }
+        },
+        "message": "2 display states other than the current one were not applied: disp1, disp2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "structure.visibility-inferred",
+            "kind": "decode_diagnostic",
+            "namespace": "edrawings"
+          }
+        },
+        "message": "2 occurrences take their visibility from defaultvisibility=off or from a listed ancestor, a reading that the format does not settle: Pair-2, Cube-3",
+        "severity": "warning"
       }
     ],
     "notes": [],

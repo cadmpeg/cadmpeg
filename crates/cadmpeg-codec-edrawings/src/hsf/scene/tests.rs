@@ -38,6 +38,7 @@ fn spec() -> ModelSpec {
                 segment: "subassem1".into(),
                 name: "inner".into(),
                 children: vec![part("assempart2", "second", 1, false)],
+                matrix: None,
             },
             part("assempart0", "first", 0, true),
         ],

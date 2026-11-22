@@ -165,7 +165,7 @@ pub(super) struct Scene<'a> {
     /// Display state components.
     pub(super) components: Vec<Component>,
     /// Display state names, in stream order.
-    states: Vec<String>,
+    pub(super) states: Vec<String>,
     /// The name of the active display state.
     pub(super) current_state: Option<String>,
     /// The name of the default display state.
@@ -176,6 +176,8 @@ pub(super) struct Scene<'a> {
     pub(super) duplicate_objects: usize,
     /// Number of records walked.
     pub(super) records: usize,
+    /// Geometry and image side objects: 2D annotation content.
+    pub(super) annotation_objects: usize,
 }
 
 /// A channel in `0..=1` as a byte.
@@ -565,9 +567,11 @@ impl<'a> Builder<'a> {
                 Ok(id) => self.object(id, Object::Instance(instance))?,
                 Err(_) => return Err("shell instance id exceeds 32 bits"),
             },
-            Record::SideEmpty | Record::SideImage | Record::SideGeometry => {
+            Record::SideImage | Record::SideGeometry => {
+                self.scene.annotation_objects += 1;
                 self.stack.push(Frame::Side);
             }
+            Record::SideEmpty => self.stack.push(Frame::Side),
             Record::SideText(id, text) => {
                 self.stack.push(Frame::Side);
                 if self.scene.objects.contains_key(&id) || self.scene.texts.contains_key(&id) {

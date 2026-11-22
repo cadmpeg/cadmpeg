@@ -166,6 +166,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "annotation.not-transferred",
+            "kind": "object_records_untransferred",
+            "namespace": "edrawings"
+          }
+        },
+        "message": "2 geometry and image side objects, the 2D annotation of the model, were read and not transferred (EDR-18)",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "model.no-geometry",
             "kind": "geometry_not_transferred",
             "namespace": "edrawings",
