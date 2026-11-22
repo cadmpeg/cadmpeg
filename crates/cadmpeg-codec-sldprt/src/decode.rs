@@ -3564,6 +3564,11 @@ fn build_geometry_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    crate::resolved_features::markers::report_listed_curve_relation_drops(
+        sketch_lanes,
+        &histories,
+        &mut pmi_losses,
+    );
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             &mut ir.model.features,
@@ -4888,6 +4893,11 @@ fn build_metadata_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    crate::resolved_features::markers::report_listed_curve_relation_drops(
+        sketch_lanes,
+        &histories,
+        &mut pmi_losses,
+    );
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             &mut ir.model.features,

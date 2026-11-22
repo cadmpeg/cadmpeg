@@ -457,8 +457,10 @@ pub(crate) fn project_relation_point_geometry(
                 referenced.insert(id);
             }
         }
+        // A list-curve reading (DI-77) replaces the kind, not the stored
+        // relation code, so the points the record's links reach stay drawn.
         for marker in &lane.sketch_entities {
-            if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
+            if !matches!(marker.stored_kind(), SketchInputKind::Relation(_)) {
                 continue;
             }
             let id = marker.id();
