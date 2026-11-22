@@ -4,8 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::{
-    composable_sketch_profiles, entity_selection_matches_curve, parse_sketch_profile,
+use crate::design::decode::operands::entity_selections::entity_selection_matches_curve;
+use crate::design::decode::operands::sketch_profiles::{
+    composable_sketch_profiles, parse_sketch_profile,
 };
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,

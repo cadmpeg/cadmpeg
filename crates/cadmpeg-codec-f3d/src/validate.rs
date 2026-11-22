@@ -5067,11 +5067,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .extrude_prologue()
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
-                                    || design::decode::operands::extrude_has_selected_termination(scope)
+                                    || design::decode::operands::construction_groups::extrude_has_selected_termination(scope)
                                     || (group.extrude_face_role()
                                         == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                                         && group.members().len() == 1
-                                        && design::decode::operands::allows_slotted_extrude_face_targets(scope))
+                                        && design::decode::operands::extrude_roles::allows_slotted_extrude_face_targets(scope))
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {
@@ -6105,8 +6105,8 @@ fn validate_fillet_operand_groups<'a>(
                 })
                 .collect::<Vec<_>>();
             scope_groups.sort_by_key(|candidate| candidate.scope_reference_ordinal);
-            design::decode::operands::fillet_edge_and_face_groups(&scope_groups).is_some_and(
-                |pair| {
+            design::decode::operands::fillets::fillet_edge_and_face_groups(&scope_groups)
+                .is_some_and(|pair| {
                     let face_backed = pair
                         .iter()
                         .filter(|candidate| candidate.role() == DesignOperandRole::ROLE_0X10)
@@ -6130,8 +6130,7 @@ fn validate_fillet_operand_groups<'a>(
                         && pair
                             .iter()
                             .any(|candidate| candidate.record_index == group.record_index)
-                },
-            )
+                })
         });
         let has_fixed_assignment = scope
             .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
@@ -6170,7 +6169,7 @@ fn validate_fillet_operand_groups<'a>(
             });
         let retained_fixed_assignment = !has_parameter_owner
             && scope.is_some_and(|scope| {
-                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                design::decode::operands::fillets::fixed_fillet_assignment_is_unresolved(
                     scope,
                     &native.design_construction_operand_groups,
                 ) && ctx
@@ -6189,7 +6188,7 @@ fn validate_fillet_operand_groups<'a>(
                     })
             });
         let retained_set_list = scope.is_some_and(|scope| {
-            design::decode::operands::fillet_set_list_is_unadmitted(
+            design::decode::operands::fillets::fillet_set_list_is_unadmitted(
                 scope,
                 &native.design_construction_operand_groups,
                 &native.design_fillet_radius_groups,
@@ -6472,7 +6471,7 @@ fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
-    design::decode::operands::bind_body_recipe_operand_candidates(
+    design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
@@ -6949,7 +6948,7 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
         }) && (operand.sketch_point().is_none()
             || group.is_some_and(|group| {
-                crate::design::decode::operands::is_loft_point_group(
+                crate::design::decode::operands::entity_selections::is_loft_point_group(
                     group,
                     &native.design_parameter_scopes,
                 )
@@ -7113,11 +7112,13 @@ fn validate_edge_operands<'a>(
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
         let expected_faces = match design_reference {
-            Some(design_reference) => design::decode::operands::edge_operand_candidate_faces(
-                design_reference,
-                &native.persistent_subentity_tags,
-                Some(&operand.id),
-            ),
+            Some(design_reference) => {
+                design::decode::operands::operand_candidates::edge_operand_candidate_faces(
+                    design_reference,
+                    &native.persistent_subentity_tags,
+                    Some(&operand.id),
+                )
+            }
             None => Vec::new(),
         };
         let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
@@ -7138,7 +7139,7 @@ fn validate_edge_operands<'a>(
                 scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
             })
             .and_then(|_| {
-                design::decode::operands::surface_patch_recipe_structure(
+                design::decode::operands::recipe_structure::surface_patch_recipe_structure(
                     &operand.recipe_program,
                     operand.recipe_references.len(),
                 )
@@ -7153,7 +7154,7 @@ fn validate_edge_operands<'a>(
                         == Some(&operand.record_index())
             });
         let valid = scope.is_some_and(|scope| {
-            design::decode::operands::has_edge_recipe_operands(&scope.kind())
+            design::decode::operands::edge_operands::has_edge_recipe_operands(&scope.kind())
                 && usize::try_from(operand.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -7163,7 +7164,7 @@ fn validate_edge_operands<'a>(
         }) && (operand
             .record_index()
             .checked_add(scope.map_or(4, |scope| {
-                design::decode::operands::edge_recipe_terminal_delta(&scope.kind())
+                design::decode::operands::edge_operands::edge_recipe_terminal_delta(&scope.kind())
             }))
             .is_some_and(|expected_offset| operand.next_record_index == expected_offset)
             || terminal_group_member)
@@ -7183,7 +7184,7 @@ fn validate_edge_operands<'a>(
                     && recipe.byte_offset > operand.recipe_record_byte_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
             })
-            && design::decode::operands::edge_recipe_structure(
+            && design::decode::operands::recipe_structure::edge_recipe_structure(
                 ctx.decode,
                 &operand.recipe_program,
             )? == operand.recipe_structure
@@ -7394,7 +7395,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         );
         let valid = operand.id == expected_id
             && scope.is_some_and(|scope| {
-                design::decode::operands::has_edge_recipe_operands(&scope.kind())
+                design::decode::operands::edge_operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -7737,7 +7738,7 @@ fn validate_face_operands<'a>(
                                             .program
                                             .get(3..)
                                             .map(|program| {
-                                                design::decode::operands::face_recipe_structure(
+                                                design::decode::operands::recipe_structure::face_recipe_structure(
                                                     ctx.decode, program,
                                                 )
                                             })
@@ -7948,7 +7949,7 @@ fn validate_face_operands<'a>(
                                     records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face)
                             }
                             None if group.is_some_and(|group| {
-                                design::decode::operands::is_surface_untrim_face_group(scope, group)
+                                design::decode::operands::edge_operands::is_surface_untrim_face_group(scope, group)
                             }) =>
                             {
                                 matches!(
@@ -8164,7 +8165,7 @@ fn validate_face_group_member_resolution(
 
 /// Validate retained Face source carriers and their persistent identities.
 fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
-    use design::decode::operands::{
+    use design::decode::operands::face_sources::{
         face_source_carrier_spec, face_source_profile_pair_count, face_source_record_is_registered,
         FaceSourceType,
     };

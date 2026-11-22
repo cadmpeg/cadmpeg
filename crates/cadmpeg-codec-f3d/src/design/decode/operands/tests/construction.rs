@@ -2,9 +2,9 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::operands::construction_operand_group_is_retained;
-use crate::design::decode::operands::ConstructionOperandGroupParse;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse;
+use crate::design::decode::operands::construction_groups::RecordFrame;
+use crate::design::decode::operands::face_operand_frames::construction_operand_group_is_retained;
 use crate::design::feature_project::direct_face::project_split;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::records::decal::DesignRecordHeader;
@@ -28,7 +28,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
 
-use crate::design::decode::operands::parse_construction_operand_group;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_group;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -123,7 +123,7 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     indexed_header(&mut bytes, *b"262", header.record_index);
 
     let parse = |bytes: &[u8], scope: &DesignParameterScope| {
-        super::super::parse_construction_operand_group_in_stream(
+        super::super::construction_groups::parse_construction_operand_group_in_stream(
             bytes,
             scope,
             0,
@@ -387,7 +387,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .expect("counted Extrude start-face group");
     assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
     assert_eq!(start_face.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
         None,
@@ -438,7 +438,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .expect("counted Extrude legacy to-face group");
     assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
     assert_eq!(legacy_to_face.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
         None,
@@ -484,7 +484,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         )
         .complete()
         .expect("counted Extrude face group");
-        crate::design::decode::operands::assign_extrude_face_roles(
+        crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
             &scope,
             std::slice::from_mut(&mut group),
             seventh_slot_record_index,
@@ -668,7 +668,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(auxiliary.frame.trailing_records().is_empty());
     assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
     assert_eq!(auxiliary.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
         None,

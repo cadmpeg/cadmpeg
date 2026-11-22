@@ -2,7 +2,7 @@
 //! Bind compact coils to registered solved placement constructions.
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::parse_entity_selection_frame;
+use crate::design::decode::operands::entity_selections::parse_entity_selection_frame;
 use crate::ids::{native_scope_matches, native_stream};
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::coil::{DesignCoilPlacement, DesignCoilSelection};

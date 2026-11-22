@@ -1649,13 +1649,13 @@ fn mesh_operation_relation(
         )?;
         let group_record = &context.bytes[group_frame.start..group_frame.end];
         let group_identity = record_identity(group_record, group_frame, "mesh-operation-group")?;
-        let header = crate::design::decode::operands::RecordFrame {
+        let header = crate::design::decode::operands::construction_groups::RecordFrame {
             record_index: reference.value,
             class_tag: group_identity.class_tag().clone(),
             byte_offset: group_identity.byte_offset(),
         };
-        let crate::design::decode::operands::ConstructionOperandGroupParse::Complete(group) =
-            crate::design::decode::operands::parse_construction_operand_group(
+        let crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse::Complete(group) =
+            crate::design::decode::operands::construction_groups::parse_construction_operand_group(
                 context.bytes,
                 &scope,
                 u32::try_from(ordinal)
