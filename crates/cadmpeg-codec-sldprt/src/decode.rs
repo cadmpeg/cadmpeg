@@ -5491,19 +5491,6 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         return Ok(());
     }
     let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
-    let sketch_features = features
-        .iter()
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Sketch { .. }
-                        | cadmpeg_ir::features::FeatureOperation::SpatialSketch { .. }
-                )
-            )
-        })
-        .map(|feature| &feature.id)
-        .collect::<HashSet<_>>();
     let configuration = &mut configurations[configuration_index];
     for feature in features
         .iter()
@@ -5596,13 +5583,6 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
         };
         if let Some(copied_placements) = copied_placements {
             *placements = Some(copied_placements);
-            // The placements come with the sketches the document feature
-            // resolved them through.
-            for dependency in &feature.dependencies {
-                if sketch_features.contains(dependency) {
-                    state.dependencies.insert(dependency.clone());
-                }
-            }
         }
         if apply_resolution {
             shape
