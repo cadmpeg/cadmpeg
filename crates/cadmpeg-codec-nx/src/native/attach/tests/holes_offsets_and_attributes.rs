@@ -25,9 +25,8 @@ use crate::test_support::test_bytes::attach_test_body_surface;
 use cadmpeg_ir::features::direct_edit::ThickenSide;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::ProceduralSurfaceId;
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use std::collections::BTreeMap;

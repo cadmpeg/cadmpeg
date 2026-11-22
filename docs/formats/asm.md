@@ -4,7 +4,7 @@
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/asm.md`](../layouts/asm.md), generated from `docs/layouts/asm.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 An ASM or Spatial ACIS stream serializes one B-rep model as a header, a table of framed records, and an optional construction-history partition. The stream identifies its branch through its binary magic or text terminator. Fusion `.f3d` containers carry ASM streams in the binary and text encodings named in [`f3d.md`](f3d.md) §2. Inventor part carriers can contain the ASM binary branch or the ACIS 217/218 binary branch.
 

@@ -4,7 +4,7 @@
 
 This specification covers the Creo Parametric and Pro/ENGINEER `.prt` variant. Creo files use the PSB (Pro/E Session Binary) container.
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo.md`](../layouts/creo.md), generated from `docs/layouts/creo.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo.md`](../layouts/creo.md), generated from `docs/layouts/creo.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Container
 
@@ -29,7 +29,7 @@ spaces pad the counted field.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name. A common name is free text. It can be the
 model filename, such as `widget.prt`, or a descriptive title, such as
-`MOUNTING PLATE 40 MM`. A repeated or malformed `CMNM` record establishes no
+`WIDGET BRACKET 40 MM`. A repeated or malformed `CMNM` record establishes no
 common name.
 
 Binary model-data sections store the model name in the named field

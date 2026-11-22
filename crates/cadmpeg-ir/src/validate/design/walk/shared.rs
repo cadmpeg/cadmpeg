@@ -132,7 +132,10 @@ impl<Q> Walk for Law<Q> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Curve(f0) => f0.walk(into),
-            Self::Expression(f0) => f0.walk(into),
+            Self::Expression(f0) => {
+                into.push_expression(super::ExpressionPlace::Law, f0);
+                f0.walk(into)
+            }
             Self::Constant(_) | Self::Linear { start: _, end: _ } | Self::Native(_) => Ok(()),
         }
     }

@@ -2,7 +2,7 @@ use super::{EdgeBoundaryLayout, EdgeRow, MeshEdgeGeometry};
 use crate::solve::mesh_gauge::map_endpoint_relation_state;
 use crate::solve::mesh_gauge::relation_row_gauge_mapping;
 use crate::solve::mesh_gauge::MeshCandidateGauge;
-use crate::solve::mesh_quotient::MeshEndpointRelationSelection;
+use crate::solve::mesh_quotient::endpoint_relations::MeshEndpointRelationSelection;
 
 #[test]
 fn coordinate_gauge_keeps_identity_for_unsearched_eight_point_class() {

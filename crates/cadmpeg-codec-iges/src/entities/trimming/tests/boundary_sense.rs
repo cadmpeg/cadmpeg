@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
-use cadmpeg_ir::geometry::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::CadIr;
 

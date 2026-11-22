@@ -25,9 +25,25 @@ use cadmpeg_test_support::unknown_keys::accepting_shapes;
 /// Extension of the committed fixture inputs.
 const FIXTURE_EXTENSION: &str = "FCStd";
 
-#[test]
-fn every_decoded_shape_refuses_an_unknown_key() {
-    let fixtures = fixture_inputs();
+macro_rules! unknown_key_sweep {
+    ($($name:ident: $partition:expr),+ $(,)?) => {
+        $(#[test] fn $name() { check_unknown_keys($partition); })+
+    };
+}
+
+unknown_key_sweep! {
+    every_decoded_shape_refuses_an_unknown_key_0: 0,
+    every_decoded_shape_refuses_an_unknown_key_1: 1,
+    every_decoded_shape_refuses_an_unknown_key_2: 2,
+    every_decoded_shape_refuses_an_unknown_key_3: 3,
+}
+
+fn check_unknown_keys(partition: usize) {
+    let fixtures: Vec<_> = fixture_inputs()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, path)| (index % 4 == partition).then_some(path))
+        .collect();
     assert!(
         !fixtures.is_empty(),
         "the sweep found no fixtures to decode"

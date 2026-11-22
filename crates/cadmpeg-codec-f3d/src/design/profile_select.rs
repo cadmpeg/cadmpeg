@@ -2217,9 +2217,10 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     .find_map(|t| t.surface_planes.iter().find(|sp| sp.surface == s))
             })
     });
+    let prev_face_points = FacePointsIndex::new(prev_topology);
     let mut face_verts = Vec::new();
     for &fid in &face_ids {
-        for pt in historical_face_all_points(fid, prev_topology) {
+        for pt in prev_face_points.all_points(fid) {
             if !face_verts.contains(&pt) {
                 face_verts.push(pt);
             }
@@ -2227,26 +2228,75 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     }
 
     // Collect edges of selected faces and adjacent faces in prev_topology
+    let mut loops_by_face: HashMap<i64, Vec<&[i64]>> =
+        HashMap::with_capacity(prev_topology.face_loops.len());
+    let mut faces_by_loop: HashMap<i64, Vec<i64>> =
+        HashMap::with_capacity(prev_topology.face_loops.len());
+    for fl in &prev_topology.face_loops {
+        loops_by_face
+            .entry(fl.owner_ref)
+            .or_default()
+            .push(fl.member_refs.as_slice());
+        for &loop_id in &fl.member_refs {
+            faces_by_loop.entry(loop_id).or_default().push(fl.owner_ref);
+        }
+    }
+    let mut coedges_by_loop: HashMap<i64, Vec<&[i64]>> =
+        HashMap::with_capacity(prev_topology.loop_coedges.len());
+    let mut loops_by_coedge: HashMap<i64, Vec<i64>> =
+        HashMap::with_capacity(prev_topology.coedge_topology.len());
+    for lc in &prev_topology.loop_coedges {
+        coedges_by_loop
+            .entry(lc.owner_ref)
+            .or_default()
+            .push(lc.member_refs.as_slice());
+        for &coedge_id in &lc.member_refs {
+            loops_by_coedge
+                .entry(coedge_id)
+                .or_default()
+                .push(lc.owner_ref);
+        }
+    }
+    let mut coedge_by_id: HashMap<i64, i64> =
+        HashMap::with_capacity(prev_topology.coedge_topology.len());
+    for ce in &prev_topology.coedge_topology {
+        coedge_by_id.entry(ce.coedge).or_insert(ce.edge);
+    }
+    let mut edge_curve_by_edge: HashMap<i64, Option<i64>> =
+        HashMap::with_capacity(prev_topology.edge_curves.len());
+    for ec in &prev_topology.edge_curves {
+        edge_curve_by_edge.entry(ec.entity).or_insert(ec.carrier);
+    }
+    let mut curve_axis_by_curve: HashMap<i64, (Point3, cadmpeg_ir::math::Vector3)> =
+        HashMap::with_capacity(prev_topology.curve_axes.len());
+    for ca in &prev_topology.curve_axes {
+        curve_axis_by_curve
+            .entry(ca.curve)
+            .or_insert((ca.origin, ca.direction));
+    }
+
     let mut face_edges = HashSet::new();
+    let mut circle_axes = Vec::new();
     for &fid in &face_ids {
-        for fl in prev_topology
-            .face_loops
-            .iter()
-            .filter(|fl| fl.owner_ref == fid)
-        {
-            for &loop_id in &fl.member_refs {
-                for lc in prev_topology
-                    .loop_coedges
-                    .iter()
-                    .filter(|lc| lc.owner_ref == loop_id)
-                {
-                    for &coedge_id in &lc.member_refs {
-                        if let Some(ce) = prev_topology
-                            .coedge_topology
-                            .iter()
-                            .find(|c| c.coedge == coedge_id)
-                        {
-                            face_edges.insert(ce.edge);
+        for loop_members in loops_by_face.get(&fid).into_iter().flatten() {
+            for &loop_id in *loop_members {
+                for coedge_members in coedges_by_loop.get(&loop_id).into_iter().flatten() {
+                    for &coedge_id in *coedge_members {
+                        if let Some(&edge_id) = coedge_by_id.get(&coedge_id) {
+                            face_edges.insert(edge_id);
+                        }
+                    }
+                    if coedge_members.len() == 1 {
+                        let coedge_id = coedge_members[0];
+                        if let Some(&edge_id) = coedge_by_id.get(&coedge_id) {
+                            if let Some(Some(curve_id)) = edge_curve_by_edge.get(&edge_id).copied()
+                            {
+                                if let Some(&axis) = curve_axis_by_curve.get(&curve_id) {
+                                    if !circle_axes.contains(&axis) {
+                                        circle_axes.push(axis);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2256,60 +2306,10 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     let mut adjacent_faces = Vec::new();
     for ce in &prev_topology.coedge_topology {
         if face_edges.contains(&ce.edge) {
-            for lc in prev_topology
-                .loop_coedges
-                .iter()
-                .filter(|lc| lc.member_refs.contains(&ce.coedge))
-            {
-                for fl in prev_topology
-                    .face_loops
-                    .iter()
-                    .filter(|fl| fl.member_refs.contains(&lc.owner_ref))
-                {
-                    if !face_ids.contains(&fl.owner_ref) && !adjacent_faces.contains(&fl.owner_ref)
-                    {
-                        adjacent_faces.push(fl.owner_ref);
-                    }
-                }
-            }
-        }
-    }
-    let mut circle_axes = Vec::new();
-    for &fid in &face_ids {
-        for fl in prev_topology
-            .face_loops
-            .iter()
-            .filter(|fl| fl.owner_ref == fid)
-        {
-            for &loop_id in &fl.member_refs {
-                for lc in prev_topology
-                    .loop_coedges
-                    .iter()
-                    .filter(|lc| lc.owner_ref == loop_id)
-                {
-                    if lc.member_refs.len() == 1 {
-                        let coedge_id = lc.member_refs[0];
-                        if let Some(ce) = prev_topology
-                            .coedge_topology
-                            .iter()
-                            .find(|c| c.coedge == coedge_id)
-                        {
-                            if let Some(ec) = prev_topology
-                                .edge_curves
-                                .iter()
-                                .find(|ec| ec.entity == ce.edge)
-                            {
-                                if let Some(ca) = prev_topology
-                                    .curve_axes
-                                    .iter()
-                                    .find(|ca| Some(ca.curve) == ec.carrier)
-                                {
-                                    if !circle_axes.contains(&(ca.origin, ca.direction)) {
-                                        circle_axes.push((ca.origin, ca.direction));
-                                    }
-                                }
-                            }
-                        }
+            for &loop_id in loops_by_coedge.get(&ce.coedge).into_iter().flatten() {
+                for &owner_face in faces_by_loop.get(&loop_id).into_iter().flatten() {
+                    if !face_ids.contains(&owner_face) && !adjacent_faces.contains(&owner_face) {
+                        adjacent_faces.push(owner_face);
                     }
                 }
             }
@@ -2375,9 +2375,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     };
                     let on_circle_center = prof.iter().any(|use_| {
                         resolution
-                            .entities
-                            .iter()
-                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .profile_work
+                            .find_entity(resolution.entities, &use_.entity)
+                            .filter(|e| e.sketch == candidate_sketch.id)
                             .is_some_and(|e| match e.geometry.definition() {
                                 cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
                                     center,
@@ -2408,9 +2408,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     };
                     let on_prof = prof.iter().any(|use_| {
                         resolution
-                            .entities
-                            .iter()
-                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .profile_work
+                            .find_entity(resolution.entities, &use_.entity)
+                            .filter(|e| e.sketch == candidate_sketch.id)
                             .is_some_and(|e| {
                                 let is_circle_or_arc = matches!(
                                     e.geometry.definition(),
@@ -2856,12 +2856,14 @@ fn transition_profile_selection_step(
             }
         }
     }
+    let face_points_index = FacePointsIndex::new(topology);
     let placement_opt = sketch.resolved_placement();
     let face_has_off_plane_point = |face: i64| -> bool {
         let Some((sk_origin, sk_normal, _)) = placement_opt else {
             return true;
         };
-        historical_face_all_points(face, topology)
+        face_points_index
+            .all_points(face)
             .into_iter()
             .any(|pt| pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs() > tolerance)
     };
@@ -2874,7 +2876,9 @@ fn transition_profile_selection_step(
             .all(|(face, cyl_sel)| {
                 cyl_sel.is_some()
                     || (has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face))
-                    || historical_face_points(*face, topology).is_none_or(|pts| pts.len() <= 2)
+                    || face_points_index
+                        .points(*face)
+                        .is_none_or(|pts| pts.len() <= 2)
             });
     if only_circular_faces {
         let rings = BodyCircleRings {
@@ -2903,7 +2907,7 @@ fn transition_profile_selection_step(
         if has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face) {
             continue;
         }
-        let points = historical_face_points(*face, topology);
+        let points = face_points_index.points(*face);
         let selection = match points.as_deref() {
             Some(points) => selection_containing_points(
                 sketch,
@@ -2985,7 +2989,7 @@ fn transition_profile_selection_step(
     if let Some((sk_origin, sk_normal, _)) = sketch.resolved_placement() {
         let mut inserted_plane_pts = Vec::new();
         for face in inserted_faces {
-            for pt in historical_face_all_points(*face, topology) {
+            for pt in face_points_index.all_points(*face) {
                 let d = pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs();
                 if d <= tolerance * 10.0 {
                     if let Some(p2) = project_to_sketch(sketch, pt) {
@@ -3002,9 +3006,8 @@ fn transition_profile_selection_step(
                 };
                 let is_matched_circle = prof.len() == 1
                     && prof.iter().all(|use_| {
-                        entities
-                            .iter()
-                            .find(|e| e.id() == &use_.entity)
+                        profile_work
+                            .find_entity(entities, &use_.entity)
                             .is_some_and(|e| {
                                 matches!(
                                     e.geometry.definition(),
@@ -3043,10 +3046,11 @@ fn transition_profile_selection_step(
         deleted,
         previous_topology
     ));
+    let prev_points_index = FacePointsIndex::new(previous_topology);
     let mut selections = Vec::new();
     let mut combined_deleted_points = Vec::new();
     for face in faces {
-        let pts = historical_face_points(face, previous_topology);
+        let pts = prev_points_index.points(face);
         if let Some(ref points) = pts {
             for &p in points {
                 if !combined_deleted_points.contains(&p) {
@@ -3607,7 +3611,7 @@ pub(super) fn concentric_ring_regions(
     innermost_hole: Option<&ConcentricCircle<'_>>,
 ) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
     use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
-    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
 
     let circle_use = |circle: &ConcentricCircle<'_>, reversed: bool| {
         Some(SketchProfileBoundaryUse {
@@ -4184,6 +4188,114 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     Ok(Some(ResolvedProfileSelection::Regions(output)))
 }
 
+struct FacePointsIndex<'a> {
+    face_loops: HashMap<i64, &'a [i64]>,
+    loop_coedges: HashMap<i64, &'a [i64]>,
+    coedge_edge: HashMap<i64, i64>,
+    edge_vertices: HashMap<i64, (i64, i64)>,
+    vertex_point: HashMap<i64, i64>,
+    point_position: HashMap<i64, Point3>,
+}
+
+impl<'a> FacePointsIndex<'a> {
+    fn new(topology: &'a crate::history_records::AsmHistoricalTopology) -> Self {
+        let mut face_loops = HashMap::with_capacity(topology.face_loops.len());
+        for rel in &topology.face_loops {
+            face_loops
+                .entry(rel.owner_ref)
+                .or_insert(rel.member_refs.as_slice());
+        }
+        let mut loop_coedges = HashMap::with_capacity(topology.loop_coedges.len());
+        for rel in &topology.loop_coedges {
+            loop_coedges
+                .entry(rel.owner_ref)
+                .or_insert(rel.member_refs.as_slice());
+        }
+        let mut coedge_edge = HashMap::with_capacity(topology.coedge_topology.len());
+        for row in &topology.coedge_topology {
+            coedge_edge.entry(row.coedge).or_insert(row.edge);
+        }
+        let mut edge_vertices = HashMap::with_capacity(topology.edge_vertices.len());
+        for row in &topology.edge_vertices {
+            edge_vertices
+                .entry(row.edge)
+                .or_insert((row.start_vertex, row.end_vertex));
+        }
+        let mut vertex_point = HashMap::with_capacity(topology.vertex_points.len());
+        for binding in &topology.vertex_points {
+            vertex_point
+                .entry(binding.entity)
+                .or_insert(binding.carrier);
+        }
+        let mut point_position = HashMap::with_capacity(topology.point_positions.len());
+        for row in &topology.point_positions {
+            point_position.entry(row.point).or_insert(row.position);
+        }
+        Self {
+            face_loops,
+            loop_coedges,
+            coedge_edge,
+            edge_vertices,
+            vertex_point,
+            point_position,
+        }
+    }
+
+    fn all_points(&self, face: i64) -> Vec<Point3> {
+        let Some(&loops) = self.face_loops.get(&face) else {
+            return Vec::new();
+        };
+        let mut positions = Vec::new();
+        for loop_ref in loops {
+            let Some(&coedges) = self.loop_coedges.get(loop_ref) else {
+                continue;
+            };
+            for coedge_ref in coedges {
+                let Some(&edge_ref) = self.coedge_edge.get(coedge_ref) else {
+                    continue;
+                };
+                let Some(&(start_vertex, end_vertex)) = self.edge_vertices.get(&edge_ref) else {
+                    continue;
+                };
+                for vertex_ref in [start_vertex, end_vertex] {
+                    let Some(&point_ref) = self.vertex_point.get(&vertex_ref) else {
+                        continue;
+                    };
+                    let Some(&position) = self.point_position.get(&point_ref) else {
+                        continue;
+                    };
+                    if !positions.contains(&position) {
+                        positions.push(position);
+                    }
+                }
+            }
+        }
+        positions
+    }
+
+    fn points(&self, face: i64) -> Option<Vec<Point3>> {
+        let &loops = self.face_loops.get(&face)?;
+        let mut positions = Vec::new();
+        let mut closed_edges_only = true;
+        for loop_ref in loops {
+            let &coedges = self.loop_coedges.get(loop_ref)?;
+            for coedge_ref in coedges {
+                let &edge_ref = self.coedge_edge.get(coedge_ref)?;
+                let &(start_vertex, end_vertex) = self.edge_vertices.get(&edge_ref)?;
+                closed_edges_only &= start_vertex == end_vertex;
+                for vertex_ref in [start_vertex, end_vertex] {
+                    let &point_ref = self.vertex_point.get(&vertex_ref)?;
+                    let &position = self.point_position.get(&point_ref)?;
+                    if !positions.contains(&position) {
+                        positions.push(position);
+                    }
+                }
+            }
+        }
+        (positions.len() >= 3 || (closed_edges_only && !positions.is_empty())).then_some(positions)
+    }
+}
+
 fn historical_face_all_points(
     face: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
@@ -4697,8 +4809,7 @@ pub(in crate::design) fn selection_containing_points(
         for point in &projected {
             let mut on_boundary = false;
             for use_ in profile {
-                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity)
-                else {
+                let Some(entity) = profile_work.find_entity(entities, &use_.entity) else {
                     continue;
                 };
                 if point_on_sketch_entity(*point, entity, tolerance) {
@@ -4714,9 +4825,8 @@ pub(in crate::design) fn selection_containing_points(
         if matches && points.len() >= 2 && unique_projected.len() == 1 {
             let p0 = unique_projected[0];
             let on_curve = profile.iter().any(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         matches!(
                             entity.geometry.definition(),
@@ -4733,9 +4843,8 @@ pub(in crate::design) fn selection_containing_points(
             let p0 = unique_projected[0];
             let p1 = unique_projected[1];
             let on_single_entity = profile.iter().any(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         let on_both = point_on_sketch_entity(p0, entity, tolerance)
                             && point_on_sketch_entity(p1, entity, tolerance);
@@ -4758,9 +4867,8 @@ pub(in crate::design) fn selection_containing_points(
             }
         } else if matches && unique_projected.len() >= 3 && profile.len() >= 2 {
             let all_lines_covered = profile.iter().all(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         if matches!(
                             entity.geometry.definition(),
@@ -4797,9 +4905,8 @@ pub(in crate::design) fn selection_containing_points(
                     .is_some_and(|prof| {
                         prof.len() == 1
                             && prof.iter().all(|use_| {
-                                entities
-                                    .iter()
-                                    .find(|e| e.id() == &use_.entity)
+                                profile_work
+                                    .find_entity(entities, &use_.entity)
                                     .is_some_and(|e| {
                                         matches!(
                                             e.geometry.definition(),

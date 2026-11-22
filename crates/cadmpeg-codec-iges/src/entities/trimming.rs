@@ -20,12 +20,15 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoles3};
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
+use cadmpeg_ir::geometry::pcurve::{
+    Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsPoles3},
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
-    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurface, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
@@ -1113,7 +1116,7 @@ fn linear_boundary_geometry(
 }
 
 /// The stated interval of each parameter-curve use of each boundary item.
-type UseRanges = Vec<Vec<Option<cadmpeg_ir::geometry::DirectedParameterRange>>>;
+type UseRanges = Vec<Vec<Option<cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange>>>;
 
 /// The use interval of each parameter curve of each item when the boundary
 /// is traversed backward (`runs_backward`) or in source order: absent when
@@ -1131,11 +1134,11 @@ fn use_ranges(items: &[BoundaryItem], runs_backward: bool) -> Result<UseRanges, 
                     if !backward {
                         return Ok(None);
                     }
-                    cadmpeg_ir::geometry::DirectedParameterRange::new([*end, *start])
-                        .map(Some)
-                        .map_err(|_| {
-                            "a parameter curve has no interval whose reversal a use can state"
-                        })
+                    cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+                        *end, *start,
+                    ])
+                    .map(Some)
+                    .map_err(|_| "a parameter curve has no interval whose reversal a use can state")
                 })
                 .collect()
         })

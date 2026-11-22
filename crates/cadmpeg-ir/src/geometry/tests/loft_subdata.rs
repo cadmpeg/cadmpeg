@@ -2,7 +2,7 @@
 //! Loft subdata names its form with a tag, and the table form cannot restate
 //! its own dimensions.
 
-use crate::geometry::{LoftSubdata, LoftSubdataRow};
+use crate::geometry::lofts::{LoftSubdata, LoftSubdataRow};
 
 fn row(parameters: [f64; 2], columns: Vec<[f64; 2]>) -> LoftSubdataRow {
     LoftSubdataRow {
