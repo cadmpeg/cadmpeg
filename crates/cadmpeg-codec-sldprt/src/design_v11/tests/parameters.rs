@@ -180,9 +180,9 @@ fn parameters_with_readings(
 /// name, dimension name, and the scalar.
 type NamedScalars<'a> = [(&'a str, &'a str, super::super::parameters::NamedScalar)];
 
-/// As [`parameters_with_readings`], with the parameters the records of the
-/// scalars `stated` state, and the scalars `named` the features hold under
-/// their dimensions' names.
+/// As [`parameters_with_readings`], with what the records of the scalars
+/// `stated` state of their parameters, and the scalars `named` the features
+/// hold under their dimensions' names.
 fn parameters_with_scalars(
     keywords: &[u8],
     readings: &[(
@@ -192,10 +192,7 @@ fn parameters_with_scalars(
         Option<&str>,
     )],
     classes: &[(&str, crate::records::ArchiveParameterClass)],
-    stated: &[(
-        &str,
-        crate::resolved_features::parameter_classes::StatedParameter,
-    )],
+    stated: &[(&str, crate::resolved_features::parameter_classes::Statement)],
     named: &NamedScalars<'_>,
     length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> (
@@ -603,7 +600,10 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
         V10::Angle(Angle::from_assigned_real(0.24.try_into().unwrap())),
         Some("scalar-d8"),
     )];
-    let stated = [("scalar-d8", StatedParameter::Length(0.24))];
+    let stated = [(
+        "scalar-d8",
+        Statement::Parameter(StatedParameter::Length(0.24)),
+    )];
     let read = |unit| parameters_with_scalars(keywords, &mistyped, &[], &stated, &named, unit);
     let named_in = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
         parameters
@@ -699,6 +699,79 @@ fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
         )),
         "{}",
         note.message
+    );
+}
+
+#[test]
+fn a_contested_bound_scalar_gives_no_value() {
+    use crate::records::ArchiveParameterClass;
+    use crate::resolved_features::parameter_classes::Statement;
+    use cadmpeg_ir::design::units::{UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    // D1's earlier reading is an angle and D2's archive walk types its
+    // scalar a length; the class token of each bound scalar is contested.
+    let (_, parameters, notes) = parameters_with_scalars(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">7</Dimension>
+                <Dimension Name="D2">12</Dimension>
+            </Feature>
+        </Keywords>"#,
+        &[
+            (
+                "Sketch1",
+                "D1",
+                V10::Angle(Angle::from_assigned_real(0.007.try_into().unwrap())),
+                Some("scalar-d1"),
+            ),
+            (
+                "Sketch1",
+                "D2",
+                V10::Length(Length::new(12.0).unwrap()),
+                Some("scalar-d2"),
+            ),
+        ],
+        &[("scalar-d2", ArchiveParameterClass::Length)],
+        &[
+            ("scalar-d1", Statement::Contested),
+            ("scalar-d2", Statement::Contested),
+        ],
+        &[],
+        Some(UnitSymbol::Mm),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    for name in ["D1", "D2"] {
+        let parameter = named(name);
+        assert!(
+            matches!(&parameter.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"),
+            "{name}: {parameter:#?}"
+        );
+        assert_eq!(parameter.value, None, "{name}");
+    }
+    let unvalued = note_of(&notes, SldprtLossCode::DesignParameterValueUnread)
+        .expect("the dimensions with no value are named");
+    assert!(
+        unvalued.message.ends_with(&format!(
+            ": 2 whose scalars' class tokens the decoder's class sources name differently \
+             ({}, {})",
+            named("D1").id.as_str(),
+            named("D2").id.as_str()
+        )),
+        "{}",
+        unvalued.message
     );
 }
 
