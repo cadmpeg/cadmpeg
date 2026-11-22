@@ -2186,6 +2186,38 @@ fn report_parameter_trailer_flags(
     }
 }
 
+fn report_parameter_header_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterHeaderFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter(s) in {} set the header flag at offset 21; the flag is not interpreted (f3d-open-items.md DR-1007).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_driven_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterDrivenFlagAssumed,
+            format_args!(
+                "{} decoded parameter(s) in {} set the second flag byte of the expression trailer, read as the driven flag (f3d-open-items.md DR-144).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_owner_trailer_flags(
     report: &mut DecodeBody,
     flagged: &[crate::design::decode::parameters::StreamParameterCount],
@@ -2595,11 +2627,12 @@ fn report_design_projection_gaps(
             ),
         );
     }
-    let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
-        ctx,
-        &native.design_edge_operands,
-        &native.design_face_operands,
-    )?;
+    let recipe_search_skips =
+        crate::design::decode::operands::recipe_structure::recipe_side_searches_exhausted(
+            ctx,
+            &native.design_edge_operands,
+            &native.design_face_operands,
+        )?;
     for cap in crate::records::feature::patterns::RectangularPatternSearchCap::ALL {
         let capped_pattern_searches = native
             .design_parameter_scopes
@@ -2627,7 +2660,7 @@ fn report_design_projection_gaps(
             F3dLossCode::RecipeSideSearchBudgetExceeded,
             format_args!(
                 "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
-                crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
+                crate::design::decode::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
             ),
         );
     }
@@ -3035,6 +3068,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if container::brep_entries(scan).any(|entry| {
+                entry.name.rsplit('/').next() == Some(blob_name.as_str())
+                    && entry.attributes.contains_key("payload_error")
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -3169,6 +3208,7 @@ struct GeometryIndex {
 struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
+    model_selection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 struct DeferredBodylessInputs {
@@ -3303,6 +3343,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities: _,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let mut untyped = std::collections::BTreeSet::new();
         let stats = &brep.asm.stats;
@@ -3321,6 +3362,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
             geometry_losses(&brep),
         )?;
+        report.losses.extend(model_selection_losses);
         if undecoded_candidates != 0 {
             push_loss_vec(
                 &mut report.losses,
@@ -3400,6 +3442,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let MetadataIr {
             mut ir,
@@ -3412,6 +3455,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
             container_losses(scan, brep_outcome),
         )?;
+        report.losses.extend(model_selection_losses);
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = std::collections::BTreeSet::new();
         if container::design_breps(scan).next().is_some()
@@ -3465,10 +3509,12 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
         self.report
             .losses
-            .extend(prereqs.design_feature_timeline_losses.iter().cloned());
+            .extend(prereqs.design_record_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_driven_flags(&mut self.report, &prereqs.design_parameter_driven_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_header_flags(&mut self.report, &prereqs.design_parameter_header_flags);
         report_parameter_owner_trailer_flags(
             &mut self.report,
             &prereqs.design_parameter_owner_trailer_flags,
@@ -3477,16 +3523,9 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
         );
-        if prereqs.design_superseded_scope_envelopes != 0 {
-            push_loss_vec(
-                &mut self.report.losses,
-                F3dLossCode::FeatureScopeEnvelopeSuperseded,
-                format_args!(
-                    "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
-                    prereqs.design_superseded_scope_envelopes
-                ),
-            );
-        }
+        self.report
+            .losses
+            .extend(prereqs.design_superseded_scope_envelopes.losses());
         self.report
             .losses
             .extend(prereqs.design_component_occurrence_losses.iter().cloned());
@@ -4364,7 +4403,7 @@ fn decode_scanned_document<'a>(
     // arbitrary `.smbh` entry.
     if !model_breps.is_empty() {
         let mut primary_model_brep = None;
-        let qualify_ids = model_breps.len() > 1;
+        let qualify_ids = model_selection.blob_names.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
@@ -4496,6 +4535,7 @@ fn decode_scanned_document<'a>(
                 DecodeSessionState {
                     admitted_entities,
                     report_scope,
+                    model_selection_losses: model_selection.losses,
                 },
             );
         }
@@ -4514,6 +4554,7 @@ fn decode_scanned_document<'a>(
             DecodeSessionState {
                 admitted_entities,
                 report_scope,
+                model_selection_losses: model_selection.losses,
             },
         );
     }
@@ -4525,6 +4566,7 @@ fn decode_scanned_document<'a>(
         DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses: model_selection.losses,
         },
         &brep_outcome,
     )?;

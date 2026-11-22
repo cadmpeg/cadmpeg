@@ -225,6 +225,14 @@ pub(crate) mod brep {
         )
     }
 
+    /// The pcurve of pole `pole` of loop `loop_`.
+    pub(crate) fn pole_pcurve(definition: &str, loop_: usize, pole: usize) -> PcurveId {
+        PcurveId::compose(
+            &cadmpeg_ir::identity_namespace!("usd", "stage", "pcurve"),
+            brep_key(definition, &format!("pole-{loop_}"), pole),
+        )
+    }
+
     pub(crate) fn coedge(definition: &str, oriented_edge: usize) -> CoedgeId {
         CoedgeId::compose(
             &cadmpeg_ir::identity_namespace!("usd", "stage", "coedge"),

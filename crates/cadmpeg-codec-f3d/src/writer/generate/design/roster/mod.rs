@@ -8,7 +8,10 @@ mod act;
 mod bodies;
 mod browser;
 mod component;
+pub(super) mod extrude;
 mod fixed;
+mod owned;
+pub(super) mod planes;
 mod rows;
 pub(super) mod segment;
 pub(super) mod sketches;
@@ -24,6 +27,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
+use extrude::ExtrudeRecords;
+use planes::PlaneRecords;
 use segment::TypeTable;
 use sketches::SketchRoster;
 use values::Values;
@@ -83,6 +88,11 @@ const PARAMETER_COMPANION: u32 = 219;
 const EXTENSION: u32 = 225;
 /// The records of each body after the first.
 const BODY_RECORDS: u32 = 10;
+/// The roster records of the `Base Feature` item a design that writes an
+/// `Extrude` in its place leaves out: the scope, its record-timestamp
+/// tables, item-tail companion, tracked results and result owner, and the
+/// body tracking entry.
+const BASE_FEATURE_ITEM: [u32; 7] = [209, 210, 211, 212, 213, 214, 223];
 
 /// The records of one result body.
 #[derive(Clone, Copy)]
@@ -104,20 +114,32 @@ pub(super) struct Roster {
     pub(super) parameters: Vec<u32>,
     /// The records of the `Sketch` items, after the user parameters.
     pub(super) sketches: SketchRoster,
+    /// The records of the `WorkPlane` items, in timeline order.
+    pub(super) planes: Vec<PlaneRecords>,
+    /// The records of the `Extrude` item, between the `Sketch` items before
+    /// and after it.
+    pub(super) extrude: Option<ExtrudeRecords>,
     rows: Vec<(u32, TypeRow)>,
 }
 
 impl Roster {
     /// The one-body roster, with the ten records of each further body, one
     /// record of each user parameter, and then the records of each `Sketch`
-    /// item, at the indices from 225.
+    /// item, of the `WorkPlane` item before its first sketch, and of
+    /// `extrude`, in timeline order, at the indices from 225. The `Extrude`
+    /// replaces the `Base Feature` item.
     pub(super) fn new(
         bodies: usize,
         parameters: usize,
-        sketches: &[super::sketch::PlannedSketch<'_>],
+        sketch_plan: &super::sketch::SketchPlan<'_>,
+        extrude: Option<&super::extrude::ExtrudePlan<'_>>,
     ) -> Result<Self, CodecError> {
+        let sketches = &sketch_plan.items;
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
+        if extrude.is_some() {
+            entries.retain(|(index, _)| !BASE_FEATURE_ITEM.contains(index));
+        }
         let row_of = |index: u32| {
             rows::ONE_BODY
                 .iter()
@@ -168,11 +190,47 @@ impl Roster {
             parameter_indices.push(next);
             next = next.checked_add(1).ok_or_else(overflow)?;
         }
-        let (sketches, _) = SketchRoster::allocate(sketches, next, &mut entries)?;
+        let mut roster = SketchRoster::default();
+        let mut planes = Vec::<PlaneRecords>::new();
+        let mut extrude_records = None;
+        for (position, planned) in sketches.iter().enumerate() {
+            if let Some(plan) = extrude.filter(|plan| plan.after == position) {
+                let (records, after) = ExtrudeRecords::allocate(plan, next, &mut entries)?;
+                extrude_records = Some(records);
+                next = after;
+            }
+            for _ in sketch_plan
+                .planes
+                .iter()
+                .filter(|plane| plane.first == position)
+            {
+                let (records, after) = PlaneRecords::allocate(position, next, &mut entries)?;
+                planes.push(records);
+                next = after;
+            }
+            let plane_scope = match planned.support {
+                super::sketch::Support::Origin(_) => None,
+                super::sketch::Support::Construction(index) => Some(
+                    planes
+                        .get(index)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!("construction plane {index}"))
+                        })?
+                        .scope,
+                ),
+            };
+            next = roster.allocate(planned, plane_scope, next, &mut entries)?;
+        }
+        if let Some(plan) = extrude.filter(|plan| plan.after == sketches.len()) {
+            let (records, _) = ExtrudeRecords::allocate(plan, next, &mut entries)?;
+            extrude_records = Some(records);
+        }
         Ok(Self {
             bodies: indices,
             parameters: parameter_indices,
-            sketches,
+            sketches: roster,
+            planes,
+            extrude: extrude_records,
             rows: entries,
         })
     }
@@ -209,6 +267,94 @@ pub(super) struct Context<'a> {
     pub(super) bodies: Vec<RosterBody<'a>>,
     /// The `Sketch` items, in the order of [`Roster::sketches`].
     pub(super) sketches: &'a [super::sketch::PlannedSketch<'a>],
+    /// The construction planes, in the order of [`Roster::planes`].
+    pub(super) planes: &'a [super::sketch::PlannedPlane<'a>],
+    /// The `Extrude` written in place of the `Base Feature`.
+    pub(super) extrude: Option<&'a super::extrude::ExtrudePlan<'a>>,
+    pub(super) timeline_value: ContextValue,
+}
+
+/// The timeline context value.
+pub(super) enum ContextValue {
+    /// The value f3d.md §3.1 states for the design ("Records the timeline
+    /// context names", "Design records of Sketch items").
+    Stated(u64),
+    /// The largest source ordinal of an owned parameter, for a design
+    /// outside the f3d.md rules, with what puts it outside them.
+    Chosen { value: u64, outside: String },
+}
+
+impl ContextValue {
+    /// The value of a design whose parameters are named `names` and whose
+    /// timeline holds `planes`, `sketches` and `extrude`, or a `Base Feature`
+    /// without `extrude`.
+    pub(super) fn of<'n>(
+        names: impl IntoIterator<Item = &'n str>,
+        sketches: &[super::sketch::PlannedSketch<'_>],
+        planes: &[super::sketch::PlannedPlane<'_>],
+        extrude: Option<&super::extrude::ExtrudePlan<'_>>,
+    ) -> Self {
+        let largest = || {
+            let dimensions = sketches
+                .iter()
+                .flat_map(|sketch| &sketch.dimensions)
+                .map(|dimension| dimension.parameter.ordinal);
+            let planes = planes
+                .iter()
+                .filter_map(|plane| plane.parameters.as_ref())
+                .flat_map(|parameters| parameters.iter().map(|parameter| parameter.ordinal));
+            let extrude = extrude
+                .into_iter()
+                .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
+            dimensions
+                .chain(planes)
+                .chain(extrude)
+                .max()
+                .map_or(0, u64::from)
+        };
+        if !planes.is_empty() {
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds WorkPlane items".to_owned(),
+            };
+        }
+        if extrude.is_none() {
+            if sketches.is_empty() {
+                return Self::Stated(0);
+            }
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds Sketch items and a Base Feature".to_owned(),
+            };
+        }
+        let mut largest_number = 0;
+        let mut renamed = Vec::new();
+        for name in names {
+            match owned_number(name) {
+                Some(number) => largest_number = largest_number.max(number),
+                None => renamed.push(name),
+            }
+        }
+        if renamed.is_empty() {
+            return Self::Stated(largest_number);
+        }
+        Self::Chosen {
+            value: largest(),
+            outside: format!("parameters not named d<n>: {}", renamed.join(" ")),
+        }
+    }
+
+    pub(super) fn value(&self) -> u64 {
+        match self {
+            Self::Stated(value) | Self::Chosen { value, .. } => *value,
+        }
+    }
+}
+
+/// `n` of a parameter name `d<n>`.
+fn owned_number(name: &str) -> Option<u64> {
+    let number = name.strip_prefix('d')?.parse::<u64>().ok()?;
+    (format!("d{number}") == name).then_some(number)
 }
 
 impl Context<'_> {
@@ -242,6 +388,33 @@ impl Context<'_> {
         Ok(())
     }
 
+    /// The parameter records whose tails name the parameter collection, in
+    /// ascending record index: the user parameters and the parameters the
+    /// timeline items own.
+    pub(super) fn collected_parameters(&self) -> Vec<u32> {
+        let mut parameters = self.roster.parameters.clone();
+        for sketch in &self.roster.sketches.items {
+            parameters.extend(sketch.parameters());
+        }
+        for plane in &self.roster.planes {
+            parameters.extend([plane.along[0], plane.extra[0]]);
+        }
+        if let Some(records) = &self.roster.extrude {
+            parameters.extend([records.along[1], records.taper[1]]);
+        }
+        parameters.sort_unstable();
+        parameters
+    }
+
+    /// The timeline item whose scope the browser node of a result body
+    /// names: the `Extrude` scope, else the `Base Feature` scope.
+    pub(super) fn item_scope(&self) -> u32 {
+        self.roster
+            .extrude
+            .as_ref()
+            .map_or(SCOPE, |records| records.scope)
+    }
+
     /// The number of result bodies as a u32.
     pub(super) fn body_count(&self) -> Result<u32, CodecError> {
         count(self.bodies.len())
@@ -258,6 +431,15 @@ pub(super) fn type_table(roster: &Roster, sheet: bool) -> Result<TypeTable, Code
     }
     if !roster.sketches.is_empty() {
         known.extend(super::types::SKETCH_ANCESTORS);
+    }
+    if roster.extrude.is_some() {
+        known.extend(super::types::EXTRUDE_ANCESTORS);
+    }
+    if roster.sketches.has_dimensions() {
+        known.extend(super::types::DIMENSION_ANCESTORS);
+    }
+    if !roster.planes.is_empty() {
+        known.extend(super::types::WORKPLANE_ANCESTORS);
     }
     TypeTable::new(roster.rows(), &known)
 }
@@ -289,7 +471,11 @@ pub(super) fn archive(
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
+    planes::write(ctx, &mut records)?;
     sketches::write(ctx, ctx.sketches, &mut records)?;
+    if let Some(plan) = ctx.extrude {
+        extrude::write(ctx, plan, &mut records)?;
+    }
     let records = records.sorted()?;
     let design = segment::Segment {
         kind: segment::SegmentKind::Design,
@@ -331,14 +517,28 @@ const EMPTY_CONFIGURATION: &[u8] = b"{}";
 /// The empty directory of the document's images.
 pub(super) const IMAGES: &str = "Images.BlobParts/";
 
+/// The reason of the note that charges the record-timestamp tables.
+pub(super) const FIXED_CLOCK: &str = "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock";
+
 /// The values this writer chooses where the specification leaves the rule
 /// open.
 fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     let mut notes = Vec::new();
-    notes.extend(super::base_feature::item_tail_loss(SCOPE));
+    match &ctx.roster.extrude {
+        None => notes.extend(super::base_feature::item_tail_loss(SCOPE)),
+        Some(records) => notes.extend(extrude::losses(ctx, records)),
+    }
+    notes.extend(sketches::dimensions::losses(ctx));
+    if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            "writes the timeline context value where f3d.md §3.1 states it (\"Records the timeline context names\" and \"Design records of Sketch items\"), and f3d-open-items.md DR-882 leaves the value of other designs open",
+            [format!("record {CONTEXT} (timeline context: context value {value}, the largest source ordinal of an owned parameter; {outside})")],
+        ));
+    }
     notes.extend(record_residual_unavailable(
         "F3D",
-        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        FIXED_CLOCK,
         ctx.roster
             .rows()
             .iter()
@@ -393,15 +593,22 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         "stores the box of each body's vertex points as its axis-aligned bounding box in the Scene records, the HOME camera and the scene radius; a curved face can extend past its vertices",
         ctx.bodies.iter().map(|body| body.id.to_string()),
     ));
+    let item = if ctx.roster.extrude.is_some() {
+        "Extrude"
+    } else {
+        "Base Feature"
+    };
     if !ctx.roster.sketches.is_empty() {
         notes.extend(record_residual_unavailable(
             "F3D",
-            "writes the Sketch items before the Base Feature with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open",
+            &format!(
+                "writes the Sketch items before the {item} with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open"
+            ),
             [
-                "record 199 (owner collection: the order of the Sketch and Base Feature members)".to_owned(),
+                format!("record 199 (owner collection: the order of the Sketch and {item} members)"),
                 "record 200 (B65B5682: the order of its members)".to_owned(),
                 "record 201 (dependency table: the order of its entries)".to_owned(),
-                "record 203 (persistent-id table of Sketch items before a Base Feature)".to_owned(),
+                "record 203 (persistent-id table of Sketch items before the timeline's geometry item)".to_owned(),
                 "Sketch scopes (P = 0, F = 1)".to_owned(),
                 "sketch containers (word 1, sketch word 7, no base record)".to_owned(),
                 "sketch points (flags and state by role)".to_owned(),
@@ -410,11 +617,31 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                 format!("record {SKETCHES} (sketch collection: `crv_tag_id_idx`, one more than the largest point or curve identity)"),
                 "placement tracking flags (01 01 00)".to_owned(),
                 format!(
-                    "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
+                    "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
                     super::base_feature::EPOCH,
                     super::base_feature::DURATION
                 ),
             ],
+        ));
+    }
+    if !ctx.roster.planes.is_empty() {
+        let entries = vec![
+            "plane entities (display corners (0.075, 0.075) and (2.175, 2.175), empty text, flag byte 0)".to_owned(),
+            format!(
+                "WorkPlane scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the {item} item tail)",
+                super::base_feature::EPOCH,
+                super::base_feature::DURATION
+            ),
+            "placements and frame records of the sketches on construction planes (origin at the plane entity's origin)".to_owned(),
+            "record 11 (construction collection: its entities in timeline order)".to_owned(),
+            "parameter source ordinals (one counter from 1 over the WorkPlane and Sketch items in timeline order: each WorkPlane item's AlongDistance parameter takes the ordinal after the parameters of the WorkPlane and Sketch items before it, the dimension parameters of the Sketch item after it continue from its ExtraOffset parameter's ordinal plus one, and an Extrude item's two parameters take the last two ordinals)".to_owned(),
+        ];
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            &format!(
+                "writes the WorkPlane items of the timeline whose geometry item is the {item} with these values where f3d-open-items.md DR-1004 leaves their meaning open and DR-901 leaves the rule of items before a timeline's geometry item open"
+            ),
+            entries,
         ));
     }
     notes.extend(record_residual_unavailable(
