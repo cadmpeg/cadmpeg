@@ -15,12 +15,15 @@ use crate::eval::{
     nurbs_pcurve_parameter_domain, EvaluationFailure,
 };
 use crate::geometry::analytic::CircleCurve;
+use crate::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
 use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
 use crate::geometry::pcurve::{Pcurve, PcurveGeometry};
+use crate::geometry::procedural_curves::{
+    DirectedParameterRange, ProceduralCurveDefinition, SupportPcurve,
+};
+use crate::geometry::surface_curves::SurfaceCurveFamily;
 use crate::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SupportPcurve, SurfaceCurveFamily,
+    Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use crate::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId};
 use crate::index::{ModelIndex, StandardIndex};

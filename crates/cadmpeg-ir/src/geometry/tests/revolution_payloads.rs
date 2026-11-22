@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::features::geometry::FinitePoint3;
-use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::ProceduralSurface;
 use crate::ids::{CurveId, ProceduralSurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::units::UnitVector3;
@@ -15,7 +16,7 @@ fn curve() -> CurveId {
 
 fn revolution(
     intervals: [[f64; 2]; 3],
-) -> Result<ProceduralSurfaceDefinition, crate::geometry::ProceduralGeometryError> {
+) -> Result<ProceduralSurfaceDefinition, crate::geometry::legacy_cache::ProceduralGeometryError> {
     Ok(ProceduralSurfaceDefinition::Revolution(
         crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
             curve(),
@@ -24,7 +25,7 @@ fn revolution(
             Some(intervals[1]),
             Some(intervals[2]),
             false,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )?,
     ))
 }
@@ -58,7 +59,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
             None,
             None,
             false,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
         .unwrap(),
     );
@@ -128,7 +129,7 @@ fn axis_revolution_and_sum_reject_nonfinite_frames_and_basepoints() {
             curve(),
             curve(),
             basepoint,
-            crate::geometry::CacheContract::from_form(None),
+            crate::geometry::legacy_cache::CacheContract::from_form(None),
         )
         .map(ProceduralSurfaceDefinition::Sum)
     };

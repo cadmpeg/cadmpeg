@@ -605,7 +605,7 @@ fn build_result(
 }
 
 fn unmapped_support_chart_losses(ir: &CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let mut losses = Vec::new();
     for curve in &ir.geometry.procedural_curves {

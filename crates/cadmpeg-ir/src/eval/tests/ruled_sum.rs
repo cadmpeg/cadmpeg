@@ -4,10 +4,10 @@ use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::model_surface_second_partials_by_id;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
 use crate::geometry::ProceduralSurface;
-use crate::geometry::ProceduralSurfaceDefinition;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::Surface;
 use crate::geometry::SurfaceGeometry;
@@ -136,7 +136,7 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
                 CurveId::mint("test:model:entity#first").expect("valid identity"),
                 CurveId::mint("test:model:entity#second").expect("valid identity"),
                 Vector3::new(0.5, 1.0, 2.0),
-                crate::geometry::CacheContract::from_form(None),
+                crate::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .expect("valid sum"),
         ),
@@ -210,7 +210,7 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
                 CurveId::mint("test:model:entity#first").expect("valid identity"),
                 CurveId::mint("test:model:entity#second").expect("valid identity"),
                 Vector3::new(0.5, 1.0, 2.0),
-                crate::geometry::CacheContract::from_form(None),
+                crate::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .expect("valid sum"),
         ),
