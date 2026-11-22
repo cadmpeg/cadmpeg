@@ -126,21 +126,29 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Check public refusal, then exercise the internal history section encoder.
-pub(crate) fn serialize_history_in_native_envelope_after_refusal(
+/// Write an edit that shapes the solid through the public encoder, and check
+/// that the export report names the stored solid as stale.
+pub(crate) fn write_history_over_stale_solid(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+) -> Result<cadmpeg_ir::report::export::ExportReport, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
-    let error = plan_inherited_write(&ir, &fidelity, &mut Vec::new()).unwrap_err();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )?
+        .write_to(writer)?;
     assert!(
-        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-        "{error}"
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+        "{:?}",
+        report.losses
     );
-    let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
-        .map(|output| output.dialect)
+    Ok(report)
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
