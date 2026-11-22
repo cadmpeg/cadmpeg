@@ -418,7 +418,10 @@ impl Kept {
             Self::Unconfirmed => {
                 "a value it reads is not the value the equation manager stores beside it"
             }
-            Self::Disagrees => "its evaluation disagrees with the stored value",
+            Self::Disagrees => {
+                "its evaluation over the decoded values disagrees with the parameter's decoded \
+                 value"
+            }
             Self::BareReference => {
                 "it is one reference to a parameter whose kind differs or is not read"
             }
@@ -437,7 +440,11 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
     let mut unread = Losses::default();
     let mut kept = Losses::default();
     for minted in mint(parameters, &lines, linking.scope) {
-        kept.push(Kept::Untranslated, parameters[minted].id.as_str());
+        let parameter = &parameters[minted];
+        kept.push(
+            (Kept::Untranslated, parameter.value.is_some()),
+            parameter.id.as_str(),
+        );
     }
     let names = Names::new(parameters, linking.features);
     for line in lines {
@@ -470,7 +477,8 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
         let (expression, why) =
             expression(parameters, target, &line, stored.as_ref(), &names, linking);
         if let Some(why) = why {
-            kept.push(why, parameters[target].id.as_str());
+            let parameter = &parameters[target];
+            kept.push((why, parameter.value.is_some()), parameter.id.as_str());
         }
         let parameter = &mut parameters[target];
         parameter.definition = ParameterDefinition::Expression(expression);
@@ -713,7 +721,6 @@ fn expression(
     if matches!(&tree, Node::Reference(_)) {
         return (Expression::Neutral(Neutral(tree)), None);
     }
-    let stored = stored.map_or(&[][..], |stored| stored.reads.as_slice());
     match test(
         parameters,
         target,
@@ -785,15 +792,15 @@ enum Test {
 
 /// The tree's evaluation over the caches of the parameters it reads, against
 /// the cache of the parameter it defines, compared as part 10 compares a
-/// cache with its expression. `stored` holds the value the manager stores
-/// beside each name the tree reads, in the order of `reads`; each cache of a
-/// read with a stored value is that value.
+/// cache with its expression. `reads` holds the parameter of each name of
+/// the line in order, as `stored` holds the value the manager stores beside
+/// each; each cache of a read with a stored value is that value.
 fn test(
     parameters: &[DesignParameter],
     target: usize,
     tree: &Node<ParameterRef>,
     reads: &[usize],
-    stored: &[Option<f64>],
+    stored: Option<&Stored>,
     tolerances: &Tolerances,
 ) -> Test {
     let Some(target_cache) = cached(&parameters[target]) else {
@@ -805,12 +812,12 @@ fn test(
     {
         return Test::Untested;
     }
-    if stored.len() == reads.len()
-        && reads
+    if stored.is_some_and(|stored| {
+        reads
             .iter()
-            .zip(stored)
+            .zip(&stored.reads)
             .any(|(&read, value)| value.is_some_and(|value| !stores(&parameters[read], value)))
-    {
+    }) {
         return Test::Unconfirmed;
     }
     let by_id = reads
@@ -978,7 +985,9 @@ impl<W: Copy + PartialEq> Losses<W> {
 }
 
 impl Losses<Unread> {
-    fn notes(&self, kept: &Losses<Kept>) -> Vec<LossNote> {
+    /// The notes of the lines not read and of those `kept` as `Source`, the
+    /// latter by reason and by whether the parameter holds a value.
+    fn notes(&self, kept: &Losses<(Kept, bool)>) -> Vec<LossNote> {
         let mut notes = Vec::new();
         for (why, named) in &self.by_reason {
             notes.push(SldprtLossCode::DesignEquationUnread.note(format!(
@@ -988,10 +997,15 @@ impl Losses<Unread> {
                 why.reason()
             )));
         }
-        for (why, named) in &kept.by_reason {
+        for ((why, valued), named) in &kept.by_reason {
+            let value = if *valued {
+                "a writer of another format writes their cached value"
+            } else {
+                "they hold no cached value for a writer of another format to write"
+            };
             notes.push(SldprtLossCode::DesignEquationSource.note(format!(
-                "{} parameters keep their equation as SolidWorks source text, because {}; a \
-                 writer of another format writes their cached value: {named}",
+                "{} parameters keep their equation as SolidWorks source text, because {}; \
+                 {value}: {named}",
                 named.count(),
                 why.reason()
             )));
