@@ -263,7 +263,10 @@ where
                 let carrier = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
                 for _ in 0..2 {
                     let target = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
-                    if !matches!(self.records[target].class(), 0x27 | 0x29 | 0x38) {
+                    let record = &self.records[target];
+                    if !matches!(record.class(), 0x27 | 0x29 | 0x38)
+                        && (record.family(), record.class()) != (Family::B, 0x30)
+                    {
                         return None;
                     }
                 }
@@ -2053,6 +2056,7 @@ fn fit_ring(
 mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
+    mod carriers;
     mod recovery;
     mod roster_priority;
 
