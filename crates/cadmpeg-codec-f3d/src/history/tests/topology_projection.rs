@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Linear historical radius replacement and ordered coedge incidence.
 use crate::history::historical_topology;
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+use cadmpeg_ir::geometry::legacy_cache::CacheContract;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload;
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CacheContract, ProceduralSurface,
-    ProceduralSurfaceDefinition,
-};
+use cadmpeg_ir::geometry::ProceduralSurface;
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::topology::{Coedge, Loop, LoopBoundary, LoopRing, Sense};
 

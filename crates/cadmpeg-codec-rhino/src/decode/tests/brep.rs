@@ -290,7 +290,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(
         geometry.pcurves[0]
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
     let PcurveGeometry::Nurbs { nurbs } = &geometry.pcurves[0].geometry else {

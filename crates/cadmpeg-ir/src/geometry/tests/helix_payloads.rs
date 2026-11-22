@@ -1,8 +1,8 @@
-use super::super::{
+use super::super::helix::{
     HelixCircleProfile, HelixCurveConstruction, HelixFrame, HelixLineProfile,
     HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
-    ProceduralCurveDefinition,
 };
+use super::super::procedural_curves::ProceduralCurveDefinition;
 use crate::math::{Point3, Vector3};
 use serde_json::json;
 
@@ -292,7 +292,7 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
 
 #[test]
 fn numerical_followup_circular_helix_admits_finite_radial_scales() {
-    use crate::geometry::{HelixFrame, HelixPathConstruction};
+    use crate::geometry::helix::{HelixFrame, HelixPathConstruction};
     use crate::math::{Point3, Vector3};
     for radius in [1.0, 1e200, 1e-200] {
         let frame = HelixFrame {
