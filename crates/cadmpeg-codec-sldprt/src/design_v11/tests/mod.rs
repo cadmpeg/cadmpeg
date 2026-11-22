@@ -691,7 +691,7 @@ fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
     use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
     use cadmpeg_ir::design::parameter::ParameterDefinition;
     use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
-    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::{Angle, Length};
 
     let (_, parameters, losses) = parameters_with_readings(
