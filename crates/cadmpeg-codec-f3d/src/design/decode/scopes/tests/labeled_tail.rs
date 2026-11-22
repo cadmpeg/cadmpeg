@@ -120,7 +120,7 @@ fn labeled_77_byte_tail_reads_its_preceding_state() {
 }
 
 #[test]
-fn labeled_tail_admits_any_record_index_and_epoch_and_keeps_zero_flags() {
+fn labeled_tail_admits_any_record_index_and_epoch_and_zero_or_one_flags() {
     for long_form in [true, false] {
         assert_labeled_with_previous(&PlainTail {
             long_form,
@@ -129,12 +129,12 @@ fn labeled_tail_admits_any_record_index_and_epoch_and_keeps_zero_flags() {
             flags: (0, 0),
             previous: 70_000,
         });
-        let (nonzero, _) = plain_labeled_frame(&PlainTail {
+        let (other, _) = plain_labeled_frame(&PlainTail {
             long_form,
-            flags: (1, 0),
+            flags: (2, 0),
             ..PlainTail::default()
         });
-        assert!(parse_plain(&nonzero).is_none());
+        assert!(parse_plain(&other).is_none());
     }
 }
 

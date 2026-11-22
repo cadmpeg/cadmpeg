@@ -273,7 +273,11 @@ fn scope_tail_reads_its_state_bytes_and_lane_flags() {
                     assert!(scope.combine_named_tail().is_some(), "{case}");
                 }
                 let wire = serde_json::to_value(&scope).unwrap();
-                assert_eq!(wire["rolled_back"], serde_json::json!(rolled_back), "{case}");
+                assert_eq!(
+                    wire["rolled_back"],
+                    serde_json::json!(rolled_back),
+                    "{case}"
+                );
                 assert_eq!(
                     serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
                     scope,
@@ -294,9 +298,11 @@ fn scope_tail_state_outside_the_flag_domain_is_unread() {
         let bytes = marked_named_combine_with_state("", None, state, flags, false);
         let scope = parse_marked_named_combine(&bytes);
         assert!(
-            scope.as_ref().is_none_or(|scope| scope.rolled_back.is_none()
-                && !scope.suppression_flag
-                && !scope.unevaluated_flag),
+            scope
+                .as_ref()
+                .is_none_or(|scope| scope.rolled_back.is_none()
+                    && !scope.suppression_flag
+                    && !scope.unevaluated_flag),
             "{state:?} {flags:?}"
         );
     }

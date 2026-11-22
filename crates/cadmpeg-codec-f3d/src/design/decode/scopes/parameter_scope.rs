@@ -2269,10 +2269,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         if let Some(state) = previous_history_state_id_offset
             .and_then(|previous| scope_timeline_state(bytes, previous, paired_at))
         {
-            scope.rolled_back = Some(state.rolled_back);
+            scope.rolled_back = Some(state.lanes.rolled_back);
             scope.suppression_flag = state.suppressed;
             scope.unevaluated_flag = state.unevaluated;
-            scope.no_result_flag = state.no_result;
+            scope.no_result_flag = state.lanes.no_result;
         }
         if let Some(prologue) = extrude_prologue {
             {
@@ -2613,6 +2613,13 @@ struct ScopeTimelineState {
     suppressed: bool,
     /// The third state byte.
     unevaluated: bool,
+    /// The two lane flags.
+    lanes: LaneFlags,
+}
+
+/// The no-result and rolled-back lane flags of a plain parameter-scope tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LaneFlags {
     /// The no-result lane flag.
     no_result: bool,
     /// The rolled-back lane flag.
@@ -2641,21 +2648,21 @@ fn scope_timeline_state(
         previous.checked_add(named_tail::LANE_FLAGS - named_tail::PREVIOUS_HISTORY_STATE_ID)?;
     let long_rest = named_tail::LEN - named_tail::LANE_FLAGS;
     let rest = paired_at.checked_sub(flags_at)?;
-    let (no_result, rolled_back, third) =
-        if rest == long_rest || rest == long_rest + reference_width - 1 {
-            let &[1, no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(3)?)?
-            else {
-                return None;
-            };
-            (no_result, rolled_back, flags_at.checked_add(3)?)
-        } else if rest == long_rest - 1 || rest == long_rest + reference_width - 2 {
-            let &[no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(2)?)? else {
-                return None;
-            };
-            (no_result, rolled_back, flags_at.checked_add(2)?)
-        } else {
+    let (no_result, rolled_back, third) = if rest == long_rest
+        || rest == long_rest + reference_width - 1
+    {
+        let &[1, no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(3)?)? else {
             return None;
         };
+        (no_result, rolled_back, flags_at.checked_add(3)?)
+    } else if rest == long_rest - 1 || rest == long_rest + reference_width - 2 {
+        let &[no_result, rolled_back] = bytes.get(flags_at..flags_at.checked_add(2)?)? else {
+            return None;
+        };
+        (no_result, rolled_back, flags_at.checked_add(2)?)
+    } else {
+        return None;
+    };
     if !reference(second)? || !reference(third)? || no_result > 1 || rolled_back > 1 {
         return None;
     }
@@ -2682,8 +2689,10 @@ fn scope_timeline_state(
     Some(ScopeTimelineState {
         suppressed: by_group == 1 || directly == 1,
         unevaluated: unevaluated == 1,
-        no_result: no_result == 1,
-        rolled_back: rolled_back == 1,
+        lanes: LaneFlags {
+            no_result: no_result == 1,
+            rolled_back: rolled_back == 1,
+        },
     })
 }
 

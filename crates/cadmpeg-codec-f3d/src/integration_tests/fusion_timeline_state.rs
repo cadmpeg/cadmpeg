@@ -55,24 +55,27 @@ fn expect(suppressed: &BTreeMap<String, bool>, expected: &[(&str, bool)]) {
 
 #[test]
 fn rolled_back_features_after_an_edit_are_active() {
-    let (suppressed, marker, _) =
-        timeline_state(include_bytes!("../../../../corpus/f3d/timeline_rolled_after_edit.f3d"));
+    let (suppressed, marker, _) = timeline_state(include_bytes!(
+        "../../../../corpus/f3d/timeline_rolled_after_edit.f3d"
+    ));
     expect(&suppressed, &[("Combine 1", false), ("Fillet 1", false)]);
     assert_eq!(marker.as_deref(), Some("Combine 1"));
 }
 
 #[test]
 fn a_suppressed_feature_after_the_marker_stays_suppressed() {
-    let (suppressed, marker, _) =
-        timeline_state(include_bytes!("../../../../corpus/f3d/timeline_suppressed_rolled.f3d"));
+    let (suppressed, marker, _) = timeline_state(include_bytes!(
+        "../../../../corpus/f3d/timeline_suppressed_rolled.f3d"
+    ));
     expect(&suppressed, &[("Combine 1", false), ("Fillet 1", true)]);
     assert_eq!(marker.as_deref(), Some("Combine 1"));
 }
 
 #[test]
 fn inherited_and_direct_suppression_bytes_mark_suppressed_features() {
-    let (suppressed, marker, _) =
-        timeline_state(include_bytes!("../../../../corpus/f3d/timeline_combine_suppressed.f3d"));
+    let (suppressed, marker, _) = timeline_state(include_bytes!(
+        "../../../../corpus/f3d/timeline_combine_suppressed.f3d"
+    ));
     expect(
         &suppressed,
         &[("Combine 1", true), ("Fillet 1", false), ("Fillet 2", true)],
@@ -82,11 +85,16 @@ fn inherited_and_direct_suppression_bytes_mark_suppressed_features() {
 
 #[test]
 fn a_suppressed_timeline_group_suppresses_its_items() {
-    let (suppressed, marker, _) =
-        timeline_state(include_bytes!("../../../../corpus/f3d/timeline_group_suppressed.f3d"));
+    let (suppressed, marker, _) = timeline_state(include_bytes!(
+        "../../../../corpus/f3d/timeline_group_suppressed.f3d"
+    ));
     expect(
         &suppressed,
-        &[("Extrude 1", false), ("Sketch 3", true), ("Extrude 3", true)],
+        &[
+            ("Extrude 1", false),
+            ("Sketch 3", true),
+            ("Extrude 3", true),
+        ],
     );
     assert_eq!(marker, None);
 }
