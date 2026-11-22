@@ -20,6 +20,24 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1014. Order of a body-override appearance and the body's material assignment
+
+**Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
+
+**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 records a user's test in which a body's assigned appearance shows through a root override, which is the opposite order.
+
+**Need.** A save with a body whose material assignment and body-override record name different appearances, with the displayed appearance of the body.
+
+**Note.** The decoder binds the override's appearance, replaces the binding of the material assignment, and charges `appearance.body-override-precedence-assumed`.
+
+### DR-1006. Coordinate System construction inputs and frame ownership
+
+**Question.** Which type registration identifies a timeline Coordinate System, and how do its construction references select the origin, axes, and containing frame?
+
+**Known.** `f3d.md` §3.1 "A `JointOrigin` scope owns one coordinate frame" defines admitted scope matrices and assembly operand frames. The separate placement-carrier grammar follows §3.1 "A version-2 `JointOrigin` scope can store its solved frame". A public JointOrigin has a 333-byte version-2 scope with nine ordered references. Its first reference names a 389-byte version-8 placement carrier with reference type 20 and four value references. The carrier stores a rigid matrix and a scope backlink. The pin body has model-space end planes at z = 0 and 14 millimetres. The carrier translation is (172.435358383, 15.303201895, 38.907575495) millimetres. The decoder keeps this scope native with `feature.coordinate-system-frame-unresolved`. Admitted solved frames transfer to v11 datum frame caches with an unread construction input. A frame whose scope keeps its source construction references and parameter expressions charges `feature.coordinate-system-construction-native`; a frame whose scope keeps none charges `feature.coordinate-system-construction-dropped`.
+
+**Need.** Bind the type registration, carrier frame, occurrence space, input roles, offset signs, and axis flags to final geometry in independent public designs. Establish the relation between the timeline label Coordinate System and the registered JointOrigin type.
+
 ### DR-817. Silhouette Split direction selection
 
 **Question.** How does the direction selector bind to the datum or topology in the state before the split?
@@ -40,9 +58,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
 
-**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. One local corpus file has a symmetric intersect Extrude whose counted members each join uniquely to a Sketch curve. Other Sketch curves with tail marker zero divide its boundary. The member-ring resolver requires one atomic arrangement boundary with the complete named-curve ring and traversal directions. Its join remains unresolved. The transition certificate accepts one-sided blind Cut, Join, and NewBody. The selection retains its native identity with `feature.profile-selection-native`.
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. One local corpus file has a symmetric intersect Extrude whose counted members each join uniquely to a Sketch curve. Other Sketch curves with tail marker zero divide its boundary. The member-ring resolver accepts one atomic arrangement boundary with the complete named-curve ring and traversal directions. It also accepts a boundary whose fragments of one curve meet only at nodes of curves outside the ring, when each member is piece `k` of the `n` pieces into which the other curves of its member list cut its curve; this reading carries `feature.profile-piece-partition-assumed`. Six attached designs agree with the member-list partition: `reversed_traversal.f3d` numbers pieces along the curve's parameter direction for both traversal flags; `circle_phase.f3d` starts the pieces of a full circle at angle zero and continues counterclockwise; `overlaps_and_extensions.f3d` gives each of two overlapping lines its own member, cuts each at the ends of the other, and counts the part of a line beyond a corner as a piece; `arc.f3d` numbers arc pieces along the arc; `T-Junction.f3d` shows that curves outside the member list that end on, cross, or touch a member curve add no cut; `edited_sketches.f3d` keeps this relation for curves added to the Sketch after the feature. The transition certificate accepts one-sided blind Cut, Join, and NewBody. The selection retains its native identity with `feature.profile-selection-native`.
 
 **Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
+
+**Note.** The decoder reads the two incidence words as the piece ordinal and count in the member list's own partition. Other member curves cut the curve, and pieces follow its stored direction. The first piece of a circle contains angle zero. The decoder joins consecutive fragments of one curve and direction at nodes shared only with curves outside the list. It selects a joined ring when every member names a distinct piece in that partition and every fragment has one curve. It reports `feature.profile-piece-partition-assumed`.
 
 ### DR-501. Profile members after sketch boundary edits
 
@@ -1028,15 +1048,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-109. Legacy external placement control and extended envelopes
 
-**Question.** Which native object does the auxiliary placement UUID and cross-segment metadata reference identify? What does the nonzero control word select, and how do alternate member preludes and change-category lists delimit the placement?
+**Question.** Which native objects do the auxiliary placement UUID and cross-segment metadata reference identify? What does the control word select, and how do change-category lists delimit the placement?
 
-**Known.** The zero-control envelope has an auxiliary metadata UUID, a source occurrence key, a cross-segment reference, equal legacy targets, a stored transform or identity flag, an occurrence role, and a local owner. Other short envelopes have a different sequence between the attribute block and the repeated target. A separate envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
+**Known.** `f3d.md` §1.4 defines the compact and attributed placement envelopes, their occurrence roles, and their local owners. A change-category envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
 
-**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and complete grammars for the alternate member preludes and change-category envelope.
+**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and the complete grammar of the change-category envelope.
 
 **Conflict.** None.
 
-**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes remain `xref.placement-undecoded` losses.
+**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. Extended control and change-category envelopes remain `xref.placement-undecoded` losses.
 
 ### DR-100. Rigid-group operand forms and root identities
 
@@ -1742,15 +1762,15 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-142. Thread construction option bytes
 
-**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte and the zero bytes before the trailer `01` select? In a form without the extended prefix, which field separates a cosmetic thread from a modeled thread whose scope has a null current history-state identity?
+**Question.** Which controls state side outside the extended prefix and hand outside the extended standard form? Which table identity and revision, with the thread type, designation, and class, determine the exact groove section, including crest and root truncation and radii? What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte and the zero bytes before the trailer `01` select? In a form without the extended prefix, which field separates a cosmetic thread from a modeled thread whose scope has a null current history-state identity?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. In the extended standard form, the first marker byte is the full-length flag. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it. A form without the extended prefix stores modeled flag `0` for both a cosmetic thread and a modeled thread whose scope has a null current history-state identity; in a scope with a null current history-state identity the decoder reads `0` as a cosmetic thread and reports `feature.thread-modeled-flag-assumed`.
+**Known.** `f3d.md` §3.1 "The three LP-UTF16 fields are the designation, nominal-size text, and profile name" defines the thread type string and four physical scalars. The extended prefix also carries class and side; its extended standard trailer carries hand. The native construction retains these values and the flank angle. The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. In the extended standard form, the first marker byte is the full-length flag. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it. A form without the extended prefix stores modeled flag `0` for both a cosmetic thread and a modeled thread whose scope has a null current history-state identity; in a scope with a null current history-state identity the decoder reads `0` as a cosmetic thread and reports `feature.thread-modeled-flag-assumed`.
 
-**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. A cosmetic thread and a modeled thread of one form without the extended prefix, each saved with a null current history-state identity. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
+**Need.** Raw final ASM face and cylinder orientation records for the FIN nozzle, compared with its selected historical face and its thread side flag. External and internal compact and compact owned Thread counterparts that separate the prefix zero lanes from the side control. Thread table identities and revisions tied to measured groove sections for each type, designation, class, and side. Final helical faces with opposite hands and final cylindrical carriers with opposite material sides. Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. A cosmetic thread and a modeled thread of one form without the extended prefix, each saved with a null current history-state identity. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
 
-**Conflict.** None.
+**Conflict.** The FIN nozzle stores side flag `0` and class `6H` in its modeled Thread. Its decoded final minor cylinder, face `f3d:brep:entity#16`, has radius `2.117` mm and a forward declared normal. The measurement has an undetermined loop normal because its procedural boundary curves lack a derivative evaluator. The declared normal and the internal-side reading require reconciliation.
 
-**Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
+**Note.** `feature.thread-detail-native` records native retention of side controls, hand outside the extended standard form, flank angle, and the exact groove profile. A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
 
 ### DR-152. Mirror selection run with role 0x10
 
@@ -2756,14 +2776,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-### DR-642. Circular-pattern compute option
-
-**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
-
-**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
-
 ### DR-818. Targets of rectangular-pattern body references
 
 **Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
@@ -2771,6 +2783,14 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
 
 **Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
+
+### DR-925. Suppressed-instance keys of a symmetric circular pattern
+
+**Question.** Which instance does each suppressed-instance key name in a symmetric circular pattern?
+
+**Known.** `f3d.md` §3.1 "A Design circular-pattern scope stores one seed operand group" gives the key `k + 1` of instance `k` of a one-sided pattern. In a symmetric pattern of five instances over a partial turn, key `2` names the instance one step from the seed in the negative sense, and key `5` names the instance two steps in the positive sense. The decoder projects a symmetric pattern with suppressed instances with all its instances and charges `feature.circular-pattern-suppression-not-transferred`.
+
+**Need.** Symmetric patterns with other counts, over a partial and a full turn, with suppressed instances on both sides of the seed.
 
 ### DR-644. Atomic regions with holes
 

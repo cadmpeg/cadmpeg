@@ -151,6 +151,7 @@ mod diagnostics;
 mod equations;
 mod extrusion_profile;
 mod feature_operations;
+mod keywords_text;
 mod metadata;
 mod sketch_bind;
 mod sketch_relations;

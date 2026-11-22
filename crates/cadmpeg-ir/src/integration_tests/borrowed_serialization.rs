@@ -75,12 +75,12 @@ wire_case!(
 );
 wire_case!(
     borrowed_tspline_construction_wire,
-    crate::geometry::TSplineSurfaceConstruction,
+    crate::geometry::tsplines::TSplineSurfaceConstruction,
     json!({"parameter_ranges":[[0.0,1.0],[0.0,1.0]],"type_code":7,"subtransform":{"kind":"inline","program":"v 1 2","values":"e 3"},"trailing_value":4,"discontinuities":[[0.2],[0.3],[],[],[],[]],"discontinuity_flag":false,"cache":{"kind":"legacy"}})
 );
 wire_case!(
     borrowed_compound_curve_wire,
-    crate::geometry::CompoundCurveConstruction,
+    crate::geometry::procedural_curves::CompoundCurveConstruction,
     json!({"parameters":[0.5],"components":[{"parameter":1.0,"component":"test:model:curve#c"}]})
 );
 wire_case!(

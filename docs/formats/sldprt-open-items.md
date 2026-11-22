@@ -229,6 +229,22 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** The specification records a fixed value; the decoder admits every value.
 
+### CM-17. Keywords lead byte
+
+**Question.** What does the lead byte `85` or `86` before the Keywords XML text record?
+
+**Known.** `sldprt.md` §2 "An XML payload stores its text as UTF-8" defines both lead bytes; the decoder reads the text after either. Both forms declare UTF-8 and give the `Keywords` root the attributes `Name` and `id`. Every document with lead byte `85` holds an `Application` element with `Keyword` children. An `Application` element occurs after either lead byte, so that element does not select the byte. Both bytes occur in documents of the same `swVersion`.
+
+**Need.** The producer rule that selects the byte, before a writer generates a Keywords member with a lead byte.
+
+### CM-18. Keywords `Application` element
+
+**Question.** What do the `Application` element of a Keywords root and its `Keyword` children record?
+
+**Known.** The `Application` element is the first child element of the `Keywords` root. Its one attribute is `Name`, with the value `Simulation`. Its children are `Keyword` elements, each with a `Name` attribute and a text value, such as `Analysis type` with `Static` and `Mesh type` with `Solid Mesh`; the names and values are in the language of the document. Neither element has an `id` or a `Type` attribute. The element occurs after either lead byte of CM-17. The decoder keeps each `Application` element with its subtree as an item of the native history content, in source order, and the writer writes it back when it regenerates the Keywords text. Neither element is a feature, and `history.application-not-transferred` names each `Application` element and its children. The native history keeps 16 element levels of an `Application` element, the element itself being level 1; `history.application-nesting-cut` counts the elements below them and names the first. Corpus elements nest 2 levels.
+
+**Need.** The program state the keywords describe, and whether a target format has a record for it, before the decoder maps them to one.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges

@@ -469,7 +469,8 @@ mod tests {
 
     #[test]
     fn carrier_selection_keeps_its_procedure_and_support_surface() {
-        use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, Surface};
+        use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+        use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
         let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
         let carrier = geometry.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();

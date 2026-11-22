@@ -372,7 +372,7 @@ fn generated_f3d_rewrites_a_subset_edge_range_on_its_local_parameter() {
         .find(|procedural| {
             matches!(
                 procedural.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(_)
             )
         })
         .and_then(|procedural| edited.geometry.procedural_curve_owner(&procedural.id))

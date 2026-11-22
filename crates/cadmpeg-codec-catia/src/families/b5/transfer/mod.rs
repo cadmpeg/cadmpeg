@@ -5,11 +5,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::families::FamilyEntityAdmission;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, RecordBounds,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -92,7 +93,7 @@ struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
     edge_tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
-    cache_fit_tolerance: Option<cadmpeg_ir::geometry::FitTolerance>,
+    cache_fit_tolerance: Option<cadmpeg_ir::geometry::legacy_cache::FitTolerance>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,7 +101,7 @@ struct HelixPlan {
     definition: ProceduralCurveDefinition,
     cache: NurbsCurve,
     parameter_range: [f64; 2],
-    fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
+    fit_tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance,
 }
 
 struct OwnershipPlan {
