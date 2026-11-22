@@ -8,6 +8,7 @@
 mod container;
 mod decode;
 mod dialect;
+mod extents;
 mod features;
 mod layout;
 mod loss;

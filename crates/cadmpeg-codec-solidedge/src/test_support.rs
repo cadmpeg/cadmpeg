@@ -706,6 +706,16 @@ pub(crate) fn sketch_document(
     named: u32,
     groups: Vec<Vec<Object>>,
 ) -> Vec<u8> {
+    feature_with_groups(
+        part_body_with_profile(function, after, named),
+        groups.into_iter().flatten().collect(),
+        &SKETCH_CLASSES,
+    )
+}
+
+/// A document with one base-plane triple, the feature object 10 with body
+/// `body`, the objects `extra` and a navigator that lists the feature.
+fn feature_with_groups(body: Vec<u8>, extra: Vec<Object>, classes: &[&str]) -> Vec<u8> {
     let mut objects = Vec::new();
     for id in 1..=3 {
         objects.push(Object {
@@ -719,7 +729,7 @@ pub(crate) fn sketch_document(
         id: 10,
         form: 1,
         flags: 0,
-        body: part_body_with_profile(function, after, named),
+        body,
     });
     objects.push(Object {
         id: 7,
@@ -739,12 +749,119 @@ pub(crate) fn sketch_document(
         flags: 0,
         body: vec![0; 8],
     });
-    objects.extend(groups.into_iter().flatten());
+    objects.extend(extra);
     objects.sort_by_key(|object| object.id);
     let (cluster, map) = cluster_and_map(&objects);
     document(&[
         ("PSMcluster0", cluster),
         ("PSMspacemap/0x00000000", map),
-        ("PSMtypetable", type_table(&SKETCH_CLASSES, &[])),
+        ("PSMtypetable", type_table(classes, &[])),
     ])
+}
+
+/// The class names of [`extent_document`], by form.
+pub(crate) const EXTENT_CLASSES: [&str; 17] = [
+    "ReferencePlaneObject",
+    "CLSID_JMPart",
+    "CLSID_JMGroup",
+    "CLSID_JMPartOwner",
+    "FeatureNavigatorObject",
+    "CLSID_JProfileSet",
+    "CLSID_JProfile",
+    "CLSID_JProfile2d",
+    "CLSID_JLine2d",
+    "CLSID_JCircle2d",
+    "CLSID_JArc2d",
+    "CLSID_JKeyPoint2d",
+    "CLSID_JConstraint2d",
+    "CLSID_JPatternProfile",
+    "Double Value Object",
+    "CLSID_JDim",
+    "CLSID_JMRefAxis",
+];
+
+/// An object a feature's parameter slot names.
+#[derive(Clone, Copy)]
+pub(crate) enum Slot {
+    /// The slot holds `0`.
+    Empty,
+    /// A `Double Value Object` with this value.
+    Double(f64),
+    /// A `CLSID_JDim` with this value.
+    Dim(f64),
+    /// A `CLSID_JMRefAxis` through `point` along `direction`.
+    Axis {
+        point: [f64; 3],
+        direction: [f64; 3],
+    },
+}
+
+/// The four parameter slots of a feature (§6.1).
+#[derive(Clone, Copy)]
+pub(crate) struct Slots {
+    pub(crate) kind: Slot,
+    pub(crate) side: Slot,
+    /// The depth or the axis.
+    pub(crate) third: Slot,
+    pub(crate) angle: Slot,
+}
+
+/// The first identifier of the slot objects of [`extent_document`].
+const SLOT_OBJECT: u32 = 400;
+/// The profile set of [`extent_document`].
+pub(crate) const EXTENT_SET: u32 = 100;
+
+fn slot_object(id: u32, slot: Slot) -> Option<Object> {
+    let (form, body) = match slot {
+        Slot::Empty => return None,
+        Slot::Double(value) => (14, value.to_le_bytes().to_vec()),
+        Slot::Dim(value) => {
+            let mut body = vec![0_u8; 202 - 8];
+            body.extend_from_slice(&value.to_le_bytes());
+            (15, body)
+        }
+        Slot::Axis { point, direction } => {
+            let mut body = vec![0_u8; 61 - 8];
+            body[12 - 8] = 3;
+            put_reals(&mut body, 13, &point);
+            put_reals(&mut body, 37, &direction);
+            (16, body)
+        }
+    };
+    Some(Object {
+        id,
+        form,
+        flags: 0,
+        body,
+    })
+}
+
+/// A document with one feature of `function` whose profile is a group of
+/// `members` on `frame` and whose slots hold `slots`. The feature is object
+/// 10.
+pub(crate) fn extent_document(
+    function: &str,
+    frame: &ProfileFrame,
+    members: &[Member2d],
+    slots: Slots,
+) -> Vec<u8> {
+    let mut body = part_body_with_profile(function, 72, EXTENT_SET + 1);
+    let end = body.len() - 72 - 4;
+    body.resize(end + 216 + 4, 0);
+    let mut extra = profile_group(EXTENT_SET, frame, 1, 200, members);
+    let table = [
+        (100, slots.kind),
+        (128, slots.side),
+        (184, slots.third),
+        (212, slots.angle),
+    ];
+    for (index, (after, slot)) in table.into_iter().enumerate() {
+        let id = SLOT_OBJECT + u32::try_from(index).unwrap();
+        if let Some(object) = slot_object(id, slot) {
+            let at = end + after;
+            body[at..at + 4].copy_from_slice(&id.to_le_bytes());
+            extra.push(object);
+        }
+    }
+    feature_with_groups(body, extra, &EXTENT_CLASSES)
 }

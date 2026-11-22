@@ -224,3 +224,50 @@ Unstated regions:
 
 - `0..10` (10 B): §5.2 states no field before the centre x.
 - `34..35` (1 B): §5.2 states no field between the radius and the start angle.
+
+## `double_value`
+
+Spec §6.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/extents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 8 | 8 | `value` | `f64` | little | spec | as the `f64` at object offset 8. |
+
+Unstated regions:
+
+- `0..8` (8 B): §6.1 states no field before the value.
+
+## `dimension`
+
+Spec §6.1 · layout: byte offsets · size: 210 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/extents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 202 | 8 | `value` | `f64` | little | spec | `f64` at object offset 202. |
+
+Unstated regions:
+
+- `0..202` (202 B): §6.1 states no field before the value.
+
+## `ref_axis`
+
+Spec §6.4 · layout: byte offsets · size: 61 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/extents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 12 | 1 | `marker` | `u8` | little | spec | object offset 12 is `3`. · value `3` |
+| 13 | 24 | `point` | `f64[3]` | little | spec | The three `f64` at offset 13 are a point on the |
+| 37 | 24 | `direction` | `f64[3]` | little | spec | axis in model space, and the three `f64` at offset 37 are the unit axis |
+
+Unstated regions:
+
+- `0..12` (12 B): §6.4 states no field before the axis marker.

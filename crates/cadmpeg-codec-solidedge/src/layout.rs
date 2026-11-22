@@ -181,3 +181,33 @@ pub(crate) mod arc_2d {
     /// Offset of `end_angle` (`f64`, little-endian). Spec §5.2.
     pub(crate) const END_ANGLE: usize = 43;
 }
+
+/// Byte offsets for the `double_value` record.
+///
+/// Spec §6.1. Record length 16 B.
+pub(crate) mod double_value {
+    /// Offset of `value` (`f64`, little-endian). Spec §6.1.
+    pub(crate) const VALUE: usize = 8;
+}
+
+/// Byte offsets for the `dimension` record.
+///
+/// Spec §6.1. Record length 210 B.
+pub(crate) mod dimension {
+    /// Offset of `value` (`f64`, little-endian). Spec §6.1.
+    pub(crate) const VALUE: usize = 202;
+}
+
+/// Byte offsets for the `ref_axis` record.
+///
+/// Spec §6.4. Record length 61 B.
+pub(crate) mod ref_axis {
+    /// Offset of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER: usize = 12;
+    /// Stated value of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER_VALUE: u8 = 3;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §6.4.
+    pub(crate) const POINT: usize = 13;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §6.4.
+    pub(crate) const DIRECTION: usize = 37;
+}
