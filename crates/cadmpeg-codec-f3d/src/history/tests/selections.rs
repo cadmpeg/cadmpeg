@@ -811,7 +811,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
     {
         slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
@@ -832,7 +832,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
 
 #[test]
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let tool = |record_index, occurrence_reference| {
         crate::records::feature::combine::DesignCombineBodySelection {
@@ -1672,7 +1672,8 @@ mod operand_list_combine {
         DesignCombineOperation, DesignCombineTools,
     };
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{BodySelection, FeatureId};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureId;
 
     const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -1755,7 +1756,7 @@ mod operand_list_combine {
                 });
         DesignCombineOperation {
             form: DesignCombineForm::OperandLists,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 21,
             keep_tools: false,
             keep_tools_offset: 29,

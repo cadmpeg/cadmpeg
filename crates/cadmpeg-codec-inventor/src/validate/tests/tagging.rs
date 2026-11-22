@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use super::annotation;
 use crate::validate::tagging_definition_matches;
@@ -14,8 +15,8 @@ fn tagging_validation_requires_the_native_definition_without_a_neutral_result() 
     assert!(!tagging_definition_matches(&feature, true, true));
     for definition in [
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::History,
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }),
         FeatureDefinition::Operation(FeatureOperation::Native {
             kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
@@ -46,8 +47,8 @@ fn tagging_validation_keeps_ambiguous_owners_native() {
     assert!(!tagging_definition_matches(&feature, false, true));
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::TreeNode {
-            role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::History,
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         },
     ));
     assert!(!tagging_definition_matches(&feature, false, false));

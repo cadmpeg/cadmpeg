@@ -5,9 +5,8 @@
 use crate::decode::append_design_losses;
 use crate::decode::sketch_constraint_has_complete_neutral_semantics;
 use crate::decode::spatial_sketch_constraint_has_complete_neutral_semantics;
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchConstraintId, SpatialSketchConstraint,
     SpatialSketchConstraintDefinitionInput, SpatialSketchEntityId, SpatialSketchId,
@@ -95,22 +94,23 @@ fn typed_native_operands_are_reported_as_design_losses() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
                     BodySelection::Native("target".into()),
                     BodySelection::Native("tools".into()),
                 )
                 .unwrap(),
-                op: cadmpeg_ir::features::BooleanKind::Join,
+                op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 keep_tools: false,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }),
         ),
         native_ref: None,

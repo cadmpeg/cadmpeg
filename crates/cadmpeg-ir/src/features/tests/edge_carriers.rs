@@ -1,4 +1,6 @@
-use crate::features::{HistoricalEdgeCarrier, HistoricalEdgeCurve, HistoricalEdgeGeometry};
+use crate::features::evaluation::{
+    HistoricalEdgeCarrier, HistoricalEdgeCurve, HistoricalEdgeGeometry,
+};
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::{
     CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, SolvedCurveGeometry,
@@ -25,11 +27,11 @@ fn spline() -> NurbsCurve {
 fn geometry(carrier: Option<HistoricalEdgeCarrier>) -> HistoricalEdgeGeometry {
     HistoricalEdgeGeometry {
         edge: HistoricalEdgeId::mint("test:model:historical-edge#one").unwrap(),
-        interior: crate::features::FinitePoint3::new(Point3::new(5.0, 4.0, 0.0)).unwrap(),
+        interior: crate::features::geometry::FinitePoint3::new(Point3::new(5.0, 4.0, 0.0)).unwrap(),
         tangent: None,
         start: None,
         end: None,
-        faces: crate::features::DistinctMembers::default(),
+        faces: crate::features::selections::DistinctMembers::default(),
         carrier,
         supports: Vec::new(),
     }

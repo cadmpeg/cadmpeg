@@ -1438,9 +1438,11 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
 
 #[test]
 fn native_reference_index_matches_the_first_feature_scan() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, SketchFeatureBinding,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        SketchFeatureBinding,
     };
 
     let mut state = 0x2545_f491_u64;

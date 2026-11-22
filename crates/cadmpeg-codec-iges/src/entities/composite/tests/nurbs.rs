@@ -232,13 +232,13 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         ir.geometry.points.extend([
             Point::new(
                 start_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(start)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(start)
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 end_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(declared_end)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(declared_end)
                     .expect("a finite position is a point"),
                 None,
             ),

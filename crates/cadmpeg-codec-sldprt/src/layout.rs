@@ -48,6 +48,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const ZERO_TRAILER: usize = 8;
 }
 
+/// Byte offsets for the `feature_input_scalar_class_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// ```
+pub(crate) mod feature_input_scalar_class_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
+}
+
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §1.1. Record length 8 B.

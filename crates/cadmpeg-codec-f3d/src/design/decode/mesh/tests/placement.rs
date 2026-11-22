@@ -3,7 +3,7 @@ use super::matrix;
 use crate::design::decode::mesh::{mesh_body_transform, MeshBody};
 use crate::layout::paramesh_mesh_body_join_prefix;
 use crate::paramesh::MeshContainer;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 
 const EPS_MESH_NORMAL_ALIGNMENT: f64 = 1.0e-12;

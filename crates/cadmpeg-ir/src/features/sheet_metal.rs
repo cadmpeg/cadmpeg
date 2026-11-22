@@ -1,4 +1,5 @@
-use super::{FaceSelection, PathRef};
+use crate::features::profiles::PathRef;
+use crate::features::selections::FaceSelection;
 use crate::scalar::{Angle, PositiveLength};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -18,9 +19,9 @@ pub struct SheetMetalFlangeTargetConstruction {
     )]
     #[cfg_attr(
         feature = "schema",
-        schemars(with = "super::SheetMetalFlangeHeightTarget")
+        schemars(with = "crate::features::sheet_metal_forms::SheetMetalFlangeHeightTarget")
     )]
-    pub target: Option<super::SheetMetalFlangeHeightTarget>,
+    pub target: Option<crate::features::sheet_metal_forms::SheetMetalFlangeHeightTarget>,
     #[doc = "Signed target offset in millimetres."]
     #[serde(
         default,
@@ -32,7 +33,7 @@ pub struct SheetMetalFlangeTargetConstruction {
 }
 cadmpeg_core::named_optional_field!(
     deserialize_edge_target_inputs_target,
-    super::SheetMetalFlangeHeightTarget,
+    crate::features::sheet_metal_forms::SheetMetalFlangeHeightTarget,
     "target"
 );
 cadmpeg_core::named_optional_field!(
@@ -73,15 +74,18 @@ pub struct SheetMetalEdgeFlangeConstruction {
         deserialize_with = "deserialize_edge_edges"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::EdgeSelection"))]
-    pub edges: Option<super::EdgeSelection>,
+    pub edges: Option<crate::features::selections::EdgeSelection>,
     #[doc = "Height from the selected datum."]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_height"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "super::SheetMetalFlangeHeight"))]
-    pub height: Option<super::SheetMetalFlangeHeight>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "crate::features::sheet_metal_forms::SheetMetalFlangeHeight")
+    )]
+    pub height: Option<crate::features::sheet_metal_forms::SheetMetalFlangeHeight>,
     #[doc = "Wall angle in radians."]
     #[serde(
         default,
@@ -96,24 +100,33 @@ pub struct SheetMetalEdgeFlangeConstruction {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_height_datum"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "super::SheetMetalHeightDatum"))]
-    pub height_datum: Option<super::SheetMetalHeightDatum>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "crate::features::sheet_metal_forms::SheetMetalHeightDatum")
+    )]
+    pub height_datum: Option<crate::features::sheet_metal_forms::SheetMetalHeightDatum>,
     #[doc = "Bend placement against the source edges."]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_bend_position"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "super::SheetMetalBendPosition"))]
-    pub bend_position: Option<super::SheetMetalBendPosition>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "crate::features::sheet_metal_forms::SheetMetalBendPosition")
+    )]
+    pub bend_position: Option<crate::features::sheet_metal_forms::SheetMetalBendPosition>,
     #[doc = "Extent along each selected edge."]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_edge_width"
     )]
-    #[cfg_attr(feature = "schema", schemars(with = "super::SheetMetalFlangeWidth"))]
-    pub width: Option<super::SheetMetalFlangeWidth>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "crate::features::sheet_metal_forms::SheetMetalFlangeWidth")
+    )]
+    pub width: Option<crate::features::sheet_metal_forms::SheetMetalFlangeWidth>,
     #[doc = "Inside bend radius in millimetres."]
     #[serde(
         default,
@@ -126,26 +139,30 @@ pub struct SheetMetalEdgeFlangeConstruction {
     )]
     pub bend_radius: Option<crate::scalar::NonNegativeLength>,
 }
-cadmpeg_core::named_optional_field!(deserialize_edge_edges, super::EdgeSelection, "edges");
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_edges,
+    crate::features::selections::EdgeSelection,
+    "edges"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_edge_height,
-    super::SheetMetalFlangeHeight,
+    crate::features::sheet_metal_forms::SheetMetalFlangeHeight,
     "height"
 );
 cadmpeg_core::named_optional_field!(deserialize_edge_angle, Angle, "angle");
 cadmpeg_core::named_optional_field!(
     deserialize_edge_height_datum,
-    super::SheetMetalHeightDatum,
+    crate::features::sheet_metal_forms::SheetMetalHeightDatum,
     "height_datum"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_edge_bend_position,
-    super::SheetMetalBendPosition,
+    crate::features::sheet_metal_forms::SheetMetalBendPosition,
     "bend_position"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_edge_width,
-    super::SheetMetalFlangeWidth,
+    crate::features::sheet_metal_forms::SheetMetalFlangeWidth,
     "width"
 );
 cadmpeg_core::named_optional_field!(
@@ -159,46 +176,50 @@ impl SheetMetalEdgeFlangeConstruction {
     pub fn has_all_inputs(&self) -> bool {
         self.edges.is_some()
             && self.height.as_ref().is_some_and(|height| match height {
-                super::SheetMetalFlangeHeight::ToObject(construction) => {
-                    construction.target.is_some() && construction.offset.is_some()
-                }
-                super::SheetMetalFlangeHeight::Distance(_) => true,
+                crate::features::sheet_metal_forms::SheetMetalFlangeHeight::ToObject(
+                    construction,
+                ) => construction.target.is_some() && construction.offset.is_some(),
+                crate::features::sheet_metal_forms::SheetMetalFlangeHeight::Distance(_) => true,
             })
             && self.angle.is_some()
             && self.height_datum.is_some()
             && self.bend_position.is_some()
             && self.bend_radius.is_some()
             && self.width.as_ref().is_some_and(|width| match width {
-                super::SheetMetalFlangeWidth::SymmetricPerEdge { widths } => {
-                    widths.iter().all(|row| row.width.is_some())
-                }
-                super::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => widths
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::SymmetricPerEdge {
+                    widths,
+                } => widths.iter().all(|row| row.width.is_some()),
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::TwoSidesPerEdge {
+                    widths,
+                } => widths
                     .as_slice()
                     .iter()
                     .all(|row| row.first.is_some() && row.second.is_some()),
-                super::SheetMetalFlangeWidth::Symmetric(width) => width.width.is_some(),
-                super::SheetMetalFlangeWidth::TwoSides(width) => {
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::Symmetric(width) => {
+                    width.width.is_some()
+                }
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::TwoSides(width) => {
                     width.first.is_some() && width.second.is_some()
                 }
-                super::SheetMetalFlangeWidth::TwoOffsetsPerEdge { offsets } => {
-                    offsets.iter().all(|row| {
-                        row.first.is_some()
-                            && row.second.is_some()
-                            && row.first_reference.is_some()
-                            && row.second_reference.is_some()
-                    })
-                }
-                super::SheetMetalFlangeWidth::FullEdge => true,
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::TwoOffsetsPerEdge {
+                    offsets,
+                } => offsets.iter().all(|row| {
+                    row.first.is_some()
+                        && row.second.is_some()
+                        && row.first_reference.is_some()
+                        && row.second_reference.is_some()
+                }),
+                crate::features::sheet_metal_forms::SheetMetalFlangeWidth::FullEdge => true,
             })
     }
     #[doc = "Construct an edge flange with all seven construction inputs."]
     pub fn complete(
-        edges: super::EdgeSelection,
-        height: super::SheetMetalFlangeHeight,
+        edges: crate::features::selections::EdgeSelection,
+        height: crate::features::sheet_metal_forms::SheetMetalFlangeHeight,
         angle: Angle,
-        height_datum: super::SheetMetalHeightDatum,
-        bend_position: super::SheetMetalBendPosition,
-        width: super::SheetMetalFlangeWidth,
+        height_datum: crate::features::sheet_metal_forms::SheetMetalHeightDatum,
+        bend_position: crate::features::sheet_metal_forms::SheetMetalBendPosition,
+        width: crate::features::sheet_metal_forms::SheetMetalFlangeWidth,
         bend_radius: crate::scalar::NonNegativeLength,
     ) -> Self {
         Self {
@@ -241,7 +262,7 @@ pub struct SheetMetalFlangeOffset {
         deserialize_with = "deserialize_edge_offset_first_reference"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::SelectionReference"))]
-    pub first_reference: Option<super::SelectionReference>,
+    pub first_reference: Option<crate::features::selections::SelectionReference>,
     #[doc = "Second boundary reference program, when decoded."]
     #[serde(
         default,
@@ -249,7 +270,7 @@ pub struct SheetMetalFlangeOffset {
         deserialize_with = "deserialize_edge_offset_second_reference"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::SelectionReference"))]
-    pub second_reference: Option<super::SelectionReference>,
+    pub second_reference: Option<crate::features::selections::SelectionReference>,
 }
 cadmpeg_core::named_optional_field!(
     deserialize_edge_offset_first,
@@ -263,12 +284,12 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_edge_offset_first_reference,
-    super::SelectionReference,
+    crate::features::selections::SelectionReference,
     "first_reference"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_edge_offset_second_reference,
-    super::SelectionReference,
+    crate::features::selections::SelectionReference,
     "second_reference"
 );
 
@@ -392,7 +413,7 @@ pub struct SheetMetalContourFlangeConstruction {
         deserialize_with = "deserialize_contour_profile"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::PlanarProfileRef"))]
-    pub profile: Option<super::PlanarProfileRef>,
+    pub profile: Option<crate::features::profiles::PlanarProfileRef>,
     #[doc = "Travel direction in model coordinates."]
     #[serde(
         default,
@@ -400,7 +421,7 @@ pub struct SheetMetalContourFlangeConstruction {
         deserialize_with = "deserialize_contour_direction"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::FeatureDirection3"))]
-    pub direction: Option<super::FeatureDirection3>,
+    pub direction: Option<crate::features::geometry::FeatureDirection3>,
     #[doc = "Signed travel from the profile plane."]
     #[serde(
         default,
@@ -408,7 +429,7 @@ pub struct SheetMetalContourFlangeConstruction {
         deserialize_with = "deserialize_contour_extent"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "super::ExtrudeExtent"))]
-    pub extent: Option<super::ExtrudeExtent>,
+    pub extent: Option<crate::features::extents::ExtrudeExtent>,
     #[doc = "Finished sheet thickness in millimetres."]
     #[serde(
         default,
@@ -448,15 +469,19 @@ pub struct SheetMetalContourFlangeConstruction {
 
 cadmpeg_core::named_optional_field!(
     deserialize_contour_profile,
-    super::PlanarProfileRef,
+    crate::features::profiles::PlanarProfileRef,
     "profile"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_contour_direction,
-    super::FeatureDirection3,
+    crate::features::geometry::FeatureDirection3,
     "direction"
 );
-cadmpeg_core::named_optional_field!(deserialize_contour_extent, super::ExtrudeExtent, "extent");
+cadmpeg_core::named_optional_field!(
+    deserialize_contour_extent,
+    crate::features::extents::ExtrudeExtent,
+    "extent"
+);
 cadmpeg_core::named_optional_field!(deserialize_contour_thickness, PositiveLength, "thickness");
 cadmpeg_core::named_optional_field!(
     deserialize_contour_inside_radius,

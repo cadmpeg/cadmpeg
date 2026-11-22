@@ -590,7 +590,7 @@ fn solid_split_binds_its_plane_to_the_placed_work_plane_feature() {
             .expect("work-plane feature");
         match split.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
-                tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane },
                 ..
             }) => {
                 assert!(binds, "{plane}");

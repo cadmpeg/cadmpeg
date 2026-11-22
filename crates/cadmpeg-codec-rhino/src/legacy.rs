@@ -9,7 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -1847,7 +1847,7 @@ fn append_legacy_brep(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
             legacy_identity_key(format!("{suffix}.slot-{index}"))?,
         );
-        let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+        let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         geometry
@@ -2134,7 +2134,7 @@ fn append_legacy_brep(
     }
     if shell_faces.is_empty() {
         return Err(cadmpeg_core::CodecError::Malformed(
-            cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
         ));
     }
     geometry

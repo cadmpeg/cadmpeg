@@ -64,6 +64,21 @@ Parsed by:
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
 
+## `feature_input_scalar_class_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `relation_class_token` | `u16` | little | spec | the relation class token at prefix +0 |
+| 2 | 4 | `zero` | `u32` | little | spec | a zero u32 at prefix +2 |
+| 6 | 2 | `parameter_class_token` | `u16` | little | spec | the parameter class token at prefix +6 |
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B

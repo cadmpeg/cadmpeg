@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use cadmpeg_ir::attributes::AttributeValue;
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+};
 use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -913,7 +915,7 @@ fn a_closed_spline_profile_requires_the_full_named_carrier() {
     changed
         .try_map_control_points(|i, p| {
             let p = *p.as_raw();
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 p.x + if i == 1 { 1. } else { 0. },
                 p.y,
                 p.z,

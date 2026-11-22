@@ -38,20 +38,22 @@ fn decode_result(ir: CadIr) -> DecodeResult {
 }
 
 fn with_parameter(mut ir: CadIr) -> CadIr {
-    ir.model.parameters.push(crate::features::DesignParameter {
-        product_definition: None,
-        id: crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
-        owner: None,
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "1mm".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    });
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            product_definition: None,
+            id: crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
     ir
 }
 

@@ -541,7 +541,7 @@ pub(crate) struct DesignCombineOperation {
     /// Serialized scope-prologue form.
     pub(crate) form: DesignCombineForm,
     /// Join, cut, or intersect operation.
-    pub(crate) operation: cadmpeg_ir::features::BooleanKind,
+    pub(crate) operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
@@ -598,7 +598,7 @@ impl Serialize for DesignCombineToolsRef<'_> {
 #[derive(Serialize)]
 struct DesignCombineOperationRef<'a> {
     form: DesignCombineForm,
-    operation: cadmpeg_ir::features::BooleanKind,
+    operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     operation_offset: u64,
     keep_tools: bool,
     keep_tools_offset: u64,
@@ -654,7 +654,7 @@ struct DesignCombineOperationWire {
     form: DesignCombineForm,
     /// Join, cut, or intersect operation.
     #[serde(deserialize_with = "deserialize_combine_operation_kind")]
-    operation: cadmpeg_ir::features::BooleanKind,
+    operation: cadmpeg_ir::features::operation_settings::BooleanKind,
     /// Byte offset of the operation u32.
     operation_offset: u64,
     /// Whether the source operation retains its tool bodies.
@@ -675,8 +675,8 @@ struct DesignCombineOperationWire {
 
 fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<cadmpeg_ir::features::BooleanKind, D::Error> {
-    cadmpeg_ir::features::BooleanKind::deserialize(deserializer)
+) -> Result<cadmpeg_ir::features::operation_settings::BooleanKind, D::Error> {
+    cadmpeg_ir::features::operation_settings::BooleanKind::deserialize(deserializer)
         .map_err(|error| serde::de::Error::custom(format!("operation: {error}")))
 }
 
