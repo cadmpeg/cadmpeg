@@ -569,3 +569,29 @@ fn a_solid_shape_with_a_circular_region_charges_the_merge_assumption() {
         .iter()
         .any(|note| note.code == SldprtLossCode::FeatureSweepMergeAssumed.kind()));
 }
+
+#[test]
+fn a_declared_reference_curve_path_keeps_its_native_path_and_applies_the_circular_section() {
+    let mut input = input(false, true);
+    let native = "sldprt:feature-input:component-reference-curve:1:0";
+    input.features[1].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Sweep { path, .. }) = definition {
+            *path = Some(PathRef::Native(native.into()));
+        }
+    });
+    let losses = apply(&mut input);
+    let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path, .. }) =
+        input.features[1].evaluation.definition()
+    else {
+        panic!("sweep")
+    };
+    let Some(GeneratedSweepSection::CircularRegion { region }) = shape.generated_section() else {
+        panic!("circular section")
+    };
+    assert_eq!(region.outer_radius().get(), 4.0);
+    assert!(matches!(path, Some(PathRef::Native(path)) if path == native));
+    assert!(input.entities.is_empty());
+    assert!(losses
+        .iter()
+        .any(|note| note.code == SldprtLossCode::FeatureSweepMergeAssumed.kind()));
+}

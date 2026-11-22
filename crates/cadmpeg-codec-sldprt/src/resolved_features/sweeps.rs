@@ -191,9 +191,7 @@ pub(crate) fn bind(
         else {
             continue;
         };
-        if path.is_some() {
-            continue;
-        }
+        let has_path = path.is_some();
         let Some(record) = feature
             .native_ref
             .as_deref()
@@ -262,53 +260,59 @@ pub(crate) fn bind(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let native = format!(
-            "sldprt:feature-input:sweep-path:{lane_key}:{}",
-            operand.offset
-        );
-        let selected = operand
-            .source
-            .and_then(|source| producer(source, record, histories));
-        let selected = selected.and_then(|selected| {
-            let mut matches = features
-                .iter()
-                .filter(|feature| feature.native_ref.as_deref() == Some(selected.id.as_str()));
-            let feature = matches.next()?;
-            matches
-                .next()
-                .is_none()
-                .then_some((feature, selected.id.as_str()))
-        });
-        let resolved = selected.and_then(|(feature, native)| {
-            if votes
-                .iter()
-                .skip(1)
-                .any(|(other, _)| !agrees(feature, native, lane, other))
-            {
-                return None;
-            }
-            bind_path(feature, native, lane, &mut geometry)
-        });
-        let dependency = selected.map(|(feature, _)| feature.id.clone());
-        let (path, assumed) = resolved.unwrap_or_else(|| (PathRef::Native(native.clone()), false));
-        if matches!(path, PathRef::Native(_)) {
-            losses.push(
-                SldprtLossCode::FeatureSweepPathRetained
-                    .note(format!("{} retains its path record {native}.", feature.id)),
+        let bound = if has_path {
+            None
+        } else {
+            let native = format!(
+                "sldprt:feature-input:sweep-path:{lane_key}:{}",
+                operand.offset
             );
-        }
-        if assumed {
-            losses.push(SldprtLossCode::FeatureSweepPathRosterAssumed.note(format!(
-                "{} reads path-line endpoints as positions in its sketch point roster.",
-                feature.id
-            )));
-        }
-        if operand.header_assumed {
-            losses.push(SldprtLossCode::FeatureSweepPathHeaderAssumed.note(format!(
-                "{} reads its path component source after a u32 header word.",
-                feature.id
-            )));
-        }
+            let selected = operand
+                .source
+                .and_then(|source| producer(source, record, histories));
+            let selected = selected.and_then(|selected| {
+                let mut matches = features
+                    .iter()
+                    .filter(|feature| feature.native_ref.as_deref() == Some(selected.id.as_str()));
+                let feature = matches.next()?;
+                matches
+                    .next()
+                    .is_none()
+                    .then_some((feature, selected.id.as_str()))
+            });
+            let resolved = selected.and_then(|(feature, native)| {
+                if votes
+                    .iter()
+                    .skip(1)
+                    .any(|(other, _)| !agrees(feature, native, lane, other))
+                {
+                    return None;
+                }
+                bind_path(feature, native, lane, &mut geometry)
+            });
+            let dependency = selected.map(|(feature, _)| feature.id.clone());
+            let (path, assumed) =
+                resolved.unwrap_or_else(|| (PathRef::Native(native.clone()), false));
+            if matches!(path, PathRef::Native(_)) {
+                losses.push(
+                    SldprtLossCode::FeatureSweepPathRetained
+                        .note(format!("{} retains its path record {native}.", feature.id)),
+                );
+            }
+            if assumed {
+                losses.push(SldprtLossCode::FeatureSweepPathRosterAssumed.note(format!(
+                    "{} reads path-line endpoints as positions in its sketch point roster.",
+                    feature.id
+                )));
+            }
+            if operand.header_assumed {
+                losses.push(SldprtLossCode::FeatureSweepPathHeaderAssumed.note(format!(
+                    "{} reads its path component source after a u32 header word.",
+                    feature.id
+                )));
+            }
+            Some((path, dependency))
+        };
         let circular = operand
             .radius_mm
             .filter(|_| record.input_class.as_deref() != Some("moSweepRefSurface_c"))
@@ -320,14 +324,21 @@ pub(crate) fn bind(
                 shape, path: slot, ..
             }) = definition
             {
-                *slot = Some(path);
+                if let Some((path, _)) = bound.as_ref() {
+                    *slot = Some(path.clone());
+                }
                 if let Some(region) = circular {
                     let op = match shape {
                         SweepShape::Solid { op, .. } => *op,
                         _ => SolidSweepOperation::Join,
                     };
+                    let reading = if op == SolidSweepOperation::Join {
+                        "with Merge enabled"
+                    } else {
+                        "without a Merge reading and keeps its recorded Boolean operation"
+                    };
                     losses.push(SldprtLossCode::FeatureSweepMergeAssumed.note(format!(
-                        "{} reads the generated solid sweep with Merge enabled.",
+                        "{} reads the generated solid sweep {reading}.",
                         record.id
                     )));
                     *shape = SweepShape::Solid {
@@ -340,7 +351,7 @@ pub(crate) fn bind(
                 }
             }
         });
-        if let Some(dependency) = dependency {
+        if let Some((_, Some(dependency))) = bound {
             feature.dependencies.insert(dependency);
         }
     }
