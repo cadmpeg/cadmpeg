@@ -1432,7 +1432,6 @@ fn a_curve_shared_by_two_profiles_is_written_once() {
 #[test]
 fn a_carrier_that_states_a_fit_tolerance_is_written_and_the_tolerance_named() {
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-    use cadmpeg_ir::geometry::FitTolerance;
     let mut ir = cube();
     let mut nurbs = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -1447,7 +1446,7 @@ fn a_carrier_that_states_a_fit_tolerance_is_written_and_the_tolerance_named() {
         false,
     )
     .unwrap();
-    nurbs.set_cache_fit_tolerance(Some(FitTolerance::try_new(0.01).unwrap()));
+    nurbs.set_cache_fit_tolerance(Some(0.01_f64.try_into().unwrap()));
     let surface = ir.geometry.surfaces[0].id.clone();
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs));
     let losses = plan_losses(&ir);
