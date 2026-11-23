@@ -259,7 +259,7 @@ fn sanitize(
             if text.is_empty()
                 || tokens.strings.contains(path)
                 || (key == "ir_version" && text == crate::document::IR_VERSION)
-                || (key == "format" && crate::CodecFormat::from_registry_id(text).is_some())
+                || (key == "format" && crate::design::names::CodecId::new(text.as_str()).is_some())
             {
                 return;
             }

@@ -17,7 +17,7 @@ use crate::design::construction::{kinds, Construction, FrameValue, ScalarDimensi
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::LinkState;
 use crate::design::ids::SpatialSketchConstraintId;
-use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
+use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::ops::shared::Spacing;
 use crate::design::ops::sketch::{
     AngleOperands, AngleSector, BlockInstance, Contact, DefiningRole, Derivation, DerivationMode,
@@ -108,7 +108,7 @@ fn frame() -> Construction<kinds::Frame> {
 
 fn native_name() -> NativeName {
     NativeName {
-        codec: CodecId::from(text("sldprt")),
+        codec: crate::codec_id!("sldprt"),
         value: NativeNameValue::Integers(vec![12]),
     }
 }

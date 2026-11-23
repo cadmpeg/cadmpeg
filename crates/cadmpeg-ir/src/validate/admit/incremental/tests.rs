@@ -41,7 +41,7 @@ fn sourced_point(id: &str) -> crate::topology::Point {
         None,
     );
     point.source_object = Some(crate::provenance::SourceObjectAssociation {
-        format: crate::CodecFormat::Rhino,
+        format: crate::codec_id!("rhino"),
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("synthetic"),
         name: None,

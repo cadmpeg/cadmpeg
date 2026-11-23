@@ -17,6 +17,7 @@ use cadmpeg_ir::design::feature::{
     Feature, FeatureDefinition, FeatureOperation, Link, OperationFamily, StoredOrigin,
 };
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -215,7 +216,7 @@ fn arrangements(
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("nx:{kind}"))
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("nx"), kind)
             .ok_or_else(|| CodecError::malformed("NX v11 operation kind is blank"))?,
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),

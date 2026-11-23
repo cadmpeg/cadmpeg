@@ -18,7 +18,7 @@ use crate::design::ids::{
     MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProcessParameterId,
     ProgramId, SetupId, ToolId,
 };
-use crate::design::names::{CodecId, NameKind, NativeName, NativeNameValue, TopoName};
+use crate::design::names::{NameKind, NativeName, NativeNameValue, TopoName};
 use crate::design::ops::shared::RadialDimension;
 use crate::design::options::Hand;
 use crate::design::selection::{
@@ -165,7 +165,7 @@ pub(super) fn design_ref(key: u32) -> ParamRef {
 
 pub(super) fn native_name(value: &str) -> NativeName {
     NativeName {
-        codec: CodecId::from(text("f3d")),
+        codec: crate::codec_id!("f3d"),
         value: NativeNameValue::Text(text(value)),
     }
 }

@@ -160,9 +160,7 @@ fn a_link_with_no_placement_or_a_native_step_has_no_transform() {
     let mut native = path(&[1]);
     native.0.push(PathStep {
         occurrence: StepRef::Native(crate::design::names::NativeName {
-            codec: crate::design::names::CodecId::from(
-                cadmpeg_core::text::NonBlankString::new("test").unwrap(),
-            ),
+            codec: crate::codec_id!("test"),
             value: crate::design::names::NativeNameValue::Text(
                 cadmpeg_core::text::NonBlankString::new("n2").unwrap(),
             ),

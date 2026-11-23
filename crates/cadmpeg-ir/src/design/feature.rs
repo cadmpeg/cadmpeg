@@ -6,7 +6,6 @@
 //! an operation known without its operands, `Native` for one whose meaning is
 //! not established, and `Stored` for a feature defined by stored geometry.
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -14,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
-use super::names::NativeName;
+use super::names::{CodecName, NativeName};
 use super::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
@@ -304,7 +303,7 @@ pub enum FeatureOperation {
     /// An operation whose meaning is not established.
     Native {
         /// The operation's kind, written `codec:kind`.
-        kind: NonBlankString,
+        kind: CodecName,
         /// Options whose meaning is not established.
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         native_options: NativeOptions,

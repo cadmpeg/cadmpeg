@@ -481,7 +481,7 @@ pub(super) fn try_decode_geometry(
                         },
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
-                            format: cadmpeg_ir::CodecFormat::Nx,
+                            format: cadmpeg_ir::codec_id!("nx"),
                             object_id: cadmpeg_core::text::NonBlankString::new(format!(
                                 "nx:s{si}:offset-surface-record#{}",
                                 offset.xmt
@@ -559,7 +559,7 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Nx,
+                    format: cadmpeg_ir::codec_id!("nx"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "nx:s{si}:blend-surface-record#{}",
                         blend.xmt
@@ -961,7 +961,7 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Nx,
+                    format: cadmpeg_ir::codec_id!("nx"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "nx:s{si}:intersection-record#{}",
                         construction.xmt
