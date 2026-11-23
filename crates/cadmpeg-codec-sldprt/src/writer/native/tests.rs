@@ -22,6 +22,7 @@ fn streams_of_kinds(sheets: &[bool]) -> Vec<(String, Vec<u8>)> {
         id_base: 0,
         name: "Bracket",
         active: "Default",
+        features: &[],
         bodies: &bodies,
     })
     .expect("the skeleton writes")
@@ -127,6 +128,7 @@ fn tree_identifiers_follow_the_identifier_base() {
         id_base: 40,
         name: "Bracket",
         active: "Default",
+        features: &[],
         bodies: &bodies,
     })
     .expect("the skeleton writes");
@@ -142,6 +144,259 @@ fn tree_identifiers_follow_the_identifier_base() {
         .expect("numeric identifiers");
     assert!(ids.iter().all(|&id| id > 40), "{ids:?}");
     assert_eq!(bodies[0].feature_id, 40 + super::ids::MARKUPS + 1);
+}
+
+/// A sketch on the Top plane: a line, an arc from its end and a circle.
+fn top_sketch() -> super::sketch::Sketch {
+    use super::sketch::{Curve, Dimension, DimensionClass, Operand, Point, Relation, Sketch};
+    let point = |at: [f64; 2], kind: u32| Point { at, kind };
+    Sketch {
+        name: "Sketch1".into(),
+        feature_id: 7,
+        plane: super::tree::Plane::Top,
+        points: vec![
+            point([0.0, 0.0], 1),
+            point([0.01, 0.0], 1),
+            point([0.01, 0.01], 2),
+            point([0.0, 0.01], 2),
+            point([0.03, 0.0], 1),
+            point([0.02, 0.0], 1),
+        ],
+        curves: vec![
+            Curve::Line { start: 0, end: 1 },
+            Curve::Arc {
+                start: 1,
+                end: 3,
+                centre: 0,
+            },
+            Curve::Circle { on: 4, centre: 5 },
+        ],
+        relations: vec![
+            Relation {
+                code: 4,
+                operands: vec![Operand::Line(0)],
+            },
+            Relation {
+                code: 6,
+                operands: vec![Operand::Line(0), Operand::Arc(0)],
+            },
+        ],
+        dimensions: vec![
+            Dimension {
+                class: DimensionClass::Circle,
+                name: "d1".into(),
+                value: 0.01,
+                code: 15,
+                operands: vec![Operand::Arc(1)],
+            },
+            Dimension {
+                class: DimensionClass::PointPoint,
+                name: "d2".into(),
+                value: 0.01,
+                code: 1,
+                operands: vec![Operand::Point(0), Operand::Point(1)],
+            },
+        ],
+        chains: vec![vec![0, 1], vec![2]],
+        body: b"PS\0\0 profile body".repeat(8),
+    }
+}
+
+#[test]
+fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
+    let features = [super::Feature::Sketch(top_sketch())];
+    let bodies = [Body::numbered("Bracket", 7, 0, false).expect("body numbers")];
+    let streams = skeleton(&Facts {
+        id_base: 7,
+        name: "Bracket",
+        active: "Default",
+        features: &features,
+        bodies: &bodies,
+    })
+    .expect("the skeleton writes");
+    let config = stream(&streams, "Contents/Config-0");
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(resolved, &arena, &DecodePolicy::desktop())
+        .expect("context");
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, Some(super::VERSION))
+        .expect("walk")
+        .expect("the walk runs");
+    assert_eq!(walk.status, crate::carchive::Status::End);
+    let profiles = walk
+        .trace
+        .iter()
+        .filter(|object| &*object.class == "moProfileFeature_c")
+        .count();
+    assert_eq!(profiles, 1);
+    let chains = walk
+        .trace
+        .iter()
+        .filter(|object| &*object.class == "moSketchChain_c")
+        .count();
+    assert_eq!(chains, 2, "one chain per profile chain");
+    assert_eq!(walk.sketch_profiles.len(), 1);
+    let profile = walk.sketch_profiles[0];
+    let wrapped = &resolved[profile.stream + 4..];
+    assert_eq!(
+        &wrapped[..16],
+        &crate::layout::zlb_wrapper_header::MAGIC_VALUE
+    );
+    let marks = walk.marks.iter().filter_map(|mark| mark.owner.as_deref());
+    assert_eq!(marks.collect::<Vec<_>>(), ["Imported1"]);
+}
+
+/// The `ResolvedFeatures` stream of a part holding `top_sketch` and a 5 mm
+/// blind extrusion of it, and the decoder's exact walk of it.
+fn extruded_top_sketch() -> (Vec<u8>, crate::carchive::Walk) {
+    let features = [
+        super::Feature::Sketch(top_sketch()),
+        super::Feature::Extrusion(super::extrude::Extrusion {
+            name: "Boss-Extrude1".into(),
+            feature_id: 8,
+            sketch_id: 7,
+            depth: 0.005,
+            reversed: false,
+        }),
+    ];
+    let streams = skeleton(&Facts {
+        id_base: 8,
+        name: "Bracket",
+        active: "Default",
+        features: &features,
+        bodies: &[],
+    })
+    .expect("the skeleton writes");
+    let config = stream(&streams, "Contents/Config-0");
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures").to_vec();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&resolved, &arena, &DecodePolicy::desktop())
+        .expect("context");
+    let count = crate::archive::resolved_count(&resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, &resolved, Some(super::VERSION))
+        .expect("walk")
+        .expect("the walk runs");
+    assert_eq!(walk.status, crate::carchive::Status::End);
+    (resolved, walk)
+}
+
+#[test]
+fn an_extrusion_writes_the_extrusion_family_word() {
+    let (resolved, _) = extruded_top_sketch();
+    // The name record is followed by four zero bytes and the family word,
+    // `0x0140` for a `moExtrusion_c` (sldprt.md §2).
+    let name_end = last_cstring_end(&resolved, "Boss-Extrude1");
+    assert_eq!(u32_at(&resolved, name_end), 0);
+    let family = u16::from_le_bytes([resolved[name_end + 4], resolved[name_end + 5]]);
+    assert_eq!(family, 0x0140);
+}
+
+#[test]
+fn a_top_plane_sketch_references_its_plane_with_the_plane_rotation() {
+    let (resolved, _) = extruded_top_sketch();
+    // After the plane's feature number and time stamp: u16 `0`, the Top
+    // plane's word `2`, u16 `0`, flag `1`, the rotation row by row (its
+    // columns are the plane's axes), a zero translation and f64 `1`.
+    let axes = super::tree::Plane::Top.axes();
+    let mut reference = vec![0, 0, 2, 0, 0, 0, 1];
+    reference.extend(
+        (0..3)
+            .flat_map(|row| axes.iter().map(move |axis| axis[row]))
+            .chain([0.0, 0.0, 0.0, 1.0])
+            .flat_map(f64::to_le_bytes),
+    );
+    // The trailer: three zero bytes, u32 `4`, i32 `-1`, u32 `0`, an
+    // identifier past the extruded body's `101`, u32 `1`.
+    reference.extend([0, 0, 0]);
+    reference.extend(
+        [4_u32, u32::MAX, 0, 102, 1]
+            .iter()
+            .flat_map(|word| word.to_le_bytes()),
+    );
+    let sketch = cstring_at(&resolved, "Sketch1");
+    assert!(
+        resolved[sketch..]
+            .windows(reference.len())
+            .any(|window| window == reference),
+        "the sketch's moCompRefPlane_c names the Top plane with its rotation and identifier 102"
+    );
+}
+
+#[test]
+fn the_origin_sketch_holds_the_plane_reference_trailer_of_native_origin_sketches() {
+    let (resolved, _) = extruded_top_sketch();
+    // After the Front plane's zero frame and f64 `1`: three zero bytes, u32
+    // `4`, i32 `-7`, u32 `0`, identifier `101`, u32 `0`, two empty hop lists
+    // and four zero bytes, before the user sketch.
+    let mut trailer = 1.0_f64.to_le_bytes().to_vec();
+    trailer.extend([0, 0, 0]);
+    trailer.extend(4_u32.to_le_bytes());
+    trailer.extend((-7_i32).to_le_bytes());
+    trailer.extend(0_u32.to_le_bytes());
+    trailer.extend(super::tree::ORIGIN_PLANE_REFERENCE.to_le_bytes());
+    trailer.extend([0; 12]);
+    let origin = cstring_at(&resolved, "Origin");
+    let sketch = cstring_at(&resolved, "Sketch1");
+    assert!(
+        resolved[origin..sketch]
+            .windows(trailer.len())
+            .any(|window| window == trailer),
+        "the origin sketch's moCompRefPlane_c ends with the native trailer"
+    );
+    assert_eq!(super::tree::ORIGIN_PLANE_REFERENCE, 101);
+}
+
+#[test]
+fn chains_name_curves_by_the_chain_identifiers_their_records_store() {
+    let (resolved, walk) = extruded_top_sketch();
+    // A record head: `ff ff`, schema `1f 00`, slot `3`, eight `ff` bytes and
+    // f32 `-1`; the ten bytes before a curve record hold its chain
+    // identifier at -8.
+    let mut head = vec![0xff, 0xff, 0x1f, 0x00, 0x03];
+    head.extend([0xff; 8]);
+    head.extend((-1.0_f32).to_le_bytes());
+    let sketch = cstring_at(&resolved, "Sketch1");
+    let records = resolved[sketch..]
+        .windows(head.len())
+        .enumerate()
+        .filter(|(_, window)| *window == head.as_slice())
+        .map(|(at, _)| sketch + at)
+        .collect::<Vec<_>>();
+    let sketch = top_sketch();
+    let curves = &records[sketch.points.len()..sketch.points.len() + sketch.curves.len()];
+    let stored = curves
+        .iter()
+        .map(|&record| u32_at(&resolved, record - 8))
+        .collect::<Vec<_>>();
+    let chains = walk
+        .trace
+        .iter()
+        .filter(|object| &*object.class == "moSketchChain_c")
+        .map(|object| {
+            let count = u16::from_le_bytes([resolved[object.body], resolved[object.body + 1]]);
+            (0..usize::from(count))
+                .map(|index| u32_at(&resolved, object.body + 2 + 4 * index))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let expected = sketch
+        .chains
+        .iter()
+        .map(|chain| chain.iter().map(|&curve| stored[curve]).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    assert_eq!(chains, expected);
+    let mut distinct = stored.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(distinct.len(), stored.len(), "{stored:?}");
+    assert!(!stored.contains(&0), "{stored:?}");
 }
 
 /// The class map of the written `Config-0`, read with the decoder.

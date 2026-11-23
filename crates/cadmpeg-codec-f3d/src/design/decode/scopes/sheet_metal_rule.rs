@@ -1,5 +1,7 @@
+use super::parameter_scope::ParameterScopeSources;
 use crate::bytes::{lp_utf16_bounded, take_reference};
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -48,6 +50,47 @@ pub(super) fn local(
         value: target,
         offset,
     })
+}
+
+/// The rule index of the one decoded settings record that has this record
+/// index and this owner in the owner's stream.
+fn decoded_settings_rule(
+    sources: &ParameterScopeSources<'_>,
+    owner_scope: &DesignParameterScope,
+    index: u32,
+) -> Option<u32> {
+    let stream = crate::ids::native_stream(&owner_scope.id)?;
+    let mut matching = sources.sheet_metal_settings.iter().filter(|settings| {
+        settings.record_index == u64::from(index)
+            && settings.owner_record_index == u64::from(owner_scope.record_index)
+            && crate::ids::native_stream(settings.id()) == Some(stream)
+    });
+    let rule = u32::try_from(matching.next()?.rule_record_index).ok()?;
+    matching.next().is_none().then_some(rule)
+}
+
+/// The rule link of a settings record. A decoded settings record gives the
+/// exact index; a frame that is not decoded falls back to the frame scan.
+pub(super) fn linked_settings_rule(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    types: &Types<'_>,
+    index: u32,
+    owner_scope: &DesignParameterScope,
+    owner_guid: &str,
+    sources: &ParameterScopeSources<'_>,
+) -> Option<(u32, bool)> {
+    if let Some(rule) = decoded_settings_rule(sources, owner_scope, index) {
+        return Some((rule, false));
+    }
+    settings_rule(
+        bytes,
+        records,
+        types,
+        index,
+        owner_scope.record_index,
+        owner_guid,
+    )
 }
 
 pub(super) fn settings_rule(
