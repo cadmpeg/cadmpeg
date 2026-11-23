@@ -999,3 +999,190 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
         1
     );
 }
+
+/// The 17-property plate of a plate-and-bend face record: slot 5 holds the
+/// joined-edge collection and slot 12 is null.
+fn joined_edge_fixture() -> Fixture {
+    let mut fixture = selecting_fixture();
+    fixture.plate = crate::test_support::sheet_metal::feature(
+        100,
+        &[1, 2, 3, 4, 5, 52, 0, 6, 7, 8, 9, 10, 0, 12, 0, 13, 14],
+    );
+    fixture
+}
+
+#[test]
+fn a_seventeen_property_plate_selects_its_joined_edge_through_slot_five() {
+    let fixture = joined_edge_fixture();
+    let mut index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
+        Err(PlateRefusal::EdgeName)
+    );
+    index
+        .edge_names
+        .insert(("fixture".to_owned(), 61), Some(named_edge()));
+    let EdgeSelection::Generated { edges, native } = refusal(attachment(
+        &fixture.plate,
+        &index,
+        &FeatureInventory::default(),
+    ))
+    .expect("generated") else {
+        panic!("generated selection");
+    };
+    assert_eq!(edges.as_slice(), [named_edge()]);
+    assert_eq!(native.as_str(), "inventor:pmdc:feature-property#fixture-51");
+    // A stored input revision selects the same edge without a generated name.
+    let index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let mut inventory = FeatureInventory::default();
+    let key = ("fixture".to_owned(), 61);
+    inventory
+        .edge_inputs
+        .historical_generators
+        .insert(key.clone(), vec![5]);
+    inventory
+        .edge_inputs
+        .historical
+        .insert(key, stored_edge(52));
+    let EdgeSelection::Historical { edges, native, .. } =
+        refusal(attachment(&fixture.plate, &index, &inventory)).expect("historical")
+    else {
+        panic!("historical selection");
+    };
+    assert_eq!(
+        edges.iter().cloned().collect::<Vec<_>>(),
+        [historical::edge_id("fixture", 61).expect("edge")]
+    );
+    assert_eq!(native.as_str(), "inventor:pmdc:feature-property#fixture-51");
+}
+
+#[test]
+fn the_joined_edge_collection_has_one_edge_item() {
+    use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
+    use crate::test_support::sheet_metal::{list, property};
+    for items in [&[][..], &[53, 53][..]] {
+        let mut fixture = joined_edge_fixture();
+        fixture
+            .properties
+            .retain(|p| p.identity.record_ordinal + 1 != 52);
+        fixture.properties.push(property(
+            52,
+            &Kind::References {
+                family: Family::EdgeCollection,
+                items: list(items),
+            },
+        ));
+        let mut index = crate::feature::tests::test_projection_index(
+            &fixture.properties,
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        index
+            .edge_names
+            .insert(("fixture".to_owned(), 61), Some(named_edge()));
+        assert_eq!(
+            refusal(attachment(
+                &fixture.plate,
+                &index,
+                &FeatureInventory::default()
+            )),
+            Err(PlateRefusal::SelectionList),
+            "{} items",
+            items.len()
+        );
+    }
+}
+
+#[test]
+fn a_seventeen_property_plate_without_a_joined_edge_or_list_has_no_selection() {
+    let mut fixture = selecting_fixture();
+    fixture.plate = crate::test_support::sheet_metal::feature(
+        100,
+        &[1, 2, 3, 4, 5, 0, 0, 6, 7, 8, 9, 10, 0, 12, 0, 13, 14],
+    );
+    let index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
+        Err(PlateRefusal::SelectionList)
+    );
+}
+
+#[test]
+fn a_fifteen_property_plate_stores_no_attachment_selection() {
+    let mut fixture = Fixture::body();
+    fixture.plate = crate::test_support::sheet_metal::feature(
+        100,
+        &[1, 2, 3, 4, 5, 0, 46, 6, 7, 8, 9, 10, 0, 12, 0],
+    );
+    let index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert_eq!(
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
+        Err(PlateRefusal::AttachmentNotStored)
+    );
+    // The loss names the missing selection, not a refused check.
+    let mut native = attached(&fixture);
+    native.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("plate".into()),
+            parameters: BTreeMap::default(),
+        },
+    ));
+    let mut refusals = Refusals::default();
+    refusals.insert(fixture.plate.id(), PlateRefusal::AttachmentNotStored);
+    let wire = serde_json::to_string(&refusals.losses(&[native])).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-attachment-not-stored"));
+    assert!(!wire.contains("feature.sheet-metal-plate-refused"));
+}
