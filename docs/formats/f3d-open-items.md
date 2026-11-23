@@ -879,6 +879,22 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A one-sided reversal-`0` `Extrude` of a stream with serializer magic `1234` whose profile loop holds an arc: it gives the curve that takes the lowest token of such a loop and shows the range and its direction for an exterior loop that holds an arc. The stored order of the hole loops of a region with two or more holes and the order of their side-token ranges, which a writer of such a region must choose. The region order of multi-region profiles against the stored region order and the region geometry. The `AlongDistance` values of reversed-direction `Extrude` features against their token direction. A two-sided or symmetric `Extrude` of a loop of several lines. An `Extrude` whose stored profile normal is opposite its Sketch's normal, to tell whether the `AlongDistance` sign or the extrusion direction against the Sketch normal orders the tokens. The records of a split side face. A writer names side faces by the walk and stores the entries of a loop in ring order.
 
+### DR-1040. Side entries and side tokens of a sketch-driven Revolve
+
+**Question.** Which profile loop entries of a sketch-driven `Revolve` take side entries in its tracked-results table, in which order do their side tokens follow the loop, and when does the table hold no body entry or more than one?
+
+**Known.** `f3d.md` §3.1 "**Revolve tracked results.**" gives the table: consecutive keys from `3`, side entries of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` and body entries of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`, and the key after the last key. For a profile of one region with one loop, most tables hold the side entries from key `3` and then one body entry, and their side entries name the loop curves other than the axis line, one entry for each curve. Other such tables hold side entries only, or two runs of side entries that each end with a body entry. In other tables a side entry names a curve that the stored loop does not hold, or a loop curve other than the axis line has no side entry. The side tokens of consecutive keys name curves that meet at a common end in some loops and curves that do not meet in others. The faces of a partial turn can carry the cap tokens `1` and `2` beside the side tokens. DR-883 gives the corresponding questions for the `Extrude`.
+
+**Need.** A one-sided full-turn new-body `Revolve` of a one-region profile of lines and arcs, saved in a stream with serializer magic `1234`, once with a profile line as the axis and once with a construction line beside the profile as the axis: the side entries and the side tokens of each, compared with the ring of "**Side-face walk.**". The same `Revolve` saved again after its profile is selected again following a sketch edit, with its table compared.
+
+### DR-1041. Prologue forms of the Revolve axis curve identity and side entry
+
+**Question.** What selects the 49-byte form of a `Revolve` axis curve identity over the 45-byte form, and the 33-byte form of a `Revolve` side entry over the 37-byte form?
+
+**Known.** `f3d.md` §3.1 "**Axis curve identity.**" gives the two forms of record `A + 3`: after the indexed header, ten zero bytes, or nine zero bytes, the byte `1`, and u32 `0`; then eight zero bytes and the two u64 identities. Record `C + 2` of the axis tracking carrier stores the same identities in the 45-byte form, also when record `A + 3` has the 49-byte form. One Design stream can hold a 45-byte record `A + 3` for one `Revolve` and a 49-byte record `A + 3` for another. "**Revolve tracked results.**" gives the 37-byte side entry, whose reference follows nine zero bytes, the byte `1`, and u32 `0`, and the 33-byte side entry, whose reference follows ten zero bytes.
+
+**Need.** `Revolve` features with a sketch-line axis saved in a stream with serializer magic `1234`, before and after an edit of the axis selection and of the profile, with the form of each record compared.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
