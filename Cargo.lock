@@ -271,6 +271,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-edrawings"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+ "serde_json",
+]
+
+[[package]]
 name = "cadmpeg-codec-f3d"
 version = "0.6.12"
 dependencies = [
@@ -355,6 +366,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "cadmpeg-codec-onshape"
+version = "0.6.12"
+dependencies = [
+ "base64",
+ "cadmpeg-codec-step",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+ "flate2",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "zip",
 ]
 
 [[package]]
@@ -509,6 +537,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-layout-tables"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-core",
+ "proc-macro2",
+ "serde",
+ "syn 3.0.10",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "cadmpeg-measure"
 version = "0.6.12"
 dependencies = [
@@ -551,11 +591,13 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
+ "cadmpeg-codec-edrawings",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
  "cadmpeg-codec-nx",
+ "cadmpeg-codec-onshape",
  "cadmpeg-codec-pvz",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",

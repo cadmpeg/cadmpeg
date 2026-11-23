@@ -309,6 +309,7 @@ fn document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::new(),
     });
     design.containers.push(Container::Ordered {
         id: id("container", "timeline"),
@@ -990,6 +991,7 @@ fn placed() -> CadIr {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::new(),
         });
     }
     for key in ["base", "large"] {
@@ -1475,6 +1477,7 @@ fn define(ir: &mut CadIr, key: &str, scoped: bool) {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::new(),
         });
     }
 }

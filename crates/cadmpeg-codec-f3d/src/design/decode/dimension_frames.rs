@@ -276,17 +276,11 @@ pub(crate) fn decode_recipe_references(
     }
 }
 
-/// The operand start of each persistent name of a standard recipe prefix
-/// whose operands carry several names, keyed by the name's prefix offset.
-///
-/// The word at offset 18 counts the operands. Each operand opens with a word
-/// counting its names; the standard frame reads that word as the first name's
-/// selector. A prefix whose operands each carry one name, or whose counted
-/// operands do not end exactly at the reference suffix, has no such starts.
+/// Preserve the operand ordinal when its names expand to several references.
 fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
     let operand_count = View::u32_le_at(prefix, 18).map(index_from_u32)?;
     let mut starts = HashMap::new();
-    let mut names_total = 0usize;
+    let mut references_total = 0usize;
     let mut at = 22usize;
     for _ in 0..operand_count {
         let names = View::u32_le_at(prefix, at)
@@ -295,11 +289,14 @@ fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
         let start = at;
         for _ in 0..names {
             starts.insert(at, start);
-            at = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?.next;
+            let name =
+                scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?;
+            references_total = references_total.checked_add(name.reference_count)?;
+            at = name.next;
         }
-        names_total = names_total.checked_add(names)?;
     }
-    (names_total > operand_count && recipe_reference_suffix(prefix.get(at..)?)).then_some(starts)
+    (references_total > operand_count && recipe_reference_suffix(prefix.get(at..)?))
+        .then_some(starts)
 }
 
 fn decode_standard_recipe_references(
@@ -874,9 +871,11 @@ fn dimension_recipe_edge_matches(
     if native_stream(&operand.id) != native_stream(&record.id) {
         return false;
     }
-    let Some(prelude_length) = super::operands::edge_recipe_prelude_length(
+    let Some(prelude_length) = super::operands::recipe_structure::edge_recipe_prelude_length(
         &operand.recipe_program,
-        &cadmpeg_core::decode::WorkBudget::new(super::operands::RECIPE_SIDE_SEARCH_WORK),
+        &cadmpeg_core::decode::WorkBudget::new(
+            super::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
+        ),
     ) else {
         return false;
     };
@@ -1406,15 +1405,20 @@ pub(crate) fn decode_dimension_annotation_frames(
             intervals.push(interval);
         }
         for (start, end, containing_companion_record_index) in intervals {
+            let scan_end = end
+                .checked_add(11)
+                .map_or(bytes.len(), |limit| limit.min(bytes.len()));
+            let scan_bytes = &bytes[..scan_end];
             let mut position = start;
             while position < end {
-                let at = next_indexed_record_offset(bytes, position);
+                let at = next_indexed_record_offset(scan_bytes, position);
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
                 if let Some(mut frame) = parse_dimension_annotation_frame(
                     bytes,
                     at,
+                    end,
                     containing_companion_record_index,
                     &governed_owners,
                     geometry_indices,
@@ -1454,6 +1458,7 @@ pub(crate) fn decode_dimension_annotation_frames(
 fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
+    end: usize,
     companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
@@ -1529,9 +1534,16 @@ fn parse_dimension_annotation_frame(
             _ => return None,
         }
     };
+    let scan_end = end
+        .checked_add(11)
+        .map_or(bytes.len(), |limit| limit.min(bytes.len()));
+    let scan_bytes = &bytes[..scan_end];
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let at = next_indexed_record_offset(scan_bytes, paired_search)?;
+        if at >= end {
+            return None;
+        }
         let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);

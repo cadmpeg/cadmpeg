@@ -6,9 +6,10 @@ use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -422,7 +423,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 None,
                 Vector3::from(frame.direction),
                 None,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .map(|admitted_payload| {
                 ProceduralSurface::new(
@@ -649,7 +650,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 Some([0.0, 1.0]),
                 Vector3::from(sweep),
                 None,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .map(|admitted_payload| {
                 ProceduralSurface::new(

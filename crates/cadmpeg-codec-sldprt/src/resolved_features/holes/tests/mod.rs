@@ -262,7 +262,7 @@ fn project_marker_sketches(
     lanes: &[FeatureInputLane],
 ) -> (Vec<cadmpeg_ir::sketches::Sketch>, Vec<SketchEntity>) {
     use crate::resolved_features::profiles::{
-        project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities,
+        project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities, MarkerSources,
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -281,8 +281,11 @@ fn project_marker_sketches(
             projected: &mut entities,
             held: &mut HeldMarkerGeometry::default(),
         },
-        std::slice::from_ref(history),
-        lanes,
+        MarkerSources {
+            histories: std::slice::from_ref(history),
+            lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
         &mut Vec::new(),
     )
     .expect("marker projection fits service policy");

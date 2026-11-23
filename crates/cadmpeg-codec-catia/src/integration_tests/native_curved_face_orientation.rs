@@ -73,7 +73,7 @@ fn native_nurbs_faces_follow_outer_control_without_transposing_the_carrier() {
 
 #[test]
 fn native_revolution_line_faces_follow_outer_control_in_profile_angle_order() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     let positive = decode(
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),

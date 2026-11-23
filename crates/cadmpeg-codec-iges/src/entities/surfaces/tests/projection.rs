@@ -92,12 +92,13 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
             .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
     );
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Exact(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected exact Type 128 construction")
     };
-    let (cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. },) =
+    let (cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy { ranges, .. },) =
         (definition_payload.spline(),)
     else {
         panic!("expected exact Type 128 construction")
@@ -144,8 +145,9 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         let origin = plane_surface.origin().get();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
-            result.ir().geometry.procedural_surfaces[0].definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+            definition_payload,
+        ) = result.ir().geometry.procedural_surfaces[0].definition()
         else {
             panic!("expected an offset dependency");
         };

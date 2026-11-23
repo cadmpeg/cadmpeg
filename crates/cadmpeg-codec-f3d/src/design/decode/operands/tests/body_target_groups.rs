@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude `0x5` groups that select bodies instead of termination faces.
 
-use crate::design::decode::operands::release_extrude_body_target_groups;
+use crate::design::decode::operands::extrude_roles::release_extrude_body_target_groups;
 use crate::records::topology::body_recipe::{
     DesignBodyRecipeOperand, DesignBodyRecipeOperandDraft, DesignBodyRecipeReference,
     DesignOperandOwner,

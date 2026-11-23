@@ -4,9 +4,11 @@
 use crate::decode::support_uv::{
     complete_parameterization_equivalent_support_uv, parameterization_equivalent_surfaces,
 };
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, Curve, CurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_test_support::edit;
@@ -86,30 +88,31 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#intersection").expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
-                context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                    [
-                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                            surface: Some(offsets[0].clone()),
-                            pcurve: None,
-                        },
-                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                            surface: Some(offsets[1].clone()),
-                            pcurve: Some(
-                                PcurveGeometry::Line(
-                                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                                        Point2::new(1.0, 2.0),
-                                        Point2::new(3.0, 4.0),
+                context:
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                        [
+                            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
+                                surface: Some(offsets[0].clone()),
+                                pcurve: None,
+                            },
+                            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
+                                surface: Some(offsets[1].clone()),
+                                pcurve: Some(
+                                    PcurveGeometry::Line(
+                                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                                            Point2::new(1.0, 2.0),
+                                            Point2::new(3.0, 4.0),
+                                        )
+                                        .unwrap(),
                                     )
-                                    .unwrap(),
-                                )
-                                .into(),
-                            ),
-                        },
-                    ],
-                    [0.0, 1.0],
-                    [Vec::new(), Vec::new(), Vec::new()],
-                )
-                .unwrap(),
+                                    .into(),
+                                ),
+                            },
+                        ],
+                        [0.0, 1.0],
+                        [Vec::new(), Vec::new(), Vec::new()],
+                    )
+                    .unwrap(),
                 discontinuity_flag: false,
                 cache: None,
             },

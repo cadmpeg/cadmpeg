@@ -87,7 +87,7 @@ fn extrude_group_valid_slot_has_no_finding() {
         let native = native(true, false);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_groups(&ctx, &mut findings);
+        super::super::extrude_selections::validate_extrude_selection_groups(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }

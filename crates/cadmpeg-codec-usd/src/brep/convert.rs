@@ -860,7 +860,7 @@ pub(crate) fn evaluate<const N: usize>(curve: &NurbsCurveRecord<N>, t: f64) -> O
 }
 
 /// The part of a NURBS curve record on `[start, end]`.
-fn segment<const N: usize>(
+pub(crate) fn segment<const N: usize>(
     curve: &NurbsCurveRecord<N>,
     start: f64,
     end: f64,
@@ -1137,8 +1137,12 @@ fn basis(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<(usize, V
     Some((span, values))
 }
 
-/// The point at `(u, v)` of a NURBS surface record.
-pub(crate) fn surface_point(surface: &NurbsSurfaceRecord, [u, v]: [f64; 2]) -> Option<V3> {
+/// The homogeneous point `(w·x, w·y, w·z, w)` at `(u, v)` of a NURBS
+/// surface record.
+pub(crate) fn surface_homogeneous(
+    surface: &NurbsSurfaceRecord,
+    [u, v]: [f64; 2],
+) -> Option<[f64; 4]> {
     let (p, q) = (
         surface.u_order.checked_sub(1)?,
         surface.v_order.checked_sub(1)?,
@@ -1157,11 +1161,17 @@ pub(crate) fn surface_point(surface: &NurbsSurfaceRecord, [u, v]: [f64; 2]) -> O
             sum[3] += weight;
         }
     }
+    Some(sum)
+}
+
+/// The point at `(u, v)` of a NURBS surface record.
+pub(crate) fn surface_point(surface: &NurbsSurfaceRecord, uv: [f64; 2]) -> Option<V3> {
+    let sum = surface_homogeneous(surface, uv)?;
     (sum[3] != 0.0).then(|| [sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3]])
 }
 
 /// The parameter domain of a NURBS surface record.
-fn surface_domain(surface: &NurbsSurfaceRecord) -> Option<ParamBox> {
+pub(crate) fn surface_domain(surface: &NurbsSurfaceRecord) -> Option<ParamBox> {
     Some([
         [
             *surface.u_knots.get(surface.u_order.checked_sub(1)?)?,
@@ -1592,6 +1602,18 @@ pub(crate) fn nurbs_only(brep: &Brep) -> Result<Converted, String> {
                 Some((Catalog::Analytic, pcurve)) => analytic_pcurve(brep.analytic_pcurves.get(pcurve)?).ok()?.0,
                 None => planar_pcurve(brep, *carrier, oriented, &out, tolerance)?,
             };
+            let collapsed_edge = out.edges.get(oriented.edge).is_some_and(|edge| {
+                let [start, end] = edge.vertices;
+                start == end
+                    && edge.curve.is_some_and(|(_, curve)| {
+                        out.nurbs_curves
+                            .get(curve)
+                            .is_some_and(|curve| collapsed(curve, out.tolerance))
+                    })
+            });
+            if collapsed_edge {
+                return mapped_pcurve(&curve, surface_maps, tolerance);
+            }
             let revolved = match carrier {
                 (Catalog::Analytic, index) => brep.analytic_surfaces.get(*index).filter(|surface| {
                     matches!(
@@ -1840,6 +1862,7 @@ fn boundary_loop(brep: &mut Brep, face: usize, trimmed: bool) -> Result<(), Stri
     brep.loops.push(super::LoopRecord {
         oriented_edges: oriented,
         vertex: None,
+        poles: Vec::new(),
     });
     let loop_index = brep.loops.len() - 1;
     brep.faces[face].loops.push(loop_index);

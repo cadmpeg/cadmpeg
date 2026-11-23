@@ -13,8 +13,6 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::active_brep_face_matches_source;
-use crate::history::admit_history_binding;
-use crate::history::archived_active_record_count;
 use crate::history::bind_snapshot_revision_ids;
 use crate::history::body_revision_without_topology_change;
 use crate::history::combine_recipe_family_tool_slots;
@@ -33,6 +31,7 @@ use crate::history::selection::per_history_identities;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
 use crate::history::TopologyStableBodyRevision;
+use crate::history::{admit_history_binding, archived_active_record_count};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
@@ -1818,7 +1817,10 @@ mod operand_list_combine {
             (std::slice::from_ref(history), scopes),
             &mut refusals,
         );
-        let losses = refusals.into_iter().map(|(_, loss)| loss).collect();
+        let losses = refusals
+            .iter()
+            .map(crate::history::CombineOperandRefusal::note)
+            .collect();
         ((target, tools), losses, shared_body)
     }
 
@@ -1864,6 +1866,19 @@ mod operand_list_combine {
         assert_eq!(input_body_slots(&tools), [3, 1]);
     }
 
+    #[test]
+    fn tools_that_name_one_browser_node_select_one_body() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        let ((target, tools), losses) = bind_with_losses(
+            operation(node(200), &[node(300), node(100), node(300)]),
+            &history,
+            &creators(),
+        );
+        assert_eq!(input_body_slots(&target), [2]);
+        assert_eq!(input_body_slots(&tools), [3, 1]);
+        assert_eq!(operand_refusals(&losses), 0);
+    }
+
     fn assert_target_only(selections: &(BodySelection, BodySelection), slot: i64) {
         assert_eq!(input_body_slots(&selections.0), [slot], "{selections:?}");
         assert!(
@@ -1888,7 +1903,6 @@ mod operand_list_combine {
             (node(200), vec![None, node(100)], 2),
             (node(200), vec![node(300), None], 2),
             (node(200), vec![node(300), node(999)], 2),
-            (node(200), vec![node(300), node(300)], 2),
         ] {
             let (selections, losses, shared_body) =
                 bind_with_outcome(operation(target, &tools), &history, &creators());

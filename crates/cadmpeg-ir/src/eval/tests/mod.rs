@@ -23,12 +23,16 @@ use crate::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 
 use crate::eval::rolling_ball_jet_point;
 use crate::eval::IsolineDirection;
+use crate::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
+use crate::geometry::laws::LawExpression;
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::revision_forms::{
+    RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+};
+use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
-    CurveGeometry, LawExpression, LegacyExtensionFlags, OffsetExtension, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
-    RevisionSurfaceParameterization, RollingBallJetDerivative, RollingBallJetSite,
+    CurveGeometry, LegacyExtensionFlags, OffsetExtension, ProceduralSurface, RecordBounds,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
@@ -48,7 +52,7 @@ macro_rules! procedural_surface {
         let mut definition = $definition;
         definition
             .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                crate::geometry::LegacyCache::try_new(value)
+                crate::geometry::legacy_cache::LegacyCache::try_new(value)
                     .expect("admissible fit tolerance fixture")
             }))
             .expect("valid procedural surface cache fixture");
@@ -67,7 +71,7 @@ macro_rules! procedural_curve {
         match cache_fit_tolerance {
             Some(value) => definition
                 .set_legacy_cache(
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture"),
                 )
                 .expect("valid procedural curve cache fixture"),
@@ -222,10 +226,10 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
         angle: 0.0,
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(
+        crate::geometry::blends::RollingBallJetStations::try_new(
             5,
             vec![
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 2.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -242,7 +246,7 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
                         },
                     },
                 },
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 5.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -327,7 +331,8 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
     terminal.angle = crate::scalar::FiniteReal::ZERO;
     let expected = terminal.first_limit;
     let collapsed = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::from_parts(jet.degree(), stations).unwrap(),
+        crate::geometry::blends::RollingBallJetStations::from_parts(jet.degree(), stations)
+            .unwrap(),
     );
     for fraction in [0.0, 0.5, 1.0] {
         assert_eq!(
@@ -347,7 +352,7 @@ fn rolling_ball_jet_evaluates_sextuple_interior_station() {
     };
     let stations = [0.0, 1.0, 2.0]
         .into_iter()
-        .map(|knot| crate::geometry::RollingBallJetStation {
+        .map(|knot| crate::geometry::blends::RollingBallJetStation {
             knot,
             multiplicity: 6,
             site: RollingBallJetSite {
@@ -361,7 +366,8 @@ fn rolling_ball_jet_evaluates_sextuple_interior_station() {
         })
         .collect();
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(5, stations).expect("three stations"),
+        crate::geometry::blends::RollingBallJetStations::try_new(5, stations)
+            .expect("three stations"),
     );
     let point = rolling_ball_jet_point(&definition, 0.5, 0.5).expect("first span");
     assert!((point.x - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
@@ -379,10 +385,10 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
         angle: 0.0,
     };
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(
+        crate::geometry::blends::RollingBallJetStations::try_new(
             5,
             vec![
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 2.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -394,7 +400,7 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
                         second_derivative: zero,
                     },
                 },
-                crate::geometry::RollingBallJetStation {
+                crate::geometry::blends::RollingBallJetStation {
                     knot: 5.0,
                     multiplicity: 6,
                     site: RollingBallJetSite {
@@ -1519,7 +1525,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ));
     ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
-        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::CacheContract::from_form(Some(RevisionSurfaceForm {
+        definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::legacy_cache::CacheContract::from_form(Some(RevisionSurfaceForm {
                 revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
@@ -1690,7 +1696,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::legacy_cache::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: None,
             }).unwrap();
@@ -1745,7 +1751,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
                     Some([-f64::MAX, f64::MAX]),
                     None,
                     false,
-                    crate::geometry::CacheContract::from_form(None),
+                    crate::geometry::legacy_cache::CacheContract::from_form(None),
                 ).unwrap()
             ),
             cache_fit_tolerance: None,
@@ -1837,7 +1843,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.geometry
         .add_procedural_surface(&surface_id, procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
-                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+                definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::legacy_cache::CacheContract::from_form(None)).unwrap()),
                 cache_fit_tolerance: None,
                 record_bounds: Some(RecordBounds::try_new([
                     Some(0.0),

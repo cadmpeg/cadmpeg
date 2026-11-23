@@ -91,7 +91,7 @@ fn operand_group_missing_member_preserves_finding_text() {
         let native = native(false);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_operand_group_carriers(
+        super::super::operand_groups::validate_operand_group_carriers(
             &ctx,
             &mut findings,
             &HashSet::new(),
@@ -116,7 +116,7 @@ fn operand_group_exact_identity_member_has_no_finding() {
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         let exact_members = HashSet::from([("f3d:Design/BulkStream.dat", 101)]);
-        super::super::validate_operand_group_carriers(
+        super::super::operand_groups::validate_operand_group_carriers(
             &ctx,
             &mut findings,
             &HashSet::new(),
@@ -142,7 +142,7 @@ fn a_pattern_face_group_needs_a_typed_member_or_an_identity() {
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let findings_with = |identity: &HashSet<(&str, u32)>| {
             let mut findings = Vec::new();
-            super::super::validate_operand_group_carriers(
+            super::super::operand_groups::validate_operand_group_carriers(
                 &ctx,
                 &mut findings,
                 identity,
@@ -225,7 +225,7 @@ fn carrier_findings(native: &crate::native::F3dNative) -> Vec<cadmpeg_ir::report
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_operand_group_carriers(
+        super::super::operand_groups::validate_operand_group_carriers(
             &ctx,
             &mut findings,
             &HashSet::new(),

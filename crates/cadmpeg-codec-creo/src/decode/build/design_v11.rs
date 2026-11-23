@@ -25,6 +25,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchId;
 
 use crate::container::ContainerScan;
@@ -38,18 +39,19 @@ const TIMELINE: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "mod
 
 /// States the design scope of the model's root definition, its timeline,
 /// its features, its parameters, and its sketches, where the decoder reads a
-/// feature list.
+/// feature list, and adds to `losses` what the projection drops.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if ir.model.features.is_empty() {
         return Ok(());
     }
     let definition = definition.clone();
-    parameters::project(ctx, ir, &definition)?;
+    parameters::project(ctx, ir, &definition, losses)?;
     let sketches = sketches::project(ctx, scan, ir)?;
     parameters::omit_measured_display(ir);
     let names = names::Names::new(scan, regeneration_order(ir).map(|feature| &feature.id));
@@ -176,6 +178,7 @@ fn project_timeline(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: vec![current],
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }

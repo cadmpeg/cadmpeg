@@ -6,10 +6,9 @@ use crate::eval::decode::curve_point;
 use crate::eval::model_curve_point_by_id;
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::curve_payloads::SubsetCurveConstruction;
-use crate::geometry::{
-    Curve, CurveGeometry, FitTolerance, LegacyCache, ProceduralCurve, ProceduralCurveDefinition,
-    SolvedCurveGeometry,
-};
+use crate::geometry::legacy_cache::{FitTolerance, LegacyCache};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::index::ModelIndex;
 use crate::math::{Point3, Vector3};
