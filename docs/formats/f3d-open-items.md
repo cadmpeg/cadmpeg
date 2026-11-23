@@ -180,6 +180,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Such a Hole retains its native placement and reports `feature.hole-placement-unproven`.
 
+### DR-1061. Entry point of a face-point Hole with records off its carrier
+
+**Question.** Which point places a Hole whose carrier has `refType` `19` when its point-data records do not all lie at the carrier position and no `refType` `17` record names a reconstructed plane?
+
+**Known.** `f3d.md` §3.1 "A point-data record with `refType` `17`" admits the reconstructed-plane form. Two further forms occur. In the first, one `refType` `17` record has a position off the carrier position, the carrier position is not on the axis through that record along the carrier direction, and the record names no reconstructed plane. The carrier stores nonzero construction parameters. The transition that drills the Hole inserts a cylinder on the axis through the record position along the carrier direction. In the second, the carrier position is zero, and one `refType` `17` record and one `refType` `5` record lie at one point. The Hole is active with no current result, so no transition drills it.
+
+**Need.** Controlled designs that place a Hole at a face point with and without reference edges, with the carrier construction parameters varied independently, and solved axes for each. For a Hole with no current result, a design that computes it and a save that states the entry point.
+
+**Conflict.** None.
+
+**Note.** Such a Hole retains its native placement and reports `feature.hole-placement-point-unselected`.
+
 ### DR-221. Primary identity of a Hole carrier selection
 
 **Question.** What does the primary persistent identity of the direct selection on a Hole carrier name?
