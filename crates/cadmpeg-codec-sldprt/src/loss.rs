@@ -148,8 +148,8 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
-    /// A relation point marker whose stored coordinate pair holds a nonzero
-    /// subnormal value gives no relation point.
+    /// A relation point marker whose record form reads a coordinate pair
+    /// that holds a nonzero subnormal value gives no relation point.
     SketchPointCoordinatesSubnormal,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,

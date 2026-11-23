@@ -625,7 +625,7 @@ pub(crate) fn project_relation_point_geometry(
             {
                 losses.push(
                     crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.note(format!(
-                        "sketch marker {}: its stored coordinates ({u:e}, {v:e}) m are subnormal, so its relation point is not drawn",
+                        "sketch marker {}: the 16 bytes its record form reads as a coordinate pair hold a subnormal value ({u:e}, {v:e}), so its relation point is not drawn",
                         marker.id()
                     )),
                 );
