@@ -67,6 +67,44 @@ fn neutral_parameter_is_count(
             ))
 }
 
+/// Relative tolerance of two stored numbers that state one value.
+const EPS_DISPLAY_SAME_VALUE: f64 = 1.0e-9;
+/// Millimetres per metre.
+const MM_PER_M: f64 = 1000.0;
+/// Millimetres per inch.
+const MM_PER_INCH: f64 = 25.4;
+
+/// The length in millimetres that a `Linear` or `Ordinate` record of `metres`
+/// gives a dimension whose Keywords `expression` is a bare number: the
+/// record's value in millimetres, inches or metres rounded to the decimal
+/// places the text shows is that number. The value is the record's whichever
+/// unit the text is in. `None` where the text is not a nonzero bare number or
+/// the record does not show as it.
+fn displayed_length_mm(expression: &str, metres: f64) -> Option<f64> {
+    let text = expression.trim();
+    if text.is_empty()
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'+'))
+    {
+        return None;
+    }
+    let number = text
+        .parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite())?;
+    if number == 0.0 || metres == 0.0 {
+        return None;
+    }
+    let places = text.split_once('.').map_or(0, |(_, places)| places.len());
+    let half_unit = 0.5 * 10f64.powi(-i32::try_from(places).ok()?);
+    let shows = |value: f64| {
+        (value - number).abs() <= half_unit + EPS_DISPLAY_SAME_VALUE * value.abs().max(number.abs())
+    };
+    let millimetres = metres * MM_PER_M;
+    (shows(millimetres) || shows(millimetres / MM_PER_INCH) || shows(metres)).then_some(millimetres)
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -487,7 +525,23 @@ pub(crate) fn apply_to_parameters(
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
             // supplied this parameter. PMI still contributes its semantic
-            // annotation and source identity.
+            // annotation and source identity. A bare number Keywords shows
+            // for a length is the record's value in the document's unit, so
+            // the record supplies the length.
+            if matches!(
+                semantic.subtype,
+                PmiDimensionSubtype::Linear | PmiDimensionSubtype::Ordinate
+            ) && matches!(
+                parameter.value,
+                None | Some(ParameterValue::Real(_) | ParameterValue::Integer(_))
+            ) {
+                if let Some(length) = displayed_length_mm(&parameter.expression, record.value.get())
+                    .and_then(Length::new)
+                {
+                    parameter.expression = crate::history::literals::format_length_mm(length);
+                    parameter.value = Some(ParameterValue::Length(length));
+                }
+            }
             parameter.pmi = Some(semantic);
             continue;
         }

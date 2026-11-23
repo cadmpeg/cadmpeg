@@ -10,7 +10,7 @@ use crate::SldprtCodec;
 
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue, PmiDimensionSubtype};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
-use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::scalar::{FiniteReal, Length};
 
 use super::{
     dimension_subtype, exact_count, neutral_parameter_is_count, patch_payload, patch_slots,
@@ -222,6 +222,85 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
         Some("dimension")
     );
+}
+
+/// One Keywords parameter `D1` of the feature `Pattern1` with `expression`
+/// and `value`, and the `Linear` record `metres` for it, applied.
+fn bare_keywords_length(
+    expression: &str,
+    value: Option<ParameterValue>,
+    subtype: &str,
+    metres: f64,
+) -> DesignParameter {
+    let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
+    let feature = named_feature("synthetic:test:id#feature", "Pattern1");
+    let mut parameters = vec![DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint("synthetic:test:id#keywords-parameter").expect("identity grammar"),
+        owner: Some(owner),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: expression.into(),
+        display: None,
+        value,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }];
+    super::apply_to_parameters(&mut parameters, &[feature], &[dimension(subtype, metres)]).unwrap();
+    parameters.remove(0)
+}
+
+#[test]
+fn a_bare_inch_display_takes_the_length_of_its_record() {
+    let real = |number: f64| Some(ParameterValue::Real(FiniteReal::new(number).unwrap()));
+    // 0.08 in is the displayed 2 mm; the display is no reading in millimetres.
+    let parameter = bare_keywords_length("0.08", real(0.08), "Linear", 0.002);
+    assert_eq!(parameter.expression, "2mm");
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(2.0).unwrap()))
+    );
+    // The same text before it was typed: no value yet.
+    let parameter = bare_keywords_length("0.79", None, "Linear", 0.02);
+    assert_eq!(parameter.expression, "20mm");
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(20.0).unwrap()))
+    );
+}
+
+#[test]
+fn a_bare_millimetre_display_takes_the_length_of_its_record() {
+    let parameter = bare_keywords_length("2", Some(ParameterValue::Integer(2)), "Linear", 0.002);
+    assert_eq!(parameter.expression, "2mm");
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(2.0).unwrap()))
+    );
+}
+
+#[test]
+fn a_display_that_no_unit_explains_keeps_keywords() {
+    let real = |number: f64| Some(ParameterValue::Real(FiniteReal::new(number).unwrap()));
+    // The record's metres do not give the text in any unit.
+    let kept = bare_keywords_length("0.08", real(0.08), "Linear", 0.01);
+    assert_eq!(kept.expression, "0.08");
+    assert_eq!(kept.value, real(0.08));
+    // A count and a record of another subtype are no length.
+    let kept = bare_keywords_length("0.08", real(0.08), "", 0.002);
+    assert_eq!(kept.expression, "0.08");
+    // A display of one place shows 3 mm as 0.1 in.
+    let parameter = bare_keywords_length("0.1", real(0.1), "Linear", 0.003);
+    assert_eq!(parameter.expression, "3mm");
+    // Zero is no unit's reading.
+    let kept = bare_keywords_length("0", real(0.0), "Linear", 0.0);
+    assert_eq!(kept.expression, "0");
+    // A typed length stays as Keywords gave it.
+    let typed = Some(ParameterValue::Length(Length::new(12.0).unwrap()));
+    let kept = bare_keywords_length("0.08", typed.clone(), "Linear", 0.002);
+    assert_eq!(kept.value, typed);
 }
 
 #[test]
