@@ -261,6 +261,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let _ = crate::tessellation::assign_unique_surface_owners(
         &ctx,
         &mut decoded.ir_mut(),
+        &std::collections::HashSet::default(),
         &mut Vec::new(),
     )
     .unwrap();
@@ -675,6 +676,8 @@ mod default_properties;
 mod weldment_refusal;
 
 mod partition_sketches;
+
+mod configuration_states;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

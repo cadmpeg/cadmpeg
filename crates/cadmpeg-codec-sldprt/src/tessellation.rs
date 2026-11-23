@@ -12,7 +12,7 @@ use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::FaceId;
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
@@ -20,7 +20,7 @@ use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::CadIr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
@@ -1275,18 +1275,24 @@ impl MeshSamples {
 /// The pass spends at most [`TESSELLATION_OWNER_WORK_PER_ROW`] per row it
 /// walks, and never less than [`TESSELLATION_OWNER_WORK`]. Once spent, the
 /// remaining tables stay unassigned and one loss counts them.
+///
+/// No table binds to a face of `stored`, the bodies of the configurations
+/// that are not active: the `DisplayLists` tables are the active
+/// configuration's faces (spec §8).
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
-    assign_unique_surface_owners_within(ctx, ir, losses, work_limit)
+    assign_unique_surface_owners_within(ctx, ir, stored, losses, work_limit)
 }
 
 fn assign_unique_surface_owners_within(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    stored: &HashSet<BodyId>,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
@@ -1379,6 +1385,9 @@ fn assign_unique_surface_owners_within(
     for face in &ir.geometry.faces {
         let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
+            if stored.contains(body) {
+                return None;
+            }
             let inverse = match body_transforms.get(body).copied().flatten() {
                 Some(transform) if transform.is_proper_rigid() => {
                     transform.try_inverse_affine().ok()?
@@ -1684,13 +1693,19 @@ fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
 /// The identity is a source-declared face key, so it is stronger than a
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
+/// A face of `stored` is no owner (see [`assign_unique_surface_owners`]).
 pub(crate) fn assign_persistent_owners(
     ir: &mut CadIr,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
+    stored: &HashSet<BodyId>,
 ) -> Vec<String> {
+    let face_bodies = face_bodies(&ir.geometry);
     let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
-    for (target, identity) in face_identities {
+    for (target, identity) in face_identities
+        .iter()
+        .filter(|(face, _)| owns_display(&face_bodies, face, stored))
+    {
         match faces_by_identity.entry(identity) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(target));
@@ -1702,8 +1717,6 @@ pub(crate) fn assign_persistent_owners(
             }
         }
     }
-
-    let face_bodies = face_bodies(&ir.geometry);
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1746,19 +1759,26 @@ pub(crate) fn assign_persistent_owners(
 /// Bind `DisplayLists` tables to faces through the face key at `M+0x64`.
 ///
 /// A key binds only when exactly one table and exactly one emitted face carry
-/// it, so a repeated key on either side binds nothing.
+/// it, so a repeated key on either side binds nothing. A face of `stored`
+/// is no owner (see [`assign_unique_surface_owners`]).
 pub(crate) fn assign_face_key_owners(
     ir: &mut CadIr,
     face_keys: &[(FaceId, u32)],
     bindings: &[FaceKeyBinding],
+    stored: &HashSet<BodyId>,
 ) -> Vec<String> {
-    let faces_by_key = unique_by_key(face_keys.iter().map(|(face, key)| (*key, face)));
+    let face_bodies = face_bodies(&ir.geometry);
+    let faces_by_key = unique_by_key(
+        face_keys
+            .iter()
+            .filter(|(face, _)| owns_display(&face_bodies, face, stored))
+            .map(|(face, key)| (*key, face)),
+    );
     let tables_by_key = unique_by_key(
         bindings
             .iter()
             .map(|binding| (binding.key, binding.tessellation.as_str())),
     );
-    let face_bodies = face_bodies(&ir.geometry);
     let mut owners = HashMap::new();
     for (key, table) in &tables_by_key {
         let (Some(table), Some(Some(face))) = (table, faces_by_key.get(key)) else {
@@ -1807,10 +1827,20 @@ fn unique_by_key<K: Eq + std::hash::Hash, V: PartialEq>(
     found
 }
 
+/// Whether `face` may own a display table: its body, where it resolves, is
+/// not one of `stored`.
+fn owns_display(
+    face_bodies: &HashMap<FaceId, BodyId>,
+    face: &FaceId,
+    stored: &HashSet<BodyId>,
+) -> bool {
+    face_bodies
+        .get(face)
+        .is_none_or(|body| !stored.contains(body))
+}
+
 /// The body of every face whose shell and region resolve.
-fn face_bodies(
-    geometry: &cadmpeg_ir::document::Topology,
-) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
+fn face_bodies(geometry: &cadmpeg_ir::document::Topology) -> HashMap<FaceId, BodyId> {
     let regions = geometry
         .regions
         .iter()
