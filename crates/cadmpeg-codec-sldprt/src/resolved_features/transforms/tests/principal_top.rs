@@ -1,7 +1,7 @@
 use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
 use crate::resolved_features::transforms::{
     component_sketch_marker_transform, feature_sketch_marker_transform,
-    record_top_marker_coordinates,
+    record_component_marker_coordinates,
 };
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::{
@@ -89,7 +89,10 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
             },
         )),
     };
-    record_top_marker_coordinates(&mut feature, true);
+    record_component_marker_coordinates(
+        &mut feature,
+        Some(principal_sketch_frame(PrincipalPlane::Top)),
+    );
     assert_eq!(
         feature_sketch_marker_transform(&sketch, 1.0, &[feature])
             .unwrap()
@@ -149,5 +152,50 @@ fn top_plane_binding_names_only_sketches_the_plane_reference_placed() {
             .starts_with("1 profile sketch(es) (Sketch5) are placed on the Top plane"),
         "{}",
         note.message
+    );
+}
+
+#[test]
+fn right_component_markers_are_sketch_coordinates_on_the_right_plane() {
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Right);
+    let sketch = Sketch {
+        placement: SketchPlacement::try_resolved(origin, normal, u_axis).unwrap(),
+        ..sketch()
+    };
+    let v_axis = normal.cross(u_axis);
+    let transform = component_sketch_marker_transform(&sketch, 1.0, true).unwrap();
+    assert_eq!(transform.apply((2, 3)), Some((2, 3)));
+    let point = origin.translated(u_axis, 2.0).translated(v_axis, 3.0);
+    assert_eq!(point, Point3::new(0.0, 3.0, -2.0));
+    assert_eq!(
+        component_sketch_marker_transform(&sketch, 1.0, false)
+            .unwrap()
+            .apply((2, 3)),
+        Some((-3, 2))
+    );
+    let mut feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:id#right-feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        native_ref: None,
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            },
+        )),
+    };
+    record_component_marker_coordinates(&mut feature, Some((origin, normal, u_axis)));
+    assert_eq!(
+        feature_sketch_marker_transform(&sketch, 1.0, &[feature])
+            .unwrap()
+            .apply((2, 3)),
+        Some((2, 3))
     );
 }

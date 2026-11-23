@@ -13,14 +13,35 @@ const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
 
 type PlaneFrame = (Point3, Vector3, Vector3);
 
+/// Why a profile with principal component records takes the retained Front
+/// fallback frame (`sldprt.md` §3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaneAssumedCause {
+    /// Neither the profile nor its context declares a plane; the Front
+    /// source is the feature-input lane's default declaration. `named` is
+    /// the plane every principal record names, where they name one.
+    LaneDefault {
+        named: Option<cadmpeg_ir::features::PrincipalPlane>,
+    },
+    /// The plane declarations of the profile and its context do not name the
+    /// Front source alone.
+    OtherDeclaration,
+    /// A custom component record lies in the profile or its context.
+    CustomComponent,
+    /// The principal records name more than one plane.
+    MixedPrincipal,
+    /// §3.3 places the profile on this plane, but the reading that built the
+    /// sketch takes its frame without the placement rule.
+    Unapplied(cadmpeg_ir::features::PrincipalPlane),
+}
+
 pub(super) struct CompactReferencePlaneIndex {
     payload_len: usize,
     class_offsets: Vec<usize>,
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
-    deferred_principal_components: Vec<usize>,
-    top_components: Vec<usize>,
+    deferred_principal_components: Vec<(usize, cadmpeg_ir::features::PrincipalPlane)>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -30,7 +51,6 @@ impl CompactReferencePlaneIndex {
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
         let mut deferred_principal_components = Vec::new();
-        let mut top_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -57,10 +77,7 @@ impl CompactReferencePlaneIndex {
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
                         if let Some(plane) = compact_principal_reference_plane_record(bytes) {
-                            deferred_principal_components.push(start);
-                            if plane == cadmpeg_ir::features::PrincipalPlane::Top {
-                                top_components.push(start);
-                            }
+                            deferred_principal_components.push((start, plane));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -79,28 +96,69 @@ impl CompactReferencePlaneIndex {
             components,
             component_frames,
             deferred_principal_components,
-            top_components,
         }
     }
 
-    pub(super) fn principal_top_profile_frame(
+    /// The principal plane of the local component records of the profile
+    /// object `start..end` with context from `context_start` (`sldprt.md`
+    /// §3.3).
+    pub(super) fn local_principal_component(
+        &self,
+        context_start: usize,
+        start: usize,
+        end: usize,
+    ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+        if self.profile_source(context_start, start, end) != Some(FRONT_SOURCE) {
+            return None;
+        }
+        self.front_profile_principal_component(context_start, start, end)
+            .ok()
+    }
+
+    /// The principal plane that §3.3 places a profile on whose reference
+    /// source is Front, or the reason it places none.
+    pub(super) fn front_profile_principal_component(
+        &self,
+        context_start: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<cadmpeg_ir::features::PrincipalPlane, PlaneAssumedCause> {
+        if self.profile_declared_source(context_start, start, end) != Some(FRONT_SOURCE) {
+            let declared = records_in_range(
+                &self.declared,
+                context_start.min(start),
+                end,
+                COMPACT_REFERENCE_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            );
+            return Err(if declared.is_empty() {
+                PlaneAssumedCause::LaneDefault {
+                    named: self.principal_component_plane(start, end),
+                }
+            } else {
+                PlaneAssumedCause::OtherDeclaration
+            });
+        }
+        if self.has_component_frame(context_start.min(start), end) {
+            return Err(PlaneAssumedCause::CustomComponent);
+        }
+        self.principal_component_plane(start, end)
+            .ok_or(PlaneAssumedCause::MixedPrincipal)
+    }
+
+    /// The principal plane that every complete principal component record in
+    /// `start..end` names, where no custom component record lies there.
+    fn principal_component_plane(
         &self,
         start: usize,
         end: usize,
-    ) -> Option<PlaneFrame> {
-        let top = records_in_range(
-            &self.top_components,
-            start,
-            end,
-            COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
-        );
+    ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
         let principal = records_in_range(
             &self.deferred_principal_components,
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
+            |(offset, _)| *offset,
         );
         let custom = records_in_range(
             &self.component_frames,
@@ -109,8 +167,10 @@ impl CompactReferencePlaneIndex {
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
             |(offset, _)| *offset,
         );
-        (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
-            .then(|| principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top))
+        if !custom.is_empty() {
+            return None;
+        }
+        unique_indexed_value(principal)
     }
 
     pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {
@@ -134,7 +194,7 @@ impl CompactReferencePlaneIndex {
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
+            |(offset, _)| *offset,
         );
         (!records.is_empty()).then(front_lane_fallback_frame)
     }
@@ -455,6 +515,17 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
     ))
 }
 
+const FRONT_SOURCE: u32 = 2;
+
+/// The feature source identifier of the built-in plane `plane`.
+pub(super) fn principal_source(plane: cadmpeg_ir::features::PrincipalPlane) -> u32 {
+    match plane {
+        cadmpeg_ir::features::PrincipalPlane::Front => FRONT_SOURCE,
+        cadmpeg_ir::features::PrincipalPlane::Top => 3,
+        cadmpeg_ir::features::PrincipalPlane::Right => 4,
+    }
+}
+
 /// The frame the decoder keeps for a Front reference with a deferred principal
 /// component record (`sldprt-open-items.md` SF-01). No support plane stores it.
 fn front_lane_fallback_frame() -> PlaneFrame {
@@ -492,7 +563,7 @@ pub(crate) fn principal_sketch_frame(
 }
 
 /// The profile sketches whose frame is the principal Top plane that their
-/// feature-input plane reference names (`SupportFrame::top_reference`), rather
+/// feature-input plane reference names (`ProfileSketchFrame::top_reference`), rather
 /// than a frame a component record or a stored plane gives (`sldprt.md` §3.3).
 #[derive(Debug, Default)]
 pub(crate) struct TopReferenceSketches(std::collections::HashSet<cadmpeg_ir::sketches::SketchId>);

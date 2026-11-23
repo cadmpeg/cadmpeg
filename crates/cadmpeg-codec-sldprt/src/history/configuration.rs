@@ -633,9 +633,10 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
-            &ir.model.sketch_entities,
-        );
+        let mut held_handles =
+            crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+                &ir.model.sketch_entities,
+            );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -726,7 +727,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
-            top_references.extend(
+            let (assumed_planes, compact_top_references) =
                 crate::resolved_features::profiles::project_compact_sketch_profiles(
                     ctx,
                     &mut features,
@@ -735,9 +736,9 @@ pub(crate) fn project_configuration_sketch_states(
                     histories,
                     scoped_lanes,
                     &mut losses,
-                )?,
-            );
-            let mut held_handles = held_handles;
+                )?;
+            held_handles.hold_assumed_planes(assumed_planes);
+            top_references.extend(compact_top_references);
             top_references.extend(
                 crate::resolved_features::profiles::project_marker_backed_sketches(
                     ctx,
@@ -829,6 +830,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             crate::resolved_features::profiles::finalize_unread_marker_entities(
+                &ir.model.sketches,
                 &mut ir.model.sketch_entities,
                 held_handles,
                 &mut losses,
