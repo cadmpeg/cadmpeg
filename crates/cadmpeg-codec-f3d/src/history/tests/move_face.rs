@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalPlane,
     AsmHistoricalTopology, AsmHistory,
@@ -170,6 +170,7 @@ fn bind_with_scope(
         native_ref: Some(SCOPE_ID.into()),
     };
     let mut input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id,
         bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -182,7 +183,7 @@ fn bind_with_scope(
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(scope),
             groups,
             operands: &[],

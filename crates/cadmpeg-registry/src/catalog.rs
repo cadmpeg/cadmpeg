@@ -66,6 +66,48 @@ impl InputDescriptor {
         }
     }
 
+    pub(crate) fn scan_zip_match(&self, name: &str) -> bool {
+        match &self.kind {
+            InputKind::Native { native, .. } => {
+                native.zip_scan_probe.is_some_and(|probe| probe(name))
+            }
+            InputKind::Neutral { .. } => false,
+        }
+    }
+
+    pub(crate) fn scan_compound_match(
+        &self,
+        entries: &[cadmpeg_container::compound::scan::ScanCompoundEntry],
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> Result<bool, cadmpeg_core::scan::StopReason> {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(probe) = native.compound_scan_probe {
+                return probe(entries, budget);
+            }
+        }
+        Ok(false)
+    }
+
+    pub(crate) fn scan(
+        &self,
+        input: View<'_>,
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> cadmpeg_core::scan::DesignScan {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(scan) = native.scanner {
+                return scan(input, budget);
+            }
+        }
+        let mut scan = cadmpeg_core::scan::DesignScan::new(Some(self.format_id().as_str()));
+        scan.finish(
+            budget,
+            Err(cadmpeg_core::scan::StopReason::Unsupported(
+                "reader has no design scan".into(),
+            )),
+        );
+        scan
+    }
+
     /// Decoder and inspector implementation for a native format.
     pub fn codec(&self) -> Option<&dyn Codec> {
         match &self.kind {
@@ -234,6 +276,8 @@ impl InputCatalog {
         }
     }
 
+    /// Every codec's judgement, strongest first. A codec whose judgement
+    /// fails other than on I/O or a resource ceiling does not apply.
     fn ranked(
         &self,
         judge: impl Fn(&dyn Codec) -> Result<Confidence, CodecError>,
@@ -243,7 +287,13 @@ impl InputCatalog {
             let Some(codec) = descriptor.codec() else {
                 continue;
             };
-            let confidence = judge(codec)?;
+            let confidence = match judge(codec) {
+                Ok(confidence) => confidence,
+                Err(error @ (CodecError::Io(_) | CodecError::ResourceLimit(_))) => {
+                    return Err(error)
+                }
+                Err(_) => Confidence::No,
+            };
             if confidence > Confidence::No {
                 matches.push((codec, confidence));
             }
@@ -506,6 +556,57 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected
         );
+    }
+
+    #[cfg(all(feature = "fcstd", feature = "f3d"))]
+    #[test]
+    fn one_codecs_detection_error_leaves_the_other_codecs_judging() {
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::codec::{Confidence, FormatId};
+
+        let catalog = InputCatalog::with_builtins();
+        let ranked = catalog
+            .ranked(|codec| match codec.id().as_str() {
+                "fcstd" => Err(CodecError::malformed("truncated archive directory")),
+                "f3d" => Ok(Confidence::High),
+                _ => Ok(Confidence::No),
+            })
+            .expect("a malformed judgement is no match");
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|(codec, confidence)| (codec.id(), *confidence))
+                .collect::<Vec<_>>(),
+            [(FormatId::new("f3d"), Confidence::High)]
+        );
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn an_io_or_resource_error_in_detection_ends_detection() {
+        use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+        use cadmpeg_core::CodecError;
+
+        let catalog = InputCatalog::with_builtins();
+        let error = catalog
+            .ranked(|_| Err(CodecError::Io(std::io::Error::other("source closed"))))
+            .err()
+            .expect("I/O ends detection");
+        assert!(matches!(error, CodecError::Io(_)));
+        let limit = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::InputBytes,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: 4,
+            used: 4,
+            additional: 1,
+            operation: "detect",
+        };
+        let error = catalog
+            .ranked(|_| Err(CodecError::ResourceLimit(limit)))
+            .err()
+            .expect("a resource ceiling ends detection");
+        assert!(matches!(error, CodecError::ResourceLimit(found) if found == limit));
     }
 
     #[cfg(feature = "step")]

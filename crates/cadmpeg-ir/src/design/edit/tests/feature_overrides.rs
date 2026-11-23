@@ -3,10 +3,15 @@
 
 use super::*;
 
-/// A point datum on one coincident input, at (1, 0, 0) in the active
+/// A point datum on one unread coincident input, at (1, 0, 0) in the active
 /// configuration and at (2, 0, 0) in configuration 2.
 fn point_datum(key: u32) -> Feature {
     let point = |x: f64| FinitePoint3::from_coordinates(real(x), real(0.0), real(0.0));
+    let unread = Selection {
+        at: Anchor::Current,
+        picks: Picks::Unread,
+        native: None,
+    };
     operation(
         key,
         FeatureOperation::Datum(Box::new(Datum {
@@ -16,7 +21,7 @@ fn point_datum(key: u32) -> Feature {
                         subject: Subject::Whole,
                         relation: Relation::Coincident,
                     }),
-                    reference: None,
+                    reference: Some(crate::design::construction::InputReference::Picks(unread)),
                     value: None,
                     reversed: None,
                 }],

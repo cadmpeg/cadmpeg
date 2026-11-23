@@ -25,6 +25,7 @@ mod configurations;
 mod datum;
 mod operation;
 pub(crate) mod parameters;
+mod pattern;
 mod sheet_metal;
 #[cfg(test)]
 mod tests;
@@ -105,12 +106,20 @@ pub(crate) fn project(
         .iter()
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
+    let scopes = namespace
+        .arena_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
+            ctx,
+            "design_parameter_scopes",
+        )?;
     let documents = timeline::project(
         ctx,
         &ir.model.features,
         &timelines,
         &types,
-        &tail_flags,
+        &timeline::ScopeInputs {
+            records: &scopes,
+            tail_flags: &tail_flags,
+        },
         &current,
         losses,
     )?;
@@ -131,9 +140,12 @@ pub(crate) fn project(
     let mut definitions = BTreeMap::new();
     for (prefix, projected) in hosted {
         let enclosing = host(&scopes, &prefix);
-        let (definition, into) = scopes
-            .entry(enclosing)
-            .or_insert_with(|| (crate::tree::file_root_id(), timeline::Projected::default()));
+        let (definition, into) = scopes.entry(enclosing).or_insert_with(|| {
+            (
+                root_definition(&ir.model.product_definitions),
+                timeline::Projected::default(),
+            )
+        });
         definitions.insert(prefix, definition.clone());
         into.containers.extend(projected.containers);
         into.features.extend(projected.features);
@@ -275,7 +287,7 @@ fn scope_definition(
     prefix: &str,
 ) -> Option<ProductDefinitionId> {
     if prefix.is_empty() {
-        return Some(crate::tree::file_root_id());
+        return Some(root_definition(definitions));
     }
     let member = crate::ids::archive_product_definition_id();
     let id = format!("f3d:{prefix}{}", member.as_str().strip_prefix("f3d:")?);
@@ -283,6 +295,17 @@ fn scope_definition(
         .iter()
         .find(|definition| definition.id.as_str() == id)
         .map(|definition| definition.id.clone())
+}
+
+/// The file's root definition: the root component where its record stands for
+/// the root, else the definition the decoder states in its stead.
+fn root_definition(definitions: &[ProductDefinition]) -> ProductDefinitionId {
+    definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .map_or_else(crate::tree::file_root_id, |definition| {
+            definition.id.clone()
+        })
 }
 
 /// The definitions a scope spans and the bodies of its current state.

@@ -723,10 +723,56 @@ fn append_terminate(
     append_card(output, &data, b'T', 1)
 }
 
+/// A Data record that restates the Directory sequence of an earlier one.
+/// The earlier record is the entity; this one is read and not stated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepeatedDataRecord {
+    /// The odd Directory sequence the record restates.
+    pub(crate) sequence: u32,
+    /// The record's byte span in the Compressed ASCII source.
+    pub(crate) span: std::ops::Range<usize>,
+}
+
+impl RepeatedDataRecord {
+    /// The loss that names the restated Directory sequence and gives the
+    /// span of the copy that is not stated.
+    pub(crate) fn loss(&self) -> cadmpeg_ir::report::loss::LossNote {
+        crate::loss::IgesLossCode::DirectoryRecordRepeated
+            .note(format!(
+                "IGES Compressed ASCII Data record D{} restates the Directory sequence of an earlier record; the first record stands and the copy at bytes {}..{} ({} bytes) is not stated",
+                self.sequence,
+                self.span.start,
+                self.span.end,
+                self.span.len()
+            ))
+            .with_provenance(
+                cadmpeg_ir::SourceProvenance::in_stream(
+                    "iges",
+                    cadmpeg_ir::stream_name!("iges"),
+                    cadmpeg_core::decode::u64_from_index(self.span.start),
+                )
+                .with_tag(format!("directory_entry:D{}", self.sequence)),
+            )
+    }
+}
+
 /// Expand one Compressed ASCII source into the fixed-card input consumed by
 /// the IGES section, Directory, and Parameter parsers.
 pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
+    expand(source).map(|(normalized, _)| normalized)
+}
+
+/// Expand one Compressed ASCII source as [`normalize`] does, and list each
+/// Data record that restates an earlier Directory sequence. The first record
+/// of a sequence is the entity; a later one is left out of the expansion, and
+/// the field values its specifiers set stay in force for the records after it.
+pub(crate) fn expand(source: &[u8]) -> Result<(Vec<u8>, Vec<RepeatedDataRecord>), CodecError> {
     let lines = split_lines(source)?;
+    let span_of = |first: usize, next: usize| {
+        let start = lines[first].as_ptr().addr() - source.as_ptr().addr();
+        let last = lines[next - 1];
+        start..last.as_ptr().addr() - source.as_ptr().addr() + last.len()
+    };
     let flag = lines
         .first()
         .copied()
@@ -771,18 +817,30 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
     let global_cards = &lines[global_begin..data_begin];
     let (parameter_delimiter, record_delimiter) = compressed_delimiters(global_cards)?;
     let mut entities = Vec::new();
+    let mut repeated = Vec::new();
+    let mut carried: Option<DataEntity> = None;
     let mut data_cursor = data_begin;
     let mut expected_sequence = 1_u32;
     while data_cursor < terminate_index {
         let (entity, next) = parse_data_entity(
             &lines,
             data_cursor,
-            entities
-                .last()
+            carried
+                .as_ref()
+                .or(entities.last())
                 .map(|previous: &DataEntity| &previous.fields),
             parameter_delimiter,
             record_delimiter,
         )?;
+        if entity.sequence % 2 == 1 && entity.sequence < expected_sequence {
+            repeated.push(RepeatedDataRecord {
+                sequence: entity.sequence,
+                span: span_of(data_cursor, next),
+            });
+            carried = Some(entity);
+            data_cursor = next;
+            continue;
+        }
         if entity.sequence != expected_sequence || entity.sequence % 2 == 0 {
             return Err(malformed(format!(
                 "Data record sequence {} is not the next odd Directory sequence {}",
@@ -793,6 +851,7 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
             .checked_add(2)
             .ok_or_else(|| malformed("Directory sequence overflows"))?;
         entities.push(entity);
+        carried = None;
         data_cursor = next;
     }
 
@@ -848,7 +907,7 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
         output.extend_from_slice(line);
         output.push(b'\n');
     }
-    Ok(output)
+    Ok((output, repeated))
 }
 
 #[cfg(test)]

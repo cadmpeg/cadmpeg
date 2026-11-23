@@ -462,6 +462,12 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten();
             if let (Some(lower), Some(upper)) = (lower, upper) {
+                let upper_first = lower.value.get() > upper.value.get();
+                let (lower, upper) = if upper_first {
+                    (upper, lower)
+                } else {
+                    (lower, upper)
+                };
                 if set_dimension_tolerance(
                     &mut ir.model.pmi[index.get()].definition,
                     StepTolerance::Deviations { lower, upper },
@@ -469,6 +475,14 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
+                    if upper_first {
+                        ir.model.pmi[index.get()].source_settings.insert(
+                            cadmpeg_core::nonblank_literal!("step:tol_order"),
+                            NativeOption::Text(Dimension::Literal(
+                                cadmpeg_core::nonblank_literal!("upper_lower"),
+                            )),
+                        );
+                    }
                     typed.insert(id);
                     typed.extend(refs);
                 } else {
@@ -1037,21 +1051,22 @@ fn admit_dimension(
             }
         }
     }
-    let mut modifiers = Vec::new();
+    let mut modifiers = std::collections::BTreeSet::new();
     for note in notes {
         let modifier = match note.to_ascii_lowercase().as_str() {
-            "auxiliary" => DimensionModifier::Reference,
+            "auxiliary" | "reference" => DimensionModifier::Reference,
             "statistical" => DimensionModifier::Statistical,
             "controlled radius" => DimensionModifier::ControlledRadius,
             "theoretical" if tolerance.is_none() && nominal.is_some() => {
                 tolerance = Some(Tolerance::Basic);
                 continue;
             }
-            _ => DimensionModifier::Other(note.clone()),
+            _ => match cadmpeg_core::text::NonBlankString::new(note.as_str()) {
+                Some(text) => DimensionModifier::Other(text),
+                None => continue,
+            },
         };
-        if !modifiers.contains(&modifier) {
-            modifiers.push(modifier);
-        }
+        modifiers.insert(modifier);
     }
     let mut dimension = PmiDimension::new(kind.clone());
     dimension.nominal = nominal.map(Dimension::Literal);

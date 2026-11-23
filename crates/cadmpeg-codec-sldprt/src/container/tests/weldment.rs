@@ -19,11 +19,12 @@ fn compound_weldment_member_preserves_outer_bytes_but_bounds_its_xt_entry() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let stream = super::super::compound_stream(
         &ctx,
-        "ThirdPty/WELDMENT_STORAGE".to_owned(),
+        "ThirdPty/WELDMENT_STORAGE",
         7,
         0,
         payload.clone(),
         None,
+        &mut Vec::new(),
     )
     .unwrap();
     assert_eq!(stream.payload, payload);

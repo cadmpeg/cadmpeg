@@ -119,6 +119,38 @@ impl PassAllowance {
         self.work.consumed()
     }
 
+    /// Work units still available in this pass.
+    pub(crate) fn remaining(&self) -> usize {
+        self.work.remaining()
+    }
+
+    /// Per-face slice cap of this pass.
+    pub(crate) const fn face_limit(&self) -> usize {
+        self.face_limit
+    }
+
+    /// Per-edge slice cap of this pass.
+    pub(crate) const fn edge_limit(&self) -> usize {
+        self.edge_limit
+    }
+
+    /// Build a standalone pass allowance with explicit item caps, used inside
+    /// parallel worker threads before committing total work back to the parent pass.
+    pub(crate) fn with_limits(allowance: usize, face_limit: usize, edge_limit: usize) -> Self {
+        Self {
+            allowance,
+            work: WorkBudget::new(allowance),
+            starved: Cell::new(false),
+            face_limit,
+            edge_limit,
+        }
+    }
+
+    /// Charge work already executed by a parallel chunk against this pass.
+    pub(crate) fn charge_committed(&self, units: usize) -> bool {
+        self.work.charge_by(units)
+    }
+
     /// Whether an item ran out because the pass could not pay its slice.
     pub(crate) fn exhausted(&self) -> bool {
         self.starved.get()

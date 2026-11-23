@@ -43,7 +43,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -904,6 +904,7 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        let mut intermediate_bodies = HashSet::new();
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes. A
         // given-up `Document.xml` declares no dialect, so the source is not
@@ -1152,12 +1153,21 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            design::hide_intermediate_bodies(
+            intermediate_bodies = design::hide_intermediate_bodies(
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
             );
+            if ctx.depth() >= DecodeDepth::Design {
+                design::v11::project(
+                    &mut ir,
+                    product::document_definition_id()?,
+                    &graph.objects,
+                    &graph.properties,
+                    &mut transfer_losses,
+                );
+            }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),
@@ -1288,10 +1298,13 @@ impl CodecBackend for FcstdCodec {
             product::document_definition_id()?,
             cadmpeg_ir::products::ExternalDocument::default(),
         )? {
-            root.bodies.retain(product::is_shape_body);
+            root.bodies
+                .retain(|body| product::is_shape_body(body) && !intermediate_bodies.contains(body));
         }
-        // Only the FCStd writer reads this digest, and it admits only a `Full`
-        // document. The serialization and hash are too costly to pay below that.
+        design::v11::state_unproduced(&mut ir);
+        // Only the FCStd writer reads this digest. Below `Full` it patches
+        // without one and reports the edits unverified, so the serialization and
+        // hash are not paid there.
         if ctx.depth() == DecodeDepth::Full {
             let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
             if let Some(source) = &mut ir.source {
@@ -1322,9 +1335,9 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Writes the feature tree and patches retained sources, so design records
-    /// must be present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    /// Writes the feature tree and patches retained sources, so it plans from
+    /// the design records.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

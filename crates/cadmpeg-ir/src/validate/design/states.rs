@@ -6,12 +6,10 @@
 //! bodies, the records they reach, and those records' name entries. Lookups
 //! walk down an evaluation's chain of bases, so no state is materialized.
 
-use std::cell::{OnceCell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
-use crate::design::names::{NameEntry, TopoName};
+use crate::design::names::NameEntry;
 use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
@@ -38,7 +36,6 @@ struct Layer<'a> {
 
 /// The extent of one current state: the records its bodies reach.
 pub(super) struct Extent<'a> {
-    pub(super) index: usize,
     pub(super) scope: &'a str,
     pub(super) state: &'a CurrentState,
     pub(super) records: HashSet<&'a str>,
@@ -50,8 +47,14 @@ pub(super) struct States<'a> {
     geometry: HashMap<&'a str, Arena>,
     layers: HashMap<&'a str, Layer<'a>>,
     pub(super) extents: Vec<Extent<'a>>,
-    extent_names: Vec<OnceCell<BTreeSet<&'a TopoName>>>,
-    eval_names: RefCell<HashMap<&'a str, Option<Rc<BTreeSet<&'a TopoName>>>>>,
+}
+
+/// A stored evaluation's chain of deltas, from its own down.
+pub(super) struct Chain<'s, 'a> {
+    /// Each delta's records and the records it removes from its base.
+    pub(super) layers: Vec<(&'a Topology, &'s HashSet<&'a str>)>,
+    /// The current state's extent the chain ends on, where it ends on one.
+    pub(super) bottom: Option<&'s Extent<'a>>,
 }
 
 /// Where a lookup in an evaluation's chain stops.
@@ -90,9 +93,7 @@ impl<'a> States<'a> {
             let reach = Reach::new(&ir.geometry);
             for scope in &ir.design.scopes {
                 for state in &scope.current {
-                    let index = extents.len();
                     extents.push(Extent {
-                        index,
                         scope: scope.definition.as_str(),
                         state,
                         records: reach
@@ -101,14 +102,11 @@ impl<'a> States<'a> {
                 }
             }
         }
-        let extent_names = (0..extents.len()).map(|_| OnceCell::new()).collect();
         Self {
             ir,
             geometry: entities(&ir.geometry),
             layers,
             extents,
-            extent_names,
-            eval_names: RefCell::new(HashMap::new()),
         }
     }
 
@@ -119,45 +117,23 @@ impl<'a> States<'a> {
             .find(|extent| extent.scope == scope && PositionKey::of(&extent.state.at) == at)
     }
 
-    /// Whether any entity in `extents` carries `name` in `Design.names`.
-    pub(super) fn extents_contain_name(&self, extents: &[&Extent<'a>], name: &TopoName) -> bool {
-        extents.iter().any(|extent| {
-            let names = self.extent_names[extent.index].get_or_init(|| {
-                self.ir
-                    .design
-                    .names
-                    .entries()
-                    .iter()
-                    .filter(|(entity, _)| extent.records.contains(entity.id()))
-                    .filter_map(|(_, entry)| entry.name.as_ref())
-                    .collect()
-            });
-            names.contains(name)
-        })
-    }
-
-    /// Whether the resolved state of `evaluation` carries `name`; `None` where
-    /// the chain of bases does not resolve.
-    pub(super) fn evaluation_contains_name(
+    /// Every entity of the current geometry within `extents` that
+    /// `Design.names` names, with its entry.
+    pub(super) fn extent_table(
         &self,
-        evaluation: &str,
-        name: &TopoName,
-    ) -> Option<bool> {
-        if let Some(cached) = self.eval_names.borrow().get(evaluation) {
-            return cached.as_ref().map(|names| names.contains(name));
-        }
-        let (&key, _) = self.layers.get_key_value(evaluation)?;
-        let table = self.table(key).map(|table| {
-            Rc::new(
-                table
-                    .into_values()
-                    .filter_map(|entry| entry.name.as_ref())
-                    .collect::<BTreeSet<_>>(),
-            )
-        });
-        let found = table.as_ref().map(|names| names.contains(name));
-        self.eval_names.borrow_mut().insert(key, table);
-        found
+        extents: &[&Extent<'a>],
+    ) -> Vec<(&'a EntityRef, &'a NameEntry)> {
+        self.ir
+            .design
+            .names
+            .entries()
+            .iter()
+            .filter(|(entity, _)| {
+                extents
+                    .iter()
+                    .any(|extent| extent.records.contains(entity.id()))
+            })
+            .collect()
     }
 
     /// Whether the geometry holds the entity in its arena.
@@ -193,7 +169,7 @@ impl<'a> States<'a> {
 
     /// Every entity the resolved state of a stored evaluation names, with its
     /// entry. `None` where the chain of bases does not resolve.
-    fn table(&self, evaluation: &str) -> Option<BTreeMap<&'a EntityRef, &'a NameEntry>> {
+    pub(super) fn table(&self, evaluation: &str) -> Option<BTreeMap<&'a EntityRef, &'a NameEntry>> {
         let mut seen: BTreeMap<&'a EntityRef, Option<&'a NameEntry>> = BTreeMap::new();
         let mut at = self.layers.get(evaluation)?;
         for _ in 0..=self.layers.len() {
@@ -221,6 +197,38 @@ impl<'a> States<'a> {
                 .filter(|(entity, _)| self.holds(evaluation, entity) == Some(true))
                 .collect(),
         )
+    }
+
+    /// The current geometry.
+    pub(super) const fn geometry(&self) -> &'a Topology {
+        &self.ir.geometry
+    }
+
+    /// The deltas of a stored evaluation's chain of bases, its own first, each
+    /// with the records it removes from its base, and the extent the chain
+    /// ends on where it ends on a current state. `None` where the chain does
+    /// not resolve.
+    pub(super) fn chain(&self, evaluation: &str) -> Option<Chain<'_, 'a>> {
+        let mut chain = Chain {
+            layers: Vec::new(),
+            bottom: None,
+        };
+        let mut at = self.layers.get(evaluation)?;
+        for _ in 0..=self.layers.len() {
+            let evaluation = at.evaluation;
+            let content = evaluation.content.as_ref()?;
+            chain.layers.push((&content.delta.records, &at.removed));
+            match &content.base {
+                StateBase::Empty => return Some(chain),
+                StateBase::Evaluation(base) => at = self.layers.get(base.as_str())?,
+                StateBase::Current(position) => {
+                    chain.bottom =
+                        Some(self.extent(evaluation.scope.as_str(), PositionKey::of(position))?);
+                    return Some(chain);
+                }
+            }
+        }
+        None
     }
 
     /// The instance paths with bodies in the resolved state of a stored

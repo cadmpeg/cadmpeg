@@ -152,6 +152,12 @@ fn check_construction(
         }
     }
     for input in inputs {
+        if input.reference.is_none() && input.value.is_none() {
+            error(format_args!(
+                "a {} construction has an input with neither a reference nor a value",
+                kind.name()
+            ));
+        }
         let Some(role) = &input.role else {
             continue;
         };
@@ -216,6 +222,7 @@ fn check_construction(
         if input.reversed.is_some() && !reversible(construction, subject, relation) {
             error(format_args!("a {relation:?} input states reversed"));
         }
+        super::fit::check_input(index, relation, input.reference.as_ref(), &mut error);
         if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
             && !parameter_ratio_admitted(index, relation, input.reference.as_ref())
         {
@@ -406,7 +413,7 @@ const fn pick_count_admitted(relation: &Relation, count: usize) -> bool {
 }
 
 /// What a datum pick's feature is known to be.
-enum DatumFeature<'a> {
+pub(super) enum DatumFeature<'a> {
     /// A typed datum.
     Datum(&'a DatumElement),
     /// A typed operation other than a datum.
@@ -415,7 +422,7 @@ enum DatumFeature<'a> {
     Unstated,
 }
 
-fn datum_element<'a>(index: &DesignIndex<'a>, feature: &str) -> DatumFeature<'a> {
+pub(super) fn datum_element<'a>(index: &DesignIndex<'a>, feature: &str) -> DatumFeature<'a> {
     match index.operation(feature) {
         Some(FeatureOperation::Datum(datum)) => DatumFeature::Datum(&datum.element),
         Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) | None => {

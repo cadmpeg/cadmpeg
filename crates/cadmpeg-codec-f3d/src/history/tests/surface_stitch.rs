@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::AsmHistory;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -216,6 +216,7 @@ fn surface_stitch_fixture() -> StitchFixture {
     };
     feature.native_ref = Some(scope_id.clone());
     let input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -272,7 +273,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],
@@ -313,7 +314,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],
@@ -383,7 +384,7 @@ fn a_selection_other_than_move_face_reads_one_transition() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],

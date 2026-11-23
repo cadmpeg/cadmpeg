@@ -261,9 +261,9 @@ fn reference(
         ),
     };
     out.record(&ctx.class_of(record)?, record);
-    // An `Extrude`'s result body has the presentation-owner form: no
+    // A geometry item's result body has the presentation-owner form: no
     // property block (f3d.md §3.1, "Result body").
-    if side == Side::Design && ctx.roster.extrude.is_some() {
+    if side == Side::Design && ctx.roster.item.is_some() {
         out.zeros(10);
     } else {
         out.zeros(9)

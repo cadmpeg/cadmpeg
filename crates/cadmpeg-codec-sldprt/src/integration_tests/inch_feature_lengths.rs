@@ -77,12 +77,12 @@ fn ftc_06_extrude_depths_plane_offsets_and_pattern_spacings_are_stored_inches() 
         ir,
         &["distance"],
         &[
-            ("Plane2", 9.75),
+            ("Plane2", -9.75),
             ("Plane3", 1.85),
             ("Plane4", 3.0),
             ("Plane5", 4.5),
             ("Plane14", 2.6),
-            ("Plane17", 3.25),
+            ("Plane17", -3.25),
         ],
     );
     assert_field(

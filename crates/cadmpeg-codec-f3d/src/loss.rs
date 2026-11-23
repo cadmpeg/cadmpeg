@@ -489,6 +489,12 @@ pub(crate) enum F3dLossCode {
     /// A linear rectangular-pattern direction has no admitted direction
     /// record and no generated-instance run.
     FeatureRectangularPatternDirectionUnresolved,
+    /// The auxiliary selection links of a 215- or 216-byte direction remain native.
+    FeatureRectangularPatternDirectionLinksNative,
+    /// A malformed rectangular-pattern construction remains native.
+    FeatureRectangularPatternConstructionNative,
+    /// A rectangular pattern or an unproved input retains its native record.
+    FeatureRectangularPatternDesignNative,
     /// A single linear rectangular-pattern direction record disagrees with
     /// the generated-instance run; the run direction is kept.
     FeatureRectangularPatternDirectionRecordDisagrees,
@@ -750,9 +756,9 @@ pub(crate) enum F3dLossCode {
     /// One configuration document failed decoding.
     ConfigurationDocumentUndecoded,
     /// One sheet-metal settings record failed decoding.
-    SheetMetalSettingsUndecoded,
+    BendSettingsUndecoded,
     /// One cached body bound failed decoding.
-    BodyBoundsUndecoded,
+    DesignBodyBoundsUndecoded,
     /// Decoded sketch curves have no neutral sketch entity.
     SketchCurveUnprojected,
     /// Decoded sketch surfaces have no neutral spatial sketch entity.
@@ -811,6 +817,12 @@ pub(crate) enum F3dLossCode {
     /// An Extrude face profile stays native because the face its selection names is on a curved carrier.
     FeatureExtrudeProfileFaceCurved,
     FeatureSketchProfileFlagsAssumed,
+    /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
+    FeatureUnevaluatedStateAssumed,
+    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    FeatureNoResultActiveAssumed,
+    /// A scope tail stores a state byte above `1`; the byte is read as set.
+    FeatureStateByteAboveOne,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     FeatureProfileJoinEnvelopeCapped,
@@ -913,6 +925,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
     FeatureWorkAxisLegacyLayoutAssumed,
     FeatureWorkAxisCandidatesUnresolved,
+    /// Null work-axis input references state no construction input.
+    FeatureWorkAxisInputNull,
+    /// A work axis whose stored line was read only in part states no line.
+    FeatureWorkAxisPartialLineNative,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// A pattern seed or `RemoveBody` selection of omitted bodies has no
@@ -1078,6 +1094,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` projects its stored boundary edges as the faces they bound.
+    FeatureSurfaceExtendEdgesAsFaces,
     FeatureSplitToolExtensionAssumed,
     FeatureSplitToolExtensionUnresolved,
     FeatureSplitBodyFaceToolGroupAssumed,
@@ -1709,6 +1727,9 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
         Self::FeatureRectangularPatternDirectionOneRecordAssumed,
         Self::FeatureRectangularPatternDirectionUnresolved,
+        Self::FeatureRectangularPatternDirectionLinksNative,
+        Self::FeatureRectangularPatternConstructionNative,
+        Self::FeatureRectangularPatternDesignNative,
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
@@ -1860,8 +1881,8 @@ impl F3dLossCode {
         Self::SketchOwnerConflict,
         Self::SketchRelationOwnerUnresolved,
         Self::ConfigurationDocumentUndecoded,
-        Self::SheetMetalSettingsUndecoded,
-        Self::BodyBoundsUndecoded,
+        Self::BendSettingsUndecoded,
+        Self::DesignBodyBoundsUndecoded,
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
@@ -1897,6 +1918,9 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceSetDisputed,
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
+        Self::FeatureUnevaluatedStateAssumed,
+        Self::FeatureNoResultActiveAssumed,
+        Self::FeatureStateByteAboveOne,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
@@ -1960,6 +1984,8 @@ impl F3dLossCode {
         Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
+        Self::FeatureWorkAxisInputNull,
+        Self::FeatureWorkAxisPartialLineNative,
         Self::FeatureBodySelectionNative,
         Self::FeatureGeneratedBodyHistoryUnresolved,
         Self::FeatureReverseNormalBodyUnverified,
@@ -2065,6 +2091,7 @@ impl F3dLossCode {
         Self::FeatureLoftCenterlineAssumed,
         Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendEdgesAsFaces,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
         Self::FeatureSplitBodyFaceToolGroupAssumed,
@@ -2561,6 +2588,15 @@ impl F3dLossCode {
             Self::FeatureRectangularPatternDirectionOneRecordAssumed => {
                 "feature.rectangular-pattern-direction-one-record-assumed"
             }
+            Self::FeatureRectangularPatternDirectionLinksNative => {
+                "feature.rectangular-pattern-direction-links-native"
+            }
+            Self::FeatureRectangularPatternConstructionNative => {
+                "feature.rectangular-pattern-construction-native"
+            }
+            Self::FeatureRectangularPatternDesignNative => {
+                "feature.rectangular-pattern-design-native"
+            }
             Self::FeatureRectangularPatternDirectionUnresolved => {
                 "feature.rectangular-pattern-direction-unresolved"
             }
@@ -2903,8 +2939,8 @@ impl F3dLossCode {
             Self::SketchOwnerConflict => "sketch.owner-conflict",
             Self::SketchRelationOwnerUnresolved => "sketch.relation-owner-unresolved",
             Self::ConfigurationDocumentUndecoded => "configuration.document-undecoded",
-            Self::SheetMetalSettingsUndecoded => "sheet-metal.settings-undecoded",
-            Self::BodyBoundsUndecoded => "body.bounds-undecoded",
+            Self::BendSettingsUndecoded => "feature.bend-settings-undecoded",
+            Self::DesignBodyBoundsUndecoded => "design.body-bounds-undecoded",
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
@@ -2918,6 +2954,9 @@ impl F3dLossCode {
             Self::SketchCurveRegionBoundary => "sketch.curve-region-boundary",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
+            Self::FeatureUnevaluatedStateAssumed => "feature.unevaluated-state-assumed",
+            Self::FeatureNoResultActiveAssumed => "feature.no-result-active-assumed",
+            Self::FeatureStateByteAboveOne => "feature.state-byte-above-one",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileGroupUnionAssumed => {
@@ -3064,6 +3103,8 @@ impl F3dLossCode {
             }
             Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
             Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
+            Self::FeatureWorkAxisInputNull => "feature.work-axis-input-null",
+            Self::FeatureWorkAxisPartialLineNative => "feature.work-axis-partial-line-native",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
@@ -3251,6 +3292,7 @@ impl F3dLossCode {
             Self::FeatureSurfaceExtendMethodUnresolved => {
                 "feature.surface-extend-method-unresolved"
             }
+            Self::FeatureSurfaceExtendEdgesAsFaces => "feature.surface-extend-edges-as-faces",
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
             }
@@ -3736,6 +3778,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -3967,8 +4012,8 @@ impl F3dLossCode {
             | Self::SketchOwnerConflict
             | Self::SketchRelationOwnerUnresolved
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
-            | Self::BodyBoundsUndecoded
+            | Self::BendSettingsUndecoded
+            | Self::DesignBodyBoundsUndecoded
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
@@ -4002,6 +4047,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
+            | Self::FeatureNoResultActiveAssumed
+            | Self::FeatureStateByteAboveOne
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -4065,6 +4113,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
@@ -4170,6 +4220,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -4390,7 +4441,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineUndecoded
             | Self::PrimaryRecordUndecoded
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
+            | Self::BendSettingsUndecoded
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
@@ -4512,6 +4563,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -4768,6 +4822,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
+            | Self::FeatureNoResultActiveAssumed
+            | Self::FeatureStateByteAboveOne
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -4831,6 +4888,8 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
+            | Self::FeatureWorkAxisInputNull
+            | Self::FeatureWorkAxisPartialLineNative
             | Self::FeatureBodySelectionNative
             | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
@@ -4936,6 +4995,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -5075,7 +5135,7 @@ impl F3dLossCode {
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
             | Self::SketchSurfaceUndecoded
-            | Self::BodyBoundsUndecoded
+            | Self::DesignBodyBoundsUndecoded
             | Self::SketchTextUndecoded
             | Self::SketchRelationUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
@@ -5133,7 +5193,7 @@ impl F3dLossCode {
             | Self::PrimaryRecordUndecoded
             | Self::FeatureTimelineUndecoded
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
+            | Self::BendSettingsUndecoded
             | Self::ConfigurationProjectionNative
             | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
@@ -5167,20 +5227,51 @@ mod tests {
     use super::F3dLossCode;
     use std::collections::BTreeSet;
 
+    /// The sixteen codes that record a Design record, or its dependent
+    /// state, kept in the source archive after a decoding failure: the
+    /// sketch curve, surface, text, relation, folder, ordinal-collection,
+    /// container and geometry-group codes; the feature-timeline and
+    /// primary-record codes; the configuration projection and document
+    /// codes; the sketch owner-conflict and relation-owner codes; the bend
+    /// settings code; and the body-bounds code.
+    const UNREAD_DESIGN_RECORD_CODES: [F3dLossCode; 16] = [
+        F3dLossCode::SketchCurveUndecoded,
+        F3dLossCode::SketchSurfaceUndecoded,
+        F3dLossCode::SketchTextUndecoded,
+        F3dLossCode::SketchRelationUndecoded,
+        F3dLossCode::SketchFolderUndecoded,
+        F3dLossCode::SketchOrdinalCollectionUndecoded,
+        F3dLossCode::SketchContainerUndecoded,
+        F3dLossCode::SketchGeometryGroupUndecoded,
+        F3dLossCode::FeatureTimelineUndecoded,
+        F3dLossCode::PrimaryRecordUndecoded,
+        F3dLossCode::ConfigurationProjectionNative,
+        F3dLossCode::SketchOwnerConflict,
+        F3dLossCode::SketchRelationOwnerUnresolved,
+        F3dLossCode::ConfigurationDocumentUndecoded,
+        F3dLossCode::BendSettingsUndecoded,
+        F3dLossCode::DesignBodyBoundsUndecoded,
+    ];
+
     #[test]
     fn unread_design_records_keep_strict_refusal() {
-        for code in [
-            F3dLossCode::PrimaryRecordUndecoded,
-            F3dLossCode::FeatureTimelineUndecoded,
-            F3dLossCode::ConfigurationDocumentUndecoded,
-            F3dLossCode::SheetMetalSettingsUndecoded,
-            F3dLossCode::ConfigurationProjectionNative,
-        ] {
+        for code in UNREAD_DESIGN_RECORD_CODES {
             assert_eq!(
                 code.note("synthetic unread Design record")
                     .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject
+                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+                "{}",
+                code.kind().local_code()
             );
+        }
+    }
+
+    #[test]
+    fn unread_design_record_codes_are_registered_once() {
+        let mut seen = BTreeSet::new();
+        for code in UNREAD_DESIGN_RECORD_CODES {
+            assert!(F3dLossCode::ALL.contains(&code));
+            assert!(seen.insert(code.kind().local_code().to_owned()));
         }
     }
 
@@ -5502,6 +5593,9 @@ mod tests {
                 "feature.rectangular-pattern-inactive-symmetric-dropped",
                 "feature.rectangular-pattern-direction-one-record-assumed",
                 "feature.rectangular-pattern-direction-unresolved",
+                "feature.rectangular-pattern-direction-links-native",
+                "feature.rectangular-pattern-construction-native",
+                "feature.rectangular-pattern-design-native",
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
@@ -5653,8 +5747,8 @@ mod tests {
                 "sketch.owner-conflict",
                 "sketch.relation-owner-unresolved",
                 "configuration.document-undecoded",
-                "sheet-metal.settings-undecoded",
-                "body.bounds-undecoded",
+                "feature.bend-settings-undecoded",
+                "design.body-bounds-undecoded",
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
@@ -5690,6 +5784,9 @@ mod tests {
                 "feature.extrude-profile-face-set-disputed",
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
+                "feature.unevaluated-state-assumed",
+                "feature.no-result-active-assumed",
+                "feature.state-byte-above-one",
                 "feature.profile-arrangement-capped",
                 "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",
@@ -5753,6 +5850,8 @@ mod tests {
                 "feature.work-axis-unsupported-version-legacy-layout-assumed",
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
+                "feature.work-axis-input-null",
+                "feature.work-axis-partial-line-native",
                 "feature.body-selection-native",
                 "feature.generated-body-history-unresolved",
                 "feature.reverse-normal-body-unverified",
@@ -5858,6 +5957,7 @@ mod tests {
                 "feature.loft-centerline-assumed",
                 "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-edges-as-faces",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
                 "feature.split-body-face-tool-group-assumed",

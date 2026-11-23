@@ -87,6 +87,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let historical_edge =
         HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
+        face_owners: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
         bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -278,8 +279,8 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let parent = FeatureId::mint("test:model:feature#parent").unwrap();
-    let child = FeatureId::mint("test:model:feature#child").unwrap();
+    let parent = FeatureId::mint("test:model:feature#1-parent").unwrap();
+    let child = FeatureId::mint("test:model:feature#2-child").unwrap();
     let mut model = Model::default();
     model.features.push(Feature {
         product_definition: None,

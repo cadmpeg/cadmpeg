@@ -937,8 +937,9 @@ pub(crate) fn project_compact_edge_selections_with_ids(
                 return Ok(());
             };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
-                let native = compact_edge_selection_set_value(selections);
-                match compact_generated_edges(selections, feature_ids_by_native) {
+                let selections = operand_selections(selections);
+                let native = compact_edge_selection_set_value(&selections);
+                match compact_generated_edges(&selections, feature_ids_by_native) {
                     Some(generated) if !generated.is_empty() => {
                         EdgeSelection::generated(generated, native)
                             .map_err(cadmpeg_core::CodecError::malformed)
@@ -1014,6 +1015,110 @@ pub(crate) fn project_compact_edge_selections_with_ids(
     }
 
     Ok(())
+}
+
+/// Charge one loss for each fillet or chamfer of `features` that names its
+/// edges by generated-edge paths and whose paths do not all settle their
+/// generating sketch entities: a path settles when each entry names an end
+/// face or a side face that `generators` joins to a profile line.
+pub(crate) fn note_blend_edge_generators(
+    features: &[cadmpeg_ir::features::Feature],
+    lanes: &[crate::records::FeatureInputLane],
+    histories: &[crate::records::FeatureHistory],
+    generators: &super::side_generators::SideGenerators,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let generated = |edges: &EdgeSelection| matches!(edges, EdgeSelection::Generated { .. });
+    let history = crate::records::HistoryFeatures::new(histories);
+    let settled = |feature: &cadmpeg_ir::features::Feature| -> bool {
+        let Some(native) = feature.native_ref.as_deref() else {
+            return false;
+        };
+        let owned = lanes
+            .iter()
+            .flat_map(|lane| &lane.edge_selections)
+            .filter(|selection| selection.feature_ref == native)
+            .collect::<Vec<_>>();
+        let operands = operand_selections(&owned);
+        !operands.is_empty()
+            && operands.iter().all(|selection| {
+                let classes = lanes
+                    .iter()
+                    .find(|lane| lane.id == selection.parent)
+                    .and_then(super::side_generators::SurfaceClasses::of);
+                let source = selection
+                    .terminal_feature_ref
+                    .as_deref()
+                    .and_then(|record| history.get(record))
+                    .and_then(crate::records::Feature::source_value);
+                matches!((classes, source), (Some(classes), Some(source))
+                    if generators.settle(selection, &classes, source))
+            })
+    };
+    for feature in features {
+        let named = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
+                groups.iter().any(|group| generated(&group.edges))
+            }
+            FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
+                groups.iter().any(|group| generated(&group.edges))
+            }
+            _ => false,
+        };
+        if named
+            && feature.native_ref.as_deref().is_some_and(|native| {
+                let mut owned = lanes
+                    .iter()
+                    .flat_map(|lane| &lane.edge_selections)
+                    .filter(|selection| selection.feature_ref == native)
+                    .peekable();
+                owned.peek().is_some() && owned.all(|selection| selection.mark_reference)
+            })
+        {
+            let name = feature
+                .name
+                .as_deref()
+                .or(feature.native_ref.as_deref())
+                .unwrap_or(feature.id.as_str());
+            losses.push(
+                crate::loss::SldprtLossCode::FeatureBlendMarkReferencesAssumed.note(format!(
+                    "every edge vector of {name} lies inside a mark record; the record's edge \
+                     references are taken as the edges the feature blends"
+                )),
+            );
+        }
+        if named && !settled(feature) {
+            let name = feature
+                .name
+                .as_deref()
+                .or(feature.native_ref.as_deref())
+                .unwrap_or(feature.id.as_str());
+            losses.push(
+                crate::loss::SldprtLossCode::FeatureBlendEdgeGeneratorUnstated.note(format!(
+                    "the edges of {name} are named by feature-local component paths; the sketch \
+                     entities that generate some of them are not established"
+                )),
+            );
+        }
+    }
+}
+
+/// The selections of `selections` that are operands of their feature: those
+/// outside a `moPMarkRecord_c`, whose own edge references are the record's.
+/// A feature with no selection outside a record keeps them all.
+fn operand_selections<'a>(
+    selections: &[&'a FeatureInputEdgeSelection],
+) -> Vec<&'a FeatureInputEdgeSelection> {
+    let operands = selections
+        .iter()
+        .copied()
+        .filter(|selection| !selection.mark_reference)
+        .collect::<Vec<_>>();
+    if operands.is_empty() {
+        selections.to_vec()
+    } else {
+        operands
+    }
 }
 
 /// The distinct generated edges a compact selection set names, in selection

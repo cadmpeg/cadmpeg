@@ -77,6 +77,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     assert_eq!(ir.model.features, features);
     assert!(ir.model.configurations[0].feature_states.is_empty());
@@ -105,6 +106,7 @@ fn run_topology() -> Result<(), CodecError> {
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &[],
+        crate::history::bind::FeatureOutputSources::default(),
     )?;
     assert_eq!(ir, expected);
     Ok(())
@@ -115,15 +117,17 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = model();
     let expected = ir.clone();
-    let losses = super::super::project_configuration_sketch_states(
+    let (losses, relation_points) = super::super::project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }

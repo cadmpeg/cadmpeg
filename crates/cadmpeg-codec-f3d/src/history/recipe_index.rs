@@ -37,7 +37,7 @@ pub(super) fn reference_lane_faces_by(
         references
             .entry(reference.selector_offset)
             .or_default()
-            .push(super::effective_faces(reference));
+            .push(super::face_resolution::effective_faces(reference));
     }
     let mut names = references
         .into_values()
@@ -154,12 +154,13 @@ impl<'a> RecipeTopologyIndex<'a> {
             return None;
         };
         let source_matches = active.as_str().starts_with("f3d:brep:entity#")
-            || history_source
-                .is_some_and(|source| super::active_brep_face_matches_source(active, source));
+            || history_source.is_some_and(|source| {
+                super::face_resolution::active_brep_face_matches_source(active, source)
+            });
         if !source_matches {
             return None;
         }
-        let slot = super::stable_ref(active.as_str())?;
+        let slot = super::body_closures::stable_ref(active.as_str())?;
         let mut selected = false;
         for reference in references
             .iter()
@@ -228,7 +229,7 @@ impl<'a> RecipeTopologyCache<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::RecipeTopologyCache;
+    use crate::history::recipe_index::RecipeTopologyCache;
     use crate::history_records::{AsmHistoricalPersistentSubentityTag, AsmHistoricalTopology};
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
@@ -350,24 +351,26 @@ mod tests {
             reference(40, 303, &[20, 30, 40]),
         ];
         assert_eq!(
-            super::reference_lane_faces(&lane).faces,
+            crate::history::recipe_index::reference_lane_faces(&lane).faces,
             [face(20), face(30)]
         );
         assert_eq!(
-            super::reference_lane_faces(&lane[..2]).faces,
+            crate::history::recipe_index::reference_lane_faces(&lane[..2]).faces,
             [face(10), face(20), face(30)]
         );
         let missing = [lane[0].clone(), reference(40, 303, &[])];
         assert_eq!(
-            super::reference_lane_faces(&missing).faces,
+            crate::history::recipe_index::reference_lane_faces(&missing).faces,
             [face(10), face(20)]
         );
         let conflict = [lane[0].clone(), reference(40, 303, &[40])];
-        let conflict = super::reference_lane_faces(&conflict);
+        let conflict = crate::history::recipe_index::reference_lane_faces(&conflict);
         assert_eq!(conflict.faces, [face(10), face(20), face(40)]);
         assert!(conflict.disjoint_names);
-        assert!(!super::reference_lane_faces(&lane).disjoint_names);
-        assert!(super::reference_lane_faces(&[]).faces.is_empty());
+        assert!(!crate::history::recipe_index::reference_lane_faces(&lane).disjoint_names);
+        assert!(crate::history::recipe_index::reference_lane_faces(&[])
+            .faces
+            .is_empty());
     }
 
     #[test]
@@ -392,11 +395,14 @@ mod tests {
         // One name with two Design references: the reference that every
         // fragment of the token carries does not widen the name.
         let name = [reference(0, 920, &[10]), reference(0, 934, &[10, 20, 30])];
-        let lane = super::reference_lane_faces_by(&name, super::NameReferences::Common);
+        let lane = crate::history::recipe_index::reference_lane_faces_by(
+            &name,
+            super::NameReferences::Common,
+        );
         assert_eq!(lane.faces, [face(10)]);
         assert!(!lane.disjoint_names);
         assert_eq!(
-            super::reference_lane_faces(&name).faces,
+            crate::history::recipe_index::reference_lane_faces(&name).faces,
             [face(10), face(20), face(30)]
         );
         // A second name of the same operand intersects the first name's faces.
@@ -407,13 +413,21 @@ mod tests {
             reference(40, 934, &[10, 20, 30]),
         ];
         assert_eq!(
-            super::reference_lane_faces_by(&operand, super::NameReferences::Common).faces,
+            crate::history::recipe_index::reference_lane_faces_by(
+                &operand,
+                super::NameReferences::Common
+            )
+            .faces,
             [face(10)]
         );
         // No face carries both references: the name keeps their union.
         let split = [reference(0, 920, &[10]), reference(0, 934, &[20, 30])];
         assert_eq!(
-            super::reference_lane_faces_by(&split, super::NameReferences::Common).faces,
+            crate::history::recipe_index::reference_lane_faces_by(
+                &split,
+                super::NameReferences::Common
+            )
+            .faces,
             [face(10), face(20), face(30)]
         );
     }

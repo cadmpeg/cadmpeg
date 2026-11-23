@@ -26,6 +26,7 @@ fn bundle() -> Bundle {
             .unwrap();
             point
         }));
+    bundle.document.finalize();
     bundle.refresh_manifest().unwrap();
     bundle
 }

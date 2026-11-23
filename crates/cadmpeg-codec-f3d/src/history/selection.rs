@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical feature selection and persistent identity resolution.
 
+use super::body_closures::{same_axis_line, stable_ref};
+use super::edge_operand_history::{design_axis, historical_edge_axis};
+use super::history_states::{
+    bound_scope_history, effective_scope_previous_history_state_id, history_state_reaches,
+    unique_history_state_pair,
+};
+use super::treatment_candidates::treatment_edge_candidates;
 use super::{
-    bound_scope_history, design_axis, effective_scope_previous_history_state_id,
-    historical_edge_axis, history_state_reaches, projection_was_finalized, same_axis_line,
-    stable_ref, treatment_edge_candidates, unique_history_state_pair,
-    EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
-    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
+    projection_was_finalized, EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9,
+    EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8,
+    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
 };
 use crate::history_records::{
     AsmHistoricalCoedge, AsmHistoricalTopology, AsmHistory, AsmTopologyScope,
@@ -1278,7 +1283,9 @@ pub(crate) fn bind_mirror_selection_planes(
         // A scope that stores no preceding state takes it from its history
         // state.
         let previous_history_state_id =
-            crate::history::effective_scope_previous_history_state_id(scope, histories);
+            crate::history::history_states::effective_scope_previous_history_state_id(
+                scope, histories,
+            );
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
@@ -2114,7 +2121,7 @@ pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
     identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    histories: super::BindingHistories<'_>,
+    histories: super::binding_histories::BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
     lineage_scopes: &HashSet<String>,
 ) {
@@ -2234,7 +2241,7 @@ pub(crate) fn bind_edge_identity_history(
     }
     let mut treatment_candidates_by_transition =
         HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
-    super::visit_state_groups_oldest_first(
+    super::binding_histories::visit_state_groups_oldest_first(
         histories,
         jobs,
         |histories, history_index, previous_index, group| {

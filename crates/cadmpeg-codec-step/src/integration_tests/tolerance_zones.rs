@@ -188,11 +188,27 @@ fn spherical_dimension_modifiers_round_trip_through_compound_items() {
             dimension.modifiers,
             [
                 DimensionModifier::Reference,
-                DimensionModifier::ControlledRadius,
-                DimensionModifier::Statistical
+                DimensionModifier::Statistical,
+                DimensionModifier::ControlledRadius
             ]
+            .into()
         );
     }
+}
+
+#[test]
+fn a_dimensional_note_reading_reference_is_the_reference_modifier() {
+    use crate::test_support::pmi_limits::LIMIT_DIMENSION;
+    use cadmpeg_ir::pmi::DimensionModifier;
+    let source = LIMIT_DIMENSION.replace("(#12,#11,#13)", "(#12,#11,#13,#16)");
+    let source =
+        format!("{source}\n#16=DESCRIPTIVE_REPRESENTATION_ITEM('dimensional note','reference');");
+    let input = decode_inline(&source);
+    assert!(input.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension(dimension)
+            if dimension.modifiers == [DimensionModifier::Reference].into()
+    )));
 }
 
 #[test]

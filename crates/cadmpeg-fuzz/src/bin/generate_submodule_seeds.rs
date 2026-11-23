@@ -501,7 +501,11 @@ fn generate_nx_submodule_seeds() -> Result<(), SeedError> {
 fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     let cfb = synthetic_cfb_seed()?;
     write_seed("seeds/inventor_codec", "minimal", &cfb)?;
-    write_seed("seeds/solidedge_codec", "minimal", &cfb)?;
+    write_seed(
+        "seeds/solidedge_codec",
+        "minimal",
+        &synthetic_solidedge_seed()?,
+    )?;
     write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
         "seeds/inventor_database",
@@ -691,6 +695,76 @@ fn synthetic_cfb_seed() -> std::io::Result<Vec<u8>> {
     put_u32(fat, slot_offset(1), END);
     put_u32(fat, slot_offset(10), END);
     put_u32(fat, slot_offset(11), FAT);
+    Ok(file)
+}
+
+/// A part-document compound file: the `PSMroots` and `JSitesList` root entries
+/// below a root storage that carries the part class identifier.
+fn synthetic_solidedge_seed() -> std::io::Result<Vec<u8>> {
+    const SECTOR: usize = 512;
+    const FREE: u32 = 0xffff_ffff;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    let mut file = vec![0_u8; 1536];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 44, 1);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, 4096);
+    put_u32(&mut file, 60, END);
+    put_u32(&mut file, 68, END);
+    for index in 0..109 {
+        put_u32(&mut file, 76 + index * 4, FREE);
+    }
+    put_u32(&mut file, 76, 1);
+
+    let directory = sector_mut(&mut file, SECTOR, 0);
+    for entry in directory.chunks_exact_mut(128) {
+        entry.fill(0);
+        entry[68..80].fill(0xff);
+    }
+    directory_entry(
+        directory,
+        0,
+        DirectoryEntry {
+            name: "Root Entry",
+            object_type: 5,
+            left: FREE,
+            right: FREE,
+            child: 1,
+            start_sector: END,
+            size: 0,
+        },
+    )?;
+    // Part root class 23c52e80-4698-11ce-b307-0800363a1e02, first three fields little-endian.
+    directory[80..96].copy_from_slice(&[
+        0x80, 0x2e, 0xc5, 0x23, 0x98, 0x46, 0xce, 0x11, 0xb3, 0x07, 0x08, 0x00, 0x36, 0x3a, 0x1e,
+        0x02,
+    ]);
+    for (index, name, right) in [(1, "PSMroots", 2), (2, "JSitesList", FREE)] {
+        directory_entry(
+            directory,
+            index,
+            DirectoryEntry {
+                name,
+                object_type: 2,
+                left: FREE,
+                right,
+                child: FREE,
+                start_sector: END,
+                size: 0,
+            },
+        )?;
+    }
+
+    let fat = sector_mut(&mut file, SECTOR, 1);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    put_u32(fat, slot_offset(1), FAT);
     Ok(file)
 }
 

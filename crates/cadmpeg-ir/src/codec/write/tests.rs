@@ -5,8 +5,8 @@ use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, DepthNeed,
-    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeInput,
+    Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -59,7 +59,7 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
-    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -118,7 +118,7 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
+    const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
@@ -164,60 +164,63 @@ fn recorded_at(depth: DecodeDepth) -> CadIr {
     ir
 }
 
-#[test]
-fn a_full_need_encoder_refuses_a_document_below_full_scope() {
-    for recorded in [DecodeDepth::Geometry, DecodeDepth::Design] {
-        let ir = recorded_at(recorded);
-        let error = F3dCoverageEncoder(ArenaCoverage::Complete)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .unwrap_err();
-        assert!(
-            matches!(
-                error,
-                CodecError::InsufficientDepth {
-                    format: "f3d",
-                    needed: DecodeDepth::Full,
-                    recorded: actual,
-                } if actual == recorded
-            ),
-            "{error}"
-        );
-    }
+fn depth_notes(plan: &super::ExportPlan) -> Vec<&String> {
+    plan.report()
+        .notes
+        .iter()
+        .filter(|note| note.starts_with("the document records "))
+        .collect()
 }
 
 #[test]
-fn a_geometry_need_encoder_admits_geometry_and_refuses_container() {
+fn plan_never_refuses_on_scope_and_notes_a_shortfall() {
+    for recorded in [
+        DecodeDepth::Container,
+        DecodeDepth::Geometry,
+        DecodeDepth::Design,
+    ] {
+        let ir = recorded_at(recorded);
+        let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert_eq!(
+            depth_notes(&plan),
+            [&format!(
+                "the document records {recorded} depth; the f3d writer plans from full, so it \
+                 wrote what the document holds"
+            )]
+        );
+    }
+    let full = recorded_at(DecodeDepth::Full);
+    let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
+        .plan(EncodeInput::new(&full, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(depth_notes(&plan).is_empty());
+}
+
+#[test]
+fn a_geometry_request_encoder_plans_a_container_document_with_a_note() {
     let geometry = recorded_at(DecodeDepth::Geometry);
-    CatalogEncoder
+    let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&geometry, None),
             TargetRequest::Explicit("new"),
         )
         .unwrap();
+    assert!(depth_notes(&plan).is_empty());
     let container = recorded_at(DecodeDepth::Container);
-    let error = CatalogEncoder
+    let plan = CatalogEncoder
         .plan(
             EncodeInput::new(&container, None),
             TargetRequest::Explicit("new"),
         )
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            CodecError::InsufficientDepth {
-                format: "test",
-                needed: DecodeDepth::Geometry,
-                recorded: DecodeDepth::Container,
-            }
-        ),
-        "{error}"
-    );
+        .unwrap();
+    assert_eq!(depth_notes(&plan).len(), 1);
 }
 
 #[test]
 fn the_cadir_encoder_writes_the_depth_a_document_records() {
-    assert_eq!(CadirEncoder.needs(), DepthNeed::Recorded);
-    assert_eq!(CadirEncoder.needs().request(), DecodeDepth::Full);
+    assert_eq!(CadirEncoder.request(), DecodeDepth::Full);
     for depth in [
         DecodeDepth::Container,
         DecodeDepth::Geometry,
@@ -331,7 +334,7 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
-    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -372,6 +375,22 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
         None,
     )
     .unwrap()
+}
+
+/// `omitted` names the arenas the `arena.omitted` losses name: an omitted
+/// design arena that a v10 record restates is not among them.
+#[test]
+fn omitted_names_the_arenas_the_omission_losses_name() {
+    let mut ir = CadIr::empty();
+    ir.design.spreadsheets.push(design_sheet("v11"));
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    assert!(dispositions.omitted(&ir).is_empty());
+    dispositions.design.spreadsheets = ArenaDisposition::Omitted;
+    assert_eq!(dispositions.omitted(&ir), ["design.spreadsheets"]);
+
+    ir.model.spreadsheets.push(v10_sheet());
+    dispositions.spreadsheets = ArenaDisposition::Omitted;
+    assert_eq!(dispositions.omitted(&ir), ["spreadsheets"]);
 }
 
 /// While a document holds a v10 design record, an omitted design-home arena
@@ -543,7 +562,20 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 
 #[test]
 fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
-    let loss = super::edit_dropped(EntityKind::SourceAttribute, "test:attribute#a");
+    assert!(super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps",
+        Vec::<String>::new()
+    )
+    .is_none());
+    let loss = super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps these records as stored",
+        ["test:attribute#b", "test:attribute#a", "test:attribute#b"],
+    )
+    .unwrap();
     assert_eq!(loss.code.namespace(), "export");
     assert_eq!(loss.code.local_code(), "edit.dropped");
     assert_eq!(loss.severity, Severity::Error);
@@ -551,7 +583,22 @@ fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
         loss.code.taxonomy(),
         crate::report::loss::LossTaxonomy::AttributesNotTransferred
     );
-    assert_eq!(loss.message, "test:attribute#a");
+    assert_eq!(
+        loss.message,
+        "the TEST write keeps these records as stored (2): test:attribute#a, test:attribute#b"
+    );
+}
+
+#[test]
+fn the_unwritable_and_residual_codes_are_listed_warnings() {
+    let note = super::value_unwritable("x", "cuts texts", ["b", "a", "b"]).unwrap();
+    assert_eq!(note.code.local_code(), "value.unwritable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert_eq!(note.message, "the x write cuts texts (2): a, b");
+    let note = super::record_residual_unavailable("x", "states no tokens", ["f"]).unwrap();
+    assert_eq!(note.code.local_code(), "record.residual-unavailable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(super::value_unwritable("x", "r", Vec::<String>::new()).is_none());
 }
 
 #[test]
@@ -602,7 +649,7 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 

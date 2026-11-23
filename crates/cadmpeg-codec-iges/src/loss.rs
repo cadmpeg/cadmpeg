@@ -87,6 +87,8 @@ loss_codes! {
     AttributeTableCountUnstatable => "parameter.attribute-table-count-unstatable",
     /// One Directory Entry record kept its raw cards because its typed fields were not recovered.
     DirectoryRecordQuarantined => "directory.record-quarantined",
+    /// A Compressed ASCII Data record restated an earlier Directory sequence and is not stated.
+    DirectoryRecordRepeated => "directory.record-repeated",
     /// One entity's Parameter Data kept its raw cards because its tokens were not recovered.
     ParameterDataQuarantined => "parameter.data-quarantined",
     /// Card framing came from the card census because the file's own declaration did not.
@@ -182,6 +184,7 @@ impl IgesLossCode {
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
+            | Self::DirectoryRecordRepeated
             | Self::ParameterDataQuarantined
             | Self::CardFramingRecovered
             | Self::DisplayDataNotProjected
@@ -255,6 +258,7 @@ impl IgesLossCode {
             | Self::ParameterCountOverdeclared
             | Self::AttributeTableCountUnstatable
             | Self::DirectoryRecordQuarantined
+            | Self::DirectoryRecordRepeated
             | Self::ParameterDataQuarantined
             | Self::ParameterLiteralUnusable
             | Self::CardFramingRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -335,6 +339,7 @@ mod tests {
                 "parameter.count-overdeclared",
                 "parameter.attribute-table-count-unstatable",
                 "directory.record-quarantined",
+                "directory.record-repeated",
                 "parameter.data-quarantined",
                 "card.framing-recovered",
                 "presentation.display-data-not-projected",

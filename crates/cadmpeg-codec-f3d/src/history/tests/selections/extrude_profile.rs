@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_profile_face_group_cardinality;
+use crate::history::profile_face_groups::bind_profile_face_group_cardinality;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmHistoricalCarrierBinding;
 use crate::history_records::AsmHistoricalTopology;

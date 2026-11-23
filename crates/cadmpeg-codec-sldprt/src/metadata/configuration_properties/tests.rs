@@ -251,7 +251,6 @@ fn compound_facts(
                 decoded_payload: None,
                 ps_streams: Vec::new(),
                 ps_probe_capped: false,
-                ps_auxiliary_refusal: None,
             });
     }
     let (mut rows, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());

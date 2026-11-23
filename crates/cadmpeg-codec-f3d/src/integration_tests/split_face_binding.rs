@@ -3,7 +3,7 @@
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs,
 };
-use crate::history::{bind_feature_face_selections, FeatureFaceSelectionInputs};
+use crate::history::face_selections::{bind_feature_face_selections, FeatureFaceSelectionInputs};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
@@ -106,6 +106,7 @@ fn split_face_binding_requires_target_membership_through_final_admission() {
     let feature_id = projected.features[0].id.clone();
     let prefix = crate::ids::feature_input_prefix(&feature_id, 7);
     let mut input_topologies = vec![FeatureInputTopology {
+        face_owners: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 7),
         input_of: feature_id,
         bodies: Vec::new().try_into().unwrap(),

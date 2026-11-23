@@ -28,6 +28,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
+            face_owners: Vec::new(),
             id: state_id.clone(),
             input_of: feature_id.clone(),
             bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1301,6 +1302,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
+            face_owners: Vec::new(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
@@ -1348,6 +1350,77 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         "test:model:historical-edge#missing",
         "test:model:historical-face#missing",
     )];
+    assert_eq!(state_findings(&ir), 2);
+}
+
+#[test]
+fn input_face_owners_name_their_own_state_members_once() {
+    use crate::features::evaluation::{FeatureInputTopology, HistoricalFaceOwner};
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId, HistoricalFaceId};
+
+    let feature_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
+    let face = HistoricalFaceId::mint("test:model:historical-face#1").expect("valid identity");
+    let body = HistoricalBodyId::mint("test:model:historical-body#1").expect("valid identity");
+    let other = HistoricalBodyId::mint("test:model:historical-body#2").expect("valid identity");
+    let owner = |face: &HistoricalFaceId, body: &HistoricalBodyId| HistoricalFaceOwner {
+        face: face.clone(),
+        body: body.clone(),
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .feature_input_topologies
+        .push(FeatureInputTopology {
+            face_owners: vec![owner(&face, &body)],
+            id: FeatureInputTopologyId::mint("test:model:feature-input#offset").unwrap(),
+            input_of: feature_id.clone(),
+            bodies: DistinctMembers::try_from(vec![body.clone(), other.clone()]).unwrap(),
+            faces: DistinctMembers::try_from(vec![face.clone()]).unwrap(),
+            edges: DistinctMembers::default(),
+            vertices: DistinctMembers::default(),
+            edge_geometry: Vec::new(),
+            native_ref: None,
+        });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
+                kind: "OffsetFaces".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let state_findings = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature-input#offset"))
+            .count()
+    };
+    assert_eq!(state_findings(&ir), 0);
+
+    ir.model.feature_input_topologies[0]
+        .face_owners
+        .push(owner(&face, &other));
+    assert_eq!(state_findings(&ir), 1);
+
+    let missing_body =
+        HistoricalBodyId::mint("test:model:historical-body#missing").expect("valid identity");
+    let missing_face =
+        HistoricalFaceId::mint("test:model:historical-face#missing").expect("valid identity");
+    ir.model.feature_input_topologies[0].face_owners = vec![owner(&missing_face, &missing_body)];
     assert_eq!(state_findings(&ir), 2);
 }
 

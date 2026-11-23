@@ -454,6 +454,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         &[lane],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 
@@ -694,6 +695,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         &lanes,
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 
@@ -777,6 +779,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         &lanes,
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 
@@ -890,6 +893,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             references: Vec::new(),
             producer_feature_refs: vec!["producer-native".into()],
             terminal_feature_ref: Some("producer-native".into()),
+            mark_reference: false,
         });
 
     project_configuration_supplemental_edge_selections(&mut ir, &[lane]).unwrap();
@@ -1012,6 +1016,7 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
                     references: Vec::new(),
                     producer_feature_refs: vec![terminal.into()],
                     terminal_feature_ref: Some(terminal.into()),
+                    mark_reference: false,
                 });
         }
         lanes.push(lane);
@@ -1697,6 +1702,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
                 trailing_fields: Vec::new(),
             },
         )],
+        crate::history::bind::FeatureOutputSources::default(),
     )
     .unwrap();
 
@@ -1802,7 +1808,14 @@ fn configuration_frame_alias_binds_without_body_membership() {
     );
 
     let lane = feature_input_lane("lane", Some("3"));
-    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[]).unwrap();
+    bind_configuration_topology_selections(
+        &mut ir,
+        &[],
+        &[lane],
+        &[],
+        crate::history::bind::FeatureOutputSources::default(),
+    )
+    .unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
@@ -1814,3 +1827,4 @@ fn configuration_frame_alias_binds_without_body_membership() {
 }
 
 mod holes;
+mod outputs;

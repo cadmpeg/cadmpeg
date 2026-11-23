@@ -195,7 +195,7 @@ impl SketchRoster {
             scope_stamps: take(types::RECORD_TIMESTAMPS)?,
             scope_companion: take(types::ITEM_TAIL_COMPANION)?,
             tracked: take(types::TRACKED_RESULTS)?,
-            path: take(types::PLACEMENT_PATH)?,
+            path: take(types::DIRECT_SELECTION)?,
             path_stamps: take(types::RECORD_TIMESTAMPS)?,
             path_companion: take(types::ITEM_TAIL_COMPANION)?,
             first_identity: take(types::TRACKED_IDENTITY)?,
@@ -204,7 +204,7 @@ impl SketchRoster {
             placement_companion: take(types::ITEM_TAIL_COMPANION)?,
             tracking_flag: take(types::PLACEMENT_TRACKING_FLAG)?,
             transform: take(types::PLACEMENT_TRANSFORM)?,
-            target: take(types::TRANSFORM_TARGET)?,
+            target: take(types::CARRIER_LINK)?,
             second_identity: take(types::TRACKED_IDENTITY)?,
             dimensions: Vec::new(),
             plane_scope,
@@ -320,6 +320,25 @@ pub(in crate::writer::generate::design) fn curve_identity(
         .ok_or_else(|| CodecError::NotImplemented("sketch identity overflow".into()))
 }
 
+/// The persistent identity (`pt_tag`) of point `point` of sketch `sketch`
+/// of `sketches`, which [`write`] gives after the item's origin point.
+pub(super) fn point_identity(
+    sketches: &[PlannedSketch<'_>],
+    sketch: usize,
+    point: usize,
+) -> Result<u64, CodecError> {
+    let before = sketches
+        .get(..sketch)
+        .ok_or_else(|| CodecError::malformed(format_args!("sketch item {sketch}")))?
+        .iter()
+        .map(|item| 1 + item.points.len() + item.curves.len())
+        .sum::<usize>();
+    u64::try_from(before + 1 + point)
+        .ok()
+        .and_then(|offset| FIRST_IDENTITY.checked_add(offset))
+        .ok_or_else(|| CodecError::NotImplemented("sketch identity overflow".into()))
+}
+
 /// The relation record class: only a tangency with an endpoint branch uses the
 /// tangency subclass; a tangency without one uses the shared relation class
 /// with mask `0x100` and no subclass bytes.
@@ -365,12 +384,12 @@ impl Classes {
             stamps: class(types::RECORD_TIMESTAMPS)?,
             item_companion: class(types::ITEM_TAIL_COMPANION)?,
             tracked: class(types::TRACKED_RESULTS)?,
-            path: class(types::PLACEMENT_PATH)?,
+            path: class(types::DIRECT_SELECTION)?,
             identity: class(types::TRACKED_IDENTITY)?,
             placement: class(types::SKETCH_PLACEMENT)?,
             tracking_flag: class(types::PLACEMENT_TRACKING_FLAG)?,
             transform: class(types::PLACEMENT_TRANSFORM)?,
-            target: class(types::TRANSFORM_TARGET)?,
+            target: class(types::CARRIER_LINK)?,
             root: class(types::SKETCHES_ROOT)?,
         })
     }
@@ -1166,7 +1185,7 @@ fn mask(kind: RelationKind) -> u64 {
 
 /// The row-major matrix a placement on `plane` stores; `None` for the
 /// identity of `XY`.
-fn matrix(plane: OriginPlane) -> Option<[f64; 16]> {
+pub(super) fn matrix(plane: OriginPlane) -> Option<[f64; 16]> {
     match plane {
         OriginPlane::Xy => None,
         OriginPlane::Xz => Some([

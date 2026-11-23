@@ -796,7 +796,12 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
     }
     let deviations = match tolerance {
         Tolerance::Deviations(deviations) => Some(deviations),
-        Tolerance::Fit { deviations, .. } => {
+        Tolerance::Fit {
+            fit,
+            mate,
+            deviations,
+        } => {
+            fits::check_mate_zone(id, fit, mate.as_ref(), findings);
             if quantity != Some(Quantity::LENGTH) {
                 super::error(
                     findings,
@@ -826,6 +831,8 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
         }
     }
 }
+
+mod fits;
 
 #[cfg(test)]
 mod tests;

@@ -113,19 +113,6 @@ pub struct Construction<K: ConstructionKind> {
     pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
-impl<K: ConstructionKind> Default for Construction<K> {
-    fn default() -> Self {
-        Self {
-            inputs: Vec::new(),
-            after: Vec::new(),
-            solution: None,
-            mode: None,
-            resolved: None,
-            resolved_in: BTreeMap::new(),
-        }
-    }
-}
-
 /// The wire form of [`Construction`]. Each construction nested in its
 /// inputs has passed the construction ceiling; reading admits this one
 /// level above the deepest of them.

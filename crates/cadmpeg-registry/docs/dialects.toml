@@ -1653,14 +1653,17 @@ aliases = ["par", "psm", "asm"]
 [[dialect]]
 id = "solidedge:cfb"
 title = "Solid Edge compound directory"
-discriminants = { container = "CFB", directory = "JSitesList and PSMroots" }
+discriminants = { container = "CFB", directory = "JSitesList and PSMroots with a part, sheet-metal, or assembly root class, or FamilyInfo and FOAPublishData with the family-of-assemblies root class" }
 witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
 
 [[dialect]]
+# Mandatory `unknown` row. Detection returns `Confidence::No` and a forced
+# decode or inspect returns `CodecError::WrongFormat` for every input outside
+# `solidedge:cfb`.
 id = "solidedge:unknown"
-unknown_kind = "recovered-residual"
-title = "Solid Edge compound document"
-discriminants = { container = "CFB", directory = "JSitesList and PSMroots" }
+unknown_kind = "detect-unreachable"
+title = "Input outside the Solid Edge compound identity"
+discriminants = { container = "any other input" }
 witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
 
 [format.onshape]

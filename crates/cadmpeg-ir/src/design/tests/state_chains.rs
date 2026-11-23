@@ -65,6 +65,7 @@ fn chain(depth: u64) -> Vec<Evaluation> {
 fn document(evaluations: Vec<Evaluation>) -> String {
     let mut ir = CadIr::empty();
     ir.design.evaluations = evaluations;
+    ir.finalize();
     serde_json::to_string(&ir).unwrap()
 }
 

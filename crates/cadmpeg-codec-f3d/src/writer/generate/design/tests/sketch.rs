@@ -145,7 +145,11 @@ pub(super) fn datum(name: &str, plane: PrincipalEntity) -> Feature {
         FeatureOperation::Datum(Box::new(Datum {
             element: DatumElement::Plane(Construction::<kinds::Plane> {
                 inputs: vec![picked(principal(plane))],
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             link: None,
             native_options: NativeOptions::new(),
@@ -201,6 +205,15 @@ impl Source {
         self
     }
 
+    /// Mark the entity `name` a construction entity.
+    pub(super) fn construction(&mut self, name: &str) -> &mut Self {
+        let id = entity_id(self.name, name);
+        for entity in self.entities.iter_mut().filter(|entity| entity.id == id) {
+            entity.construction = Some(true);
+        }
+        self
+    }
+
     pub(super) fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
         self.constraints.push(SketchConstraint {
             id: constraint_id(self.name, name),
@@ -232,7 +245,10 @@ impl Source {
             plane: SketchPlane::Placed(Box::new(Construction {
                 inputs: vec![self.input],
                 resolved: Some(self.frame),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             })),
             solve: SketchSolve {
                 state: None,

@@ -1,13 +1,5 @@
 # Solid Edge open items
 
-### DR-1009. Document identity and kind
-
-**Question.** Which stored field distinguishes part, sheet-metal, and assembly documents?
-
-**Known.** The root streams `PSMroots` and `JSitesList` identify the compound document family. Part and sheet-metal documents carry the same primary partition path pattern. Assembly sites carry `JAsmRefAttr` streams.
-
-**Need.** Establish a document-kind discriminator and its value domain.
-
 ### DR-1010. Active partition stream and framing
 
 **Question.** How does the document select active partition indices and apply paired delta streams?

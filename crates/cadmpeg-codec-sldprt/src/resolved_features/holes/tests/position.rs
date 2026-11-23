@@ -1662,6 +1662,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
@@ -1892,6 +1893,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
 
     enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
@@ -1938,4 +1940,42 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         unreachable!();
     };
     assert!(placements.is_none());
+}
+
+/// A hole whose position sketch takes the frame table's principal Top frame
+/// (its own lane gives none) lies at the Top mapping `(a,0,-b)` of its
+/// authored marker pair `(a,b)` (`sldprt.md` §3.3), with the Top normal as
+/// its axis: the sketch, its entities and the hole read the pair by one
+/// decision.
+#[test]
+fn table_top_position_sketch_places_the_hole_on_the_top_mapping() {
+    let (history, lanes, position) = super::table_top_position_sketch();
+    let mut features = vec![model_hole(), position];
+    let (sketches, entities) = super::project_marker_sketches(&mut features, &history, &lanes);
+    assert_eq!(sketches.len(), 1);
+
+    project_hole_position_sketches(
+        &mut features,
+        &sketches,
+        &entities,
+        std::slice::from_ref(&history),
+        &lanes,
+    )
+    .unwrap();
+
+    let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
+        features[0].evaluation.definition()
+    else {
+        panic!("expected hole");
+    };
+    let placements = placements.as_deref().expect("resolved placements");
+    let [HolePlacement::Axis { origin, axis }] = placements else {
+        panic!("one axis placement: {placements:?}");
+    };
+    assert_eq!(origin.get(), Point3::new(2.0, 0.0, -3.0));
+    assert_eq!(axis.get(), Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(
+        features[0].dependencies.as_slice(),
+        [FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar")]
+    );
 }

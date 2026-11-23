@@ -18962,7 +18962,7 @@
               "const": "other"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/NonBlankString"
             }
           },
           "additionalProperties": false,
@@ -24393,6 +24393,13 @@
           "description": "Edges present in this state.",
           "$ref": "#/$defs/DistinctMembers3"
         },
+        "face_owners": {
+          "description": "The body of this state that holds each of some of its faces, at most\none entry per face. A face with no entry has an owner this state does\nnot state.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoricalFaceOwner"
+          }
+        },
         "faces": {
           "description": "Faces present in this state.",
           "$ref": "#/$defs/DistinctMembers2"
@@ -24425,7 +24432,8 @@
         "faces",
         "edges",
         "vertices",
-        "edge_geometry"
+        "edge_geometry",
+        "face_owners"
       ]
     },
     "FeatureInputTopologyId": {
@@ -37096,6 +37104,25 @@
     "HistoricalFaceId": {
       "type": "string",
       "pattern": "^[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
+    },
+    "HistoricalFaceOwner": {
+      "description": "The body of a feature's input state that holds one face of that state.",
+      "type": "object",
+      "properties": {
+        "body": {
+          "description": "Body of the owning input state whose shells hold the face.",
+          "$ref": "#/$defs/HistoricalBodyId"
+        },
+        "face": {
+          "description": "Face of the owning input state.",
+          "$ref": "#/$defs/HistoricalFaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "face",
+        "body"
+      ]
     },
     "HistoricalVertexId": {
       "type": "string",
@@ -59433,11 +59460,12 @@
               "const": "dimension"
             },
             "modifiers": {
-              "description": "Qualifiers in source order, each once.",
+              "description": "The qualifiers, a set: each is stated once and their order carries no\nmeaning.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/DimensionModifier"
-              }
+              },
+              "uniqueItems": true
             },
             "nominal": {
               "description": "A literal nominal, or the design parameter that drives the\nannotation.",

@@ -159,6 +159,139 @@ fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
     lane
 }
 
+/// A hole position sketch whose own lane holds its point marker and no plane
+/// record, and whose object in a second lane holds a principal-plane
+/// component record naming Top (`sldprt.md` §2). The marker lane gives the
+/// sketch no frame, so its frame comes from the frame table of all lanes.
+/// Returns the native history, the two lanes and the position sketch
+/// feature.
+fn table_top_position_sketch() -> (
+    FeatureHistory,
+    Vec<FeatureInputLane>,
+    cadmpeg_ir::features::Feature,
+) {
+    let mut history = native_history();
+    history.features.push(crate::records::Feature {
+        id: "native-position-sketch".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(6),
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "Sketch".into(),
+        input_class: Some("moProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+
+    let mut record_lane = lane_with_position_reference(6);
+    let mut payload = record_lane.native_payload.to_vec();
+    payload.extend(profile_reference_plane_payload(false));
+    let position_start = payload.len();
+    let mut component = [0u8; 138];
+    component[..4].copy_from_slice(&3u32.to_le_bytes());
+    component[10..14].copy_from_slice(&2u32.to_le_bytes());
+    component[14] = 1;
+    for (index, value) in [1.0f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0]
+        .into_iter()
+        .chain([0.0, 0.0, 0.0, 1.0])
+        .enumerate()
+    {
+        let offset = 15 + index * 8;
+        component[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    component[122..126].copy_from_slice(&4u32.to_le_bytes());
+    component[126..130].fill(0xff);
+    payload.extend(component);
+    record_lane.native_payload = payload.into();
+    record_lane.names.push(FeatureInputName {
+        id: "position-name".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: cadmpeg_core::decode::u64_from_index(position_start),
+        value: "Position".into(),
+        object_id: ObjectId::from_value(6),
+    });
+
+    let mut marker_lane = lane();
+    marker_lane.id = "marker-lane".into();
+    marker_lane.native_payload = vec![0].into();
+    marker_lane.generated_surface_identities.clear();
+    let mut point = crate::records::SketchInputEntity::new(
+        "authored-point",
+        "marker-lane",
+        0,
+        0,
+        crate::records::SketchInputKind::Point,
+    );
+    point.feature_ref = Some("native-position-sketch".into());
+    point = point.with_test_identity(Some(1), None);
+    point.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.002, 0.003]);
+    marker_lane.sketch_entities.push(point);
+
+    let position = cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:id#position-sketch").expect("identity grammar"),
+        ordinal: 1,
+        name: Some("Position".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+            }),
+        ),
+        native_ref: Some("native-position-sketch".into()),
+    };
+    (history, vec![record_lane, marker_lane], position)
+}
+
+/// Runs the marker-backed sketch projection over `lanes`.
+fn project_marker_sketches(
+    features: &mut [cadmpeg_ir::features::Feature],
+    history: &FeatureHistory,
+    lanes: &[FeatureInputLane],
+) -> (Vec<cadmpeg_ir::sketches::Sketch>, Vec<SketchEntity>) {
+    use crate::resolved_features::profiles::{
+        project_marker_backed_sketches, HeldMarkerGeometry, MarkerSketchEntities, MarkerSources,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("fixture fits service policy");
+    let mut sketches = Vec::new();
+    let mut entities = Vec::new();
+    project_marker_backed_sketches(
+        &ctx,
+        features,
+        &mut sketches,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut HeldMarkerGeometry::default(),
+        },
+        MarkerSources {
+            histories: std::slice::from_ref(history),
+            lanes,
+            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+        },
+        &mut Vec::new(),
+    )
+    .expect("marker projection fits service policy");
+    (sketches, entities)
+}
+
 fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
@@ -186,6 +319,7 @@ fn profile_line(sketch: &SketchId, ordinal: usize, start: Point2, end: Point2) -
 
 mod admission;
 mod axial_profile;
+mod dependencies;
 mod feature_ranges;
 mod hole_axis;
 mod position;

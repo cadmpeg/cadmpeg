@@ -49,9 +49,8 @@ pub(super) fn project_extrude(
         .or_else(|| legacy_history_join.then_some(BooleanOp::Join))
         .unwrap_or(BooleanOp::Unresolved);
     let sole_length = || {
-        let mut values = feature.parameters.values();
-        let sole = values.next().filter(|_| values.next().is_none())?;
-        parse_positive_length_mm(sole).or_else(|| parse_positive_dimension_length_mm(sole))
+        crate::history::literals::sole_length_parameter(&feature.parameters)
+            .map(|(_, length)| length)
     };
     let legacy_length = || {
         source_depth

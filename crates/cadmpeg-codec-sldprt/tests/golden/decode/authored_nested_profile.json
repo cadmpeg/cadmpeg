@@ -601,6 +601,10 @@
           {
             "id": "sldprt:feature-input:sketch-entity#348:223",
             "kind": "point",
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 1,
             "object_index": 0,
             "offset": 223,
@@ -613,6 +617,10 @@
             "kind": {
               "relation": "distance"
             },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 2,
             "object_index": 1,
             "offset": 315,
@@ -624,6 +632,10 @@
             "id": "sldprt:feature-input:sketch-entity#348:407",
             "kind": {
               "relation": "distance"
+            },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
             },
             "local_id": 3,
             "object_index": 2,
@@ -697,7 +709,7 @@
         "sldprt_native_configuration_sha256": "fc01a955b2e9468401ab42f5d1cc661daa49d56bd0126c97872f5ac64fc5dc24",
         "sldprt_native_history_sha256": "f4e4dc5252ee82023e9cb1312a8b8f06961193ecffeee9d133b2e426d5e427bc",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "6c1084962fa40cefeb44377c4376897f996ac07a1f329f0b4627a8350d68b5d4",
+        "sldprt_native_sketch_sha256": "5fdabb64cba9ec3774a1a33d092aa8738d6d249515df06b7e3d461417eee7ae6",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -1053,7 +1065,7 @@
         }
       }
     },
-    "decode_digest": "534fe8ea834c75db386aba17007b4683a387fc6ba497eb31c41191979368013b",
+    "decode_digest": "f06e2c9213f3c16a7ba73a08030eb19314260a72efc1684352a37924ff168512",
     "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
@@ -1097,7 +1109,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBa2ciHFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAA09uZHVuZHN/I09uZmlnbSA9IlVjf2xmdWRmRWFkdXJ1Y3nVLLSsNAFD1J6gNttWpXgpqFC7UIiXElausLXLgoZOGySBttUaK0KeiuC3UhouBG6rcIBcFf6Af4Bf0CxzszSdvYYotnkszhnHvPDZkwpiCG8lnmsuh6hydu/sJhJEVJOiq6TlsZJ2WnlJNCpMq+2YiNczjwkEMBJoQW28UlyrRWcYBr8kqoIE9VJoLYjOvRtV8se6JD3SfPR5oROCGdnm81gRRRBd3gmurzRpWa/OZGVW1xxhagMR9AtS7LI9QoI7kS+Z3cTKEnmvXO2V3ZyiDZSPfLVv+dPdo3W/t3drxvNm/J2PRInDonXqXk6EX3quLp5XPHyxWAaXvvMGsfZy3LNKysaRqGgTX6OUJIYkCkmuG9CxMYk+Tj/eW55vpqgu5855BJIXHMi4Yp2nnZAnRYxJbkW02RwGWd7HViy4GsC3me7DViK1KOy7Zfs4MzuCV/uY+/8qc/LYa1sRnUCc8KeVshbz3kbXd4c9gc6MPPYavXOfSo2/7r3FqIMhquPCxiCMP0A4qVfk7L9zu4efoyHjekqkBVFO0uKOJLu/dZjJGhxT9Jug2ZM4y2yOtpYGh3NiYYHfXw7AOU1vflDaCIfPIHWtnIhxQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+WtnIhxQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RtFK34oAAAUAAYACAAgAAAAQuR5XBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmRSt+KAAAFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAAAAAAAAQAAAAAAUAEAADT25kdW5kc38jT25maWdtID0iVWN/bGZ1ZGZFYWR1cnVjdFK34oAAAUAAYACABCAAAAKIc340kAAABEAAAAEQAAAAAAAAABAAAAAABVAwAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAADNAwAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAQABAAXAQAAlQQAAAAA",
+          "data": "AQAAAAAAAARmWn5WFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBmWn5WFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAA09uZHVuZHN/I09uZmlnbSA9IlVjf2xmdWRmRWFkdXJ1Y3nVLLSsNAFD1J6gNttWpXgpqFC7UIiXElausLXLgoZOGySBttUaK0KeiuC3UhouBG6rcIBcFf6Af4Bf0CxzszSdvYYotnkszhnHvPDZkwpiCG8lnmsuh6hydu/sJhJEVJOiq6TlsZJ2WnlJNCpMq+2YiNczjwkEMBJoQW28UlyrRWcYBr8kqoIE9VJoLYjOvRtV8se6JD3SfPR5oROCGdnm81gRRRBd3gmurzRpWa/OZGVW1xxhagMR9AtS7LI9QoI7kS+Z3cTKEnmvXO2V3ZyiDZSPfLVv+dPdo3W/t3drxvNm/J2PRInDonXqXk6EX3quLp5XPHyxWAaXvvMGsfZy3LNKysaRqGgTX6OUJIYkCkmuG9CxMYk+Tj/eW55vpqgu5855BJIXHMi4Yp2nnZAnRYxJbkW02RwGWd7HViy4GsC3me7DViK1KOy7Zfs4MzuCV/uY+/8qc/LYa1sRnUCc8KeVshbz3kbXd4c9gc6MPPYavXOfSo2/7r3FqIMhquPCxiCMP0A4qVfk7L9zu4efoyHjekqkBVFO0uKOJLu/dZjJGhxT9Jug2ZM4y2yOtpYGh3NiYYHfXw7AOU1vflDaCIfPIHZlp+VhQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+Zlp+VhQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RuT/61HAAAUAAYACAAgAAAAQuR5XBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmk/+tRwAAFAAGAAgARQAAAPjXwwLFAQAAEgUAACIAAAAAAAAAAQAAAAAAUAEAADT25kdW5kc38jT25maWdtID0iVWN/bGZ1ZGZFYWR1cnVjeT/61HAAAUAAYACABCAAAAKIc340kAAABEAAAAEQAAAAAAAAABAAAAAABVAwAANPbmR1bmRzfytFaXd/YnRjeT/61HAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAADNAwAANPbmR1bmRzfyZFYWR1cnVjcsNQcxAAAAAAQABAAXAQAAlQQAAAAA",
           "kind": "inline"
         },
         "offset": 0,

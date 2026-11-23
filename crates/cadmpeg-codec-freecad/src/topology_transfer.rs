@@ -146,6 +146,7 @@ pub(crate) fn transfer(
                 continue;
             }
         };
+        let starts = RepeatableStarts::of(ir);
         builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
             builder.append_body(ctx, ir, root)?;
@@ -153,6 +154,7 @@ pub(crate) fn transfer(
         builder.emit_unowned_triangulations(ir)?;
         occurrences.extend(builder.occurrences);
         losses.extend(builder.losses);
+        starts.keep_first(ir, payload, losses);
     }
     close_radial_rings(&mut ir.geometry.coedges);
     let referenced_pcurves = referenced_pcurve_ids(&ir.geometry.coedges);
@@ -160,6 +162,106 @@ pub(crate) fn transfer(
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
+}
+
+/// The lengths of the topology arenas whose ids a repeated shape listing can
+/// restate, before one payload is transferred.
+struct RepeatableStarts {
+    regions: usize,
+    shells: usize,
+    faces: usize,
+    loops: usize,
+    coedges: usize,
+}
+
+impl RepeatableStarts {
+    fn of(ir: &CadIr) -> Self {
+        Self {
+            regions: ir.geometry.regions.len(),
+            shells: ir.geometry.shells.len(),
+            faces: ir.geometry.faces.len(),
+            loops: ir.geometry.loops.len(),
+            coedges: ir.geometry.coedges.len(),
+        }
+    }
+
+    /// A compound or a shell that lists one shape twice at one location
+    /// restates the ids of that shape's records, since an id is its shape and
+    /// location (`freecad_fcstd.md` §7). The first record of each id the
+    /// payload added stands; each later one is read and not stated, and is
+    /// charged (CADIR §2.2).
+    fn keep_first(&self, ir: &mut CadIr, payload: &ShapePayloadRecord, losses: &mut Vec<LossNote>) {
+        let geometry = &mut ir.geometry;
+        keep_first_from(
+            &mut geometry.regions,
+            self.regions,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.shells,
+            self.shells,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.faces,
+            self.faces,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.loops,
+            self.loops,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.coedges,
+            self.coedges,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+    }
+}
+
+fn keep_first_from<T: PartialEq>(
+    arena: &mut Vec<T>,
+    start: usize,
+    id: impl Fn(&T) -> &str,
+    payload: &ShapePayloadRecord,
+    losses: &mut Vec<LossNote>,
+) {
+    let mut stated = HashMap::new();
+    let mut repeated = Vec::new();
+    let mut kept = Vec::with_capacity(arena.len());
+    for (index, record) in arena.drain(..).enumerate() {
+        if index >= start {
+            match stated.get(id(&record)) {
+                Some(&first) if kept[first] == record => {
+                    repeated.push(id(&record).to_owned());
+                    continue;
+                }
+                Some(_) => {}
+                None => {
+                    stated.insert(id(&record).to_owned(), kept.len());
+                }
+            }
+        }
+        kept.push(record);
+    }
+    *arena = kept;
+    for id in repeated {
+        losses.push(FreecadLossCode::TopologyRecordRepeated.note(format!(
+            "shape payload {} lists one shape twice at one location: {id} is stated once and its later copy is not stated",
+            payload.id,
+        )));
+    }
 }
 
 fn referenced_pcurve_ids(coedges: &[Coedge]) -> HashSet<&PcurveId> {
@@ -309,6 +411,7 @@ struct Builder<'a, 'c, 'r, 'p> {
     body_scope: Located,
     locations: Locations,
     root_discriminator: Option<usize>,
+    face_uses: HashMap<String, Vec<(ShellId, bool)>>,
     current_body: Option<BodyId>,
     source_object: cadmpeg_core::text::NonBlankString,
     source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
@@ -340,6 +443,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             emitted_triangulations: HashSet::new(),
             body_scope: Located::identity(),
             root_discriminator: None,
+            face_uses: HashMap::new(),
             current_body: None,
             source_object,
             source_indices,
@@ -939,7 +1043,8 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             return Ok(None);
         };
         let surface_transform = self.compose(face_transform, self.location(location)?)?;
-        let face_key = self.topology_label(face_use.shape, face_transform)?;
+        let occurrence_key = self.topology_label(face_use.shape, face_transform)?;
+        let (face_key, first_use) = self.face_use_key(&occurrence_key, shell, face_reversed);
         let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
             .map_err(CodecError::malformed)?;
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
@@ -982,7 +1087,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
-            let key = format!("triangulation:{index}@{face_key}");
+            let key = format!("triangulation:{index}@{occurrence_key}");
             let id = SurfaceId::mint(crate::native::model_id("surface", &self.payload.id, &key))
                 .map_err(CodecError::malformed)?;
             let new_surface = !self.emitted_surfaces.contains(&id);
@@ -1166,12 +1271,14 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 ),
                 native_ref: None,
             });
-            self.bind_topology(
-                TextShapeKind::Wire,
-                wire_use.shape,
-                wire_transform,
-                loop_id.as_str(),
-            )?;
+            if first_use {
+                self.bind_topology(
+                    TextShapeKind::Wire,
+                    wire_use.shape,
+                    wire_transform,
+                    loop_id.as_str(),
+                )?;
+            }
             loops.push(loop_id);
         }
         ir.geometry.faces.push(Face {
@@ -1185,13 +1292,45 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             tolerance: PositiveReal::from_finite(tolerance),
             native_ref: None,
         });
-        self.bind_topology(
-            TextShapeKind::Face,
-            face_use.shape,
-            face_transform,
-            face_id.as_str(),
-        )?;
+        if first_use {
+            self.bind_topology(
+                TextShapeKind::Face,
+                face_use.shape,
+                face_transform,
+                face_id.as_str(),
+            )?;
+        }
         Ok(Some(face_id))
+    }
+
+    /// The key of a face listed at `occurrence` under `shell` with sense
+    /// `reversed`, and whether it is the occurrence's first use. A face shape
+    /// listed again at one location identity under another shell, or with
+    /// the other sense, is another face, as the two sides of a face that two
+    /// solids share: its key appends `~use<n>`, `n` numbering the distinct
+    /// uses in listing order from 2. A listing that repeats an earlier use
+    /// restates that use's face. Only the first use binds the element name.
+    fn face_use_key(
+        &mut self,
+        occurrence: &str,
+        shell: &ShellId,
+        reversed: bool,
+    ) -> (String, bool) {
+        let uses = self.face_uses.entry(occurrence.to_owned()).or_default();
+        let position = match uses
+            .iter()
+            .position(|(used, sense)| used == shell && *sense == reversed)
+        {
+            Some(position) => position,
+            None => {
+                uses.push((shell.clone(), reversed));
+                uses.len() - 1
+            }
+        };
+        match position {
+            0 => (occurrence.to_owned(), true),
+            position => (format!("{occurrence}~use{}", position + 1), false),
+        }
     }
 
     fn ensure_edge(

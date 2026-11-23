@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::feature_outputs::{base_feature, scope_between, state};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPoint,
     AsmHistoricalRelation, AsmHistoricalTopology,
@@ -242,7 +242,7 @@ fn spline_side_edge_extends_the_body_box_beyond_its_vertices() {
     use cadmpeg_ir::math::Point3;
     for cached in [false, true] {
         let topology = spline_pillow(cached);
-        let index = crate::history::HistoricalBodyIndex::new(&topology);
+        let index = crate::history::historical_index::HistoricalBodyIndex::new(&topology);
         let evidence = index.body_bounds(100, &[1000, 1001, 1002]);
         let bounds = evidence.bounds.unwrap();
         assert!(evidence.missing_evidence.is_empty());

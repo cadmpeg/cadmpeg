@@ -580,6 +580,87 @@ pub(super) fn record_header_class_tag(
     crate::design::decode::text::class_tag_from_view(class_tag).ok()
 }
 
+#[derive(Clone)]
+struct CachedDesignPrimaryFrame {
+    entity_id: u64,
+    class_tag: crate::records::references::DesignClassTag,
+    start: usize,
+    member_end: usize,
+    end: usize,
+    type_ordinal: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PrimaryFrameCacheKey {
+    bytes_len: usize,
+    records_len: usize,
+    types_len: usize,
+    secondary_len: usize,
+    fingerprint: [u64; 2],
+}
+
+#[inline]
+fn mix64(h: u64, v: u64) -> u64 {
+    // wrapping-exception: 64-bit multiplicative cache-key mixing operates modulo 2^64
+    (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95)
+}
+
+fn mix_bytes_128(mut lo: u64, mut hi: u64, slice: &[u8]) -> [u64; 2] {
+    let mut chunks = slice.chunks_exact(16);
+    for chunk in &mut chunks {
+        let a = View::u64_le_at(chunk, 0).unwrap_or(0);
+        let b = View::u64_le_at(chunk, 8).unwrap_or(0);
+        lo = mix64(lo, a);
+        hi = mix64(hi, b);
+    }
+    let rem = chunks.remainder();
+    if !rem.is_empty() {
+        let mut tail = [0_u8; 16];
+        tail[..rem.len()].copy_from_slice(rem);
+        let a = View::u64_le_at(&tail, 0).unwrap_or(0);
+        let b = View::u64_le_at(&tail, 8).unwrap_or(0);
+        lo = mix64(lo, a);
+        hi = mix64(hi, b);
+    }
+    [mix64(lo, hi), mix64(hi, lo)]
+}
+
+fn primary_frame_cache_key(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> PrimaryFrameCacheKey {
+    use cadmpeg_core::decode::u64_from_index;
+
+    let [mut lo, mut hi] = mix_bytes_128(
+        mix64(0x9e37_79b9_7f4a_7c15, u64_from_index(bytes.len())),
+        mix64(0xc2b2_ae3d_27d4_eb4f, u64_from_index(meta.records.len())),
+        bytes,
+    );
+    for rec in &meta.records {
+        lo = mix64(lo, rec.entity_id);
+        hi = mix64(hi, rec.bulk_offset);
+    }
+    for rec in &meta.secondary_records {
+        lo = mix64(lo, rec.entity_id);
+        hi = mix64(hi, rec.bulk_offset);
+    }
+    for ty in &meta.types {
+        [lo, hi] = mix_bytes_128(lo, hi, ty.type_guid.as_str().as_bytes());
+        lo = mix64(lo, u64_from_index(ty.entities.len()));
+        for &entity_id in ty.entities.values() {
+            lo = mix64(lo, entity_id);
+            hi = mix64(hi, entity_id.rotate_left(17));
+        }
+    }
+    PrimaryFrameCacheKey {
+        bytes_len: bytes.len(),
+        records_len: meta.records.len(),
+        types_len: meta.types.len(),
+        secondary_len: meta.secondary_records.len(),
+        fingerprint: [lo, hi],
+    }
+}
+
 /// Resolve every live sibling record from the primary index. The primary
 /// header must repeat the indexed entity ID and select a type-table row that
 /// registers that entity. A secondary entry supplies the exact end of the
@@ -590,14 +671,70 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    collect_design_primary_frames(bytes, meta, |_, _, _| {})
+    use std::cell::RefCell;
+
+    thread_local! {
+        static CACHE: RefCell<Vec<(PrimaryFrameCacheKey, Vec<CachedDesignPrimaryFrame>)>> =
+            const { RefCell::new(Vec::new()) };
+    }
+
+    let key = primary_frame_cache_key(bytes, meta);
+    if let Some(frames) = CACHE.with(|cache| {
+        let cache = cache.borrow();
+        cache
+            .iter()
+            .find(|(k, _)| *k == key)
+            .and_then(|(_, cached)| {
+                cached
+                    .iter()
+                    .map(|entry| {
+                        Some(DesignPrimaryFrame {
+                            entity_id: entry.entity_id,
+                            class_tag: entry.class_tag.clone(),
+                            start: entry.start,
+                            member_end: entry.member_end,
+                            end: entry.end,
+                            design_type: meta.types.get(entry.type_ordinal)?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+    }) {
+        return Ok(frames);
+    }
+
+    let (frames, cached) =
+        collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())?;
+    if cached.len() <= 16_384 {
+        CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if cache.len() >= 4 {
+                cache.remove(0);
+            }
+            cache.push((key, cached));
+        });
+    }
+    Ok(frames)
 }
 
+/// Resolve the frames as `design_primary_frames` does and charge one loss for
+/// each frame whose header is unread. A caller that discards `losses` leaves
+/// the charge to the prerequisite pass, which reports each frame once.
 fn collect_design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
-    mut failed: impl FnMut(u64, usize, CodecError),
+    stream: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    collect_design_primary_frames_with_cache(bytes, meta, stream, losses).map(|(frames, _)| frames)
+}
+
+fn collect_design_primary_frames_with_cache<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    stream: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<CachedDesignPrimaryFrame>), CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
     for (ordinal, design_type) in meta.types.iter().enumerate() {
@@ -605,73 +742,97 @@ fn collect_design_primary_frames<'a>(
             registered_entities.insert((ordinal, entity_id));
         }
     }
-    let mut frames = Vec::new();
+    let mut cached = Vec::with_capacity(indexed.len());
+    let mut frames = Vec::with_capacity(indexed.len());
     for frame in indexed {
-        let entity_id = frame.entity_id;
-        let result = (|| {
-            use crate::layout::indexed_design_record_header as header;
-            if frame
-                .start
-                .checked_add(header::LEN)
-                .is_none_or(|end| end > frame.member_end)
-                || (frame.member_end < frame.end
-                    && frame
-                        .member_end
-                        .checked_add(header::LEN)
-                        .is_none_or(|end| end > frame.end))
-            {
-                return Err(CodecError::malformed(
-                    "F3D indexed header exceeds its registered member extent",
-                ));
-            }
-            let Some(class_tag) =
-                record_header_class_tag(bytes, frame.start, frame.member_end, entity_id)
-            else {
-                return Err(CodecError::Malformed(
-                    "F3D primary record index points to an invalid record header".into(),
-                ));
-            };
-            let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
-                return Err(CodecError::Malformed(
-                    "F3D primary record class tag is outside its type table".into(),
-                ));
-            };
-            if !registered_entities.contains(&(type_ordinal, entity_id)) {
-                return Err(CodecError::Malformed(
-                    "F3D primary record type does not register its indexed entity ID".into(),
-                ));
-            }
-            if frame.member_end < frame.end {
-                let Some(nested_class_tag) =
-                    record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
-                else {
-                    return Err(CodecError::Malformed(
-                        "F3D secondary record index points to an invalid nested header".into(),
-                    ));
-                };
-                if dynamic_type(meta, &nested_class_tag).is_none() {
-                    return Err(CodecError::Malformed(
-                        "F3D secondary record header is incompatible with its primary record"
-                            .into(),
-                    ));
-                }
-            }
-            Ok(DesignPrimaryFrame {
-                entity_id,
-                class_tag,
-                start: frame.start,
-                member_end: frame.member_end,
-                end: frame.end,
-                design_type,
-            })
-        })();
-        match result {
-            Ok(frame) => frames.push(frame),
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => failed(entity_id, frame.start, error),
+        if let Some((type_ordinal, primary_frame)) = super::record::recover(
+            design_primary_frame(bytes, meta, &registered_entities, &frame),
+            losses,
+            crate::loss::F3dLossCode::PrimaryRecordUndecoded,
+            format_args!(
+                "Design primary record {} at byte {} in {stream}",
+                frame.entity_id, frame.start
+            ),
+        )? {
+            cached.push(CachedDesignPrimaryFrame {
+                entity_id: primary_frame.entity_id,
+                class_tag: primary_frame.class_tag.clone(),
+                start: primary_frame.start,
+                member_end: primary_frame.member_end,
+                end: primary_frame.end,
+                type_ordinal,
+            });
+            frames.push(primary_frame);
         }
     }
-    Ok(frames)
+    Ok((frames, cached))
+}
+
+/// The frame of one indexed primary record, or the reason its header is
+/// unread.
+fn design_primary_frame<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    registered_entities: &HashSet<(usize, u64)>,
+    frame: &crate::metastream::PrimaryRecordFrame,
+) -> Result<(usize, DesignPrimaryFrame<'a>), CodecError> {
+    use crate::layout::indexed_design_record_header as header;
+    let entity_id = frame.entity_id;
+    if frame
+        .start
+        .checked_add(header::LEN)
+        .is_none_or(|end| end > frame.member_end)
+        || (frame.member_end < frame.end
+            && frame
+                .member_end
+                .checked_add(header::LEN)
+                .is_none_or(|end| end > frame.end))
+    {
+        return Err(CodecError::malformed(
+            "F3D indexed header exceeds its registered member extent",
+        ));
+    }
+    let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.member_end, entity_id)
+    else {
+        return Err(CodecError::Malformed(
+            "F3D primary record index points to an invalid record header".into(),
+        ));
+    };
+    let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
+        return Err(CodecError::Malformed(
+            "F3D primary record class tag is outside its type table".into(),
+        ));
+    };
+    if !registered_entities.contains(&(type_ordinal, entity_id)) {
+        return Err(CodecError::Malformed(
+            "F3D primary record type does not register its indexed entity ID".into(),
+        ));
+    }
+    if frame.member_end < frame.end {
+        let Some(nested_class_tag) =
+            record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
+        else {
+            return Err(CodecError::Malformed(
+                "F3D secondary record index points to an invalid nested header".into(),
+            ));
+        };
+        if dynamic_type(meta, &nested_class_tag).is_none() {
+            return Err(CodecError::Malformed(
+                "F3D secondary record header is incompatible with its primary record".into(),
+            ));
+        }
+    }
+    Ok((
+        type_ordinal,
+        DesignPrimaryFrame {
+            entity_id,
+            class_tag,
+            start: frame.start,
+            member_end: frame.member_end,
+            end: frame.end,
+            design_type,
+        },
+    ))
 }
 
 pub(crate) fn decode_primary_frame_losses(
@@ -687,14 +848,11 @@ pub(crate) fn decode_primary_frame_losses(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let result = collect_design_primary_frames(bytes, &meta, |entity, offset, error| {
-            losses.push(crate::loss::F3dLossCode::PrimaryRecordUndecoded.note(format!(
-                "Design primary record {entity} at byte {offset} in {} remains in the source archive because its header decoding failed: {error}", entry.name,
-            )));
-        });
         // Keep structural index errors with the reader that needs this stream.
-        if let Err(error @ CodecError::ResourceLimit(_)) = result {
-            return Err(error);
+        if let Err(error) = collect_design_primary_frames(bytes, &meta, &entry.name, &mut losses) {
+            if super::record::is_fatal(&error) {
+                return Err(error);
+            }
         }
     }
     Ok(losses)
@@ -1039,7 +1197,7 @@ pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> boo
     observed.next().is_none()
 }
 
-fn local_reference(
+pub(crate) fn local_reference(
     reference: &Reference<&str, crate::bytes::utf16::Utf16View<'_>>,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<u64> {
@@ -1056,7 +1214,7 @@ fn local_reference(
     Some(target)
 }
 
-fn parse_feature_timeline_record(
+pub(crate) fn parse_feature_timeline_record(
     bytes: &[u8],
     stream: &str,
     frame: std::ops::Range<usize>,
@@ -1168,6 +1326,92 @@ fn parse_feature_timeline_record(
     .map(|timeline| (timeline, interior_null))
 }
 
+/// One timeline stream and the type table that registers its records.
+struct TimelineStream<'a> {
+    meta: &'a crate::metastream::MetaStream,
+    name: &'a str,
+    bytes: &'a [u8],
+    type_guids_by_entity: &'a HashMap<u64, Vec<&'a str>>,
+}
+
+impl TimelineStream<'_> {
+    /// The timeline record of `entity_id`, with whether it holds an interior
+    /// null slot.
+    fn timeline(
+        &self,
+        type_ordinal: usize,
+        design_type: &crate::records::entity_header::SegmentTypeData,
+        entity_id: u64,
+        source_ordinal: u32,
+    ) -> Result<(DesignFeatureTimeline, bool), CodecError> {
+        if !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version) {
+            return Err(CodecError::NotImplemented(
+                "unsupported Design feature-timeline record version".into(),
+            ));
+        }
+        if !is_supported_feature_timeline_type(design_type) {
+            return Err(CodecError::malformed(
+                "Design feature-timeline type has incompatible registration metadata",
+            ));
+        }
+        let expected_class_tag = u32::try_from(type_ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(256))
+            .filter(|class_tag| *class_tag <= 999)
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "Design feature-timeline class tag is not three digits".into(),
+                )
+            })?
+            .to_string();
+        let mut matches = self
+            .meta
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.entity_id == entity_id);
+        let Some((record_ordinal, record)) = matches.next() else {
+            return Err(CodecError::Malformed(
+                "Design feature timeline has no unique primary record-index entry".into(),
+            ));
+        };
+        if matches.next().is_some() {
+            return Err(CodecError::Malformed(
+                "Design feature timeline has no unique primary record-index entry".into(),
+            ));
+        }
+        let start = usize::try_from(record.bulk_offset).map_err(|_| {
+            CodecError::Malformed("Design feature-timeline offset exceeds usize".into())
+        })?;
+        let end = self.meta.records.get(record_ordinal + 1).map_or_else(
+            || Ok(self.bytes.len()),
+            |next| {
+                usize::try_from(next.bulk_offset).map_err(|_| {
+                    CodecError::Malformed("Design feature-timeline end exceeds usize".into())
+                })
+            },
+        )?;
+        if start >= end || end > self.bytes.len() {
+            return Err(CodecError::Malformed(
+                "Design feature-timeline record extent is outside its BulkStream".into(),
+            ));
+        }
+        parse_feature_timeline_record(
+            self.bytes,
+            self.name,
+            start..end,
+            (&expected_class_tag, entity_id),
+            source_ordinal,
+            self.type_guids_by_entity,
+        )
+        .ok_or_else(|| {
+            CodecError::Malformed(
+                "Design feature-timeline record does not match its exact frame".into(),
+            )
+        })
+    }
+}
+
 /// Decode the exact counted scope list that carries authored feature order.
 pub(crate) fn decode_feature_timelines(
     scan: &ContainerScan,
@@ -1216,6 +1460,12 @@ pub(crate) fn decode_feature_timelines(
                     .push(design_type.type_guid.as_str());
             }
         }
+        let stream = TimelineStream {
+            meta: &meta,
+            name: bulk_name,
+            bytes,
+            type_guids_by_entity: &type_guids_by_entity,
+        };
         let mut source_ordinal = 0_u32;
         for (type_ordinal, design_type) in meta
             .types
@@ -1228,79 +1478,8 @@ pub(crate) fn decode_feature_timelines(
                 source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
                     CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())
                 })?;
-                let result = (|| {
-                    if !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version) {
-                        return Err(CodecError::NotImplemented(
-                            "unsupported Design feature-timeline record version".into(),
-                        ));
-                    }
-                    if !is_supported_feature_timeline_type(design_type) {
-                        return Err(CodecError::malformed(
-                            "Design feature-timeline type has incompatible registration metadata",
-                        ));
-                    }
-                    let expected_class_tag = u32::try_from(type_ordinal)
-                        .ok()
-                        .and_then(|ordinal| ordinal.checked_add(256))
-                        .filter(|class_tag| *class_tag <= 999)
-                        .ok_or_else(|| {
-                            CodecError::Malformed(
-                                "Design feature-timeline class tag is not three digits".into(),
-                            )
-                        })?
-                        .to_string();
-                    let mut matches = meta
-                        .records
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, record)| record.entity_id == *entity_id);
-                    let Some((record_ordinal, record)) = matches.next() else {
-                        return Err(CodecError::Malformed(
-                            "Design feature timeline has no unique primary record-index entry"
-                                .into(),
-                        ));
-                    };
-                    if matches.next().is_some() {
-                        return Err(CodecError::Malformed(
-                            "Design feature timeline has no unique primary record-index entry"
-                                .into(),
-                        ));
-                    }
-                    let start = usize::try_from(record.bulk_offset).map_err(|_| {
-                        CodecError::Malformed("Design feature-timeline offset exceeds usize".into())
-                    })?;
-                    let end = meta.records.get(record_ordinal + 1).map_or_else(
-                        || Ok(bytes.len()),
-                        |next| {
-                            usize::try_from(next.bulk_offset).map_err(|_| {
-                                CodecError::Malformed(
-                                    "Design feature-timeline end exceeds usize".into(),
-                                )
-                            })
-                        },
-                    )?;
-                    if start >= end || end > bytes.len() {
-                        return Err(CodecError::Malformed(
-                            "Design feature-timeline record extent is outside its BulkStream"
-                                .into(),
-                        ));
-                    }
-                    parse_feature_timeline_record(
-                        bytes,
-                        bulk_name,
-                        start..end,
-                        (&expected_class_tag, *entity_id),
-                        entity_source_ordinal,
-                        &type_guids_by_entity,
-                    )
-                    .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "Design feature-timeline record does not match its exact frame".into(),
-                        )
-                    })
-                })();
                 let Some((timeline, interior_null)) = super::record::recover(
-                    result,
+                    stream.timeline(type_ordinal, design_type, *entity_id, entity_source_ordinal),
                     &mut pending_losses,
                     crate::loss::F3dLossCode::FeatureTimelineUndecoded,
                     format_args!("Feature timeline record {entity_id} in {bulk_name}"),

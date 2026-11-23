@@ -175,7 +175,7 @@ impl<'a> FaceInputs<'a> {
                     let source = topology
                         .native_ref
                         .as_deref()
-                        .and_then(super::historical_brep_source);
+                        .and_then(super::face_resolution::historical_brep_source);
                     let state = topology
                         .id
                         .as_str()
@@ -190,12 +190,14 @@ impl<'a> FaceInputs<'a> {
                     for face in faces.iter() {
                         if !face.as_str().starts_with("f3d:brep:entity#")
                             && !source.is_some_and(|source| {
-                                super::active_brep_face_matches_source(face, source)
+                                super::face_resolution::active_brep_face_matches_source(
+                                    face, source,
+                                )
                             })
                         {
                             return None;
                         }
-                        let slot = super::stable_ref(face.as_str())?;
+                        let slot = super::body_closures::stable_ref(face.as_str())?;
                         let id = crate::ids::history_input_face_id(&prefix, slot);
                         if !members.contains(&id) {
                             return None;

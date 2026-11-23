@@ -254,6 +254,31 @@ fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
         .procedural_surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface_extrusion#7"));
+    let rows = result
+        .ir()
+        .native
+        .namespace("creo")
+        .and_then(|namespace| namespace.arenas().get("surface_rows"))
+        .expect("surface rows");
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.id() == "creo:visibgeom:surface_row#7")
+            .count(),
+        1,
+        "the first row of a repeated surface id is stated once"
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == crate::loss::CreoLossCode::SurfaceRowRepeated.kind()
+                    && loss.message.contains("creo:visibgeom:surface_row#7")
+            )
+            .count(),
+        1
+    );
 }
 
 #[test]

@@ -386,6 +386,10 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
             plane_datum(construction(Vec::new())),
             "no input, no step, and no resolved value",
         ),
+        (
+            plane_datum(construction(vec![json!({})])),
+            "an input with neither a reference nor a value",
+        ),
     ] {
         let mut features = planes();
         features[1] = feature("b", operation);

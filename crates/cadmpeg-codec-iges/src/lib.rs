@@ -40,7 +40,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
@@ -195,8 +195,13 @@ impl CodecBackend for IgesCodec {
                 reader::decode(root.window(), root.window(), representation, ctx)
             }
             representation::Representation::CompressedAscii => {
-                let normalized = compressed::normalize(root.window())?;
-                reader::decode(&normalized, root.window(), representation, ctx)
+                let (normalized, repeated) = compressed::expand(root.window())?;
+                let mut decoded = reader::decode(&normalized, root.window(), representation, ctx)?;
+                decoded
+                    .body
+                    .losses
+                    .extend(repeated.iter().map(compressed::RepeatedDataRecord::loss));
+                Ok(decoded)
             }
             representation::Representation::Binary => {
                 let normalized = binary::normalize(root.window())?;
@@ -210,7 +215,7 @@ impl EncoderBackend for IgesCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Writes B-rep and product data only; design arenas are refused, not
     /// read.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
+    const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 

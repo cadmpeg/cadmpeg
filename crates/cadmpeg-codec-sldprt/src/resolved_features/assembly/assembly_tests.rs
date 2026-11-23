@@ -47,6 +47,7 @@ fn parameter(class: &str, value_at: usize) -> ParameterRecord {
         value: 0.0,
         at: 0,
         value_at,
+        object_id: None,
     }
 }
 
@@ -101,7 +102,7 @@ fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNot
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut losses = Vec::new();
-    let (lanes, _, _) =
+    let (lanes, _, _, _, _) =
         super::lanes(&ctx, &scan, &mut annotations, &mut losses).expect("lane assembly succeeds");
     (lanes, losses)
 }
@@ -115,15 +116,17 @@ fn a_reconciled_archive_walk_types_the_lane_scalar() {
         lanes[0].scalars[0].archive_class,
         Some(ArchiveParameterClass::Length)
     );
+    assert_eq!(lanes[0].scalars[0].archive_object_id, Some(1));
     assert_eq!(losses.len(), 0);
 }
 
 #[test]
-fn a_stopped_archive_walk_charges_a_loss_and_types_no_scalar() {
+fn a_stopped_archive_walk_charges_a_loss_and_keeps_the_identifiers_it_read() {
     let (lanes, losses) = lanes_of(&sldprt_with_stopped_archive_walk());
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].scalars.len(), 1);
     assert_eq!(lanes[0].scalars[0].archive_class, None);
+    assert_eq!(lanes[0].scalars[0].archive_object_id, Some(1));
     assert!(losses
         .iter()
         .any(|note| note.code == SldprtLossCode::FeatureInputArchiveWalkStopped.kind()));

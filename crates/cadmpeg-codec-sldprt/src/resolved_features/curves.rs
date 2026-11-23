@@ -32,8 +32,11 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
+const EPS_CURVES_STORED_OFFSET_PLANE_NORMAL: f64 = 1.0e-8;
+const EPS_CURVES_STORED_OFFSET_PLANE_U_AXIS: f64 = 1.0e-9;
 
-pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str =
+    crate::records::REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY;
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 
 #[derive(Clone, Copy, Debug)]
@@ -58,15 +61,20 @@ pub(crate) struct SketchPlaneFrame {
     pub(super) normal: Vector3,
     pub(super) u_axis: Vector3,
     pub(super) u_axis_source: SketchPlaneUAxisSource,
+    /// The principal plane whose frame this is, when the frame comes from a
+    /// principal-plane feature rather than from a stored or derived frame.
+    pub(super) principal: Option<cadmpeg_ir::features::PrincipalPlane>,
 }
 
 impl SketchPlaneFrame {
-    fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
+    pub(super) fn principal(plane: cadmpeg_ir::features::PrincipalPlane) -> Self {
+        let (origin, normal, u_axis) = principal_sketch_frame(plane);
         Self {
             origin,
             normal,
             u_axis,
             u_axis_source: SketchPlaneUAxisSource::Native,
+            principal: Some(plane),
         }
     }
 
@@ -79,6 +87,7 @@ impl SketchPlaneFrame {
             normal,
             u_axis,
             u_axis_source,
+            principal: None,
         }
     }
 
@@ -1278,6 +1287,35 @@ fn features_by_native_ref(
     by_native
 }
 
+/// The `UAxis` an offset reference plane stores with its own frame
+/// (`sldprt.md` §2, offset reference planes). The decoder takes it only when
+/// the stored `Normal` points the way of the normal the plane inherits and the
+/// axis lies in that plane, so that the derived frame stays admissible.
+fn stored_offset_plane_u_axis(
+    feature: &cadmpeg_ir::features::Feature,
+    inherited_normal: Vector3,
+) -> Option<Vector3> {
+    let stored = |key: &str| {
+        feature
+            .source_properties
+            .get(key)
+            .and_then(|value| crate::history::literals::parse_vector3(value))
+    };
+    let (normal, u_axis) = (stored("Normal")?, stored("UAxis")?);
+    let lengths = [inherited_normal.norm(), normal.norm(), u_axis.norm()];
+    if !lengths
+        .iter()
+        .all(|length| length.is_finite() && *length > f64::EPSILON)
+    {
+        return None;
+    }
+    let codirectional = inherited_normal.dot(normal)
+        >= (1.0 - EPS_CURVES_STORED_OFFSET_PLANE_NORMAL) * lengths[0] * lengths[1];
+    let in_plane = inherited_normal.dot(u_axis).abs()
+        <= EPS_CURVES_STORED_OFFSET_PLANE_U_AXIS * lengths[0] * lengths[2];
+    (codirectional && in_plane).then_some(u_axis)
+}
+
 pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -1299,7 +1337,7 @@ pub(super) fn sketch_plane_frames(
             let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPrincipalPlane { plane },
-                ) => SketchPlaneFrame::native(principal_sketch_frame(*plane)),
+                ) => SketchPlaneFrame::principal(*plane),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPlane { frame },
                 ) => SketchPlaneFrame::from_frame(
@@ -1355,6 +1393,9 @@ pub(super) fn sketch_plane_frames(
                         frame.origin.y + frame.normal.y * distance.get(),
                         frame.origin.z + frame.normal.z * distance.get(),
                     ),
+                    u_axis: stored_offset_plane_u_axis(feature, frame.normal)
+                        .unwrap_or(frame.u_axis),
+                    principal: None,
                     ..frame
                 })
             })() else {
@@ -1400,7 +1441,7 @@ pub(crate) fn lane_sketch_plane_frames(
         };
         let frame = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-                SketchPlaneFrame::native(principal_sketch_frame(*plane))
+                SketchPlaneFrame::principal(*plane)
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                 SketchPlaneFrame::from_frame(

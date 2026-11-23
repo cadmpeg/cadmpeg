@@ -21,6 +21,18 @@ use cadmpeg_core::CodecError;
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
 
+/// The `sidecar.stale` loss: a reader ignored a decode sidecar that does not
+/// describe the CADIR bytes beside it or that it cannot read.
+#[must_use]
+pub fn sidecar_stale_kind() -> crate::report::loss::LossKind {
+    crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("decode"),
+        "sidecar.stale",
+        crate::report::loss::LossTaxonomy::DecodeDiagnostic,
+    )
+    .into()
+}
+
 /// A decode report and source fidelity bound to exact CADIR bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -422,7 +434,8 @@ pub const fn arena_class_name(class: ArenaClass) -> &'static str {
     }
 }
 
-fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
+/// Returns the sidecar wire names of `classes`, comma-separated, for a message.
+pub(crate) fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
     classes
         .iter()
         .map(|class| arena_class_name(*class))

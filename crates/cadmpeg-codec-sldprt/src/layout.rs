@@ -28,6 +28,36 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
     pub(crate) const ZERO_TAIL: usize = 28;
 }
 
+/// Byte offsets for the `feature_input_padded_scalar_cell` record.
+///
+/// Spec §2. Record length 19 B.
+///
+/// ```text
+/// Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form.
+/// ```
+pub(crate) mod feature_input_padded_scalar_cell {
+    /// Offset of `padding` (`bytes[4]`). Spec §2.
+    pub(crate) const PADDING: usize = 0;
+    /// Offset of `value` (`f64`, little-endian). Spec §2.
+    pub(crate) const VALUE: usize = 4;
+    /// Offset of `trailer_zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_ZERO_PREFIX: usize = 12;
+}
+
+/// Byte offsets for the `feature_input_class_reference_trailer` record.
+///
+/// Spec §2. Record length 3 B.
+///
+/// ```text
+/// The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is.
+/// ```
+pub(crate) mod feature_input_class_reference_trailer {
+    /// Offset of `zero` (`u8`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Offset of `class_reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_REFERENCE: usize = 1;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.
@@ -53,11 +83,15 @@ pub(crate) mod feature_input_operand_cell12 {
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
-/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
 /// ```
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
+    /// Offset of `relation_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const RELATION_CLASS_TOKEN: usize = 0;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 2;
     /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
     pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
 }
@@ -2315,6 +2349,24 @@ pub(crate) mod constructed_reference_plane_fixed_frame {
     pub(crate) const V_AXIS: usize = 73;
 }
 
+/// Byte offsets for the `reference_plane_data_head` record.
+///
+/// Spec §2. Record length 49 B.
+///
+/// ```text
+/// Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`.
+/// ```
+pub(crate) mod reference_plane_data_head {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 0;
+    /// Offset of `normal` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const NORMAL: usize = 24;
+    /// Offset of `flag` (`u8`). Spec §2.
+    pub(crate) const FLAG: usize = 48;
+}
+
 /// Byte offsets for the `constructed_reference_plane_matrix_frame` record.
 ///
 /// Spec §2. Record length 121 B.
@@ -2440,6 +2492,46 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const CLASS_MARKER_VALUE: [u8; 4] = [0xff, 0xff, 0x01, 0x00];
     /// Offset of `name_length` (`u16`, little-endian). Spec §2.
     pub(crate) const NAME_LENGTH: usize = 5;
+}
+
+/// Byte offsets for the `revolution_line_reference_record_tail` record.
+///
+/// Spec §2. Record length 57 B.
+///
+/// ```text
+/// Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+/// ```
+pub(crate) mod revolution_line_reference_record_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const SCALAR: usize = 0;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 8;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const DIRECTION: usize = 32;
+    /// Offset of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO: usize = 56;
+    /// Stated value of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `revolution_line_reference_nested_end` record.
+///
+/// Spec §2. Record length 6 B.
+///
+/// ```text
+/// Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+/// ```
+pub(crate) mod revolution_line_reference_nested_end {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Stated value of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `selector` (`u8`). Spec §2.
+    pub(crate) const SELECTOR: usize = 5;
 }
 
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
@@ -2920,38 +3012,52 @@ pub(crate) mod identity_reference_header {
 /// Offsets from the end of the name object's string. A Unicode CString follows at +16.
 /// ```
 pub(crate) mod named_object_header {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 16;
     /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
     pub(crate) const OBJECT_ID: usize = 8;
 }
 
-/// Byte offsets for the `length_user_units_base` record.
+/// Byte offsets for the `units_length_unit_compound_three_word` record.
 ///
-/// Spec §Configuration objects. Record length 48 B.
+/// Spec §Configuration objects. Record length 46 B.
 ///
 /// ```text
-/// The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
 /// ```
-pub(crate) mod length_user_units_base {
-    /// Record length in bytes. Spec §Configuration objects.
-    pub(crate) const LEN: usize = 48;
-    /// Offset of `precision` (`u32`, little-endian). Spec §Configuration objects.
-    pub(crate) const PRECISION: usize = 0;
-    /// Offset of `last_word` (`u32`, little-endian). Spec §Configuration objects.
-    pub(crate) const LAST_WORD: usize = 44;
-    /// Stated value of `last_word` (`u32`). Spec §Configuration objects.
-    pub(crate) const LAST_WORD_VALUE: u32 = 0x0000_0001;
+pub(crate) mod units_length_unit_compound_three_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 44;
 }
 
-/// Byte offsets for the `length_user_units_block_base` record.
+/// Byte offsets for the `units_length_unit_compound_four_word` record.
 ///
-/// Spec §Configuration objects. Record length 62 B.
+/// Spec §Configuration objects. Record length 50 B.
 ///
 /// ```text
-/// The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
 /// ```
-pub(crate) mod length_user_units_block_base {
-    /// Record length in bytes. Spec §Configuration objects.
-    pub(crate) const LEN: usize = 62;
+pub(crate) mod units_length_unit_compound_four_word {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 48;
+}
+
+/// Byte offsets for the `units_length_unit_block` record.
+///
+/// Spec §Configuration objects. Record length 64 B.
+///
+/// ```text
+/// A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+/// ```
+pub(crate) mod units_length_unit_block {
+    /// Offset of `display_decimals` (`u32`, little-endian). Spec §Configuration objects.
+    pub(crate) const DISPLAY_DECIMALS: usize = 0;
+    /// Offset of `unit_code` (`u16`, little-endian). Spec §Configuration objects.
+    pub(crate) const UNIT_CODE: usize = 62;
 }
 
 /// Byte offsets for the `sketch_record_head` record.
@@ -3563,6 +3669,43 @@ pub(crate) mod compact_principal_plane_component {
     pub(crate) const TRAILER_SENTINEL: usize = 126;
 }
 
+/// Byte offsets for the `compact_principal_plane_component_padded` record.
+///
+/// Spec §2. Record length 142 B.
+///
+/// ```text
+/// The principal-plane component record with its feature number one word earlier. The 138-byte record of compact_principal_plane_component starts at +4: its source word is the time stamp and its time-stamp word is the padding.
+/// ```
+pub(crate) mod compact_principal_plane_component_padded {
+    /// Offset of `feature_number` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const FEATURE_NUMBER: usize = 0;
+    /// Offset of `time_stamp` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TIME_STAMP: usize = 4;
+    /// Offset of `padding` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING: usize = 8;
+    /// Stated value of `padding` (`u32`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING_VALUE: u32 = 0x0000_0000;
+    /// Offset of `selector` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const SELECTOR: usize = 14;
+    /// Offset of `matrix_present` (`u8`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const MATRIX_PRESENT: usize = 18;
+    /// Offset of `basis` (`f64[9]`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const BASIS: usize = 19;
+    /// Offset of `trailer_kind` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_KIND: usize = 126;
+    /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_SENTINEL: usize = 130;
+}
+
 /// Byte offsets for the `extrusion_compact_operation_trailer` record.
 ///
 /// Spec §2. Record length 40 B.
@@ -3738,4 +3881,22 @@ pub(crate) mod sweep_component_profile_extended_prefix {
     ];
     /// Offset of `header_word` (`u32`, little-endian). Spec §2.
     pub(crate) const HEADER_WORD: usize = 81;
+}
+
+/// Byte offsets for the `profile_line_side_words` record.
+///
+/// Spec §5. Record length 92 B.
+///
+/// ```text
+/// The words of the current-prefix 92-byte profile-locus line record (value 1 or 2, role and state 1, selector 04 00 at marker +37) that join the side faces of an extruded polygon to its lines. Bytes 0..80 are those of the profile curve records of section 2. Bytes 80..92 overlap the zero tail of current_extended_zero_tail_92_profile_curve, which stores zero at +80, +84 and +88 and so names no side face, and the direct profile line of section 2, whose +84 value 1 with a nonzero +88 is a selector and names no side face.
+/// ```
+pub(crate) mod profile_line_side_words {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 92;
+    /// Offset of `line_state` (`u32`, little-endian). Spec §5.
+    pub(crate) const LINE_STATE: usize = 80;
+    /// Offset of `next_side` (`u32`, little-endian). Spec §5.
+    pub(crate) const NEXT_SIDE: usize = 84;
+    /// Offset of `identity` (`u32`, little-endian). Spec §5.
+    pub(crate) const IDENTITY: usize = 88;
 }

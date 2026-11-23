@@ -7,7 +7,8 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::history::{bind_face_operand_history_candidates, BindingHistories};
+use crate::history::binding_histories::BindingHistories;
+use crate::history::face_operand_history::bind_face_operand_history_candidates;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalPersistentSubentityTag, AsmHistory,
 };

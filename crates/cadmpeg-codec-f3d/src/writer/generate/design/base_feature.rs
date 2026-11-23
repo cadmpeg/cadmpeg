@@ -17,11 +17,10 @@ use cadmpeg_ir::topology::{Shell, ShellMember};
 use super::frames::DesignRecords;
 use super::history::{HEAD_STATE, ROOT_STATE};
 use super::parameters::ParameterPlan;
-use super::roster::extrude::ExtrudeRecords;
 use super::roster::planes::PlaneRecords;
 use super::roster::sketches::SketchRecords;
 use super::roster::values::Timestamps;
-use super::roster::{self, Context, RosterBody};
+use super::roster::{self, Context, ItemRecords, RosterBody};
 use super::types;
 use crate::native::F3dNative;
 use crate::records::references::DesignClassTag;
@@ -43,18 +42,16 @@ const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
 /// The counter the timeline context keeps for the `Sketch` family.
 const SKETCH_COUNTER: &str = "DcSketchMetaType";
-/// The counter the timeline context keeps for the `Extrude` family.
-const EXTRUDE_COUNTER: &str = "DcExtrudeFeatureMetaType";
 /// The counter the timeline context keeps for the `WorkPlane` family.
 const WORKPLANE_COUNTER: &str = "DcWorkPlaneMetaType";
 /// The flag of a dependency-table edge from a profile selection to its
 /// `Sketch` scope (f3d-open-items.md DR-891), and from a placement path to
 /// the `WorkPlane` scope of the plane it names.
-const SKETCH_EDGE: u32 = 4;
+pub(super) const SKETCH_EDGE: u32 = 4;
 /// The flag of a dependency-table edge to the component record.
-const COMPONENT_EDGE: u32 = 0x1000;
+pub(super) const COMPONENT_EDGE: u32 = 0x1000;
 /// The flag of every other dependency-table edge.
-const EDGE: u32 = 1;
+pub(super) const EDGE: u32 = 1;
 /// The evaluation epoch of the item tail: `250`, below the `252` Fusion
 /// writes, until the decoder reads an epoch-252 tail beside record indices
 /// 209 to 212 (interim, F3D-EPOCH).
@@ -103,11 +100,11 @@ fn persistent_id(items: usize) -> Result<u64, CodecError> {
 }
 
 /// The next value of the persistent-identity counter after `items` `Sketch`
-/// and `WorkPlane` items and the `Base Feature`, or the `Extrude` with its
-/// two identities.
-pub(super) fn next_identity(items: usize, extrude: bool) -> Result<u64, CodecError> {
+/// and `WorkPlane` items and the `Base Feature`, or the geometry item with
+/// its two identities.
+pub(super) fn next_identity(items: usize, item: bool) -> Result<u64, CodecError> {
     persistent_id(items)?
-        .checked_add(if extrude { 2 } else { 1 })
+        .checked_add(if item { 2 } else { 1 })
         .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
 }
 
@@ -218,7 +215,7 @@ struct Classes {
     timeline: DesignClassTag,
     context: DesignClassTag,
     /// The classes of the `Base Feature` item's own types, which a design
-    /// with an `Extrude` in its place does not register.
+    /// with a geometry item in its place does not register.
     item: Option<ItemClasses>,
     tracked_results: DesignClassTag,
     item_companion: DesignClassTag,
@@ -332,7 +329,7 @@ impl BaseFeaturePlan<'_> {
             sketches: &[],
             planes: &[],
             persistent_id: self.persistent_id,
-            extrude: None,
+            item: None,
             context_value: 0,
         };
         writer.timeline(&mut out)?;
@@ -377,29 +374,28 @@ impl BaseFeaturePlan<'_> {
         out: &mut DesignRecords,
     ) -> Result<(), CodecError> {
         let mut indices = Indices::roster();
-        let extrude = ctx
+        let item = ctx
             .roster
-            .extrude
+            .item
             .as_ref()
-            .zip(ctx.extrude)
-            .map(|(records, plan)| {
+            .map(|records| {
                 let profile = ctx
                     .roster
                     .sketches
                     .items
-                    .get(plan.sketch)
+                    .get(records.sketch())
                     .map(|sketch| sketch.scope)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!("Extrude sketch {}", plan.sketch))
+                        CodecError::malformed(format_args!(
+                            "{} sketch {}",
+                            records.family(),
+                            records.sketch()
+                        ))
                     })?;
-                Ok::<_, CodecError>(ExtrudeItem {
-                    records,
-                    after: plan.after,
-                    profile,
-                })
+                Ok::<_, CodecError>(GeometryItem { records, profile })
             })
             .transpose()?;
-        if extrude.is_some() {
+        if item.is_some() {
             indices.item = None;
         }
         let classes = Classes::of(ctx)?;
@@ -428,7 +424,7 @@ impl BaseFeaturePlan<'_> {
             persistent_id: persistent_id(
                 ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
             )?,
-            extrude,
+            item,
             context_value: ctx.timeline_value.value(),
         };
         writer.timeline(out)?;
@@ -570,7 +566,7 @@ impl Classes {
         Ok(Self {
             timeline: class(types::TIMELINE)?,
             context: class(types::TIMELINE_CONTEXT)?,
-            item: if ctx.roster.extrude.is_some() {
+            item: if ctx.roster.item.is_some() {
                 None
             } else {
                 Some(ItemClasses {
@@ -697,18 +693,15 @@ struct Writer<'a> {
     planes: &'a [PlaneRecords],
     /// The `Base Feature` scope's persistent identity.
     persistent_id: u64,
-    /// The `Extrude` written in place of the `Base Feature`.
-    extrude: Option<ExtrudeItem<'a>>,
+    /// The geometry item written in place of the `Base Feature`.
+    item: Option<GeometryItem<'a>>,
     /// The timeline context value.
     context_value: u64,
 }
 
-/// The records of the `Extrude` item and its place in the timeline.
-struct ExtrudeItem<'a> {
-    records: &'a ExtrudeRecords,
-    /// The number of `Sketch` items before it.
-    after: usize,
-    /// The `Sketch` scope of its profile.
+/// The records of the geometry item, and the `Sketch` scope of its profile.
+struct GeometryItem<'a> {
+    records: &'a ItemRecords<'a>,
     profile: u32,
 }
 
@@ -716,16 +709,20 @@ struct ExtrudeItem<'a> {
 enum TimelineItem<'a> {
     Sketch(&'a SketchRecords),
     Plane(&'a PlaneRecords),
-    Extrude(&'a ExtrudeItem<'a>),
+    Geometry(&'a GeometryItem<'a>),
 }
 
 impl Writer<'_> {
-    /// The `Sketch`, `WorkPlane` and `Extrude` items in timeline order.
+    /// The `Sketch`, `WorkPlane` and geometry items in timeline order.
     fn items(&self) -> Vec<TimelineItem<'_>> {
         let mut items = Vec::with_capacity(self.sketches.len() + self.planes.len() + 1);
         for (position, sketch) in self.sketches.iter().enumerate() {
-            if let Some(extrude) = self.extrude.as_ref().filter(|item| item.after == position) {
-                items.push(TimelineItem::Extrude(extrude));
+            if let Some(item) = self
+                .item
+                .as_ref()
+                .filter(|item| item.records.after() == position)
+            {
+                items.push(TimelineItem::Geometry(item));
             }
             items.extend(
                 self.planes
@@ -735,12 +732,12 @@ impl Writer<'_> {
             );
             items.push(TimelineItem::Sketch(sketch));
         }
-        if let Some(extrude) = self
-            .extrude
+        if let Some(item) = self
+            .item
             .as_ref()
-            .filter(|item| item.after == self.sketches.len())
+            .filter(|item| item.records.after() == self.sketches.len())
         {
-            items.push(TimelineItem::Extrude(extrude));
+            items.push(TimelineItem::Geometry(item));
         }
         items
     }
@@ -757,7 +754,7 @@ impl Writer<'_> {
             .map(|item| match item {
                 TimelineItem::Sketch(sketch) => sketch.scope,
                 TimelineItem::Plane(plane) => plane.scope,
-                TimelineItem::Extrude(extrude) => extrude.records.scope,
+                TimelineItem::Geometry(item) => item.records.scope(),
             })
             .chain(indices.item.as_ref().map(|item| item.scope))
             .collect::<Vec<_>>();
@@ -792,17 +789,7 @@ impl Writer<'_> {
                         plane.extra[1],
                     ]);
                 }
-                TimelineItem::Extrude(extrude) => {
-                    let records = extrude.records;
-                    members.extend([
-                        records.group,
-                        records.selection,
-                        records.along[0],
-                        records.taper[0],
-                        records.start,
-                        records.scope,
-                    ]);
-                }
+                TimelineItem::Geometry(item) => members.extend(item.records.owners()),
             }
         }
         if let Some(item) = &self.indices.item {
@@ -831,16 +818,8 @@ impl Writer<'_> {
                         plane.scope,
                     ]);
                 }
-                TimelineItem::Extrude(extrude) => {
-                    let records = extrude.records;
-                    members.extend([
-                        records.selection,
-                        records.group,
-                        records.along[0],
-                        records.taper[0],
-                        records.start,
-                        records.scope,
-                    ]);
+                TimelineItem::Geometry(item) => {
+                    members.extend(item.records.context_members());
                 }
             }
         }
@@ -865,8 +844,8 @@ impl Writer<'_> {
         if indices.item.is_some() {
             counters.push((FAMILY_COUNTER, 1));
         }
-        if self.extrude.is_some() {
-            counters.push((EXTRUDE_COUNTER, 1));
+        if let Some(item) = &self.item {
+            counters.push((item.records.counter(), 1));
         }
         if !self.sketches.is_empty() {
             counters.push((
@@ -1126,7 +1105,7 @@ impl Writer<'_> {
     }
 
     /// `(scope, identities)` of every timeline item in timeline order, from
-    /// `300`: one for a `Sketch` or `WorkPlane` item, two for the `Extrude`,
+    /// `300`: one for a `Sketch` or `WorkPlane` item, two for the geometry item,
     /// then one for the `Base Feature`.
     fn identities(&self) -> Vec<(u32, Vec<u64>)> {
         let mut identities = Vec::new();
@@ -1135,7 +1114,7 @@ impl Writer<'_> {
             let (scope, owned) = match item {
                 TimelineItem::Sketch(sketch) => (sketch.scope, 1),
                 TimelineItem::Plane(plane) => (plane.scope, 1),
-                TimelineItem::Extrude(extrude) => (extrude.records.scope, 2),
+                TimelineItem::Geometry(item) => (item.records.scope(), 2),
             };
             identities.push((scope, (next..next + owned).collect()));
             next += owned;
@@ -1152,10 +1131,10 @@ impl Writer<'_> {
     /// owners and path, and the path of a sketch on its plane on the
     /// `WorkPlane` scope; the result owner depends on the `Base Feature`
     /// scope. A Base Feature design lists both maps in ascending record
-    /// index. A design with an `Extrude` lists the inputs in timeline order
-    /// with the `Extrude`'s in f3d-open-items.md DR-891's order, and the
-    /// dependents in ascending record index. A record with edges from several
-    /// items has one dependent entry.
+    /// index. A design with a geometry item lists the inputs in timeline
+    /// order with the item's in its own order (f3d-open-items.md DR-891),
+    /// and the dependents in ascending record index. A record with edges
+    /// from several items has one dependent entry.
     fn dependencies(&self) -> (Vec<Dependency>, Vec<Dependency>) {
         let component = self.indices.component;
         let mut inputs = Vec::new();
@@ -1197,26 +1176,12 @@ impl Writer<'_> {
                     dependents.push((plane.placement, vec![(plane.scope, EDGE)]));
                     scopes.push(plane.scope);
                 }
-                TimelineItem::Extrude(extrude) => {
-                    let records = extrude.records;
-                    let [along, taper] = [records.along[0], records.taper[0]];
-                    inputs.push((
-                        records.scope,
-                        vec![(component, COMPONENT_EDGE), (records.start, EDGE)],
-                    ));
-                    inputs.push((records.group, vec![(records.selection, EDGE)]));
-                    inputs.push((records.selection, vec![(extrude.profile, SKETCH_EDGE)]));
-                    inputs.push((
-                        records.start,
-                        vec![(records.group, EDGE), (along, EDGE), (taper, EDGE)],
-                    ));
-                    dependents.push((extrude.profile, vec![(records.selection, SKETCH_EDGE)]));
-                    dependents.push((records.group, vec![(records.start, EDGE)]));
-                    dependents.push((records.start, vec![(records.scope, EDGE)]));
-                    dependents.push((records.selection, vec![(records.group, EDGE)]));
-                    dependents.push((along, vec![(records.start, EDGE)]));
-                    dependents.push((taper, vec![(records.start, EDGE)]));
-                    scopes.push(records.scope);
+                TimelineItem::Geometry(item) => {
+                    let (item_inputs, item_dependents) =
+                        item.records.dependencies(component, item.profile);
+                    inputs.extend(item_inputs);
+                    dependents.extend(item_dependents);
+                    scopes.push(item.records.scope());
                 }
             }
         }
@@ -1236,7 +1201,7 @@ impl Writer<'_> {
                     .collect(),
             ));
         }
-        if self.extrude.is_none() {
+        if self.item.is_none() {
             inputs.sort_by_key(|&(record, _)| record);
         }
         dependents.sort_by_key(|&(record, _)| record);
@@ -1361,7 +1326,7 @@ pub(super) fn timestamp_table(
 }
 
 /// A dependency-table entry: a record and its `(record, flag)` edges.
-type Dependency = (u32, Vec<(u32, u32)>);
+pub(super) type Dependency = (u32, Vec<(u32, u32)>);
 
 /// Dependency-table entries, each the record, its edge count and its edges.
 fn dependency_entries(out: &mut DesignRecords, entries: &[Dependency]) -> Result<(), CodecError> {

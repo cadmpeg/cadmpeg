@@ -1079,7 +1079,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
+    patch_payload(decoded.ir(), &record.parent, &mut payload, &|_| true).unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1110,7 +1110,7 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
 }
 
 #[test]
-fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
+fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
     let payload = crate::test_support::pmi::pmi_semantic_payload_record(
         "D1@Sketch1",
         "01234567-89ab-cdef-0123-456789abcdef",
@@ -1136,9 +1136,19 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
         parameter.value = Some(ParameterValue::Integer((1_i64 << 53) + 1));
         parameter.pmi.as_mut().unwrap().subtype = PmiDimensionSubtype::Count;
     }
-    let mut patched = payload;
-    let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let mut patched = payload.clone();
+    let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
+    assert_eq!(patched, payload);
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    assert_eq!(
+        kept[0].code,
+        crate::loss::SldprtLossCode::WriterParameterEditUnwritten.kind()
+    );
+    assert!(
+        kept[0].message.contains("beyond exact float range"),
+        "{}",
+        kept[0].message
+    );
 }
 
 #[test]
@@ -1204,7 +1214,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         ));
     }
     assert!(!matches!(
-        patch_payload(&ir, "block", &mut []),
+        patch_payload(&ir, "block", &mut [], &|_| true),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }
@@ -1342,7 +1352,7 @@ fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
 }
 
 #[test]
-fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_solid() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x0021_0042,
@@ -1392,14 +1402,20 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &SldprtCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    let parameter = decoded.ir().model.parameters[0].id.as_str();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss.message.contains(parameter)),
+        "{:#?}",
+        report.losses
     );
 }

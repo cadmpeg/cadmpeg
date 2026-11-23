@@ -95,7 +95,7 @@ fn histories_for_scope<'a>(
     histories: &'a [crate::history_records::AsmHistory],
 ) -> &'a [crate::history_records::AsmHistory] {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+        crate::history::history_states::bound_scope_history(scope_id, scope_histories, histories)
             .map_or(&[], std::slice::from_ref)
     } else {
         histories
@@ -506,11 +506,46 @@ pub(crate) fn bind_extrude_profile_selections(
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
+    let inputs = ExtrudeBindInputs {
+        scopes,
+        groups,
+        members,
+        sketches,
+        curve_resolution,
+        resolution,
+    };
     let mut losses = Vec::new();
     for feature in features {
+        bind_one_extrude_profile_selection(feature, &inputs, &mut losses)?;
+    }
+    Ok(losses)
+}
+
+struct ExtrudeBindInputs<'a> {
+    scopes: &'a [DesignParameterScope],
+    groups: &'a [DesignExtrudeSelectionGroup],
+    members: &'a [DesignExtrudeSelectionMember],
+    sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    curve_resolution: &'a SketchCurveSelectionResolution<'a>,
+    resolution: ExtrudeProfileResolution<'a>,
+}
+
+fn bind_one_extrude_profile_selection(
+    feature: &mut cadmpeg_ir::features::Feature,
+    inputs: &ExtrudeBindInputs<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let ExtrudeBindInputs {
+        scopes,
+        groups,
+        members,
+        sketches,
+        curve_resolution,
+        resolution,
+    } = *inputs;
+    {
         let mut edit_result = Ok(());
         let mut to_distance_info = None;
         let mut historical_face_sketch_info: Option<(String, String)> = None;
@@ -538,7 +573,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     );
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
-                        crate::history::effective_scope_previous_history_state_id(
+                        crate::history::history_states::effective_scope_previous_history_state_id(
                             scope,
                             scoped_histories,
                         );
@@ -644,11 +679,13 @@ pub(crate) fn bind_extrude_profile_selections(
                                 }
                                 break 'feature_edit;
                             }
-                            if let Some(selection) = resolve_profile_curve_arrangement_regions(
-                                group,
-                                path_resolution,
-                                scoped_resolution,
-                            )? {
+                            if let Some(selection) =
+                                resolve_profile_curve_arrangement_regions_without_unions(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                )?
+                            {
                                 *profile = selection;
                                 break 'feature_edit;
                             }
@@ -701,6 +738,20 @@ pub(crate) fn bind_extrude_profile_selections(
                                             "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
                                         )));
                                     }
+                                    break 'feature_edit;
+                                }
+                            }
+                        }
+                        // A group whose first region is the union of its further
+                        // regions resolves only when no certified reading does.
+                        if matches!(&*profile, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
+                            for &(group, path_resolution) in &candidates {
+                                if let Some(selection) = resolve_profile_curve_arrangement_regions(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                )? {
+                                    *profile = selection;
                                     break 'feature_edit;
                                 }
                             }
@@ -1271,7 +1322,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.histories,
                             );
                             let effective_previous_history_state_id =
-                                crate::history::effective_scope_previous_history_state_id(
+                                crate::history::history_states::effective_scope_previous_history_state_id(
                                     scope,
                                     scoped_histories,
                                 );
@@ -1324,7 +1375,7 @@ pub(crate) fn bind_extrude_profile_selections(
         }
         resolution.profile_work.finish_selection();
     }
-    Ok(losses)
+    Ok(())
 }
 
 fn sorted(
@@ -3196,9 +3247,8 @@ fn transition_profile_selection_step(
             };
             let is_matched_circle = prof.len() == 1
                 && prof.iter().all(|use_| {
-                    entities
-                        .iter()
-                        .find(|e| e.id() == &use_.entity)
+                    profile_work
+                        .find_entity(entities, &use_.entity)
                         .is_some_and(|e| {
                             matches!(
                                 e.geometry.definition(),
@@ -5256,11 +5306,38 @@ fn resolve_profile_curve_arrangement_regions(
     resolve_profile_curve_arrangement_regions_with_policy(group, resolution, scoped, true)
 }
 
+/// As `resolve_profile_curve_arrangement_regions`, except that a group whose
+/// first region resolves to no face stays unresolved instead of taking the
+/// union of its further regions.
+fn resolve_profile_curve_arrangement_regions_without_unions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    resolve_profile_curve_arrangement_regions_with_unions(group, resolution, scoped, true, false)
+}
+
 fn resolve_profile_curve_arrangement_regions_with_policy(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    resolve_profile_curve_arrangement_regions_with_unions(
+        group,
+        resolution,
+        scoped,
+        allow_assumptions,
+        true,
+    )
+}
+
+fn resolve_profile_curve_arrangement_regions_with_unions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+    allow_assumptions: bool,
+    resolve_unions: bool,
 ) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let Some(stream) = native_stream(&group.id) else {
@@ -5324,6 +5401,10 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
         for group in &selection.groups {
             let group_start = regions.len();
             let mut first_end = None;
+            // A first region that resolves to no face can be the union of the
+            // further regions; its curves are checked after them.
+            let mut unresolved_first = None;
+            let mut further_found = Vec::new();
             for (position, loops) in std::iter::once(&group.region)
                 .chain(&group.further)
                 .enumerate()
@@ -5374,6 +5455,9 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                         && (allow_assumptions || !selected.identity_unique);
                                     island_absence |= selected.island_absence;
                                     crossing_runs |= selected.crossing_runs_assumed();
+                                    if position > 0 {
+                                        further_found.push(region.clone());
+                                    }
                                     if !regions.contains(region) {
                                         regions.push(region.clone());
                                     }
@@ -5385,6 +5469,8 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                     if !single_exterior {
                         return Ok(None);
                     }
+                    let union_candidate =
+                        resolve_unions && position == 0 && !group.further.is_empty();
                     if !allow_assumptions {
                         if let Some(rings) = stored_loop_rings(loops, program) {
                             if let [members] = rings.as_slice() {
@@ -5409,6 +5495,9 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                     )?
                                 {
                                     for region in selected {
+                                        if position > 0 {
+                                            further_found.push(region.clone());
+                                        }
                                         if !regions.contains(&region) {
                                             regions.push(region);
                                         }
@@ -5428,11 +5517,29 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                             scoped.ctx,
                         )?
                     else {
+                        if union_candidate {
+                            unresolved_first = Some(
+                                program
+                                    .iter()
+                                    .zip(&loops[0].entries)
+                                    .map(|(curve, entry)| {
+                                        (
+                                            curve.clone(),
+                                            [entry.entry_fields[1], entry.entry_fields[2]],
+                                        )
+                                    })
+                                    .collect::<Vec<_>>(),
+                            );
+                            continue;
+                        }
                         return Ok(None);
                     };
                     assumed = true;
                     island_absence |= split.island_absence_assumed;
                     for region in split.regions {
+                        if position > 0 {
+                            further_found.push(region.clone());
+                        }
                         if !regions.contains(&region) {
                             regions.push(region);
                         }
@@ -5440,9 +5547,25 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                     continue;
                 };
                 island_absence |= found.island_absence_assumed;
+                if position > 0 {
+                    further_found.push(found.region.clone());
+                }
                 if !regions.contains(&found.region) {
                     regions.push(found.region);
                 }
+            }
+            if let Some(first) = unresolved_first {
+                if !group_union::further_regions_compose_first(
+                    &further_found,
+                    &first,
+                    resolution.sketch_entities,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )? {
+                    return Ok(None);
+                }
+                continue;
             }
             if let Some(union) = first_end.and_then(|first_end| {
                 group_union::remove_union_first_region(&mut regions, group_start, first_end)

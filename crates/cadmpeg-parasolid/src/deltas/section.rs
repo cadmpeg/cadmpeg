@@ -77,6 +77,18 @@ impl MapEntry {
         Some(MapRead::Entry(Self(xmt, MapKind::try_from(kind).ok()?)))
     }
 
+    /// Node index of the entry.
+    #[must_use]
+    pub fn index(self) -> u32 {
+        self.0.into()
+    }
+
+    /// Node type of the entry.
+    #[must_use]
+    pub fn kind(self) -> u16 {
+        self.1.into()
+    }
+
     /// Encoded byte length of the entry.
     pub fn encoded_len(self) -> u64 {
         if u32::from(self.0) <= 32_767 {

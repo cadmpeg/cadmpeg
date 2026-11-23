@@ -21,8 +21,8 @@ use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, reports_carried_source, semantic_roundtrip, verbatim_replay_holds,
+    ExpectedWritePath, MutationOutcome, SemanticOutcome,
 };
 
 use super::SldprtCodec;
@@ -147,15 +147,20 @@ fn golden_output_is_deterministic() {
 }
 
 /// Every fixture survives a decode and comes back byte for byte through the
-/// verbatim-replay path.
+/// verbatim-replay path. A fixture whose decode keeps bytes it did not decode
+/// replays too, and its report carries `export:source.carried`.
 #[test]
 fn fixtures_replay_verbatim() {
+    let mut marked = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
             continue;
         }
-        verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        if reports_carried_source(&verbatim_replay_holds(&SldprtCodec, &name, &bytes)) {
+            marked += 1;
+        }
     }
+    assert!(marked > 0, "no fixture keeps bytes it did not decode");
 }
 
 /// The semantic write path either reproduces a fixture's document or declares
@@ -170,23 +175,99 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
+            // The source's lone configuration is active and owns partition 0.
+            // The writer writes it active without assuming one, and generates
+            // the envelope that states it; the history is the source's.
+            let history = |ir: &cadmpeg_ir::CadIr| {
+                (
+                    ir.model
+                        .features
+                        .iter()
+                        .map(|feature| {
+                            (
+                                feature.ordinal,
+                                feature.name.clone(),
+                                feature.source_tag.clone(),
+                                feature.suppressed,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    ir.model
+                        .parameters
+                        .iter()
+                        .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+                        .collect::<Vec<_>>(),
+                    ir.geometry.faces.len(),
+                )
+            };
+            let source = decode_container(&bytes).expect("legacy history decodes");
+            let fixture = bytes.as_slice();
             semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
-                SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail == "semantic SLDPRT writing requires a B-rep"),
-                    "legacy history must refuse exactly the missing typed B-rep: {error:?}"
-                ),
-                SemanticOutcome::Written { report, .. } => panic!(
-                    "legacy history has no typed B-rep to write: {:?}",
-                    report.write_path()
-                ),
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    assert!(
+                        !report
+                            .losses
+                            .iter()
+                            .any(|loss| loss.code.local_code()
+                                == "writer.active-configuration-assumed"),
+                        "{:#?}",
+                        report.losses
+                    );
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    let [configuration] = written.ir().model.configurations.as_slice() else {
+                        panic!("fixture `{name}`: one configuration");
+                    };
+                    assert_eq!(configuration.name.as_deref(), Some("Default"));
+                    assert!(configuration.active);
+                    assert_eq!(configuration.source_index, Some(0));
+                    assert_eq!(history(written.ir()), history(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                }
+            });
+            continue;
+        }
+        if name == "document_envelope" {
+            // The faceless part keeps its `SWObjects` member, and with it
+            // every metadata record.
+            let values = |ir: &cadmpeg_ir::CadIr| {
+                ir.model
+                    .attributes
+                    .iter()
+                    .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let source = decode_container(&bytes).expect("the envelope decodes");
+            assert!(source
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "configuration_manager"));
+            let fixture = bytes.as_slice();
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    assert_eq!(values(written.ir()), values(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                }
             });
             continue;
         }
         let source = decode_container(&bytes);
         let expected = neutral_text(&bytes, &source);
+        let fixture = bytes.as_slice();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
+                assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
                 assert!(
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
@@ -217,6 +298,51 @@ fn fixtures_survive_the_semantic_write_path() {
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the semantic writer"
     );
+}
+
+/// Asserts that each member of the `source` image is a member of the
+/// `written` image or that a loss names its record. A stream the source
+/// stores several times counts each member.
+fn assert_members_carried_or_named(
+    name: &str,
+    source: &[u8],
+    written: &[u8],
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) {
+    let mut written_members = BTreeMap::<String, usize>::new();
+    for section in crate::test_support::container::scan(written).sections() {
+        *written_members
+            .entry(section.source_stream().as_str().to_owned())
+            .or_default() += 1;
+    }
+    let source_scan = crate::test_support::container::scan(source);
+    let mut source_members = BTreeMap::<&str, Vec<String>>::new();
+    for section in source_scan.sections() {
+        source_members
+            .entry(section.source_stream().as_str())
+            .or_default()
+            .push(section.native_id().as_str().to_owned());
+    }
+    for (stream, ids) in source_members {
+        let named = ids
+            .iter()
+            .filter(|id| losses.iter().any(|loss| names_record(&loss.message, id)))
+            .count();
+        let carried = written_members.get(stream).copied().unwrap_or_default();
+        assert!(
+            carried + named >= ids.len(),
+            "fixture `{name}`: the source holds {} member(s) `{stream}`; the output holds {carried} \
+             and the losses name {named}: {losses:#?}",
+            ids.len()
+        );
+    }
+}
+
+/// Whether `message` names record `id` as a whole token.
+fn names_record(message: &str, id: &str) -> bool {
+    message.match_indices(id).any(|(at, _)| {
+        !message[at + id.len()..].starts_with(|character: char| character.is_ascii_digit())
+    })
 }
 
 /// Written fixtures whose measures the semantic write lane compares, the

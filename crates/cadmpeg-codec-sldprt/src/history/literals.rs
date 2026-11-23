@@ -78,6 +78,21 @@ pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<Positive
     })
 }
 
+/// The one parameter of a feature record, with its length, when the record
+/// holds exactly one and it is a positive length. An extrusion record that
+/// holds no `Depth` or `D1` states its first depth there: the projection
+/// reads the depth from it, and the encoder writes the depth to it.
+pub(crate) fn sole_length_parameter(
+    parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Option<(&cadmpeg_core::text::NonBlankString, PositiveLength)> {
+    let mut entries = parameters.iter();
+    let (name, value) = entries.next()?;
+    if entries.next().is_some() {
+        return None;
+    }
+    Some((name, parse_positive_dimension_length_mm(value)?))
+}
+
 pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<Length> {
     parse_length_mm(value).or_else(|| value.trim().parse::<f64>().ok().and_then(Length::new))
 }
@@ -358,7 +373,7 @@ pub(super) fn parse_neutral_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format_length_mm(*value),
         ParameterValue::Angle(value) => format_angle_rad(*value),

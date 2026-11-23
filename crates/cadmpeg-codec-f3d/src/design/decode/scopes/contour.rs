@@ -1,5 +1,7 @@
 use super::parameter_scope::ParameterScopeSources;
-use super::sheet_metal_rule::{local, rule_values, settings_rule, typed, Types, SETTINGS_GUID};
+use super::sheet_metal_rule::{
+    linked_settings_rule, local, rule_values, typed, Types, SETTINGS_GUID,
+};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::{
@@ -225,13 +227,14 @@ fn operation(
     let rule = settings
         .as_ref()
         .and_then(|settings| {
-            settings_rule(
+            linked_settings_rule(
                 bytes,
                 records,
                 types,
                 settings.value,
-                scope.record_index,
+                scope,
                 CONTOUR_GUID,
+                sources,
             )
         })
         .and_then(|(record_index, reference_assumed)| {

@@ -34,7 +34,9 @@ pub(crate) fn parameter_prefix() -> Vec<u8> {
     body
 }
 
-/// The 35-byte trailer of a driving scalar with no operands.
+/// The 35-byte trailer of a driving scalar with no tolerance and no
+/// operands: a zero byte, a null tolerance pointer and the object identifier
+/// `1`, then the operand count `0` and the role `0` (§2.3).
 pub(crate) fn parameter_trailer() -> [u8; 35] {
     let mut trailer = [0u8; 35];
     trailer[3..7].copy_from_slice(&1_u32.to_le_bytes());
@@ -55,6 +57,63 @@ pub(crate) fn integer_parameter_body(value: u32) -> Vec<u8> {
     body.extend_from_slice(&value.to_le_bytes());
     body.extend_from_slice(&parameter_trailer());
     body
+}
+
+/// A `moDimTolerance_c` body (§2.3) with empty strings.
+fn tolerance_body() -> Vec<u8> {
+    let mut body = 1_u32.to_le_bytes().to_vec();
+    body.extend_from_slice(&[0; 4]);
+    for limit in [-0.000_1_f64, 0.000_1] {
+        body.extend_from_slice(&limit.to_le_bytes());
+    }
+    body.push(1);
+    body.extend_from_slice(&[0; 24]);
+    body.extend(cstring(""));
+    body.extend(cstring(""));
+    body.push(0);
+    body.extend_from_slice(&1_u32.to_le_bytes());
+    body.push(1);
+    body.extend_from_slice(&[0; 24 + 6]);
+    for _ in 0..3 {
+        body.extend(cstring(""));
+    }
+    body.extend_from_slice(&[0; 4]);
+    body
+}
+
+/// The bytes after a parameter's value (§2.3): a zero byte, the tolerance
+/// pointer (a `moDimTolerance_c` declared in place, or null), the object
+/// identifier `id`, then the operand count `0` at identifier +24 and the role
+/// `0` at identifier +26, 32 bytes from the identifier.
+fn parameter_tail(id: u32, toleranced: bool) -> Vec<u8> {
+    let mut tail = vec![0];
+    if toleranced {
+        tail.extend(declaration("moDimTolerance_c"));
+        tail.extend(tolerance_body());
+    } else {
+        tail.extend_from_slice(&[0, 0]);
+    }
+    tail.extend_from_slice(&id.to_le_bytes());
+    tail.extend_from_slice(&[0; 28]);
+    tail
+}
+
+/// A `Config-0-ResolvedFeatures` payload for [`config_object_stream`]: a
+/// `moIntegerParameter_c`, declared in place, whose identifier is `integer`,
+/// and a `moLengthParameter_c` with a tolerance, whose identifier is
+/// `toleranced`.
+pub(crate) fn toleranced_and_integer_parameters_stream(integer: u32, toleranced: u32) -> Vec<u8> {
+    let mut stream = CONFIGURATION_MAP_COUNT.to_le_bytes().to_vec();
+    stream.extend_from_slice(&[0, 0]);
+    stream.extend(declaration("moIntegerParameter_c"));
+    stream.extend(parameter_prefix());
+    stream.extend_from_slice(&7_u32.to_le_bytes());
+    stream.extend(parameter_tail(integer, false));
+    stream.extend_from_slice(&tag(7));
+    stream.extend(parameter_prefix());
+    stream.extend_from_slice(&PARAMETER_VALUE.to_le_bytes());
+    stream.extend(parameter_tail(toleranced, true));
+    stream
 }
 
 /// `Contents/Config-0`: `moPart_c` and `moNodeName_c` take indices 2 and 4,
@@ -154,6 +213,22 @@ fn sldprt_with_resolved_features(resolved: &[u8]) -> Vec<u8> {
         0x21,
         "Contents/Config-0-ResolvedFeatures",
         resolved,
+    ));
+    file
+}
+
+/// A part whose `Config-0` stream also declares a sketch and a sketch
+/// entity class, so it holds a config-objects lane beside the
+/// `Config-0-ResolvedFeatures` lane.
+pub(crate) fn sldprt_with_sketch_config_objects() -> Vec<u8> {
+    let mut config = config_object_stream_declaring("sgSketch");
+    config.extend(declaration("sgPointHandle"));
+    let mut file = outer_header();
+    file.extend_from_slice(&make_block(0x20, "Contents/Config-0", &config));
+    file.extend_from_slice(&make_block(
+        0x21,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_stream(),
     ));
     file
 }
