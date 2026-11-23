@@ -1478,7 +1478,7 @@ pub(super) fn ellipse_angle_relation_kind(angle: f64) -> Option<SketchRelationKi
     .find_map(|(expected, kind)| ((angle - expected).abs() <= TOLERANCE).then_some(kind))
 }
 
-fn unique_planar_sketch_owner<'a>(
+pub(crate) fn unique_planar_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
@@ -1525,7 +1525,7 @@ fn unique_sketch_owner<'a>(
     Ok(owner)
 }
 
-fn generated_sketch_owner_record<'a>(
+pub(crate) fn generated_sketch_owner_record<'a>(
     native: &'a crate::native::SldprtNative,
     owner: &cadmpeg_ir::features::Feature,
     sketch: &str,
@@ -1546,7 +1546,7 @@ fn generated_sketch_owner_record<'a>(
         })
 }
 
-fn generated_sketch_owner_id(
+pub(crate) fn generated_sketch_owner_id(
     owner: &crate::records::Feature,
     sketch: &str,
 ) -> Result<u32, cadmpeg_core::CodecError> {
@@ -1581,24 +1581,7 @@ fn source_less_lanes(
             cut,
         )?;
         append_generated_sketch_markers(ir, sketch, &mut payload, cut)?;
-        let sketch_ir = sketch_brep(ir, sketch)?;
-        // The generated body's records are named for the sketch, which the
-        // history writer's retry leaves out (§3.2).
-        let body =
-            crate::writer::brep_body(&sketch_ir, 0.001, false).map_err(|error| match error {
-                cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => {
-                    error
-                }
-                other => cadmpeg_core::CodecError::NotImplemented(format!(
-                    "source-less SLDPRT sketch {} cannot be encoded ({other})",
-                    sketch.id.as_str()
-                )),
-            })?;
-        payload.extend(crate::writer::parasolid_stream_named(
-            &body,
-            "SCH_SW_33103_11000",
-            sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-        )?);
+        payload.extend(generated_profile_stream(ir, sketch)?);
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {
@@ -1676,6 +1659,30 @@ fn source_less_lanes(
     )?;
     bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)
+}
+
+/// The nested Parasolid stream of a generated sketch's profile body: the
+/// sheet body of its profile curves, described by the sketch's name, in
+/// schema `SCH_SW_33103_11000` (§3).
+pub(crate) fn generated_profile_stream(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let sketch_ir = sketch_brep(ir, sketch)?;
+    // The generated body's records are named for the sketch, which the
+    // history writer's retry leaves out (§3.2).
+    let body = crate::writer::brep_body(&sketch_ir, 0.001, false).map_err(|error| match error {
+        cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => error,
+        other => cadmpeg_core::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} cannot be encoded ({other})",
+            sketch.id.as_str()
+        )),
+    })?;
+    crate::writer::parasolid_stream_named(
+        &body,
+        "SCH_SW_33103_11000",
+        sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
+    )
 }
 
 fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {
