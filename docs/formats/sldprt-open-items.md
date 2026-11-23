@@ -1146,7 +1146,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set, and when bit 0 is clear and its locus (+23) is `05 00 01 00`?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 clear and locus `05 00 01 00`, the current-prefix 92-byte selector-4 line that `sldprt.md` §2 reads takes each endpoint value plus one as the object index of a point marker. The decoder reads the indices of the other such records as point-record positions and charges `sketch.point-record-index-basis-assumed`. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 clear and locus `05 00 01 00`, the current-prefix 92-byte selector-4 line that `sldprt.md` §2 reads takes each endpoint value plus one as the object index of a point marker. The decoder reads the indices of the other such records as point-record positions and charges `sketch.point-record-index-basis-assumed`. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face. In a rectangular profile, a 92-byte line record with an identity trailer at +88 reads as the bottom line under the one-based ordinal rule and as the top line under zero-based endpoint indices; the stored solid has a top face and the decoded profile has none.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
@@ -1223,6 +1223,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Two parts of one version from 8000 to 16000 that hold different layouts, with their creation logs (EV-35) compared: the version and stamps of each part's first `moLogs_c` records.
 
 **Conflict.** The writer writes `swVersion` 14000 and the first layout.
+
+### EV-38. Side-face identifiers of non-extruded producers and of unnamed profile lines
+
+**Question.** Which profile line sweeps a side face whose local identifier no `+84` value of the profile names, and what do the entries of a blend edge's component path name for a producer other than an extrusion?
+
+**Known.** `sldprt.md` §5 gives the join from the local identifier of an extrusion side face to its profile line, and the order of a component path's entries for an extrusion. A line record whose u32 at marker +80 is nonzero stores zero at +84 in two profiles. A side identifier of 1 cannot be told from the §2 direct-form selector, which stores u32 `1` at +84 with a nonzero identity at +88; the join states no face from such a record. In a seven-line profile, the closing line record has `00 00 02 00` at +80 and stores `1` at +84. In a rectangular profile, two of the four line records are line handles whose geometry is not read (EV-27), so the join states no sketch entity for their faces.
+
+**Need.** The identifier that a record with nonzero `+80` gives the next line; whether the closing record's `+84` names the first line's face where it is nonzero; and the entry order and entities of a component path for producers other than an extrusion.
 
 ### EV-24. Bytes after the last top-level object
 

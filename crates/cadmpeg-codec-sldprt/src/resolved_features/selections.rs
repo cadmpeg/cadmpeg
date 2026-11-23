@@ -407,6 +407,7 @@ pub(super) fn compact_edge_selections(
                 references,
                 producer_feature_refs,
                 terminal_feature_ref,
+                mark_reference: false,
             });
         }
         for mut selection in input_owned_edge_selections(feature_selections) {

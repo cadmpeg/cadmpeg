@@ -730,6 +730,10 @@ pub(crate) struct FeatureInputEdgeSelection {
         deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
+    /// Whether the vector lies inside a `moPMarkRecord_c`, where it is one of
+    /// the record's edge references and not an operand of the feature.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) mark_reference: bool,
 }
 
 /// One compact feature-local surface-component selection.
@@ -1427,10 +1431,33 @@ pub(crate) struct SketchInputEntity {
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record (`docs/formats/sldprt.md` §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     pub(crate) links: Option<SketchInputLinks>,
 }
+
+/// The side words of a 92-byte profile line record that join the side faces of
+/// an extruded polygon to its lines (`docs/formats/sldprt.md` §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LineSides {
+    /// The u32 at marker +80; zero in the records whose +84 names a side face.
+    pub(crate) state: u32,
+    /// The u32 at marker +84: the local identifier of the side face that the
+    /// next line record sweeps. `None` where the record is the direct form of
+    /// section 2 (u32 `1` at +84 with a nonzero, non-null identity at +88),
+    /// whose +84 is a selector.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_next_side"
+    )]
+    pub(crate) next_side: Option<u32>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_next_side, u32, "next_side");
 
 /// A marker whose record a `sgSketch` curve list reads as a curve, and the
 /// kind its +17 code selects without that reading (DI-77).
@@ -1492,10 +1519,16 @@ pub(crate) struct SketchInputEntityWire {
         deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record.
+    #[serde(default, deserialize_with = "deserialize_line_sides")]
+    line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
 }
+
+// The optional key names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_line_sides, LineSides, "line_sides");
 
 fn sketch_entities_from_wire(
     wire: Vec<SketchInputEntityWire>,
@@ -1651,6 +1684,11 @@ impl SketchInputEntity {
         self.local_id
     }
 
+    /// The side words of this marker when it is a 92-byte record.
+    pub(crate) fn line_sides(&self) -> Option<LineSides> {
+        self.line_sides
+    }
+
     #[cfg(test)]
     /// Sets the identity fields on a cloned fixture.
     pub(crate) fn with_test_identity(
@@ -1690,6 +1728,11 @@ impl SketchInputEntity {
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
+        if wire.line_sides != entity.line_sides {
+            return Err(
+                "SolidWorks feature-input line side words do not match its native payload".into(),
+            );
+        }
         entity.links = wire.links;
         Ok(entity)
     }
@@ -1720,6 +1763,7 @@ impl SketchInputEntity {
             listed_curve: None,
             state_value: None,
             coordinates_m: None,
+            line_sides: crate::resolved_features::markers::marker_line_sides(payload, position),
             links: None,
         })
     }
@@ -1746,6 +1790,9 @@ impl SketchInputEntity {
             return Err(
                 "SolidWorks feature-input local object id does not match its native payload",
             );
+        }
+        if self.line_sides != expected.line_sides {
+            return Err("SolidWorks feature-input line side words do not match its native payload");
         }
         Ok(())
     }

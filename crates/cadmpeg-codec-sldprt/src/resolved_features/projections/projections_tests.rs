@@ -1509,6 +1509,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(
@@ -1705,6 +1706,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(
@@ -1777,6 +1779,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         ],
         producer_feature_refs: Vec::new(),
         terminal_feature_ref: None,
+        mark_reference: false,
     };
 
     let groups = variable_fillet_radius_groups(

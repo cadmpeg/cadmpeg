@@ -4415,6 +4415,25 @@ Unstated regions:
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
 
+## `profile_line_side_words`
+
+Spec §5 · layout: byte offsets · size: 92 B
+
+The words of the current-prefix 92-byte profile-locus line record (value 1 or 2, role and state 1, selector 04 00 at marker +37) that join the side faces of an extruded polygon to its lines. Bytes 0..80 are those of the profile curve records of section 2. Bytes 80..92 overlap the zero tail of current_extended_zero_tail_92_profile_curve, which stores zero at +80, +84 and +88 and so names no side face, and the direct profile line of section 2, whose +84 value 1 with a nonzero +88 is a selector and names no side face.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 80 | 4 | `line_state` | `u32` | little | spec | In a line record whose u32 at marker +80 is zero |
+| 84 | 4 | `next_side` | `u32` | little | spec | the u32 at marker +84 is the local identifier of the side face that the next line record sweeps |
+| 88 | 4 | `identity` | `u32` | little | spec | nonzero, non-null identity at +88 |
+
+Unstated regions:
+
+- `0..80` (80 B): Marker prefix, endpoint indices, selectors and constants of the profile curve records of section 2.
+
 ## `sketch_dimension_parameter_trailer`
 
 Spec §Sketch objects · layout: byte offsets · size: 32 B
