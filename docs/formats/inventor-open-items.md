@@ -349,14 +349,6 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Identify the positioning control and its signed offset rule in terms of the sheet thickness, bend radius, and attachment directions.
 
-### DE-21. Face joining edge
-
-**Question.** Which record selects the edge of the existing sheet that the bend of a plate-and-bend face record joins?
-
-**Known.** Section 13 defines the plate-and-bend form of face record `904bc1c4d311ff2860004da99dccefb0`: it names a plate and a bend, and its label lists the planar sketch, plate, and bend. The plate has an attachment control in slot 4, null slots 9 through 13, and no attachment selection list. The bend shares the plate attachment control and the plate slot-7 edge collection, and that collection is empty. The face record, its label, and the plate and bend properties store no edge selector of the existing sheet.
-
-**Need.** The record or rule that identifies the joined edge of the existing sheet, so that the plate can carry an exact attachment selection.
-
 ### DE-22. Corner seam and relief fields
 
 **Question.** Which fields of the corner control `83ce7786a946cde11ebd99b4fe02afb2` store the seam option (gap, overlap, or no overlap), the overlap side, the corner relief shape, and the relief size?

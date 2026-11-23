@@ -173,6 +173,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFactorAssumed,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
+    /// A plate-and-bend face record stores no attachment selection; the plate stays native.
+    FeatureSheetMetalPlateAttachmentNotStored,
     /// Projected contour flanges retain construction controls and their bend and corner records natively.
     FeatureSheetMetalContourControlsRetained,
     /// A contour flange stays native; the note names the first refused admission check.
@@ -419,6 +421,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalUnfoldRuleUnresolved,
         Self::FeatureSheetMetalStyleFactorAssumed,
         Self::FeatureSheetMetalPlateRefused,
+        Self::FeatureSheetMetalPlateAttachmentNotStored,
         Self::FeatureSheetMetalContourControlsRetained,
         Self::FeatureSheetMetalContourFlangeRefused,
         Self::FeatureSheetMetalFoldControlsRetained,
@@ -605,6 +608,9 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFactorAssumed => "feature.sheet-metal-style-factor-assumed",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
+            Self::FeatureSheetMetalPlateAttachmentNotStored => {
+                "feature.sheet-metal-plate-attachment-not-stored"
+            }
             Self::FeatureSheetMetalContourControlsRetained => {
                 "feature.sheet-metal-contour-controls-retained"
             }
@@ -777,6 +783,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalUnfoldRuleUnresolved
             | Self::FeatureSheetMetalStyleFactorAssumed
             | Self::FeatureSheetMetalPlateRefused
+            | Self::FeatureSheetMetalPlateAttachmentNotStored
             | Self::FeatureSheetMetalContourControlsRetained
             | Self::FeatureSheetMetalContourFlangeRefused
             | Self::FeatureSheetMetalFoldControlsRetained
@@ -974,6 +981,7 @@ mod tests {
                 "feature.sheet-metal-unfold-rule-unresolved",
                 "feature.sheet-metal-style-factor-assumed",
                 "feature.sheet-metal-plate-refused",
+                "feature.sheet-metal-plate-attachment-not-stored",
                 "feature.sheet-metal-contour-controls-retained",
                 "feature.sheet-metal-contour-flange-refused",
                 "feature.sheet-metal-fold-controls-retained",

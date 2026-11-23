@@ -61,6 +61,9 @@ pub(crate) enum PlateRefusal {
     Side,
     /// Slot 12 does not hold a list of selection wrappers over edge collections of edge items.
     SelectionList,
+    /// The plate stores no attachment selection: a 15-property plate with null
+    /// slots 5 and 12.
+    AttachmentNotStored,
     /// A selected edge has no unique generated edge name.
     EdgeName,
     /// A selected attachment edge has no stored geometry.
@@ -107,6 +110,7 @@ impl PlateRefusal {
             Self::Length => "length",
             Self::Side => "side",
             Self::SelectionList => "selection-list",
+            Self::AttachmentNotStored => "attachment-not-stored",
             Self::EdgeName => "edge-name",
             Self::InputGeometry => "input-geometry",
             Self::ProfileSketch => "profile-sketch",
