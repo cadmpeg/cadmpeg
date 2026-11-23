@@ -437,8 +437,8 @@ enum Mark {
 /// a sketch whose three anchors fit the marker transform
 /// `(u, v) -> (v + 100, u + 200)`, which places the point at (109, 203), and
 /// whose frame (origin 0, normal +z, u along +x) reads the pair as it
-/// stands, at (3, 9). A relation point drawn before the pass stands at each
-/// of `drawn`.
+/// stands, at (3, 9). A relation point drawn before the pass for a marker
+/// that only a list-read record reaches stands at each of `drawn`.
 fn project_between_readings(
     reach: Reach,
     marks: &[Mark],
@@ -480,18 +480,21 @@ fn project_between_readings(
         })
         .collect::<Vec<_>>();
     for (index, position) in drawn.iter().enumerate() {
-        entities.push(SketchEntity::new(
-            SketchEntityId::mint(format!(
-                "sldprt:model:sketch-entity#relation-point:lane:{}",
-                900 + index
-            ))
-            .unwrap(),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: *position,
-            })
-            .unwrap(),
-        ));
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId::mint(format!(
+                    "sldprt:model:sketch-entity#relation-point:lane:{}",
+                    900 + index
+                ))
+                .unwrap(),
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: *position,
+                })
+                .unwrap(),
+            )
+            .with_native_ref(Some(format!("listed-only-marker-{index}"))),
+        );
     }
     let mut points = Vec::new();
     let mut vertices = Vec::new();
@@ -633,4 +636,18 @@ fn relation_points_drawn_before_do_not_vote_in_the_fit_of_an_added_point() {
         loss.code,
         SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
     );
+}
+
+#[test]
+fn added_relation_points_do_not_move_a_point_main_places() {
+    // Drawn at the frame's reading of the three anchor markers, these added
+    // points alone would fit the unswapped identity.
+    let drawn = [
+        Point2::new(0.0, 0.0),
+        Point2::new(2.0, 1.0),
+        Point2::new(7.0, 4.0),
+    ];
+    let (entities, losses, marker) = project_between_readings(Reach::Relation, &[], &drawn);
+    assert_near(drawn_at(&entities, &marker), FITTED);
+    assert!(losses.is_empty(), "{losses:?}");
 }

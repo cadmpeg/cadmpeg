@@ -4460,9 +4460,24 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = RELATION_GEOMETRY_QUANTUM_MM;
 
+    // A relation point drawn for a marker that only a list-read record
+    // reaches is no evidence for the transform that places main's geometry.
+    let main_reach = sketch_entities
+        .iter()
+        .any(|entity| {
+            entity
+                .id()
+                .as_str()
+                .starts_with(super::relation_geometry::RELATION_POINT_PREFIX)
+        })
+        .then(|| super::relation_geometry::main_relation_reach(lanes));
     let mut entities_by_sketch = HashMap::<&SketchId, Vec<&SketchEntity>>::new();
     let mut entities_by_native = HashMap::<(&SketchId, &str), Vec<&SketchEntity>>::new();
-    for entity in sketch_entities {
+    for entity in sketch_entities.iter().filter(|entity| {
+        main_reach
+            .as_ref()
+            .is_none_or(|reach| !super::relation_geometry::is_added_relation_point(entity, reach))
+    }) {
         entities_by_sketch
             .entry(&entity.sketch)
             .or_default()

@@ -445,7 +445,44 @@ pub(crate) fn append_relation_point_notes(
 
 /// The id prefix of a relation point that [`project_relation_point_geometry`]
 /// draws.
-const RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:";
+pub(super) const RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:";
+
+/// The markers a relation reaches without a list-read record: each relation
+/// operand, each marker of relation kind, and the markers linked to them.
+pub(super) fn main_relation_reach(lanes: &[FeatureInputLane]) -> HashSet<&str> {
+    let mut markers_by_id = HashMap::new();
+    let mut reach = HashSet::new();
+    for lane in lanes {
+        for marker in &lane.sketch_entities {
+            markers_by_id.insert(marker.id(), marker);
+            if matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                reach.insert(marker.id());
+            }
+        }
+        for operand in lane
+            .relation_instances
+            .iter()
+            .flat_map(|relation| &relation.operands)
+        {
+            if let Some(id) = operand.entity_ref.as_deref() {
+                reach.insert(id);
+            }
+        }
+    }
+    close_over_links(&markers_by_id, &mut reach);
+    reach
+}
+
+/// Whether `entity` is a relation point drawn for a marker outside `reach`,
+/// the markers [`main_relation_reach`] gives.
+pub(super) fn is_added_relation_point(entity: &SketchEntity, reach: &HashSet<&str>) -> bool {
+    entity.id().as_str().starts_with(RELATION_POINT_PREFIX)
+        && entity
+            .native_ref
+            .as_deref()
+            .or(entity.geometry_ref.as_deref())
+            .is_none_or(|marker| !reach.contains(marker))
+}
 
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 ///
@@ -486,8 +523,9 @@ pub(crate) fn project_relation_point_geometry(
         sketches_by_feature.insert(native_ref, sketch_id);
     }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    // The fit of an added point leaves out the relation points this pass has
-    // drawn before, which come from the same markers.
+    // The fit of an added point leaves out every relation point drawn before,
+    // which come from the same markers; the fit of every other marker leaves
+    // out the added points (`marker_transform_candidates_by_feature`).
     let added_transforms = entities
         .iter()
         .any(|entity| entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
@@ -506,7 +544,6 @@ pub(crate) fn project_relation_point_geometry(
     }
     let mut point_operands = HashSet::new();
     let mut curve_operands = HashSet::new();
-    let mut referenced = HashSet::new();
     let mut listed_relations = Vec::new();
     for lane in lanes {
         for relation in &lane.relation_instances {
@@ -535,27 +572,19 @@ pub(crate) fn project_relation_point_geometry(
                 };
                 curve_operands.insert(id);
             }
-            for operand in &relation.operands {
-                let Some(id) = operand.entity_ref.as_deref() else {
-                    continue;
-                };
-                referenced.insert(id);
-            }
         }
         for marker in &lane.sketch_entities {
-            match (marker.kind(), marker.stored_kind()) {
-                (SketchInputKind::Relation(_), _) => {
-                    referenced.insert(marker.id());
-                }
-                // A list-curve reading (DI-77) replaces the kind, not the
-                // stored relation code: the points the record's links reach
-                // stay drawn, and the record itself stays a curve.
-                (_, SketchInputKind::Relation(_)) => listed_relations.push(marker.id()),
-                _ => {}
+            // A list-curve reading (DI-77) replaces the kind, not the stored
+            // relation code: the points the record's links reach stay drawn,
+            // and the record itself stays a curve.
+            if !matches!(marker.kind(), SketchInputKind::Relation(_))
+                && matches!(marker.stored_kind(), SketchInputKind::Relation(_))
+            {
+                listed_relations.push(marker.id());
             }
         }
     }
-    close_over_links(&markers_by_id, &mut referenced);
+    let referenced = main_relation_reach(lanes);
     let mut point_reach = referenced.clone();
     point_reach.extend(listed_relations);
     close_over_links(&markers_by_id, &mut point_reach);
