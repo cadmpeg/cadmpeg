@@ -15642,3 +15642,122 @@ offset = 81
 type = "u32"
 source = "spec"
 anchor = "a u32 header word before the complete component source record"
+
+[[record]]
+name = "sketch_dimension_parameter_trailer"
+kind = "byte"
+section = "Sketch objects"
+anchor = "The parameter of a sketch dimension writes, after its tolerance pointer, a 32-byte trailer"
+size = 32
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs"
+note = "The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer."
+
+[[record.field]]
+name = "object_id"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the parameter's object identifier as a little-endian u32 at trailer +0"
+
+[[record.gap]]
+offset = 4
+size = 16
+note = "Sixteen bytes."
+
+[[record.field]]
+name = "measure"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the relation code of the dimension's measure as a little-endian u32 at trailer +20"
+
+[[record.field]]
+name = "operand_count"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "the operand count as a little-endian u16 at trailer +24"
+
+[[record.field]]
+name = "word"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 at trailer +26"
+
+[[record.gap]]
+offset = 30
+size = 2
+note = "Two bytes."
+
+[[record]]
+name = "sketch_external_handle_block_54"
+kind = "byte"
+section = "Sketch objects"
+anchor = "or 54 in older files and in some of `swVersion` 14000"
+size = 54
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs"
+note = "The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null."
+
+[[record.gap]]
+offset = 0
+size = 4
+note = "Four bytes."
+
+[[record.field]]
+name = "word_4"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 at +4"
+
+[[record.gap]]
+offset = 8
+size = 12
+note = "Twelve bytes."
+
+[[record.field]]
+name = "first_sentinel"
+offset = 20
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.field]]
+name = "second_sentinel"
+offset = 24
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.field]]
+name = "third_sentinel"
+offset = 28
+type = "i32"
+source = "spec"
+anchor = "three i32 `-12345` at +20"
+value = -12345
+
+[[record.gap]]
+offset = 32
+size = 4
+note = "Four bytes."
+
+[[record.field]]
+name = "version"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "a version number at +36"
+
+[[record.field]]
+name = "trailing_zeros"
+offset = 40
+type = "bytes[14]"
+source = "spec"
+anchor = "which end with fourteen zero bytes after the version"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

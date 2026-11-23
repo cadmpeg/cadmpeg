@@ -46,6 +46,30 @@ pub(super) fn named_with(
     id: Oid,
     after_id: u32,
 ) {
+    head(archive, name, schema, id, 0, after_id);
+}
+
+/// [`named`] with an operation family word (§2.3).
+pub(super) fn named_operation(archive: &mut Archive, name: &str, id: u32, family: u16) {
+    head(
+        archive,
+        Some(name),
+        Schema::Plain,
+        Oid::Plain(id),
+        family,
+        0,
+    );
+}
+
+/// A named head with `family` and `after_id`.
+fn head(
+    archive: &mut Archive,
+    name: Option<&str>,
+    schema: Schema,
+    id: Oid,
+    family: u16,
+    after_id: u32,
+) {
     let id = match id {
         Oid::Tree(id) => archive.tree_id(id),
         Oid::Plain(id) => id,
@@ -58,7 +82,7 @@ pub(super) fn named_with(
         None => archive.null(),
     }
     archive.u32(0);
-    archive.u16(0);
+    archive.u16(family);
     archive.u8(0);
     archive.u8(schema.byte());
     archive.u32(id);

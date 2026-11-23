@@ -13,8 +13,11 @@ mod archive;
 mod block;
 mod config;
 mod detailing;
+pub(super) mod extrude;
+pub(super) mod from_ir;
+pub(super) mod sketch;
 mod streams;
-mod tree;
+pub(super) mod tree;
 
 #[cfg(test)]
 mod tests;
@@ -79,8 +82,17 @@ pub(super) struct Facts<'a> {
     pub(super) name: &'a str,
     /// The name of the configuration the skeleton writes.
     pub(super) active: &'a str,
+    /// The user features, in source order, written after the origin.
+    pub(super) features: &'a [Feature],
     /// One stored body per body of the configuration's partition.
     pub(super) bodies: &'a [Body],
+}
+
+/// A user feature the tree writes.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Feature {
+    Sketch(sketch::Sketch),
+    Extrusion(extrude::Extrusion),
 }
 
 /// One stored body.
