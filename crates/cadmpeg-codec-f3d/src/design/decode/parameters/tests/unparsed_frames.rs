@@ -250,3 +250,41 @@ fn decode_reports_discriminated_trailers_that_set_an_uninterpreted_flag() {
     assert_eq!(flagged.stream, stream);
     assert_eq!(flagged.count, 2);
 }
+
+#[test]
+fn decode_reports_discriminated_trailers_that_set_the_driven_flag() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let fixture = |record_index: u32, trailer: &[u8]| {
+        let mut frame = parameter_record(Some(0x5d), "1", "Linear Dimension-2", None, "d4", 1.0);
+        frame[7..11].copy_from_slice(&record_index.to_le_bytes());
+        let expression_end = 46 + 4 + 2;
+        frame.splice(expression_end..expression_end + 9, trailer.iter().copied());
+        frame
+    };
+    let mut bulk = fixture(71, &[0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+    bulk.extend_from_slice(&fixture(72, &[0; 10]));
+    bulk.extend_from_slice(&fixture(73, &[0, 0, 0, 0, 0, 1, 0, 0, 0]));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+
+    let driven = decoded
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.record_index, parameter.flags().driven))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        driven,
+        std::collections::BTreeMap::from([(71, true), (72, false), (73, true)])
+    );
+    assert!(decoded.trailer_flags.is_empty());
+    let [flagged] = decoded.driven_flags.as_slice() else {
+        panic!("one driven flag report");
+    };
+    assert_eq!(flagged.stream, stream);
+    assert_eq!(flagged.count, 2);
+}

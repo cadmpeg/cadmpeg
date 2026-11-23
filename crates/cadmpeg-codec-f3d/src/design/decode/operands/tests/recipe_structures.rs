@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{
-    edge_recipe_structure, edge_recipe_structure_within, face_recipe_nodes, FaceRecipeProgramKind,
-    RECIPE_SIDE_SEARCH_WORK,
+use super::super::recipe_structure::{
+    edge_recipe_structure, edge_recipe_structure_within, face_recipe_nodes, RECIPE_SIDE_SEARCH_WORK,
 };
+use super::super::FaceRecipeProgramKind;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
 };
@@ -148,22 +148,28 @@ fn face_recipe_retains_its_delimiter_and_header_count_domain() {
     let program = [
         0, -1, 2, -1, 2, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
     ];
-    assert!(super::super::face_recipe_structure(&ctx, &program)
-        .unwrap()
-        .is_some());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &program)
+            .unwrap()
+            .is_some()
+    );
     for offset in [8, 10, 13, 16, 18] {
         let mut invalid = program;
         invalid[offset] = 1;
-        assert!(super::super::face_recipe_structure(&ctx, &invalid)
-            .unwrap()
-            .is_none());
+        assert!(
+            super::super::recipe_structure::face_recipe_structure(&ctx, &invalid)
+                .unwrap()
+                .is_none()
+        );
     }
     let mut single_header = program.to_vec();
     single_header[6] = 1;
     single_header.drain(9..11);
-    assert!(super::super::face_recipe_structure(&ctx, &single_header)
-        .unwrap()
-        .is_none());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &single_header)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -172,7 +178,7 @@ fn face_recipe_second_prelude_counts_its_side_clauses() {
     let single = [
         1, -1, 0, -1, 1, -1, 2, 0, -1, 1, -1, 0, 1, 0, 2, 1, 1, 1, 1, 0, 1, -1,
     ];
-    let structure = super::super::face_recipe_structure(&ctx, &single)
+    let structure = super::super::recipe_structure::face_recipe_structure(&ctx, &single)
         .unwrap()
         .unwrap();
     assert_eq!((structure.root, structure.prelude), (1, [0, 1]));
@@ -184,15 +190,17 @@ fn face_recipe_second_prelude_counts_its_side_clauses() {
 
     let mut double = single.to_vec();
     double[4] = 2;
-    assert!(super::super::face_recipe_structure(&ctx, &double)
-        .unwrap()
-        .is_none());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &double)
+            .unwrap()
+            .is_none()
+    );
 
     let two = [
         0, -1, 2, -1, 2, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
     ];
     assert_eq!(
-        super::super::face_recipe_structure(&ctx, &two)
+        super::super::recipe_structure::face_recipe_structure(&ctx, &two)
             .unwrap()
             .unwrap()
             .sides
@@ -202,8 +210,10 @@ fn face_recipe_second_prelude_counts_its_side_clauses() {
     for count in [0, 1, 3] {
         let mut miscounted = two;
         miscounted[4] = count;
-        assert!(super::super::face_recipe_structure(&ctx, &miscounted)
-            .unwrap()
-            .is_none());
+        assert!(
+            super::super::recipe_structure::face_recipe_structure(&ctx, &miscounted)
+                .unwrap()
+                .is_none()
+        );
     }
 }

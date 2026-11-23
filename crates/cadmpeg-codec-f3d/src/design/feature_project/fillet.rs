@@ -73,7 +73,7 @@ pub(super) fn project<'a>(
         return native_scope_definition(scope, parameters).map(FilletProjection::Existing);
     }
     if parameters.is_empty()
-        && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+        && crate::design::decode::operands::fillets::fixed_fillet_assignment_is_unresolved(
             scope,
             inputs.construction_groups,
         )
