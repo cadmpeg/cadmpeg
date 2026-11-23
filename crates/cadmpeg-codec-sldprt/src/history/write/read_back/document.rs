@@ -553,14 +553,13 @@ fn native_form(text: &str) -> Option<String> {
         .filter(|start| *start < locator.len());
     let mut form = kind;
     let mut digits = false;
-    let mut escaped = 0_u8;
+    // The end of the percent escape the scan is in: `%` and two hex digits.
+    let mut escape_end = 0;
     for (index, character) in locator.char_indices() {
-        let content = escaped > 0 || kept_last.is_some_and(|start| index >= start);
-        escaped = if character == '%' {
-            2
-        } else {
-            escaped.saturating_sub(1)
-        };
+        let content = index < escape_end || kept_last.is_some_and(|start| index >= start);
+        if character == '%' {
+            escape_end = index + 3;
+        }
         if character.is_ascii_digit() && !content {
             if !digits {
                 form.push_str(UNPAIRED_DIGITS);

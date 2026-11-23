@@ -636,3 +636,34 @@ fn a_written_part_that_does_not_decode_is_named() {
     assert_eq!(written.withhold.len(), 1, "{:?}", written.withhold);
     assert!(written.unread.is_none());
 }
+
+/// The read-back names a writer difference and an unread written part with
+/// their own losses.
+#[test]
+fn a_writer_difference_and_an_unread_part_are_named_by_their_losses() {
+    use crate::loss::SldprtLossCode;
+
+    let (source, input, _) = edited();
+    let read_back = ReadBack {
+        defects: vec!["model.features: 1 difference(s) (model.features x at /y)".into()],
+        unread: Some("does not decode again (fails)".into()),
+        ..ReadBack::default()
+    };
+
+    let notes = SourceEdits::new(&input, None, Some(&source), &[])
+        .unwrap()
+        .into_parts()
+        .unwritten
+        .render(&read_back);
+
+    for code in [
+        SldprtLossCode::WriterReadBackDiffers,
+        SldprtLossCode::WriterReadBackUnread,
+    ] {
+        assert_eq!(
+            notes.iter().filter(|note| note.code == code.kind()).count(),
+            1,
+            "{notes:?}"
+        );
+    }
+}
