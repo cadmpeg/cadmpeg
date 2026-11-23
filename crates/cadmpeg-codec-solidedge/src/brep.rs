@@ -82,6 +82,32 @@ fn tolerance(node: Node<'_>, losses: &mut Vec<LossNote>) -> Option<PositiveReal>
     value
 }
 
+/// The stated tolerance, widened to the departure of the edge's carrier from
+/// its faces when that departure exceeds the document tolerance.
+fn widened(
+    stated: Option<PositiveReal>,
+    departure: Option<f64>,
+    document: f64,
+) -> Option<PositiveReal> {
+    let Some(departure) = departure.filter(|value| *value > document) else {
+        return stated;
+    };
+    let wide = stated.map_or(departure, |value| value.get().max(departure));
+    PositiveReal::new(wide).or(stated)
+}
+
+/// A vertex's position in millimetres.
+fn vertex_position(nodes: &Nodes<'_>, vertex: u32) -> Option<Point3> {
+    let point = nodes.get(&ptr(*nodes.get(&vertex)?, "point")?)?;
+    let [x, y, z] = point.vector("pvec")?;
+    FinitePoint3::new(Point3::new(
+        x * MM_PER_METRE,
+        y * MM_PER_METRE,
+        z * MM_PER_METRE,
+    ))
+    .map(FinitePoint3::get)
+}
+
 fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> Result<Vec<u32>, CodecError> {
     let mut result = Vec::new();
     let mut seen = BTreeSet::new();
@@ -213,6 +239,10 @@ pub(crate) fn project(
     let mut fins = BTreeSet::new();
     let mut edges = BTreeSet::new();
     let mut fit_tolerances: BTreeMap<CurveId, f64> = BTreeMap::new();
+    // Largest departure of a carrier from the faces it bounds, where it
+    // exceeds the document tolerance.
+    let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
+    let document_linear = linear.map_or(ir.tolerances.linear.get(), PositiveLength::get);
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
     for face_index in faces {
@@ -451,12 +481,36 @@ pub(crate) fn project(
                 }
                 if projected.is_none() && construction.kind() == kind::INTERSECTION {
                     match crate::chart::project(ctx, &nodes, construction) {
-                        Ok(chart)
+                        Ok(mut chart)
                             if chart.supports.iter().all(|index| nodes.contains_key(index)) =>
                         {
+                            let owner = curve_id(stream, curve_index);
                             if let Some(fit) = &chart.fit {
-                                fit_tolerances
-                                    .insert(curve_id(stream, curve_index), fit.fit_tolerance.get());
+                                fit_tolerances.insert(owner.clone(), fit.fit_tolerance.get());
+                            }
+                            if let Some((departure, moved)) = crate::trace::conform(
+                                ctx,
+                                &nodes,
+                                &mut chart,
+                                endpoints.and_then(|[start, end]| {
+                                    Some([
+                                        vertex_position(&nodes, start)?,
+                                        vertex_position(&nodes, end)?,
+                                    ])
+                                }),
+                                document_linear,
+                            )? {
+                                if moved {
+                                    // The curve holds the vertex positions, so the
+                                    // trim admits only the carrier's departure.
+                                    fit_tolerances.insert(owner.clone(), departure);
+                                }
+                                if departure > document_linear {
+                                    departures.insert(owner, departure);
+                                    losses.push(SolidEdgeLossCode::EdgeToleranceWidened.note(
+                                        "an intersection carrier departs from its support surfaces by more than the document tolerance; the edge states that departure as its tolerance",
+                                    ));
+                                }
                             }
                             let context = cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                 chart.supports.map(|support| {
@@ -481,7 +535,7 @@ pub(crate) fn project(
                                 chart.curve,
                             )));
                             losses.push(SolidEdgeLossCode::IntersectionChartReduced.note(
-                                "surface-intersection construction and chart cache are retained; angular and parameter error fields remain unmapped",
+                                "surface-intersection construction and chart cache are retained, the chart cache moved onto its support surfaces; angular and parameter error fields remain unmapped",
                             ));
                         }
                         Ok(_) => reason = "intersection support references do not resolve",
@@ -532,10 +586,17 @@ pub(crate) fn project(
             }
             carrier = EdgeCarrier::Curve(curve_id(stream, curve_index));
         } else if let Some((sp, stated, range)) = crate::sp_curve::locate(&nodes, first) {
-            if let Some(sampled) = crate::sp_curve::sample(ctx, &nodes, sp, range)? {
+            let target = crate::sp_curve::FIT_TOLERANCE_MM.min(0.5 * document_linear);
+            if let Some(sampled) = crate::sp_curve::sample(ctx, &nodes, sp, range, target)? {
                 let owner = curve_id(stream, stated);
                 if !ir.geometry.curves.iter().any(|curve| curve.id == owner) {
                     fit_tolerances.insert(owner.clone(), sampled.fit_tolerance);
+                    if sampled.departure > document_linear {
+                        departures.insert(owner.clone(), sampled.departure);
+                        losses.push(SolidEdgeLossCode::EdgeToleranceWidened.note(
+                            "a sampled tolerant-edge carrier departs from its curve by more than the document tolerance; the edge states that departure as its tolerance",
+                        ));
+                    }
                     ir.geometry.curves.push(Curve {
                         id: owner.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(sampled.curve)),
@@ -557,11 +618,15 @@ pub(crate) fn project(
             )),
             None => ring_vertex(ctx, &mut ir, stream, edge, &carrier)?,
         };
+        let stated = tolerance(node, losses);
+        let departure = carrier
+            .curve()
+            .and_then(|curve| departures.get(curve).copied());
         ir.geometry.edges.push(Edge {
             id: edge_id(stream, edge),
             carrier,
             ends,
-            tolerance: tolerance(node, losses),
+            tolerance: widened(stated, departure, document_linear),
             native_ref: None,
         });
     }

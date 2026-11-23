@@ -21,7 +21,10 @@ use crate::geometry::{self, Nodes};
 const MM_PER_METRE: f64 = cadmpeg_ir::scalar::Magnification::MILLIMETERS_PER_METER.get();
 
 /// Largest distance, millimetres, between the sampled polyline and the
-/// evaluated curve at a segment midpoint.
+/// evaluated curve at a segment midpoint, when the document states a looser
+/// linear tolerance than the sampling needs. The caller's target is the
+/// smaller of this and half the document tolerance. Tolerant edges also
+/// admit this distance between an endpoint and the sampled curve.
 pub(crate) const FIT_TOLERANCE_MM: f64 = 1.0e-4;
 
 /// Segments sampled per knot span before midpoint refinement.
@@ -38,8 +41,12 @@ const MIN_SEED_SEGMENTS: usize = 8;
 /// The model-space polyline of a tolerant edge's `SP_CURVE`.
 pub(crate) struct Sampled {
     pub(crate) curve: NurbsCurve,
-    /// Largest sampled midpoint departure admitted, millimetres.
+    /// Largest distance, millimetres, from an edge endpoint to the sampled
+    /// curve that the trim admits.
     pub(crate) fit_tolerance: f64,
+    /// Largest midpoint departure of the polyline from the evaluated curve,
+    /// millimetres.
+    pub(crate) departure: f64,
 }
 
 /// The `SP_CURVE` node a tolerant edge's fins state, the index of the node
@@ -94,6 +101,7 @@ pub(crate) fn sample(
     nodes: &Nodes<'_>,
     sp: Node<'_>,
     range: Option<[f64; 2]>,
+    target: f64,
 ) -> Result<Option<Sampled>, CodecError> {
     let Some(support) = sp
         .pointer("surface")
@@ -118,17 +126,18 @@ pub(crate) fn sample(
     if mapped.is_err() {
         return Ok(None);
     }
-    polyline(ctx, &support, &pcurve, range)
+    polyline(ctx, &support, &pcurve, range, target)
 }
 
 /// Samples `pcurve`, in the IR's parameters of `support`, over `range` (its
 /// knot domain when absent) and bisects every segment whose midpoint departs
-/// from its chord by more than [`FIT_TOLERANCE_MM`].
+/// from its chord by more than `target`.
 fn polyline(
     ctx: &DecodeContext<'_>,
     support: &SolvedSurfaceGeometry,
     pcurve: &PcurveNurbs,
     range: Option<[f64; 2]>,
+    target: f64,
 ) -> Result<Option<Sampled>, CodecError> {
     let knots = pcurve.knots();
     let Ok(degree) = usize::try_from(pcurve.degree()) else {
@@ -191,6 +200,7 @@ fn polyline(
         points.push(point);
     }
     let mut fit_tolerance = FIT_TOLERANCE_MM;
+    let mut departure = 0.0_f64;
     let mut refined_parameters = vec![parameters[0]];
     let mut refined_points = vec![points[0]];
     for index in 1..parameters.len() {
@@ -208,7 +218,7 @@ fn polyline(
             } else {
                 None
             };
-            let departure = midpoint.map(|point| {
+            let sagitta = midpoint.map(|point| {
                 let chord = Point3::new(
                     0.5 * (from.x + to.x),
                     0.5 * (from.y + to.y),
@@ -216,18 +226,23 @@ fn polyline(
                 );
                 (point, point.distance(chord))
             });
-            let split = match departure {
-                Some((point, distance)) if distance > FIT_TOLERANCE_MM => {
+            let split = match sagitta {
+                Some((point, distance)) if distance > target => {
                     if depth < MAX_DEPTH {
                         Some(point)
                     } else {
                         // A segment at the bisection cap is kept; the stated
                         // tolerance covers its departure.
                         fit_tolerance = fit_tolerance.max(distance);
+                        departure = departure.max(distance);
                         None
                     }
                 }
-                _ => None,
+                Some((_, distance)) => {
+                    departure = departure.max(distance);
+                    None
+                }
+                None => None,
             };
             match split {
                 Some(point) => {
@@ -254,12 +269,14 @@ fn polyline(
     Ok(Some(Sampled {
         curve,
         fit_tolerance,
+        departure,
     }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{ir_parameters, polyline, FIT_TOLERANCE_MM};
+    const TARGET_MM: f64 = 5.0e-6;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
@@ -320,7 +337,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("context");
         let surface = plane();
         let pcurve = map(&surface, line([0.0, 0.0], [0.001, 0.002]));
-        let sampled = polyline(&ctx, &surface, &pcurve, None)
+        let sampled = polyline(&ctx, &surface, &pcurve, None, FIT_TOLERANCE_MM)
             .expect("evaluation")
             .expect("polyline");
         let points = sampled.curve.control_points();
@@ -343,9 +360,15 @@ mod tests {
         let surface = cylinder();
         let quarter = std::f64::consts::FRAC_PI_2;
         let pcurve = map(&surface, line([0.0, 0.002], [quarter, 0.002]));
-        let sampled = polyline(&ctx, &surface, &pcurve, Some([0.25, 0.75]))
-            .expect("evaluation")
-            .expect("polyline");
+        let sampled = polyline(
+            &ctx,
+            &surface,
+            &pcurve,
+            Some([0.25, 0.75]),
+            FIT_TOLERANCE_MM,
+        )
+        .expect("evaluation")
+        .expect("polyline");
         let points: Vec<_> = sampled
             .curve
             .control_points()
@@ -361,6 +384,27 @@ mod tests {
             let sag = 10.0 - (0.5 * (pair[0].x + pair[1].x)).hypot(0.5 * (pair[0].y + pair[1].y));
             assert!(sag <= FIT_TOLERANCE_MM);
         }
+        ctx.finish_session().expect("session");
+    }
+
+    #[test]
+    fn cylinder_arc_meets_a_document_scale_target() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("context");
+        let surface = cylinder();
+        let quarter = std::f64::consts::FRAC_PI_2;
+        let pcurve = map(&surface, line([0.0, 0.002], [quarter, 0.002]));
+        let sampled = polyline(&ctx, &surface, &pcurve, None, TARGET_MM)
+            .expect("evaluation")
+            .expect("polyline");
+        let coarse = polyline(&ctx, &surface, &pcurve, None, FIT_TOLERANCE_MM)
+            .expect("evaluation")
+            .expect("polyline");
+        assert!(sampled.curve.control_points().len() > coarse.curve.control_points().len());
+        assert!(sampled.departure <= TARGET_MM);
+        assert!(coarse.departure <= FIT_TOLERANCE_MM);
+        assert!(coarse.departure > TARGET_MM);
         ctx.finish_session().expect("session");
     }
 }
