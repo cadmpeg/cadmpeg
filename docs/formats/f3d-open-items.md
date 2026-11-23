@@ -899,9 +899,9 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What selects the 76-byte item tail of a `Revolve` over the 77-byte item tail in a plain-reference stream?
 
-**Known.** `f3d.md` §3.1 "**Revolve item tail.**" gives the forms. The 76-byte tail stores the family ordinal at tail offset 0, the custom-label count at 8, the state bytes at 16, the tracked-results table at 19, the preceding history-state identity at 30, the evaluation epoch at 34, the evaluation duration at 38, the second evaluation epoch at 46, the item-tail companion at 50, the no-result flag at 61, the rolled-back flag at 62, the record-timestamp table at 63, and two zero bytes at 74. A stream that stores the 76-byte tail for its `Revolve` item stores it for its `Sketch` and `Extrude` items, and its MetaStream header stores serializer magic `134223416` and one further u32. The streams that store the 77-byte or the 87-byte tail for a `Revolve` item store serializer magic `134224764` or a larger value.
+**Known.** `f3d.md` §3.1 "**Revolve item tail.**" gives the forms. The 76-byte tail stores the family ordinal at tail offset 0, the custom-label count at 8, the state bytes at 16, the tracked-results table at 19, the preceding history-state identity at 30, the evaluation epoch at 34, the evaluation duration at 38, the second evaluation epoch at 46, the item-tail companion at 50, the no-result flag at 61, the rolled-back flag at 62, the record-timestamp table at 63, and two zero bytes at 74. A plain-reference stream stores the 76-byte tail for its `Sketch`, `Extrude`, and `Revolve` items when its MetaStream header stores a serializer magic from `134223405` to `134223991`, and the 77-byte or the 87-byte tail when it stores serializer magic `134224396` or a larger value.
 
-**Need.** One design of a `Sketch`, an `Extrude`, and a `Revolve`, saved by builds that write serializer magic values on each side of `134224764`: the item tail of each scope compared.
+**Need.** One design of a `Sketch`, an `Extrude`, and a `Revolve`, saved by builds that write the serializer magic values between `134223991` and `134224396`: the item tail of each scope compared.
 
 ### DR-1043. Scope frame of a one-sided Revolve with serializer magic 1234
 
@@ -911,11 +911,11 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A one-sided full-turn new-body `Revolve` of a Sketch profile about a line of the same Sketch, saved in a stream with serializer magic `1234`: its scope frame compared field by field with `sketch_revolve_scope_frame`.
 
-### DR-1044. Body owner of a Revolve result body
+### DR-1044. Body-presentation owner and Body owner of a Revolve result body
 
-**Question.** Which form of the `Body` owner does the result body of a sketch-driven `Revolve` store, and what selects it?
+**Question.** What is the layout of the body-presentation owner of a sketch-driven `Revolve`'s result body, which form of the `Body` owner does that result body store, and what selects it?
 
-**Known.** `f3d.md` §3.1 "**Revolve result body.**" gives the browser-node member and the body-presentation owner, which references one `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, type version `4`, twice. That `Body` owner has no paired header. After the indexed header it stores nine zero bytes, the byte `1`, and u32 `0`, and it references the snapshot body-map companion (type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`), the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`), a record of type `372234A0-2A6C-4122-8047-E74DBA04F326`, and the component aggregate. Its length is 89, 107, 151, or 1163 bytes in a plain-reference stream and 415 bytes in a stream with serializer magic `1234`; the 107-, 151-, 1163- and 415-byte forms also reference body-presentation owners. "Records of a sketch-driven Extrude" gives the 103-byte form of the `Body` owner of an `Extrude`.
+**Known.** `f3d.md` §3.1 "**Revolve result body.**" gives the browser-node member and the body-presentation owner, which references one `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, type version `4`, twice. That `Body` owner has no paired header. After the indexed header it stores nine zero bytes, the byte `1`, and u32 `0`, and it references the snapshot body-map companion (type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`), the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`), a record of type `372234A0-2A6C-4122-8047-E74DBA04F326`, and the component aggregate. Its length is 89, 107, 151, or 1163 bytes in a plain-reference stream and 415 bytes in a stream with serializer magic `1234`; the 107-, 151-, 1163- and 415-byte forms also reference body-presentation owners. "Records of a sketch-driven Extrude" gives the 103-byte form of the `Body` owner of an `Extrude`. The body-presentation owner of type version `18` stores, after the indexed header, ten zero bytes, or nine zero bytes, the byte `1`, and u32 `0`, and then u32 `2`. The body-presentation owner of type version `19` starts with the prefix `sketch_extrude_body_presentation_owner_prefix` and the LP-UTF16 name `0_` followed by its own decimal record index.
 
 **Need.** A design of one Sketch and one one-sided new-body `Revolve`, saved in a stream with serializer magic `1234`: the `Body` owner of its result body compared with the 103-byte form.
 
