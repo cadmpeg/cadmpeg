@@ -2692,7 +2692,9 @@ pub(crate) fn favhandle(r: &mut Reader<'_>) -> Res<V> {
     Ok(list(s))
 }
 
-/// `moBaseBody_c`.
+/// `moBaseBody_c`: the feature, its body head, its `moPMarkRecord_c` and,
+/// when present, a `CString`, a u32 and the name. The next object follows
+/// directly.
 pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
     feature(r, "moBaseBody_c")?;
     bodyhead(r, "moBaseBody_c")?;
@@ -2702,9 +2704,6 @@ pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
         r.cstring()?;
         r.u32()?;
         nm = V::from(r.cstring()?);
-    }
-    if r.p < r.len() {
-        r.expect_zeros(4, "base body u32 0")?;
     }
     Ok(V::map([("name", nm)]))
 }

@@ -98,7 +98,8 @@ fn enclosure_metadata_is_not_generated_without_a_retained_opaque_prologue() {
         native_ref: None,
     });
     let mut unwritten = crate::writer::UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 0.001, false, &mut unwritten, &mut Vec::new());
     assert!(objects.is_empty());
     assert!(units.is_none());
     assert_eq!(
@@ -106,7 +107,8 @@ fn enclosure_metadata_is_not_generated_without_a_retained_opaque_prologue() {
         Some(crate::writer::Unwritten::NoSerializer)
     );
     let mut retained = crate::writer::UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, true, &mut retained);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 0.001, true, &mut retained, &mut Vec::new());
     assert!(objects.is_empty());
     assert!(units.is_none());
     assert_eq!(

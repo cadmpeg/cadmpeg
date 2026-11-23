@@ -28,6 +28,36 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
     pub(crate) const ZERO_TAIL: usize = 28;
 }
 
+/// Byte offsets for the `feature_input_padded_scalar_cell` record.
+///
+/// Spec §2. Record length 19 B.
+///
+/// ```text
+/// Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form.
+/// ```
+pub(crate) mod feature_input_padded_scalar_cell {
+    /// Offset of `padding` (`bytes[4]`). Spec §2.
+    pub(crate) const PADDING: usize = 0;
+    /// Offset of `value` (`f64`, little-endian). Spec §2.
+    pub(crate) const VALUE: usize = 4;
+    /// Offset of `trailer_zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_ZERO_PREFIX: usize = 12;
+}
+
+/// Byte offsets for the `feature_input_class_reference_trailer` record.
+///
+/// Spec §2. Record length 3 B.
+///
+/// ```text
+/// The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is.
+/// ```
+pub(crate) mod feature_input_class_reference_trailer {
+    /// Offset of `zero` (`u8`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Offset of `class_reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_REFERENCE: usize = 1;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.
@@ -58,6 +88,8 @@ pub(crate) mod feature_input_operand_cell12 {
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
+    /// Offset of `relation_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const RELATION_CLASS_TOKEN: usize = 0;
     /// Offset of `zero` (`u32`, little-endian). Spec §2.
     pub(crate) const ZERO: usize = 2;
     /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
@@ -2444,6 +2476,46 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const NAME_LENGTH: usize = 5;
 }
 
+/// Byte offsets for the `revolution_line_reference_record_tail` record.
+///
+/// Spec §2. Record length 57 B.
+///
+/// ```text
+/// Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+/// ```
+pub(crate) mod revolution_line_reference_record_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const SCALAR: usize = 0;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 8;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const DIRECTION: usize = 32;
+    /// Offset of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO: usize = 56;
+    /// Stated value of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `revolution_line_reference_nested_end` record.
+///
+/// Spec §2. Record length 6 B.
+///
+/// ```text
+/// Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+/// ```
+pub(crate) mod revolution_line_reference_nested_end {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Stated value of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `selector` (`u8`). Spec §2.
+    pub(crate) const SELECTOR: usize = 5;
+}
+
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
 ///
 /// Spec §2. Record length 17 B.
@@ -3563,6 +3635,43 @@ pub(crate) mod compact_principal_plane_component {
     pub(crate) const TRAILER_KIND: usize = 122;
     /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
     pub(crate) const TRAILER_SENTINEL: usize = 126;
+}
+
+/// Byte offsets for the `compact_principal_plane_component_padded` record.
+///
+/// Spec §2. Record length 142 B.
+///
+/// ```text
+/// The principal-plane component record with its feature number one word earlier. The 138-byte record of compact_principal_plane_component starts at +4: its source word is the time stamp and its time-stamp word is the padding.
+/// ```
+pub(crate) mod compact_principal_plane_component_padded {
+    /// Offset of `feature_number` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const FEATURE_NUMBER: usize = 0;
+    /// Offset of `time_stamp` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TIME_STAMP: usize = 4;
+    /// Offset of `padding` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING: usize = 8;
+    /// Stated value of `padding` (`u32`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING_VALUE: u32 = 0x0000_0000;
+    /// Offset of `selector` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const SELECTOR: usize = 14;
+    /// Offset of `matrix_present` (`u8`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const MATRIX_PRESENT: usize = 18;
+    /// Offset of `basis` (`f64[9]`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const BASIS: usize = 19;
+    /// Offset of `trailer_kind` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_KIND: usize = 126;
+    /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_SENTINEL: usize = 130;
 }
 
 /// Byte offsets for the `extrusion_compact_operation_trailer` record.

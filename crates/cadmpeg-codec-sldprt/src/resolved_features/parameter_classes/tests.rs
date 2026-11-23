@@ -93,6 +93,20 @@ impl Stream {
         self
     }
 
+    /// The name record and a value-only scalar whose f64 `value` follows
+    /// four zero bytes after its header, then its trailer of three zero
+    /// bytes and the scalar's object identifier.
+    fn padded(&mut self, name: &str, value: f64, object: u32) -> &mut Self {
+        self.name_record(name);
+        self.0.extend_from_slice(VALUE_ONLY_SCALAR_HEADER);
+        self.0.extend_from_slice(&[0; 4]);
+        self.0.extend_from_slice(&value.to_le_bytes());
+        self.0.extend_from_slice(&[0, 0, 0]);
+        self.0.extend_from_slice(&object.to_le_bytes());
+        self.0.resize(self.0.len() + 40, 0);
+        self
+    }
+
     /// A pattern-count dimension that declares its relation and parameter
     /// classes in place, named `N9` and holding 3. Its declaration precedes
     /// a name record, from which the name reader learns the name class; at
@@ -442,6 +456,34 @@ fn a_stream_that_opens_with_a_declaration_states_no_map_count() {
             ("D2".into(), Some(StatedParameter::Length(0.02))),
         ]
     );
+}
+
+#[test]
+fn a_padded_value_only_scalar_states_its_f64_and_no_count() {
+    // The f64 after the padding states a length. Under the integer class its
+    // cell is eight bytes wide, its trailer beginning after the f64, so it
+    // holds no count, whether or not the f64's low half is zero.
+    let mut length = Stream::compound();
+    length
+        .declare("sgPntPntDist")
+        .zero_word()
+        .declare("moLengthParameter_c")
+        .padded("D1", 0.0127, 7);
+    assert_eq!(
+        stated_by_name(&length.lane()),
+        vec![("D1".into(), Some(StatedParameter::Length(0.0127)))]
+    );
+    for value in [0.0127, 2.0] {
+        let mut count = Stream::compound();
+        count
+            .declare("sgCircularPattCntDim")
+            .zero_word()
+            .declare("moIntegerParameter_c")
+            .padded("D2", value, 8);
+        let lane = count.lane();
+        assert_eq!(lane.scalars.len(), 1);
+        assert_eq!(stated_by_name(&lane), vec![("D2".into(), None)]);
+    }
 }
 
 #[test]
