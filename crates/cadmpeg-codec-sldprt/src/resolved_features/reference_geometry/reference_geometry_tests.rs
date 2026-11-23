@@ -1061,6 +1061,7 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut histories,
         &[lane],
+        None,
     )
     .unwrap();
 

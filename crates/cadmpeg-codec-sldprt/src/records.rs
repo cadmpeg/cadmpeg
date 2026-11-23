@@ -1422,9 +1422,9 @@ pub(crate) struct SketchInputEntity {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
-    /// Curve form and relation code discarded by list-curve admission (DI-77).
+    /// The stored kind a list-curve reading replaced (DI-77).
     #[serde(skip)]
-    pub(crate) listed_curve_relation_drop: Option<(&'static str, u32)>,
+    pub(crate) listed_curve: Option<ListedCurveOverride>,
     /// Little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
@@ -1458,6 +1458,18 @@ pub(crate) struct LineSides {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_next_side, u32, "next_side");
+
+/// A marker whose record a `sgSketch` curve list reads as a curve, and the
+/// kind its +17 code selects without that reading (DI-77).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListedCurveOverride {
+    /// Curve form the list reading gives the record: `line`, `circle` or `arc`.
+    pub(crate) form: &'static str,
+    /// The +17 code.
+    pub(crate) code: u32,
+    /// The kind the code selects without the list reading.
+    pub(crate) stored: SketchInputKind,
+}
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
@@ -1525,19 +1537,15 @@ fn sketch_entities_from_wire(
     let Some(parent) = wire.first().map(|entity| entity.parent.as_str()) else {
         return Ok(Vec::new());
     };
-    let drops = crate::resolved_features::markers::admit_sketch_input_entities(payload, parent)
+    let listed = crate::resolved_features::markers::admit_sketch_input_entities(payload, parent)
         .map_err(|error| error.to_string())?
         .into_iter()
-        .filter_map(|entity| {
-            entity
-                .listed_curve_relation_drop
-                .map(|drop| (entity.offset(), drop))
-        })
+        .filter_map(|entity| entity.listed_curve.map(|listed| (entity.offset(), listed)))
         .collect::<HashMap<_, _>>();
     wire.into_iter()
         .map(|entity| {
             let mut entity = SketchInputEntity::try_from_wire(entity, payload)?;
-            entity.listed_curve_relation_drop = drops.get(&entity.offset()).copied();
+            entity.listed_curve = listed.get(&entity.offset()).copied();
             Ok(entity)
         })
         .collect()
@@ -1632,6 +1640,12 @@ impl SketchInputEntity {
     /// Sketch-entity kind this marker identifies.
     pub(crate) fn kind(&self) -> SketchInputKind {
         self.kind
+    }
+
+    /// The kind the marker's +17 code selects before a list-curve reading
+    /// replaces it (DI-77).
+    pub(crate) fn stored_kind(&self) -> SketchInputKind {
+        self.listed_curve.map_or(self.kind, |listed| listed.stored)
     }
 
     /// Reclassifies this marker once its payload neighbourhood identifies a
@@ -1746,7 +1760,7 @@ impl SketchInputEntity {
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
             local_id: crate::resolved_features::markers::marker_local_id(payload, position),
             kind,
-            listed_curve_relation_drop: None,
+            listed_curve: None,
             state_value: None,
             coordinates_m: None,
             line_sides: crate::resolved_features::markers::marker_line_sides(payload, position),

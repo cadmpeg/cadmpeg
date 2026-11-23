@@ -2235,18 +2235,20 @@ fn prepare_history(
     )?;
     // The configuration states are projected again with the profile bodies
     // the decode bound, read from the retained source image.
-    crate::history::write::configurations::prepare_configurations_for_write(
-        ir,
-        native,
-        annotations,
-        |lanes| {
-            source_image(retained_records)
-                .map(|image| {
-                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
-                })
-                .transpose()
-        },
-    )?;
+    prepared.losses.extend(
+        crate::history::write::configurations::prepare_configurations_for_write(
+            ir,
+            native,
+            annotations,
+            |lanes| {
+                source_image(retained_records)
+                    .map(|image| {
+                        crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                    })
+                    .transpose()
+            },
+        )?,
+    );
     Ok(prepared)
 }
 

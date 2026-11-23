@@ -23,15 +23,18 @@ use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
     SPATIAL_VERTEX_PREFIX,
 };
+use crate::loss::SldprtLossCode;
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
-    FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
+    FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputOperandKind,
+    FeatureInputReference, FeatureInputRelationBinding, FeatureInputScalar, HistoryFeatures,
+    ListedCurveOverride, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition, SpatialSketchId,
@@ -909,19 +912,23 @@ pub(crate) fn admit_sketch_input_entities(
                     _ => None,
                 },
             };
-            let dropped_relation = curve.filter(|_| kind.owns_constraint()).map(|curve| {
-                let form = match curve {
-                    FramedCurve::Line => "line",
-                    FramedCurve::Circle => "circle",
-                    FramedCurve::Arc => "arc",
-                };
-                (form, code)
-            });
+            let stored = kind;
             let kind = match curve {
                 Some(FramedCurve::Line | FramedCurve::Circle) => SketchInputKind::LineOrCircle,
                 Some(FramedCurve::Arc) => SketchInputKind::Arc,
                 None => kind,
             };
+            let listed_curve = curve
+                .filter(|_| stored != kind)
+                .map(|curve| ListedCurveOverride {
+                    form: match curve {
+                        FramedCurve::Line => "line",
+                        FramedCurve::Circle => "circle",
+                        FramedCurve::Arc => "arc",
+                    },
+                    code,
+                    stored,
+                });
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Err(CodecError::malformed(format_args!(
                     "SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"
@@ -945,10 +952,44 @@ pub(crate) fn admit_sketch_input_entities(
             };
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
-            entity.listed_curve_relation_drop = dropped_relation;
+            entity.listed_curve = listed_curve;
             entities.push(entity);
             Ok(entities)
         })
+}
+
+/// Names each constraint-owning relation code a list-curve reading replaced
+/// (DI-77), once for each marker of every lane, whichever projection path
+/// reads the marker's sketch.
+pub(crate) fn report_listed_curve_relation_drops(
+    lanes: &[FeatureInputLane],
+    histories: &[FeatureHistory],
+    losses: &mut Vec<LossNote>,
+) {
+    let features = HistoryFeatures::new(histories);
+    for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        let Some(listed) = marker
+            .listed_curve
+            .filter(|listed| listed.stored.owns_constraint())
+        else {
+            continue;
+        };
+        let owner = marker
+            .feature_ref
+            .as_deref()
+            .and_then(|feature| features.get(feature))
+            .map_or_else(String::new, |feature| {
+                format!(" of feature {}", feature.name)
+            });
+        losses.push(
+            SldprtLossCode::SketchListedCurveRelationDropped.note(format!(
+                "Sketch marker {}{owner} drops relation code {} at +17 for a listed {} (DI-77)",
+                marker.id(),
+                listed.code,
+                listed.form
+            )),
+        );
+    }
 }
 
 #[cfg(test)]

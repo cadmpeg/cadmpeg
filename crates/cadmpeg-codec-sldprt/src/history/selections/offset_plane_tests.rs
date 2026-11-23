@@ -1194,3 +1194,74 @@ fn resolved_plane_offset_takes_the_side_its_stored_frame_states() {
         .to_string()
         .contains("normal not parallel to the source plane"));
 }
+
+/// The Front offset plane of [`front_and_offset`] whose stored frame lies at
+/// `stored_origin` and whose plane-data object stores the point
+/// `plane_point` with the Front normal.
+fn front_and_offset_with_plane_point(
+    stored_origin: &str,
+    plane_point: &str,
+) -> Vec<cadmpeg_ir::features::Feature> {
+    let mut features = front_and_offset(stored_origin);
+    for (key, value) in [
+        (cadmpeg_core::nonblank_literal!("PlanePoint"), plane_point),
+        (cadmpeg_core::nonblank_literal!("PlaneNormal"), "0,0,1"),
+    ] {
+        features[1].source_properties.insert(key, value.into());
+    }
+    features
+}
+
+/// Where the stored frame is the source plane's, the point of the plane-data
+/// object states the side, on either side of the source normal.
+#[test]
+fn offset_plane_takes_the_side_its_plane_data_point_states() {
+    for (plane_point, expected) in [("2mm,1mm,-5mm", -5.0), ("0mm,0mm,5mm", 5.0)] {
+        let mut features = front_and_offset_with_plane_point("0mm,0mm,0mm", plane_point);
+        let report = bind_offset_plane_references(&mut features);
+        assert_eq!(offset_distance(&features[1]), expected);
+        assert!(report.unstated.is_empty() && report.contradicted.is_empty());
+    }
+}
+
+/// A stored frame that states one side outranks a plane-data point on the
+/// other: the frame's side stays and the disagreement is named.
+#[test]
+fn offset_plane_keeps_its_frame_side_against_a_plane_data_point_and_names_it() {
+    let mut features = front_and_offset_with_plane_point("0mm,0mm,5mm", "0mm,0mm,-5mm");
+    let report = bind_offset_plane_references(&mut features);
+    assert_eq!(offset_distance(&features[1]), 5.0);
+    assert!(report.unstated.is_empty());
+    assert_eq!(report.contradicted.count(), 1);
+    assert!(report
+        .contradicted
+        .to_string()
+        .contains("plane-data point on the other side of the stored frame"));
+}
+
+/// A plane-data point at another distance than `D1` states no side: the sign
+/// of `D1` stays and the disagreement is named.
+#[test]
+fn offset_plane_data_point_at_another_distance_is_named_and_states_no_side() {
+    let mut features = front_and_offset_with_plane_point("0mm,0mm,0mm", "0mm,0mm,-7mm");
+    let report = bind_offset_plane_references(&mut features);
+    assert_eq!(offset_distance(&features[1]), 5.0);
+    assert!(report.unstated.is_empty());
+    assert!(report
+        .contradicted
+        .to_string()
+        .contains("plane-data point parallel at a distance other than D1"));
+}
+
+/// A plane whose distance is the `D1` display is reported.
+#[test]
+fn offset_plane_with_a_displayed_distance_is_reported() {
+    let mut features = front_and_offset("0mm,0mm,5mm");
+    features[1].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("DistanceDisplayed"),
+        "5".into(),
+    );
+    let report = bind_offset_plane_references(&mut features);
+    assert_eq!(report.displayed.count(), 1);
+    assert_eq!(offset_distance(&features[1]), 5.0);
+}

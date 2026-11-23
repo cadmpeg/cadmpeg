@@ -164,6 +164,18 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
+    /// A relation point marker whose record form reads a coordinate pair
+    /// that holds a nonzero subnormal value gives no relation point.
+    SketchPointCoordinatesSubnormal,
+    /// A relation point marker gives no relation point where the decode
+    /// does not settle its place: no unique fitted marker transform and no
+    /// sketch frame place it; or, for a marker that only a list-read record
+    /// reaches, the fitted transform and the frame place it more than the
+    /// linear resolution apart and a curve end or centre of the sketch or a
+    /// vertex or circular-edge centre of the solid marks both places or
+    /// neither, or the sketch its feature binds is read from another
+    /// feature-input lane.
+    SketchRelationPointPlaceUnsettled,
     /// A profile sketch lies on a plane the decoder assumes (open item
     /// DI-73): the plane that the preceding object's or the lane's plane
     /// reference names, the Top plane its feature-input reference names, the
@@ -227,11 +239,16 @@ pub(crate) enum SldprtLossCode {
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
     /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
-    /// magnitude and no stored frame of the object states the side (DI-81).
+    /// magnitude, and neither a stored frame of the object nor the point and
+    /// normal of its plane-data object states the side.
     FeatureOffsetPlaneSideAssumed,
-    /// An offset reference plane stores a frame of its own that is not the
-    /// plane the decoder places from its source plane and `D1` (DI-81).
+    /// An offset reference plane stores a frame, or a point and normal, that
+    /// is not the plane the decoder places from its source plane and `D1`.
     FeatureOffsetPlaneFrameConflict,
+    /// An offset reference plane takes its distance from the `D1` display: the
+    /// decoder reads no value of its `D1` parameter object that the display
+    /// shows.
+    FeatureOffsetPlaneDistanceDisplayed,
     /// A revolution keeps a stored axis that lies outside the plane the
     /// decoder binds its profile sketch to (DI-85).
     FeatureRevolveAxisOffProfilePlane,
@@ -634,6 +651,8 @@ impl SldprtLossCode {
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
+        Self::SketchPointCoordinatesSubnormal,
+        Self::SketchRelationPointPlaceUnsettled,
         Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
@@ -660,6 +679,7 @@ impl SldprtLossCode {
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureOffsetPlaneSideAssumed,
         Self::FeatureOffsetPlaneFrameConflict,
+        Self::FeatureOffsetPlaneDistanceDisplayed,
         Self::FeatureRevolveAxisOffProfilePlane,
         Self::FeatureRevolveAxisRecordPrefixUnread,
         Self::FeatureThinOperationAmbiguous,
@@ -854,6 +874,8 @@ impl SldprtLossCode {
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
+            Self::SketchRelationPointPlaceUnsettled => "sketch.relation-point-place-unsettled",
             Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
@@ -877,6 +899,7 @@ impl SldprtLossCode {
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
             Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
+            Self::FeatureOffsetPlaneDistanceDisplayed => "feature.offset-plane-distance-displayed",
             Self::FeatureRevolveAxisOffProfilePlane => "feature.revolve-axis-off-profile-plane",
             Self::FeatureRevolveAxisRecordPrefixUnread => {
                 "feature.revolve-axis-record-prefix-unread"
@@ -1145,6 +1168,8 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1171,6 +1196,7 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
             | Self::FeatureRevolveAxisOffProfilePlane
             | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
@@ -1455,6 +1481,8 @@ impl SldprtLossCode {
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1481,6 +1509,7 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
             | Self::FeatureRevolveAxisOffProfilePlane
             | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
@@ -1729,6 +1758,8 @@ mod tests {
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
+                "sketch.point-coordinates-subnormal",
+                "sketch.relation-point-place-unsettled",
                 "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
@@ -1755,6 +1786,7 @@ mod tests {
                 "feature.extrude-start-unresolved",
                 "feature.offset-plane-side-assumed",
                 "feature.offset-plane-frame-conflict",
+                "feature.offset-plane-distance-displayed",
                 "feature.revolve-axis-off-profile-plane",
                 "feature.revolve-axis-record-prefix-unread",
                 "feature.thin-operation-ambiguous",

@@ -89,7 +89,7 @@ pub(crate) fn named_scalars(
 ///
 /// The name length comes from the payload's own length byte, so the offset is a
 /// function of the retained bytes alone and never of a stored name value.
-fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
+pub(super) fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
     let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
