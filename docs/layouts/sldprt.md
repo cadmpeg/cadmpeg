@@ -64,6 +64,20 @@ Parsed by:
 | 12 | 3 | `trailer_zero_prefix` | `bytes[3]` | little | spec | the trailer begins after the f64 |
 | 15 | 4 | `object_id` | `u32` | little | spec | three zero bytes and the scalar object identifier |
 
+## `feature_input_class_reference_trailer`
+
+Spec §2 · layout: byte offsets · size: 3 B
+
+The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero` | `u8` | little | spec | with a zero byte and a class token |
+| 1 | 2 | `class_reference` | `u16` | little | spec | a class token or class declaration |
+
 ## `feature_input_operand_cell12`
 
 Spec §2 · layout: byte offsets · size: 12 B

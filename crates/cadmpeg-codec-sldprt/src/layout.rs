@@ -44,6 +44,20 @@ pub(crate) mod feature_input_padded_scalar_cell {
     pub(crate) const TRAILER_ZERO_PREFIX: usize = 12;
 }
 
+/// Byte offsets for the `feature_input_class_reference_trailer` record.
+///
+/// Spec §2. Record length 3 B.
+///
+/// ```text
+/// The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is.
+/// ```
+pub(crate) mod feature_input_class_reference_trailer {
+    /// Offset of `zero` (`u8`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Offset of `class_reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_REFERENCE: usize = 1;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.

@@ -692,7 +692,7 @@ resolve a seed feature?
 
 **Question.** Where does a value-only scalar behind the 18-byte header store its object identifier when the trailer after its f64 opens with a zero byte and a class token or class declaration?
 
-**Known.** `sldprt.md` §2: such a trailer follows the f64 at the 18-byte header's end. The class token's high-bit byte or the declaration's `ff ff` occupies the bytes where a trailer of the first form stores the object identifier. The decoder reads the value at the end of the 14-byte value-only header for this trailer, so the value it states holds the four zero bytes and the f64's low half.
+**Known.** `sldprt.md` §2: such a trailer follows the f64 at the 18-byte header's end. The class token's high-bit byte or the declaration's `ff ff` occupies the bytes where a trailer of the first form stores the object identifier. The decoder reads the f64 at the 18-byte header's end. The u32 it reads as the object identifier at trailer +3 holds the class reference's last byte and the bytes after it.
 
 **Need.** The object that the class reference opens, compared with the objects that follow trailers of the first form, and the scalar's f64 compared with the Keywords display of its dimension.
 
