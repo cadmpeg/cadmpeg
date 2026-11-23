@@ -27,7 +27,9 @@ pub(crate) const FIT_TOLERANCE_MM: f64 = 1.0e-4;
 /// Segments sampled per knot span before midpoint refinement.
 const SEED_SEGMENTS_PER_SPAN: usize = 4;
 
-/// Midpoint bisections applied to one seed segment.
+/// Midpoint bisections applied to one seed segment. A segment still
+/// outside the fit tolerance at this depth is kept, and the sampled fit
+/// tolerance states its midpoint departure.
 const MAX_DEPTH: u32 = 12;
 
 /// The fewest seed segments.
@@ -188,6 +190,7 @@ fn polyline(
         parameters.push(parameter);
         points.push(point);
     }
+    let mut fit_tolerance = FIT_TOLERANCE_MM;
     let mut refined_parameters = vec![parameters[0]];
     let mut refined_points = vec![points[0]];
     for index in 1..parameters.len() {
@@ -200,19 +203,32 @@ fn polyline(
         )];
         while let Some((start, from, end, to, depth)) = pending.pop() {
             let middle = 0.5 * (start + end);
-            let midpoint = if depth < MAX_DEPTH && middle > start && middle < end {
+            let midpoint = if middle > start && middle < end {
                 point_at(middle)?
             } else {
                 None
             };
-            let split = midpoint.filter(|point| {
+            let departure = midpoint.map(|point| {
                 let chord = Point3::new(
                     0.5 * (from.x + to.x),
                     0.5 * (from.y + to.y),
                     0.5 * (from.z + to.z),
                 );
-                point.distance(chord) > FIT_TOLERANCE_MM
+                (point, point.distance(chord))
             });
+            let split = match departure {
+                Some((point, distance)) if distance > FIT_TOLERANCE_MM => {
+                    if depth < MAX_DEPTH {
+                        Some(point)
+                    } else {
+                        // A segment at the bisection cap is kept; the stated
+                        // tolerance covers its departure.
+                        fit_tolerance = fit_tolerance.max(distance);
+                        None
+                    }
+                }
+                _ => None,
+            };
             match split {
                 Some(point) => {
                     pending.push((middle, point, end, to, depth + 1));
@@ -237,7 +253,7 @@ fn polyline(
     };
     Ok(Some(Sampled {
         curve,
-        fit_tolerance: FIT_TOLERANCE_MM,
+        fit_tolerance,
     }))
 }
 
