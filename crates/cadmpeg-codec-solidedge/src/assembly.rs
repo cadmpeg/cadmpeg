@@ -11,7 +11,8 @@
 //! not read leaves the definition without a path. An occurrence that does not
 //! read adds `assembly.occurrence-unread`, a site whose link does not read adds
 //! `assembly.reference-unread`, and the display state, which the layout does
-//! not state, adds `assembly.visibility-unread` once. A document with no
+//! not state, adds `assembly.visibility-unread` once. The state word states
+//! whether the occurrence is grounded, so an occurrence states no suppression. A document with no
 //! references collection adds nothing.
 //!
 //! Stored lengths are metres and CADIR states millimetres. The stored rotation
@@ -41,8 +42,6 @@ const COLLECTION_CLASS: &str = "References Collection Object";
 const REFERENCE_CLASS: &str = "CLSID_JAsmReference";
 /// The class of a referenced document's site.
 const SITE_CLASS: &str = "CLSID_JSite";
-/// Bit of the state word that states a suppressed occurrence (§9.2).
-const SUPPRESSED_BIT: u32 = 0x04;
 /// Offset of the first file moniker in a site's link stream, after its 12-byte
 /// header (§9.3).
 const FIRST_MONIKER_AT: usize = 12;
@@ -113,7 +112,6 @@ fn listing(cluster: &Cluster<'_>, types: &TypeTable) -> Option<Listing> {
 /// One occurrence as stored.
 struct Stored {
     site: u32,
-    suppressed: bool,
     /// The placement, or the reason it is not stated.
     transform: Result<Transform, String>,
 }
@@ -187,8 +185,6 @@ fn read_occurrence(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Result<
             assembly_reference::LEN
         ));
     }
-    let state = View::u32_le_at(bytes, assembly_reference::STATE)
-        .ok_or_else(|| "the state word is unreadable".to_owned())?;
     let site = View::u32_le_at(bytes, assembly_reference::SITE)
         .ok_or_else(|| "the site identifier is unreadable".to_owned())?;
     let site_object = cluster
@@ -199,7 +195,6 @@ fn read_occurrence(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Result<
     }
     Ok(Stored {
         site,
-        suppressed: state & SUPPRESSED_BIT != 0,
         transform: placement(bytes),
     })
 }
@@ -345,9 +340,7 @@ pub(crate) fn project<'a>(
                 None
             }
         };
-        let mut occurrence = Occurrence::new(occurrence_id(id), prototype, transform);
-        occurrence.suppressed = Some(stored.suppressed);
-        occurrences.push(occurrence);
+        occurrences.push(Occurrence::new(occurrence_id(id), prototype, transform));
     }
     if occurrences.is_empty() {
         return Ok(());
