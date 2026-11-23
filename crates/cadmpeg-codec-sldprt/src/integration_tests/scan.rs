@@ -208,7 +208,7 @@ fn scan_sldprt_complete_non_history_block_ending_in_a_marker_prefix_is_skipped()
 }
 
 #[test]
-fn scan_sldprt_history_block_cut_after_its_marker_is_truncated() {
+fn scan_sldprt_history_block_cut_in_its_marker_completes_and_in_its_header_is_truncated() {
     let preview = make_block(0x42, "Preview/Thumbnail", LIST);
     for lead in [&[][..], &preview[..], &[0][..]] {
         let marker = make_block(0x42, "Contents/Keywords", LIST);
@@ -220,18 +220,25 @@ fn scan_sldprt_history_block_cut_after_its_marker_is_truncated() {
             bytes.extend_from_slice(&marker[..cut]);
             assert_complete_history_listing(&bytes);
         }
-        // A cut after the marker ends the file inside the block header.
-        let mut bytes = source(LIST);
-        bytes.extend_from_slice(lead);
-        bytes.extend_from_slice(&marker[..8]);
-        let scan = scan_bytes(&bytes);
-        assert!(
-            matches!(scan.stop_reason, Some(StopReason::Truncated(_))),
-            "cut at 8 after {} lead bytes",
-            lead.len()
-        );
-        let census = scan.census.expect("first block's admitted rows");
-        assert!(!census.complete, "cut at 8 after {} lead bytes", lead.len());
+        // A cut at or after the whole marker ends the file inside the block
+        // header.
+        for cut in [6, 7, 8] {
+            let mut bytes = source(LIST);
+            bytes.extend_from_slice(lead);
+            bytes.extend_from_slice(&marker[..cut]);
+            let scan = scan_bytes(&bytes);
+            assert!(
+                matches!(scan.stop_reason, Some(StopReason::Truncated(_))),
+                "cut at {cut} after {} lead bytes",
+                lead.len()
+            );
+            let census = scan.census.expect("first block's admitted rows");
+            assert!(
+                !census.complete,
+                "cut at {cut} after {} lead bytes",
+                lead.len()
+            );
+        }
     }
 }
 
@@ -244,11 +251,7 @@ fn scan_bytes(bytes: &[u8]) -> cadmpeg_core::scan::DesignScan {
 }
 
 fn assert_complete_history_listing(bytes: &[u8]) {
-    let scan = SldprtCodec::scan_design(
-        View::over_retained(bytes),
-        ScanLimits::default(),
-        &ManualClock::default(),
-    );
+    let scan = scan_bytes(bytes);
     assert_eq!(scan.stop_reason, None);
     let census = scan.census.expect("history census");
     assert!(census.complete);
