@@ -292,10 +292,8 @@ fn unprojected_item(
     losses: &mut Vec<LossNote>,
 ) -> Feature {
     let id = item_feature_id(stream, record);
-    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
-        losses.push(code.note(format!(
-            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
-        )));
+    if let Some(flags) = flags {
+        losses.extend(flags.assumption_notes(&format!("feature {id}")));
     }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
