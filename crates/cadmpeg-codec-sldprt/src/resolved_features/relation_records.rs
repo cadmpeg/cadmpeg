@@ -2367,13 +2367,13 @@ mod relation_records_tests {
         name(&mut bytes, "D1");
         bytes.extend_from_slice(super::super::VALUE_ONLY_SCALAR_HEADER);
         bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&0.031f64.to_le_bytes());
+        bytes.extend_from_slice(&0.0215f64.to_le_bytes());
         trailer(&mut bytes, 21, 40);
         for (dimension, metres, role, object) in [
-            ("D1", 0.052f64, 1u8, 23u32),
-            ("D1", 0.06, 0, 24),
-            ("D2", 0.093, 1, 25),
-            ("D2", 0.3, 0, 26),
+            ("D1", 0.0412f64, 1u8, 23u32),
+            ("D1", 0.045, 0, 24),
+            ("D2", 0.0176, 1, 25),
+            ("D2", 0.025, 0, 26),
         ] {
             bytes.extend_from_slice(&(0x8000 | relation).to_le_bytes());
             bytes.extend_from_slice(&[0; 4]);

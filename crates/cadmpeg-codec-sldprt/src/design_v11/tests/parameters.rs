@@ -1059,8 +1059,8 @@ fn scalars_one_number_apart_state_one_length_and_further_apart_none() {
 
     let keywords = br#"<Keywords Name="Bracket">
             <Feature Name="Sketch1" Type="ProfileFeature" id="7">
-                <Dimension Name="D1">20</Dimension>
-                <Dimension Name="D2">20</Dimension>
+                <Dimension Name="D1">37.5</Dimension>
+                <Dimension Name="D2">37.5</Dimension>
             </Feature>
         </Keywords>"#;
     let shown = |metres| NamedScalar {
@@ -1069,12 +1069,12 @@ fn scalars_one_number_apart_state_one_length_and_further_apart_none() {
     };
     // D1's scalars differ in the last bit; D2's by 5e-6 relative, though
     // the display shows both.
-    let next = f64::from_bits(0.02f64.to_bits() + 1);
+    let next = f64::from_bits(0.0375f64.to_bits() + 1);
     let named = [
-        ("Sketch1", "D1", shown(0.02)),
+        ("Sketch1", "D1", shown(0.0375)),
         ("Sketch1", "D1", shown(next)),
-        ("Sketch1", "D2", shown(0.02)),
-        ("Sketch1", "D2", shown(0.020_000_1)),
+        ("Sketch1", "D2", shown(0.0375)),
+        ("Sketch1", "D2", shown(0.037_500_2)),
     ];
     let (_, parameters, notes) =
         parameters_with_scalars(keywords, &[], &[], &[], &named, Some(UnitSymbol::Mm), None);
@@ -1093,7 +1093,7 @@ fn scalars_one_number_apart_state_one_length_and_further_apart_none() {
     let d1 = parameter("D1");
     assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!(
-        matches!(&d1.value, Some(ParameterValue::Number(value)) if value.get() == 0.02 * 1000.0),
+        matches!(&d1.value, Some(ParameterValue::Number(value)) if value.get() == 0.0375 * 1000.0),
         "the first counted scalar's value: {d1:#?}"
     );
     let d2 = parameter("D2");
