@@ -12362,6 +12362,29 @@ source = "spec"
 anchor = "| +12 | little-endian u32 |"
 
 [[record]]
+name = "model_header_log_tail"
+kind = "byte"
+section = "2.3"
+anchor = "After the last `moLogs_c` record come a little-endian u32 time stamp and a little-endian u32"
+size = 8
+endianness = "little"
+note = "Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Contents/Header2."
+
+[[record.field]]
+name = "time_stamp"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "come a little-endian u32 time stamp"
+
+[[record.field]]
+name = "next_object_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the part's next object identifier"
+
+[[record]]
 name = "feature_object_block_head"
 kind = "byte"
 section = "2.3"

@@ -1162,6 +1162,16 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** The writer writes two directional lights, `13` and `14`, and the `moEqnFolder_c` at `16`, and leaves `15` empty. No native part holds that combination. The first identifier set with a third directional light at `15` is a combination native parts hold.
 
+### EV-35. The next object identifier after an edit
+
+**Question.** What does a save that adds or deletes a node write to the creation log and to the next object identifier of `Contents/Config-N-ModelHeader` and `Contents/Header2`?
+
+**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger.
+
+**Need.** Two saves of one part, before and after a feature is added, and two before and after a feature is deleted, with their creation logs and next object identifiers compared: the `moLogs_c` record and stamps of the added or deleted feature, the time stamps, and the change of the next object identifier.
+
+**Conflict.** The writer of an edited part keeps the source part's `ModelHeader` and `Header2` streams, so an added feature has no `moLogs_c` record and the next object identifier does not change. The writer gives an added feature an identifier past every identifier the decoder reads in the part's `KeyWords` records, named-object headers and parameter objects, and it does not read the next object identifier. A part the writer generates holds no `ModelHeader` or `Header2` stream.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

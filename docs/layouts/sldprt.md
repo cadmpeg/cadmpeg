@@ -3245,6 +3245,17 @@ Offsets from the end of the name object's string. A Unicode CString follows at +
 | 8 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier; `ff ff ff ff` when the object has none |
 | 12 | 4 | `word_12` | `u32` | little | spec | \| +12 \| little-endian u32 \| |
 
+## `model_header_log_tail`
+
+Spec §2.3 · layout: byte offsets · size: 8 B
+
+Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Contents/Header2.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `time_stamp` | `u32` | little | spec | come a little-endian u32 time stamp |
+| 4 | 4 | `next_object_id` | `u32` | little | spec | the part's next object identifier |
+
 ## `feature_object_block_head`
 
 Spec §2.3 · layout: byte offsets · size: 55 B
