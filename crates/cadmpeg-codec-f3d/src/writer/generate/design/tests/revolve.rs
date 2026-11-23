@@ -195,8 +195,11 @@ fn axis(line: &str) -> Construction<cadmpeg_ir::design::construction::kinds::Axi
             value: None,
             reversed: None,
         }],
+        after: Vec::new(),
+        solution: None,
+        mode: None,
         resolved: Some(z_axis()),
-        ..Construction::default()
+        resolved_in: std::collections::BTreeMap::new(),
     }
 }
 

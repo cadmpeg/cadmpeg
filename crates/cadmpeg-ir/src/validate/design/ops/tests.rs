@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 
 use super::super::fixture::{self, assert_finding, assert_no_design_finding, design_findings, id};
-use crate::design::construction::{Construction, FrameAxis, PostStep};
+use crate::design::construction::{Construction, ConstructionKind, FrameAxis, PostStep};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
@@ -64,6 +64,17 @@ use crate::scalar::{Angle, Fraction, Length, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
+
+fn empty_construction<K: ConstructionKind>() -> Construction<K> {
+    Construction {
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
+    }
+}
 
 fn feature(key: &str) -> FeatureId {
     fixture::feature(key)
@@ -387,7 +398,7 @@ fn primitives_have_their_own_placement_and_admitted_literals() {
     assert_no_design_finding(&with(primitive(prism(3))));
     assert_finding(&with(primitive(prism(2))), "a literal count is at least 3");
     let mut placed = with(primitive(prism(4)));
-    placed.design.features[0].placement = Some(Box::new(Construction::default()));
+    placed.design.features[0].placement = Some(Box::new(empty_construction()));
     assert_finding(&placed, "states a Feature.placement");
     let literal = |value| Dimension::Literal(length(value));
     let wedge = PrimitiveShape::Wedge {
@@ -606,7 +617,7 @@ fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
         first: LinearRun {
             direction: Construction {
                 resolved: Some(UnitVector3::X_AXIS),
-                ..Construction::default()
+                ..empty_construction()
             },
             run: PatternRun {
                 spacing: Spacing::Pitch {
@@ -964,7 +975,7 @@ fn a_place_set_lists_two_distinct_occurrences() {
 fn a_place_states_its_base_with_its_placement() {
     let place = Place {
         occurrence: id("occurrence", "a"),
-        placement: Some(Construction::default()),
+        placement: Some(empty_construction()),
         base: None,
         constraints: Vec::new(),
         packaged: None,
@@ -977,7 +988,7 @@ fn a_place_states_its_base_with_its_placement() {
 }
 
 fn joint(kind: JointKind) -> FeatureOperation {
-    let frame = || JointConnector::Frame(Construction::default());
+    let frame = || JointConnector::Frame(empty_construction());
     FeatureOperation::Joint(Box::new(Joint {
         connectors: [frame(), frame()],
         kind,
@@ -1058,7 +1069,7 @@ fn component_instances_hold_one_occurrence_per_seed() {
     assert_finding(&ir, "lists 2 occurrences for 1 seeds");
     let mirror = MirrorComponents {
         seeds: named(vec![entity(NameKind::Body, 1)]),
-        plane: Construction::default(),
+        plane: empty_construction(),
         results: Vec::new(),
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
@@ -1080,7 +1091,7 @@ fn a_new_component_is_created_once() {
     let mut ir = with(FeatureOperation::Combine(Box::new(creating)));
     let mirror = MirrorComponents {
         seeds: named(Vec::new()),
-        plane: Construction::default(),
+        plane: empty_construction(),
         results: vec![MirrorResult {
             occurrence: id("occurrence", "a"),
             orientation: None,
@@ -1386,7 +1397,7 @@ fn a_connector_placed_by_a_step_has_no_resolved_value_to_state() {
                 axis: FrameAxis::Z,
                 distance: Dimension::Literal(length(1.0)),
             }],
-            ..Construction::default()
+            ..empty_construction()
         })
     };
     let mut operation = joint(JointKind::Coincident { offset: None });
@@ -1506,7 +1517,7 @@ fn a_helix_start_circle_picks_a_circle_or_arc() {
         FeatureOperation::HelicalSweep(Box::new(HelicalSweep {
             section: HelicalSection::Profile(unread()),
             helix: Helix {
-                placement: Construction::default(),
+                placement: empty_construction(),
                 start: Some(HelixStart::Circle(named(vec![sketch_entity_pick(key)]))),
                 shape: HelixShape::Helix {
                     law: None,
@@ -1546,7 +1557,7 @@ fn hole_points_pick_points_or_sketches() {
     assert_no_finding_containing(&ir, "HolePositions::Points");
     let mut plane = fixture::unresolved("plane", OperationFamily::Datum);
     plane.definition.operation = FeatureOperation::Datum(Box::new(Datum {
-        element: DatumElement::Plane(Construction::default()),
+        element: DatumElement::Plane(empty_construction()),
         link: None,
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
