@@ -62,12 +62,6 @@ use index::DesignIndex;
 use records::MemberKey;
 use walk::{Collect, ConstructionView, SelectionView, Walk};
 
-/// Whether native text has the form `codec:name`.
-fn native_text(text: &str) -> bool {
-    text.split_once(':')
-        .is_some_and(|(codec, name)| !codec.is_empty() && !name.is_empty())
-}
-
 /// Checks that a `Topology` is closed over its own references: every
 /// reference of its records names a record of it.
 fn check_closed_topology(

@@ -5882,7 +5882,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -5903,7 +5903,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -7028,7 +7028,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -7045,7 +7045,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -8914,79 +8914,15 @@
         }
       ]
     },
-    "CodecFormat": {
-      "description": "Registry codec format id stored on a source-object association.\n\nThe variant set is the generated `FORMAT` constants. Serialize as the\nregistry string. Deserialize rejects any other string.",
-      "oneOf": [
-        {
-          "description": "`acis`",
-          "type": "string",
-          "const": "acis"
-        },
-        {
-          "description": "`catia`",
-          "type": "string",
-          "const": "catia"
-        },
-        {
-          "description": "`creo`",
-          "type": "string",
-          "const": "creo"
-        },
-        {
-          "description": "`f3d`",
-          "type": "string",
-          "const": "f3d"
-        },
-        {
-          "description": "`fcstd`",
-          "type": "string",
-          "const": "fcstd"
-        },
-        {
-          "description": "`iges`",
-          "type": "string",
-          "const": "iges"
-        },
-        {
-          "description": "`inventor`",
-          "type": "string",
-          "const": "inventor"
-        },
-        {
-          "description": "`nx`",
-          "type": "string",
-          "const": "nx"
-        },
-        {
-          "description": "`parasolid`",
-          "type": "string",
-          "const": "parasolid"
-        },
-        {
-          "description": "`rhino`",
-          "type": "string",
-          "const": "rhino"
-        },
-        {
-          "description": "`sat`",
-          "type": "string",
-          "const": "sat"
-        },
-        {
-          "description": "`sldprt`",
-          "type": "string",
-          "const": "sldprt"
-        },
-        {
-          "description": "`step`",
-          "type": "string",
-          "const": "step"
-        }
-      ]
-    },
     "CodecId": {
-      "description": "A format id of the dialect registry.",
-      "$ref": "#/$defs/NonBlankString"
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "CodecName": {
+      "description": "A codec id, `:`, and a name that holds a character that is not white space.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
     },
     "Coedge": {
       "description": "One use of an edge by a loop.\n\nCoedges form a loop ring through the owning [`Loop`] coedge order, and a\nradial ring around their shared edge through `radial_next`.",
@@ -9587,7 +9523,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9619,7 +9555,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9821,7 +9757,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9835,7 +9771,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -13061,7 +12997,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -13071,7 +13007,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14259,7 +14195,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14269,7 +14205,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14301,7 +14237,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14314,7 +14250,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14901,7 +14837,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14933,7 +14869,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16376,7 +16312,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16397,7 +16333,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16434,7 +16370,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16444,7 +16380,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -17158,7 +17094,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -17190,7 +17126,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19321,7 +19257,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19353,7 +19289,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19489,7 +19425,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19539,7 +19475,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -21016,7 +20952,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -21030,7 +20966,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22580,7 +22516,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22601,7 +22537,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22837,7 +22773,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22858,7 +22794,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22924,7 +22860,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22975,7 +22911,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -30282,14 +30218,14 @@
               "properties": {
                 "kind": {
                   "description": "The operation's kind, written `codec:kind`.",
-                  "$ref": "#/$defs/NonBlankString"
+                  "$ref": "#/$defs/CodecName"
                 },
                 "native_options": {
                   "description": "Options whose meaning is not established.",
                   "type": "object",
                   "additionalProperties": false,
                   "patternProperties": {
-                    "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+                    "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
                       "$ref": "#/$defs/NativeOption"
                     }
                   }
@@ -30299,7 +30235,7 @@
                   "type": "object",
                   "additionalProperties": false,
                   "patternProperties": {
-                    "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+                    "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
                       "$ref": "#/$defs/NativeOption"
                     }
                   }
@@ -31106,7 +31042,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -31123,7 +31059,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32163,7 +32099,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32173,7 +32109,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32525,7 +32461,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32535,7 +32471,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -34466,7 +34402,7 @@
               "const": "other"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -35072,7 +35008,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -35097,7 +35033,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -35755,7 +35691,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -35773,7 +35709,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -37401,7 +37337,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -37426,7 +37362,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -39276,7 +39212,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -39303,7 +39239,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -40412,7 +40348,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -40422,7 +40358,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -42297,7 +42233,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -42322,7 +42258,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -45463,7 +45399,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -45488,7 +45424,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -47797,7 +47733,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -47811,7 +47747,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -48781,7 +48717,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -48806,7 +48742,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -49879,7 +49815,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -49889,7 +49825,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -51516,7 +51452,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -51537,7 +51473,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -54544,7 +54480,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -54591,7 +54527,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -55285,7 +55221,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -55299,7 +55235,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58399,7 +58335,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58431,7 +58367,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58454,7 +58390,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58471,7 +58407,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -59386,7 +59322,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -59403,7 +59339,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -61322,7 +61258,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -61351,7 +61287,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -66458,7 +66394,7 @@
           ]
         },
         {
-          "description": "A source propagation whose meaning is not established.",
+          "description": "A source propagation whose meaning is not established, written\n`codec:propagation`.",
           "type": "object",
           "properties": {
             "kind": {
@@ -66466,7 +66402,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -68068,7 +68004,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -68217,7 +68153,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -68231,7 +68167,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69358,7 +69294,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69376,7 +69312,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69636,7 +69572,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69661,7 +69597,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69988,7 +69924,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69998,7 +69934,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -73157,7 +73093,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -73736,7 +73672,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -73746,7 +73682,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75306,7 +75242,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75327,7 +75263,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75565,7 +75501,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75579,7 +75515,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75899,7 +75835,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75928,7 +75864,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76173,7 +76109,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76198,7 +76134,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76244,7 +76180,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76269,7 +76205,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78059,7 +77995,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78087,7 +78023,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78145,7 +78081,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78173,7 +78109,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -83976,7 +83912,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -83986,7 +83922,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -84016,8 +83952,8 @@
           ]
         },
         "format": {
-          "description": "Source format identifier.",
-          "$ref": "#/$defs/CodecFormat"
+          "description": "The codec of the source format.",
+          "$ref": "#/$defs/CodecId"
         },
         "geometry_role": {
           "description": "Source ownership, when it can be established independently of projection.",
@@ -84751,7 +84687,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -84776,7 +84712,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -86121,7 +86057,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -86131,7 +86067,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -89949,7 +89885,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -89982,7 +89918,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -92560,7 +92496,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -92577,7 +92513,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -93778,7 +93714,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -93788,7 +93724,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -93995,7 +93931,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -94005,7 +93941,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -95734,7 +95670,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -95744,7 +95680,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -96167,7 +96103,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97150,7 +97086,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97160,7 +97096,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97186,7 +97122,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97196,7 +97132,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }

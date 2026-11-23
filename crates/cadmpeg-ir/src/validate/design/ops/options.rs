@@ -19,8 +19,7 @@ use crate::scalar::{Angle, Length};
 
 use super::super::records::{DesignRecords, MemberKey};
 
-/// `native_options` and `source_settings` keys have the form `codec:name`,
-/// and no key is in both maps of one record.
+/// No key is in both `native_options` and `source_settings` of one record.
 pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
     let mut pending = vec![(wire, "design")];
     while let Some((value, owner)) = pending.pop() {
@@ -35,15 +34,6 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
                 };
                 let native = keys("native_options");
                 let settings = keys("source_settings");
-                for key in native.iter().chain(&settings) {
-                    if !codec_key(key) {
-                        error(
-                            findings,
-                            owner,
-                            format_args!("native key {key:?} does not have the form codec:name"),
-                        );
-                    }
-                }
                 for key in native.iter().filter(|key| settings.contains(key)) {
                     error(
                         findings,
@@ -59,12 +49,6 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
             _ => {}
         }
     }
-}
-
-fn codec_key(key: &str) -> bool {
-    key.split_once(':').is_some_and(|(codec, name)| {
-        !codec.is_empty() && !name.trim().is_empty() && !codec.contains(char::is_whitespace)
-    })
 }
 
 /// A profile holds at least one pick or is `Unread`, and its picks target

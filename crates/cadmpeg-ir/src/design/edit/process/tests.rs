@@ -229,9 +229,9 @@ fn machined() -> CadIr {
         native_feature(
             1,
             FeatureOperation::Native {
-                kind: NonBlankString::new("test:op").unwrap(),
+                kind: crate::codec_name!("test:op"),
                 native_options: NativeOptions::from([(
-                    NonBlankString::new("test:depth").unwrap(),
+                    crate::codec_name!("test:depth"),
                     NativeOption::Length(Dimension::Parameter(parameter_id(1))),
                 )]),
                 source_settings: NativeOptions::new(),

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
@@ -968,7 +968,7 @@ fn resolved_reference(
 fn instance_name(id: u64) -> Result<NativeName, CodecError> {
     let blank = || CodecError::malformed("STEP instance name is empty");
     Ok(NativeName {
-        codec: CodecId::from(NonBlankString::new("step").ok_or_else(blank)?),
+        codec: cadmpeg_ir::codec_id!("step"),
         value: NativeNameValue::Text(NonBlankString::new(format!("#{id}")).ok_or_else(blank)?),
     })
 }

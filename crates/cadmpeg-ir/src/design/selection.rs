@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
-use super::names::{NameKind, NativeName, TopoName};
+use super::names::{CodecName, NameKind, NativeName, TopoName};
 use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
@@ -852,7 +852,7 @@ pub enum SelectionRule {
     },
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
-    Native(NonBlankString),
+    Native(CodecName),
 }
 
 /// How a rule term extends its result.
@@ -896,8 +896,9 @@ pub enum Propagation {
         )]
         gap: Option<Dimension<Length>>,
     },
-    /// A source propagation whose meaning is not established.
-    Native(NonBlankString),
+    /// A source propagation whose meaning is not established, written
+    /// `codec:propagation`.
+    Native(CodecName),
 }
 
 /// The continuity of a connection.

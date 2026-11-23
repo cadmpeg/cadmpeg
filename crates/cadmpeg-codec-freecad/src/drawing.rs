@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{
     Drawing, DrawingId, DrawingKind, HiddenLineMethod, ProjectionAngle, ScaleFrom,
@@ -163,7 +163,7 @@ pub(crate) fn link_references(
 fn native_name(text: &str) -> Result<NativeName, CodecError> {
     let blank = || CodecError::malformed("drawing reference has an empty source name");
     Ok(NativeName {
-        codec: CodecId::from(NonBlankString::new("fcstd").ok_or_else(blank)?),
+        codec: cadmpeg_ir::codec_id!("fcstd"),
         value: NativeNameValue::Text(NonBlankString::new(text).ok_or_else(blank)?),
     })
 }

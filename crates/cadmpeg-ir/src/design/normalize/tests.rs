@@ -11,7 +11,7 @@ use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, OccurrenceOverride,
     Overrides,
 };
-use crate::design::names::{CodecId, NativeName, NativeNameValue};
+use crate::design::names::{NativeName, NativeNameValue};
 use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::scope::OccurrenceDesign;
 use crate::design::selection::{OccurrencePath, PathStep, StepRef, Witness};
@@ -924,7 +924,7 @@ fn process_records_take_their_one_spelling() {
         name: None,
         class: MachiningFeatureClass::ClosedPocket {},
         native_kind: NativeName {
-            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            codec: crate::codec_id!("test"),
             value: NativeNameValue::Text(NonBlankString::new("pocket").unwrap()),
         },
         geometry: vec![
@@ -1340,7 +1340,7 @@ fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
     let mut native = cube();
     native.0.push(PathStep {
         occurrence: StepRef::Native(NativeName {
-            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            codec: crate::codec_id!("test"),
             value: NativeNameValue::Text(NonBlankString::new("n").unwrap()),
         }),
         configuration: None,
