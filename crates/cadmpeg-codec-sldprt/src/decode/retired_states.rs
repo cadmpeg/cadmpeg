@@ -6,11 +6,13 @@
 //! the active configuration's state alone (§5.5), and the design projection
 //! states each other configuration's stored records in that configuration's
 //! evaluation. [`retire`] then removes them from the geometry, with what the
-//! model says of them: the body membership and feature outputs that the
-//! evaluation states, and the appearance bindings on them, which a
-//! model-class target cannot yet name in an evaluation (interim, §8). The
-//! display tables bind to the active configuration's faces only, so none
-//! names a retired record.
+//! model says of them: the body membership, which the evaluation states; the
+//! document feature outputs that name them, which state the current
+//! geometry; and the configuration feature-state outputs that name them and
+//! the appearance bindings on them, which a model record cannot yet state of
+//! a state that is not current (interim, §8), each with one loss per
+//! configuration. The display tables bind to the active configuration's
+//! faces only, so none names a retired record.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -29,7 +31,8 @@ use crate::loss::SldprtLossCode;
 
 /// Removes the `retired` geometry records, which the evaluations of
 /// configurations that are not active hold, with every model reference to
-/// them: [`retire_model`]; the appearance bindings on them, and the
+/// them: [`retire_model`], with one loss per configuration whose feature
+/// states named them as outputs; the appearance bindings on them, and the
 /// appearances only those bindings used, with one loss per configuration;
 /// their annotations and the unknown-record links to them.
 pub(super) fn retire(
@@ -88,7 +91,14 @@ pub(super) fn retire(
             );
         }
     }
-    retire_model(ir, retired);
+    for (configuration, count) in retire_model(ir, retired) {
+        losses.push(SldprtLossCode::ConfigStateOutputsUnstated.note(format!(
+            "configuration {configuration}: {count} feature output(s) on the bodies of its state \
+             are not stated, because a model feature state cannot name a body of a state that \
+             is not current, and an evaluation states which definition owns a body, not which \
+             feature produces it."
+        )));
+    }
     ir.model
         .appearance_bindings
         .retain(|binding| !dropped.contains(binding.id.as_str()));
@@ -136,9 +146,14 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
 /// Removes the `retired` geometry records from `ir.geometry`, the feature
 /// outputs and configuration feature-state outputs that name them, and the
 /// body list of each configuration whose bodies they are, since its
-/// evaluation states them.
-fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, ConfigurationId>) {
+/// evaluation states them. Returns, per configuration whose state holds the
+/// bodies, the number of configuration feature-state outputs removed.
+fn retire_model(
+    ir: &mut CadIr,
+    retired: &BTreeMap<String, ConfigurationId>,
+) -> BTreeMap<ConfigurationId, usize> {
     let gone = |id: &str| retired.contains_key(id);
+    let mut unstated = BTreeMap::<ConfigurationId, usize>::new();
     remove_records(&mut ir.geometry, retired);
     for feature in &mut ir.model.features {
         if feature
@@ -167,10 +182,16 @@ fn retire_model(ir: &mut CadIr, retired: &BTreeMap<String, ConfigurationId>) {
         }
         for state in configuration.feature_states.values_mut() {
             if let ConfigurationEvaluation::Active { outputs } = &mut state.evaluation {
+                for body in outputs.iter() {
+                    if let Some(owner) = retired.get(body.as_str()) {
+                        *unstated.entry(owner.clone()).or_default() += 1;
+                    }
+                }
                 outputs.retain(|body| !gone(body.as_str()));
             }
         }
     }
+    unstated
 }
 
 /// The state the design stores for a model configuration whose body list

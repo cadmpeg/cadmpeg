@@ -74,6 +74,9 @@ pub(crate) enum SldprtLossCode {
     /// The imported-feature body streams of a configuration that is not
     /// active are not taken into its state.
     ConfigStateImportedBodiesNotTransferred,
+    /// The bodies that features produce in a state that is not current are
+    /// not stated.
+    ConfigStateOutputsUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -551,6 +554,7 @@ impl SldprtLossCode {
         Self::ConfigStateNotStored,
         Self::ConfigStatePresentationUnstated,
         Self::ConfigStateImportedBodiesNotTransferred,
+        Self::ConfigStateOutputsUnstated,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -748,6 +752,7 @@ impl SldprtLossCode {
             Self::ConfigStateImportedBodiesNotTransferred => {
                 "config.state-imported-bodies-not-transferred"
             }
+            Self::ConfigStateOutputsUnstated => "config.state-outputs-unstated",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -1032,6 +1037,7 @@ impl SldprtLossCode {
             | Self::ConfigStateNotStored
             | Self::ConfigStatePresentationUnstated
             | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1330,6 +1336,7 @@ impl SldprtLossCode {
             | Self::ConfigStateNotStored
             | Self::ConfigStatePresentationUnstated
             | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1586,6 +1593,7 @@ mod tests {
                 "config.state-not-stored",
                 "config.state-presentation-unstated",
                 "config.state-imported-bodies-not-transferred",
+                "config.state-outputs-unstated",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
