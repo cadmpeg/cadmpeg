@@ -796,11 +796,16 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
-            crate::resolved_features::relation_geometry::project_relation_point_geometry(
-                &mut ir.model.sketch_entities,
-                &ir.model.sketches,
-                &features,
-                scoped_lanes,
+            let point_notes =
+                crate::resolved_features::relation_geometry::project_relation_point_geometry(
+                    &mut ir.model.sketch_entities,
+                    &ir.model.sketches,
+                    &features,
+                    scoped_lanes,
+                );
+            crate::resolved_features::relation_geometry::append_relation_point_notes(
+                &mut losses,
+                point_notes,
             );
             crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
                 &mut ir.model.sketch_entities,

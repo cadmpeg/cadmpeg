@@ -21,7 +21,9 @@ use crate::history::parameters::{
     global_parameter_owners, parameters_with_incoherent_evaluated_values,
 };
 use crate::history::project::project_configurations;
-use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
+use crate::resolved_features::relation_geometry::{
+    is_reference_relation_parameter, is_relation_point_note,
+};
 use crate::resolved_features::scalars::FeatureObjectNames;
 
 /// Resolve neutral/native configuration edit authority before writing.
@@ -228,7 +230,12 @@ fn sync_configuration_design_state(
         profiles,
         &mut current_annotations,
     )?;
-    if !projection_losses.is_empty() {
+    // A relation point charge falls on every projection of its sketch, the
+    // decode's as well, and leaves the configuration states as they are.
+    if projection_losses
+        .iter()
+        .any(|note| !is_relation_point_note(note))
+    {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
         ));
@@ -337,7 +344,12 @@ fn sync_configuration_design_state(
         profiles,
         &mut projected_annotations,
     )?;
-    if !projection_losses.is_empty() {
+    // A relation point charge falls on every projection of its sketch, the
+    // decode's as well, and leaves the configuration states as they are.
+    if projection_losses
+        .iter()
+        .any(|note| !is_relation_point_note(note))
+    {
         return Err(CodecError::NotImplemented(
             "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
         ));

@@ -3907,7 +3907,10 @@ fn build_geometry_ir(
         &exact_profiles,
         &mut annotations,
     )?;
-    pmi_losses.extend(configuration_losses);
+    crate::resolved_features::relation_geometry::append_relation_point_notes(
+        &mut pmi_losses,
+        configuration_losses,
+    );
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,
@@ -5163,7 +5166,10 @@ fn build_metadata_ir(
         &exact_profiles,
         &mut annotations,
     )?;
-    pmi_losses.extend(configuration_losses);
+    crate::resolved_features::relation_geometry::append_relation_point_notes(
+        &mut pmi_losses,
+        configuration_losses,
+    );
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,

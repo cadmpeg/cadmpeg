@@ -1,11 +1,17 @@
-use super::project_relation_point_geometry;
+use super::{append_relation_point_notes, project_relation_point_geometry};
+use crate::history::configuration::project_configuration_sketch_states;
 use crate::loss::SldprtLossCode;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance,
 };
 use crate::resolved_features::transforms::tests::marker;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
+};
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
+};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;
@@ -14,11 +20,11 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::BTreeMap;
 
-/// Projects the relation point of one point marker stored at
-/// `coordinates_m`, in a sketch whose three anchor markers fix the marker
-/// transform `(u, v) -> (1000 v, 1000 u)` and whose marker carries a
-/// dimension circle.
-fn project_point(coordinates_m: [f64; 2]) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
+/// A sketch feature that binds its sketch, the sketch's entities and the lane
+/// of one point marker stored at `coordinates_m`, whose three anchor markers
+/// fix the marker transform `(u, v) -> (1000 v, 1000 u)` and whose marker
+/// carries a dimension circle, and the marker's id.
+fn fixture(coordinates_m: [f64; 2]) -> (Feature, Vec<SketchEntity>, FeatureInputLane, String) {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         product_definition: None,
@@ -117,6 +123,12 @@ fn project_point(coordinates_m: [f64; 2]) -> (Vec<SketchEntity>, Vec<LossNote>, 
         references: Vec::new(),
         sketch_entities: markers,
     };
+    (feature, entities, lane, point_id)
+}
+
+/// Projects the relation point of the marker of [`fixture`].
+fn project_point(coordinates_m: [f64; 2]) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
+    let (feature, mut entities, lane, point_id) = fixture(coordinates_m);
     let losses = project_relation_point_geometry(
         &mut entities,
         &[],
@@ -173,4 +185,76 @@ fn a_relation_point_marker_with_subnormal_coordinates_is_charged_and_not_drawn()
         );
         assert!(loss.message.contains(&marker), "{}", loss.message);
     }
+}
+
+#[test]
+fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach() {
+    let subnormal = f64::MIN_POSITIVE / 4.0;
+    let (bound, entities, mut lane, marker) = fixture([subnormal, subnormal]);
+    lane.configuration = Some("0".into());
+    // The model feature leaves the sketch unbound; only the configuration
+    // state binds it, so only the configuration pass reaches the marker.
+    let mut unbound = bound.clone();
+    unbound.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(None),
+        }),
+    );
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(unbound);
+    ir.model.sketch_entities = entities;
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").unwrap(),
+        ordinal: 0,
+        active: false,
+        source_index: Some(0),
+        name: Some("configuration".into()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::from([(
+            bound.id.clone(),
+            ConfigurationFeatureState {
+                definition: bound.evaluation.definition().clone(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                evaluation: ConfigurationEvaluation::Active {
+                    outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                },
+            },
+        )]),
+        native_ref: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let losses = project_configuration_sketch_states(
+        &ctx,
+        &mut ir,
+        &[],
+        std::slice::from_ref(&lane),
+        &crate::resolved_features::profiles::ExactProfiles::default(),
+        &mut cadmpeg_ir::Annotations::default(),
+    )
+    .unwrap();
+    assert!(relation_points(&ir.model.sketch_entities, &marker).is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
+    );
+    assert!(loss.message.contains(&marker), "{}", loss.message);
+
+    // Where the model pass has charged the marker, the configuration pass's
+    // note joins it as one note.
+    let mut merged = losses.clone();
+    append_relation_point_notes(&mut merged, losses.clone());
+    assert_eq!(merged, losses);
 }

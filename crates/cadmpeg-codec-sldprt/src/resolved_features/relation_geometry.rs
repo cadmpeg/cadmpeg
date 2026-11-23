@@ -420,6 +420,26 @@ fn close_over_links<'a>(
     }
 }
 
+/// Whether `note` is the relation point pass's charge of a marker whose
+/// record reads a subnormal coordinate pair.
+pub(crate) fn is_relation_point_note(note: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    note.code == crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
+}
+
+/// Appends `notes` to `losses`, leaving out a relation point note that
+/// `losses` already holds: the model pass and each configuration pass that
+/// reach one marker charge it with the same note.
+pub(crate) fn append_relation_point_notes(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    for note in notes {
+        if !is_relation_point_note(&note) || !losses.contains(&note) {
+            losses.push(note);
+        }
+    }
+}
+
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
