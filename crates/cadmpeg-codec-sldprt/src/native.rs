@@ -315,7 +315,7 @@ impl SldprtNative {
     /// them (sldprt.md §2.3): each history record's, each named object's
     /// header identifier and each parameter object's identifier. A
     /// parameter's identifier is the one the exact archive walk read; where
-    /// the walk read no parameter at the scalar, it is the identifier after a
+    /// the walk read no identifier at the scalar, it is the identifier after a
     /// zero byte and a null tolerance pointer.
     pub(crate) fn object_ids(&self) -> impl Iterator<Item = u32> + '_ {
         let records = self
@@ -328,14 +328,12 @@ impl SldprtNative {
                 crate::resolved_features::names::header_object_id(&lane.native_payload, name)
             });
             let parameters = lane.scalars.iter().filter_map(|scalar| {
-                match (scalar.archive_object_id, scalar.archive_class) {
-                    (Some(id), _) => Some(id),
-                    (None, Some(_)) => None,
-                    (None, None) => crate::resolved_features::scalars::untoleranced_parameter_id(
+                scalar.archive_object_id.or_else(|| {
+                    crate::resolved_features::scalars::untoleranced_parameter_id(
                         &lane.native_payload,
                         scalar,
-                    ),
-                }
+                    )
+                })
             });
             named.chain(parameters)
         });
