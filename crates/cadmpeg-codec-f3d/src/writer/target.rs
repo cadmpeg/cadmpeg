@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
+    ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -40,7 +40,7 @@ pub(crate) fn plan(
                 bytes,
                 write_path,
                 notes,
-            }) => return Ok(preserved_body(input.ir, write_path, bytes, notes)),
+            }) => return Ok(preserved_body(input, write_path, bytes, notes)),
             Ok(Preservation::SourceImageUnavailable) => SynthesisCause::SourceImageUnavailable,
             Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
             Err(error) => SynthesisCause::PatchDeclined(error.to_string()),
@@ -104,7 +104,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
 }
 
 fn preserved_body(
-    ir: &CadIr,
+    input: EncodeInput<'_>,
     write_path: PreservedWritePath,
     bytes: Vec<u8>,
     notes: Vec<String>,
@@ -117,8 +117,10 @@ fn preserved_body(
     };
     // Replay runs only while the document digest matches its decode baseline,
     // and the patcher refuses unless the patched baseline digests equal to the
-    // target document, so every arena is carried.
-    let mut body = body(ir, write_path, ArenaCoverage::Complete, Vec::new(), bytes);
+    // target document, so every arena is carried. Bytes the decode kept
+    // without decoding are carried too, and reported.
+    let losses = carried_source_losses(input.fidelity, &write_path);
+    let mut body = body(input.ir, write_path, ArenaCoverage::Complete, losses, bytes);
     body.notes.extend(notes);
     body
 }

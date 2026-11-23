@@ -43,7 +43,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -1302,8 +1302,9 @@ impl CodecBackend for FcstdCodec {
                 .retain(|body| product::is_shape_body(body) && !intermediate_bodies.contains(body));
         }
         design::v11::state_unproduced(&mut ir);
-        // Only the FCStd writer reads this digest, and it admits only a `Full`
-        // document. The serialization and hash are too costly to pay below that.
+        // Only the FCStd writer reads this digest. Below `Full` it patches
+        // without one and reports the edits unverified, so the serialization and
+        // hash are not paid there.
         if ctx.depth() == DecodeDepth::Full {
             let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
             if let Some(source) = &mut ir.source {
@@ -1334,9 +1335,9 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Writes the feature tree and patches retained sources, so design records
-    /// must be present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    /// Writes the feature tree and patches retained sources, so it plans from
+    /// the design records.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

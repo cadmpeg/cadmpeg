@@ -144,8 +144,8 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    ArenaCoverage, ArenaDispositions, Consumption, DepthNeed, EncodeInput, EncoderBackend,
-    ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -537,9 +537,9 @@ impl CodecBackend for SldprtCodec {
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Patches the retained source, so the design records it rewrites must be
-    /// present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    /// Patches the retained source, so it plans from the design records it
+    /// rewrites.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

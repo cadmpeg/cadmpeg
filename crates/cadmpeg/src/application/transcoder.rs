@@ -5,9 +5,8 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::write::{
-    target::TargetRequest, DepthNeed, EncodeInput, Encoder, ExportPlan,
-};
+use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
@@ -16,7 +15,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
+use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::validators::validate_loaded;
 use crate::loader;
 
@@ -41,8 +40,8 @@ pub(crate) struct ExportTarget {
 impl ExportTarget {
     /// The decode depth the selected encoder plans from.
     #[must_use]
-    pub(crate) fn needs(&self) -> DepthNeed {
-        self.encoder.needs()
+    pub(crate) fn request(&self) -> DecodeDepth {
+        self.encoder.request()
     }
 }
 
@@ -502,8 +501,7 @@ pub(crate) enum EmittedArtifact {
     StdoutWithoutSidecar,
 }
 
-/// Restates an unsupported target or an insufficient decode depth as a typed
-/// refusal.
+/// Restates an unsupported target as a typed refusal.
 ///
 /// Resource failures retain their typed evidence; other plan failures stay
 /// operational. Export-loss refusal needs a completed plan's typed loss rows.
@@ -521,17 +519,6 @@ fn plan_refusal(
             }
             .into()
         }
-        cadmpeg_core::CodecError::InsufficientDepth {
-            format,
-            needed,
-            recorded,
-        } => ConversionRefusal::InsufficientDepth {
-            format,
-            depth: DepthReport { needed, recorded },
-            decode_report,
-            validation,
-        }
-        .into(),
         _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }

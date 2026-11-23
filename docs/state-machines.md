@@ -33,7 +33,7 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | From | Event | To (exit) | Report |
 | --- | --- | --- | --- |
 | running | command completes | 0 | `ok` |
-| running | `CheckFailed`, loss policy, unsupported dialect/target, strict decode, insufficient depth | 1 | `refused` |
+| running | `CheckFailed`, loss policy, unsupported dialect/target, strict decode, insufficient measure depth | 1 | `refused` |
 | running | `diff` models or geometry disagree | 1 | `ok` with `different: true` |
 | running | I/O, `DecodeFailed`, resource limit, binary stdout | 2 | `refused` when typed |
 
