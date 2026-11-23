@@ -89,8 +89,8 @@ fn skeleton_identifiers_bind_no_summary_feature_to_a_default_tree_node() {
             .filter(|feature| feature.name.as_deref() == Some(name))
             .collect::<Vec<_>>()
     };
-    // The summary numbers its features 1 to 5. The default tree's
-    // identifiers follow them, so each decodes as its own flex feature.
+    // The summary numbers its features from 23, above the default tree's
+    // identifiers 1 to 22, so each decodes as its own flex feature.
     for index in 1..=5 {
         let bends = named(&format!("Bend{index}"));
         assert_eq!(bends.len(), 1, "Bend{index}");
@@ -102,6 +102,18 @@ fn skeleton_identifiers_bind_no_summary_feature_to_a_default_tree_node() {
             "Bend{index}"
         );
     }
+    let native = crate::test_support::native::sldprt_native(decoded.ir());
+    let summary = (1..=5)
+        .map(|index| {
+            native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| record.name == format!("Bend{index}"))
+                .and_then(crate::records::Feature::source_value)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(summary, [23, 24, 25, 26, 27].map(Some));
 }
 
 #[test]

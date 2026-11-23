@@ -1909,6 +1909,7 @@ mod relation_records_tests {
             role,
             operands,
             archive_class: None,
+            archive_object_id: None,
         }
     }
 
@@ -2134,6 +2135,7 @@ mod relation_records_tests {
                 entity_ref: entity_ref.map(str::to_owned),
             }],
             archive_class: None,
+            archive_object_id: None,
         }
     }
 

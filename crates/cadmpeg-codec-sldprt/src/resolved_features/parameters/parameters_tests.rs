@@ -269,6 +269,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             role: FeatureInputScalarRole::Driving,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -357,6 +358,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 role: FeatureInputScalarRole::Native,
                 operands: Vec::new(),
                 archive_class: None,
+                archive_object_id: None,
             })
             .collect();
 
@@ -454,6 +456,7 @@ fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
