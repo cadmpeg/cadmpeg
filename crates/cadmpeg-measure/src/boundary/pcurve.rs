@@ -565,6 +565,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         let Some((curve, [c0, c1])) = self.curve else {
             return Ok(0.0);
         };
+        let mut inverter = curve.inverter();
         let delta = spans.iter().map(|span| span.fit).fold(self.alpha, f64::max);
         let (Some(first), Some((last_index, last))) =
             (spans.first(), spans.iter().enumerate().next_back())
@@ -597,7 +598,8 @@ impl<'ir> UseFrame<'_, 'ir> {
         let mut farthest: f64 = 0.0;
         for (position, (index, t)) in nodes.iter().enumerate() {
             let point = self.map(eval, spans[*index].uv(eval, *t)?)?;
-            let Some(found) = curve.parameter(eval, point, previous, delta)? else {
+            let Some(found) = curve.parameter(eval, point, previous, delta, inverter.as_mut())?
+            else {
                 return Err(mismatch("the pcurve image leaves the edge's 3D curve"));
             };
             let lifted = match period {

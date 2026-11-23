@@ -631,6 +631,9 @@ pub(crate) enum F3dLossCode {
     ParameterTrailerFlagUninterpreted,
     /// Decoded parameters set the uninterpreted header flag at offset 21.
     ParameterHeaderFlagUninterpreted,
+    /// Decoded parameters set the flag byte of a nine-byte or ten-byte
+    /// expression trailer that the decoder reads as the driven flag.
+    ParameterDrivenFlagAssumed,
     /// Decoded parameter owners store a set final flag byte in the compact trailer.
     ParameterOwnerTrailerFlagUninterpreted,
     /// Decoded compact null-owner parameters have no owner binding.
@@ -1807,6 +1810,7 @@ impl F3dLossCode {
         Self::ParameterRecordUnparsed,
         Self::ParameterTrailerFlagUninterpreted,
         Self::ParameterHeaderFlagUninterpreted,
+        Self::ParameterDrivenFlagAssumed,
         Self::ParameterOwnerTrailerFlagUninterpreted,
         Self::ParameterOwnerUnstored,
         Self::ParameterOwnerUnrecognized,
@@ -2846,6 +2850,7 @@ impl F3dLossCode {
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterTrailerFlagUninterpreted => "parameter.trailer-flag-uninterpreted",
             Self::ParameterHeaderFlagUninterpreted => "parameter.header-flag-uninterpreted",
+            Self::ParameterDrivenFlagAssumed => "parameter.driven-flag-assumed",
             Self::ParameterOwnerTrailerFlagUninterpreted => {
                 "parameter.owner-trailer-flag-uninterpreted"
             }
@@ -3924,6 +3929,7 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
             | Self::ParameterHeaderFlagUninterpreted
+            | Self::ParameterDrivenFlagAssumed
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -4712,6 +4718,7 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterTrailerFlagUninterpreted
             | Self::ParameterHeaderFlagUninterpreted
+            | Self::ParameterDrivenFlagAssumed
             | Self::ParameterOwnerTrailerFlagUninterpreted
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
@@ -5614,6 +5621,7 @@ mod tests {
                 "parameter.record-unparsed",
                 "parameter.trailer-flag-uninterpreted",
                 "parameter.header-flag-uninterpreted",
+                "parameter.driven-flag-assumed",
                 "parameter.owner-trailer-flag-uninterpreted",
                 "parameter.owner-unstored",
                 "parameter.owner-unrecognized",

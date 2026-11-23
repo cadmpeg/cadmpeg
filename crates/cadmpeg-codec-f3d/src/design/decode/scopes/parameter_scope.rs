@@ -70,7 +70,7 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::canvas::typed_canvas_reference;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::design::design_feature_family;

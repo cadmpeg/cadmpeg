@@ -51,7 +51,9 @@ fn decode_fillet_radius_groups(
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
 ) -> Vec<crate::records::topology::fillet::DesignFilletRadiusGroup> {
-    crate::design::decode::operands::decode_fillet_radius_groups(scopes, groups, owners, parameters)
+    crate::design::decode::operands::fillets::decode_fillet_radius_groups(
+        scopes, groups, owners, parameters,
+    )
 }
 
 #[test]
@@ -779,7 +781,7 @@ fn fillet_edge_sets_pair_with_radii_and_leave_the_face_group_unassigned() {
 
 #[test]
 fn fillet_with_owners_and_no_radius_assignment_keeps_its_set_list_native() {
-    use crate::design::decode::operands::fillet_set_list_is_unadmitted;
+    use crate::design::decode::operands::fillets::fillet_set_list_is_unadmitted;
     let scope = localized_fillet_scope();
     let groups = [
         localized_fillet_group(100, 0, vec![200]),
@@ -902,7 +904,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             .unwrap()],
         });
     }
-    crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+    crate::design::decode::operands::fillets::disambiguate_fixed_fillet_parameters(
         std::slice::from_mut(&mut indexed_scope),
         &owners,
     );

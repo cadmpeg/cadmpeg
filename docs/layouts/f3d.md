@@ -5600,13 +5600,38 @@ Offsets are relative to the curve record's primary indexed header. The record en
 | 29 | 4 | `curve_count` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
 | 33 | 4 | `entry_kind` | `u32` | little | spec | it stores one entry of kind `3` with the primary identity of the circle · value `3` |
 | 37 | 8 | `primary_identity` | `u64` | little | spec | it stores one entry of kind `3` with the primary identity of the circle |
-| 45 | 8 | `secondary_identity` | `u64` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `0` |
-| 53 | 4 | `sense` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
-| 57 | 4 | `first_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
-| 61 | 4 | `second_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
-| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 53 | 4 | `sense` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 57 | 4 | `first_operand` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 73 | 4 | `first_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
 | 77 | 4 | `second_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+
+## `sketch_extrude_loop_curve_record`
+
+Spec §Records of a sketch-and-extrude design · layout: byte offsets · size: 97 B
+
+Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The secondary identity is the one the loop entry stores. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 25 | 4 | `zero_word` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `0` |
+| 29 | 4 | `curve_count` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 33 | 4 | `entry_kind` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes |
+| 53 | 4 | `sense` | `u32` | little | spec | the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop |
+| 57 | 4 | `first_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 73 | 4 | `first_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end · value `1` |
+| 77 | 8 | `first_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end |
+| 85 | 4 | `second_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end · value `1` |
+| 89 | 8 | `second_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end |
 
 ## `early_distance_extrude_absent_prefix`
 
@@ -14431,6 +14456,9 @@ Spec §Records of a Sketch item · layout: byte offsets · size: 129 B
 
 Offsets are relative to the first byte after the property block.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 24 | `dimension_line_start` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
@@ -14447,6 +14475,9 @@ Spec §Records of a Sketch item · layout: byte offsets · size: 153 B
 
 Offsets are relative to the first byte after the property block.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 96 | `curve_payload` | `f64[12]` | little | spec | the 96-byte analytic payload of the measured circular curve |
@@ -14460,6 +14491,9 @@ Offsets are relative to the first byte after the property block.
 Spec §Records of a Sketch item · layout: byte offsets · size: 146 B
 
 Offsets are relative to the first byte after the property block.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -14479,6 +14513,9 @@ Offsets are relative to the first byte after the property block.
 Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
 
 Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91. A legacy annotated dimension frame in a segment whose serializer magic is neither 1234 nor 134225558 or more stores offsets 0 to 17 only, and its LP-UTF16 prefix follows at 18.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

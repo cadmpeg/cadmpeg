@@ -2202,6 +2202,22 @@ fn report_parameter_header_flags(
     }
 }
 
+fn report_parameter_driven_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterDrivenFlagAssumed,
+            format_args!(
+                "{} decoded parameter(s) in {} set the second flag byte of the expression trailer, read as the driven flag (f3d-open-items.md DR-144).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_owner_trailer_flags(
     report: &mut DecodeBody,
     flagged: &[crate::design::decode::parameters::StreamParameterCount],
@@ -2611,11 +2627,12 @@ fn report_design_projection_gaps(
             ),
         );
     }
-    let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
-        ctx,
-        &native.design_edge_operands,
-        &native.design_face_operands,
-    )?;
+    let recipe_search_skips =
+        crate::design::decode::operands::recipe_structure::recipe_side_searches_exhausted(
+            ctx,
+            &native.design_edge_operands,
+            &native.design_face_operands,
+        )?;
     for cap in crate::records::feature::patterns::RectangularPatternSearchCap::ALL {
         let capped_pattern_searches = native
             .design_parameter_scopes
@@ -2643,7 +2660,7 @@ fn report_design_projection_gaps(
             F3dLossCode::RecipeSideSearchBudgetExceeded,
             format_args!(
                 "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
-                crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
+                crate::design::decode::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
             ),
         );
     }
@@ -3495,6 +3512,7 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(prereqs.design_record_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_driven_flags(&mut self.report, &prereqs.design_parameter_driven_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
         report_parameter_header_flags(&mut self.report, &prereqs.design_parameter_header_flags);
         report_parameter_owner_trailer_flags(

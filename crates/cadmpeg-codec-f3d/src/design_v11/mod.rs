@@ -24,7 +24,7 @@
 mod configurations;
 mod datum;
 mod operation;
-mod parameters;
+pub(crate) mod parameters;
 mod pattern;
 mod sheet_metal;
 #[cfg(test)]

@@ -29,6 +29,11 @@ const CURVE_COLLECTION: u32 = 22;
 pub(super) const COMPONENT: u32 = 205;
 /// The owner collection.
 pub(super) const OWNER_COLLECTION: u32 = 199;
+/// The secondary identity of every written sketch curve, the null value; a
+/// profile-loop entry, its side face's curve record and its sketch links
+/// store the curve's (f3d.md §3.1, "Tracked results of a profile with
+/// circular holes" and "Sketch links of the start cap").
+pub(in crate::writer::generate::design) const CURVE_SECONDARY_IDENTITY: u64 = 0;
 /// The first origin plane record, `XY`; `XZ` and `YZ` follow.
 pub(super) const ORIGIN_PLANES: u32 = 29;
 /// The family name of a `Sketch` scope.
@@ -86,24 +91,32 @@ pub(in crate::writer::generate::design) struct SketchRecords {
     transform: u32,
     target: u32,
     second_identity: u32,
-    /// Each dimension's frame, parameter, owner and companion.
-    dimensions: Vec<[u32; 4]>,
+    dimensions: Vec<DimensionRecords>,
     /// The scope of the `WorkPlane` item whose plane the sketch lies on.
     pub(in crate::writer::generate::design) plane_scope: Option<u32>,
+}
+
+/// The record indices of one sketch dimension.
+#[derive(Clone, Copy, Debug)]
+struct DimensionRecords {
+    frame: u32,
+    parameter: u32,
+    owner: u32,
+    companion: u32,
+    /// Whether it is a driven dimension.
+    driven: bool,
 }
 
 impl SketchRecords {
     /// The owners of the sketch's dimension parameters, in local-ordinal
     /// order.
     pub(in crate::writer::generate::design) fn owners(&self) -> impl Iterator<Item = u32> + '_ {
-        self.dimensions.iter().map(|[_, _, owner, _]| *owner)
+        self.dimensions.iter().map(|dimension| dimension.owner)
     }
 
     /// The parameters of the sketch's dimensions.
     pub(in crate::writer::generate::design) fn parameters(&self) -> impl Iterator<Item = u32> + '_ {
-        self.dimensions
-            .iter()
-            .map(|[_, parameter, _, _]| *parameter)
+        self.dimensions.iter().map(|dimension| dimension.parameter)
     }
 }
 
@@ -197,12 +210,13 @@ impl SketchRoster {
             plane_scope,
         };
         for dimension in &planned.dimensions {
-            records.dimensions.push([
-                take(dimensions::frame_row(dimension.kind))?,
-                take(types::PARAMETER)?,
-                take(types::PARAMETER_OWNER)?,
-                take(types::RECORD_TIMESTAMPS)?,
-            ]);
+            records.dimensions.push(DimensionRecords {
+                frame: take(dimensions::frame_row(dimension.kind))?,
+                parameter: take(types::PARAMETER)?,
+                owner: take(types::PARAMETER_OWNER)?,
+                companion: take(types::RECORD_TIMESTAMPS)?,
+                driven: dimension.driven,
+            });
         }
         self.items.push(records);
         Ok(next)
@@ -467,7 +481,7 @@ impl Item<'_> {
         let frames = records
             .dimensions
             .iter()
-            .map(|[frame, ..]| *frame)
+            .map(|dimension| dimension.frame)
             .collect::<Vec<_>>();
         out.byte(1).u32(count(frames.len())?);
         for frame in &frames {
@@ -641,7 +655,7 @@ impl Item<'_> {
             .u32(3);
         genesis(out, genesis_value)?;
         property(out, "crv_primary_id", identity)?;
-        property(out, "crv_secondary_id", 0)?;
+        property(out, "crv_secondary_id", CURVE_SECONDARY_IDENTITY)?;
         for value in payload {
             out.f64(value);
         }

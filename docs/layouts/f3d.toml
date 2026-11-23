@@ -17874,22 +17874,21 @@ name = "secondary_identity"
 offset = 45
 type = "u64"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
-value = 0
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 
 [[record.field]]
 name = "sense"
 offset = 53
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 
 [[record.field]]
 name = "first_operand"
 offset = 57
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17897,7 +17896,7 @@ name = "second_operand"
 offset = 61
 type = "u32"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = 1
 
 [[record.field]]
@@ -17905,7 +17904,7 @@ name = "entry_zero_run_8"
 offset = 65
 type = "bytes[8]"
 source = "spec"
-anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+anchor = "the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
 value = [0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]
@@ -17924,6 +17923,136 @@ source = "spec"
 anchor = "then two empty curve-identity lists, each the u32 count `0`"
 value = 0
 
+
+[[record]]
+name = "sketch_extrude_loop_curve_record"
+kind = "byte"
+section = "Records of a sketch-and-extrude design"
+anchor = "a curve record of a side face of one of their curves whose entry stores operands `1` and `1` has the layout"
+size = 97
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The secondary identity is the one the loop entry stores. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 0
+
+[[record.field]]
+name = "curve_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "entry_kind"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+
+[[record.field]]
+name = "sense"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop"
+
+[[record.field]]
+name = "first_operand"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "second_operand"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "entry_zero_run_8"
+offset = 65
+type = "bytes[8]"
+source = "spec"
+anchor = "the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_list_count"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+value = 1
+
+[[record.field]]
+name = "first_end_curve_identity"
+offset = 77
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+
+[[record.field]]
+name = "second_list_count"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
+value = 1
+
+[[record.field]]
+name = "second_end_curve_identity"
+offset = 89
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
 
 [[record]]
 name = "early_distance_extrude_absent_prefix"
@@ -48779,6 +48908,7 @@ anchor = "DR-917 the ordinal of the null locus"
 
 [[record]]
 name = "sketch_item_dimension_frame_linear"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a linear frame is 129 bytes"
@@ -48836,6 +48966,7 @@ anchor = "the f64 measured value, and the first anchor `A1`"
 
 [[record]]
 name = "sketch_item_dimension_frame_radial"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of a radial or diameter frame is 153 bytes"
@@ -48879,6 +49010,7 @@ anchor = "a flag byte, and the f64 radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_angular"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The measurement of an angular frame is 146 bytes"
@@ -48958,6 +49090,7 @@ anchor = "the arc point, and the f64 arc radius"
 
 [[record]]
 name = "sketch_item_dimension_frame_text"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The text frame is 91 bytes"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operation offsets and extent-slot spans of reference-aware Extrude scopes.
 
-use super::super::{direct_extrude_operation_valid, extent_slot_expansion_valid};
+use super::super::parameter_scopes::{direct_extrude_operation_valid, extent_slot_expansion_valid};
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,

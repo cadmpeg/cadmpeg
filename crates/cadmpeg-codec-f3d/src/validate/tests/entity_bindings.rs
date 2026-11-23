@@ -99,7 +99,7 @@ fn body_bounds_valid_binding_order_has_no_finding() {
         let native = validation_body_bounds(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_body_bounds(&ctx, &mut findings);
+        super::super::design_records::validate_body_bounds(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -140,7 +140,7 @@ fn history_only_binding_names_no_solved_body_or_owner_and_no_retained_key() {
         let findings = |native: &crate::native::F3dNative| {
             let ctx = super::super::Ctx::new(&ir, native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
+            super::super::design_records::validate_body_bindings(&ctx, &mut findings).unwrap();
             findings
         };
         assert!(findings(&native).is_empty());
@@ -166,7 +166,7 @@ fn body_binding_valid_group_has_no_finding() {
         let native = validation_body_bounds(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
+        super::super::design_records::validate_body_bindings(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
     })
 }
@@ -230,7 +230,7 @@ fn placement_contiguous_visibility_has_no_finding() {
         let native = placement_native(validation_placement(None, Some(1), true));
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -284,7 +284,7 @@ fn sketch_geometry_ordinals_are_admitted_in_separate_and_shared_collections() {
             let native = two_sketch_placements(separate_collections, [1, 1]);
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_sketch_placements(&ctx, &mut findings);
+            super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
             assert!(findings.is_empty(), "{findings:?}");
         }
     })
@@ -298,7 +298,7 @@ fn sketch_geometry_ordinals_may_skip_values_and_decrease_with_entity_order() {
             let native = two_sketch_placements(false, stream_ordinals);
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_sketch_placements(&ctx, &mut findings);
+            super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
             findings
         };
         let skipped = findings_for([2, 5]);
@@ -320,7 +320,7 @@ fn sketch_geometry_ordinals_may_repeat_within_one_collection() {
             .stream_ordinal = std::num::NonZeroU32::new(8).unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
     });
 }
@@ -337,7 +337,7 @@ fn sketch_visibility_collection_must_be_registered() {
             .ordinal_collection = std::num::NonZeroU64::new(999);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert_eq!(
             findings[0].message,
@@ -362,7 +362,7 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
         );
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_act(&ctx, &mut findings).unwrap();
+        super::super::design_records::validate_act(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty(), "{findings:?}");
         for (offset, index) in [(100, 1), (200, 2)] {
             native.act_component_links.push(
@@ -388,7 +388,7 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
             );
         }
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        super::super::validate_act(&ctx, &mut findings).unwrap();
+        super::super::design_records::validate_act(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings.iter().all(|finding| finding.message
             == "Fusion ACT stream does not have exactly one document-root component link"));
@@ -406,7 +406,7 @@ fn sketch_geometry_ordinals_follow_entities_across_placement_order() {
         }
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
         native.design_sketch_placements[1]
             .visibility
@@ -414,11 +414,11 @@ fn sketch_geometry_ordinals_follow_entities_across_placement_order() {
             .unwrap()
             .ordinal_collection = std::num::NonZeroU64::new(100);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
         native.design_sketch_placements.reverse();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
     });
 }
@@ -465,7 +465,7 @@ fn sketch_visibility_names_a_decoded_ordinal_collection_or_none() {
                 .ordinal_collection = collection;
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_sketch_placements(&ctx, &mut findings);
+            super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
             assert_eq!(findings.len(), finding_count);
             assert!(findings.iter().all(|finding| finding.message
                 == "Fusion Design sketch placement has an invalid frame or scope link"));
@@ -474,7 +474,7 @@ fn sketch_visibility_names_a_decoded_ordinal_collection_or_none() {
         native.design_types.clear();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert_eq!(findings.len(), 2);
         assert!(findings.iter().all(|finding| finding.message
             == "Fusion Design sketch placement has an invalid frame or scope link"));
@@ -507,7 +507,7 @@ fn typed_profile_compact_placement_validator_and_wire_admission_agree() {
         let native = placement_native(placement);
         let ctx = super::super::Ctx::new(&ir, &native, ctx);
         let mut findings = Vec::new();
-        super::super::validate_sketch_placements(&ctx, &mut findings);
+        super::super::sketches::validate_sketch_placements(&ctx, &mut findings);
         assert!(findings.is_empty());
     });
 }
