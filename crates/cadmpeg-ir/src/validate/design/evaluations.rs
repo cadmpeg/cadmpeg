@@ -8,9 +8,7 @@ use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
-use crate::design::ops::body::PatternInstances;
-use crate::design::ops::surface::MeshKind;
+use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
@@ -396,35 +394,10 @@ pub(super) fn is_stateless(
     if suppressed == Some(true) {
         return true;
     }
-    stateless_operation(&index.definition_in(feature, configuration).operation)
-}
-
-/// An operation whose kind cannot change a state: a sketch, a sheet, a datum,
-/// a pattern whose instances are features of their own, a template instance,
-/// a decal, and a mesh section.
-fn stateless_operation(operation: &FeatureOperation) -> bool {
-    match operation {
-        FeatureOperation::Sketch(_)
-        | FeatureOperation::SpatialSketch(_)
-        | FeatureOperation::Spreadsheet(_)
-        | FeatureOperation::Datum(_)
-        | FeatureOperation::TemplateInstance(_)
-        | FeatureOperation::Decal(_) => true,
-        FeatureOperation::Pattern(pattern) => {
-            matches!(pattern.instances, PatternInstances::Members(_))
-        }
-        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
-        FeatureOperation::Unresolved { family } => matches!(
-            family,
-            OperationFamily::Sketch
-                | OperationFamily::SpatialSketch
-                | OperationFamily::Spreadsheet
-                | OperationFamily::Datum
-                | OperationFamily::TemplateInstance
-                | OperationFamily::Decal
-        ),
-        _ => false,
-    }
+    index
+        .definition_in(feature, configuration)
+        .operation
+        .cannot_change_state()
 }
 
 /// Every `Occurrence` step of the path names an occurrence of the model.

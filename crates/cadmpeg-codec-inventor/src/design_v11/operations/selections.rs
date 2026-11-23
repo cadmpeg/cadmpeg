@@ -7,6 +7,7 @@ use cadmpeg_ir::design::selection::{
     Anchor, BoundaryUse, MemberOrder, Members, NativeOwner, OrderedSelection, PickTarget, Picked,
     Picks, Selection, SetSelection, SketchRegion,
 };
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
 use cadmpeg_ir::sketches::Sketch;
@@ -70,46 +71,182 @@ pub(super) fn set(selection: OrderedSelection) -> Projected<SetSelection> {
 pub(super) fn face(value: &FaceSelection) -> Projected<SetSelection> {
     match value {
         FaceSelection::Faces(faces) if faces.is_empty() => selection(Vec::new()),
-        FaceSelection::Native(text) | FaceSelection::Resolved { native: text, .. } => native(text),
-        FaceSelection::Historical { native: text, .. }
-        | FaceSelection::HistoricalPartial { native: text, .. } => native(text.as_str()),
-        FaceSelection::Generated { native: text, .. } => native(text.as_str()),
+        FaceSelection::Native(text) => native(text),
+        FaceSelection::Historical {
+            faces,
+            native: text,
+            ..
+        } => source_group(
+            text.as_str(),
+            faces.iter().map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
+            &[],
+        ),
+        FaceSelection::HistoricalPartial {
+            faces,
+            unresolved,
+            native: text,
+            ..
+        } => source_group(
+            text.as_str(),
+            faces.iter().map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
+            unresolved,
+        ),
+
         _ => Err("the face selection has no persistent name"),
     }
 }
 
-pub(super) fn edge(value: &EdgeSelection) -> Projected<OrderedSelection> {
+fn named_group<'a, O: MemberOrder>(
+    group: &str,
+    names: impl Iterator<Item = &'a str>,
+) -> Projected<Selection<O>> {
+    let mut value = selection(
+        names
+            .map(|name| named(name, None))
+            .collect::<Projected<_>>()?,
+    )?;
+    value.native = Some(
+        vec![group.to_owned()]
+            .try_into()
+            .map_err(|_| "a native group is blank")?,
+    );
+    Ok(value)
+}
+
+/// The native name of a historical face or edge: the source selector index
+/// that the input state keys it by within the owning feature's segment.
+fn source_pick(id: &str) -> Projected<Picked> {
+    let selector = id
+        .rsplit_once('-')
+        .and_then(|(_, selector)| selector.parse::<u32>().ok())
+        .ok_or("a historical selection has no source selector")?;
+    let mut pick = picked(PickTarget::Native { within: None });
+    pick.native = Some(NativeName {
+        codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+        value: NativeNameValue::Integers(vec![i64::from(selector)]),
+    });
+    Ok(pick)
+}
+
+fn source_group<'a, O: MemberOrder>(
+    group: &str,
+    ids: impl Iterator<Item = &'a str>,
+    unresolved: &[String],
+) -> Projected<Selection<O>> {
+    let mut picks = ids.map(source_pick).collect::<Projected<Vec<_>>>()?;
+    for name in unresolved {
+        picks.push(named(name, None)?);
+    }
+    let mut value = selection(picks)?;
+    value.native = Some(
+        vec![group.to_owned()]
+            .try_into()
+            .map_err(|_| "a native group is blank")?,
+    );
+    Ok(value)
+}
+
+fn historical_edges<'a>(
+    state: &cadmpeg_ir::ids::FeatureInputTopologyId,
+    edges: impl Iterator<Item = &'a cadmpeg_ir::ids::HistoricalEdgeId>,
+    group: &str,
+    inputs: &[FeatureInputTopology],
+) -> Projected<OrderedSelection> {
+    let mut states = inputs.iter().filter(|input| &input.id == state);
+    let input = states.next().ok_or("the selected edge state is absent")?;
+    if states.next().is_some() {
+        return Err("the selected edge state is ambiguous");
+    }
+    let mut picks = Vec::new();
+    for edge in edges {
+        if !input.edges.contains(edge) {
+            return Err("the selected edge is absent from its state");
+        }
+        let mut pick = source_pick(edge.as_str())?;
+        let mut samples = input
+            .edge_geometry
+            .iter()
+            .filter(|sample| &sample.edge == edge);
+        if let Some(sample) = samples.next() {
+            if samples.next().is_some() {
+                return Err("the selected edge sample is ambiguous");
+            }
+            pick.witness = Some(cadmpeg_ir::design::selection::Witness {
+                point: Some(sample.interior),
+                direction: sample.tangent,
+                endpoints: sample
+                    .start
+                    .zip(sample.end)
+                    .map(|(start, end)| [start, end]),
+                frame: None,
+                curves: Vec::new(),
+                surface: None,
+                body: None,
+            });
+        }
+        picks.push(pick);
+    }
+    let mut value = selection(picks)?;
+    value.native = Some(
+        vec![group.to_owned()]
+            .try_into()
+            .map_err(|_| "an edge group is blank")?,
+    );
+    Ok(value)
+}
+
+pub(super) fn edge(
+    value: &EdgeSelection,
+    inputs: &[FeatureInputTopology],
+) -> Projected<OrderedSelection> {
     match value {
-        EdgeSelection::Native(text) | EdgeSelection::Resolved { native: text, .. } => native(text),
-        EdgeSelection::Historical { native: text, .. }
-        | EdgeSelection::HistoricalPartial { native: text, .. } => native(text.as_str()),
-        EdgeSelection::Generated { native: text, .. } => native(text.as_str()),
+        EdgeSelection::Native(text) => native(text),
+        EdgeSelection::Generated {
+            edges,
+            native: text,
+        } => {
+            let mut result = selection(
+                edges
+                    .iter()
+                    .map(|edge| {
+                        named(
+                            edge.local_id.as_str(),
+                            Some(NativeOwner::Feature(edge.feature.clone())),
+                        )
+                    })
+                    .collect::<Projected<_>>()?,
+            )?;
+            result.native = Some(
+                vec![text.as_str().to_owned()]
+                    .try_into()
+                    .map_err(|_| "an edge group is blank")?,
+            );
+            Ok(result)
+        }
+        EdgeSelection::Historical {
+            state,
+            edges,
+            native: text,
+        } => historical_edges(state, edges.iter(), text.as_str(), inputs),
+
         _ => Err("the edge selection has no persistent name"),
     }
 }
 
 pub(super) fn bodies(value: &BodySelection) -> Projected<OrderedSelection> {
     match value {
-        BodySelection::Native(text) | BodySelection::Resolved { native: text, .. } => native(text),
-        BodySelection::Historical { native: text, .. }
-        | BodySelection::Local { native: text, .. }
-        | BodySelection::Generated { native: text, .. } => native(text.as_str()),
+        BodySelection::Native(text) => native(text),
+        // The bodies are those of the final geometry, not of the stored
+        // anchored state, so the pick keeps only its native name.
+        BodySelection::Resolved { native: text, .. } => selection(vec![named(text, None)?]),
+        BodySelection::Local {
+            bodies,
+            native: text,
+        } => named_group(text.as_str(), bodies.iter().map(String::as_str)),
         BodySelection::NativeSet(names) => selection(
             names
                 .iter()
                 .map(|name| named(name, None))
-                .collect::<Projected<_>>()?,
-        ),
-        BodySelection::ResolvedSet { members } => selection(
-            members
-                .iter()
-                .map(|member| named(&member.clone().into_parts().1, None))
-                .collect::<Projected<_>>()?,
-        ),
-        BodySelection::HistoricalSet { members, .. } => selection(
-            members
-                .iter()
-                .map(|member| named(&member.clone().into_parts().1, None))
                 .collect::<Projected<_>>()?,
         ),
         _ => Err("the body selection has no persistent name"),
@@ -204,3 +341,6 @@ pub(super) fn planar(value: &PlanarProfileRef, sketches: &[Sketch]) -> Projected
         _ => Err("the profile selection has unresolved members"),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -420,10 +420,12 @@ impl<'a> DesignRecords<'a> {
 }
 
 impl CadIr {
-    pub(crate) fn spanned_definitions(
-        &self,
-        scope: &crate::ids::ProductDefinitionId,
-    ) -> BTreeSet<&str> {
+    /// The definition `scope` and the definitions its design scope spans
+    /// (§5.1): embedded definitions reached through occurrences and, for a
+    /// file-stored scope, the unplaced embedded definitions of its file. A
+    /// definition with a scope of its own is not spanned.
+    #[must_use]
+    pub fn spanned_definitions(&self, scope: &crate::ids::ProductDefinitionId) -> BTreeSet<&str> {
         DesignRecords::new(self).spanned_definitions(scope.as_str())
     }
 }

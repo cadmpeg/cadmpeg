@@ -83,7 +83,7 @@ fn run(ir: &mut CadIr) {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    crate::design_v11::project_history(&ctx, ir, &BTreeMap::default()).expect("history");
+    crate::design_v11::project_history(&ctx, ir, &BTreeMap::default(), false).expect("history");
     project(&ctx, ir).expect("sketches");
     crate::design_v11::datums::project(&ctx, ir).expect("datums");
     assert_eq!(ir.model, model);
@@ -396,4 +396,113 @@ fn read_endpoint_references_bind_points_to_curve_roles() {
         .find(|entity| entity.id == entity_id("line"))
         .expect("line");
     assert!(line.roles.is_empty());
+}
+
+#[test]
+fn shared_endpoint_roles_survive_legacy_arena_sorting() {
+    let mut ir = fixture();
+    add_entity(
+        &mut ir,
+        "joint",
+        Geometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+        false,
+    );
+    for (name, start, end, refs) in [
+        ("z", [-1.0, 0.0], [0.0, 0.0], ["other_z", "joint"]),
+        ("a", [0.0, 0.0], [1.0, 0.0], ["joint", "other_a"]),
+    ] {
+        add_entity(
+            &mut ir,
+            name,
+            Geometry::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            },
+            false,
+        );
+        ir.model
+            .sketch_entities
+            .last_mut()
+            .expect("line")
+            .endpoint_refs = Vec::from(refs.map(|name| format!("inventor:pmdc:entity#{name}")));
+    }
+    run(&mut ir);
+    let joint = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id == entity_id("joint"))
+        .expect("joint");
+    assert_eq!(
+        joint.roles,
+        vec![
+            EntityRole {
+                of: entity_id("a"),
+                role: DefiningRole::Start
+            },
+            EntityRole {
+                of: entity_id("z"),
+                role: DefiningRole::End
+            },
+        ]
+    );
+    ir.model.finalize();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    ir.native
+        .namespace_mut("inventor")
+        .set_arena(
+            &ctx,
+            "pm_dc_features",
+            Vec::<crate::feature::PmDcFeature>::new().as_slice(),
+        )
+        .expect("native arena");
+    assert!(crate::design_v11::tests::validate_from_native(&ctx, &ir)
+        .expect("validation")
+        .is_empty());
+}
+
+#[test]
+fn endpoint_roles_keep_reference_names_in_their_own_sketch() {
+    let sketches = [
+        sketch_id(),
+        SketchId::mint("inventor:design:sketch#other").expect("id"),
+    ];
+    let entities = sketches
+        .iter()
+        .enumerate()
+        .map(|(index, sketch)| {
+            cadmpeg_ir::sketches::SketchEntity::new(
+                entity_id(&format!("curve-{index}")),
+                sketch.clone(),
+                Geometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                }
+                .try_into()
+                .expect("geometry"),
+            )
+            .with_endpoint_refs(vec!["shared-start".into(), "shared-end".into()])
+        })
+        .collect::<Vec<_>>();
+    let roles = endpoint_roles(&entities);
+    for (index, sketch) in sketches.iter().enumerate() {
+        assert_eq!(
+            roles[&(sketch, "shared-start")],
+            vec![EntityRole {
+                of: entity_id(&format!("curve-{index}")),
+                role: DefiningRole::Start
+            }]
+        );
+        assert_eq!(
+            roles[&(sketch, "shared-end")],
+            vec![EntityRole {
+                of: entity_id(&format!("curve-{index}")),
+                role: DefiningRole::End
+            }]
+        );
+    }
 }
