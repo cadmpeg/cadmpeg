@@ -601,6 +601,10 @@
           {
             "id": "sldprt:feature-input:sketch-entity#348:223",
             "kind": "point",
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 1,
             "object_index": 0,
             "offset": 223,
@@ -613,6 +617,10 @@
             "kind": {
               "relation": "angle"
             },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 2,
             "object_index": 1,
             "offset": 315,
@@ -624,6 +632,10 @@
             "id": "sldprt:feature-input:sketch-entity#348:407",
             "kind": {
               "relation": "distance"
+            },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
             },
             "local_id": 3,
             "object_index": 2,
@@ -697,7 +709,7 @@
         "sldprt_native_configuration_sha256": "650a5d3acbac9953422db20fbc4dea549e15c4c2cf1ea3a59a1a4120ffc033b8",
         "sldprt_native_history_sha256": "388e813693990d4c3d1cf424d29a1f39af897f50484acfda011cf6a4966bad74",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "39dc204dd2340231a291da93b5527c9994e56f55443c4bd9bb2bbfbd7afa770f",
+        "sldprt_native_sketch_sha256": "73c40037c78ea915626b65a257c4cb26f385c1a0add7aa8762a6d96b08af2db5",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",

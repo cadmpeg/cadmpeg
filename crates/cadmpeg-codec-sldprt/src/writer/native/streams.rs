@@ -33,7 +33,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
     let mut records = vec![
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::ANNOTATIONS,
+            id: ids::ANNOTATIONS,
             name: "Annotations",
             label: "Annotations",
             dissectable: false,
@@ -41,7 +41,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::FRONT_PLANE,
+            id: ids::FRONT_PLANE,
             name: "Front Plane",
             label: "Plane",
             dissectable: false,
@@ -49,7 +49,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::TOP_PLANE,
+            id: ids::TOP_PLANE,
             name: "Top Plane",
             label: "Plane",
             dissectable: false,
@@ -57,7 +57,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::RIGHT_PLANE,
+            id: ids::RIGHT_PLANE,
             name: "Right Plane",
             label: "Plane",
             dissectable: false,
@@ -65,7 +65,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Sketch",
-            id: facts.id_base + ids::ORIGIN,
+            id: ids::ORIGIN,
             name: "Origin",
             label: "Origin",
             dissectable: false,
@@ -73,7 +73,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::LIGHTS,
+            id: ids::LIGHTS,
             name: "Lights, Cameras and Scene",
             label: "Lights, Cameras and Scene",
             dissectable: false,
@@ -81,7 +81,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::DESIGN_BINDER,
+            id: ids::DESIGN_BINDER,
             name: "Design Binder",
             label: "Design Binder",
             dissectable: false,
@@ -89,7 +89,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::COMMENTS,
+            id: ids::COMMENTS,
             name: "Comments",
             label: "Comments",
             dissectable: false,
@@ -97,7 +97,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::SOLID_BODIES,
+            id: ids::SOLID_BODIES,
             name: "Solid Bodies",
             label: "Solid Bodies",
             dissectable: false,
@@ -105,7 +105,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::SURFACE_BODIES,
+            id: ids::SURFACE_BODIES,
             name: "Surface Bodies",
             label: "Surface Bodies",
             dissectable: false,
@@ -113,7 +113,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::MATERIAL,
+            id: ids::MATERIAL,
             name: MATERIAL_NAME,
             label: "SOLIDWORKS Materials",
             dissectable: false,
@@ -121,7 +121,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::AMBIENT,
+            id: ids::AMBIENT,
             name: "Ambient",
             label: "Ambient",
             dissectable: false,
@@ -129,7 +129,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::DIRECTIONAL_1,
+            id: ids::DIRECTIONAL_1,
             name: "Directional1",
             label: "Directional",
             dissectable: false,
@@ -137,7 +137,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::DIRECTIONAL_2,
+            id: ids::DIRECTIONAL_2,
             name: "Directional2",
             label: "Directional",
             dissectable: false,
@@ -145,7 +145,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::EQUATIONS,
+            id: ids::EQUATIONS,
             name: "Equations",
             label: "Equations",
             dissectable: false,
@@ -153,7 +153,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::EXPLODED_VIEWS,
+            id: ids::EXPLODED_VIEWS,
             name: "",
             label: "Exploded Views",
             dissectable: false,
@@ -161,7 +161,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::SENSORS,
+            id: ids::SENSORS,
             name: "Sensors",
             label: "Sensors",
             dissectable: false,
@@ -169,7 +169,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::FAVORITES,
+            id: ids::FAVORITES,
             name: "Favorites",
             label: "Favorites",
             dissectable: false,
@@ -177,7 +177,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::HISTORY,
+            id: ids::HISTORY,
             name: "History",
             label: "History",
             dissectable: false,
@@ -185,7 +185,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::SELECTION_SETS,
+            id: ids::SELECTION_SETS,
             name: "Selection Sets",
             label: "Selection Sets",
             dissectable: false,
@@ -193,7 +193,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::NOTES,
+            id: facts.numbering.notes,
             name: "Notes",
             label: "Notes",
             dissectable: false,
@@ -201,7 +201,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::NOTES_END,
+            id: facts.numbering.notes_end,
             name: "Notes1___EndTag___",
             label: "Notes",
             dissectable: false,
@@ -209,7 +209,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         },
         Record {
             tag: "Feature",
-            id: facts.id_base + ids::MARKUPS,
+            id: facts.numbering.markups,
             name: "Markups",
             label: "Markups",
             dissectable: false,

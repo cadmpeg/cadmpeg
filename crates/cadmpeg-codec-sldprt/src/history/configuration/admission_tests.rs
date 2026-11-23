@@ -94,7 +94,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = carrier_model();
     let expected = ir.clone();
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -104,6 +104,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -288,6 +289,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     let configuration = &ir.model.configurations[0];
     assert_eq!(
@@ -342,7 +344,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
     ])
     .unwrap();
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -352,6 +354,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -425,7 +428,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
             sketch: Some(sketch.clone()),
         });
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -435,6 +438,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -536,7 +540,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
             .unwrap()
             .definition = hole(Some(Box::new(specification)), true);
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -546,6 +550,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -628,7 +633,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         .get_mut(&id)
         .unwrap()
         .definition = hole(true);
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -638,6 +643,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -839,7 +845,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
             .unwrap()
             .definition = feature.evaluation.definition().clone();
     }
-    let losses = project_configuration_sketch_states(
+    let (losses, relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -849,6 +855,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -942,8 +949,9 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     );
     assert_eq!(ir.model.parameters, expected.model.parameters);
-    let losses = result?;
+    let (losses, relation_points) = result?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
@@ -1051,6 +1059,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         histories: &histories,
         lanes: &lanes,
         pmi_dimensions: &[],
+        length_unit: None,
     };
 
     let mut uncapped = base.clone();

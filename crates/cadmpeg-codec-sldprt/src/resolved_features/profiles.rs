@@ -1813,15 +1813,6 @@ pub(crate) fn project_marker_backed_sketches(
                 ))
             };
             for marker in markers.iter().copied() {
-                if let Some((form, code)) = marker.listed_curve_relation_drop {
-                    losses.push(
-                        crate::loss::SldprtLossCode::SketchListedCurveRelationDropped.note(format!(
-                            "Sketch {sketch_id} (feature {}) marker {} drops relation code {code} at +17 for a listed {form} (DI-77)",
-                            native_feature.name,
-                            marker.id()
-                        )),
-                    );
-                }
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
@@ -4795,6 +4786,7 @@ mod detached_legacy_sketch_tests {
                     role: crate::records::FeatureInputScalarRole::Driving,
                     operands: Vec::new(),
                     archive_class: None,
+                    archive_object_id: None,
                 })
                 .collect::<Vec<_>>();
             let relation_instances = (0..xorshift(&mut state, 8))

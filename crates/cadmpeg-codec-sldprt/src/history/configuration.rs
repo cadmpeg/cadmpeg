@@ -10,6 +10,9 @@ mod lane_tests;
 #[cfg(test)]
 mod profile_body_tests;
 
+#[cfg(test)]
+mod solid_tests;
+
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::extents::LinearTermination;
@@ -157,6 +160,7 @@ pub(crate) fn enrich_history_semantic(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(
         ctx, histories, lanes,
@@ -183,7 +187,10 @@ pub(crate) fn enrich_history_semantic(
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes)?;
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
-        ctx, histories, lanes,
+        ctx,
+        histories,
+        lanes,
+        length_unit,
     )?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
@@ -297,6 +304,7 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
@@ -306,6 +314,7 @@ pub(crate) fn project_configuration_design_states(
             histories,
             lanes,
             pmi_dimensions,
+            length_unit,
         },
         form_padding,
         work_limit,
@@ -318,6 +327,8 @@ struct ConfigurationSources<'a> {
     histories: &'a [FeatureHistory],
     lanes: &'a [crate::records::FeatureInputLane],
     pmi_dimensions: &'a [crate::records::PmiDimension],
+    /// The length unit the part states, in which a bare display reads.
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 }
 
 fn project_configuration_design_states_within(
@@ -331,6 +342,7 @@ fn project_configuration_design_states_within(
         histories,
         lanes,
         pmi_dimensions,
+        length_unit,
     } = sources;
     let mut resolved_base_features = copy_configuration_features(&ir.model.features);
     crate::resolved_features::operations::bind_extrusion_operations(
@@ -397,6 +409,7 @@ fn project_configuration_design_states_within(
             scoped_lanes,
             pmi_dimensions,
             HistoryEnrichment::Write,
+            length_unit,
         )?;
         let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
@@ -652,7 +665,8 @@ pub(super) fn restore_configuration_tree_node_definitions(
     }
 }
 
-/// Apply sketch ownership projection to configuration-local feature snapshots.
+/// Apply sketch ownership projection to configuration-local feature snapshots,
+/// and return its losses and the relation point decisions of its passes.
 pub(crate) fn project_configuration_sketch_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -661,8 +675,16 @@ pub(crate) fn project_configuration_sketch_states(
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
     plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        crate::resolved_features::relation_geometry::RelationPointNotes,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut losses = Vec::new();
+    let mut relation_points =
+        crate::resolved_features::relation_geometry::RelationPointNotes::default();
     let solid = crate::resolved_features::stream_readings::SolidEdges::new(
         &ir.geometry.edges,
         &ir.geometry.vertices,
@@ -676,6 +698,7 @@ pub(crate) fn project_configuration_sketch_states(
             &ir.model.sketch_entities,
         );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
+        let configuration_solid = configuration_solid(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(&ir.model.features, states);
@@ -840,11 +863,14 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
-            crate::resolved_features::relation_geometry::project_relation_point_geometry(
-                &mut ir.model.sketch_entities,
-                &ir.model.sketches,
-                &features,
-                scoped_lanes,
+            relation_points.extend(
+                crate::resolved_features::relation_geometry::project_relation_point_geometry(
+                    &mut ir.model.sketch_entities,
+                    &ir.model.sketches,
+                    &features,
+                    scoped_lanes,
+                    &configuration_solid,
+                ),
             );
             crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
                 &mut ir.model.sketch_entities,
@@ -995,7 +1021,7 @@ pub(crate) fn project_configuration_sketch_states(
         }
     }
 
-    Ok(losses)
+    Ok((losses, relation_points))
 }
 
 fn inherit_configuration_shared_semantics(
@@ -1403,6 +1429,74 @@ pub(crate) fn inherit_configuration_reference_plane_states(
         }
     }
     Ok(())
+}
+
+/// The vertices and edges of `configuration_index`'s bodies, or of every body
+/// where its membership is unresolved.
+fn configuration_solid(
+    ir: &cadmpeg_ir::CadIr,
+    configuration_index: usize,
+) -> crate::resolved_features::stream_readings::SolidEdges {
+    let geometry = &ir.geometry;
+    let Some(body_ids) = ir.model.configurations[configuration_index]
+        .bodies
+        .as_deref()
+    else {
+        return crate::resolved_features::stream_readings::SolidEdges::new(
+            &geometry.edges,
+            &geometry.vertices,
+            &geometry.points,
+            &geometry.curves,
+        );
+    };
+    let bodies = body_ids.iter().collect::<HashSet<_>>();
+    let shells = geometry
+        .regions
+        .iter()
+        .filter(|region| bodies.contains(&region.body))
+        .flat_map(|region| &region.shells)
+        .collect::<HashSet<_>>();
+    let faces = geometry
+        .faces
+        .iter()
+        .filter(|face| shells.contains(&face.shell))
+        .map(|face| &face.id)
+        .collect::<HashSet<_>>();
+    let loops = geometry
+        .loops
+        .iter()
+        .filter(|face_loop| faces.contains(&face_loop.face))
+        .map(|face_loop| &face_loop.id)
+        .collect::<HashSet<_>>();
+    let edge_ids = geometry
+        .coedges
+        .iter()
+        .filter(|coedge| loops.contains(&coedge.owner_loop))
+        .map(|coedge| &coedge.edge)
+        .collect::<HashSet<_>>();
+    let edges = geometry
+        .edges
+        .iter()
+        .filter(|edge| edge_ids.contains(&edge.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let vertex_ids = edges
+        .iter()
+        .filter_map(|edge| edge.ends.as_ref())
+        .flat_map(|ends| [&ends.start, &ends.end])
+        .collect::<HashSet<_>>();
+    let vertices = geometry
+        .vertices
+        .iter()
+        .filter(|vertex| vertex_ids.contains(&vertex.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::resolved_features::stream_readings::SolidEdges::new(
+        &edges,
+        &vertices,
+        &geometry.points,
+        &geometry.curves,
+    )
 }
 
 fn configuration_surface_carriers(

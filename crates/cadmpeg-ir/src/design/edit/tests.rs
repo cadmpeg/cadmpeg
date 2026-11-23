@@ -44,6 +44,8 @@ use crate::scalar::{FiniteReal, Length};
 use crate::topology::{Body, BodyKind, Region};
 use crate::CadIr;
 
+mod configurations;
+
 fn id<T>(kind: &str, key: u32) -> T
 where
     T: TryFrom<String>,

@@ -4462,7 +4462,12 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
 
     let mut entities_by_sketch = HashMap::<&SketchId, Vec<&SketchEntity>>::new();
     let mut entities_by_native = HashMap::<(&SketchId, &str), Vec<&SketchEntity>>::new();
-    for entity in sketch_entities {
+    // A relation point drawn for a marker that only a list-read record
+    // reaches is no evidence for the transform that places main's geometry.
+    for entity in sketch_entities
+        .iter()
+        .filter(|entity| !super::relation_geometry::is_listed_relation_point(entity))
+    {
         entities_by_sketch
             .entry(&entity.sketch)
             .or_default()

@@ -25,17 +25,8 @@ impl Schema {
 /// A named object's head: its `moNodeName_c` object (`None` for an unnamed
 /// object), u32 `0`, u16 family `0`, Boolean byte `0`, the schema byte, the
 /// object identifier, u32 `0` and an empty `CString`.
-pub(super) fn named(archive: &mut Archive, name: Option<&str>, schema: Schema, id: Oid) {
+pub(super) fn named(archive: &mut Archive, name: Option<&str>, schema: Schema, id: u32) {
     named_with(archive, name, schema, id, 0);
-}
-
-/// A named object's identifier.
-#[derive(Debug, Clone, Copy)]
-pub(super) enum Oid {
-    /// A default-tree node by its `ids` value.
-    Tree(u32),
-    /// An identifier as written.
-    Plain(u32),
 }
 
 /// [`named`] with the u32 after the identifier.
@@ -43,7 +34,7 @@ pub(super) fn named_with(
     archive: &mut Archive,
     name: Option<&str>,
     schema: Schema,
-    id: Oid,
+    id: u32,
     after_id: u32,
 ) {
     head(archive, name, schema, id, 0, after_id);
@@ -51,14 +42,7 @@ pub(super) fn named_with(
 
 /// [`named`] with an operation family word (§2.3).
 pub(super) fn named_operation(archive: &mut Archive, name: &str, id: u32, family: u16) {
-    head(
-        archive,
-        Some(name),
-        Schema::Plain,
-        Oid::Plain(id),
-        family,
-        0,
-    );
+    head(archive, Some(name), Schema::Plain, id, family, 0);
 }
 
 /// A named head with `family` and `after_id`.
@@ -66,14 +50,10 @@ fn head(
     archive: &mut Archive,
     name: Option<&str>,
     schema: Schema,
-    id: Oid,
+    id: u32,
     family: u16,
     after_id: u32,
 ) {
-    let id = match id {
-        Oid::Tree(id) => archive.tree_id(id),
-        Oid::Plain(id) => id,
-    };
     match name {
         Some(name) => {
             archive.object(super::NODE_NAME_CLASS);

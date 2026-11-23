@@ -309,6 +309,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -391,6 +392,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
     assert!(cosmetic_thread_cylinder_references(
         &references_ctx,

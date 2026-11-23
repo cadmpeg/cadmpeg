@@ -117,13 +117,15 @@ impl FeatureProjection {
         let OffsetSideReport {
             unstated,
             contradicted,
+            displayed,
         } = &self.offset_sides;
         if !unstated.is_empty() {
             losses.push(
                 crate::loss::SldprtLossCode::FeatureOffsetPlaneSideAssumed.note(format!(
                     "{} offset reference plane(s) ({unstated}) keep the side of the source plane \
-                     that the sign of D1 gives: D1 is a magnitude and no stored frame of the \
-                     object states the side.",
+                     that the sign of D1 gives: D1 is a magnitude, and neither a stored frame of \
+                     the object nor the point and normal of its plane-data object states the \
+                     side.",
                     unstated.count(),
                 )),
             );
@@ -131,10 +133,23 @@ impl FeatureProjection {
         if !contradicted.is_empty() {
             losses.push(
                 crate::loss::SldprtLossCode::FeatureOffsetPlaneFrameConflict.note(format!(
-                    "{} offset reference plane(s) ({contradicted}) store a frame of their own \
-                     that is not the plane placed from the source plane and D1; the plane keeps \
-                     the source plane's normal and the side of it that the sign of D1 gives.",
+                    "{} offset reference plane(s) ({contradicted}) store a frame, or a point and \
+                     normal, that is not the plane placed from the source plane at D1; each \
+                     entry names what differs and the side the plane keeps, on the source \
+                     plane's normal.",
                     contradicted.count(),
+                )),
+            );
+        }
+        if !displayed.is_empty() {
+            losses.push(
+                crate::loss::SldprtLossCode::FeatureOffsetPlaneDistanceDisplayed.note(format!(
+                    "{} offset reference plane(s) ({displayed}) take their distance from the D1 \
+                     display, rounded to the display precision: the decoder reads no value of \
+                     the plane's D1 parameter object that the display shows. A bare display is \
+                     read in the part's length unit, or in millimetres where the part states \
+                     none.",
+                    displayed.count(),
                 )),
             );
         }
@@ -385,14 +400,20 @@ pub(crate) fn project_semantic_notes(
     Ok(notes)
 }
 
-/// The offset reference planes whose stored frame gives the decoder no side.
+/// The offset reference planes whose stored records give the decoder no side
+/// or no distance.
 #[derive(Debug, Default)]
 pub(super) struct OffsetSideReport {
-    /// Planes at a nonzero `D1` whose side no stored frame states.
+    /// Planes at a nonzero `D1` whose side neither a stored frame nor the
+    /// point and normal of their plane-data object states.
     pub(super) unstated: crate::loss::NamedCount,
-    /// Planes that store a frame other than the plane placed from their source
-    /// plane and `D1`, each with what differs.
+    /// Planes that store a frame, or a point and normal, other than the plane
+    /// placed from their source plane and `D1`, each with what differs and
+    /// the side the plane keeps.
     pub(super) contradicted: crate::loss::NamedCount,
+    /// Planes whose distance is the `D1` display: the decoder reads no stored
+    /// value that the display shows.
+    pub(super) displayed: crate::loss::NamedCount,
 }
 
 const OFFSET_FRAME_TOLERANCE: f64 = 1.0e-8;
@@ -473,8 +494,9 @@ fn stored_offset_side(
 }
 
 /// Bind each offset reference plane to its source plane and give its distance
-/// the side its stored frame states. Returns the offset planes whose stored
-/// frame states no side or contradicts the placed plane.
+/// the side its stored frame, else the point and normal of its plane-data
+/// object, states. Returns the offset planes whose stored records state no
+/// side, contradict the placed plane, or store no distance.
 pub(super) fn bind_offset_plane_references(
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> OffsetSideReport {
@@ -509,6 +531,12 @@ pub(super) fn bind_offset_plane_references(
         let normal = parse_vector3(feature.source_properties.get("Normal")?)?;
         let u_axis = parse_vector3(feature.source_properties.get("UAxis")?)?;
         valid_plane_frame(normal, u_axis).then_some((origin, normal, u_axis))
+    };
+    let stored_plane_point = |feature: &cadmpeg_ir::features::Feature| {
+        Some((
+            parse_point3_mm(feature.source_properties.get("PlanePoint")?)?.get(),
+            parse_vector3(feature.source_properties.get("PlaneNormal")?)?,
+        ))
     };
     let same_scalar = same_offset_scalar;
     let plane_frames_match = |left: (Point3, Vector3, Vector3),
@@ -569,21 +597,66 @@ pub(super) fn bind_offset_plane_references(
         )
     };
     let mut report = OffsetSideReport::default();
-    // Records the side a plane's stored frame states, and returns the signed
-    // distance the plane takes.
+    for feature in features.iter() {
+        if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+        ) && feature.source_properties.contains_key("DistanceDisplayed")
+        {
+            report
+                .displayed
+                .push(feature.name.as_deref().unwrap_or(feature.id.as_str()));
+        }
+    }
+    // Records the side a plane's stored records state, and returns the signed
+    // distance the plane takes: the side its stored frame states, else the
+    // side the point and normal of its plane-data object state, else the sign
+    // of `D1`.
     let mut take_side =
         |feature: &cadmpeg_ir::features::Feature, source: (Point3, Vector3), distance: Length| {
             let label = feature.name.as_deref().unwrap_or(feature.id.as_str());
-            match stored_offset_side(stored_frame(feature), source, distance) {
-                StoredOffsetSide::Stated(stated) => stated,
-                StoredOffsetSide::Unstated => {
+            let frame = stored_offset_side(stored_frame(feature), source, distance);
+            let point = stored_offset_side(
+                stored_plane_point(feature).map(|(point, normal)| (point, normal, normal)),
+                source,
+                distance,
+            );
+            match (frame, point) {
+                (StoredOffsetSide::Stated(stated), StoredOffsetSide::Stated(other))
+                    if !same_scalar(distance.get(), 0.0)
+                        && other.get().signum() != stated.get().signum() =>
+                {
+                    report.contradicted.push(&format!(
+                        "{label}: plane-data point on the other side of the stored frame; \
+                         the frame's side kept"
+                    ));
+                    stated
+                }
+                (StoredOffsetSide::Stated(stated), _) => stated,
+                (frame, StoredOffsetSide::Stated(stated)) => {
+                    if let StoredOffsetSide::Contradicted(difference) = frame {
+                        report.contradicted.push(&format!(
+                            "{label}: stored frame {difference}; the plane-data point's side kept"
+                        ));
+                    }
+                    stated
+                }
+                (StoredOffsetSide::Contradicted(difference), _) => {
+                    report.contradicted.push(&format!(
+                        "{label}: stored frame {difference}; D1's sign kept"
+                    ));
+                    distance
+                }
+                (StoredOffsetSide::Unstated, StoredOffsetSide::Contradicted(difference)) => {
+                    report.contradicted.push(&format!(
+                        "{label}: plane-data point {difference}; D1's sign kept"
+                    ));
+                    distance
+                }
+                (StoredOffsetSide::Unstated, StoredOffsetSide::Unstated) => {
                     if !same_scalar(distance.get(), 0.0) {
                         report.unstated.push(label);
                     }
-                    distance
-                }
-                StoredOffsetSide::Contradicted(difference) => {
-                    report.contradicted.push(&format!("{label}: {difference}"));
                     distance
                 }
             }
@@ -785,7 +858,10 @@ pub(super) fn bind_offset_plane_references(
             ) {
                 continue;
             }
-            let Some((origin, normal, _)) = stored_frame(feature) else {
+            let Some((origin, normal)) = stored_frame(feature)
+                .map(|(origin, normal, _)| (origin, normal))
+                .or_else(|| stored_plane_point(feature))
+            else {
                 continue;
             };
             if same_scalar(distance.get(), 0.0) {

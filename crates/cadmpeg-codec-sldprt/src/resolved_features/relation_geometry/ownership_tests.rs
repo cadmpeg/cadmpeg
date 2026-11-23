@@ -80,6 +80,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 role: FeatureInputScalarRole::Display,
                 operands: Vec::new(),
                 archive_class: None,
+                archive_object_id: None,
             })
             .collect();
         lane.names = (0..12)

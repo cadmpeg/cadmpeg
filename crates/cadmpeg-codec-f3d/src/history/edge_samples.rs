@@ -134,6 +134,29 @@ fn sampled_bounds(
     end: f64,
 ) -> Result<Option<[Point3; 2]>, cadmpeg_core::decode::ResourceLimit> {
     const SAMPLES_PER_SPAN: u32 = 16;
+    if matches!(geometry, SolvedCurveGeometry::Line(_)) {
+        let Some(p0) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
+            EvaluationAdmission::Standard,
+            geometry,
+            start,
+        ))?
+        else {
+            return Ok(None);
+        };
+        let Some(p1) = finite_or_refusal(cadmpeg_ir::eval::decode::curve_point_solved(
+            EvaluationAdmission::Standard,
+            geometry,
+            end,
+        ))?
+        else {
+            return Ok(None);
+        };
+        let (p0, p1) = (p0.get(), p1.get());
+        return Ok(Some([
+            Point3::new(p0.x.min(p1.x), p0.y.min(p1.y), p0.z.min(p1.z)),
+            Point3::new(p0.x.max(p1.x), p0.y.max(p1.y), p0.z.max(p1.z)),
+        ]));
+    }
     let mut breaks = vec![start, end];
     if let SolvedCurveGeometry::Nurbs(curve) = geometry {
         breaks.extend(

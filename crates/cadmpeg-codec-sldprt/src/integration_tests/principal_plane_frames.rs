@@ -230,6 +230,15 @@ fn serialized_support_offset_preserves_model_frame_and_polarity() {
 fn offset_plane_with_stored_origin(
     stored_origin: &str,
 ) -> (f64, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    offset_plane_with_properties(stored_origin, &[])
+}
+
+/// Projects the Front offset plane of [`offset_plane_with_stored_origin`]
+/// with the further stored properties `extra`.
+fn offset_plane_with_properties(
+    stored_origin: &str,
+    extra: &[(&str, &str)],
+) -> (f64, Vec<cadmpeg_ir::report::loss::LossKind>) {
     let native = |id: &str, source, ordinal| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -258,6 +267,12 @@ fn offset_plane_with_stored_origin(
         (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
     ] {
         offset.properties.insert(key, value.into());
+    }
+    for (key, value) in extra {
+        offset.properties.insert(
+            cadmpeg_core::text::NonBlankString::new((*key).to_owned()).expect("key"),
+            (*value).to_owned(),
+        );
     }
     let histories = [FeatureHistory {
         id: "history".into(),
@@ -332,4 +347,19 @@ fn offset_plane_frame_displaced_within_its_plane_states_the_side() {
     ] {
         assert!(!codes.contains(&code), "{codes:?}");
     }
+}
+
+/// A plane whose distance is the `D1` display is named under
+/// `feature.offset-plane-distance-displayed`.
+#[test]
+fn offset_plane_with_a_displayed_distance_names_it() {
+    let (distance, codes) =
+        offset_plane_with_properties("0mm,0mm,6mm", &[("DistanceDisplayed", "6")]);
+    assert_eq!(distance, 6.0);
+    let displayed = crate::loss::SldprtLossCode::FeatureOffsetPlaneDistanceDisplayed.kind();
+    assert_eq!(
+        codes.iter().filter(|code| **code == displayed).count(),
+        1,
+        "{codes:?}"
+    );
 }
