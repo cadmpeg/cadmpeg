@@ -29,7 +29,7 @@ use crate::design::units::{AngularSpeed, Duration, Feed, UnitSymbol};
 use crate::features::geometry::FinitePoint3;
 use crate::features::{FeatureId, ParameterId};
 use crate::geometry::analytic::LineCurve;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::math::{Point3, Vector3};
 use crate::process::cycle::{Cycle, CycleKind, CycleReturn, PlaneAxis, ProbeTarget};
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
@@ -630,7 +630,7 @@ pub(super) fn tool_axis_controls() -> Vec<ToolAxisControl> {
 }
 
 pub(super) fn profile_curves() -> Vec<ProfileCurve> {
-    let line = SolvedCurveGeometry::Line(
+    let line = InlineCurve::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
     );
     vec![
