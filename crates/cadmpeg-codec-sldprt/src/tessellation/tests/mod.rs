@@ -941,6 +941,92 @@ fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
         .all(|mesh| mesh.faces.is_empty()));
 }
 
+/// Put `active` on the body of [`model_with_body`] and `stored` on a second
+/// body, which is returned: the body of a configuration that is not active.
+fn split_between_two_bodies(ir: &mut CadIr, active: &FaceId, stored: &FaceId) -> BodyId {
+    set_shell_faces(ir, std::slice::from_ref(active));
+    let body = BodyId::mint("synthetic:test:body#stored").expect("identity grammar");
+    let region = RegionId::mint("synthetic:test:region#stored").expect("identity grammar");
+    let shell = ShellId::mint("synthetic:test:shell#stored").expect("identity grammar");
+    let mut second = ir.geometry.bodies[0].clone();
+    second.id = body.clone();
+    ir.geometry.bodies.push(second);
+    ir.geometry.regions.push(Region {
+        id: region.clone(),
+        body: body.clone(),
+        shells: vec![shell.clone()],
+        native_ref: None,
+    });
+    ir.geometry.shells.push(Shell::new(shell.clone(), region));
+    for face in &mut ir.geometry.faces {
+        if face.id == *stored {
+            face.shell = shell.clone();
+        }
+    }
+    body
+}
+
+#[test]
+fn a_face_key_repeated_on_a_stored_body_binds_the_active_face() {
+    let mut ir = model_with_body();
+    let active = add_square_face(&mut ir, "active-key", 0.0);
+    let stored = add_square_face(&mut ir, "stored-key", 0.0);
+    let stored_body = split_between_two_bodies(&mut ir, &active, &stored);
+    ir.model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_keys = vec![(active.clone(), 7), (stored, 7)];
+
+    assert_eq!(
+        assign_face_key_owners(
+            &mut ir,
+            &face_keys,
+            &[key_binding("synthetic:test:tessellation#mesh", 7)],
+            &std::collections::HashSet::from([stored_body]),
+        ),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(ir.model.tessellations[0].faces, vec![active]);
+    assert_eq!(
+        ir.model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+}
+
+#[test]
+fn a_persistent_identity_repeated_on_a_stored_body_binds_the_active_face() {
+    let mut ir = model_with_body();
+    let active = add_square_face(&mut ir, "active-persistent", 0.0);
+    let stored = add_square_face(&mut ir, "stored-persistent", 0.0);
+    let stored_body = split_between_two_bodies(&mut ir, &active, &stored);
+    ir.model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![
+        (active.clone(), persistent_identity(7, 3, &[])),
+        (stored, persistent_identity(7, 3, &[])),
+    ];
+    let binding = PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(7, 3, &[]),
+    };
+
+    assert_eq!(
+        assign_persistent_owners(
+            &mut ir,
+            &face_identities,
+            &[binding],
+            &std::collections::HashSet::from([stored_body]),
+        ),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(ir.model.tessellations[0].faces, vec![active]);
+    assert_eq!(
+        ir.model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+}
+
 #[test]
 fn display_face_key_reads_the_one_cell_and_the_key_inside_the_table_metadata() {
     let key_table = |one: u32, key: u32| {
