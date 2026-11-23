@@ -64,6 +64,21 @@ Parsed by:
 | 4 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at +4 |
 | 8 | 4 | `zero_trailer` | `bytes[4]` | little | spec | four zero bytes at +8 |
 
+## `feature_input_scalar_class_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/parameter_classes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `relation_class_token` | `u16` | little | spec | the relation class token at prefix +0 |
+| 2 | 4 | `zero` | `u32` | little | spec | a zero u32 at prefix +2 |
+| 6 | 2 | `parameter_class_token` | `u16` | little | spec | the parameter class token at prefix +6 |
+
 ## `outer_header`
 
 Spec §1.1 · layout: byte offsets · size: 8 B
@@ -3166,6 +3181,55 @@ Parsed by:
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
 
+## `view_bytes`
+
+Spec §Configuration objects · layout: byte offsets · size: 115 B
+
+A view's bytes after its name and frame, in a part of swVersion below 15000.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `unit` | `f64` | little | spec | hold f64 `1` at +24 |
+| 58 | 8 | `scale` | `f64` | little | spec | the view's scale as an f64 at +58 |
+| 69 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +69 |
+| 73 | 8 | `minus_one_real` | `f64` | little | spec | f64 `-1` at +73 |
+| 85 | 4 | `index` | `u32` | little | spec | the view's index as a little-endian u32 at +85 |
+
+Unstated regions:
+
+- `0..24` (24 B): Zero bytes.
+- `32..58` (26 B): Zero bytes.
+- `66..69` (3 B): Zero bytes.
+- `81..85` (4 B): Zero bytes.
+- `89..115` (26 B): Zero bytes.
+
+## `annotation_view_tail`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+The bytes a `moAnnotationView_c` writes after the view bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 1 | `area` | `u8` | little | spec | a byte at +10 |
+| 28 | 4 | `one` | `u32` | little | spec | little-endian u32 `1` at +28 · value `1` |
+| 34 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +34 |
+| 38 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +38 |
+| 42 | 4 | `minus_one_second` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+| 46 | 4 | `minus_one_third` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+
+Unstated regions:
+
+- `0..10` (10 B): Zero bytes.
+- `11..28` (17 B): Zero bytes.
+- `32..34` (2 B): Zero bytes.
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B
@@ -3275,6 +3339,40 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 20 | 4 | `word_20` | `u32` | little | spec | \| +20 \| little-endian u32 \| |
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
+
+## `length_user_units_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 48 B
+
+The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `precision` | `u32` | little | spec | The first u32 of a `moLengthUserUnits_c` base is the number of decimal places |
+| 44 | 4 | `last_word` | `u32` | little | spec | four u32, the last `1`, 48 bytes · value `1` |
+
+Unstated regions:
+
+- `4..44` (40 B): A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them.
+
+## `length_user_units_block_base`
+
+Spec §Configuration objects · layout: byte offsets · size: 62 B
+
+The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 48 | `base` | `bytes[48]` | little | spec | In its four-word base form |
+| 48 | 8 | `block_real` | `f64` | little | spec | an f64, a u32 and a u16 follow |
+| 56 | 4 | `block_word` | `u32` | little | spec | an f64, a u32 and a u16 follow |
+| 60 | 2 | `block_short` | `u16` | little | spec | an f64, a u32 and a u16 follow |
 
 ## `sketch_record_head`
 
@@ -3767,6 +3865,52 @@ Starts at the parsed post-relation settings boundary H, not at a fixed displacem
 | 25 | 3 | `settings_before_mode` | `bytes[3]` | little | spec | \| +25 \| bytes[3] \| settings_before_mode \| |
 | 28 | 1 | `equation_angular_mode` | `u8` | little | spec | \| +28 \| u8 \| equation_angular_mode \| |
 
+## `equation_token_words`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+Follows the counted string of each token of a relation side stored as tokens; the repeated assigned name has no words.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `token_lead_word` | `u32` | little | spec | \| +0 \| u32 \| token_lead_word \| |
+| 4 | 4 | `token_first_character` | `u32` | little | spec | \| +4 \| u32 \| token_first_character \| |
+| 8 | 4 | `token_end_character` | `u32` | little | spec | \| +8 \| u32 \| token_end_character \| |
+| 12 | 4 | `token_kind` | `u32` | little | spec | \| +12 \| u32 \| token_kind \| |
+
+## `equation_expression_separator`
+
+Spec §2 · layout: byte offsets · size: 10 B
+
+The expression side's class tag and token count follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `separator_lead` | `bytes[8]` | little | spec | \| +0 \| bytes[8] \| separator_lead, `00 00 00 00 01 00 00 00` \| · value `[0, 0, 0, 0, 1, 0, 0, 0]` |
+| 8 | 2 | `separator_word` | `u16` | little | spec | \| +8 \| u16 \| separator_word \| |
+
+## `equation_dimension_reference_token`
+
+Spec §2 · layout: byte offsets · size: 16 B
+
+The first reference of a stream declares the two classes in place of their repeat tokens; its four zero bytes and value follow the same way. The reference's handle objects and name token follow the value.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/equations/stored.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `dimension_class_token` | `u16` | little | spec | \| +0 \| u16 \| dimension_class_token \| |
+| 2 | 4 | `dimension_pad` | `bytes[4]` | little | spec | \| +2 \| bytes[4] \| dimension_pad, zero \| · value `[0, 0, 0, 0]` |
+| 6 | 2 | `wrapper_class_token` | `u16` | little | spec | \| +6 \| u16 \| wrapper_class_token, `dimension_class_token` + 2 \| |
+| 8 | 8 | `stored_value` | `f64` | little | spec | \| +8 \| f64 \| stored_value \| |
+
 ## `draft_declared_neutral_frame`
 
 Spec §2 · layout: byte offsets · size: 120 B
@@ -3989,6 +4133,26 @@ Parsed by:
 | 22 | 12 | `zero_after_reference` | `bytes[12]` | little | spec | twelve zero bytes, a nonzero u16 final token |
 | 34 | 2 | `final_token` | `u16` | little | spec | a nonzero u16 final token |
 | 36 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero tail bytes |
+
+## `extrusion_end_spec_header`
+
+Spec §2 · layout: byte offsets · size: 26 B
+
+Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class` | `bytes[2]` | little | spec | The direct form uses the declaration's final `_c` bytes as its anchor |
+| 2 | 2 | `zero_after_class` | `bytes[2]` | little | spec | Anchor +2 is zero |
+| 4 | 4 | `direction_count` | `u32` | little | spec | The little-endian u32 at anchor +4 is the direction count |
+| 8 | 4 | `boolean_word` | `u32` | little | spec | Anchor +8 is a little-endian u32 Boolean word |
+| 12 | 4 | `reversal` | `u32` | little | spec | anchor +12 is the little-endian u32 reversal flag |
+| 16 | 2 | `zero_before_codes` | `u16` | little | spec | anchor +16 is a zero u16 · value `0` |
+| 18 | 4 | `first_code` | `u32` | little | spec | The little-endian u32 first-direction termination code is at anchor +18 |
+| 22 | 4 | `second_code` | `u32` | little | spec | the little-endian u32 second-direction termination code is at anchor +22 |
 
 ## `pmark_record_head`
 

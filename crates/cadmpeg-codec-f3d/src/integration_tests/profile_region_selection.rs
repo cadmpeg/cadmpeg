@@ -583,9 +583,12 @@ fn same_sketch_profile_group_composes_merged_regions_and_charges_union_assumptio
     let mut second = left_scope.extrude_profile().unwrap().clone();
     second.scope_reference_ordinal = 1;
     second.record_index = 110;
-    assert!(crate::design::decode::operands::composable_sketch_profiles(
-        &[first.clone(), second.clone(),]
-    ));
+    assert!(
+        crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
+            first.clone(),
+            second.clone(),
+        ])
+    );
 
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
@@ -612,12 +615,15 @@ fn same_sketch_profile_group_composes_merged_regions_and_charges_union_assumptio
     let mut no_region = second.clone();
     no_region.region_selection = None;
     assert!(
-        !crate::design::decode::operands::composable_sketch_profiles(&[first.clone(), no_region,])
+        !crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
+            first.clone(),
+            no_region,
+        ])
     );
     let mut other_sketch = second;
     other_sketch.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 99);
     assert!(
-        !crate::design::decode::operands::composable_sketch_profiles(&[
+        !crate::design::decode::operands::sketch_profiles::composable_sketch_profiles(&[
             first.clone(),
             other_sketch,
         ])

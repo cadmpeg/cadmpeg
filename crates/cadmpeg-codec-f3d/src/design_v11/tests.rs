@@ -8,7 +8,7 @@ use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
@@ -22,6 +22,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
 use crate::records::entity_header::{
     BaseTypeGuid, DesignFeatureTimeline, DesignTimelineFrame, SegmentType, SegmentTypeData,
 };
+use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::records::identity::{Located, ReferenceRun};
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -134,6 +135,10 @@ fn an_unresolved_coordinate_frame_keeps_the_next_timeline_item() {
             &features,
             &[timeline(STREAM, 0, &[10, 20])],
             &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -216,6 +221,10 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             &features,
             &timelines,
             &types,
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -293,6 +302,10 @@ fn a_stream_whose_timelines_list_no_item_states_no_container() {
             &[],
             &[timeline(STREAM, 0, &[])],
             &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -310,6 +323,10 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             &[],
             &[timeline(STREAM, 0, &[7])],
             &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut Vec::new(),
         )
@@ -322,6 +339,186 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
         &feature.definition.operation,
         FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:timeline-item"
     ));
+}
+
+/// Tail flags with state bytes 0 and 1 `suppression`, the no-result flag
+/// `no_result` and the rolled-back flag `rolled_back`.
+fn tail_flags(suppression: [bool; 2], no_result: bool, rolled_back: bool) -> DesignScopeTailFlags {
+    DesignScopeTailFlags {
+        suppression,
+        unevaluated: false,
+        state_offset: 0,
+        no_result,
+        rolled_back,
+        no_result_offset: 3,
+        envelope_offset: None,
+    }
+}
+
+/// The rollback marker, the members and the losses of one timeline of
+/// `items`, whose scope tails carry the rolled-back flags in `flags`.
+fn rollback_of(
+    items: &[u64],
+    flags: &[(u64, bool)],
+) -> (
+    Rollback,
+    Vec<Member>,
+    Vec<cadmpeg_ir::report::loss::LossKind>,
+) {
+    let flags: super::timeline::TailFlags<'_> = flags
+        .iter()
+        .map(|&(record, rolled_back)| {
+            ((STREAM, record), tail_flags([false; 2], false, rolled_back))
+        })
+        .collect();
+    let mut losses = Vec::new();
+    let mut documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, items)],
+            &[],
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &flags,
+            },
+            &BTreeSet::new(),
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let Container::Ordered {
+        members, rollback, ..
+    } = documents.remove("").unwrap().containers.remove(0)
+    else {
+        panic!("ordered container")
+    };
+    (
+        rollback,
+        members,
+        losses.into_iter().map(|loss| loss.code).collect(),
+    )
+}
+
+#[test]
+fn the_rollback_marker_stands_before_the_first_of_the_trailing_rolled_back_items() {
+    let (rollback, members, losses) = rollback_of(
+        &[10, 20, 30, 40],
+        &[(10, false), (20, false), (30, true), (40, true)],
+    );
+    assert_eq!(rollback, Rollback::Before(members[2].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+    let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true), (20, true)]);
+    assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn an_unread_item_before_the_rolled_back_items_charges_the_marker_bound_loss() {
+    let (rollback, members, losses) = rollback_of(&[10, 20, 30], &[(10, false), (30, true)]);
+    assert_eq!(rollback, Rollback::Before(members[2].clone()));
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackBoundUnread.kind()]
+    );
+}
+
+#[test]
+fn an_unread_item_after_the_first_rolled_back_item_charges_the_rollback_loss() {
+    let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true)]);
+    assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
+    );
+}
+
+#[test]
+fn a_timeline_whose_items_are_all_read_and_built_ends_after_its_last_item() {
+    let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, false), (20, false)]);
+    assert_eq!(rollback, Rollback::End);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_built_item_after_a_rolled_back_item_leaves_the_marker_unread() {
+    let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, true), (20, false)]);
+    assert_eq!(rollback, Rollback::End);
+    assert_eq!(
+        losses,
+        [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
+    );
+}
+
+#[test]
+fn the_current_state_stands_at_the_rollback_marker() {
+    let id =
+        cadmpeg_ir::design::ids::ContainerId::mint("f3d:design:timeline#0".to_owned()).unwrap();
+    let members = [10, 20, 30]
+        .map(|key| Member::Feature(FeatureId::mint(format!("f3d:model:feature#{key}")).unwrap()));
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::End),
+        Position::After(members[2].clone())
+    );
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::Before(members[1].clone())),
+        Position::After(members[0].clone())
+    );
+    assert_eq!(
+        super::rollback_position(&id, &members, &Rollback::Before(members[0].clone())),
+        Position::Start(id.clone())
+    );
+}
+
+/// An unprojected item is suppressed where state byte 0 or 1 of its scope
+/// tail is set. With the no-result flag and neither byte set, it is active
+/// with no current result and charges a loss.
+#[test]
+fn an_unprojected_item_takes_its_suppression_from_its_scope_tail_state_bytes() {
+    for (suppression, no_result, suppressed, assumed) in [
+        ([true, false], true, true, false),
+        ([false, true], true, true, false),
+        ([false, false], true, false, true),
+        ([false, false], false, false, false),
+    ] {
+        let flags: super::timeline::TailFlags<'_> =
+            [((STREAM, 7), tail_flags(suppression, no_result, false))]
+                .into_iter()
+                .collect();
+        let mut losses = Vec::new();
+        let documents = crate::test_support::with_decode_context(|ctx| {
+            super::timeline::project(
+                ctx,
+                &[],
+                &[timeline(STREAM, 0, &[7, 8])],
+                &[],
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &flags,
+                },
+                &BTreeSet::new(),
+                &mut losses,
+            )
+        })
+        .unwrap();
+        let [flagged, unflagged] = documents[""].features.as_slice() else {
+            panic!("two features")
+        };
+        let case = format!("{suppression:?} {no_result}");
+        assert_eq!(
+            flagged.suppressed,
+            Some(Dimension::Literal(suppressed)),
+            "{case}"
+        );
+        assert_eq!(unflagged.suppressed, None, "{case}");
+        assert_eq!(
+            losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureNoResultActiveAssumed.kind()
+            }),
+            assumed,
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -465,7 +662,18 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
         let current = current.iter().copied().collect::<BTreeSet<_>>();
         let timelines = [timeline(STREAM, 0, &[10])];
         crate::test_support::with_decode_context(|ctx| {
-            super::timeline::project(ctx, &[feature], &timelines, &[], &current, &mut Vec::new())
+            super::timeline::project(
+                ctx,
+                &[feature],
+                &timelines,
+                &[],
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &super::timeline::TailFlags::new(),
+                },
+                &current,
+                &mut Vec::new(),
+            )
         })
         .unwrap()
         .remove("")
@@ -737,6 +945,104 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         definition("bare"),
         source(vec![ExpressionToken::Text("3".to_owned())])
     );
+}
+
+/// The parameter of a driven (reference) dimension is `Driven` (§5.12, D11).
+/// Its value is the measured value its frame stores, not the value of the
+/// literal its record stores, and the source setting `f3d:literal` keeps
+/// that literal; with no measured value it has no value. A driving dimension's
+/// parameter keeps its literal expression.
+#[test]
+fn the_parameter_of_a_driven_dimension_is_driven() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::options::NativeOption;
+    use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
+    const OWNER: &str = "f3d:model:feature#sketch:20";
+    let legacy = [
+        parameter(
+            "reference",
+            Some(OWNER),
+            "12.5 mm",
+            Some(V10::Length(Length::new(12.5).unwrap())),
+            &[],
+            &[
+                ("source_kind", "Linear Dimension-2"),
+                ("driven", "true"),
+                ("measured_value", "12.25"),
+            ],
+        ),
+        parameter(
+            "unmeasured",
+            Some(OWNER),
+            "3 mm",
+            Some(V10::Length(Length::new(3.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-4"), ("driven", "true")],
+        ),
+        parameter(
+            "driving",
+            Some(OWNER),
+            "4 mm",
+            Some(V10::Length(Length::new(4.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-3")],
+        ),
+    ];
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let [reference, unmeasured, driving] = projected.as_slice() else {
+        panic!("three parameters: {projected:?}")
+    };
+    let literal = |text: &str| {
+        Some(NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(text.to_owned()).unwrap(),
+        )))
+    };
+    assert!(matches!(reference.definition, ParameterDefinition::Driven));
+    assert_eq!(
+        reference.value,
+        Some(ParameterValue::Number(FiniteReal::new(12.25).unwrap()))
+    );
+    assert_eq!(
+        reference
+            .source_settings
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("12.5 mm")
+    );
+    assert!(matches!(unmeasured.definition, ParameterDefinition::Driven));
+    assert_eq!(unmeasured.value, None);
+    assert_eq!(
+        unmeasured
+            .source_settings
+            .get(super::parameters::LITERAL)
+            .cloned(),
+        literal("3 mm")
+    );
+    assert!(matches!(
+        &driving.definition,
+        ParameterDefinition::Expression(expression)
+            if expression == &number(4.0, Some(UnitSymbol::Mm))
+    ));
+    assert_eq!(
+        driving.value,
+        Some(ParameterValue::Number(FiniteReal::new(4.0).unwrap()))
+    );
+    assert_eq!(
+        driving.source_settings.get(super::parameters::LITERAL),
+        None
+    );
+    assert!(reference.native_options.is_empty());
 }
 
 #[test]

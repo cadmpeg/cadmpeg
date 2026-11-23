@@ -4,8 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::{
-    composable_sketch_profiles, entity_selection_matches_curve, parse_sketch_profile,
+use crate::design::decode::operands::entity_selections::entity_selection_matches_curve;
+use crate::design::decode::operands::sketch_profiles::{
+    composable_sketch_profiles, parse_sketch_profile,
 };
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
@@ -94,7 +95,7 @@ fn histories_for_scope<'a>(
     histories: &'a [crate::history_records::AsmHistory],
 ) -> &'a [crate::history_records::AsmHistory] {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+        crate::history::history_states::bound_scope_history(scope_id, scope_histories, histories)
             .map_or(&[], std::slice::from_ref)
     } else {
         histories
@@ -537,7 +538,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     );
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
-                        crate::history::effective_scope_previous_history_state_id(
+                        crate::history::history_states::effective_scope_previous_history_state_id(
                             scope,
                             scoped_histories,
                         );
@@ -575,11 +576,39 @@ pub(crate) fn bind_extrude_profile_selections(
                             (Some(group), None) => Some(group),
                             _ => None,
                         };
-                        if let Some(group) = typed_group {
-                            if let Some(selection) = resolve_entity_selection_profile(
-                                group,
-                                &curve_resolution.path_resolution(),
-                            ) {
+                        let live = typed_group.and_then(|group| {
+                            live_profile_members(group, curve_resolution.profile_curves)
+                        });
+                        for record_index in live.iter().flat_map(|live| &live.lost_members) {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureProfileMemberReferenceLost.note(format!(
+                                    "Feature {} profile member record {record_index}: its status record references a lost profile-reference record, and the member contributes a region only when the complete group resolves.",
+                                    feature.id
+                                )),
+                            );
+                        }
+                        let full_resolution = curve_resolution.path_resolution();
+                        let live_resolution = live
+                            .as_ref()
+                            .filter(|live| !live.group.members().is_empty())
+                            .map(|live| {
+                                let mut resolution = curve_resolution.path_resolution();
+                                resolution.profile_curves = &live.profile_curves;
+                                (&live.group, resolution)
+                            });
+                        let candidates: Vec<_> = typed_group
+                            .map(|group| (group, &full_resolution))
+                            .into_iter()
+                            .chain(
+                                live_resolution
+                                    .as_ref()
+                                    .map(|(group, resolution)| (*group, resolution)),
+                            )
+                            .collect();
+                        for &(group, path_resolution) in &candidates {
+                            if let Some(selection) =
+                                resolve_entity_selection_profile(group, path_resolution)
+                            {
                                 *profile = selection;
                                 if is_to_termination {
                                     if let (
@@ -617,7 +646,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             }
                             if let Some(selection) = resolve_profile_curve_arrangement_regions(
                                 group,
-                                &curve_resolution.path_resolution(),
+                                path_resolution,
                                 scoped_resolution,
                             )? {
                                 *profile = selection;
@@ -633,32 +662,47 @@ pub(crate) fn bind_extrude_profile_selections(
                             &mut curved_face_note,
                         )? {
                             *profile = ProfileRef::Planar(selection);
-                        } else if let (Some(group), Some(states)) = (
-                            typed_group,
-                            scope
-                                .history_state_id()
-                                .zip(effective_previous_history_state_id),
-                        ) {
-                            if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
-                                group,
-                                &curve_resolution.path_resolution(),
-                                scoped_resolution,
-                                states,
-                                cap_regions::compact::Sweep {
-                                    operation: op,
-                                    start,
-                                    direction,
-                                    extent,
-                                },
-                            )? {
-                                *profile = ProfileRef::Planar(selection);
-                                for code in selection_losses {
-                                    losses.push(code.note(format!(
-                                        "{}: stored profile entries use their participating intervals on the certified cap boundary",
-                                        feature.id,
-                                    )));
+                        } else if let Some(states) = scope
+                            .history_state_id()
+                            .zip(effective_previous_history_state_id)
+                        {
+                            for &(group, path_resolution) in &candidates {
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep {
+                                        operation: op,
+                                        start,
+                                        direction,
+                                        extent,
+                                    },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                            feature.id,
+                                        )));
+                                    }
+                                    break 'feature_edit;
                                 }
-                                break 'feature_edit;
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve_stale(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
+                                        )));
+                                    }
+                                    break 'feature_edit;
+                                }
                             }
                         }
                     }
@@ -1227,7 +1271,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.histories,
                             );
                             let effective_previous_history_state_id =
-                                crate::history::effective_scope_previous_history_state_id(
+                                crate::history::history_states::effective_scope_previous_history_state_id(
                                     scope,
                                     scoped_histories,
                                 );
@@ -1446,6 +1490,73 @@ pub(crate) fn unprofiled_curve_losses(
             }
         })
         .collect()
+}
+
+/// A typed profile group with the members whose status record references a
+/// lost profile-reference record removed.
+struct LiveProfileMembers {
+    /// The group with the remaining members in stored order.
+    group: DesignConstructionOperandGroup,
+    /// Every profile selection, with the group's lost members removed and the
+    /// remaining members' ordinals renumbered.
+    profile_curves: Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
+    /// Record indices of the removed members, in stored order.
+    lost_members: Vec<u32>,
+}
+
+/// The live members of `group`. `None` when no member's status record
+/// references a lost profile-reference record.
+fn live_profile_members(
+    group: &DesignConstructionOperandGroup,
+    profile_curves: &[crate::records::topology::entity_selection::DesignProfileCurveSelection],
+) -> Option<LiveProfileMembers> {
+    let stream = native_stream(&group.id)?;
+    let in_group =
+        |selection: &crate::records::topology::entity_selection::DesignProfileCurveSelection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+        };
+    let mut live = Vec::new();
+    let mut lost_members = Vec::new();
+    let mut ordinals = HashMap::new();
+    for (ordinal, member) in group.members().iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let lost = profile_curves.iter().any(|selection| {
+            in_group(selection)
+                && selection.group_member_ordinal == ordinal
+                && selection.record_index == member.value
+                && selection.reference_lost()
+        });
+        if lost {
+            lost_members.push(member.value);
+        } else {
+            ordinals.insert(ordinal, u32::try_from(live.len()).ok()?);
+            live.push(*member);
+        }
+    }
+    if lost_members.is_empty() {
+        return None;
+    }
+    let mut live_group = group.clone();
+    live_group.try_set_members(live).ok()?;
+    let profile_curves = profile_curves
+        .iter()
+        .filter_map(|selection| {
+            if !in_group(selection) {
+                return Some(selection.clone());
+            }
+            let ordinal = *ordinals.get(&selection.group_member_ordinal)?;
+            let mut selection = selection.clone();
+            selection.group_member_ordinal = ordinal;
+            Some(selection)
+        })
+        .collect();
+    Some(LiveProfileMembers {
+        group: live_group,
+        profile_curves,
+        lost_members,
+    })
 }
 
 fn resolve_entity_selection_profile(
@@ -4998,7 +5109,8 @@ fn resolve_profile_curve_regions(
 ) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
-    let (sketch, curves) = profile_curve_selection_candidates(group, stream, resolution, false)?;
+    let (sketch, curves) =
+        profile_curve_selection_candidates(group, stream, resolution, false, false)?;
     let source = resolution
         .sketches
         .iter()
@@ -5495,6 +5607,7 @@ fn profile_curve_selection_candidates(
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
     allow_compact_fragments: bool,
+    allow_missing: bool,
 ) -> Option<(
     cadmpeg_ir::sketches::SketchId,
     Vec<Vec<cadmpeg_ir::sketches::SketchEntityId>>,
@@ -5603,7 +5716,7 @@ fn profile_curve_selection_candidates(
                     }
                 })
                 .collect();
-            if ids.is_empty() {
+            if ids.is_empty() && !allow_missing {
                 return None;
             }
             candidates.push(ids);
@@ -5635,8 +5748,13 @@ fn profile_curve_selection_curves(
     cadmpeg_ir::sketches::SketchId,
     Vec<cadmpeg_ir::sketches::SketchEntityId>,
 )> {
-    let (sketch, entries) =
-        profile_curve_selection_candidates(group, stream, resolution, allow_compact_fragments)?;
+    let (sketch, entries) = profile_curve_selection_candidates(
+        group,
+        stream,
+        resolution,
+        allow_compact_fragments,
+        false,
+    )?;
     let curves = entries
         .into_iter()
         .map(|mut ids| (ids.len() == 1).then(|| ids.remove(0)))

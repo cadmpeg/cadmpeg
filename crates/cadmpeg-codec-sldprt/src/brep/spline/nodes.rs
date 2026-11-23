@@ -159,6 +159,7 @@ fn surface_descriptor(
     body_offset: usize,
 ) -> Option<(SurfaceDescriptor, bool)> {
     let descriptor = SurfaceDescriptor {
+        start: node.range().start.checked_sub(body_offset)?,
         end: node.range().end.checked_sub(body_offset)?,
         attr: node.index(),
         u_periodic: node.logical("u_periodic")?,

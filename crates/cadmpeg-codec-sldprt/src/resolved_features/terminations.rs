@@ -15,6 +15,7 @@ use super::selections::{
     is_component_vector_selector_for_role, COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
+use crate::layout::extrusion_end_spec_header as end_spec;
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -189,20 +190,59 @@ impl TerminationVote {
     }
 }
 
-pub(crate) fn enrich_history_extrusion_terminations(
+/// One extrusion end spec in a feature-input lane: the lane's index, the
+/// anchor's offset in its payload, and whether the reversal word at anchor
+/// +12 is `1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EndSpecAnchor {
+    pub(crate) lane: usize,
+    pub(crate) offset: usize,
+    pub(crate) reversed: bool,
+}
+
+/// What the end specs of every lane say of each extrusion record, by record
+/// id: one entry per lane object of the record.
+struct EndSpecs {
+    terminations: HashMap<String, Vec<Option<TerminationVote>>>,
+    anchors: HashMap<String, Vec<Option<EndSpecAnchor>>>,
+    start_conditions: HashMap<String, Vec<super::extrusion_start::StartCondition>>,
+}
+
+/// The end specs whose reversal word is `1`, by extrusion record id.
+pub(crate) fn reversed_end_specs(
     ctx: &DecodeContext<'_>,
-    histories: &mut [crate::records::FeatureHistory],
+    histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<HashMap<String, Vec<EndSpecAnchor>>, cadmpeg_core::CodecError> {
+    Ok(end_specs(ctx, histories, lanes)?
+        .anchors
+        .into_iter()
+        .map(|(record, anchors)| {
+            let reversed = anchors
+                .into_iter()
+                .flatten()
+                .filter(|anchor| anchor.reversed)
+                .collect();
+            (record, reversed)
+        })
+        .collect())
+}
+
+fn end_specs(
+    ctx: &DecodeContext<'_>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<EndSpecs, cadmpeg_core::CodecError> {
     let mut features_by_id = HashMap::<&str, &crate::records::Feature>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         // Preserve the first feature selected by the history-order lookup.
         features_by_id.entry(feature.id.as_str()).or_insert(feature);
     }
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
+    let mut anchors = HashMap::<String, Vec<Option<EndSpecAnchor>>>::new();
     let mut start_conditions =
         HashMap::<String, Vec<super::extrusion_start::StartCondition>>::new();
-    for lane in lanes {
+    for (lane_index, lane) in lanes.iter().enumerate() {
         let mut names_by_id = HashMap::new();
         for name in &lane.names {
             names_by_id.insert(name.id.as_str(), name);
@@ -422,23 +462,53 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         }))
                     })()?;
                 if let Some(candidate) = candidate {
-                    candidates.push(candidate);
+                    let anchor = EndSpecAnchor {
+                        lane: lane_index,
+                        offset,
+                        reversed: View::u32_le_at(
+                            &lane.native_payload,
+                            offset + end_spec::REVERSAL,
+                        ) == Some(1),
+                    };
+                    candidates.push((candidate, Some(anchor)));
                 }
             }
             let grouped = (grouped_blind.get(feature_id.as_str()) == Some(&1))
-                .then_some(TerminationVote::Blind { depth_m: None });
-            let vote = if candidates.len() == 1 {
+                .then_some((TerminationVote::Blind { depth_m: None }, None));
+            let (vote, anchor) = if candidates.len() == 1 {
                 candidates.pop()
             } else {
                 None
             }
-            .or(grouped);
+            .or(grouped)
+            .unzip();
             terminations
                 .entry(feature_id.clone())
                 .or_default()
                 .push(vote);
+            anchors
+                .entry(feature_id.clone())
+                .or_default()
+                .push(anchor.flatten());
         }
     }
+    Ok(EndSpecs {
+        terminations,
+        anchors,
+        start_conditions,
+    })
+}
+
+pub(crate) fn enrich_history_extrusion_terminations(
+    ctx: &DecodeContext<'_>,
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let EndSpecs {
+        terminations,
+        anchors,
+        start_conditions,
+    } = end_specs(ctx, histories, lanes)?;
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -452,15 +522,37 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 super::extrusion_start::insert_condition(&mut feature.properties, condition)?;
             }
         }
+        let Some(vote) = terminations
+            .get(&feature.id)
+            .map(Vec::as_slice)
+            .and_then(consensus_termination_vote)
+        else {
+            continue;
+        };
+        let reversed = anchors.get(&feature.id).is_some_and(|anchors| {
+            !anchors.is_empty()
+                && anchors
+                    .iter()
+                    .all(|anchor| anchor.is_some_and(|anchor| anchor.reversed))
+        });
+        // The flag belongs to the end spec's own termination: a Keywords end
+        // condition that names another one leaves the reversal unread.
+        let same_termination = feature
+            .properties
+            .get("EndCondition")
+            .is_none_or(|condition| condition == vote.condition());
+        if reversed
+            && same_termination
+            && !matches!(
+                vote,
+                TerminationVote::Symmetric | TerminationVote::ThroughAllBoth
+            )
+        {
+            insert_termination_field(&mut feature.properties, "Reverse", "true".to_owned())?;
+        }
         if feature.properties.contains_key("EndCondition") {
             continue;
         }
-        let Some(votes) = terminations.get(&feature.id) else {
-            continue;
-        };
-        let Some(vote) = consensus_termination_vote(votes) else {
-            continue;
-        };
         let condition = vote.condition().to_owned();
         insert_termination_field(&mut feature.properties, "EndCondition", condition)?;
         match vote {

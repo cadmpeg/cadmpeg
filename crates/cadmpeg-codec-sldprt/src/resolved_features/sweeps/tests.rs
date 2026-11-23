@@ -166,6 +166,43 @@ pub(super) fn sketch(spatial: bool) -> FeatureInputLane {
     lane
 }
 
+/// Removes the `sgSketch` frame of the [`sketch`]`(true)` records at the start
+/// of `lane`: the point count becomes `0`, the line indices become one-based
+/// positions, and each point record becomes a primary point marker.
+pub(super) fn unframe(lane: &mut FeatureInputLane) {
+    use super::super::sketch_lists::{ListedRecord, SketchRecordLists};
+    use cadmpeg_core::decode::View;
+    let lists = SketchRecordLists::new(&lane.native_payload);
+    let offset = usize::try_from(lane.sketch_entities[0].offset()).unwrap();
+    let Some(ListedRecord::Curve { sketch, .. }) = lists.record(offset) else {
+        panic!("curve")
+    };
+    let points = (0..3)
+        .map(|index| sketch.point(index).unwrap())
+        .collect::<Vec<_>>();
+    let mut payload = lane.native_payload.to_vec();
+    payload[32..36].fill(0);
+    for marker in &lane.sketch_entities {
+        let offset = usize::try_from(marker.offset()).unwrap();
+        for field in [64, 66] {
+            let index = View::u16_le_at(&payload, offset + field).unwrap() + 1;
+            payload[offset + field..offset + field + 2].copy_from_slice(&index.to_le_bytes());
+        }
+    }
+    lane.native_payload = payload.into();
+    for (ordinal, offset) in points.into_iter().enumerate() {
+        let mut marker = SketchInputEntity::new(
+            format!("point#{offset}"),
+            "lane#1",
+            u32::try_from(ordinal).unwrap(),
+            u64::try_from(offset).unwrap(),
+            SketchInputKind::Point,
+        );
+        marker.feature_ref = Some("source".into());
+        lane.sketch_entities.push(marker);
+    }
+}
+
 fn native(id: &str, source: u32, class: &str) -> crate::records::Feature {
     crate::records::Feature {
         id: id.into(),
@@ -518,24 +555,141 @@ fn an_existing_path_keeps_its_operand() {
     );
 }
 
-/// `docs/formats/sldprt.md` §2.3: a line with an identifier trailer indexes
-/// the point records of its sketch by position, like any other line.
+fn set(input: &mut Input, marker: usize, at: usize, bytes: &[u8]) {
+    let offset = usize::try_from(input.lane.sketch_entities[marker].offset()).unwrap() + at;
+    let mut payload = input.lane.native_payload.to_vec();
+    payload[offset..offset + bytes.len()].copy_from_slice(bytes);
+    input.lane.native_payload = payload.into();
+}
+
+fn bound_path(input: &Input) -> Option<&PathRef> {
+    let FeatureDefinition::Operation(FeatureOperation::Sweep { path, .. }) =
+        input.features[1].evaluation.definition()
+    else {
+        panic!("sweep")
+    };
+    path.as_ref()
+}
+
+fn charged(losses: &[LossNote], code: SldprtLossCode) -> bool {
+    losses.iter().any(|note| note.code == code.kind())
+}
+
+const GEOMETRY_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
+
+/// `docs/formats/sldprt.md` §2.3: a line with an identifier trailer off locus
+/// `05 00 01 00` indexes the point records of its sketch by position, like
+/// any other line, so the path states no assumed reading.
 #[test]
 fn an_identifier_trailer_path_line_reads_its_point_record_positions() {
     let mut input = input(false, false);
-    let offset = usize::try_from(input.lane.sketch_entities[0].offset()).unwrap();
-    input.lane.native_payload[offset + 84..offset + 88].copy_from_slice(&1u32.to_le_bytes());
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_line_record::TRAILER,
+        &1u32.to_le_bytes(),
+    );
     let losses = apply(&mut input);
     assert!(matches!(
-        input.features[1].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Sweep {
-            path: Some(PathRef::SketchCurves { .. }),
-            ..
-        })
+        bound_path(&input),
+        Some(PathRef::SketchCurves { .. })
     ));
-    assert!(losses
-        .iter()
-        .all(|note| note.code != SldprtLossCode::FeatureSweepPathRetained.kind()));
+    for code in [
+        SldprtLossCode::FeatureSweepPathRetained,
+        SldprtLossCode::FeatureSweepPathRosterAssumed,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed,
+    ] {
+        assert!(!charged(&losses, code), "{code:?}");
+    }
+}
+
+/// Open item EV-27: what the indices of a curve record on locus
+/// `05 00 01 00` select is not established, so a planar path that reads
+/// them by point-record position states that reading.
+#[test]
+fn a_planar_path_arc_on_the_geometry_locus_charges_the_index_basis_assumption() {
+    let mut input = input(false, false);
+    set(
+        &mut input,
+        2,
+        crate::layout::sketch_record_head::LOCUS,
+        &GEOMETRY_LOCUS,
+    );
+    let losses = apply(&mut input);
+    assert!(matches!(
+        bound_path(&input),
+        Some(PathRef::SketchCurves { curves, .. }) if curves.len() == 3
+    ));
+    assert!(charged(
+        &losses,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed
+    ));
+}
+
+/// Open item EV-27, for a line of a framed spatial sketch. The word at +68
+/// is not `1`, so the line is not the object-index line that §2 reads.
+#[test]
+fn a_spatial_path_line_on_the_geometry_locus_charges_the_index_basis_assumption() {
+    let mut input = input(true, false);
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_record_head::LOCUS,
+        &GEOMETRY_LOCUS,
+    );
+    set(&mut input, 0, 68, &0u32.to_le_bytes());
+    let losses = apply(&mut input);
+    assert!(matches!(
+        bound_path(&input),
+        Some(PathRef::SpatialSketchCurves { curves, .. }) if curves.len() == 2
+    ));
+    assert!(charged(
+        &losses,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed
+    ));
+    assert!(!charged(
+        &losses,
+        SldprtLossCode::FeatureSweepPathRosterAssumed
+    ));
+}
+
+/// `docs/formats/sldprt.md` §2: an unframed spatial path line with an
+/// identifier trailer is read by one-based primary-point position, which no
+/// file establishes for that record form; a line without the trailer is not.
+#[test]
+fn an_unframed_spatial_trailer_line_charges_the_roster_assumption() {
+    let mut plain = input(true, false);
+    unframe(&mut plain.lane);
+    let losses = apply(&mut plain);
+    assert!(matches!(
+        bound_path(&plain),
+        Some(PathRef::SpatialSketchCurves { .. })
+    ));
+    assert!(!charged(
+        &losses,
+        SldprtLossCode::FeatureSweepPathRosterAssumed
+    ));
+    let mut input = input(true, false);
+    unframe(&mut input.lane);
+    set(
+        &mut input,
+        0,
+        crate::layout::sketch_line_record::TRAILER,
+        &1u32.to_le_bytes(),
+    );
+    let losses = apply(&mut input);
+    assert!(matches!(
+        bound_path(&input),
+        Some(PathRef::SpatialSketchCurves { curves, .. }) if curves.len() == 2
+    ));
+    assert!(charged(
+        &losses,
+        SldprtLossCode::FeatureSweepPathRosterAssumed
+    ));
+    assert!(!charged(
+        &losses,
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed
+    ));
 }
 
 #[test]

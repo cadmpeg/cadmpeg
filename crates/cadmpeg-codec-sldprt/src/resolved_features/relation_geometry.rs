@@ -2508,6 +2508,36 @@ fn declared_entity_handle_linked_pairs<'a>(
     pairs
 }
 
+/// Whether every sketch entity that `definition` names belongs to `sketch`,
+/// by `owners`, the sketch of each entity. A string of the definition's wire
+/// form that is no entity id names no entity.
+fn names_only_own_entities(
+    definition: &SketchConstraintDefinitionInput,
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    owners: &HashMap<&str, &cadmpeg_ir::sketches::SketchId>,
+) -> bool {
+    let Ok(value) = serde_json::to_value(definition) else {
+        return false;
+    };
+    let mut pending = vec![&value];
+    while let Some(value) = pending.pop() {
+        match value {
+            serde_json::Value::String(text) => {
+                if owners
+                    .get(text.as_str())
+                    .is_some_and(|owner| *owner != sketch)
+                {
+                    return false;
+                }
+            }
+            serde_json::Value::Array(values) => pending.extend(values),
+            serde_json::Value::Object(fields) => pending.extend(fields.values()),
+            _ => {}
+        }
+    }
+    true
+}
+
 pub(crate) fn project_relation_bindings(
     ctx: &DecodeContext<'_>,
     constraints: &mut Vec<SketchConstraint>,
@@ -2540,6 +2570,10 @@ pub(crate) fn project_relation_bindings(
         markers_by_id.insert(marker.id(), marker);
     }
     let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let entity_sketches = sketch_entities
+        .iter()
+        .map(|entity| (entity.id().as_str(), &entity.sketch))
+        .collect::<HashMap<_, _>>();
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
         parameters_by_id.insert(&parameter.id, parameter);
@@ -2610,6 +2644,10 @@ pub(crate) fn project_relation_bindings(
             }
             entities.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
+            // A marker can also have an entity in a sketch the feature does
+            // not bind, such as its unbound marker sketch beside a stream
+            // circle; the constraint names only entities of its own sketch.
+            entities.retain(|entity| entity_sketches.get(entity.as_str()) == Some(sketch));
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
@@ -2646,6 +2684,8 @@ pub(crate) fn project_relation_bindings(
                     &loci_by_marker,
                 )?,
             };
+            let typed_definition = typed_definition
+                .filter(|definition| names_only_own_entities(definition, sketch, &entity_sketches));
             let typed_definition = match typed_definition {
                 Some(definition)
                     if measured_parameter
@@ -3989,6 +4029,46 @@ mod relation_geometry_tests {
         assert!(same_dimension_length(
             spatial_point_line_distance(source_position, start.get(), end.get()).unwrap(),
             6.5
+        ));
+    }
+}
+
+#[cfg(test)]
+mod constraint_ownership_tests {
+    use std::collections::HashMap;
+
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
+
+    use super::names_only_own_entities;
+
+    /// A typed distance whose entities are those of an unbound marker sketch
+    /// does not project onto the stream sketch its feature binds.
+    #[test]
+    fn a_typed_constraint_naming_another_sketch_s_entities_is_not_its_sketch_s() {
+        let stream = SketchId::mint("synthetic:test:id#stream").unwrap();
+        let marker = SketchId::mint("synthetic:test:id#marker").unwrap();
+        let [own, other] = ["own", "other"]
+            .map(|name| SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap());
+        let owners = HashMap::from([(own.as_str(), &stream), (other.as_str(), &marker)]);
+        let distance = |entities: Vec<SketchEntityId>| SketchConstraintDefinitionInput::Distance {
+            entities,
+            parameter: ParameterId::mint("synthetic:test:id#length").unwrap(),
+        };
+        assert!(names_only_own_entities(
+            &distance(vec![own.clone()]),
+            &stream,
+            &owners
+        ));
+        assert!(!names_only_own_entities(
+            &distance(vec![own.clone(), other.clone()]),
+            &stream,
+            &owners
+        ));
+        assert!(names_only_own_entities(
+            &distance(vec![own, other]),
+            &stream,
+            &HashMap::new()
         ));
     }
 }

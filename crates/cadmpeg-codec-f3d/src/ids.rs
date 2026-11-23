@@ -445,6 +445,38 @@ pub(crate) fn document_parameter_scope_id() -> cadmpeg_ir::features::FeatureId {
     )
 }
 
+/// The neutral key of a rule shared by features of one document.
+pub(crate) fn neutral_sheet_metal_rule_id(
+    definition: &cadmpeg_ir::ids::ProductDefinitionId,
+    stream: &str,
+    record_index: u64,
+) -> cadmpeg_ir::design::ids::SheetMetalRuleId {
+    let definition = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(definition.as_str());
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream);
+    let key = cadmpeg_ir::ids::IdentityKey::from(definition.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&definition)
+        .then(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .colon(record_index);
+    cadmpeg_ir::design::ids::SheetMetalRuleId::from(cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "sheet-metal-rule"),
+        key,
+    ))
+}
+
+pub(crate) fn body_history_tail_feature_id(
+    body: &cadmpeg_ir::ids::BodyId,
+) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-tail", "feature"),
+        cadmpeg_ir::identity_key!("body:").with_tail(
+            &cadmpeg_ir::ids::IdentityKeyTail::percent_encode(body.as_str()),
+        ),
+    )
+}
+
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
@@ -1105,6 +1137,25 @@ mod tests {
     use crate::records::{
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
+
+    #[test]
+    fn sheet_metal_rule_ids_preserve_owner_stream_and_record_identity() {
+        let owner = cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product-definition#root")
+            .unwrap();
+        let other =
+            cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product-definition#other")
+                .unwrap();
+        let stream = "f3d:Design #1/BulkStream.dat";
+        let id = super::neutral_sheet_metal_rule_id(&owner, stream, 104);
+        assert_eq!(id, super::neutral_sheet_metal_rule_id(&owner, stream, 104));
+        assert_ne!(id, super::neutral_sheet_metal_rule_id(&other, stream, 104));
+        assert_ne!(
+            id,
+            super::neutral_sheet_metal_rule_id(&owner, "f3d:Design #2/BulkStream.dat", 104)
+        );
+        assert_ne!(id, super::neutral_sheet_metal_rule_id(&owner, stream, 105));
+        assert!(cadmpeg_ir::design::ids::SheetMetalRuleId::mint(id.as_str()).is_ok());
+    }
 
     #[test]
     fn native_scoped_id_matches_escaped_identity_bytes() {

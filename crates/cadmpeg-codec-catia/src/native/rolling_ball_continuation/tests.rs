@@ -288,3 +288,89 @@ fn continuation_spanning_frame_stays_source_only() {
         .expect("bounded admission");
     assert!(rows.is_empty());
 }
+
+#[test]
+fn continuation_preserves_sheet_tail_fields_without_scalar_interpretation() {
+    use crate::test_support::test_rolling_ball_continuation::{sheet_fixture, SheetTailForm};
+    for form in [
+        SheetTailForm::Absent,
+        SheetTailForm::Doubled,
+        SheetTailForm::Explicit,
+    ] {
+        for wide in [false, true] {
+            let (mut bytes, tail) = sheet_fixture(form, wide);
+            if wide {
+                assert_eq!(&bytes[11..13], &[0x08, 0x09]);
+                bytes[12] = 0x0f;
+            }
+            for control in [3, 5] {
+                bytes[tail + crate::layout::rolling_ball_tail_prefix::CONTROL] = control;
+                let rows = decode(&bytes);
+                assert_eq!(rows.len(), 1);
+                let row = &rows[0];
+                assert_eq!(row.raw_control, control);
+                assert_eq!(row.current_v_bits[0], (-0.0_f64).to_bits());
+                assert_eq!(&*row.frame.payload, &bytes[8..]);
+                let terminal = match form {
+                    SheetTailForm::Absent => 3.0_f64,
+                    SheetTailForm::Doubled => 2.0,
+                    SheetTailForm::Explicit => 1.0,
+                };
+                assert_eq!(row.reference_scalar_repeat_bits, Some(terminal.to_bits()));
+                let expected = if matches!(form, SheetTailForm::Explicit) {
+                    ScalarJet::Explicit {
+                        values_bits: vec![2.0_f64.to_bits(), 1.0_f64.to_bits()],
+                        first_derivative_bits: vec![(-1.0_f64).to_bits(); 2],
+                        second_derivative_bits: vec![(-0.0_f64).to_bits(); 2],
+                        terminal: 1,
+                    }
+                } else {
+                    ScalarJet::Absent
+                };
+                assert_eq!(row.scalar_jet, expected);
+                let json = serde_json::to_value(row).expect("retained continuation");
+                assert_eq!(
+                    serde_json::from_value::<CatiaRollingBallContinuation>(json.clone())
+                        .expect("checked continuation"),
+                    *row
+                );
+                if matches!(form, SheetTailForm::Explicit) {
+                    let mut changed = json;
+                    changed["scalar_jet"]["first_derivative_bits"][0] =
+                        serde_json::json!(1.0_f64.to_bits());
+                    assert!(
+                        serde_json::from_value::<CatiaRollingBallContinuation>(changed).is_err()
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn continuation_sheet_forms_require_valid_scalars_bounds_and_complete_terminals() {
+    use crate::test_support::test_rolling_ball_continuation::{sheet_fixture, SheetTailForm};
+    for form in [
+        SheetTailForm::Absent,
+        SheetTailForm::Doubled,
+        SheetTailForm::Explicit,
+    ] {
+        let (bytes, tail) = sheet_fixture(form, false);
+        for offset in [0, 16, 24, 32, 41, 49] {
+            let mut invalid = bytes.clone();
+            set_word(&mut invalid, tail + offset, f64::NAN);
+            assert!(decode(&invalid).is_empty());
+        }
+        let mut nonzero_terminal = bytes.clone();
+        *nonzero_terminal.last_mut().expect("terminal") = 1;
+        assert!(decode(&nonzero_terminal).is_empty());
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        resize_frame(&mut truncated);
+        assert!(decode(&truncated).is_empty());
+        let mut residue = bytes;
+        residue.push(0);
+        resize_frame(&mut residue);
+        assert!(decode(&residue).is_empty());
+    }
+}

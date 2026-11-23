@@ -241,7 +241,7 @@ anchor = "offsets 26 and 28"
 [[record]]
 name = "end_record"
 kind = "byte"
-parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+parsed_by = ["crates/cadmpeg-container/src/archive/probe.rs", "crates/cadmpeg-container/src/archive/admission.rs"]
 section = "3"
 anchor = "The end-of-central-directory record is 22 bytes in little-endian order."
 size = 22
@@ -305,7 +305,7 @@ anchor = "offset 20"
 [[record]]
 name = "zip64_end"
 kind = "byte"
-parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+parsed_by = ["crates/cadmpeg-container/src/archive/probe.rs", "crates/cadmpeg-container/src/archive/admission.rs"]
 section = "3"
 anchor = "The ZIP64 end record has a 56-byte fixed prefix."
 size = 56
@@ -383,7 +383,7 @@ anchor = "offsets 24, 32, 40, and 48"
 [[record]]
 name = "zip64_locator"
 kind = "byte"
-parsed_by = "crates/cadmpeg-container/src/archive/probe.rs"
+parsed_by = ["crates/cadmpeg-container/src/archive/probe.rs", "crates/cadmpeg-container/src/archive/admission.rs"]
 section = "3"
 anchor = "The 20-byte ZIP64 locator has signature"
 size = 20

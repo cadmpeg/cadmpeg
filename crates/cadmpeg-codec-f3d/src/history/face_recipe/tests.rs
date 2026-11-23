@@ -100,7 +100,7 @@ fn operand() -> DesignFaceOperand {
             fields.extend([3, fan[0], -1, fan[1], -1, fan[2], -1, 0, 0, -1]);
         }
         let structure = crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+            crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
                 .unwrap()
                 .unwrap()
         });
@@ -172,7 +172,8 @@ fn set_node_fans(operand: &mut DesignFaceOperand, index: usize, fans: [&[i32]; 2
         fields.extend([0, 0, -1]);
     }
     node.recipe_structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(ctx, &fields).unwrap()
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
+            .unwrap()
     });
     node.program = vec![-1, -1, 2];
     node.program.extend(fields);
@@ -275,7 +276,7 @@ fn add_closed_edge_node(operand: &mut DesignFaceOperand, fan: [i32; 2]) {
     operand.recipe_references.push(reference);
     let fields = vec![0, -1, 4, -1, 1, -1, 2, fan[0], -1, fan[1], -1, 0, 0, -1];
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
             .unwrap()
             .unwrap()
     });

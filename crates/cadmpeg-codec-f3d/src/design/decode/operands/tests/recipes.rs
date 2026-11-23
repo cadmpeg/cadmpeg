@@ -18,7 +18,7 @@ fn parse_edge_operand(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
-    crate::design::decode::operands::parse_edge_operand(
+    crate::design::decode::operands::recipe_operands::parse_edge_operand(
         &ctx,
         bytes,
         records,
@@ -43,11 +43,11 @@ fn parse_face_operand(
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
-    crate::design::decode::operands::parse_face_operand(
+    crate::design::decode::operands::face_operand_frames::parse_face_operand(
         &ctx,
         bytes,
         records,
-        crate::design::decode::operands::FaceOperandFrame {
+        crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
             registered_frame: None,
             scope,
             scope_reference_ordinal: ordinal,
@@ -67,14 +67,21 @@ fn parse_vertex_recipe(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<crate::records::feature::work_geometry::DesignVertexRecipe> {
-    crate::design::decode::operands::parse_vertex_recipe(bytes, records, stream, header, recipes)
+    crate::design::decode::operands::recipe_operands::parse_vertex_recipe(
+        bytes, records, stream, header, recipes,
+    )
 }
 
 #[test]
 fn surface_patch_long_field_rejected_before_copy() {
     let mut program = vec![0; 7];
     program.extend_from_slice(&[2, 1, 2, 3, -1]);
-    assert!(crate::design::decode::operands::surface_patch_recipe_structure(&program, 4).is_none());
+    assert!(
+        crate::design::decode::operands::recipe_structure::surface_patch_recipe_structure(
+            &program, 4
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -85,7 +92,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     }
     let ordinary_position = ordinary.len() - 11;
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(
+        crate::design::decode::operands::recipe_structure::face_recipe_next_boundary(
             &ordinary,
             ordinary_position,
             100,
@@ -103,7 +110,9 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     let next = omitted.len();
     indexed_header(&mut omitted, *b"317", 105);
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(&omitted, position, 100, None),
+        crate::design::decode::operands::recipe_structure::face_recipe_next_boundary(
+            &omitted, position, 100, None
+        ),
         Some((next, 105))
     );
 
@@ -114,7 +123,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     let arbitrary_position = arbitrary.len();
     indexed_header(&mut arbitrary, *b"124", 205);
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(
+        crate::design::decode::operands::recipe_structure::face_recipe_next_boundary(
             &arbitrary,
             arbitrary_position,
             100,
@@ -135,11 +144,13 @@ fn face_recipe_boundary_accepts_the_stream_end() {
         last.extend_from_slice(&word.to_le_bytes());
     }
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(&last, position, 100, None),
+        crate::design::decode::operands::recipe_structure::face_recipe_next_boundary(
+            &last, position, 100, None
+        ),
         Some((last.len(), 0))
     );
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(
+        crate::design::decode::operands::recipe_structure::face_recipe_next_boundary(
             &last,
             position,
             100,

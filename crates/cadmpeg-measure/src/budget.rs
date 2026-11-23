@@ -149,6 +149,15 @@ pub(crate) struct ItemBudget<'pass> {
 }
 
 impl ItemBudget<'_> {
+    /// A local allowance charged to this item.
+    pub(crate) fn local_slice(&self, limit: usize) -> ItemBudget<'_> {
+        ItemBudget {
+            work: self.work.charging_slice(limit),
+            truncated: self.truncated && self.work.remaining() < limit,
+            pass: self.pass,
+        }
+    }
+
     /// The item's work slice, for an evaluator that charges it directly.
     pub(crate) const fn slice(&self) -> &WorkBudget {
         &self.work
@@ -244,6 +253,19 @@ mod tests {
             assert_eq!(profile.pair_allowance(1 << 16), Some((1 << 16) * per_body));
             assert_eq!(profile.pair_allowance(usize::MAX), None);
         }
+    }
+
+    #[test]
+    fn a_local_slice_charges_the_item_and_preserves_its_remaining_work() {
+        let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
+        let face = pass.face_slice();
+        let local = face.local_slice(10);
+        local.charge(5).unwrap();
+        assert!(local.charge(6).is_err());
+        assert_eq!(pass.used(), 5);
+        face.charge(10).unwrap();
+        assert!(!face.exhausted());
+        assert!(!pass.exhausted());
     }
 
     #[test]

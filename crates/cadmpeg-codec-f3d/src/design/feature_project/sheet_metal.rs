@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Sheet-metal base flange, edge flange and hem projection.
+//! Sheet-metal edge flange and hem projection.
 
 use crate::design::edge_resolve::resolved_edge_flange_group;
 use crate::design::face_resolve::design_angle;
@@ -11,73 +11,9 @@ use crate::design::feature_project::unique_feature_match;
 use crate::design::feature_project::ProjectInputs;
 use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::sketch_placement::DesignSketchPlacement;
-use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-
-/// The neutral base flange and whether its thickness is its sheet-metal
-/// rule's; without a rule thickness the scope's stored copy is used.
-pub(super) fn project_base_flange(
-    scope: &DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-    placements: &[DesignSketchPlacement],
-    settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
-) -> Option<(cadmpeg_ir::features::FeatureDefinition, bool)> {
-    use cadmpeg_ir::features::profiles::PlanarProfileRef;
-    use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
-    let operation = scope.base_flange_operation()?;
-    let mut matching = groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-    });
-    let profile_group = matching.next()?;
-    if matching.next().is_some() {
-        return None;
-    }
-    if profile_group.scope_reference_ordinal != 0
-        || profile_group.record_index != operation.profile_group_record_index
-        || profile_group.role() != DesignOperandRole::PROFILE
-        || !profile_group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .eq([operation.profile_record_index])
-    {
-        return None;
-    }
-    let profile = scope.base_flange_profile()?;
-    if profile.scope_reference_ordinal != 1
-        || profile.record_index != operation.profile_record_index
-    {
-        return None;
-    }
-    let placement = placements.iter().find(|placement| {
-        native_stream(&placement.id) == native_stream(&scope.id)
-            && placement.entity_id == profile.entity_id
-    })?;
-    let rule_thickness = settings
-        .iter()
-        .find(|settings| {
-            native_stream(settings.id()) == native_stream(&scope.id)
-                && settings.record_index == u64::from(operation.settings_record_index)
-        })
-        .and_then(|settings| settings.rule_thickness);
-    let thickness = rule_thickness.unwrap_or(operation.thickness);
-    Some((
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
-            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
-                thickness.get() * 10.0,
-            )?),
-            side: Some(SheetMetalThicknessSide::Forward),
-        }),
-        rule_thickness.is_some(),
-    ))
-}
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
@@ -572,7 +508,7 @@ pub(super) fn project_hem(
         groups,
         edge_operands,
         edge_identity_operands,
-        crate::history::effective_scope_previous_history_state_id(scope, histories),
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories),
         &crate::ids::neutral_feature_id(scope),
         ctx,
     )?;
@@ -584,21 +520,23 @@ pub(super) fn project_hem(
     })) {
         Some(operand) => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
-            crate::history::effective_scope_previous_history_state_id(scope, histories),
+            crate::history::history_states::effective_scope_previous_history_state_id(
+                scope, histories,
+            ),
         ),
         None => None,
     };
     let gap_length_form = edge_slot.and_then(|edge_slot| {
-        crate::history::hem_gap_length_form_for_scope(scope, edge_slot, histories)
+        crate::history::hem_gap_forms::hem_gap_length_form_for_scope(scope, edge_slot, histories)
     });
     let form = match (form, gap_length_form) {
         (
             SheetMetalHemForm::GapLength { gap: _, length },
-            Some(crate::history::HemGapLengthForm::Flat),
+            Some(crate::history::hem_gap_forms::HemGapLengthForm::Flat),
         ) => SheetMetalHemForm::Flat { length },
         (
             SheetMetalHemForm::GapLength { gap, length },
-            Some(crate::history::HemGapLengthForm::Open),
+            Some(crate::history::hem_gap_forms::HemGapLengthForm::Open),
         ) => SheetMetalHemForm::Open { gap, length },
         (form, _) => form,
     };

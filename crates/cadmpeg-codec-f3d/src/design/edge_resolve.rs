@@ -2739,7 +2739,7 @@ pub(super) fn project_fixed_fillet_with_corners(
         complete_edge_groups.push(group);
     }
     let selection_pair =
-        crate::design::decode::operands::fillet_edge_and_face_groups(&scope_groups);
+        crate::design::decode::operands::fillets::fillet_edge_and_face_groups(&scope_groups);
     let assignments = if let (Some(pair), [fixed_group]) = (selection_pair, fixed.groups.as_slice())
     {
         pair.map(|group| (fixed_group, group)).to_vec()

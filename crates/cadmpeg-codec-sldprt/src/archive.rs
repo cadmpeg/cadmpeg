@@ -53,6 +53,10 @@ const CLASS_DECLARATION_COUNT: CoverageKey =
 
 /// Length of a class declaration's fixed header: `ff ff`, schema, name length.
 const DECLARATION_HEADER_LEN: usize = 6;
+/// The tag that opens a class declaration (§2.2).
+const NEW_CLASS_TAG: [u8; 2] = [0xff, 0xff];
+/// The u16 a compound-file part's `ResolvedFeatures` stream opens with.
+const COMPOUND_OPENING_LEN: usize = 2;
 /// Shortest class name a declaration carries.
 const SHORTEST_CLASS_NAME: u8 = 3;
 /// Longest class name a declaration carries.
@@ -175,13 +179,25 @@ pub(crate) fn coverage(
     Ok(coverage)
 }
 
-/// The map count a `ResolvedFeatures` stream opens with. A stream whose first
-/// declaration follows a u16, as in a compound-file part, carries none.
-fn resolved_count(resolved: &[u8]) -> Option<u32> {
-    if resolved.get(2..4) == Some(&[0xff, 0xff][..]) {
+/// The map count a `ResolvedFeatures` stream opens with. A stream that opens
+/// with a class declaration, or with a u16 and then a class declaration as in
+/// a compound-file part, carries none.
+pub(crate) fn resolved_count(resolved: &[u8]) -> Option<u32> {
+    if declaration_at(resolved, 0) || declaration_at(resolved, COMPOUND_OPENING_LEN) {
         return None;
     }
     View::u32_le_at(resolved, 0)
+}
+
+/// Whether a `ResolvedFeatures` stream opens as in a compound-file part:
+/// a u16 and then a class declaration. Such a stream continues the
+/// `Config-N` map without stating the count at which `Config-N` ended.
+pub(crate) fn compound_opening(resolved: &[u8]) -> bool {
+    !declaration_at(resolved, 0) && declaration_at(resolved, COMPOUND_OPENING_LEN)
+}
+
+fn declaration_at(stream: &[u8], at: usize) -> bool {
+    stream.get(at..at + NEW_CLASS_TAG.len()) == Some(&NEW_CLASS_TAG[..])
 }
 
 /// `contents/config-N` with a decimal `N`, in normalised lower case.
@@ -260,11 +276,6 @@ fn walked<'p, 'a, 'c>(
         }
     }
     Ok(walker)
-}
-
-/// The map count a `ResolvedFeatures` stream opens with (see [`resolved_count`]).
-pub(crate) fn resolved_features_count(resolved: &[u8]) -> Option<u32> {
-    resolved_count(resolved)
 }
 
 /// One class declaration.

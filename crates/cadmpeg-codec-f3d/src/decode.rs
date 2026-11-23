@@ -2186,6 +2186,38 @@ fn report_parameter_trailer_flags(
     }
 }
 
+fn report_parameter_header_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterHeaderFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter(s) in {} set the header flag at offset 21; the flag is not interpreted (f3d-open-items.md DR-1007).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_driven_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterDrivenFlagAssumed,
+            format_args!(
+                "{} decoded parameter(s) in {} set the second flag byte of the expression trailer, read as the driven flag (f3d-open-items.md DR-144).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_owner_trailer_flags(
     report: &mut DecodeBody,
     flagged: &[crate::design::decode::parameters::StreamParameterCount],
@@ -2595,11 +2627,12 @@ fn report_design_projection_gaps(
             ),
         );
     }
-    let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
-        ctx,
-        &native.design_edge_operands,
-        &native.design_face_operands,
-    )?;
+    let recipe_search_skips =
+        crate::design::decode::operands::recipe_structure::recipe_side_searches_exhausted(
+            ctx,
+            &native.design_edge_operands,
+            &native.design_face_operands,
+        )?;
     for cap in crate::records::feature::patterns::RectangularPatternSearchCap::ALL {
         let capped_pattern_searches = native
             .design_parameter_scopes
@@ -2627,7 +2660,7 @@ fn report_design_projection_gaps(
             F3dLossCode::RecipeSideSearchBudgetExceeded,
             format_args!(
                 "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
-                crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
+                crate::design::decode::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
             ),
         );
     }
@@ -3035,6 +3068,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if container::brep_entries(scan).any(|entry| {
+                entry.name.rsplit('/').next() == Some(blob_name.as_str())
+                    && entry.attributes.contains_key("payload_error")
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -3169,6 +3208,7 @@ struct GeometryIndex {
 struct DecodeSessionState {
     admitted_entities: u64,
     report_scope: crate::report::ReportScope,
+    model_selection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 struct DeferredBodylessInputs {
@@ -3191,6 +3231,24 @@ enum SessionPath {
         model_body_maps_empty: bool,
         model_body_maps_explicitly_empty: bool,
     },
+}
+
+/// Store a bodyless design's records and attach its owners. The body history
+/// tails collected for the design are reported here, as the geometry path
+/// reports them through the consumed-history fill.
+fn store_bodyless_design(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    mut design: design_intent::DesignNative,
+    native: &mut F3dNative,
+    ir: &mut CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let consumers = std::mem::take(&mut design.history_body_consumers);
+    design.store(native);
+    crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
+    crate::design::owners::attach(scan, native, ir, losses)?;
+    crate::history::body_history_tail::append(&mut ir.model, &consumers.tails, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -3285,6 +3343,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities: _,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let mut untyped = std::collections::BTreeSet::new();
         let stats = &brep.asm.stats;
@@ -3303,6 +3362,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
             geometry_losses(&brep),
         )?;
+        report.losses.extend(model_selection_losses);
         if undecoded_candidates != 0 {
             push_loss_vec(
                 &mut report.losses,
@@ -3382,6 +3442,7 @@ impl<'a> F3dDecodeSession<'a> {
         let DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses,
         } = session_state;
         let MetadataIr {
             mut ir,
@@ -3394,6 +3455,7 @@ impl<'a> F3dDecodeSession<'a> {
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
             container_losses(scan, brep_outcome),
         )?;
+        report.losses.extend(model_selection_losses);
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = std::collections::BTreeSet::new();
         if container::design_breps(scan).next().is_some()
@@ -3447,10 +3509,12 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
         self.report
             .losses
-            .extend(prereqs.design_feature_timeline_losses.iter().cloned());
+            .extend(prereqs.design_record_losses.iter().cloned());
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
+        report_parameter_driven_flags(&mut self.report, &prereqs.design_parameter_driven_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_header_flags(&mut self.report, &prereqs.design_parameter_header_flags);
         report_parameter_owner_trailer_flags(
             &mut self.report,
             &prereqs.design_parameter_owner_trailer_flags,
@@ -3459,16 +3523,9 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
         );
-        if prereqs.design_superseded_scope_envelopes != 0 {
-            push_loss_vec(
-                &mut self.report.losses,
-                F3dLossCode::FeatureScopeEnvelopeSuperseded,
-                format_args!(
-                    "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
-                    prereqs.design_superseded_scope_envelopes
-                ),
-            );
-        }
+        self.report
+            .losses
+            .extend(prereqs.design_superseded_scope_envelopes.losses());
         self.report
             .losses
             .extend(prereqs.design_component_occurrence_losses.iter().cloned());
@@ -3850,6 +3907,11 @@ impl<'a> F3dDecodeSession<'a> {
             external,
         );
         self.report.losses.extend(external_losses);
+        crate::xref::api_export::state_file_identity(
+            &mut self.ir.model,
+            prereqs.xref_table(),
+            self.scan.manifest_lineage_urn.as_deref(),
+        );
         let mesh_projection = match &finalize_path {
             FinalizePath::Geometry(index) => &index.mesh_projection,
             FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
@@ -4016,17 +4078,11 @@ impl<'a> F3dDecodeSession<'a> {
                             design.configuration_roots_unbound,
                             &self.ir,
                         );
-                        design.store(&mut self.native);
-                        crate::design::decode::sketch_owners::attach(
+                        store_bodyless_design(
                             ctx,
                             scan,
-                            &self.native,
-                            &mut self.ir.model,
-                            &mut self.report.losses,
-                        )?;
-                        crate::design::owners::attach(
-                            scan,
-                            &self.native,
+                            *design,
+                            &mut self.native,
                             &mut self.ir,
                             &mut self.report.losses,
                         )?;
@@ -4224,8 +4280,14 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
-            crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
+            let root_identity = crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
+            decoded.body.losses.extend(root_identity);
+            crate::design_v11::project(
+                ctx,
+                &mut decoded.ir,
+                decoded.body.transfer.depth(),
+                &mut decoded.body.losses,
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4341,7 +4403,7 @@ fn decode_scanned_document<'a>(
     // arbitrary `.smbh` entry.
     if !model_breps.is_empty() {
         let mut primary_model_brep = None;
-        let qualify_ids = model_breps.len() > 1;
+        let qualify_ids = model_selection.blob_names.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
         let mut decoded_brep_count = 0usize;
@@ -4473,6 +4535,7 @@ fn decode_scanned_document<'a>(
                 DecodeSessionState {
                     admitted_entities,
                     report_scope,
+                    model_selection_losses: model_selection.losses,
                 },
             );
         }
@@ -4491,6 +4554,7 @@ fn decode_scanned_document<'a>(
             DecodeSessionState {
                 admitted_entities,
                 report_scope,
+                model_selection_losses: model_selection.losses,
             },
         );
     }
@@ -4502,6 +4566,7 @@ fn decode_scanned_document<'a>(
         DecodeSessionState {
             admitted_entities,
             report_scope,
+            model_selection_losses: model_selection.losses,
         },
         &brep_outcome,
     )?;
@@ -5109,7 +5174,6 @@ fn annotate_docstruct(
     Ok(())
 }
 
-/// A warning for a present but unparseable `RedirectionsStream.dat`.
 fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
     push_loss_vec(
         &mut report.losses,
@@ -5477,7 +5541,9 @@ fn decode_result(
     }
     let archive_member = matches!(report_scope, crate::report::ReportScope::ArchiveMember(_));
     if archive_member {
-        crate::tree::state_root_definition(ctx, &mut ir)?;
+        report
+            .losses
+            .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
     let mut source = crate::report::classify_document(
         scan,

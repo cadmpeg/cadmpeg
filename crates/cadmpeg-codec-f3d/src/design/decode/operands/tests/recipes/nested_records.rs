@@ -2,9 +2,9 @@
 use super::parse_edge_operand;
 use super::parse_face_operand;
 use super::parse_vertex_recipe;
-use crate::design::decode::operands::bind_edge_operand_candidates;
-use crate::design::decode::operands::bind_face_operand_candidates;
 use crate::design::decode::operands::face_recipe_program_kind;
+use crate::design::decode::operands::operand_candidates::bind_edge_operand_candidates;
+use crate::design::decode::operands::operand_candidates::bind_face_operand_candidates;
 use crate::design::decode::operands::FaceRecipeProgramKind;
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::face_resolve::resolved_historical_split_face_target_group;
@@ -680,7 +680,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
     assert!(edge_operand.recipe_structure.is_none());
     let structured = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 1, 1, 5, 4, 4, 4, 4, 3,
@@ -772,7 +772,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         1
     );
     assert_eq!(
-        crate::design::decode::operands::edge_recipe_local_topology_references(&structured, 3),
+        crate::design::decode::operands::recipe_structure::edge_recipe_local_topology_references(
+            &structured,
+            3
+        ),
         Some(
             [2, 1, 1, 3]
                 .into_iter()
@@ -781,12 +784,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         )
     );
     assert!(
-        crate::design::decode::operands::edge_recipe_local_topology_references(&structured, 2)
-            .is_none()
+        crate::design::decode::operands::recipe_structure::edge_recipe_local_topology_references(
+            &structured,
+            2
+        )
+        .is_none()
     );
-    let signed_middle =
-        crate::design::decode::operands::edge_recipe_entries(&[1, 4, 1, -2, 1, 4, 4, 4])
-            .expect("signed topology middle is retained");
+    let signed_middle = crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+        1, 4, 1, -2, 1, 4, 4, 4,
+    ])
+    .expect("signed topology middle is retained");
     assert_eq!(signed_middle[0].topology_triplets[0].middle, -2);
     assert_eq!(
         signed_middle[0].topology_triplets[0]
@@ -795,7 +802,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         None
     );
     let signed_face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3,
@@ -816,7 +823,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         None
     );
     let postlude_face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3,
@@ -828,7 +835,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("face-node topology postlude");
     assert_eq!(postlude_face.postlude_value, Some(4));
     let unambiguous_payload_face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -840,7 +847,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     .expect("face-node payload prefix grammar");
     assert_eq!(unambiguous_payload_face.sides[0].entries.len(), 2);
     let ambiguous_extended_payload_face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, -1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
@@ -854,7 +861,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     referenced_headers.sides[0].header_value = 2;
     referenced_headers.sides[1].header_value = 3;
     assert_eq!(
-        crate::design::decode::operands::edge_recipe_local_topology_references(
+        crate::design::decode::operands::recipe_structure::edge_recipe_local_topology_references(
             &referenced_headers,
             3
         ),
@@ -865,8 +872,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .collect()
         )
     );
-    let wrap =
-        crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
+    let wrap = crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+        1, 5, 1, 0, 1, 1, 1, 1,
+    ])
+    .unwrap();
     assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal(), 0);
     assert_eq!(
         wrap[0].topology_triplets[0]
@@ -881,11 +890,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .map(|incident| incident.side),
         Some(crate::records::topology::edge_recipe::DesignTopologyIncidentSide::Preceding)
     );
-    let common =
-        crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
+    let common = crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+        1, 5, 1, 1, 1, 1, 1, 1,
+    ])
+    .unwrap();
     assert_eq!(common[0].common_incident_edge_ordinal(), Some(0));
-    let underived =
-        crate::design::decode::operands::edge_recipe_entries(&[0, 6, 6, 4, 6, 1, 1, 1]).unwrap();
+    let underived = crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+        0, 6, 6, 4, 6, 1, 1, 1,
+    ])
+    .unwrap();
     assert_eq!(underived[0].topology_triplets[0].vertex_ordinal(), 5);
     assert_eq!(
         underived[0].topology_triplets[0]
@@ -900,26 +913,39 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         None
     );
     assert_eq!(
-        crate::design::decode::operands::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0]
+        crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+            3, 5, 1, 1, 1, 2, 1, 2
+        ])
+        .unwrap()[0]
             .selector,
         3
     );
     assert!(
-        crate::design::decode::operands::edge_recipe_entries(&[-1, 5, 1, 1, 1, 2, 1, 2]).is_none()
+        crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+            -1, 5, 1, 1, 1, 2, 1, 2
+        ])
+        .is_none()
     );
     assert!(
-        crate::design::decode::operands::edge_recipe_entries(&[1, 5, 6, 5, 6, 2, 1, 2]).is_none()
+        crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+            1, 5, 6, 5, 6, 2, 1, 2
+        ])
+        .is_none()
     );
-    assert!(crate::design::decode::operands::edge_recipe_entries(&[
-        1, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,
-    ])
-    .is_none());
-    assert!(crate::design::decode::operands::edge_recipe_entries(&[
-        2, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,
-    ])
-    .is_none());
+    assert!(
+        crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+            1, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,
+        ])
+        .is_none()
+    );
+    assert!(
+        crate::design::decode::operands::recipe_structure::edge_recipe_entries(&[
+            2, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,
+        ])
+        .is_none()
+    );
     let extended = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 2, -1, 1, -1, 0, -1, 0, 0, -1, 4, 3, -1, 0, -1,
@@ -935,7 +961,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(extended.sides[0].entries.is_empty());
     assert!(extended.sides[1].entries.is_empty());
     let zero_delimited = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 1, 0, 0, 0, 2, 0, 0, 0, -1, 4, 1, 0, 3, 0, 4, 0,
@@ -959,7 +985,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         3
     );
     let mixed_delimiters = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, 0, 1, -1, 2, -1, 3, 2, 0, 1, -1, 0, 0, 0, 0, -1, 3, 0, 0, 1, -1, 3,
@@ -975,7 +1001,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(mixed_delimiters.sides[1].header_value, 0);
     assert_eq!(mixed_delimiters.sides[1].scalars, [1, 3]);
     let revolution_axis = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 0, 0, 2, -1, 1, 0, 0, 1, 1, 7, 1, 1, 1, 4, 4, 4,
@@ -989,7 +1015,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(revolution_axis.sides[0].entries.len(), 1);
     assert!(revolution_axis.sides[1].entries.is_empty());
     let variable_scalars = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, -1, 1, -1, 2, -1, 5, 1, -1, 0, -1, 2, -1, 3, -1, 4, -1, 0, 0, -1, 3,
@@ -1002,7 +1028,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(variable_scalars.sides[0].field_count(), 5);
     assert_eq!(variable_scalars.sides[0].scalars, [0, 2, 3, 4]);
     let extended_payload = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(
             ctx,
             &[
                 -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 2, 3, -1, 0, 0, -1, 4, -1,
@@ -1017,14 +1043,16 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
     );
     assert_eq!(extended_payload.sides[0].entries.len(), 1);
-    let surface_patch = crate::design::decode::operands::surface_patch_recipe_structure(
-        &[
-            0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2,
-            1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
-        ],
-        4,
-    )
-    .expect("SurfacePatch two-clause recipe structure");
+    let surface_patch =
+        crate::design::decode::operands::recipe_structure::surface_patch_recipe_structure(
+            &[
+                0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
+                2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
+                -1,
+            ],
+            4,
+        )
+        .expect("SurfacePatch two-clause recipe structure");
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
     assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
@@ -1035,7 +1063,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(surface_patch.clauses[1].entries.len(), 0);
     assert!(surface_patch.clauses[1].entries.is_empty());
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure(
+        crate::design::decode::operands::recipe_structure::surface_patch_recipe_structure(
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1046,7 +1074,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .is_none()
     );
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure(
+        crate::design::decode::operands::recipe_structure::surface_patch_recipe_structure(
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
@@ -1109,7 +1137,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         cadmpeg_ir::features::selections::EdgeSelection::Native(_)
     ));
     let face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0,
@@ -1128,7 +1156,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(face.sides[1].header_value, 0);
     assert_eq!(face.sides[1].scalars, [1, 3]);
     let zero_delimited_face = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, 0, 1, 0, 2, -1, 3, 0, 0, 2, 0, 1, 0, 0, 0, -1, 3, 0, 0, 1, 0, 3, 0, 0, 0, -1,
@@ -1734,7 +1762,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
 
     let split_structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0,
