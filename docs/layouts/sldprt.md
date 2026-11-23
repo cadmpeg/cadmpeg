@@ -2654,6 +2654,21 @@ Offsets begin immediately after the data-class name. The pairwise-orthogonal for
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 
+## `reference_plane_data_head`
+
+Spec §2 · layout: byte offsets · size: 49 B
+
+Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `point` | `f64[3]` | little | spec | Its head is the plane's point (three f64, metres) |
+| 24 | 24 | `normal` | `f64[3]` | little | spec | its unit normal (three f64) |
+| 48 | 1 | `flag` | `u8` | little | spec | With flag `1` the head continues as the 97-byte frame |
+
 ## `constructed_reference_plane_matrix_frame`
 
 Spec §2 · layout: byte offsets · size: 121 B
@@ -3304,6 +3319,17 @@ Offsets from the end of the name object's string. A Unicode CString follows at +
 | 7 | 1 | `schema` | `u8` | little | spec | one schema byte (§2) |
 | 8 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier; `ff ff ff ff` when the object has none |
 | 12 | 4 | `word_12` | `u32` | little | spec | \| +12 \| little-endian u32 \| |
+
+## `model_header_log_tail`
+
+Spec §2.3 · layout: byte offsets · size: 8 B
+
+Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Header2.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `time_stamp` | `u32` | little | spec | come a little-endian u32 time stamp |
+| 4 | 4 | `next_object_id` | `u32` | little | spec | the part's next object identifier |
 
 ## `feature_object_block_head`
 

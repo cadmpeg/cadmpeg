@@ -292,6 +292,7 @@ fn body_modifier_uses_native_source_identity_instead_of_history_position() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
 
@@ -326,6 +327,7 @@ fn a_history_position_does_not_resolve_a_body_modifier_source() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
     assert!(projected
@@ -366,6 +368,7 @@ fn body_modifier_source_is_unresolved_when_history_is_ambiguous() {
         &[],
         &[],
         &[],
+        |_| true,
     )
     .unwrap();
 

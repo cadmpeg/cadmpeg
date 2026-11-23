@@ -288,6 +288,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     let configuration = &ir.model.configurations[0];
     assert_eq!(
@@ -1051,6 +1052,7 @@ fn configuration_projection_cap_leaves_later_configurations_empty() -> Result<()
         histories: &histories,
         lanes: &lanes,
         pmi_dimensions: &[],
+        length_unit: None,
     };
 
     let mut uncapped = base.clone();

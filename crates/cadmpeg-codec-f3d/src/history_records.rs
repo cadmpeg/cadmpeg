@@ -53,7 +53,7 @@ impl AsmHistory {
     }
 
     pub(crate) fn states_mut(&mut self) -> &mut Vec<AsmDeltaState> {
-        self.release_topologies();
+        self.invalidate_all_caches();
         &mut self.states
     }
 
@@ -1435,5 +1435,5 @@ pub(crate) enum AsmTransitionError {
     Allocation,
 }
 
-pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};
+pub(crate) use chain::{AsmStateSnapshot, CachedRecordArchive, MaterializedTopologies};
 mod chain;

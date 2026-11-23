@@ -603,11 +603,11 @@ option `2`, and side extents `[1, 0]`.
 
 ### DR-654. Stored profile loop curves off the selected material boundary
 
-**Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
+**Question.** Which sketch curves does a typed profile loop list when two coincident curves share one boundary interval, which piece of a line that ends inside the selected material does it list, and in which of the regions that the line enters does a loop list it?
 
-**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, or a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`. A loop that lists a line ending inside a circle can name a curve that contributes no boundary interval. The selection stays native with `feature.profile-selection-native`. Two coincident lines listed as separate entries resolve under the transition reading: the alias line takes its certified boundary interval and charges `feature.profile-coincident-boundary-assumed`, and an entry with several pieces, or a piece with no identity use in the selected boundary, also charges `feature.profile-partial-entry-assumed`. A Cut whose stored transition inserts, deletes, and updates no face has no changed plane and no certificate, so its selection stays native.
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`, or a piece in the interior of a selected region, which the loop traverses as a slit under `feature.profile-partial-entry-assumed`. For such a line, the second and third entry fields can equal the ordinal and count of the line piece inside the region when the other curves of that region divide the line. Two coincident lines listed as separate entries resolve under the transition reading: the alias line takes its certified boundary interval and charges `feature.profile-coincident-boundary-assumed`, and an entry with several pieces, or a piece with no identity use in the selected boundary, also charges `feature.profile-partial-entry-assumed`. A Cut whose stored transition inserts, deletes, and updates no face has no changed plane and no certificate, so its selection stays native.
 
-**Need.** Controlled Extrudes of one region with a line that ends inside it, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+**Need.** Controlled Extrudes of one region with a line that ends inside it, at several positions and across several regions, with the stored loops and the resulting end caps, to state which piece a loop lists for such a line and when a region lists it.
 
 **Conflict.** None.
 
@@ -3016,7 +3016,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reads the extension method from the fixed scope prologue. With a positive distance, a scope with another prologue or a method code above `2` projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
+**Note.** The decoder reads the extension method from the fixed scope prologue. With a positive distance, a scope with another prologue or a method code above `2` projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. The decoder selects input-state faces for the boundary when each boundary edge has one edge-recipe operand, all operands name one input state, and each operand has one candidate face in that state with a boundary edge that the feature changes. A feature that keeps this selection reports `feature.surface-extend-edges-as-faces` and stays in `feature.definition-incomplete`, because the neutral operation selects faces and the edge choice stays native. Another boundary keeps its native reference. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
 
 ### DR-312. Negative SurfaceExtend distance
 

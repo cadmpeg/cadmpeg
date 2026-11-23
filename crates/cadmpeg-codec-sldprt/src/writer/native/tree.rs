@@ -7,9 +7,9 @@ use cadmpeg_core::CodecError;
 
 use super::archive::{Archive, ClassMap};
 use super::block::{
-    block, block_close, block_open, body_head, named, Oid, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
+    block, block_close, block_open, body_head, named, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
 };
-use super::{ids, Body, Facts, Feature, PLANE_HALF_EXTENT, TIME_STAMP};
+use super::{ids, Body, Facts, Feature, Numbering, PLANE_HALF_EXTENT, TIME_STAMP};
 
 /// The sketch-record attribute block of the origin point: `ff ff`, a u16,
 /// a byte, eight `ff` bytes and f32 `-1`.
@@ -50,13 +50,13 @@ pub(super) fn resolved_features(
     part: &PartRefs,
 ) -> Result<Vec<u8>, CodecError> {
     let count = config.count();
-    let mut archive = Archive::continuing(config, facts.id_base);
+    let mut archive = Archive::continuing(config);
     let comments = Tail { word64: 0, ..TAIL };
     plain_folder(
         &mut archive,
         "moCommentsFolder_c",
         "Comments",
-        Oid::Tree(ids::COMMENTS),
+        ids::COMMENTS,
         comments,
     );
     favorites(&mut archive);
@@ -66,29 +66,29 @@ pub(super) fn resolved_features(
         &mut archive,
         "moSensorFolder_c",
         "Sensors",
-        Oid::Tree(ids::SENSORS),
+        ids::SENSORS,
         TAIL,
     );
     plain_folder(
         &mut archive,
         "moDocsFolder_c",
         "Design Binder",
-        Oid::Tree(ids::DESIGN_BINDER),
+        ids::DESIGN_BINDER,
         TAIL,
     );
-    annotations(&mut archive);
+    annotations(&mut archive, &facts.numbering);
     plain_folder(
         &mut archive,
         "moInkMarkupFolder_c",
         "Markups",
-        Oid::Tree(ids::MARKUPS),
+        facts.numbering.markups,
         ADDED_FOLDER_TAIL,
     );
     plain_folder(
         &mut archive,
         "moSurfaceBodyFolder_c",
         "Surface Bodies",
-        Oid::Tree(ids::SURFACE_BODIES),
+        ids::SURFACE_BODIES,
         TAIL,
     );
     archive.zeros(12);
@@ -96,7 +96,7 @@ pub(super) fn resolved_features(
         &mut archive,
         "moSolidBodyFolder_c",
         "Solid Bodies",
-        Oid::Tree(ids::SOLID_BODIES),
+        ids::SOLID_BODIES,
         TAIL,
     );
     archive.zeros(12);
@@ -105,14 +105,14 @@ pub(super) fn resolved_features(
         &mut archive,
         "moEqnFolder_c",
         "Equations",
-        Oid::Tree(ids::EQUATIONS),
+        ids::EQUATIONS,
         TAIL,
     );
     plain_folder(
         &mut archive,
         "moMaterialFolder_c",
         super::MATERIAL_NAME,
-        Oid::Tree(ids::MATERIAL),
+        ids::MATERIAL,
         TAIL,
     );
     archive.cstring("");
@@ -122,14 +122,7 @@ pub(super) fn resolved_features(
         plane_data(&mut archive, plane);
     }
     origin(&mut archive);
-    // Dimension parameters take identifiers after the stored bodies' and the
-    // user features'.
-    let features = archive.count32(facts.bodies.len() + facts.features.len(), "feature count");
-    let first = archive.tree_id(ids::MARKUPS + 1);
-    let mut next_id = match first.checked_add(features) {
-        Some(id) => id,
-        None => archive.count32(usize::MAX, "object identifier"),
-    };
+    let mut next_id = facts.numbering.first_parameter;
     // A user sketch's plane reference holds an identifier in its trailer,
     // which in native parts exceeds the origin sketch's (sldprt.md, EV-16).
     // The tree numbers the sketches' from one past the last body identifier
@@ -192,7 +185,7 @@ pub(super) struct PartRefs {
 
 /// A folder of `class` named `name`: its named head, its block and the
 /// folder's u32 `0`.
-fn plain_folder(archive: &mut Archive, class: &'static str, name: &str, id: Oid, tail: Tail) {
+fn plain_folder(archive: &mut Archive, class: &'static str, name: &str, id: u32, tail: Tail) {
     archive.object(class);
     named(archive, Some(name), Schema::Plain, id);
     block(archive, tail);
@@ -205,7 +198,7 @@ fn favorites(archive: &mut Archive) {
         archive,
         "moFavoriteFolder_c",
         "Favorites",
-        Oid::Tree(ids::FAVORITES),
+        ids::FAVORITES,
         TAIL,
     );
     archive.u32(0);
@@ -220,27 +213,17 @@ const HISTORY_ITEM_WORDS: [u32; 4] = [1, 0x4000_0000, u32::MAX, 0];
 /// [`HISTORY_ITEM_WORDS`], an empty `CString` and a `moCompFeature_c` naming
 /// the feature by its object identifier.
 fn history(archive: &mut Archive, features: &[Feature]) {
-    plain_folder(
-        archive,
-        "moHistoryFolder_c",
-        "History",
-        Oid::Tree(ids::HISTORY),
-        TAIL,
-    );
+    plain_folder(archive, "moHistoryFolder_c", "History", ids::HISTORY, TAIL);
     let count = archive.count16(features.len(), "history item count");
     archive.u16(count);
     for feature in features {
-        let id = match feature {
-            Feature::Sketch(sketch) => sketch.feature_id,
-            Feature::Extrusion(extrusion) => extrusion.feature_id,
-        };
         archive.object("moHistoryFeatItemData_c");
         archive.u16(0);
         archive.u32s(&HISTORY_ITEM_WORDS);
         archive.cstring("");
         archive.object("moCompFeature_c");
         unit_component(archive, 0);
-        archive.u32(id);
+        archive.u32(feature.id());
         archive.u32(TIME_STAMP);
     }
 }
@@ -251,7 +234,7 @@ fn selection_sets(archive: &mut Archive) {
         archive,
         "moSelectionSetFolder_c",
         "Selection Sets",
-        Oid::Tree(ids::SELECTION_SETS),
+        ids::SELECTION_SETS,
         ADDED_FOLDER_TAIL,
     );
     archive.u16(0);
@@ -261,18 +244,19 @@ fn selection_sets(archive: &mut Archive) {
 /// The `moDetailCabinet_c` annotations folder. Its inputs are the notes
 /// folder pair: the opening folder, whose link writes the end-tag folder in
 /// place, the run `1 1 1 0 1 1` and a reference to the opening folder; the
-/// end-tag folder's link is a reference back to the opening folder.
-fn annotations(archive: &mut Archive) {
+/// end-tag folder's link is a reference back to the opening folder. The
+/// folders take their identifiers from `numbering`.
+fn annotations(archive: &mut Archive, numbering: &Numbering) {
     archive.object("moDetailCabinet_c");
     named(
         archive,
         Some("Annotations"),
         Schema::Plain,
-        Oid::Tree(ids::ANNOTATIONS),
+        ids::ANNOTATIONS,
     );
     block_open(archive, 2);
     let notes = archive.object("moNotesAreaFtrFolder_c");
-    named(archive, Some("Notes"), Schema::Plain, Oid::Tree(ids::NOTES));
+    named(archive, Some("Notes"), Schema::Plain, numbering.notes);
     block(archive, ADDED_FOLDER_TAIL);
     archive.u32(0);
     archive.object("moNotesAreaFtrFolder_c");
@@ -280,7 +264,7 @@ fn annotations(archive: &mut Archive) {
         archive,
         Some("Notes1___EndTag___"),
         Schema::Plain,
-        Oid::Tree(ids::NOTES_END),
+        numbering.notes_end,
     );
     block(archive, ADDED_FOLDER_TAIL);
     archive.u32(0);
@@ -312,10 +296,6 @@ impl Plane {
             Self::Top => "Top Plane",
             Self::Right => "Right Plane",
         }
-    }
-
-    fn id(self) -> Oid {
-        Oid::Tree(self.tree_id())
     }
 
     /// The plane's `ids` value.
@@ -378,7 +358,12 @@ impl Plane {
 /// (§2.3).
 fn reference_plane(archive: &mut Archive, plane: Plane) {
     archive.object("moRefPlane_c");
-    named(archive, Some(plane.name()), Schema::Geometric, plane.id());
+    named(
+        archive,
+        Some(plane.name()),
+        Schema::Geometric,
+        plane.tree_id(),
+    );
     block(archive, Tail { word64: 0, ..TAIL });
     body_head(archive, None, &[]);
     archive.zeros(6);
@@ -424,12 +409,7 @@ fn plane_data(archive: &mut Archive, plane: Plane) {
 /// plane, as a `moCompRefPlane_c`.
 fn origin(archive: &mut Archive) {
     archive.object("moOriginProfileFeature_c");
-    named(
-        archive,
-        Some("Origin"),
-        Schema::Geometric,
-        Oid::Tree(ids::ORIGIN),
-    );
+    named(archive, Some("Origin"), Schema::Geometric, ids::ORIGIN);
     block(archive, Tail { word64: 0, ..TAIL });
     archive.zeros(10);
     archive.object("sgSketch");
@@ -523,8 +503,7 @@ pub(super) const ORIGIN_PLANE_REFERENCE: u32 = super::config::FIRST_BODY_ID;
 fn origin_plane(archive: &mut Archive) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
-    let front = archive.tree_id(ids::FRONT_PLANE);
-    archive.u32(front);
+    archive.u32(ids::FRONT_PLANE);
     archive.u32(TIME_STAMP);
     archive.u16(0);
     archive.u16(3);
@@ -564,12 +543,7 @@ pub(super) fn unit_component(archive: &mut Archive, body: u32) {
 /// directly (§2.3).
 fn base_body(archive: &mut Archive, body: &Body, component: u32) {
     archive.object("moBaseBody_c");
-    named(
-        archive,
-        Some(&body.name),
-        Schema::Plain,
-        Oid::Plain(body.feature_id),
-    );
+    named(archive, Some(&body.name), Schema::Plain, body.feature_id);
     block(archive, BASE_BODY_TAIL);
     body_head(archive, Some(std::slice::from_ref(&component)), &[body.id]);
     archive.object("moPMarkRecord_c");

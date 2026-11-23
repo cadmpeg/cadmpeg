@@ -14,7 +14,7 @@ mod history_drop;
 pub(crate) mod keywords_text;
 mod materials;
 mod metadata_owners;
-mod native;
+pub(crate) mod native;
 mod ownership;
 mod read_back;
 mod reduce;
@@ -32,6 +32,7 @@ use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::parameters::DesignConfiguration;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -246,6 +247,7 @@ pub(crate) fn write_semantic_with_records(
         losses.extend(
             reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
         );
+        losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));
     let brep_empty = ir.geometry.faces.is_empty();
@@ -265,10 +267,13 @@ pub(crate) fn write_semantic_with_records(
             // The source holds no partition either.
             Vec::new()
         } else {
-            empty_partitions(ir, &mut bodiless_partitions)?
+            let generated = faceless_partitions(ir, length_scale)?;
+            bodiless_partitions.extend(generated.bodiless);
+            losses.extend(generated.losses);
+            generated.sections
         }
     } else {
-        let encoded = body_drop::encode_without_unwritable_bodies(ir, |ir| {
+        let encoded = body_drop::encode_without_unwritable_bodies(ir, None, |ir| {
             generated_partitions(ir, length_scale)
         })?;
         losses.extend(encoded.losses);
@@ -276,9 +281,10 @@ pub(crate) fn write_semantic_with_records(
         losses.extend(reduce::cache_tolerances_omitted(written));
         losses.extend(reduce::unchained_face_loops(written));
         encodable = encoded.reduced;
-        let (partitions, bodiless) = encoded.partitions;
-        bodiless_partitions.extend(bodiless);
-        partitions
+        let generated = encoded.partitions;
+        bodiless_partitions.extend(generated.bodiless);
+        losses.extend(generated.losses);
+        generated.sections
     };
     let ir = encodable.as_ref().unwrap_or(ir);
     losses.extend(cadmpeg_ir::codec::write::record_residual_unavailable(
@@ -649,15 +655,15 @@ fn native_skeleton(
         .find(|value| value.active)
         .and_then(|value| value.name.clone())
         .unwrap_or_else(|| "Default".to_owned());
-    // The skeleton's object identifiers follow the history summary's, so the
-    // decoder binds no summary feature to a skeleton object.
-    let id_base = native
+    // The skeleton's stored bodies, parameters and last folders take
+    // identifiers after the history summary's, so the decoder binds no
+    // summary feature to a skeleton object.
+    let last_feature = native
         .iter()
         .flat_map(|native| &native.feature_histories)
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
-        .max()
-        .unwrap_or_default();
+        .max();
     let (features, unwritten_extrusion, lane_reason) =
         match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
             native::from_ir::Features::Native {
@@ -675,19 +681,20 @@ fn native_skeleton(
     } else {
         ir.geometry.bodies.len()
     };
-    let streams = ir
-        .geometry
-        .bodies
-        .iter()
-        .take(stored)
-        .enumerate()
-        .map(|(index, body)| {
-            native::Body::numbered(&name, id_base, index, body.kind == BodyKind::Sheet)
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .and_then(|bodies| {
+    let streams = native::Numbering::new(last_feature, stored, &features)
+        .and_then(|numbering| {
+            let bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .take(stored)
+                .enumerate()
+                .map(|(index, body)| {
+                    native::Body::numbered(&name, &numbering, index, body.kind == BodyKind::Sheet)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             native::skeleton(&native::Facts {
-                id_base,
+                numbering,
                 name: &name,
                 active: &active,
                 features: &features,
@@ -697,10 +704,7 @@ fn native_skeleton(
         .map_err(|error| error.to_string())?;
     let native_features = features
         .iter()
-        .map(|feature| match feature {
-            native::Feature::Sketch(sketch) => sketch.feature_id,
-            native::Feature::Extrusion(extrusion) => extrusion.feature_id,
-        })
+        .map(native::Feature::id)
         .collect::<HashSet<_>>();
     if let Some((stream, _)) = streams.iter().find(|(stream, _)| {
         stream != SKELETON_RESOLVED && sections.iter().any(|(candidate, _)| candidate == stream)
@@ -1312,46 +1316,57 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// Named member payloads.
 type Sections = Vec<(String, Vec<u8>)>;
 
-/// The partitions the writer generates from the document's bodies, and the
-/// sections of those that hold no body.
-fn generated_partitions(
-    ir: &CadIr,
-    length_scale: f64,
-) -> Result<(Sections, Vec<String>), CodecError> {
-    let mut bodiless = Vec::new();
+/// The partitions the writer generates, the sections of those that hold no
+/// body, and the losses of the stored states they write.
+#[derive(Default)]
+pub(crate) struct Generated {
+    pub(crate) sections: Sections,
+    bodiless: Vec<String>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// The partitions the writer generates from the document's bodies.
+fn generated_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
     if ir.geometry.faces.is_empty() {
-        let partitions = empty_partitions(ir, &mut bodiless)?;
-        return Ok((partitions, bodiless));
+        return faceless_partitions(ir, length_scale);
     }
     if !ir.model.configurations.is_empty() {
-        let partitions = configuration_partitions(ir, length_scale, &mut bodiless)?;
-        return Ok((partitions, bodiless));
+        return configuration_partitions(ir, length_scale);
     }
-    let schema_32001 = ir
+    Ok(Generated {
+        sections: vec![partition(ir, 0, length_scale)?],
+        ..Generated::default()
+    })
+}
+
+/// The `Config-<index>-Partition` section that holds the bodies of
+/// `document`.
+fn partition(
+    document: &CadIr,
+    index: u32,
+    length_scale: f64,
+) -> Result<(String, Vec<u8>), CodecError> {
+    let schema_32001 = document
         .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Sheet);
-    let body = brep_body(ir, length_scale, schema_32001)?;
+    let body = brep_body(document, length_scale, schema_32001)?;
     let schema = if schema_32001 {
         "SCH_SW_32001_11000"
     } else {
         "SCH_SW_33103_11000"
     };
     Ok((
-        vec![(
-            "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema)?,
-        )],
-        bodiless,
+        format!("Contents/Config-{index}-Partition"),
+        parasolid_stream(&body, schema)?,
     ))
 }
 
-fn configuration_partitions(
+pub(crate) fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
-    bodiless: &mut Vec<String>,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Generated, CodecError> {
     let configured = ir
         .model
         .configurations
@@ -1378,42 +1393,63 @@ fn configuration_partitions(
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
-    configurations
-        .into_iter()
-        .filter_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .map(|bodies| (configuration, bodies))
-        })
-        .map(|(configuration, bodies)| {
-            let index = configuration.source_index.ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "SLDPRT configuration {} has no assigned source index",
-                    configuration.id.as_str()
-                ))
-            })?;
-            if bodies.is_empty() {
-                return bodiless_partition(index, bodiless);
-            }
-            let subset = body_subset(ir, bodies)?;
-            let schema_32001 = subset
-                .geometry
-                .bodies
-                .iter()
-                .any(|body| body.kind == BodyKind::Sheet);
-            let body = brep_body(&subset, length_scale, schema_32001)?;
-            let schema = if schema_32001 {
-                "SCH_SW_32001_11000"
-            } else {
-                "SCH_SW_33103_11000"
-            };
-            Ok((
-                format!("Contents/Config-{index}-Partition"),
-                parasolid_stream(&body, schema)?,
+    let mut generated = Generated::default();
+    for configuration in configurations {
+        let stored = match configuration.bodies.as_deref() {
+            Some(_) => None,
+            None => match stored_state(ir, configuration) {
+                Some(state) => Some(state),
+                None => continue,
+            },
+        };
+        let index = configuration.source_index.ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "SLDPRT configuration {} has no assigned source index",
+                configuration.id.as_str()
             ))
-        })
-        .collect()
+        })?;
+        match (configuration.bodies.as_deref(), stored) {
+            (_, Some(state)) => {
+                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+            }
+            (Some(bodies), None) if !bodies.is_empty() => {
+                let section = partition(&body_subset(ir, bodies)?, index, length_scale)?;
+                generated.sections.push(section);
+            }
+            _ => {
+                let section = bodiless_partition(index, &mut generated.bodiless)?;
+                generated.sections.push(section);
+            }
+        }
+    }
+    Ok(generated)
+}
+
+/// The partition of configuration `index` written from `state`, the state the
+/// design stores for `configuration`. The bodies the encoder cannot write are
+/// left out and named with the configuration, as the current bodies are, and
+/// a state left with no body is written as a partition that holds none.
+fn stored_partition(
+    state: &CadIr,
+    configuration: &DesignConfiguration,
+    index: u32,
+    length_scale: f64,
+    generated: &mut Generated,
+) -> Result<(), CodecError> {
+    let encoded =
+        body_drop::encode_without_unwritable_bodies(state, Some(&configuration.id), |state| {
+            if state.geometry.bodies.is_empty() {
+                return Ok(None);
+            }
+            partition(state, index, length_scale).map(Some)
+        })?;
+    generated.losses.extend(encoded.losses);
+    let section = match encoded.partitions {
+        Some(section) => section,
+        None => bodiless_partition(index, &mut generated.bodiless)?,
+    };
+    generated.sections.push(section);
+    Ok(())
 }
 
 pub(super) fn reserve_configuration_index(
@@ -1436,27 +1472,48 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
-/// One partition per indexed configuration, or `Config-0`, each holding no
-/// body. A file with no partition is not an SLDPRT part its readers detect.
-fn empty_partitions(
-    ir: &CadIr,
-    bodiless: &mut Vec<String>,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    let mut indices = ir
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| configuration.source_index)
-        .collect::<Vec<_>>();
-    indices.sort_unstable();
-    indices.dedup();
-    if indices.is_empty() {
-        indices.push(0);
+/// A document of the geometry of the state the design stores for a
+/// configuration whose body list the decoder moved into its evaluation:
+/// all that [`brep_body`] reads. Its faces carry their own colours.
+fn stored_state(ir: &CadIr, configuration: &DesignConfiguration) -> Option<CadIr> {
+    let (_, state) = crate::decode::retired_states::stored_state(ir, configuration)?;
+    let mut subset = CadIr::empty();
+    subset.geometry = state.records.clone();
+    Some(subset)
+}
+
+/// The partitions of a document whose geometry holds no face: one per
+/// indexed configuration, or `Config-0`. A configuration whose evaluation
+/// holds the state the design stores for it writes that state, as
+/// [`configuration_partitions`] does; every other partition holds no body.
+/// A file with no partition is not an SLDPRT part its readers detect.
+fn faceless_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
+    let mut indices = BTreeMap::<u32, Option<(CadIr, &DesignConfiguration)>>::new();
+    for configuration in &ir.model.configurations {
+        let Some(index) = configuration.source_index else {
+            continue;
+        };
+        let state = indices.entry(index).or_default();
+        if state.is_none() {
+            *state = stored_state(ir, configuration).map(|stored| (stored, configuration));
+        }
     }
-    indices
-        .into_iter()
-        .map(|index| bodiless_partition(index, bodiless))
-        .collect()
+    if indices.is_empty() {
+        indices.insert(0, None);
+    }
+    let mut generated = Generated::default();
+    for (index, state) in indices {
+        match state {
+            Some((state, configuration)) => {
+                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+            }
+            None => {
+                let section = bodiless_partition(index, &mut generated.bodiless)?;
+                generated.sections.push(section);
+            }
+        }
+    }
+    Ok(generated)
 }
 
 /// The partition of configuration `index` that holds no body, recorded in

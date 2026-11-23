@@ -1662,6 +1662,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
@@ -1892,6 +1893,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         role: FeatureInputScalarRole::Native,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     });
 
     enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
