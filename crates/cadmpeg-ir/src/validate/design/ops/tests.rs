@@ -65,6 +65,17 @@ use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
 
+fn empty_construction<K: ConstructionKind>() -> Construction<K> {
+    Construction {
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
+    }
+}
+
 fn feature(key: &str) -> FeatureId {
     fixture::feature(key)
 }
@@ -1699,17 +1710,4 @@ fn a_tapped_series_stage_states_no_standard() {
         };
     }
     assert_finding(&with(operation), "a tapped series stage states");
-}
-
-/// A construction that states nothing, for tests whose finding does not
-/// depend on it.
-fn empty_construction<K: ConstructionKind>() -> Construction<K> {
-    Construction {
-        inputs: Vec::new(),
-        after: Vec::new(),
-        solution: None,
-        mode: None,
-        resolved: None,
-        resolved_in: BTreeMap::new(),
-    }
 }

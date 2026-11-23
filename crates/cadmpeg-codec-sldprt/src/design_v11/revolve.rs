@@ -365,14 +365,14 @@ fn axis_construction(
     let direction = UnitVector3::normalized_nonzero(axis.direction.into())
         .ok_or("the revolve's axis is degenerate")?;
     let mut construction = Construction {
-        resolved: Some(AxisValue {
-            origin: axis.origin,
-            direction,
-        }),
         inputs: Vec::new(),
         after: Vec::new(),
         solution: None,
         mode: None,
+        resolved: Some(AxisValue {
+            origin: axis.origin,
+            direction,
+        }),
         resolved_in: std::collections::BTreeMap::new(),
     };
     let Some((origin, normal, u_axis)) = context

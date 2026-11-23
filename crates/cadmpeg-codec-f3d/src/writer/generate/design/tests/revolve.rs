@@ -199,7 +199,7 @@ fn axis(line: &str) -> Construction<cadmpeg_ir::design::construction::kinds::Axi
         solution: None,
         mode: None,
         resolved: Some(z_axis()),
-        resolved_in: BTreeMap::new(),
+        resolved_in: std::collections::BTreeMap::new(),
     }
 }
 
