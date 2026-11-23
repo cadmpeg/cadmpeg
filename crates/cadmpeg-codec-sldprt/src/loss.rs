@@ -208,8 +208,8 @@ pub(crate) enum SldprtLossCode {
     /// An offset reference plane stores a frame of its own that is not the
     /// plane the decoder places from its source plane and `D1` (DI-81).
     FeatureOffsetPlaneFrameConflict,
-    /// A revolution keeps a stored axis that lies outside the plane of its
-    /// profile sketch (DI-85).
+    /// A revolution keeps a stored axis that lies outside the plane the
+    /// decoder binds its profile sketch to (DI-85).
     FeatureRevolveAxisOffProfilePlane,
     /// A revolution reads its axis from the tail of an `moLineRef_w` record
     /// whose words before the scalar record are not read, or keeps no axis
