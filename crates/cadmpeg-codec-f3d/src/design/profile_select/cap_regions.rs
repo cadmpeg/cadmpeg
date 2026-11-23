@@ -1132,13 +1132,16 @@ enum OneOrMany<T> {
     Many,
 }
 
-fn insert_one_or_many<T>(map: &mut HashMap<i64, OneOrMany<T>>, key: i64, value: T) {
+fn insert_one_or_many<T>(map: &mut FastSlotMap<i64, OneOrMany<T>>, key: i64, value: T) {
     map.entry(key)
         .and_modify(|slot| *slot = OneOrMany::Many)
         .or_insert(OneOrMany::One(value));
 }
 
-fn sole_indexed<T: Copy>(map: &HashMap<i64, OneOrMany<T>>, key: i64) -> Result<Option<T>, Several> {
+fn sole_indexed<T: Copy>(
+    map: &FastSlotMap<i64, OneOrMany<T>>,
+    key: i64,
+) -> Result<Option<T>, Several> {
     match map.get(&key) {
         None => Ok(None),
         Some(OneOrMany::One(value)) => Ok(Some(*value)),
@@ -1146,79 +1149,151 @@ fn sole_indexed<T: Copy>(map: &HashMap<i64, OneOrMany<T>>, key: i64) -> Result<O
     }
 }
 
+/// Fast non-cryptographic hasher for internal bounded slot-index tables.
+#[derive(Default)]
+struct CapSlotHasher(u64);
+
+impl std::hash::Hasher for CapSlotHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            let mixed = self.0.rotate_left(5) ^ u64::from(byte);
+            // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+            self.0 = mixed.wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+    }
+
+    #[inline]
+    fn write_i64(&mut self, value: i64) {
+        let mixed = self.0.rotate_left(5) ^ u64::from_ne_bytes(value.to_ne_bytes());
+        // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+        self.0 = mixed.wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+type FastSlotMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<CapSlotHasher>>;
+
 /// Borrowed O(1) lookup index over one [`AsmHistoricalTopology`].
 struct HistoricalTopologyIndex<'a> {
-    face_surfaces: HashMap<i64, OneOrMany<i64>>,
-    surface_planes: HashMap<i64, OneOrMany<&'a AsmHistoricalPlane>>,
-    vertex_points: HashMap<i64, OneOrMany<i64>>,
-    point_positions: HashMap<i64, OneOrMany<Point3>>,
-    face_loops: HashMap<i64, OneOrMany<&'a [i64]>>,
-    loop_owner_face: HashMap<i64, OneOrMany<i64>>,
-    loop_coedges: HashMap<i64, OneOrMany<&'a [i64]>>,
-    coedge_by_id: HashMap<i64, OneOrMany<&'a AsmHistoricalCoedge>>,
-    coedges_by_edge: HashMap<i64, Vec<&'a AsmHistoricalCoedge>>,
-    edge_vertices: HashMap<i64, OneOrMany<&'a AsmHistoricalEdge>>,
-    edge_samples: HashMap<i64, OneOrMany<&'a AsmHistoricalEdgeSample>>,
-    edge_curves: HashMap<i64, OneOrMany<Option<i64>>>,
-    curve_axes: HashMap<i64, OneOrMany<&'a AsmHistoricalCurveAxis>>,
-    surface_cylinders: HashMap<i64, Vec<&'a AsmHistoricalCylinder>>,
+    face_surfaces: FastSlotMap<i64, OneOrMany<i64>>,
+    surface_planes: FastSlotMap<i64, OneOrMany<&'a AsmHistoricalPlane>>,
+    vertex_points: FastSlotMap<i64, OneOrMany<i64>>,
+    point_positions: FastSlotMap<i64, OneOrMany<Point3>>,
+    face_loops: FastSlotMap<i64, OneOrMany<&'a [i64]>>,
+    loop_owner_face: FastSlotMap<i64, OneOrMany<i64>>,
+    loop_coedges: FastSlotMap<i64, OneOrMany<&'a [i64]>>,
+    coedge_by_id: FastSlotMap<i64, OneOrMany<&'a AsmHistoricalCoedge>>,
+    coedges_by_edge: FastSlotMap<i64, Vec<&'a AsmHistoricalCoedge>>,
+    edge_vertices: FastSlotMap<i64, OneOrMany<&'a AsmHistoricalEdge>>,
+    edge_samples: FastSlotMap<i64, OneOrMany<&'a AsmHistoricalEdgeSample>>,
+    edge_curves: FastSlotMap<i64, OneOrMany<Option<i64>>>,
+    curve_axes: FastSlotMap<i64, OneOrMany<&'a AsmHistoricalCurveAxis>>,
+    surface_cylinders: FastSlotMap<i64, Vec<&'a AsmHistoricalCylinder>>,
 }
 
 impl<'a> HistoricalTopologyIndex<'a> {
     fn new(topology: &'a AsmHistoricalTopology) -> Self {
-        let mut face_surfaces = HashMap::with_capacity(topology.face_surfaces.len());
+        use std::hash::BuildHasherDefault;
+        let mut face_surfaces = FastSlotMap::with_capacity_and_hasher(
+            topology.face_surfaces.len(),
+            BuildHasherDefault::default(),
+        );
         for binding in &topology.face_surfaces {
             insert_one_or_many(&mut face_surfaces, binding.entity, binding.carrier);
         }
-        let mut surface_planes = HashMap::with_capacity(topology.surface_planes.len());
+        let mut surface_planes = FastSlotMap::with_capacity_and_hasher(
+            topology.surface_planes.len(),
+            BuildHasherDefault::default(),
+        );
         for plane in &topology.surface_planes {
             insert_one_or_many(&mut surface_planes, plane.surface, plane);
         }
-        let mut vertex_points = HashMap::with_capacity(topology.vertex_points.len());
+        let mut vertex_points = FastSlotMap::with_capacity_and_hasher(
+            topology.vertex_points.len(),
+            BuildHasherDefault::default(),
+        );
         for binding in &topology.vertex_points {
             insert_one_or_many(&mut vertex_points, binding.entity, binding.carrier);
         }
-        let mut point_positions = HashMap::with_capacity(topology.point_positions.len());
+        let mut point_positions = FastSlotMap::with_capacity_and_hasher(
+            topology.point_positions.len(),
+            BuildHasherDefault::default(),
+        );
         for row in &topology.point_positions {
             insert_one_or_many(&mut point_positions, row.point, row.position);
         }
-        let mut face_loops = HashMap::with_capacity(topology.face_loops.len());
-        let mut loop_owner_face = HashMap::with_capacity(topology.face_loops.len());
+        let mut face_loops = FastSlotMap::with_capacity_and_hasher(
+            topology.face_loops.len(),
+            BuildHasherDefault::default(),
+        );
+        let mut loop_owner_face = FastSlotMap::with_capacity_and_hasher(
+            topology.face_loops.len(),
+            BuildHasherDefault::default(),
+        );
         for rel in &topology.face_loops {
             insert_one_or_many(&mut face_loops, rel.owner_ref, rel.member_refs.as_slice());
             for &loop_id in &rel.member_refs {
                 insert_one_or_many(&mut loop_owner_face, loop_id, rel.owner_ref);
             }
         }
-        let mut loop_coedges = HashMap::with_capacity(topology.loop_coedges.len());
+        let mut loop_coedges = FastSlotMap::with_capacity_and_hasher(
+            topology.loop_coedges.len(),
+            BuildHasherDefault::default(),
+        );
         for rel in &topology.loop_coedges {
             insert_one_or_many(&mut loop_coedges, rel.owner_ref, rel.member_refs.as_slice());
         }
-        let mut coedge_by_id = HashMap::with_capacity(topology.coedge_topology.len());
-        let mut coedges_by_edge: HashMap<i64, Vec<&'a AsmHistoricalCoedge>> =
-            HashMap::with_capacity(topology.edge_vertices.len());
+        let mut coedge_by_id = FastSlotMap::with_capacity_and_hasher(
+            topology.coedge_topology.len(),
+            BuildHasherDefault::default(),
+        );
+        let mut coedges_by_edge: FastSlotMap<i64, Vec<&'a AsmHistoricalCoedge>> =
+            FastSlotMap::with_capacity_and_hasher(
+                topology.edge_vertices.len(),
+                BuildHasherDefault::default(),
+            );
         for row in &topology.coedge_topology {
             insert_one_or_many(&mut coedge_by_id, row.coedge, row);
             coedges_by_edge.entry(row.edge).or_default().push(row);
         }
-        let mut edge_vertices = HashMap::with_capacity(topology.edge_vertices.len());
+        let mut edge_vertices = FastSlotMap::with_capacity_and_hasher(
+            topology.edge_vertices.len(),
+            BuildHasherDefault::default(),
+        );
         for row in &topology.edge_vertices {
             insert_one_or_many(&mut edge_vertices, row.edge, row);
         }
-        let mut edge_samples = HashMap::with_capacity(topology.edge_samples.len());
+        let mut edge_samples = FastSlotMap::with_capacity_and_hasher(
+            topology.edge_samples.len(),
+            BuildHasherDefault::default(),
+        );
         for row in &topology.edge_samples {
             insert_one_or_many(&mut edge_samples, row.edge, row);
         }
-        let mut edge_curves = HashMap::with_capacity(topology.edge_curves.len());
+        let mut edge_curves = FastSlotMap::with_capacity_and_hasher(
+            topology.edge_curves.len(),
+            BuildHasherDefault::default(),
+        );
         for binding in &topology.edge_curves {
             insert_one_or_many(&mut edge_curves, binding.entity, binding.carrier);
         }
-        let mut curve_axes = HashMap::with_capacity(topology.curve_axes.len());
+        let mut curve_axes = FastSlotMap::with_capacity_and_hasher(
+            topology.curve_axes.len(),
+            BuildHasherDefault::default(),
+        );
         for row in &topology.curve_axes {
             insert_one_or_many(&mut curve_axes, row.curve, row);
         }
-        let mut surface_cylinders: HashMap<i64, Vec<&'a AsmHistoricalCylinder>> =
-            HashMap::with_capacity(topology.surface_cylinders.len());
+        let mut surface_cylinders: FastSlotMap<i64, Vec<&'a AsmHistoricalCylinder>> =
+            FastSlotMap::with_capacity_and_hasher(
+                topology.surface_cylinders.len(),
+                BuildHasherDefault::default(),
+            );
         for cylinder in &topology.surface_cylinders {
             surface_cylinders
                 .entry(cylinder.surface)

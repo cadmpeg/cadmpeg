@@ -109,6 +109,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -869,6 +870,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let entity = |id: &str, offset| {
         let marker_id: String = id.into();

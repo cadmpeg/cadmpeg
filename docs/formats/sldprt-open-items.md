@@ -1174,6 +1174,56 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
 
+### EV-33. The four identifiers below an extrusion
+
+**Question.** Which objects hold the four identifiers between an extrusion's depth parameter and the extrusion?
+
+**Known.** `sldprt.md` §2.3 gives the identifier order of a sketch and its extrusion: the sketch, its dimension parameters, the extrusion's depth parameter, four identifiers and the extrusion. No `KeyWords` record, named-object header or parameter trailer that the decoder reads holds the four identifiers. The extrusion's objects after its end specification include its dimension display objects, a body chooser and a `moFromEndSpec_c` (EV-17).
+
+**Need.** The class of each object that holds one of the four identifiers, and the field that holds it, so that a writer that creates an extrusion numbers its objects as native parts do and a feature added to a part takes none of the four.
+
+**Conflict.** The writer numbers a generated part's user features first, from `23`, and their dimension parameters after them, the extrusion's depth parameter last. It writes the extrusion one above its sketch and nothing at the four identifiers. A feature added to a part takes an identifier past the largest that the decoder reads in the part, so it takes none of the four.
+
+### EV-34. The light set of the default tree
+
+**Question.** Which `moDirectionLight_c` objects and which `moEqnFolder_c` identifier does a part hold when its `moEnvFolder_c` holds fewer than three directional lights?
+
+**Known.** `sldprt.md` §2.3 gives the two identifier sets of the default nodes: directional lights `13`, `14` and `15` with the `moEqnFolder_c` `16`, or those lights and a fourth `16` with the `moEqnFolder_c` `61`. Parts of other versions that hold exactly two directional lights, at `13` and `14`, hold the `moEqnFolder_c` at an identifier other than `16`, some at `15`. Parts that hold the `moAmbientLight_c` at `12` and the `moEqnFolder_c` at `16` with `15` empty hold their directional lights at other identifiers.
+
+**Need.** The light set and `moEqnFolder_c` identifier a writer gives a generated part, so that its default tree is one native parts hold.
+
+**Conflict.** The writer writes two directional lights, `13` and `14`, and the `moEqnFolder_c` at `16`, and leaves `15` empty. No native part holds that combination. The first identifier set with a third directional light at `15` is a combination native parts hold.
+
+### EV-35. The next object identifier after an edit
+
+**Question.** What does a save that adds or deletes a node write to the creation log and to the next object identifier of `Contents/Config-N-ModelHeader` and `Header2`?
+
+**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger. A parameter object's trailer can hold an identifier at or above the next object identifier (EV-36).
+
+**Need.** Two saves of one part, before and after a feature is added, and two before and after a feature is deleted, with their creation logs and next object identifiers compared: the `moLogs_c` record and stamps of the added or deleted feature, the time stamps, and the change of the next object identifier.
+
+**Conflict.** The writer of an edited part keeps the source part's `ModelHeader` and `Header2` streams, so an added feature has no `moLogs_c` record and the next object identifier does not change. The writer gives an added feature an identifier past every identifier the decoder reads in the part's `KeyWords` records, named-object headers and parameter objects, and it does not read the next object identifier. The decoder reads the identifier of a parameter object with a tolerance or an integer value only from the object walk of the stream, and the walk reads no identifier from a feature-dimension parameter that writes its `moDimTolerance_c`. The writer counts no identifier from a parameter the walk gives none for: when that parameter holds the part's largest identifier, the added feature takes the same identifier. A part the writer generates holds no `ModelHeader` or `Header2` stream.
+
+### EV-36. Parameter identifiers that other records hold
+
+**Question.** What does the object identifier in a parameter object's trailer name when a `KeyWords` record or another parameter object of the part holds the same identifier?
+
+**Known.** `sldprt.md` §2.3 gives the parameter trailer: a zero byte, the tolerance pointer and the u32 object identifier. Parameter objects can hold identifiers that `KeyWords` records also hold, among them the `moDirectionLight_c` identifiers `13` to `16`, and one identifier can be held by many parameter objects of one part. The parameter objects that hold these identifiers form a block whose first identifier is `13` or `14` and whose last is between `37` and `53`. Several parameter objects of the block can hold one identifier, and the values the block's parameter objects hold differ between parts. An identifier of the block can be at or above the part's next object identifier (EV-35).
+
+**Need.** A part that holds such a block and a save of the same part without the feature or library object that brings the block, with their parameter objects, `KeyWords` records and next object identifiers compared.
+
+**Conflict.** The writer counts every parameter identifier the decoder reads among the part's identifiers when it numbers an added feature, so the block can raise the added feature's identifier above the next object identifier.
+
+### EV-37. The layout of the first identifiers by version
+
+**Question.** What decides which of the two layouts of the first identifiers (`sldprt.md` §2.3) a part of a version other than 14000 holds?
+
+**Known.** In the first layout `1` is the `moDetailCabinet_c`, `2`, `3` and `4` the Front, Top and Right planes and `5` the origin. In the second `2` is the `moEnvFolder_c`, `3`, `4` and `5` the planes and `6` the origin; its origin projection names feature `6` and a `moCompRefPlane_c` names the Front plane by feature `3` with plane word `3`. Parts of `swVersion` 14000 hold the first layout. Parts of other versions from 8000 to 16000 hold either layout.
+
+**Need.** Two parts of one version from 8000 to 16000 that hold different layouts, with their creation logs (EV-35) compared: the version and stamps of each part's first `moLogs_c` records.
+
+**Conflict.** The writer writes `swVersion` 14000 and the first layout.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1240,14 +1290,29 @@ The design reads a built circle in this order. A built circle that has the cente
 
 **Conflict.** A cylinder face witnesses a circle whichever feature cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads cylinders along the sketch normal, so a built circle that a revolution sweeps has none.
 
-### DI-72. Length unit codes and the three-word unit base
+### DI-72. Length unit codes above `3`
 
-**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+**Question.** Which length units do the `moLengthUserUnits_c` unit codes above `3` name?
 
-**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+**Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
-**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+**Need.** A document that writes a code above `3` and stores a length scalar beside its Keywords display, so that their quotient names the unit.
 
+### DI-87. The base form of each unit object of one units table
+
+**Question.** Does every unit object of a `moUnitsTable_c` open with a base of the form its `moNumberUserUnits_c` object has?
+
+**Known.** `sldprt.md` §2.3 gives the three base forms: 44 and 48 bytes in a compound document, 62 bytes in a block-container document. The decoder measures the `moNumberUserUnits_c` object, from the end of its class declaration to the next class declaration, and reads the `moLengthUserUnits_c` display decimal places and u16 unit code at that form's offsets. A 48-byte length unit base read at the 44-byte offsets gives as its unit code the low u16 of its last u32, which is `0` or `1`.
+
+**Need.** A compound document whose `moLengthUserUnits_c` base and `moNumberUserUnits_c` object differ in length, or a field of the length unit object that states its own base form.
+
+### DI-88. The end of a units table
+
+**Question.** At which byte does the last unit object of a `moUnitsTable_c` end?
+
+**Known.** The table writes a u16 count (12, 16 or 17) and that many unit objects. A unit object is its class declaration or a reference to an earlier one, a base, and what its class adds (`sldprt.md` §2.3). `moLengthUserUnits_c` adds an object pointer to a dual length unit, which the table writes in place as a second length unit object, and `moDensityUnits_c` adds a length-unit pointer when its flag byte is set. The decoder searches from the count to the end of the configuration stream for the first `moLengthUserUnits_c` and `moNumberUserUnits_c` declarations.
+
+**Need.** The encoding of a null and of an in-place object pointer in each unit class that writes one, so that a walk of the table's count of objects ends at the table's last byte and bounds the search.
 
 ### DI-77. The +17 value of a sketch curve record
 
@@ -1310,6 +1375,16 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** A reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement, and the 121-byte angular frame stores a u-axis, a normal and a v-axis (`sldprt.md` §2). An angled plane can read u-axis `(0,1,0)` while the dual-frame offset planes whose source it is store its frame with u-axis `(0.707,0,-0.707)` and the same normal: the Front frame turned about `Y` by the plane's angle. A sibling angled plane turned the other way reads the u-axis its offset planes store. The sketches on its offset planes take the u-axis those planes store.
 
 **Need.** Angled planes whose offset planes store their source frame, compared field by field with the angular frame, and the B-rep of features sketched on an angled plane itself.
+
+### DI-84. Produced bodies of a configuration without a bound partition
+
+**Question.** Which carrier states the bodies a feature produces in a configuration whose `Config-N-Partition` is absent or unbound?
+
+**Known.** The `FACE_ID_2001` producers and the `LAST_BODY_MODIFYING_FEATURE_ID` attributes of a configuration's own partition state the bodies each feature produces in that configuration (`sldprt.md` §2, §5). The decoder gives the feature states of a configuration with unresolved body membership no produced body, and a decode loss counts the configurations with unresolved body membership. The document features name their producers over every decoded partition, so a document feature can name a body that the active configuration's partition does not hold.
+
+`Config-N-FeatureBodies/LocalBodies` holds the bodies an Imported feature owns (`sldprt.md` §3.3). Where the active partition is an empty partition/deltas model, they are the active configuration's bodies. A configuration that is not active can store a `Config-N-FeatureBodies` stream with no `Config-N-Partition`. Whether those bodies are that configuration's bodies or the input of its import is not known. The decoder takes them into no state and charges the warning `config.state-imported-bodies-not-transferred` naming the configuration index; it does the same for a configuration that is not active whose partition holds no body. For the active configuration, whose bodies the model would then lack, the same loss is the error `geometry.imported-bodies-not-transferred`.
+
+**Need.** A `Config-N` or `Config-N-ResolvedFeatures` record that names output bodies by an identity the partition also stores (`ATOM_ID_2001`), compared with a configuration whose partition holds the same bodies. For `Config-N-FeatureBodies`: a configuration that is not active whose partition is an empty partition/deltas model beside such a stream, or the Imported feature of its `Config-N-ResolvedFeatures` lane naming its body by an identity the stream also stores.
 
 ### DI-85. Revolution axes that lie outside the profile plane
 

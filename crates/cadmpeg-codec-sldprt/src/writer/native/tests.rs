@@ -2,7 +2,7 @@
 //! The skeleton's object streams read to their end with the decoder's exact
 //! walker, and its `KeyWords` and class map take the native form.
 
-use super::{skeleton, Body, Facts};
+use super::{ids, skeleton, Body, Facts, Numbering};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn streams(bodies: usize) -> Vec<(String, Vec<u8>)> {
@@ -12,14 +12,15 @@ fn streams(bodies: usize) -> Vec<(String, Vec<u8>)> {
 /// The skeleton of a part with one body per entry, a sheet body where the
 /// entry is `true`.
 fn streams_of_kinds(sheets: &[bool]) -> Vec<(String, Vec<u8>)> {
+    let numbering = Numbering::new(None, sheets.len(), &[]).expect("the part numbers");
     let bodies = sheets
         .iter()
         .enumerate()
-        .map(|(index, &sheet)| Body::numbered("Bracket", 0, index, sheet))
+        .map(|(index, &sheet)| Body::numbered("Bracket", &numbering, index, sheet))
         .collect::<Result<Vec<_>, _>>()
         .expect("bodies number");
     skeleton(&Facts {
-        id_base: 0,
+        numbering,
         name: "Bracket",
         active: "Default",
         features: &[],
@@ -121,29 +122,93 @@ fn keywords_group_records_by_tag_and_order_them_by_identifier_text() {
     }
 }
 
-#[test]
-fn tree_identifiers_follow_the_identifier_base() {
-    let bodies = [Body::numbered("Bracket", 40, 0, false).expect("body numbers")];
-    let streams = skeleton(&Facts {
-        id_base: 40,
-        name: "Bracket",
-        active: "Default",
-        features: &[],
-        bodies: &bodies,
-    })
-    .expect("the skeleton writes");
-    let keywords = stream(&streams, "swXmlContents/KeyWords");
+/// The `id` of each `KeyWords` record, by its name.
+fn keyword_ids(streams: &[(String, Vec<u8>)]) -> std::collections::BTreeMap<String, u32> {
+    let keywords = stream(streams, "swXmlContents/KeyWords");
     let text = std::str::from_utf8(&keywords[1..]).expect("UTF-8");
     let document = roxmltree::Document::parse(text).expect("XML");
-    let ids = document
+    document
         .root_element()
         .children()
         .filter(|node| node.is_element() && node.tag_name().name() != "Configuration")
-        .map(|node| node.attribute("id").and_then(|id| id.parse::<u32>().ok()))
-        .collect::<Option<Vec<_>>>()
-        .expect("numeric identifiers");
-    assert!(ids.iter().all(|&id| id > 40), "{ids:?}");
-    assert_eq!(bodies[0].feature_id, 40 + super::ids::MARKUPS + 1);
+        .map(|node| {
+            let id = node.attribute("id").and_then(|id| id.parse().ok());
+            (
+                node.attribute("Name").unwrap_or_default().to_owned(),
+                id.expect("a numeric identifier"),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_default_tree_takes_the_native_identifiers_and_user_objects_follow_it() {
+    let (streams, walk) = extruded_top_sketch_streams();
+    let ids = keyword_ids(&streams);
+    let expected = [
+        ("Annotations", 1),
+        ("Front Plane", 2),
+        ("Top Plane", 3),
+        ("Right Plane", 4),
+        ("Origin", 5),
+        ("Lights, Cameras and Scene", 6),
+        ("Design Binder", 7),
+        ("Comments", 8),
+        ("Solid Bodies", 9),
+        ("Surface Bodies", 10),
+        (super::MATERIAL_NAME, 11),
+        ("Ambient", 12),
+        ("Directional1", 13),
+        ("Directional2", 14),
+        ("Equations", 16),
+        ("", 17),
+        ("Sensors", 19),
+        ("Favorites", 20),
+        ("History", 21),
+        ("Selection Sets", 22),
+        ("Sketch1", 23),
+        ("Boss-Extrude1", 24),
+        ("Notes", 28),
+        ("Notes1___EndTag___", 29),
+        ("Markups", 30),
+    ]
+    .map(|(name, id)| (name.to_owned(), id));
+    assert_eq!(ids, std::collections::BTreeMap::from(expected));
+    // The sketch's two dimensions and the extrusion's depth take the three
+    // identifiers between the user features and the notes folders; each
+    // writes its identifier eleven bytes after its value.
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures");
+    let parameters = walk
+        .parameters
+        .iter()
+        .map(|parameter| u32_at(resolved, parameter.value_at + 11))
+        .collect::<Vec<_>>();
+    assert_eq!(parameters, [25, 26, 27]);
+}
+
+#[test]
+fn stored_bodies_follow_the_history_summary_and_precede_the_last_folders() {
+    let numbering = Numbering::new(Some(40), 2, &[]).expect("the part numbers");
+    assert_eq!(
+        numbering,
+        Numbering {
+            first_body: 41,
+            first_parameter: 43,
+            notes: 43,
+            notes_end: 44,
+            markups: 45,
+        }
+    );
+    let bodies = [0, 1].map(|index| {
+        Body::numbered("Bracket", &numbering, index, false)
+            .expect("body numbers")
+            .feature_id
+    });
+    assert_eq!(bodies, [41, 42]);
+    let empty = Numbering::new(None, 0, &[]).expect("the part numbers");
+    assert_eq!(empty.first_body, ids::FIRST_USER);
+    assert_eq!(empty.markups, ids::FIRST_USER + 2);
+    assert!(Numbering::new(Some(u32::MAX - 2), 1, &[]).is_err());
 }
 
 /// A sketch on the Top plane: a line, an arc from its end and a circle.
@@ -152,7 +217,7 @@ fn top_sketch() -> super::sketch::Sketch {
     let point = |at: [f64; 2], kind: u32| Point { at, kind };
     Sketch {
         name: "Sketch1".into(),
-        feature_id: 7,
+        feature_id: 23,
         plane: super::tree::Plane::Top,
         points: vec![
             point([0.0, 0.0], 1),
@@ -205,9 +270,10 @@ fn top_sketch() -> super::sketch::Sketch {
 #[test]
 fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
     let features = [super::Feature::Sketch(top_sketch())];
-    let bodies = [Body::numbered("Bracket", 7, 0, false).expect("body numbers")];
+    let numbering = Numbering::new(Some(23), 1, &features).expect("the part numbers");
+    let bodies = [Body::numbered("Bracket", &numbering, 0, false).expect("body numbers")];
     let streams = skeleton(&Facts {
-        id_base: 7,
+        numbering,
         name: "Bracket",
         active: "Default",
         features: &features,
@@ -250,21 +316,22 @@ fn a_user_sketch_walks_to_the_end_and_holds_its_profile_body() {
     assert_eq!(marks.collect::<Vec<_>>(), ["Imported1"]);
 }
 
-/// The `ResolvedFeatures` stream of a part holding `top_sketch` and a 5 mm
-/// blind extrusion of it, and the decoder's exact walk of it.
-fn extruded_top_sketch() -> (Vec<u8>, crate::carchive::Walk) {
+/// The streams of a part holding `top_sketch` and a 5 mm blind extrusion of
+/// it, numbered as the history summary numbers them, and the decoder's exact
+/// walk of its `ResolvedFeatures` stream.
+fn extruded_top_sketch_streams() -> (Vec<(String, Vec<u8>)>, crate::carchive::Walk) {
     let features = [
         super::Feature::Sketch(top_sketch()),
         super::Feature::Extrusion(super::extrude::Extrusion {
             name: "Boss-Extrude1".into(),
-            feature_id: 8,
-            sketch_id: 7,
+            feature_id: 24,
+            sketch_id: 23,
             depth: 0.005,
             reversed: false,
         }),
     ];
     let streams = skeleton(&Facts {
-        id_base: 8,
+        numbering: Numbering::new(Some(24), 0, &features).expect("the part numbers"),
         name: "Bracket",
         active: "Default",
         features: &features,
@@ -272,18 +339,26 @@ fn extruded_top_sketch() -> (Vec<u8>, crate::carchive::Walk) {
     })
     .expect("the skeleton writes");
     let config = stream(&streams, "Contents/Config-0");
-    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures").to_vec();
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures");
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&resolved, &arena, &DecodePolicy::desktop())
+    let (ctx, _) = DecodeContext::from_root_bytes(resolved, &arena, &DecodePolicy::desktop())
         .expect("context");
-    let count = crate::archive::resolved_count(&resolved).expect("map count");
+    let count = crate::archive::resolved_count(resolved).expect("map count");
     let map = crate::archive::class_index_map(config, count, &ctx)
         .expect("class map")
         .expect("the Config-0 map reaches the ResolvedFeatures count");
-    let walk = crate::carchive::walk_configuration(&ctx, &map, &resolved, Some(super::VERSION))
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, Some(super::VERSION))
         .expect("walk")
         .expect("the walk runs");
     assert_eq!(walk.status, crate::carchive::Status::End);
+    (streams, walk)
+}
+
+/// The `ResolvedFeatures` stream of [`extruded_top_sketch_streams`] and the
+/// walk of it.
+fn extruded_top_sketch() -> (Vec<u8>, crate::carchive::Walk) {
+    let (streams, walk) = extruded_top_sketch_streams();
+    let resolved = stream(&streams, "Contents/Config-0-ResolvedFeatures").to_vec();
     (resolved, walk)
 }
 
@@ -301,11 +376,15 @@ fn an_extrusion_writes_the_extrusion_family_word() {
 #[test]
 fn a_top_plane_sketch_references_its_plane_with_the_plane_rotation() {
     let (resolved, _) = extruded_top_sketch();
-    // After the plane's feature number and time stamp: u16 `0`, the Top
-    // plane's word `2`, u16 `0`, flag `1`, the rotation row by row (its
+    // The Top plane's feature number `3` and the time stamp, u16 `0`, the
+    // Top plane's word `2`, u16 `0`, flag `1`, the rotation row by row (its
     // columns are the plane's axes), a zero translation and f64 `1`.
     let axes = super::tree::Plane::Top.axes();
-    let mut reference = vec![0, 0, 2, 0, 0, 0, 1];
+    let mut reference = [ids::TOP_PLANE, super::TIME_STAMP]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>();
+    reference.extend([0, 0, 2, 0, 0, 0, 1]);
     reference.extend(
         (0..3)
             .flat_map(|row| axes.iter().map(move |axis| axis[row]))

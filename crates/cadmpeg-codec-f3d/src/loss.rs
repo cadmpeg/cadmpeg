@@ -1090,6 +1090,8 @@ pub(crate) enum F3dLossCode {
     FeatureLoftSolidInferred,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
+    /// A `SurfaceExtend` projects its stored boundary edges as the faces they bound.
+    FeatureSurfaceExtendEdgesAsFaces,
     FeatureSplitToolExtensionAssumed,
     FeatureSplitToolExtensionUnresolved,
     FeatureSplitBodyFaceToolGroupAssumed,
@@ -2083,6 +2085,7 @@ impl F3dLossCode {
         Self::FeatureLoftCenterlineAssumed,
         Self::FeatureLoftSolidInferred,
         Self::FeatureSurfaceExtendMethodUnresolved,
+        Self::FeatureSurfaceExtendEdgesAsFaces,
         Self::FeatureSplitToolExtensionAssumed,
         Self::FeatureSplitToolExtensionUnresolved,
         Self::FeatureSplitBodyFaceToolGroupAssumed,
@@ -3281,6 +3284,7 @@ impl F3dLossCode {
             Self::FeatureSurfaceExtendMethodUnresolved => {
                 "feature.surface-extend-method-unresolved"
             }
+            Self::FeatureSurfaceExtendEdgesAsFaces => "feature.surface-extend-edges-as-faces",
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
             }
@@ -4206,6 +4210,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -4978,6 +4983,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureLoftSolidInferred
             | Self::FeatureSurfaceExtendMethodUnresolved
+            | Self::FeatureSurfaceExtendEdgesAsFaces
             | Self::FeatureSplitToolExtensionAssumed
             | Self::FeatureSplitToolExtensionUnresolved
             | Self::FeatureSplitBodyFaceToolGroupAssumed
@@ -5937,6 +5943,7 @@ mod tests {
                 "feature.loft-centerline-assumed",
                 "feature.loft-solid-inferred",
                 "feature.surface-extend-method-unresolved",
+                "feature.surface-extend-edges-as-faces",
                 "feature.split-tool-extension-assumed",
                 "feature.split-tool-extension-unresolved",
                 "feature.split-body-face-tool-group-assumed",

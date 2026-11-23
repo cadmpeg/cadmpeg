@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bounded_lateral_ellipse, Piece, PlaneFrame};
+use super::{bounded_lateral_cylinder_cap, bounded_lateral_ellipse, Piece, PlaneFrame};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder, AsmHistoricalPlane,
     AsmHistoricalRelation, AsmHistoricalTopology,
@@ -402,4 +402,191 @@ fn two_sided_lateral_bounds_require_continuations_at_both_ends() {
     assert!(!agrees(&[side(-1.0, -0.5), side(0.6, 1.0)]));
     assert!(!agrees(&[side(-1.0, -0.5)]));
     assert!(!agrees(&[side(0.5, 1.0)]));
+}
+
+fn concentric_circles() -> (
+    cadmpeg_ir::sketches::Sketch,
+    Vec<cadmpeg_ir::sketches::SketchEntity>,
+) {
+    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        SketchPlacement, SketchProfiles,
+    };
+    let sketch = Sketch {
+        id: SketchId::mint("synthetic:test:sketch#floor").unwrap(),
+        name: None,
+        configuration: None,
+        visible: None,
+        native_ref: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+    };
+    let entities = [("outer", 3.0), ("inner", 1.75)]
+        .into_iter()
+        .map(|(name, radius)| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length::new(radius).unwrap(),
+                })
+                .unwrap(),
+            )
+        })
+        .collect();
+    (sketch, entities)
+}
+
+fn disk_cap(radius: f64) -> super::Cap {
+    let ring = (0..64)
+        .map(|k| {
+            let angle = std::f64::consts::TAU * f64::from(k) / 64.0;
+            Point2::new(radius * angle.cos(), radius * angle.sin())
+        })
+        .collect();
+    super::Cap::new(vec![ring], Vec::new(), Vec::new(), 0.0, Vec::new())
+}
+
+/// Floor regions of two concentric circles of radius 3 and 1.75, with an
+/// inserted face on `offset` that covers the ring between the circles.
+fn floor_selection(offset: f64, far: Option<f64>, before: usize) -> Vec<usize> {
+    let (sketch, entities) = concentric_circles();
+    let ring_floor = {
+        let outer = disk_cap(3.0);
+        let inner = disk_cap(1.75);
+        super::Cap::new(
+            outer.loops.into_iter().chain(inner.loops).collect(),
+            Vec::new(),
+            Vec::new(),
+            0.0,
+            Vec::new(),
+        )
+    };
+    let planes = vec![super::PlaneSides {
+        offset,
+        before: (0..before).map(|_| disk_cap(3.0)).collect(),
+        after: vec![ring_floor],
+    }];
+    crate::test_support::with_decode_context(|ctx| {
+        let work = crate::design::geometry::ProfileGeometryWork::new();
+        let regions = crate::design::geometry::atomic_sketch_regions(
+            &sketch, &entities, TOLERANCE, &work, ctx,
+        )
+        .unwrap()
+        .unwrap();
+        let sampled = super::sample_regions(&regions, TOLERANCE, &work).unwrap();
+        let selected = super::floor_regions(&sampled, &planes, far, TOLERANCE);
+        // Only the ring has a hole region nested in it.
+        selected
+            .iter()
+            .map(|index| sampled[*index].nested.len())
+            .collect()
+    })
+}
+
+#[test]
+fn a_floor_face_selects_the_ring_it_covers_and_not_the_disk_inside_it() {
+    assert_eq!(floor_selection(-20.0, Some(-20.0), 0), vec![1]);
+}
+
+#[test]
+fn a_floor_needs_the_signed_length_and_an_empty_before_side() {
+    assert!(floor_selection(-20.0, Some(20.0), 0).is_empty());
+    assert!(floor_selection(-20.0, None, 0).is_empty());
+    assert!(floor_selection(-19.0, Some(-20.0), 0).is_empty());
+    assert!(floor_selection(-20.0, Some(-20.0), 1).is_empty());
+}
+
+/// A lateral cylinder of radius `radius` along the Z axis and a cylinder of
+/// radius 2 along the Y axis through height -3 that cut each other along
+/// edge 7.
+fn crossing_cylinders(radius: f64) -> AsmHistoricalTopology {
+    AsmHistoricalTopology {
+        surface_cylinders: vec![
+            AsmHistoricalCylinder {
+                surface: 1,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius,
+            },
+            AsmHistoricalCylinder {
+                surface: 2,
+                origin: Point3::new(0.0, 0.0, -3.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                radius: 2.0,
+            },
+        ],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 11,
+                carrier: 1,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 12,
+                carrier: 2,
+            },
+        ],
+        face_loops: vec![
+            AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![20],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 12,
+                member_refs: vec![10],
+            },
+        ],
+        coedge_topology: [(21, 20), (22, 10)]
+            .into_iter()
+            .map(|(coedge, owner_loop)| AsmHistoricalCoedge {
+                coedge,
+                owner_loop,
+                edge: 7,
+                next: 0,
+                previous: 0,
+                radial_next: 0,
+            })
+            .collect(),
+        ..AsmHistoricalTopology::default()
+    }
+}
+
+#[test]
+fn a_lateral_edge_cut_by_a_transverse_cylinder_is_bounded_on_its_branch() {
+    let frame = PlaneFrame {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u: Vector3::new(1.0, 0.0, 0.0),
+        v: Vector3::new(0.0, 1.0, 0.0),
+    };
+    let bounded = |topology: &AsmHistoricalTopology, height: f64, travel: (f64, f64)| {
+        bounded_lateral_cylinder_cap(
+            topology,
+            1,
+            7,
+            &frame,
+            Point3::new(1.0, 0.0, height),
+            travel,
+            TOLERANCE,
+        )
+    };
+    let topology = crossing_cylinders(1.0);
+    // The edge keeps heights from -3 + sqrt(3) to -3 + 2 on the upper branch
+    // and the mirrored heights on the lower branch.
+    assert!(bounded(&topology, -1.2, (-4.0, 0.0)));
+    assert!(bounded(&topology, -1.2, (-1.3, -1.0)));
+    assert!(!bounded(&topology, -1.2, (-1.1, 0.0)));
+    assert!(!bounded(&topology, -1.2, (-4.0, -1.1)));
+    assert!(bounded(&topology, -4.8, (-5.0, -4.7)));
+    assert!(!bounded(&topology, -4.8, (-4.0, 0.0)));
+    // A lateral circle that reaches the silhouette of the second cylinder
+    // leaves its branch.
+    assert!(!bounded(&crossing_cylinders(2.5), -1.2, (-9.0, 9.0)));
 }
