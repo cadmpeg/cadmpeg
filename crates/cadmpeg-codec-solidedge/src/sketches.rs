@@ -75,9 +75,10 @@ fn profile_offsets(function: &str) -> &'static [usize] {
         | "JMLoftedProtrusionFunction"
         | "JMBaseTabFunction" => &[PROFILE_AFTER_NAME],
         "JMMultiSweepProtrusionFunction" => &[PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME],
-        "JMHoleFunction" | "JMFlangeFunction" | "JMFastPatternFunction" => {
-            &[PROFILE_AFTER_NAME_SHORT]
-        }
+        "JMHoleFunction"
+        | "JMFlangeFunction"
+        | "JMBaseContourFlangeFunction"
+        | "JMFastPatternFunction" => &[PROFILE_AFTER_NAME_SHORT],
         _ => &[],
     }
 }

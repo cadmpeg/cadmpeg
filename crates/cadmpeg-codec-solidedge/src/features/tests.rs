@@ -115,6 +115,11 @@ fn function_names_map_to_families() {
         ("JMThinwallAssocFunctionNew", OperationFamily::Shell),
         ("JMBaseTabFunction", OperationFamily::SheetMetal),
         ("JMFlangeFunction", OperationFamily::SheetMetal),
+        ("JMMultiFlangeFunction", OperationFamily::SheetMetal),
+        ("JMBaseContourFlangeFunction", OperationFamily::SheetMetal),
+        ("JMHemAssocFunction", OperationFamily::SheetMetal),
+        ("JMUnfoldFunction", OperationFamily::SheetMetal),
+        ("JMRefoldFunction", OperationFamily::SheetMetal),
     ];
     for (name, family) in table {
         assert_eq!(function_family(name), Some(family), "{name}");

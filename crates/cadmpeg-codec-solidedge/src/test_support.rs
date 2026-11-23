@@ -1092,3 +1092,6 @@ pub(crate) use assembly::{assembly_document, OccurrenceSpec, SiteSpec};
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
+
+mod kinds;
+pub(crate) use kinds::{kind_document, EdgeSpec, Operand};

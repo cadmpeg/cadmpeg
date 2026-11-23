@@ -361,7 +361,50 @@ pub(crate) fn project_base_tabs(
     }
 }
 
+/// The `CLSID_JMPart` features of `listed` with function `function`: each
+/// feature's object identifier, its object and the offset after its function
+/// name.
+fn features_of<'a>(
+    cluster: &Cluster<'a>,
+    types: &TypeTable,
+    listed: &[Listed],
+    function: &str,
+) -> Vec<(u32, crate::psm::Object<'a>, usize)> {
+    let mut found = Vec::new();
+    for entry in listed {
+        let Kind::Function(Some(name)) = &entry.kind else {
+            continue;
+        };
+        if name != function {
+            continue;
+        }
+        let Some(object) = cluster.object(entry.object) else {
+            continue;
+        };
+        if types.class_name(object.form, object.flags) != Some(PART_CLASS) {
+            continue;
+        }
+        let Some((_, end)) = function_span(&object) else {
+            continue;
+        };
+        found.push((entry.object, object, end));
+    }
+    found
+}
+
+/// A whole-number code stored as an `f64`.
+fn code_of(value: f64) -> Option<i64> {
+    const CODE_MAX: i32 = 1023;
+    (0..=CODE_MAX)
+        .find(|n| is(value, f64::from(*n)))
+        .map(i64::from)
+}
+
+pub(crate) mod contour;
+pub(crate) mod corner;
 pub(crate) mod flange;
+pub(crate) mod hem;
+pub(crate) mod unfold;
 
 #[cfg(test)]
 mod tests;

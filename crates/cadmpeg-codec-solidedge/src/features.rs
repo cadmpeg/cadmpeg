@@ -261,9 +261,13 @@ fn function_family(function: &str) -> Option<OperationFamily> {
         "JMRoundFunction" => OperationFamily::Fillet,
         "JMChamferFunction" => OperationFamily::Chamfer,
         "JMThinwallAssocFunctionNew" => OperationFamily::Shell,
-        "JMBaseTabFunction" | "JMFlangeFunction" | "JMMultiFlangeFunction" => {
-            OperationFamily::SheetMetal
-        }
+        "JMBaseTabFunction"
+        | "JMFlangeFunction"
+        | "JMMultiFlangeFunction"
+        | "JMBaseContourFlangeFunction"
+        | "JMHemAssocFunction"
+        | "JMUnfoldFunction"
+        | "JMRefoldFunction" => OperationFamily::SheetMetal,
         _ => return None,
     })
 }
@@ -442,6 +446,10 @@ pub(crate) fn project<'a>(
     crate::sweeps::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::project_base_tabs(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::flange::project(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::hem::project(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::contour::project(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::unfold::project(&cluster, &types, &listed, ir, losses);
+    crate::sheet_metal::corner::project(&cluster, &types, &listed, ir);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
     crate::patterns::project(&cluster, &types, &listed, ir, losses);
     let pending = ir

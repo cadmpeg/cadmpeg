@@ -325,8 +325,9 @@ bytes after the end of its function name (§4.2). For
 `JMMultiSweepProtrusionFunction` that profile is the sweep path, and the
 `u32` 104 bytes after the end of the function name is the identifier of the
 section profile. A feature with function
-`JMHoleFunction`, `JMFlangeFunction` or `JMFastPatternFunction` stores it 68
-bytes after the end of its function name. The identifier names a
+`JMHoleFunction`, `JMFlangeFunction`, `JMBaseContourFlangeFunction` or
+`JMFastPatternFunction` stores it 68 bytes after the end of its function
+name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
 profile. At most one feature names a profile.
 
@@ -690,3 +691,68 @@ on the flange and holds its own number.
 A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
 record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius
 and the `f64` at object offset 382 + 93`k` is the bend angle pi - `a`.
+
+### 10.4 Hem
+
+A `CLSID_JMPart` feature with function `JMHemAssocFunction` stores these
+object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the `CLSID_JMTopologyProxy` edge selection (§7.6) |
+| 96 | `Double Value Object` form code |
+| 208 | `Double Value Object`, a length that depends on the form |
+| 236 | `Double Value Object`, a length that depends on the form |
+
+The form code is `208` for a single hem, `209` for a double hem, `210` for a
+teardrop hem and `212` for a rolled hem. For form code `208` the value at
+offset 208 is the inner bend radius, which is half the gap between the hem
+and the face, and the value at offset 236 is the length of the straight part
+of the fold, measured from the plane through the fold axis to the free end.
+The entered hem length is the value at offset 236 plus the inner bend radius
+plus a further offset. The edge proxy selects the end edge of the wall; the
+side to which the hem folds changes the selected edge and no other slot.
+
+### 10.5 Base contour flange
+
+A `CLSID_JMPart` feature with function `JMBaseContourFlangeFunction` stores
+these object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the `CLSID_JProfile` open profile (§5.3) |
+| 124 | `Double Value Object`, `1` |
+| 152 | `Double Value Object` extent kind, `13` for a finite extent (§6.2) |
+| 180 | `Double Value Object`, `1` |
+| 208 | `CLSID_JDim` extent distance along the profile normal |
+| 236 | `Double Value Object` inside bend radius |
+| 264 | `Double Value Object` neutral factor |
+
+The extent distance is the distance from the profile plane. The slots at
+offsets 124 and 180 each hold the side value of §6.2 or a value that no stored
+feature separates from it.
+
+### 10.6 Unfold and refold
+
+A `CLSID_JMPart` feature with function `JMUnfoldFunction` stores a
+`CLSID_JMTopologyProxy` face selection at 68 bytes after the end of its
+function name and a second one at 96 bytes. A feature with function
+`JMRefoldFunction` stores one `CLSID_JMTopologyProxy` at 68 bytes. The
+selections are not edge selections: they are larger than 559 bytes and store
+no edge line.
+
+### 10.7 Close corner
+
+A `CLSID_JMPart` feature with function `JMCloseCornerAssocFunction` stores
+these object identifiers after the end of its function name:
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | the `CLSID_JMTopologyProxy` selection of the corner |
+| 124 | `Double Value Object`, `103` |
+| 152 | `Double Value Object` relief form: `107` round, `222` square, `106` tear |
+| 180 | `Double Value Object` relief size |
+| 244 | `CLSID_JDim` corner gap |
+| 420 | `Double Value Object` that repeats the relief size |
+
+Lengths are metres.
