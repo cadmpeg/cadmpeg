@@ -164,6 +164,18 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
+    /// A relation point marker whose record form reads a coordinate pair
+    /// that holds a nonzero subnormal value gives no relation point.
+    SketchPointCoordinatesSubnormal,
+    /// A relation point marker gives no relation point where the decode
+    /// does not settle its place: no unique fitted marker transform and no
+    /// sketch frame place it; or, for a marker that only a list-read record
+    /// reaches, the fitted transform and the frame place it more than the
+    /// linear resolution apart and a curve end or centre of the sketch or a
+    /// vertex or circular-edge centre of the solid marks both places or
+    /// neither, or the sketch its feature binds is read from another
+    /// feature-input lane.
+    SketchRelationPointPlaceUnsettled,
     /// A profile sketch lies on a plane the decoder assumes (open item
     /// DI-73): the plane that the preceding object's or the lane's plane
     /// reference names, the Top plane its feature-input reference names, the
@@ -631,6 +643,8 @@ impl SldprtLossCode {
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
+        Self::SketchPointCoordinatesSubnormal,
+        Self::SketchRelationPointPlaceUnsettled,
         Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
@@ -850,6 +864,8 @@ impl SldprtLossCode {
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
+            Self::SketchRelationPointPlaceUnsettled => "sketch.relation-point-place-unsettled",
             Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
@@ -1140,6 +1156,8 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1449,6 +1467,8 @@ impl SldprtLossCode {
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1722,6 +1742,8 @@ mod tests {
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
+                "sketch.point-coordinates-subnormal",
+                "sketch.relation-point-place-unsettled",
                 "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",

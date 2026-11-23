@@ -156,10 +156,13 @@ fn stream_plane_placement(
 /// compared with.
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
-/// The line and circular edges of the decoded solid, in model coordinates:
-/// the witness of which reading of a feature's profile the solid carries.
+/// The vertices and the line and circular edges of the decoded solid, in
+/// model coordinates: the witness of which reading of a feature's profile,
+/// or of a relation point's place, the solid carries.
 #[derive(Debug, Default)]
 pub(crate) struct SolidEdges {
+    /// Each vertex's position.
+    vertices: Vec<Point3>,
     /// Each line edge's two ends.
     lines: Vec<(Point3, Point3)>,
     /// Each circular edge's centre, unit axis and radius.
@@ -167,7 +170,8 @@ pub(crate) struct SolidEdges {
 }
 
 impl SolidEdges {
-    /// The line and circular edges among `edges`. An edge whose curve is
+    /// The vertices among `vertices`, and the line and circular edges among
+    /// `edges`. An edge whose curve is
     /// unsolved or of another kind, or a line edge whose ends do not
     /// resolve to points, gives no witness.
     pub(crate) fn new(
@@ -188,7 +192,10 @@ impl SolidEdges {
             .iter()
             .map(|curve| (&curve.id, &curve.geometry))
             .collect();
-        let mut solid = Self::default();
+        let mut solid = Self {
+            vertices: vertices.values().copied().collect(),
+            ..Self::default()
+        };
         for edge in edges {
             match edge
                 .curve()
@@ -284,6 +291,21 @@ impl SolidEdges {
             }
         }
         every_curve_tested.then_some(true)
+    }
+
+    /// Whether a vertex of the solid, or the centre of one of its circular
+    /// edges, lies at `point` within the linear resolution.
+    pub(crate) fn marks(&self, point: Point3) -> bool {
+        self.vertices
+            .iter()
+            .chain(self.circles.iter().map(|(center, _, _)| center))
+            .any(|mark| mark.distance(point) <= LINEAR_RESOLUTION_MM)
+    }
+
+    /// Whether the solid holds no vertex and no circular edge that
+    /// [`Self::marks`] compares.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.vertices.is_empty() && self.circles.is_empty()
     }
 
     fn holds_line(&self, start: Point3, end: Point3) -> bool {

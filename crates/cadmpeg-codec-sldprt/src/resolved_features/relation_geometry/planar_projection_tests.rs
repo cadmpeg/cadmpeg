@@ -114,7 +114,13 @@ fn solved_line_projection_succeeds() {
 fn project_relation_point_with_policy() {
     let (sketch, feature, lane) = planar_fixture();
     let mut entities = Vec::new();
-    project_relation_point_geometry(&mut entities, &[sketch], &[feature], &[lane]);
+    project_relation_point_geometry(
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[lane],
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
+    );
     assert!(entities.is_empty());
 }
 

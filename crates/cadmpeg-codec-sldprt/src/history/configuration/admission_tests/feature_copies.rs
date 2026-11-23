@@ -117,7 +117,7 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = model();
     let expected = ir.clone();
-    let losses = super::super::project_configuration_sketch_states(
+    let (losses, relation_points) = super::super::project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -127,6 +127,7 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }
