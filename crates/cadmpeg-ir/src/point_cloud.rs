@@ -31,6 +31,21 @@ pub struct PointCloud {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
+    /// The point cloud's own display colour, apart from the per-point
+    /// `colors`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_color"
+    )]
+    pub color: Option<Color>,
+    /// Whether the source displays the point cloud.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visible"
+    )]
+    pub visible: Option<bool>,
     /// Pose of the capturing sensor in the frame of the points.
     #[serde(
         default,
@@ -68,6 +83,8 @@ pub struct PointChannel {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_sensor, Transform, "sensor");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 

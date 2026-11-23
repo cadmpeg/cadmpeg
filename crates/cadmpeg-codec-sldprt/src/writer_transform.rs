@@ -125,7 +125,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             _ => None,
         };
         for mesh in &mut ir.model.tessellations {
-            let transform = match &mesh.body {
+            let transform = match mesh.of.body() {
                 Some(body) => transforms.get(body).copied().ok_or_else(|| {
                     CodecError::Malformed("tessellation references missing body".into())
                 })?,

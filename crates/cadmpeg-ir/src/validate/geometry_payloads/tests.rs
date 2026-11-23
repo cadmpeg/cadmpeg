@@ -4,7 +4,7 @@
 use crate::examples::unit_cube;
 use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
-use crate::tessellation::{Tessellation, TessellationMesh};
+use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
 use crate::validate::validate_neutral;
 
 #[test]
@@ -28,9 +28,10 @@ fn tessellation_counts_must_be_consistent() {
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_faces(vec![
-            FaceId::mint("synthetic:test:face#missing").expect("valid identity")
-        ]),
+        .with_of(Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: vec![FaceId::mint("synthetic:test:face#missing").expect("valid identity")],
+        }),
     );
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -171,11 +172,13 @@ fn tessellation_reference_validation_preserves_finding_order() {
             Vec::new(),
         )
         .unwrap()
-        .with_body(Some("test:model:body#missing".try_into().unwrap()))
-        .with_faces(vec![
-            "test:model:face#missing".try_into().unwrap(),
-            "test:model:face#also-missing".try_into().unwrap(),
-        ])
+        .with_of(Meshed::Body {
+            body: "test:model:body#missing".try_into().unwrap(),
+            faces: vec![
+                "test:model:face#missing".try_into().unwrap(),
+                "test:model:face#also-missing".try_into().unwrap(),
+            ],
+        })
         .with_texture_assignments(vec![crate::tessellation::TessellationTextureAssignment {
             source_id: None,
             texture: "test:model:asset#missing".try_into().unwrap(),
@@ -185,10 +188,9 @@ fn tessellation_reference_validation_preserves_finding_order() {
     );
     let mut findings = Vec::new();
     super::check_tessellations(&ir, &mut findings);
-    assert_eq!(findings.len(), 3);
+    assert_eq!(findings.len(), 2);
     for (finding, message) in findings.iter().zip([
         "references a missing tessellation body",
-        "references a missing tessellation face",
         "references a missing tessellation texture asset",
     ]) {
         assert_eq!(finding.check, Check::Tessellation);
@@ -222,7 +224,22 @@ fn face_grouped(ir: &crate::document::CadIr, face: crate::ids::FaceId, body: boo
         TessellationTriangleGroup::new(None, vec![1]),
     ])
     .expect("valid triangle group partition");
-    mesh.with_body(body.then(|| ir.geometry.bodies[0].id.clone()))
+    if body {
+        mesh.with_of(Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: Vec::new(),
+        })
+    } else {
+        mesh
+    }
+}
+
+/// `face_grouped` with `faces` as the faces its body arm lists.
+fn listing(mesh: Tessellation, faces: Vec<crate::ids::FaceId>) -> Tessellation {
+    let Meshed::Body { body, .. } = mesh.of.clone() else {
+        unreachable!("a face-grouped mesh displays a body");
+    };
+    mesh.with_of(Meshed::Body { body, faces })
 }
 
 fn tessellation_errors(ir: &mut crate::document::CadIr) -> Vec<String> {
@@ -243,7 +260,7 @@ fn tessellation_errors(ir: &mut crate::document::CadIr) -> Vec<String> {
 fn a_triangle_group_names_a_face_of_the_tessellation_body() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let face = ir.geometry.faces[0].id.clone();
-    let mesh = face_grouped(&ir, face.clone(), true).with_faces(vec![face]);
+    let mesh = listing(face_grouped(&ir, face.clone(), true), vec![face]);
     ir.model.tessellations.push(mesh);
     assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
 }
@@ -281,7 +298,7 @@ fn a_triangle_group_face_is_one_of_the_tessellation_faces() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let grouped = ir.geometry.faces[0].id.clone();
     let listed = ir.geometry.faces[1].id.clone();
-    let mesh = face_grouped(&ir, grouped, true).with_faces(vec![listed]);
+    let mesh = listing(face_grouped(&ir, grouped, true), vec![listed]);
     ir.model.tessellations.push(mesh);
     let errors = tessellation_errors(&mut ir);
     assert!(
@@ -289,5 +306,107 @@ fn a_triangle_group_face_is_one_of_the_tessellation_faces() {
             .iter()
             .any(|message| message.contains("triangle group face outside the tessellation faces")),
         "{errors:?}"
+    );
+}
+
+/// A one-triangle mesh `id` that is `of`.
+fn meshed(id: &str, of: Meshed) -> Tessellation {
+    Tessellation::new(
+        id.try_into().unwrap(),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_of(of)
+}
+
+#[test]
+fn a_body_mesh_covers_faces_of_its_body() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let body = ir.geometry.bodies[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
+    ir.model.tessellations.push(meshed(
+        "test:model:tessellation#own",
+        Meshed::Body {
+            body: body.clone(),
+            faces: vec![face],
+        },
+    ));
+    assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
+
+    let mut other = crate::examples::unit_cube().unwrap();
+    other.geometry.bodies[0].id = "test:model:body#other".try_into().unwrap();
+    ir.geometry.bodies.push(other.geometry.bodies[0].clone());
+    ir.model.tessellations[0].of = Meshed::Body {
+        body: "test:model:body#other".try_into().unwrap(),
+        faces: vec![ir.geometry.faces[0].id.clone()],
+    };
+    assert_eq!(
+        tessellation_errors(&mut ir),
+        ["covers a face outside the tessellation body"]
+    );
+}
+
+#[test]
+fn a_definition_mesh_names_a_stored_definition() {
+    use crate::products::{ExternalDocument, ProductDefinition, Storage};
+    let part: crate::ids::ProductDefinitionId = "test:model:product#part".try_into().unwrap();
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.tessellations.push(meshed(
+        "test:model:tessellation#mesh",
+        Meshed::definition(part.clone()),
+    ));
+    assert_eq!(
+        tessellation_errors(&mut ir),
+        ["references a missing tessellation product definition"]
+    );
+
+    ir.model.product_definitions.push(ProductDefinition::new(
+        part.clone(),
+        Storage::External(ExternalDocument::default()),
+    ));
+    assert_eq!(
+        tessellation_errors(&mut ir),
+        ["references an external tessellation product definition"]
+    );
+
+    ir.model.product_definitions[0].storage = Storage::Embedded;
+    assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
+    ir.model.tessellations[0].of = Meshed::Display { definition: part };
+    assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
+}
+
+#[test]
+fn a_pmi_mesh_names_an_annotation_and_an_unresolved_one_states_no_state() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.tessellations.push(meshed(
+        "test:model:tessellation#pmi",
+        Meshed::Pmi {
+            pmi: "test:model:pmi#missing".try_into().unwrap(),
+        },
+    ));
+    assert_eq!(
+        tessellation_errors(&mut ir),
+        ["references a missing tessellation PMI annotation"]
+    );
+
+    ir.model.tessellations[0].of = Meshed::Unresolved;
+    assert_eq!(tessellation_errors(&mut ir), Vec::<String>::new());
+    ir.model.tessellations[0].state = Some(crate::design::refs::StateRef {
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#3").unwrap(),
+        ),
+    });
+    assert_eq!(
+        tessellation_errors(&mut ir),
+        ["states a state on an unresolved tessellation"]
     );
 }

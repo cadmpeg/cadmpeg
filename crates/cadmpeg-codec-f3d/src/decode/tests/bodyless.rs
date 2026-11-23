@@ -131,7 +131,6 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
-                scopeless_tessellations: Vec::new(),
             },
         });
         let bodies = path.component_bodies(&decoded.ir().geometry.bodies, false);
@@ -175,7 +174,6 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
             count: 0,
             unjoined: 0,
             tessellations_by_scope: std::collections::HashMap::new(),
-            scopeless_tessellations: Vec::new(),
         },
     });
     let required = path.component_bodies(&bodies, true).unwrap();

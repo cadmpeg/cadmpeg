@@ -90,7 +90,7 @@ fn owner_work_capped_loss(skipped: usize, work_limit: usize) -> LossNote {
 }
 
 fn needs_surface_owner(mesh: &cadmpeg_ir::tessellation::Tessellation) -> bool {
-    mesh.body.is_none() && mesh.faces.is_empty() && mesh.vertex_count() != 0
+    matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) && mesh.vertex_count() != 0
 }
 
 #[cfg(test)]
@@ -1504,8 +1504,10 @@ fn assign_unique_surface_owners_within(
             }
         };
         let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![face.clone()],
+        };
         if let Some(deflection) = chordal_deflection {
             mesh.set_chordal_deflection(Some(deflection))
                 .map_err(|error| {
@@ -1736,7 +1738,7 @@ pub(crate) fn assign_persistent_owners(
 
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some(Some(identity)) = bindings_by_mesh.get(mesh.id.as_str()) else {
@@ -1749,8 +1751,10 @@ pub(crate) fn assign_persistent_owners(
             continue;
         };
         let assigned_id = mesh.id.as_str().to_owned();
-        mesh.faces.push((*face).clone());
-        mesh.body = Some(body.clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: body.clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(assigned_id);
     }
     assigned
@@ -1790,14 +1794,16 @@ pub(crate) fn assign_face_key_owners(
     }
     let mut assigned = Vec::new();
     for mesh in &mut ir.model.tessellations {
-        if mesh.body.is_some() || !mesh.faces.is_empty() {
+        if !matches!(mesh.of, cadmpeg_ir::tessellation::Meshed::Unresolved) {
             continue;
         }
         let Some((face, body)) = owners.get(mesh.id.as_str()) else {
             continue;
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: (*body).clone(),
+            faces: vec![(*face).clone()],
+        };
         assigned.push(mesh.id.as_str().to_owned());
     }
     assigned

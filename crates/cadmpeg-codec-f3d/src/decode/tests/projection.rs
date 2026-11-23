@@ -369,7 +369,6 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
                 "test:model:tessellation#a-body".into(),
             ],
         )]),
-        scopeless_tessellations: Vec::new(),
     };
 
     let archive = crate::test_support::zip_test::synthetic_f3d(false);
@@ -1901,28 +1900,37 @@ fn native_mesh_face_group_sources_remain_incomplete() {
 }
 
 #[test]
-fn scopeless_member_mesh_tessellations_belong_to_the_member_file_root() {
-    const MESH: &str = "test:model:tessellation#scopeless-body";
+fn file_root_mesh_bodies_belong_to_the_stated_root() {
+    use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh};
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let mut model = cadmpeg_ir::document::Model::default();
-    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[MESH.to_owned()])
-        .unwrap();
-    let [root] = model.product_definitions.as_slice() else {
-        panic!("one root definition");
-    };
-    assert_eq!(root.id, crate::tree::file_root_id());
-    assert_eq!(
-        root.tessellations
-            .iter()
-            .map(cadmpeg_ir::tessellation::TessellationId::as_str)
-            .collect::<Vec<_>>(),
-        [MESH]
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let root: cadmpeg_ir::ids::ProductDefinitionId =
+        "f3d:test:product-definition#component".try_into().unwrap();
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition::root(
+            root.clone(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        ));
+    ir.model.tessellations.push(
+        Tessellation::new(
+            "f3d:test:mesh-body#0".try_into().unwrap(),
+            TessellationMesh::List {
+                vertices: vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap()
+        .with_of(Meshed::definition(crate::tree::file_root_id())),
     );
-    assert!(root.bodies.is_empty());
-
-    super::super::list_member_scopeless_tessellations(&ctx, &mut model, &[]).unwrap();
-    assert_eq!(model.product_definitions.len(), 1);
-    assert_eq!(model.product_definitions[0].tessellations.len(), 1);
+    crate::tree::state_root_definition(&ctx, &mut ir).unwrap();
+    assert_eq!(ir.model.product_definitions.len(), 1);
+    assert_eq!(ir.model.tessellations[0].of, Meshed::definition(root));
 }
 
 #[test]

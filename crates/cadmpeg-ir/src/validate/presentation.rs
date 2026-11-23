@@ -88,6 +88,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             add(item.id.as_str(), ());
         }
     });
+    let point_clouds = BorrowedIdentities::build(|add| {
+        for item in &ir.model.point_clouds {
+            add(item.id.as_str(), ());
+        }
+    });
     for layer in &ir.model.presentation_layers {
         for item in &layer.items {
             let resolved = match &item.entity {
@@ -120,6 +125,9 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 PresentationItem::Tessellation { tessellation } => ids
                     .tessellations(tessellation.as_str(), StandardIndex)
                     .is_some(),
+                PresentationItem::PointCloud { point_cloud } => {
+                    point_clouds.contains(point_cloud.as_str())
+                }
                 PresentationItem::Source { .. } => true,
             };
             if !resolved {

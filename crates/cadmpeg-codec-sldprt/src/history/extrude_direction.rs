@@ -1307,7 +1307,8 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
     }
     for mesh in &ir.model.tessellations {
         let face_count = mesh
-            .faces
+            .of
+            .faces()
             .iter()
             .filter(|face| indices.contains_key(*face))
             .count();
@@ -1324,7 +1325,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
         }
         let vertices = mesh.vertices();
         let triangles = mesh.triangles();
-        for face in &mesh.faces {
+        for face in mesh.of.faces() {
             let Some(index) = indices.get(face) else {
                 continue;
             };

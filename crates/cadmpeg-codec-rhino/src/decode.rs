@@ -22,6 +22,7 @@ use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::tessellation::Meshed;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -3486,6 +3487,9 @@ impl<'a> DecodeContext<'a> {
                 ))
                 .map_err(|error| error.to_string())?;
                 mesh.tessellation.source_object = Some(association.clone());
+                mesh.tessellation.of = Meshed::Display {
+                    definition: crate::product::root_definition_id(),
+                };
                 annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
@@ -3612,6 +3616,12 @@ impl<'a> DecodeContext<'a> {
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
+        tessellation.of = Meshed::Definition {
+            definition: crate::product::root_definition_id(),
+            name: cadmpeg_core::text::NonBlankString::new(identity.name.clone()),
+            color: identity.own_color.map(color),
+            visible: identity.own_visible,
+        };
         self.session
             .append_model_mut()?
             .tessellations
@@ -4501,6 +4511,9 @@ fn stage_brep_carriers(
                         },
                     );
                     staged.links.push(mesh.tessellation.id.to_string());
+                    mesh.tessellation.of = Meshed::Display {
+                        definition: crate::product::root_definition_id(),
+                    };
                     staged
                         .draft
                         .model_mut()

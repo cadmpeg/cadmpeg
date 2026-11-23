@@ -44,8 +44,10 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TextureCoordinateAddressing};
-use cadmpeg_ir::topology::{Body, Sense};
+use cadmpeg_ir::tessellation::{
+    Meshed, Tessellation, TessellationMesh, TextureCoordinateAddressing,
+};
+use cadmpeg_ir::topology::{Body, Color, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -357,6 +359,9 @@ struct Writer<'ir> {
     positions: BTreeMap<&'ir str, usize>,
     /// The tessellations of each body, in arena order.
     body_tessellations: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>>,
+    /// The mesh bodies of each definition that states product structure, in
+    /// arena order.
+    definition_meshes: BTreeMap<&'ir ProductDefinitionId, Vec<&'ir Tessellation>>,
     /// Definitions that place a part, directly or through other definitions.
     above_parts: BTreeSet<ProductDefinitionId>,
     /// The members a package holds beside the root layer, or `None` for a
@@ -415,6 +420,22 @@ impl<'ir> Writer<'ir> {
                 .entry(key)
                 .or_insert_with(|| binding.appearance.to_string());
         }
+        let mut definition_meshes: BTreeMap<&'ir ProductDefinitionId, Vec<&'ir Tessellation>> =
+            BTreeMap::new();
+        let stated: BTreeSet<&ProductDefinitionId> =
+            cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
+                .map(|definition| &definition.id)
+                .collect();
+        for tessellation in &ir.model.tessellations {
+            if let Meshed::Definition { definition, .. } = &tessellation.of {
+                if stated.contains(definition) {
+                    definition_meshes
+                        .entry(definition)
+                        .or_default()
+                        .push(tessellation);
+                }
+            }
+        }
         let mut uses: BTreeMap<&ProductDefinitionId, usize> = BTreeMap::new();
         for occurrence in &ir.model.occurrences {
             *uses.entry(&occurrence.prototype).or_default() += 1;
@@ -426,7 +447,9 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|definition| {
                 uses.get(&definition.id).copied().unwrap_or_default() > 1
-                    && (!definition.bodies.is_empty() || !definition.occurrences.is_empty())
+                    && (!definition.bodies.is_empty()
+                        || !definition.occurrences.is_empty()
+                        || definition_meshes.contains_key(&definition.id))
             })
             .map(|definition| {
                 let name = names.unique(definition.source_name.as_deref().unwrap_or("Prototype"));
@@ -482,12 +505,13 @@ impl<'ir> Writer<'ir> {
             body_tessellations: {
                 let mut out: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>> = BTreeMap::new();
                 for tessellation in &ir.model.tessellations {
-                    if let Some(body) = &tessellation.body {
+                    if let Some(body) = tessellation.of.body() {
                         out.entry(body).or_default().push(tessellation);
                     }
                 }
                 out
             },
+            definition_meshes,
             tessellator: cadmpeg_tessellate::Tessellator::new(
                 ir,
                 cadmpeg_tessellate::Options::default(),
@@ -572,7 +596,7 @@ impl<'ir> Writer<'ir> {
                 .model
                 .tessellations
                 .iter()
-                .any(|tessellation| tessellation.body.is_none())
+                .any(|tessellation| self.is_free_mesh(tessellation))
             || !free_curves.is_empty()
             || !free_points.is_empty();
         let mut names = Names::default();
@@ -604,8 +628,8 @@ impl<'ir> Writer<'ir> {
                     }
                 }
                 for tessellation in &self.ir.model.tessellations {
-                    if tessellation.body.is_none() {
-                        let name = names.unique("Mesh");
+                    if self.is_free_mesh(tessellation) {
+                        let name = names.unique(&mesh_name(tessellation));
                         self.mesh(tessellation, &name, None, &root, &[]);
                     }
                 }
@@ -793,13 +817,26 @@ impl<'ir> Writer<'ir> {
                     .collect()
             })
             .unwrap_or_default();
+        let meshes: Vec<&'ir Tessellation> = if shared {
+            Vec::new()
+        } else {
+            self.definition_meshes(&occurrence.prototype)
+        };
         if root.is_none() && children.is_empty() && !shared {
-            if let [body] = bodies.as_slice() {
-                if named_as(body, occurrence.name.as_deref().unwrap_or("Occurrence")) {
-                    self.body(body, names, &placement, Some(&name));
+            match (bodies.as_slice(), meshes.as_slice()) {
+                ([body], []) => {
+                    if named_as(body, occurrence.name.as_deref().unwrap_or("Occurrence")) {
+                        self.body(body, names, &placement, Some(&name));
+                        self.stack.pop();
+                        return;
+                    }
+                }
+                ([], [mesh]) => {
+                    self.mesh(mesh, &name, None, &placement, &[]);
                     self.stack.pop();
                     return;
                 }
+                _ => {}
             }
         }
         if let Some(kind) = self.model_kind(occurrence) {
@@ -835,6 +872,7 @@ impl<'ir> Writer<'ir> {
         for body in bodies {
             self.body(body, &mut child_names, &Placement::default(), None);
         }
+        self.definition_mesh_prims(&meshes, &mut child_names);
         for child in children {
             self.occurrence(child, &mut child_names, None);
         }
@@ -859,8 +897,11 @@ impl<'ir> Writer<'ir> {
                 .find(|candidate| candidate.id == occurrence.prototype)
                 .is_some_and(|definition| {
                     !matches!(definition.storage, Storage::External(_))
-                        && match definition.bodies.as_slice() {
-                            [body] => self
+                        && match (
+                            definition.bodies.as_slice(),
+                            self.definition_meshes(&definition.id).as_slice(),
+                        ) {
+                            ([body], []) => self
                                 .index
                                 .bodies(body.as_str(), cadmpeg_ir::index::StandardIndex)
                                 .is_some_and(|body| {
@@ -869,9 +910,50 @@ impl<'ir> Writer<'ir> {
                                         occurrence.name.as_deref().unwrap_or("Occurrence"),
                                     )
                                 }),
+                            ([], [_]) => true,
                             _ => false,
                         }
                 })
+    }
+
+    /// The mesh bodies of `definition`, in arena order.
+    fn definition_meshes(&self, definition: &ProductDefinitionId) -> Vec<&'ir Tessellation> {
+        self.definition_meshes
+            .get(definition)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Whether `tessellation` is written at the top of the layer: it displays
+    /// no body, and is no mesh body of a definition that states product
+    /// structure.
+    fn is_free_mesh(&self, tessellation: &Tessellation) -> bool {
+        match &tessellation.of {
+            Meshed::Body { .. } => false,
+            Meshed::Definition { definition, .. } => {
+                !self.definition_meshes.contains_key(definition)
+            }
+            Meshed::Display { .. } | Meshed::Pmi { .. } | Meshed::Unresolved => true,
+        }
+    }
+
+    /// Writes each of `meshes`, mesh bodies of one definition, as a `Mesh` prim
+    /// in the definition's prim.
+    fn definition_mesh_prims(&mut self, meshes: &[&'ir Tessellation], names: &mut Names) {
+        for mesh in meshes {
+            let name = names.unique(&mesh_name(mesh));
+            let placement = Placement {
+                hidden: matches!(
+                    mesh.of,
+                    Meshed::Definition {
+                        visible: Some(false),
+                        ..
+                    }
+                ),
+                ..Placement::default()
+            };
+            self.mesh(mesh, &name, None, &placement, &[]);
+        }
     }
 
     /// The occurrences `definition` owns, in its order.
@@ -1285,8 +1367,8 @@ impl<'ir> Writer<'ir> {
         out.into_iter().map(|(_, record)| record).collect()
     }
 
-    fn color_primvars(&mut self, body: Option<&Body>) {
-        let Some(color) = body.and_then(|body| body.color) else {
+    fn color_primvars(&mut self, color: Option<Color>) {
+        let Some(color) = color else {
             return;
         };
         self.out.line(&format!(
@@ -1407,7 +1489,10 @@ impl<'ir> Writer<'ir> {
             self.out.line(")");
         }
         self.out.array("point3f[] points", &points, "");
-        self.color_primvars(body);
+        self.color_primvars(body.and_then(|body| body.color).or(match &tessellation.of {
+            Meshed::Definition { color, .. } => *color,
+            _ => None,
+        }));
         for set in tessellation.texture_coordinates() {
             let values: Vec<String> = set
                 .values
@@ -1604,7 +1689,7 @@ impl<'ir> Writer<'ir> {
                 self.trim_attributes(&loops);
             }
         }
-        self.color_primvars(Some(body));
+        self.color_primvars(body.color);
         self.out.close();
     }
 
@@ -1683,7 +1768,7 @@ impl<'ir> Writer<'ir> {
             self.out.array("double[] pointWeights", &weights, "");
         }
         self.out.array("point3f[] points", &points, "");
-        self.color_primvars(body);
+        self.color_primvars(body.and_then(|body| body.color));
         self.out.close();
     }
 
@@ -1820,14 +1905,20 @@ impl<'ir> Writer<'ir> {
                 })
                 .collect();
             let occurrences = self.owned_occurrences(definition);
+            let meshes = self.definition_meshes(&definition.id);
             let mut names = Names::default();
             // A body named other than its prototype keeps its name on its
             // own prim inside the prototype prim.
-            if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
-                if named_as(body, &name) {
+            match (bodies.as_slice(), occurrences.as_slice(), meshes.as_slice()) {
+                ([body], [], []) if named_as(body, &name) => {
                     self.body(body, &mut names, &Placement::default(), Some(&name));
                     continue;
                 }
+                ([], [], [mesh]) => {
+                    self.mesh(mesh, &name, None, &Placement::default(), &[]);
+                    continue;
+                }
+                _ => {}
             }
             self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
@@ -1836,6 +1927,7 @@ impl<'ir> Writer<'ir> {
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
+            self.definition_mesh_prims(&meshes, &mut names);
             for occurrence in occurrences {
                 self.occurrence(occurrence, &mut names, None);
             }
@@ -2125,6 +2217,16 @@ fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f3
 mod tests;
 
 /// The arena position of each region, shell, face, and edge of `ir`.
+/// The prim name of a mesh: a mesh body's name, else `Mesh`.
+fn mesh_name(tessellation: &Tessellation) -> String {
+    match &tessellation.of {
+        Meshed::Definition {
+            name: Some(name), ..
+        } => name.as_str().to_owned(),
+        _ => "Mesh".to_owned(),
+    }
+}
+
 /// Whether the prim named after `name` can carry `body` under its own
 /// name: the body has no name, or the same prim name.
 fn named_as(body: &Body, name: &str) -> bool {

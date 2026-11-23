@@ -905,7 +905,6 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             part_number: None,
             bom_properties: std::collections::BTreeMap::new(),
             sketches: Vec::new(),
-            tessellations: Vec::new(),
             native_ref: None,
             generated_from: None,
             storage: cadmpeg_ir::products::Storage::Embedded,

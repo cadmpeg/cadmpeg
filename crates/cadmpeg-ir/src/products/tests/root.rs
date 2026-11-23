@@ -19,26 +19,6 @@ fn body(id: &str) -> Body {
     }
 }
 
-fn mesh(id: &str, body: Option<BodyId>) -> crate::tessellation::Tessellation {
-    use crate::math::Point3;
-    use crate::tessellation::{Tessellation, TessellationMesh};
-
-    Tessellation::new(
-        id.try_into().unwrap(),
-        TessellationMesh::List {
-            vertices: vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(1.0, 0.0, 0.0),
-                Point3::new(0.0, 1.0, 0.0),
-            ],
-            triangles: vec![[0, 1, 2]],
-        },
-        Vec::new(),
-    )
-    .unwrap()
-    .with_body(body)
-}
-
 fn root_id() -> ProductDefinitionId {
     "test:model:product-definition#root".try_into().unwrap()
 }
@@ -50,13 +30,6 @@ fn a_geometry_document_gains_a_root_that_owns_its_top() {
     ir.geometry
         .bodies
         .extend([body("test:model:body#a"), body("test:model:body#b")]);
-    ir.model.tessellations.extend([
-        mesh("test:model:tessellation#mesh", None),
-        mesh(
-            "test:model:tessellation#shaded",
-            Some("test:model:body#a".try_into().unwrap()),
-        ),
-    ]);
     let root = ir
         .state_root_definition(&ctx, root_id(), ExternalDocument::document_id("uid"))
         .unwrap()
@@ -65,13 +38,6 @@ fn a_geometry_document_gains_a_root_that_owns_its_top() {
     assert_eq!(
         root.bodies.iter().map(BodyId::as_str).collect::<Vec<_>>(),
         ["test:model:body#a", "test:model:body#b"]
-    );
-    assert_eq!(
-        root.tessellations
-            .iter()
-            .map(crate::tessellation::TessellationId::as_str)
-            .collect::<Vec<_>>(),
-        ["test:model:tessellation#mesh"]
     );
     assert_eq!(
         root.storage,

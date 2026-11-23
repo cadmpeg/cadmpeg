@@ -215,7 +215,6 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "cadir:model:product#group"
                 .try_into()
                 .expect("valid identity"),

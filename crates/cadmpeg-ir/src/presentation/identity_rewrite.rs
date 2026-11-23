@@ -20,6 +20,7 @@ rewrite_enum!(PresentationItem, []; {
     Occurrence {occurrence},
     Pmi {annotation},
     Tessellation {tessellation},
+    PointCloud {point_cloud},
     Source {source_id},
 });
 rewrite_record!(PresentationLayer, []; {id, name, description, visible, items});

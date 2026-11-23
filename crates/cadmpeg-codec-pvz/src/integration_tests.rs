@@ -437,7 +437,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let meshes: Vec<_> = model
             .tessellations
             .iter()
-            .filter(|mesh| mesh.body.as_ref() == Some(&cube.id))
+            .filter(|mesh| mesh.of.body() == Some(&cube.id))
             .collect();
         assert_eq!(meshes.len(), 1);
         assert_eq!(meshes[0].triangle_count(), 12);
@@ -509,7 +509,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let meshes: Vec<_> = model
         .tessellations
         .iter()
-        .map(|mesh| mesh.body.clone())
+        .map(|mesh| mesh.of.body().cloned())
         .collect();
     assert_eq!(meshes, [Some(solid.id.clone())]);
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();

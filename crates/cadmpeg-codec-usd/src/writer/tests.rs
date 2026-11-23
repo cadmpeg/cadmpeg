@@ -195,7 +195,7 @@ fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
         panic!("one mesh\n{text}");
     };
     assert_eq!(mesh.triangles().len(), 12);
-    assert_eq!(mesh.body.as_ref(), Some(&geometry.bodies[0].id));
+    assert_eq!(mesh.of.body(), Some(&geometry.bodies[0].id));
 }
 
 #[test]

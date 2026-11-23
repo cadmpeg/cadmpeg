@@ -733,9 +733,9 @@ fn persistent_surface_identity_binds_one_face_and_body() {
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -764,7 +764,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
         &std::collections::HashSet::default()
     )
     .is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
 
     let mut ir = model_with_body();
     let first = add_square_face(&mut ir, "first-mesh", 0.0);
@@ -794,7 +794,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
         &std::collections::HashSet::default()
     )
     .is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
 }
 
 #[test]
@@ -832,7 +832,7 @@ fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
         5
     );
     for (mesh, expected) in ir.model.tessellations.iter().zip(&faces) {
-        assert_eq!(mesh.faces.as_slice(), std::slice::from_ref(expected));
+        assert_eq!(mesh.of.faces(), std::slice::from_ref(expected));
     }
 }
 
@@ -863,7 +863,7 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![second]);
 }
 
 fn key_binding(mesh: &str, key: u32) -> FaceKeyBinding {
@@ -893,9 +893,9 @@ fn face_key_binds_one_table_to_one_face_and_body() {
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![second]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -917,7 +917,7 @@ fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
         &std::collections::HashSet::default(),
     )
     .is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
 
     ir.model
         .tessellations
@@ -938,7 +938,7 @@ fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
         .model
         .tessellations
         .iter()
-        .all(|mesh| mesh.faces.is_empty()));
+        .all(|mesh| mesh.of.faces().is_empty()));
 }
 
 /// Put `active` on the body of [`model_with_body`] and `stored` on a second
@@ -986,9 +986,9 @@ fn a_face_key_repeated_on_a_stored_body_binds_the_active_face() {
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![active]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![active]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -1020,9 +1020,9 @@ fn a_persistent_identity_repeated_on_a_stored_body_binds_the_active_face() {
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![active]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![active]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -1080,15 +1080,15 @@ fn face_key_attribute_binds_a_display_table_off_its_face_support() {
     };
 
     let unkeyed = decode(&triangle_body(), &keyed_display);
-    assert!(unkeyed.ir().model.tessellations[0].faces.is_empty());
+    assert!(unkeyed.ir().model.tessellations[0].of.faces().is_empty());
 
     let mut body = triangle_body();
     body.extend(face_key_attribute(10, key));
     let keyed = decode(&body, &keyed_display);
     let face = keyed.ir().geometry.faces[0].id.clone();
     assert!(face.as_str().ends_with("face#10"));
-    assert_eq!(keyed.ir().model.tessellations[0].faces, vec![face]);
-    assert!(keyed.ir().model.tessellations[0].body.is_some());
+    assert_eq!(keyed.ir().model.tessellations[0].of.faces(), vec![face]);
+    assert!(keyed.ir().model.tessellations[0].of.body().is_some());
 }
 
 #[test]
@@ -1118,9 +1118,9 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![second]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 
@@ -1130,10 +1130,9 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .find(|face| face.id == first)
         .unwrap()
         .loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-    ir.model.tessellations[0].body = None;
-    ir.model.tessellations[0].faces.clear();
+    ir.model.tessellations[0].of = cadmpeg_ir::tessellation::Meshed::Unresolved;
     assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
 }
 
 #[test]
@@ -1165,9 +1164,9 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#lower-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![lower]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![lower]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -1207,7 +1206,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#chordal-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert!(ir.model.tessellations[0]
         .chordal_deflection()
         .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
@@ -1248,7 +1247,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#inconsistent-normals-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert!(ir.model.tessellations[0]
         .chordal_deflection()
         .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
@@ -1285,8 +1284,8 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     );
 
     assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
-    assert!(ir.model.tessellations[0].body.is_none());
-    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].of.body().is_none());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
 }
 
 #[test]
@@ -1368,9 +1367,9 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#nurbs-exact-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
     assert!(ir.model.tessellations[0].chordal_deflection().is_none());
@@ -1411,8 +1410,8 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
     );
 
     assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
-    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
+    assert!(ir.model.tessellations[0].of.body().is_none());
     assert!(ir.model.tessellations[0].chordal_deflection().is_none());
 }
 
@@ -1465,8 +1464,8 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
     );
 
     assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
-    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
+    assert!(ir.model.tessellations[0].of.body().is_none());
 }
 
 #[test]
@@ -1527,8 +1526,8 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     );
 
     assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
-    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
+    assert!(ir.model.tessellations[0].of.body().is_none());
 }
 
 #[test]
@@ -1725,11 +1724,11 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir().model.tessellations[0].vertex_normals().len(), 3);
     assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
-        result.ir().model.tessellations[0].faces,
+        result.ir().model.tessellations[0].of.faces(),
         [result.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
-        result.ir().model.tessellations[0].body.as_ref(),
+        result.ir().model.tessellations[0].of.body(),
         Some(&result.ir().geometry.bodies[0].id)
     );
     assert!(!result.report().losses.iter().any(|loss| {

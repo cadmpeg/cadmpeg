@@ -1694,7 +1694,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if mesh.body.is_some() || !mesh.strip_lengths().is_empty() {
+    if mesh.of.body().is_some() || !mesh.strip_lengths().is_empty() {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} uses body binding or strips not yet writable",
             mesh.id

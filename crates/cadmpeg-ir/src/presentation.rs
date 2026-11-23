@@ -253,8 +253,8 @@ pub struct ViewPresentation {
 // Named presentation layers and their model-item membership.
 
 use crate::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointId, ProductDefinitionId,
-    SurfaceId, VertexId,
+    BodyId, CurveId, EdgeId, FaceId, LayerId, OccurrenceId, PmiId, PointCloudId, PointId,
+    ProductDefinitionId, SurfaceId, VertexId,
 };
 
 /// A model or presentation object assigned to a layer.
@@ -317,6 +317,11 @@ pub enum PresentationItem {
     Tessellation {
         /// Assigned tessellation identity.
         tessellation: String,
+    },
+    /// Point cloud.
+    PointCloud {
+        /// Assigned point cloud.
+        point_cloud: PointCloudId,
     },
     /// Source item whose neutral target type is not modeled.
     Source {

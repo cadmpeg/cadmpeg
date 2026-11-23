@@ -61,7 +61,6 @@ fn placed_point_product() -> CadIr {
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
 
-        tessellations: Vec::new(),
         id: part.clone(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("Pin".into()),

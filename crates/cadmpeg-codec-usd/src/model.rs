@@ -33,8 +33,8 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::tessellation::{
-    ShadedTriangle, ShadedVertex, Tessellation, TessellationMesh, TessellationTriangleGroup,
-    TextureCoordinateAddressing, TextureCoordinates,
+    Meshed, ShadedTriangle, ShadedVertex, Tessellation, TessellationMesh,
+    TessellationTriangleGroup, TextureCoordinateAddressing, TextureCoordinates,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Color, Edge, EdgeCarrier, Face, FaceLoops, Point, Region, Sense, Shell, Vertex,
@@ -294,6 +294,8 @@ struct Builder<'s, 'l, 'c, 'a> {
     physical_materials: BTreeSet<String>,
     /// Definitions that own a body.
     bodied: BTreeSet<String>,
+    /// Definitions whose geometry is a mesh.
+    meshed: BTreeSet<String>,
     /// Joint prims, resolved after every occurrence exists.
     pending_joints: Vec<physics::PendingJoint>,
     pending_physx: Vec<physx::PendingSettings>,
@@ -329,6 +331,7 @@ pub(crate) fn build<'a>(
         appearances: BTreeSet::new(),
         physical_materials: BTreeSet::new(),
         bodied: BTreeSet::new(),
+        meshed: BTreeSet::new(),
         pending_joints: Vec::new(),
         pending_physx: Vec::new(),
         admitted,
@@ -570,8 +573,14 @@ impl Builder<'_, '_, '_, '_> {
             .or_default()
             .push(id);
         self.admit("usd_occurrence")?;
-        let bodied = self.bodied.contains(&definition);
-        self.physics_apis(prim, &definition, bodied)?;
+        let owner = if self.bodied.contains(&definition) {
+            physics::PhysicsOwner::Body
+        } else if self.meshed.contains(&definition) {
+            physics::PhysicsOwner::Mesh
+        } else {
+            physics::PhysicsOwner::Occurrence
+        };
+        self.physics_apis(prim, &definition, owner)?;
         // A definition another instance already wrote states its prototype's
         // descendants once, in it.
         if !first {
@@ -705,7 +714,6 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies,
             sketches: Vec::new(),
-            tessellations: Vec::new(),
             native_ref: Some(prim.path.clone()),
             generated_from: None,
             storage: cadmpeg_ir::products::Storage::Embedded,
@@ -868,12 +876,17 @@ impl Builder<'_, '_, '_, '_> {
                 return Ok(None);
             }
         };
-        let body = crate::ids::body(key);
-        self.body(prim, key, BodyKind::General);
+        let color = self.display_color(prim);
         self.ir
             .model
             .tessellations
-            .push(tessellation.with_body(Some(body.clone())));
+            .push(tessellation.with_of(Meshed::Definition {
+                definition: crate::ids::definition(key),
+                name: None,
+                color,
+                visible: None,
+            }));
+        self.meshed.insert(key.to_owned());
         let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
         self.material(prim, key, target)?;
         for subset in &mesh.subsets {
@@ -881,7 +894,7 @@ impl Builder<'_, '_, '_, '_> {
         }
         self.transferred = true;
         self.admit("usd_mesh")?;
-        Ok(Some(body))
+        Ok(None)
     }
 
     fn tessellation(&self, key: &str, mesh: &MeshData) -> Result<Tessellation, String> {
