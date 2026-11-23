@@ -521,12 +521,17 @@ pub(crate) fn project(
             }
             carrier = EdgeCarrier::Curve(curve_id(stream, curve_index));
         }
+        let ends = match endpoints {
+            Some([start, end]) => Some(EdgeEnds::new(
+                vertex_id(stream, start),
+                vertex_id(stream, end),
+            )),
+            None => ring_vertex(ctx, &mut ir, stream, edge, &carrier)?,
+        };
         ir.geometry.edges.push(Edge {
             id: edge_id(stream, edge),
             carrier,
-            ends: endpoints.map(|[start, end]| {
-                EdgeEnds::new(vertex_id(stream, start), vertex_id(stream, end))
-            }),
+            ends,
             tolerance: tolerance(node, losses),
             native_ref: None,
         });
@@ -536,6 +541,58 @@ pub(crate) fn project(
         ir.tolerances.linear = linear;
     }
     Ok(ir)
+}
+
+/// The vertex that bounds a vertexless ring edge. Parasolid states a closed
+/// edge on a periodic carrier without a vertex; the neutral topology bounds it
+/// at the carrier's origin parameter, one vertex serving as both ends.
+fn ring_vertex(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    stream: u32,
+    edge: u32,
+    carrier: &EdgeCarrier,
+) -> Result<Option<EdgeEnds>, CodecError> {
+    let Some(curve) = carrier.curve() else {
+        return Ok(None);
+    };
+    let Some(geometry) = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|value| &value.id == curve)
+        .and_then(|value| value.geometry.solved())
+    else {
+        return Ok(None);
+    };
+    let parameter = match geometry {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => 0.0,
+        SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
+            match cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) {
+                Some(domain) => domain.endpoints()[0],
+                None => return Ok(None),
+            }
+        }
+        _ => return Ok(None),
+    };
+    let Some(position) = cadmpeg_ir::eval::finite_or_refusal(
+        cadmpeg_ir::eval::decode::curve_point_solved(ctx, geometry, parameter),
+    )?
+    else {
+        return Ok(None);
+    };
+    let point = point_id(stream, edge);
+    let vertex = vertex_id(stream, edge);
+    ir.geometry
+        .points
+        .push(Point::new(point.clone(), position, None));
+    ir.geometry.vertices.push(Vertex {
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+        native_ref: None,
+    });
+    Ok(Some(EdgeEnds::new(vertex.clone(), vertex)))
 }
 
 fn trim_edges(
