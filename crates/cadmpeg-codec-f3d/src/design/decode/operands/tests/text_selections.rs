@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::operands::bind_sketch_profiles;
+use crate::design::decode::operands::sketch_profiles::bind_sketch_profiles;
 use crate::design::sketch_text_extrude::SketchTextExtrudeCandidate;
 use crate::layout::sketch_profile_text_selection as text_selection;
 use crate::test_support::indexed_header;

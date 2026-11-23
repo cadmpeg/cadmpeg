@@ -12,6 +12,7 @@ use crate::history::configuration::{
     align_configuration_parameter_kinds, configuration_lane_assignments,
     project_configuration_design_states, project_configuration_sketch_states,
 };
+use crate::history::extrude_direction::settle_projected_configurations;
 use crate::history::hash::{
     configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
     native_configuration_hash,
@@ -212,6 +213,7 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));
     }
+    settle_projected_configurations(&mut current_projection);
     align_configuration_parameter_kinds(&mut current_projection);
     let mut current_annotations = annotations.clone();
     let projection_bytes = native
@@ -326,6 +328,7 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design states exceed the local projection work cap".into(),
         ));
     }
+    settle_projected_configurations(&mut projected);
     align_configuration_parameter_kinds(&mut projected);
     let mut projected_annotations = annotations.clone();
     let projection_bytes = native

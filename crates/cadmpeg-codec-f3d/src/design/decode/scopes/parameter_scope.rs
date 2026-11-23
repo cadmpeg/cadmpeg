@@ -70,7 +70,7 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::canvas::typed_canvas_reference;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::design::design_feature_family;
@@ -796,13 +796,25 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_rectangular_pattern_construction(
-                    bytes,
-                    &records,
-                    &scope,
-                    parameter_owners,
-                    &stream_types,
+                let construction = rectangular_construction_or_native(
+                    exact_rectangular_pattern_construction(
+                        bytes,
+                        &records,
+                        &scope,
+                        parameter_owners,
+                        &stream_types,
+                    ),
+                    &scope.id,
+                    &mut losses,
                 )?;
+                if let Some(construction) = &construction {
+                    losses.extend(super::pattern::linked_direction_losses(
+                        bytes,
+                        &records,
+                        &scope.id,
+                        construction.directions(),
+                    ));
+                }
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
                 {
@@ -2877,6 +2889,28 @@ fn extrude_extent_native_loss(
             scope.id
         ))
     })
+}
+
+fn rectangular_construction_or_native(
+    construction: Result<
+        Option<crate::records::feature::patterns::DesignRectangularPatternConstruction>,
+        CodecError,
+    >,
+    scope: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<
+    Option<crate::records::feature::patterns::DesignRectangularPatternConstruction>,
+    CodecError,
+> {
+    match construction {
+        Err(CodecError::Malformed(reason)) => {
+            losses.push(crate::loss::F3dLossCode::FeatureRectangularPatternConstructionNative.note(format!(
+                "scope {scope} retains its rectangular-pattern construction in its native record: {reason}"
+            )));
+            Ok(None)
+        }
+        result => result,
+    }
 }
 
 #[cfg(test)]

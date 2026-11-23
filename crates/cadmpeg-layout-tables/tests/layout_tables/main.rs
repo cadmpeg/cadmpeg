@@ -59,6 +59,7 @@ const EXPECTED_FORMATS: &[&str] = &[
     "catia",
     "creo",
     "creo_view_pvz",
+    "edrawings",
     "f3d",
     "freecad",
     "iges",

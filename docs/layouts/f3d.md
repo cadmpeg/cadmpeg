@@ -5600,13 +5600,38 @@ Offsets are relative to the curve record's primary indexed header. The record en
 | 29 | 4 | `curve_count` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
 | 33 | 4 | `entry_kind` | `u32` | little | spec | it stores one entry of kind `3` with the primary identity of the circle · value `3` |
 | 37 | 8 | `primary_identity` | `u64` | little | spec | it stores one entry of kind `3` with the primary identity of the circle |
-| 45 | 8 | `secondary_identity` | `u64` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `0` |
-| 53 | 4 | `sense` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
-| 57 | 4 | `first_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
-| 61 | 4 | `second_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
-| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 53 | 4 | `sense` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 57 | 4 | `first_operand` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | the secondary identity of the loop entry, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 | 73 | 4 | `first_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
 | 77 | 4 | `second_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+
+## `sketch_extrude_loop_curve_record`
+
+Spec §Records of a sketch-and-extrude design · layout: byte offsets · size: 97 B
+
+Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The secondary identity is the one the loop entry stores. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 25 | 4 | `zero_word` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `0` |
+| 29 | 4 | `curve_count` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 33 | 4 | `entry_kind` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes |
+| 53 | 4 | `sense` | `u32` | little | spec | the sense is `1` when the side face comes from an entry of the exterior loop, and `0xffffffff` when it comes from an entry of a hole loop |
+| 57 | 4 | `first_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | the secondary identity of the loop entry, the sense, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 73 | 4 | `first_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end · value `1` |
+| 77 | 8 | `first_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end |
+| 85 | 4 | `second_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end · value `1` |
+| 89 | 8 | `second_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end |
 
 ## `early_distance_extrude_absent_prefix`
 
@@ -12378,7 +12403,7 @@ Parsed by:
 | 25 | 24 | `origin` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 49 | 24 | `displacement` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The compact spacing direction form is a 195-byte frame. |
-| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. · value `7` |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 93 | 4 | `selection_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 108 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
@@ -15747,6 +15772,73 @@ Offsets are relative to the collection's indexed header. The `k` container refer
 | 43 | 27 | `property_type` | `bytes[27]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]` |
 | 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 | 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+
+## `rectangular_pattern_linked_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 216 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 108 | 11 | `selection_link_one` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 119 | 11 | `selection_link_two` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 130 | 4 | `auxiliary_count` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 134 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 145 | 8 | `role` | `u64` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 153 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 163 | 4 | `opaque_index` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 167 | 8 | `opaque_scalar` | `f64` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 175 | 4 | `opaque_index_repeat` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 179 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 190 | 1 | `separator_flag` | `u8` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 191 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 193 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 204 | 1 | `scope_separator` | `u8` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 205 | 11 | `scope_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+
+## `rectangular_pattern_linked_extent_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 108 | 11 | `selection_link_one` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 119 | 11 | `selection_link_two` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 130 | 4 | `auxiliary_count` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 134 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 145 | 8 | `role` | `u64` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 153 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 163 | 4 | `opaque_index` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 167 | 8 | `opaque_scalar` | `f64` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 175 | 4 | `opaque_index_repeat` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 179 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 190 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 192 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 203 | 1 | `scope_separator` | `u8` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 204 | 11 | `scope_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
 
 ## `local_component_occurrence_attributed_source_matrix`
 

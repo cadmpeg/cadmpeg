@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::operands::assign_extrude_face_roles;
+use crate::design::decode::operands::extrude_roles::assign_extrude_face_roles;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::face_resolve::resolved_body_recipe_shape;
