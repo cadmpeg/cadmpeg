@@ -115,79 +115,121 @@ fn compact_line_reference_rejects_conflicting_layout_candidates() {
     assert!(compact_line_reference_directions_test(&payload, 0, payload.len(), &[]).is_empty());
 }
 
+const SOURCE: u32 = word(0);
+
+const fn word(index: u32) -> u32 {
+    60_013 + 1_009 * index
+}
+
+const fn token(index: u16) -> u16 {
+    0xa011 + 0x0102 * index
+}
+
+fn length(index: usize) -> f64 {
+    const PRIMES: [u32; 16] = [
+        11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
+    ];
+    f64::from(PRIMES[index]) / 7000.0
+}
+
+fn mm(index: usize) -> f64 {
+    length(index) * 1000.0
+}
+
+fn write_values(payload: &mut [u8], frame: usize, values: &[f64]) {
+    for (index, value) in values.iter().enumerate() {
+        let offset = frame + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn write_source_cell(payload: &mut [u8], source: usize, identity: u32, token: u16) {
+    payload[source..source + 4].copy_from_slice(&SOURCE.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&identity.to_le_bytes());
+    payload[source + 8..source + 10].copy_from_slice(&token.to_le_bytes());
+    payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+}
+
 #[test]
 fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
     let mut payload = vec![0; 240];
     let handles = 96;
-    payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x2c6e_91a7u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x8a53u16.to_le_bytes());
-    payload[76..80].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, 64, word(1), token(0));
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.0437, 0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 16 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    payload[handles + 12..handles + 16].copy_from_slice(&word(2).to_le_bytes());
+    write_values(
+        &mut payload,
+        handles + 16,
+        &[length(0), length(1), -length(2), length(3), 0.0, 1.0, 0.0],
+    );
     payload[handles + 73..handles + 77].copy_from_slice(CLASS_MARKER);
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(12.0, -34.0, 56.0),
+            SOURCE,
+            Point3::new(mm(1), -mm(2), mm(3)),
             Vector3::new(0.0, 1.0, 0.0)
         ))
     );
 
     payload[handles + 8..handles + 12].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 12..handles + 16].copy_from_slice(&[0; 4]);
-    payload[handles + 16..handles + 20].copy_from_slice(&7000u32.to_le_bytes());
+    payload[handles + 16..handles + 20].copy_from_slice(&word(2).to_le_bytes());
     payload[handles + 73..handles + 77].copy_from_slice(&[0; 4]);
     // Nine values: two zero values and a scalar, then the axis line. The
-    // first triple (0, 0, 0.025) is not a point on the axis.
-    for (index, value) in [0.0, 0.0, 0.025, 0.012, -0.034, 0.056, 0.0, 0.0, -1.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 20 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    // first triple (0, 0, scalar) is not a point on the axis.
+    write_values(
+        &mut payload,
+        handles + 20,
+        &[
+            0.0,
+            0.0,
+            length(4),
+            length(1),
+            -length(2),
+            length(3),
+            0.0,
+            0.0,
+            -1.0,
+        ],
+    );
     payload[handles + 93..handles + 97].copy_from_slice(CLASS_MARKER);
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(12.0, -34.0, 56.0),
+            SOURCE,
+            Point3::new(mm(1), -mm(2), mm(3)),
             Vector3::new(0.0, 0.0, -1.0)
         ))
     );
 
     payload.fill(0);
-    payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x2c6e_91a7u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x8a53u16.to_le_bytes());
-    payload[76..80].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, 64, word(1), token(0));
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
+    payload[handles + 12..handles + 16].copy_from_slice(&word(2).to_le_bytes());
     // Eight values: one zero value and a scalar, then the axis line.
-    for (index, value) in [0.0, 0.025, 0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 16 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    write_values(
+        &mut payload,
+        handles + 16,
+        &[
+            0.0,
+            length(4),
+            length(1),
+            -length(2),
+            length(3),
+            0.0,
+            1.0,
+            0.0,
+        ],
+    );
     payload[handles + 81..handles + 85].copy_from_slice(CLASS_MARKER);
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(12.0, -34.0, 56.0),
+            SOURCE,
+            Point3::new(mm(1), -mm(2), mm(3)),
             Vector3::new(0.0, 1.0, 0.0)
         ))
     );
@@ -197,27 +239,22 @@ fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
 fn revolution_line_reference_inputs_decode_repeated_instance_frame() {
     let mut payload = vec![0; 240];
     let handles = 96;
-    payload[64..68].copy_from_slice(&42u32.to_le_bytes());
-    payload[68..72].copy_from_slice(&0x7d14_3b08u32.to_le_bytes());
-    payload[72..74].copy_from_slice(&0x8b61u16.to_le_bytes());
-    payload[76..80].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, 64, word(3), token(1));
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-    payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
-    for (index, value) in [0.0291, 0.012, -0.034, 0.056, 0.0, 0.0, 1.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 24 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
-    payload[handles + 81..handles + 83].copy_from_slice(&0x8c42u16.to_le_bytes());
+    payload[handles + 12..handles + 16].copy_from_slice(&word(4).to_le_bytes());
+    write_values(
+        &mut payload,
+        handles + 24,
+        &[length(5), length(1), -length(2), length(3), 0.0, 0.0, 1.0],
+    );
+    payload[handles + 81..handles + 83].copy_from_slice(&token(2).to_le_bytes());
 
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(12.0, -34.0, 56.0),
+            SOURCE,
+            Point3::new(mm(1), -mm(2), mm(3)),
             Vector3::new(0.0, 0.0, 1.0)
         ))
     );
@@ -228,31 +265,26 @@ fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
     let mut payload = vec![0; 240];
     let handles = 108;
     let source = handles - 44;
-    payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x1f8a_5d36u32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x8d27u16.to_le_bytes());
-    payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, source, word(5), token(3));
     payload[source + 16..source + 20].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
-    payload[source + 28..source + 32].copy_from_slice(&122u32.to_le_bytes());
+    payload[source + 28..source + 32].copy_from_slice(&word(6).to_le_bytes());
     payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
 
     // Seven values, the scalar and the axis line whose last value is zero,
     // end one zero byte before the class declaration.
-    for (index, value) in [0.0815, 0.0, 0.0473, 0.0, 0.0, -1.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 24 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    write_values(
+        &mut payload,
+        handles + 24,
+        &[length(6), 0.0, length(7), 0.0, 0.0, -1.0, 0.0],
+    );
     payload[handles + 81..handles + 85].copy_from_slice(CLASS_MARKER);
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(0.0, 0.0473 * 1000.0, 0.0),
+            SOURCE,
+            Point3::new(0.0, mm(7), 0.0),
             Vector3::new(0.0, -1.0, 0.0)
         ))
     );
@@ -264,50 +296,52 @@ fn revolution_line_reference_inputs_decode_declared_three_handle_layouts() {
         let mut payload = vec![0; 320];
         let handles = 128;
         let source = handles - 48;
-        payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-        payload[source + 4..source + 8].copy_from_slice(&0x6b29_e4c1u32.to_le_bytes());
-        payload[source + 8..source + 10].copy_from_slice(&0x8e15u16.to_le_bytes());
-        payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+        write_source_cell(&mut payload, source, word(7), token(4));
         payload[source + 20..source + 24]
-            .copy_from_slice(&(if addressed { 4u32 } else { 10 }).to_le_bytes());
+            .copy_from_slice(&(if addressed { word(8) } else { word(9) }).to_le_bytes());
         payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
-        payload[source + 32..source + 36].copy_from_slice(&274u32.to_le_bytes());
+        payload[source + 32..source + 36].copy_from_slice(&word(10).to_le_bytes());
         for offset in [handles, handles + 4, handles + 8] {
             payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         }
         let handles_end = handles + 12;
         let (frame, values, marker) = if addressed {
-            payload[handles_end + 4..handles_end + 8].copy_from_slice(&9000u32.to_le_bytes());
+            payload[handles_end + 4..handles_end + 8].copy_from_slice(&word(11).to_le_bytes());
             payload[handles_end + 20..handles_end + 24].copy_from_slice(&[0xff; 4]);
             (
                 handles_end + 24,
-                vec![0.0, 0.015, 0.0, 0.021, 0.0, 0.0, 0.0, 1.0],
+                vec![0.0, length(8), 0.0, length(9), 0.0, 0.0, 0.0, 1.0],
                 handles_end + 89,
             )
         } else {
             (
                 handles_end + 4,
-                vec![0.0, 0.0, 0.0, 0.052, 0.0, 0.0, 0.0, 0.0, 1.0],
+                vec![0.0, 0.0, 0.0, length(10), 0.0, 0.0, 0.0, 0.0, 1.0],
                 handles_end + 85,
             )
         };
-        for (index, value) in values.into_iter().enumerate() {
-            let offset = frame + index * 8;
-            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-        }
+        write_values(&mut payload, frame, &values);
         payload[marker..marker + 4].copy_from_slice(CLASS_MARKER);
         payload
     };
 
     assert_eq!(
-        revolution_line_reference_inputs(&make_payload(true), 32, 320, &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 21.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        revolution_line_reference_inputs(&make_payload(true), 32, 320, &HashSet::from([SOURCE])),
+        Some((
+            SOURCE,
+            Point3::new(0.0, mm(9), 0.0),
+            Vector3::new(0.0, 0.0, 1.0)
+        ))
     );
     assert_eq!(
-        revolution_line_reference_inputs(&make_payload(false), 32, 320, &HashSet::from([42])),
+        revolution_line_reference_inputs(&make_payload(false), 32, 320, &HashSet::from([SOURCE])),
         // The record holds ten values: the class declaration follows one zero
         // byte after a tenth zero value, so the axis line is the last six.
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)))
+        Some((
+            SOURCE,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0)
+        ))
     );
 }
 
@@ -316,64 +350,63 @@ fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
     let mut declared = vec![0; 280];
     let handles = 112;
     let source = handles - 48;
-    declared[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    declared[source + 4..source + 8].copy_from_slice(&0x35d7_0a9eu32.to_le_bytes());
-    declared[source + 8..source + 10].copy_from_slice(&0x8f3au16.to_le_bytes());
-    declared[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
-    declared[source + 20..source + 24].copy_from_slice(&2u32.to_le_bytes());
+    write_source_cell(&mut declared, source, word(12), token(5));
+    declared[source + 20..source + 24].copy_from_slice(&word(13).to_le_bytes());
     declared[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
-    declared[source + 32..source + 36].copy_from_slice(&308u32.to_le_bytes());
+    declared[source + 32..source + 36].copy_from_slice(&word(14).to_le_bytes());
     for offset in [handles, handles + 4] {
         declared[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    for (index, value) in [0.0, 0.0, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 8 + index * 8;
-        declared[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    write_values(
+        &mut declared,
+        handles + 8,
+        &[0.0, 0.0, 0.0, length(11), 0.0, 0.0, 0.0, 1.0],
+    );
     declared[handles + 89..handles + 93].copy_from_slice(CLASS_MARKER);
     assert_eq!(
-        revolution_line_reference_inputs(&declared, 32, declared.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&declared, 32, declared.len(), &HashSet::from([SOURCE])),
         // Ten values end one zero byte before the class declaration: two
         // zero values follow the eight written here.
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)))
+        Some((
+            SOURCE,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0)
+        ))
     );
     let mut tokened = declared.clone();
-    tokened[handles + 89..handles + 93].copy_from_slice(&[0x5e, 0x8d, 0x01, 0x00]);
+    tokened[handles + 89..handles + 91].copy_from_slice(&token(6).to_le_bytes());
+    tokened[handles + 91..handles + 93].copy_from_slice(&[0x01, 0x00]);
     assert_eq!(
-        revolution_line_reference_inputs(&tokened, 32, tokened.len(), &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)))
+        revolution_line_reference_inputs(&tokened, 32, tokened.len(), &HashSet::from([SOURCE])),
+        Some((
+            SOURCE,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0)
+        ))
     );
 
     let mut nested = vec![0; 300];
     let handles = 132;
     let source = handles - 44;
-    nested[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    nested[source + 4..source + 8].copy_from_slice(&0x58c3_17f2u32.to_le_bytes());
-    nested[source + 8..source + 10].copy_from_slice(&0x8964u16.to_le_bytes());
-    nested[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
-    nested[source + 16..source + 20].copy_from_slice(&7u32.to_le_bytes());
+    write_source_cell(&mut nested, source, word(15), token(7));
+    nested[source + 16..source + 20].copy_from_slice(&word(16).to_le_bytes());
     nested[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
-    nested[source + 28..source + 32].copy_from_slice(&126u32.to_le_bytes());
+    nested[source + 28..source + 32].copy_from_slice(&word(17).to_le_bytes());
     for offset in [handles, handles + 4] {
         nested[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    nested[handles + 12..handles + 16].copy_from_slice(&3800u32.to_le_bytes());
-    for (index, value) in [0.056, -0.051, -0.008, 0.0, 1.0, 0.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 24 + index * 8;
-        nested[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
-    nested[handles + 85..handles + 89].copy_from_slice(&103u32.to_le_bytes());
+    nested[handles + 12..handles + 16].copy_from_slice(&word(18).to_le_bytes());
+    write_values(
+        &mut nested,
+        handles + 24,
+        &[length(12), -length(13), -length(14), 0.0, 1.0, 0.0, 0.0],
+    );
+    nested[handles + 85] = word(19).to_le_bytes()[0];
     assert_eq!(
-        revolution_line_reference_inputs(&nested, 32, nested.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&nested, 32, nested.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(-51.0, -8.0, 0.0),
+            SOURCE,
+            Point3::new(-mm(13), -mm(14), 0.0),
             Vector3::new(1.0, 0.0, 0.0)
         ))
     );
@@ -384,29 +417,28 @@ fn revolution_line_reference_inputs_decode_declared_post_handle_address() {
     let mut payload = vec![0; 300];
     let handles = 128;
     let source = handles - 48;
-    payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x0e4b_a6d5u32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x8a7du16.to_le_bytes());
-    payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, source, word(20), token(8));
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
-    payload[source + 32..source + 36].copy_from_slice(&151u32.to_le_bytes());
+    payload[source + 32..source + 36].copy_from_slice(&word(21).to_le_bytes());
     for offset in [handles, handles + 4, handles + 8] {
         payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    payload[handles + 16..handles + 20].copy_from_slice(&8000u32.to_le_bytes());
-    for (index, value) in [0.0, 0.0, 0.006, 0.006, 0.0, 0.0, -1.0, 0.0, 0.0]
-        .into_iter()
-        .enumerate()
-    {
-        let offset = handles + 24 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-    }
+    payload[handles + 16..handles + 20].copy_from_slice(&word(22).to_le_bytes());
+    write_values(
+        &mut payload,
+        handles + 24,
+        &[0.0, 0.0, length(15), length(10), 0.0, 0.0, -1.0, 0.0, 0.0],
+    );
     payload[handles + 97..handles + 101].copy_from_slice(CLASS_MARKER);
 
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
-        Some((42, Point3::new(6.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)))
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
+        Some((
+            SOURCE,
+            Point3::new(mm(10), 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0)
+        ))
     );
 }
 
@@ -417,21 +449,15 @@ fn two_handle_axis_payload(values: &[f64]) -> Vec<u8> {
     let mut payload = vec![0; 320];
     let handles = 128;
     let source = handles - 48;
-    payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
-    payload[source + 4..source + 8].copy_from_slice(&0x0e4b_a6d5u32.to_le_bytes());
-    payload[source + 8..source + 10].copy_from_slice(&0x8a7du16.to_le_bytes());
-    payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+    write_source_cell(&mut payload, source, word(23), token(9));
     payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
     payload[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
-    payload[source + 32..source + 36].copy_from_slice(&141u32.to_le_bytes());
+    payload[source + 32..source + 36].copy_from_slice(&word(24).to_le_bytes());
     for offset in [handles, handles + 4] {
         payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
     }
-    payload[handles + 12..handles + 16].copy_from_slice(&5000u32.to_le_bytes());
-    for (index, value) in values.iter().enumerate() {
-        let offset = handles + 16 + index * 8;
-        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-    }
+    payload[handles + 12..handles + 16].copy_from_slice(&word(25).to_le_bytes());
+    write_values(&mut payload, handles + 16, values);
     let class = handles + 16 + values.len() * 8 + 1;
     payload[class..class + 4].copy_from_slice(CLASS_MARKER);
     payload
@@ -441,18 +467,22 @@ fn two_handle_axis_payload(values: &[f64]) -> Vec<u8> {
 fn two_handle_axis_record_takes_nine_values_over_eight() {
     // Nine values whose last is zero also end an eight-value read in zero
     // bytes before the class declaration.
-    let nine = two_handle_axis_payload(&[0.0, 0.0, 0.0437, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
+    let nine = two_handle_axis_payload(&[0.0, 0.0, length(5), 0.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
     assert_eq!(
-        revolution_line_reference_inputs(&nine, 32, nine.len(), &HashSet::from([42])),
-        Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)))
+        revolution_line_reference_inputs(&nine, 32, nine.len(), &HashSet::from([SOURCE])),
+        Some((
+            SOURCE,
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0)
+        ))
     );
 
-    let eight = two_handle_axis_payload(&[0.0, 0.0613, 0.0, -0.0287, 0.0, 0.0, 1.0, 0.0]);
+    let eight = two_handle_axis_payload(&[0.0, length(6), 0.0, -length(7), 0.0, 0.0, 1.0, 0.0]);
     assert_eq!(
-        revolution_line_reference_inputs(&eight, 32, eight.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&eight, 32, eight.len(), &HashSet::from([SOURCE])),
         Some((
-            42,
-            Point3::new(0.0, -0.0287 * 1000.0, 0.0),
+            SOURCE,
+            Point3::new(0.0, -mm(7), 0.0),
             Vector3::new(0.0, 1.0, 0.0)
         ))
     );
@@ -461,10 +491,19 @@ fn two_handle_axis_record_takes_nine_values_over_eight() {
 #[test]
 fn axis_record_direction_must_be_stored_with_unit_length() {
     let subnormal = f64::from_bits(1);
-    let payload =
-        two_handle_axis_payload(&[0.0, 0.0, 0.0437, 0.0, 0.0, 0.0, subnormal, 0.0, subnormal]);
+    let payload = two_handle_axis_payload(&[
+        0.0,
+        0.0,
+        length(5),
+        0.0,
+        0.0,
+        0.0,
+        subnormal,
+        0.0,
+        subnormal,
+    ]);
     assert_eq!(
-        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+        revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([SOURCE])),
         None
     );
 }
@@ -1415,14 +1454,11 @@ fn revolution_with_tail_records(
             payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         }
         let tail = handles + 8 + 24;
-        for (index, value) in std::iter::once(0.0437)
+        let values = std::iter::once(length(8))
             .chain(point)
             .chain(direction)
-            .enumerate()
-        {
-            let offset = tail + index * 8;
-            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
-        }
+            .collect::<Vec<_>>();
+        write_values(&mut payload, tail, &values);
         payload[tail + 57..tail + 61].copy_from_slice(CLASS_MARKER);
     }
     let name = |id: &str, ordinal, offset, source| FeatureInputName {
@@ -1455,14 +1491,14 @@ fn revolution_with_tail_records(
 #[test]
 fn revolution_takes_the_axis_from_the_tail_of_an_unread_line_reference_record() {
     let (mut histories, lane) =
-        revolution_with_tail_records(&[(300, [0.0, 0.0319, 0.0], [0.0, 0.0, -1.0])]);
+        revolution_with_tail_records(&[(300, [0.0, length(9), 0.0], [0.0, 0.0, -1.0])]);
 
     let notes = enrich_history_revolution_inputs_test(&mut histories, &[lane]);
 
     let revolution = &histories[0].features[1];
     assert_eq!(
         revolution.properties.get("AxisOrigin"),
-        Some(&format!("0mm,{}mm,0mm", 0.0319 * 1000.0))
+        Some(&format!("0mm,{}mm,0mm", mm(9)))
     );
     assert_eq!(
         revolution.properties.get("AxisDirection"),
@@ -1484,8 +1520,8 @@ fn revolution_takes_the_axis_from_the_tail_of_an_unread_line_reference_record() 
 #[test]
 fn unread_line_reference_records_with_different_tails_give_no_axis() {
     let (mut histories, lane) = revolution_with_tail_records(&[
-        (300, [0.0, 0.0319, 0.0], [0.0, 0.0, -1.0]),
-        (420, [0.0, 0.0319, 0.0], [0.0, 1.0, 0.0]),
+        (300, [0.0, length(9), 0.0], [0.0, 0.0, -1.0]),
+        (420, [0.0, length(9), 0.0], [0.0, 1.0, 0.0]),
     ]);
 
     let notes = enrich_history_revolution_inputs_test(&mut histories, &[lane]);
