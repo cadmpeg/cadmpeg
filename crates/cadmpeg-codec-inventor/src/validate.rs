@@ -1935,6 +1935,11 @@ fn validate_features(
         .iter()
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let producer_records = crate::feature::body_selection::ProducerRecords::new(
+        &data.pm_dc_features,
+        &data.pm_dc_feature_labels,
+        &data.pm_dc_feature_properties,
+    );
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -2109,8 +2114,10 @@ fn validate_features(
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
             let selection_matches = collection.is_some_and(|collection| match face {
-                cadmpeg_ir::features::FaceSelection::Native(native) => *native == collection.id(),
-                cadmpeg_ir::features::FaceSelection::Historical { native, .. } => {
+                cadmpeg_ir::features::selections::FaceSelection::Native(native) => {
+                    *native == collection.id()
+                }
+                cadmpeg_ir::features::selections::FaceSelection::Historical { native, .. } => {
                     native.as_str() == collection.id()
                 }
                 _ => false,
@@ -2211,7 +2218,8 @@ fn validate_features(
             // face join is checked by `face_selection::valid`. A Thicken in the
             // face-offset form is a Move Face operation.
             let expected = expected.ok().map(|mut expected| {
-                use cadmpeg_ir::features::{FaceSelection, FeatureOperation};
+                use cadmpeg_ir::features::selections::FaceSelection;
+                use cadmpeg_ir::features::FeatureOperation;
                 let faces_of = |operation: &FeatureOperation| match operation {
                     FeatureOperation::Thicken { faces, .. }
                     | FeatureOperation::MoveFace { faces, .. } => Some(faces.clone()),
@@ -2266,7 +2274,7 @@ fn validate_features(
                     .as_ref()
             };
             let length = |reference| match parameter(reference)? {
-                cadmpeg_ir::features::ParameterValue::Length(value) => Some(*value),
+                cadmpeg_ir::features::parameters::ParameterValue::Length(value) => Some(*value),
                 _ => None,
             };
             let admitted = match operation {
@@ -2287,7 +2295,9 @@ fn validate_features(
                     property,
                     |slot| length(*raw_feature.properties.references().get(slot)?),
                     |slot| match parameter(*raw_feature.properties.references().get(slot)?)? {
-                        cadmpeg_ir::features::ParameterValue::Angle(value) => Some(*value),
+                        cadmpeg_ir::features::parameters::ParameterValue::Angle(value) => {
+                            Some(*value)
+                        }
                         _ => None,
                     },
                 )
@@ -2361,7 +2371,9 @@ fn validate_features(
                         .value
                         .as_ref()?
                     {
-                        cadmpeg_ir::features::ParameterValue::Angle(angle) => Some(*angle),
+                        cadmpeg_ir::features::parameters::ParameterValue::Angle(angle) => {
+                            Some(*angle)
+                        }
                         _ => None,
                     }
                 },
@@ -2585,11 +2597,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                 )
             })
@@ -2625,11 +2633,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                     crate::feature::body_selection::qualified_split_target(
                         raw_feature,
@@ -3986,11 +3990,12 @@ fn unique<T: Eq + std::hash::Hash>(
 /// sides of its axis.
 fn revolve_axis_finding(
     feature: &cadmpeg_ir::features::FeatureId,
-    construction: &cadmpeg_ir::features::RevolveConstruction,
+    construction: &cadmpeg_ir::features::revolve::RevolveConstruction,
     sketches: &HashMap<&str, &cadmpeg_ir::sketches::Sketch>,
     entities: &HashMap<&str, &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Option<Finding> {
-    let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } = construction
+    let cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { profile, axis, .. } =
+        construction
     else {
         return None;
     };

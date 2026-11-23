@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::history::face_boundaries::face_operand_support_candidates;
 use crate::history::face_support::historical_face_support_contexts;
-use crate::history::{face_operand_support_candidates, TopologyQueryCache};
+use crate::history::topology_cache::TopologyQueryCache;
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 use crate::records::dimensions::DesignRecipeReference;
 use cadmpeg_ir::ids::FaceId;

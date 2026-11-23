@@ -5,25 +5,24 @@ use super::{
     DesignGuidText, DesignMeshBody, DesignMeshBodyWords, DesignMeshCollection,
     DesignMeshCollectionBacklink, DesignMeshCollectionOwner, DesignMeshEntryName,
     DesignMeshFaceGroup, DesignMeshFaceGroups, DesignMeshFeature, DesignMeshFixedRecord,
-    DesignMeshFlaggedCollection, DesignMeshFlaggedEntry, DesignMeshGuid, DesignMeshHistoryStream,
-    DesignMeshOperationBody, DesignMeshOperationInput, DesignMeshPlacement,
-    DesignMeshRecordIdentity, DesignMeshSceneBounds, DesignMeshSceneNode, DesignMeshSceneNodeForm,
-    DesignMeshSceneState, DesignMeshScope, DesignMeshSourceRecord, DesignMeshSplitStream,
-    DesignMeshTextureFile, DesignMeshTextureResource, DesignMeshTextureTable, DesignMeshUuid,
-    DesignOccurrenceKey, DesignRelaxedGuidText, MeshAffineTransform,
+    DesignMeshFlaggedCollection, DesignMeshFlaggedEntry, DesignMeshGuid, DesignMeshOperationBody,
+    DesignMeshOperationInput, DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds,
+    DesignMeshSceneNode, DesignMeshSceneNodeForm, DesignMeshSceneState, DesignMeshScope,
+    DesignMeshSourceRecord, DesignMeshSplitStream, DesignMeshTextureFile,
+    DesignMeshTextureResource, DesignMeshTextureTable, DesignMeshUuid, DesignOccurrenceKey,
+    DesignRelaxedGuidText, MeshAffineTransform,
 };
 
 rewrite_native_record!(DesignGuidText, []; (field0));
 rewrite_native_record!(DesignOccurrenceKey, []; (field0));
 rewrite_native_record!(DesignMeshFaceGroup, []; {guid});
 rewrite_native_record!(DesignMeshFaceGroups, []; {entries});
-rewrite_native_record!(DesignMeshSplitStream, []; {name, descriptor});
-rewrite_native_record!(DesignMeshHistoryStream, []; {name, encoding, decoded_length});
+rewrite_native_record!(DesignMeshSplitStream, []; {name, descriptor, component_flag});
 rewrite_native_record!(DesignMeshSourceRecord, []; {record, type_guid, bytes});
 rewrite_native_record!(DesignMeshOperationInput, []; {guid, entry});
 rewrite_native_record!(DesignMeshOperationBody, []; {scope, group, member, inputs, body});
 rewrite_native_scalar!(DesignMeshBodyWords);
-rewrite_native_record!(DesignMeshBody, []; {words, split_streams, history_streams, face_group_metadata, placement, entry, guid, wrapper_record, scene_state, scene_node, scene_auxiliary_record, owner_record, container_mesh_uuid, tessellation_id});
+rewrite_native_record!(DesignMeshBody, []; {words, split_streams, face_group_metadata, placement, entry, guid, wrapper_record, scene_state, scene_node, scene_auxiliary_record, owner_record, container_mesh_uuid, tessellation_id});
 rewrite_native_scalar!(DesignMeshFlaggedEntry);
 rewrite_native_record!(DesignMeshFlaggedCollection, []; {entries});
 rewrite_native_record!(DesignMeshCollection, []; {record, base_class_tag, flagged_data});

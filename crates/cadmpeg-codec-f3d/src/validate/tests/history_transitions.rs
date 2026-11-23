@@ -43,7 +43,7 @@ fn decoded_history_reports_an_invalid_transition() {
             ..Default::default()
         };
         let mut findings = Vec::new();
-        super::super::validate_history_graphs(
+        super::super::links::validate_history_graphs(
             &super::super::Ctx::new(&ir, &native, decode),
             &mut findings,
         );
@@ -54,7 +54,7 @@ fn decoded_history_reports_an_invalid_transition() {
             .unwrap()
             .previous_state_id = Some(-9);
         native.asm_histories = vec![history];
-        super::super::validate_history_graphs(
+        super::super::links::validate_history_graphs(
             &super::super::Ctx::new(&ir, &native, decode),
             &mut findings,
         );

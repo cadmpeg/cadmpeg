@@ -1,5 +1,6 @@
 use crate::test_support::{lp_ascii, push_reference_u64};
-use cadmpeg_ir::features::{CapturedPositionTransform, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::tree::CapturedPositionTransform;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::transform::Transform;
 use std::io::{Cursor, Read, Write};
 

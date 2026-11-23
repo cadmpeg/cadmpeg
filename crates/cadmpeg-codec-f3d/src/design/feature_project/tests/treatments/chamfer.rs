@@ -19,7 +19,7 @@ use crate::records::parameters::{
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_ir::features::edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec};
-use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
@@ -66,10 +66,8 @@ fn localized_chamfer_scope() -> DesignParameterScope {
 }
 #[test]
 fn a_chamfer_without_an_edge_group_keeps_its_distance_and_scope_selector() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{ChamferGroup, ChamferSpec},
-        EdgeSelection,
-    };
+    use cadmpeg_ir::features::edge_treatments::{ChamferGroup, ChamferSpec};
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let scope = localized_chamfer_scope();
     let parameters = [localized_fillet_parameter(
@@ -742,6 +740,78 @@ fn fixed_two_distance_chamfer_names_reference_face_assumption() {
     assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 1);
 }
 
+fn fixed_equal_distance_scope() -> DesignParameterScope {
+    let mut scope = localized_chamfer_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
+        payload.fixed = Some(
+            serde_json::from_value(serde_json::json!({
+                "kind":"equal_distance", "distance":{"value":0.2,"record_index":20,"value_offset":2020}
+            }))
+            .unwrap(),
+        );
+    }
+    scope
+}
+
+#[test]
+fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
+    let scope = fixed_equal_distance_scope();
+    let groups = [
+        localized_fillet_group_with_role(101, 2, vec![201], DesignOperandRole::ROLE_0X10),
+        localized_fillet_group(100, 0, vec![200]),
+    ];
+    let projected = project_scope(&scope, &[], &[], &groups);
+    let projected_groups = projected_groups(&projected);
+    assert_eq!(projected_groups.len(), 2);
+    assert!(matches!(&projected_groups[0].edges, EdgeSelection::Native(id) if id == &groups[1].id));
+    assert!(matches!(&projected_groups[1].edges, EdgeSelection::Native(id) if id == &groups[0].id));
+    assert!(projected_groups.iter().all(|group| matches!(
+        group.spec,
+        ChamferSpec::Distance { distance } if (distance.get() - 2.0).abs() < EPS_CHAMFER_DISTANCE_MM
+    )));
+    assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 2);
+    assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferFixedFaceGroupAssumed),
+        1
+    );
+    assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferEdgeRoleAssumed),
+        0
+    );
+}
+
+#[test]
+fn fixed_chamfer_with_two_edge_role_groups_keeps_its_scope_selector() {
+    let scope = fixed_equal_distance_scope();
+    for second in [DesignOperandRole::BODIES_B, DesignOperandRole::ROLE_0X9] {
+        let groups = [
+            localized_fillet_group(100, 0, vec![200]),
+            localized_fillet_group_with_role(101, 2, vec![201], second),
+        ];
+        let projected = project_scope(&scope, &[], &[], &groups);
+        assert!(matches!(
+            projected_groups(&projected),
+            [ChamferGroup { edges: EdgeSelection::Native(id), .. }] if id == &scope.id
+        ));
+        assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 1);
+    }
+}
+
+#[test]
+fn fixed_chamfer_shares_its_specification_with_another_role_and_names_the_assumption() {
+    let scope = fixed_equal_distance_scope();
+    let groups = [
+        localized_fillet_group_with_role(100, 0, vec![200], DesignOperandRole::ROLE_0X9),
+        localized_fillet_group_with_role(101, 2, vec![201], DesignOperandRole::ROLE_0X10),
+    ];
+    let projected = project_scope(&scope, &[], &[], &groups);
+    assert_eq!(projected_groups(&projected).len(), 2);
+    assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferEdgeRoleAssumed),
+        1
+    );
+}
+
 #[test]
 fn unresolved_chamfer_does_not_charge_resolved_orientation() {
     let scope = localized_chamfer_scope();
@@ -800,6 +870,13 @@ fn reversed_distance_angle_keeps_dimensions_and_native_side_control() {
     ];
     let groups = [localized_fillet_group(100, 0, vec![200])];
     let projected = project_scope(&scope, &parameters, &owners, &groups);
+    assert!(matches!(
+        projected.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            flip_direction: true,
+            ..
+        })
+    ));
     assert!(matches!(projected_groups(&projected)[0].spec,
         ChamferSpec::DistanceAngle { distance, angle }
         if (distance.get() - 1.0).abs() < EPS_CHAMFER_DISTANCE_MM
@@ -810,4 +887,58 @@ fn reversed_distance_angle_keeps_dimensions_and_native_side_control() {
     assert_eq!(loss_count(&projected, ChamferDefinitionUnresolved), 0);
     assert_eq!(loss_count(&projected, ChamferReferenceFaceAssumed), 1);
     assert_eq!(loss_count(&projected, ChamferAngleReferenceAssumed), 1);
+}
+
+#[test]
+fn reversed_two_distance_set_projects_flip_direction_and_disagreeing_sets_record_loss() {
+    let mut single = localized_chamfer_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = single.payload_mut() {
+        payload.sets = Some(
+            serde_json::from_value(serde_json::json!({
+                "form":"current", "corner_type":"chamfer", "entry_count":1,
+                "sets":[{
+                    "record_index":500, "byte_offset":2000, "frame_length":93,
+                    "group_record_index":100,
+                    "spec":{"kind":"two_distances", "first_owner_record_index":10,
+                        "second_owner_record_index":20},
+                    "auxiliary_record_index":600, "entry_count":1,
+                    "tangent_chain":false, "distance_reversed":true
+                }]
+            }))
+            .unwrap(),
+        );
+    }
+    let parameters = [
+        localized_fillet_parameter(10, 11, "Distance 1", Some("mm"), 0.1),
+        localized_fillet_parameter(20, 21, "Distance 2", Some("mm"), 0.3),
+    ];
+    let owners = [
+        localized_fillet_owner(10, 11, 0),
+        localized_fillet_owner(20, 21, 1),
+    ];
+    let groups = [localized_fillet_group(100, 0, vec![200])];
+    let projected = project_scope(&single, &parameters, &owners, &groups);
+    assert!(matches!(
+        projected.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            flip_direction: true,
+            ..
+        })
+    ));
+    assert_eq!(loss_count(&projected, ChamferReferenceFaceAssumed), 1);
+
+    let mut mixed = mixed_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = mixed.payload_mut() {
+        payload.sets.as_mut().unwrap().sets[1].distance_reversed = true;
+    }
+    let (mixed_params, mixed_owners) = mixed_parameters();
+    let mixed_projected = project_scope(&mixed, &mixed_params, &mixed_owners, &mixed_groups());
+    assert!(matches!(
+        mixed_projected.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            flip_direction: true,
+            ..
+        })
+    ));
+    assert_eq!(loss_count(&mixed_projected, ChamferReferenceFaceAssumed), 3);
 }

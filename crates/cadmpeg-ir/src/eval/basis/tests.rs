@@ -6,7 +6,7 @@ use cadmpeg_core::decode::DecodePolicy;
 #[test]
 fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
     let knots = [0.0, 1.0];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::eval::basis::bspline_span(&ctx, &knots, usize::MAX, 1, 0.5).expect("shape check"),
         None

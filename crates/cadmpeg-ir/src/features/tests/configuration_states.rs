@@ -1,7 +1,7 @@
-use crate::features::{
-    ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, FeatureDefinition,
-    FeatureId, FeatureOperation, FinitePoint3,
-};
+use crate::features::geometry::FinitePoint3;
+use crate::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+use crate::features::selections::DistinctMembers;
+use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use crate::ids::BodyId;
 use crate::math::Point3;
 
@@ -15,7 +15,8 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
             outputs: DistinctMembers::default(),
         },
         ConfigurationEvaluation::Active {
-            outputs: crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+            outputs: crate::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                .unwrap(),
         },
     ] {
         let wire = serde_json::to_value(&evaluation).unwrap();
@@ -45,7 +46,8 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
         evaluation: ConfigurationEvaluation::Active {
             outputs: DistinctMembers::default(),
         },
-        dependencies: crate::features::DistinctMembers::try_from(vec![earlier.clone()]).unwrap(),
+        dependencies: crate::features::selections::DistinctMembers::try_from(vec![earlier.clone()])
+            .unwrap(),
         definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             construction: None,

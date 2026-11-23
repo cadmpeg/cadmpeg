@@ -151,8 +151,13 @@ impl LocalOccurrencePaths {
     /// Keys left after an external occurrence continue inside its member, which
     /// the archive merge binds. Keys left after a local occurrence can name a
     /// reference that this document omitted.
-    pub(crate) fn refuses_residual_keys(&self, stream: &str, occurrence: &OccurrenceId) -> bool {
-        self.requires_external_binding(stream)
+    pub(crate) fn refuses_residual_keys(
+        &self,
+        stream: &str,
+        occurrence: &OccurrenceId,
+        require_complete_local_path: bool,
+    ) -> bool {
+        (require_complete_local_path || self.requires_external_binding(stream))
             && self.projected_occurrence_is_external.get(occurrence) != Some(&true)
     }
 
@@ -237,19 +242,24 @@ pub(crate) fn bind_feature_paths(
                 let mapping_complete = mapped.len() == components.occurrences().len();
                 let complete = components.is_resolved() && mapping_complete;
                 let native = components.native_reference().clone();
-                *components = match cadmpeg_ir::features::SelectionMembers::try_from(mapped) {
-                    Ok(occurrences) if complete => {
-                        cadmpeg_ir::features::InsertedComponents::Resolved {
-                            occurrences,
-                            native,
+                *components =
+                    match cadmpeg_ir::features::selections::SelectionMembers::try_from(mapped) {
+                        Ok(occurrences) if complete => {
+                            cadmpeg_ir::features::selections::InsertedComponents::Resolved {
+                                occurrences,
+                                native,
+                            }
                         }
-                    }
-                    Ok(occurrences) => cadmpeg_ir::features::InsertedComponents::Partial {
-                        occurrences,
-                        native,
-                    },
-                    Err(_) => cadmpeg_ir::features::InsertedComponents::Native { native },
-                };
+                        Ok(occurrences) => {
+                            cadmpeg_ir::features::selections::InsertedComponents::Partial {
+                                occurrences,
+                                native,
+                            }
+                        }
+                        Err(_) => {
+                            cadmpeg_ir::features::selections::InsertedComponents::Native { native }
+                        }
+                    };
                 if !mapping_complete {
                     losses.push(crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.note(
                         "a component insertion retains native membership for occurrence paths without a unique expanded target",
@@ -356,14 +366,22 @@ mod tests {
             projected_occurrence_is_external: BTreeMap::from([(external.clone(), true)]),
             paths: BTreeMap::new(),
         };
-        assert!(paths.refuses_residual_keys(stream, &local));
-        assert!(!paths.refuses_residual_keys(stream, &external));
-        assert!(!LocalOccurrencePaths::default().refuses_residual_keys(stream, &local));
+        for require_complete_local_path in [false, true] {
+            assert!(paths.refuses_residual_keys(stream, &local, require_complete_local_path));
+            assert!(!paths.refuses_residual_keys(stream, &external, require_complete_local_path));
+        }
+        let without_unplaced = LocalOccurrencePaths {
+            unplaced_external: Vec::new(),
+            ..paths
+        };
+        assert!(!without_unplaced.refuses_residual_keys(stream, &local, false));
+        assert!(without_unplaced.refuses_residual_keys(stream, &local, true));
+        assert!(!without_unplaced.refuses_residual_keys(stream, &external, true));
     }
 
     #[test]
     fn component_set_paths_keep_known_members_when_another_path_is_ambiguous() {
-        use cadmpeg_ir::features::InsertedComponents;
+        use cadmpeg_ir::features::selections::InsertedComponents;
         let stream = "f3d:Design/BulkStream.dat";
         let first = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
         let second = OccurrenceId::mint("f3d:model:occurrence#35").unwrap();
@@ -384,12 +402,12 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("DerivedInstance".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::InsertComponents {
                     components: InsertedComponents::resolved(
                         vec![first, second],
@@ -433,12 +451,12 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("CopyPaste".to_owned()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence: id }),
             ),
             native_ref: Some("f3d:Design/BulkStream.dat:design-parameter-scope#1".to_owned()),

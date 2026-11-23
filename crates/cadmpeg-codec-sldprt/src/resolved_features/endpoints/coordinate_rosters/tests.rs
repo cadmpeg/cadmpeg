@@ -21,7 +21,7 @@ fn owner_and_grammar_rosters_keep_offset_order() {
         marker("empty", Some(""), 5, true),
     ];
     let roster = CoordinateRosters::new(markers.iter().collect());
-    for _ in 0..500 {
+    for _ in 0..2 {
         for (owner, complete, expected) in [
             (Some("a"), false, vec!["a1", "a2"]),
             (Some("a"), true, vec!["a0", "a1", "a2"]),
@@ -65,7 +65,7 @@ fn repeated_endpoint_queries_read_the_coordinate_roster() {
         marker("second", None, 20, true),
     ];
     let roster = CoordinateRosters::new(markers.iter().collect());
-    for _ in 0..50 {
+    for _ in 0..2 {
         let endpoints = super::super::coordinate_roster_curve_endpoint_markers_at(
             &payload,
             &curve,

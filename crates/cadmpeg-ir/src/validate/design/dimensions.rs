@@ -59,20 +59,28 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             }
         }
     }
-    let mut bound: BTreeSet<String> = bindings
-        .into_iter()
-        .map(|binding| binding.parameter)
-        .collect();
-    bound.extend(other_bindings(index));
-    for parameter in &index.ir.design.parameters {
-        if matches!(parameter.definition, ParameterDefinition::Driven)
-            && !bound.contains(parameter.id.as_str())
-        {
-            super::warning(
-                findings,
-                parameter.id.as_str(),
-                format_args!("driven parameter is bound by no dimension"),
-            );
+    let has_driven = index
+        .ir
+        .design
+        .parameters
+        .iter()
+        .any(|parameter| matches!(parameter.definition, ParameterDefinition::Driven));
+    if has_driven {
+        let mut bound: BTreeSet<String> = bindings
+            .into_iter()
+            .map(|binding| binding.parameter)
+            .collect();
+        bound.extend(other_bindings(index));
+        for parameter in &index.ir.design.parameters {
+            if matches!(parameter.definition, ParameterDefinition::Driven)
+                && !bound.contains(parameter.id.as_str())
+            {
+                super::warning(
+                    findings,
+                    parameter.id.as_str(),
+                    format_args!("driven parameter is bound by no dimension"),
+                );
+            }
         }
     }
     let design = &index.ir.design;
@@ -96,6 +104,7 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
 fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
     let design = &index.ir.design;
     let mut found = Vec::new();
+    let mut scratch = Vec::new();
     let mut add = |holder: &'a str, scope: Option<&'a str>, wire: Option<Json>| {
         for parameter in wire.iter().flat_map(bound_parameters) {
             found.push(Binding {
@@ -107,18 +116,30 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
     };
     for feature in &design.features {
         let id = feature.id.as_str();
-        add(id, index.scope_of(MemberKey::Feature(id)), wire_of(feature));
+        add(
+            id,
+            index.scope_of(MemberKey::Feature(id)),
+            wire_if_bound(&mut scratch, feature),
+        );
     }
     for configuration in &design.configurations {
         let scope = Some(configuration.scope.as_str());
         for state in configuration.overrides.features.values() {
-            add(configuration.id.as_str(), scope, wire_of(state));
+            add(
+                configuration.id.as_str(),
+                scope,
+                wire_if_bound(&mut scratch, state),
+            );
         }
     }
     for arrangement in &design.arrangements {
         let scope = Some(arrangement.scope.as_str());
         for state in arrangement.overrides.features.values() {
-            add(arrangement.id.as_str(), scope, wire_of(state));
+            add(
+                arrangement.id.as_str(),
+                scope,
+                wire_if_bound(&mut scratch, state),
+            );
         }
     }
     for container in &design.containers {
@@ -126,51 +147,63 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
         add(
             id,
             index.scope_of(MemberKey::Container(id)),
-            wire_of(container),
+            wire_if_bound(&mut scratch, container),
         );
     }
     let mut owners: BTreeMap<&str, Option<&'a str>> = BTreeMap::new();
     for sketch in &design.sketches {
         let scope = index.scope_of(MemberKey::Feature(sketch.owner.as_str()));
         owners.insert(sketch.id.as_str(), scope);
-        add(sketch.id.as_str(), scope, wire_of(sketch));
+        add(
+            sketch.id.as_str(),
+            scope,
+            wire_if_bound(&mut scratch, sketch),
+        );
     }
     for sketch in &design.spatial_sketches {
         let scope = index.scope_of(MemberKey::Feature(sketch.owner.as_str()));
         owners.insert(sketch.id.as_str(), scope);
-        add(sketch.id.as_str(), scope, wire_of(sketch));
+        add(
+            sketch.id.as_str(),
+            scope,
+            wire_if_bound(&mut scratch, sketch),
+        );
     }
     let owner = |sketch: &str| owners.get(sketch).copied().flatten();
     for entity in &design.sketch_entities {
         add(
             entity.id.as_str(),
             owner(entity.sketch.as_str()),
-            wire_of(entity),
+            wire_if_bound(&mut scratch, entity),
         );
     }
     for constraint in &design.sketch_constraints {
         add(
             constraint.id.as_str(),
             owner(constraint.sketch.as_str()),
-            wire_of(constraint),
+            wire_if_bound(&mut scratch, constraint),
         );
     }
     for entity in &design.spatial_sketch_entities {
         add(
             entity.id.as_str(),
             owner(entity.sketch.as_str()),
-            wire_of(entity),
+            wire_if_bound(&mut scratch, entity),
         );
     }
     for constraint in &design.spatial_sketch_constraints {
         add(
             constraint.id.as_str(),
             owner(constraint.sketch.as_str()),
-            wire_of(constraint),
+            wire_if_bound(&mut scratch, constraint),
         );
     }
     for rule in &design.sheet_metal_rules {
-        add(rule.id.as_str(), Some(rule.scope.as_str()), wire_of(rule));
+        add(
+            rule.id.as_str(),
+            Some(rule.scope.as_str()),
+            wire_if_bound(&mut scratch, rule),
+        );
     }
     found
 }
@@ -180,22 +213,34 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
 fn other_bindings(index: &DesignRecords<'_>) -> Vec<String> {
     let ir = index.ir;
     let mut found = Vec::new();
+    let mut scratch = Vec::new();
     for annotation in &ir.model.pmi {
         found.extend(
-            wire_of(annotation)
+            wire_if_bound(&mut scratch, annotation)
                 .map(|wire| bound_parameters(&wire))
                 .into_iter()
                 .flatten(),
         );
     }
-    if let Ok(process) = serde_json::to_value(&ir.process) {
-        found.extend(design_targets(&process));
+    if !ir.process.is_empty() {
+        if let Some(process) = wire_if_bound(&mut scratch, &ir.process) {
+            found.extend(design_targets(&process));
+        }
     }
     found
 }
 
-fn wire_of<T: Serialize>(record: &T) -> Option<Json> {
-    serde_json::to_value(record).ok()
+/// Parses `record`'s JSON representation only when its text mentions a
+/// `"parameter"` or `"negated"` tag, skipping `serde_json::Value` allocation
+/// for records that hold only literal dimensions.
+fn wire_if_bound<T: Serialize>(scratch: &mut Vec<u8>, record: &T) -> Option<Json> {
+    scratch.clear();
+    crate::hash::finite_json::write_json_value_bytes(scratch, record).ok()?;
+    let text = std::str::from_utf8(scratch).ok()?;
+    if !text.contains("\"parameter\"") && !text.contains("\"negated\"") {
+        return None;
+    }
+    crate::native::replay::value(text).ok()
 }
 
 /// The ids a wire value binds as `{"kind": "parameter" | "negated",

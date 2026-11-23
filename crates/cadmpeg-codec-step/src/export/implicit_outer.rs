@@ -15,9 +15,8 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
-use cadmpeg_ir::geometry::{
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{Face, LoopBoundaryRole, Sense};
 

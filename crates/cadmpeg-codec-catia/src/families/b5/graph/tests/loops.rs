@@ -18,7 +18,8 @@ use crate::families::b5::graph::{
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
-use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[test]
@@ -82,7 +83,7 @@ fn pcurve_endpoints(
     pcurve_id: u32,
     edge_id: u32,
     geometry: &B5PcurveContext<'_>,
-) -> Option<[cadmpeg_ir::features::FinitePoint3; 2]> {
+) -> Option<[cadmpeg_ir::features::geometry::FinitePoint3; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurve_endpoints(ctx, pcurve_id, edge_id, geometry)
     })
@@ -93,7 +94,7 @@ fn lift_parameter_incidence(
     pcurve_id: u32,
     parameter: cadmpeg_ir::scalar::FiniteReal,
     geometry: &B5PcurveContext<'_>,
-) -> Option<cadmpeg_ir::features::FinitePoint3> {
+) -> Option<cadmpeg_ir::features::geometry::FinitePoint3> {
     crate::test_support::with_service_context(|ctx| {
         super::super::lift_parameter_incidence(ctx, pcurve_id, parameter, geometry)
     })
@@ -103,7 +104,7 @@ fn lift_parameter_incidence(
 fn bind_edge_vertices(
     loops: &BTreeMap<u32, B5Loop>,
     geometry: &B5PcurveContext<'_>,
-    points: &[cadmpeg_ir::features::FinitePoint3],
+    points: &[cadmpeg_ir::features::geometry::FinitePoint3],
 ) -> BTreeMap<u32, [usize; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::bind_edge_vertices(ctx, loops, geometry, points)
@@ -116,8 +117,8 @@ fn bind_native_vertices(
     geometry: &B5PcurveContext<'_>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     geometric_edges: &BTreeMap<u32, [usize; 2]>,
-    native_coordinates: &BTreeMap<u32, cadmpeg_ir::features::FinitePoint3>,
-    points: &[cadmpeg_ir::features::FinitePoint3],
+    native_coordinates: &BTreeMap<u32, cadmpeg_ir::features::geometry::FinitePoint3>,
+    points: &[cadmpeg_ir::features::geometry::FinitePoint3],
 ) -> super::super::BoundNativeVertices {
     crate::test_support::with_service_context(|ctx| {
         super::super::bind_native_vertices(
@@ -133,7 +134,9 @@ fn bind_native_vertices(
     .expect("bind native vertices")
 }
 
-fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
+fn point_index(
+    points: &[cadmpeg_ir::features::geometry::FinitePoint3],
+) -> HashMap<[i64; 3], Vec<usize>> {
     super::super::point_index(points).expect("compute the point index")
 }
 

@@ -309,7 +309,7 @@ fn topology(
         }
     }
     for surface in &value.procedural_surfaces {
-        if let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+        if let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
             support,
             boundary_pcurves,
             ..
@@ -446,7 +446,8 @@ mod tests {
     use super::*;
     use cadmpeg_ir::design::construction::{kinds, FrameAxis};
     use cadmpeg_ir::design::selection::{Anchor, PickTarget, PrincipalEntity, Witness};
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     #[test]
     fn axis_conversion_reaches_nested_values_options_and_steps() {
@@ -502,7 +503,7 @@ mod tests {
                 .into_operation()
                 .expect("valid axis conversion fixture"),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
             &mut definition,
@@ -552,10 +553,10 @@ mod tests {
 
     #[test]
     fn axis_conversion_reaches_witness_topology_and_chart_metadata() {
+        use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
         use cadmpeg_ir::geometry::pcurve::{
             LinePcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveMetadata,
         };
-        use cadmpeg_ir::geometry::FitTolerance;
         use cadmpeg_ir::units::FiniteVector;
         let mut body = cadmpeg_ir::examples::unit_cube()
             .expect("cube witness")
@@ -629,7 +630,7 @@ mod tests {
                 .into_operation()
                 .expect("valid axis conversion fixture"),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
             &mut definition,

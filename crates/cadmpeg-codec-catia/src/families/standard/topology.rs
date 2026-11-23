@@ -15,8 +15,9 @@ use crate::solve::missing_edge::{
 use crate::solve::union_find::UnionFind;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::selections::NonEmptyMembers;
+use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::FiniteVector;
-use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{HashMap, HashSet};
 
 fn duplicate_degree(row: &[(usize, u8)], point: usize) -> Option<u8> {

@@ -1,5 +1,7 @@
 use super::parameter_scope::ParameterScopeSources;
-use super::sheet_metal_rule::{local, rule_values, settings_rule, typed, Types, SETTINGS_GUID};
+use super::sheet_metal_rule::{
+    linked_settings_rule, local, rule_values, typed, Types, SETTINGS_GUID,
+};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::{
@@ -14,7 +16,9 @@ use crate::records::feature::sheet_metal::contour::{
 };
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, View};
-use cadmpeg_ir::{features::FeatureDirection3, math::Vector3, scalar::PositiveReal};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::PositiveReal;
 
 const CONTOUR_GUID: &str = "7AFA0A65-B53C-472C-ACA4-5C7C0A65001C";
 const CARRIER_GUID: &str = "CAA55628-037B-4D01-9C74-26118F70B63E";
@@ -223,13 +227,14 @@ fn operation(
     let rule = settings
         .as_ref()
         .and_then(|settings| {
-            settings_rule(
+            linked_settings_rule(
                 bytes,
                 records,
                 types,
                 settings.value,
-                scope.record_index,
+                scope,
                 CONTOUR_GUID,
+                sources,
             )
         })
         .and_then(|(record_index, reference_assumed)| {

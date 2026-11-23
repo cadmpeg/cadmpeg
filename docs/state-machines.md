@@ -48,12 +48,12 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
 | decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | error findings and no `--allow-errors` | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err` and carried errors | `check_failed` preferred | plan refusal |
+| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
+| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
 | planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-`--allow-errors` writes after check errors. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
+Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
 
 No CLI retry loop exists.
 
@@ -142,7 +142,7 @@ Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::ne
 
 `RadialStatus` (`Closed(n)` \| `DoesNotClose` \| `CrossesEdge`) is the topology-graph classifier in `validate/topology/graphs.rs`. `Sense` is a static bit.
 
-Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. Codecs do not depend on `cadmpeg-measure` in production; the crate is an oracle.
+Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. The crate is an oracle. Of the codecs, the source policy admits a production dependency on `cadmpeg-measure` only in the Fusion codec, for the body boxes its writer writes.
 
 ## Container parsers
 
@@ -208,7 +208,7 @@ Ranked by user-visible impact. “Reachable” means a constructor, deserializer
 | Inventor container transfers B-rep | Depth harness: non-design arenas match Full. Container bulk frames stay `Unavailable` without a kernel stream. README “does not inflate bulk geometry streams” refers to those frames. |
 | FreeCAD `TopologyOccurrence.source_index` starts at 1 | Bind tests pad `names[0]` and index from 1. Legacy maps pad to the parsed index. |
 | `validate_neutral().is_ok()` ignores `losses` | Documented: findings vs decode losses are separate. |
-| Measurement feeds codecs | Production codec crates list `cadmpeg-measure` only in `[dev-dependencies]`. |
+| Measurement feeds codecs | Codec crates list `cadmpeg-measure` in `[dev-dependencies]`. The source-policy rule `measurement_dependency` also admits it in the `[dependencies]` of `cadmpeg-codec-f3d`, for its writer's body boxes. The rule `measurement_use` fails the name `cadmpeg_measure` in production code of a codec crate outside `crates/cadmpeg-codec-f3d/src/writer/`; it does not follow a re-export or an included file out of the writer. |
 | Mutex / retry races into illegal states | No conflicting transition found. |
 
 ## Issues

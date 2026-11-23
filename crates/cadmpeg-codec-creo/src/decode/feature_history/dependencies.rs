@@ -11,9 +11,10 @@ use crate::decode::sketch_transfer::recipe::{
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
 use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation,
+    FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -345,7 +346,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _, _) in unique_surface_prototype_associations(scan)? {
         let prototype = prototype.record();
         let mut fields = prototype
             .parameters
@@ -415,6 +416,7 @@ pub(in super::super) fn reconcile_feature_links(
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let output_index = super::outputs::FeatureOutputIndex::new(scan, ir);
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -425,8 +427,8 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
-            super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
+        let outputs = cadmpeg_ir::features::selections::DistinctMembers::try_from(
+            output_index.output_bodies(ctx, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
         output_updates.push((index, outputs));
@@ -490,7 +492,7 @@ pub(in super::super) fn reconcile_feature_links(
             generated_ids.push(id);
         }
         feature.dependencies =
-            cadmpeg_ir::features::DistinctMembers::try_from(reconciled_dependencies(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(reconciled_dependencies(
                 &feature.id,
                 &feature.dependencies,
                 native_dependencies.into_iter().chain(generated_ids),

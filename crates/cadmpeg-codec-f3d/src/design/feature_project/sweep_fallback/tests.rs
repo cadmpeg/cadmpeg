@@ -8,7 +8,9 @@ use crate::records::topology::construction::{
 use crate::records::topology::sketch_profile::{
     DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
 };
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::BTreeMap;
 

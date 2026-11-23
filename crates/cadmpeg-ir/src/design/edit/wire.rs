@@ -119,7 +119,7 @@ pub(super) fn record_reads<T: Serialize>(
     record: &T,
     is_container: &dyn Fn(&str) -> bool,
 ) -> Result<Reads, EditError> {
-    let json = serde_json::to_value(record).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(record).map_err(malformed)?;
     Ok(reads(&json, is_container))
 }
 
@@ -129,7 +129,7 @@ pub(super) fn rewrite<T: Serialize + DeserializeOwned>(
     record: &mut T,
     edit: impl FnOnce(&mut Json) -> Result<bool, EditError>,
 ) -> Result<bool, EditError> {
-    let mut json = serde_json::to_value(&*record).map_err(malformed)?;
+    let mut json = crate::hash::finite_json::to_json_value(&*record).map_err(malformed)?;
     if !edit(&mut json)? {
         return Ok(false);
     }
@@ -142,7 +142,7 @@ pub(super) fn rewrite<T: Serialize + DeserializeOwned>(
 pub(super) fn positions(positions: &[Position]) -> Result<Vec<Json>, EditError> {
     positions
         .iter()
-        .map(|position| serde_json::to_value(position).map_err(malformed))
+        .map(|position| crate::hash::finite_json::to_json_value(position).map_err(malformed))
         .collect()
 }
 

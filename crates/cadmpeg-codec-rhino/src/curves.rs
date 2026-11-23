@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength, PositiveReal};
@@ -2221,7 +2221,7 @@ mod tests {
     use crate::loss::Diagnostics;
     use crate::settings::MillimeterScale;
 
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2927,7 +2927,7 @@ mod tests {
             Diagnostics::new(),
         );
         let error = scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(f64::MAX),
             17,
@@ -2959,7 +2959,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,
@@ -2986,7 +2986,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,
@@ -3012,7 +3012,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,

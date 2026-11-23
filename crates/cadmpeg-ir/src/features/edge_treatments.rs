@@ -2,7 +2,7 @@
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
 use super::selection_overlap::face_selections_overlap;
-use super::{EdgeSelection, FaceSelection};
+use crate::features::selections::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
@@ -28,7 +28,7 @@ pub enum RadiusForm {
 }
 
 /// Radius assignment along filleted edges.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RadiusSpec {
@@ -174,7 +174,7 @@ impl<'de> Deserialize<'de> for FullRoundFilletGroup {
 }
 
 /// One side of a full-round fillet.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -333,7 +333,7 @@ pub enum ChamferForm {
 }
 
 /// Dimensional definition of an edge chamfer.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChamferSpec {

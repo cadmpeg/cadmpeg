@@ -235,7 +235,7 @@ fn companion_findings(
         ctx.owners_by_index.insert((stream, 6), &owner);
         ctx.records_by_index.insert((stream, 8), &header);
         let mut findings = Vec::new();
-        super::super::validate_parameter_companions(&ctx, &mut findings);
+        super::super::parameters::validate_parameter_companions(&ctx, &mut findings);
         findings
     })
 }

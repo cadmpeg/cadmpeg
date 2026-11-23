@@ -9,11 +9,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::Value as Json;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use super::evaluations::check_path_steps;
 use super::parameters::{node_references, references};
 use super::records::DesignRecords;
+use super::walk::{Collect, ExpressionPlace, Walk};
 use crate::design::configuration::ParameterOverride;
 use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
 use crate::design::edit::{check_types, kind_type, ExpressionSite, Type};
@@ -42,7 +44,11 @@ pub(super) struct Site<'a> {
     pub(super) variables: ExpressionSite,
 }
 
-pub(super) fn check_expressions(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_expressions(
+    ctx: &DecodeContext<'_>,
+    index: &DesignRecords<'_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let design = &index.ir.design;
     for parameter in &design.parameters {
         if let ParameterDefinition::Expression(expression) = &parameter.definition {
@@ -107,17 +113,18 @@ pub(super) fn check_expressions(index: &DesignRecords<'_>, findings: &mut Vec<Fi
             feature_owned: false,
             variables: ExpressionSite::BendAllowance,
         };
-        if let Ok(wire) = serde_json::to_value(rule) {
-            for expression in wire_expressions(&wire) {
-                check_expression(index, site, &expression, findings);
-            }
+        let mut walked = Collect::new(ctx);
+        rule.walk(&mut walked)?;
+        for (_, expression) in walked.expressions {
+            check_expression(index, site, expression, findings);
         }
     }
     for feature in &design.features {
-        check_feature_expressions(index, feature, findings);
+        check_feature_expressions(ctx, index, feature, findings)?;
     }
     check_process_parameters(index, findings);
     check_cycles(index, findings);
+    Ok(())
 }
 
 fn check_overrides(
@@ -455,83 +462,35 @@ pub(super) fn check_reference(
     }
 }
 
-/// The expressions a record's wire form holds, read back through their
-/// strict reader.
-pub(super) fn wire_expressions(wire: &Json) -> Vec<Expression> {
-    let mut found = Vec::new();
-    let mut pending = vec![wire];
-    while let Some(node) = pending.pop() {
-        match node {
-            Json::Array(items) => pending.extend(items),
-            Json::Object(object) => {
-                if let Some(expression) = tagged_expression(node) {
-                    found.push(expression);
-                    continue;
-                }
-                pending.extend(object.values());
-            }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => {}
-        }
-    }
-    found
-}
-
-/// A wire node that is an `Expression`, read back through its strict reader.
-fn tagged_expression(node: &Json) -> Option<Expression> {
-    let object = node.as_object()?;
-    let tagged = object.len() == 2
-        && object.contains_key("value")
-        && matches!(
-            object.get("kind").and_then(Json::as_str),
-            Some("neutral" | "source")
-        );
-    if !tagged {
-        return None;
-    }
-    serde_json::from_value(node.clone()).ok()
-}
-
-/// Where a feature operation holds an expression.
-enum FeaturePlace {
-    /// A `Law::Expression`.
-    Law,
-    /// An `AngleRange.value`.
-    BendAllowance,
-    /// A pattern instance's expression for the seed parameter it names.
-    Seed(String),
-    /// Anywhere else.
-    Other,
-}
-
 /// Every expression a feature's operation holds: its laws, its bend
 /// allowances, and its pattern instances' seed expressions.
 fn check_feature_expressions(
+    ctx: &DecodeContext<'_>,
     index: &DesignRecords<'_>,
     feature: &Feature,
     findings: &mut Vec<Finding>,
-) {
-    let Ok(wire) = serde_json::to_value(&feature.definition.operation) else {
-        return;
-    };
+) -> Result<(), CodecError> {
+    let mut walked = Collect::new(ctx);
+    feature.definition.operation.walk(&mut walked)?;
     let entity = feature.id.as_str();
-    for (place, expression) in feature_expressions(&wire) {
+    for (place, expression) in walked.expressions {
         let base = Site {
             entity,
             kind: None,
             feature_owned: false,
             variables: ExpressionSite::Parameter,
         };
-        let site = match &place {
-            FeaturePlace::Law => Site {
+        let site = match place {
+            ExpressionPlace::Law => Site {
                 variables: ExpressionSite::Law,
                 ..base
             },
-            FeaturePlace::BendAllowance => Site {
+            ExpressionPlace::BendAllowance => Site {
                 variables: ExpressionSite::BendAllowance,
                 ..base
             },
-            FeaturePlace::Seed(parameter) => {
-                let record = index.parameters.get(parameter.as_str());
+            ExpressionPlace::Seed(parameter) => {
+                let record = index.parameters.get(parameter);
                 Site {
                     kind: record.map(|record| &record.kind),
                     feature_owned: record.is_some_and(|record| {
@@ -540,63 +499,17 @@ fn check_feature_expressions(
                     ..base
                 }
             }
-            FeaturePlace::Other => base,
         };
-        check_expression(index, site, &expression, findings);
+        check_expression(index, site, expression, findings);
     }
-}
-
-/// The expressions of a feature operation's wire form, each with its place.
-fn feature_expressions(wire: &Json) -> Vec<(FeaturePlace, Expression)> {
-    let mut found = Vec::new();
-    let mut pending = vec![wire];
-    while let Some(node) = pending.pop() {
-        let object = match node {
-            Json::Array(items) => {
-                pending.extend(items);
-                continue;
-            }
-            Json::Object(object) => object,
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => continue,
-        };
-        if let Some(expression) = tagged_expression(node) {
-            found.push((FeaturePlace::Other, expression));
-            continue;
-        }
-        let kind = object.get("kind").and_then(Json::as_str);
-        let value = object.get("value");
-        if kind == Some("expression") && object.len() == 2 {
-            if let Some(expression) = value.and_then(tagged_expression) {
-                found.push((FeaturePlace::Law, expression));
-                continue;
-            }
-        }
-        if object.contains_key("from_inclusive") && object.contains_key("to_inclusive") {
-            if let Some(expression) = value.and_then(tagged_expression) {
-                found.push((FeaturePlace::BendAllowance, expression));
-                continue;
-            }
-        }
-        if kind == Some("varied") {
-            if let Some(Json::Object(parameters)) = object.get("parameters") {
-                for (parameter, expression) in parameters {
-                    if let Some(expression) = tagged_expression(expression) {
-                        found.push((FeaturePlace::Seed(parameter.clone()), expression));
-                    }
-                }
-                continue;
-            }
-        }
-        pending.extend(object.values());
-    }
-    found
+    Ok(())
 }
 
 /// A process parameter with no kind holds a `Number` and has a `Source`
 /// expression, no neutral tree references it, a stated value follows a stated
 /// kind, each reference of its expression resolves, and a neutral expression
 /// type-checks with a root of the stated kind.
-fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let process = &index.ir.process;
     let kinds: BTreeMap<&str, Option<&ValueKind>> = process
         .parameters

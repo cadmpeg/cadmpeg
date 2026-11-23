@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::direct_body_fixture;
+use crate::history::binding_histories::BindingHistories;
 use crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates;
-use crate::history::BindingHistories;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
     AsmHistory,
@@ -279,22 +279,74 @@ fn design_linked_case(
     links: &[(i64, i64)],
     in_state: bool,
 ) -> Option<i64> {
+    design_linked_clauses_case(design_id, selector, links, &[in_state])
+}
+
+/// `design_linked_case` for an operand with one face clause for each entry
+/// of `clauses_in_state`, in order.
+fn design_linked_clauses_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    clauses_in_state: &[bool],
+) -> Option<i64> {
+    let clauses = clauses_in_state
+        .iter()
+        .map(|&in_state| clause_faces(in_state))
+        .collect::<Vec<_>>();
+    design_linked_topology_case(design_id, selector, links, &clauses, |_| {})
+}
+
+/// Face 70 of body 7 and face 80 of body 8, or face 99 outside the state
+/// when `in_state` is false.
+fn clause_faces(in_state: bool) -> &'static [&'static str] {
+    if in_state {
+        &["f3d:brep:entity#70", "f3d:brep:entity#80"]
+    } else {
+        &["f3d:brep:entity#99"]
+    }
+}
+
+/// The design-linked fixture for an operand with one face clause for each
+/// entry of `clauses`, which lists that clause's candidate faces, with `edit`
+/// applied to the preceding-state topology.
+fn design_linked_topology_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    clauses: &[&[&str]],
+    edit: impl FnOnce(&mut AsmHistoricalTopology),
+) -> Option<i64> {
+    const CLAUSE_BYTES: u64 = 12;
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
     };
     let (scope, _, mut operands, _) = body_recipe_history_fixture();
-    let faces: &[&str] = if in_state {
-        &["f3d:brep:entity#70", "f3d:brep:entity#80"]
-    } else {
-        &["f3d:brep:entity#99"]
-    };
-    for reference in operands[0].reference_bindings_mut() {
-        *reference.candidate_faces = faces
-            .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
-            .collect();
-    }
+    let mut draft = operands.remove(0).into_draft();
+    let first = draft.references[0].clone();
+    draft.references = clauses
+        .iter()
+        .zip(0u64..)
+        .map(|(&faces, ordinal)| {
+            let mut reference = first.clone();
+            reference.design_reference_offset += ordinal * CLAUSE_BYTES;
+            reference.form_offset += ordinal * CLAUSE_BYTES;
+            reference.candidate_faces = faces
+                .iter()
+                .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
+                .collect();
+            reference
+        })
+        .collect();
+    let added = (u64::try_from(clauses.len()).unwrap() - 1) * CLAUSE_BYTES;
+    draft.nested_record_index_offset += added;
+    draft.asset_id_offset += added;
+    draft.context_id_offset += added;
+    operands.insert(
+        0,
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap(),
+    );
     let topology = AsmHistoricalTopology {
         bodies: vec![7, 8],
         regions: vec![71, 81],
@@ -329,14 +381,16 @@ fn design_linked_case(
             .collect(),
         ..AsmHistoricalTopology::default()
     };
+    let mut preceding = topology.clone();
+    edit(&mut preceding);
     let history = crate::test_support::history::history(
         "history".into(),
         0,
         None,
         false,
         vec![
-            recipe_state(2, topology.clone(), Some(1)),
-            recipe_state(1, topology, None),
+            recipe_state(2, topology, Some(1)),
+            recipe_state(1, preceding, None),
         ],
     );
     let recipe = crate::records::recipes::ConstructionRecipe {
@@ -390,25 +444,28 @@ fn body_recipes_resolve_design_link_307_8_before_body_deletion() {
         target: AttributeTarget::Body(body.id.clone()).into(),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: vec![
-            AttributeValue::String("generic_tag_attrib_def".into()),
-            AttributeValue::Integer(3),
-            AttributeValue::Integer(3),
-            AttributeValue::Integer(-1),
-            AttributeValue::String("generic_tag_attrib_def ".into()),
-            AttributeValue::Integer(1),
-            AttributeValue::Integer(3),
-            AttributeValue::String("307".into()),
-            AttributeValue::Integer(8),
-            AttributeValue::Integer(0),
-            AttributeValue::Integer(0),
+            Some(AttributeValue::String("generic_tag_attrib_def".into())),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::Integer(-1)),
+            Some(AttributeValue::String("generic_tag_attrib_def ".into())),
+            Some(AttributeValue::Integer(1)),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::String("307".into())),
+            Some(AttributeValue::Integer(8)),
+            Some(AttributeValue::Integer(0)),
+            Some(AttributeValue::Integer(0)),
         ],
+        native_ref: None,
     };
     let brep = cadmpeg_asm::brep::AsmBrep {
         bodies: vec![body],
         attributes: vec![attribute],
         ..Default::default()
     };
-    let tagged = crate::history::historical_topology(&brep).unwrap().unwrap();
+    let tagged = crate::history::topology_rows::historical_topology(&brep)
+        .unwrap()
+        .unwrap();
     crate::test_support::history::edit(&mut history, 1, |topology, _| {
         topology.body_design_links = tagged.body_design_links;
     });
@@ -491,6 +548,66 @@ fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
 }
 
 #[test]
-fn a_body_recipe_whose_face_clauses_miss_the_state_ignores_its_design_link() {
-    assert_eq!(design_linked_case("308", 6, &[(7, 5), (8, 6)], false), None);
+fn a_body_recipe_whose_face_clauses_partly_reach_the_state_ignores_its_design_link() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[true, true]),
+        Some(8)
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[false, false]),
+        Some(8)
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[true, false]),
+        None
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[false, true]),
+        None
+    );
+}
+
+#[test]
+fn a_body_recipe_ignores_its_design_link_when_the_state_has_an_unreadable_body_closure() {
+    let links = [(7, 5), (8, 6)];
+    for clauses in [
+        [clause_faces(true), clause_faces(false)],
+        [clause_faces(false), clause_faces(false)],
+    ] {
+        assert_eq!(
+            design_linked_topology_case("308", 6, &links, &clauses, |topology| {
+                topology.body_regions.retain(|row| row.owner_ref != 7);
+            }),
+            None
+        );
+    }
+}
+
+#[test]
+fn a_body_recipe_whose_faces_were_renumbered_selects_its_design_linked_body() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(design_linked_case("308", 6, &links, false), Some(8));
+    assert_eq!(design_linked_case("308", 5, &links, false), Some(7));
+    assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], false), None);
+}
+
+#[test]
+fn a_body_recipe_whose_face_clauses_have_no_candidate_faces_ignores_its_design_link() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(
+        design_linked_topology_case("308", 6, &links, &[&[], &[]], |_| {}),
+        None
+    );
+}
+
+#[test]
+fn a_body_recipe_whose_faces_are_in_no_body_of_the_state_ignores_its_design_link() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(
+        design_linked_topology_case("308", 6, &links, &[&["f3d:brep:entity#90"]], |topology| {
+            topology.faces.push(90);
+        }),
+        None
+    );
 }

@@ -68,7 +68,11 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -168,6 +172,44 @@ pub(crate) fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Ve
         .map(|guid| generated_instance_properties_for(guid))
         .collect::<Vec<_>>();
     let (design_bulk, design_records) = generated_design_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_records,
+    )
+}
+
+/// An archive whose Design stream also carries a browser-body appearance
+/// record that names `override_visual` for the generated body.
+pub(crate) fn f3d_with_smbh_and_protein_guids_and_browser_override(
+    smbh: &[u8],
+    guids: &[&str],
+    override_visual: &str,
+) -> Vec<u8> {
+    let properties = guids
+        .iter()
+        .map(|guid| generated_instance_properties_for(guid))
+        .collect::<Vec<_>>();
+    let (mut design_bulk, design_records) = generated_design_bulkstream();
+    let node_guid = "ABCD0000-1111-8222-A333-444444444444";
+    for value in [
+        "e966e81d-2581-4d41-821d-839938974425",
+        node_guid,
+        "DE897CF7-F483-4D31-A2D8-41671FE36D3D",
+        "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+        "PrismMaterial-018",
+        "ba2d3026-32c4-4584-b0e1-a738e387fa35",
+        override_visual,
+        crate::design::presentation::APPEARANCE_LIBRARY_ID,
+        "Prism-090",
+    ] {
+        crate::test_support::lp_utf16(&mut design_bulk, value);
+    }
+    crate::test_support::lp_utf16(&mut design_bulk, node_guid);
+    design_bulk.push(0);
+    design_bulk.extend_from_slice(&[0x01, 0x01]);
+    design_bulk.extend_from_slice(&985u64.to_le_bytes());
     f3d_with_smbh_and_instance_properties_and_design(
         smbh,
         &properties,

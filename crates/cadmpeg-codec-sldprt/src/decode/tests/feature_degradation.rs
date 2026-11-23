@@ -34,13 +34,13 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                     ..
                 },
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             ..
         })
     ));
@@ -56,7 +56,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Shell {
-            removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
             ..
@@ -65,7 +65,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Dome {
-            faces: cadmpeg_ir::features::FaceSelection::Native(_),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(_),
             height: None,
             elliptical: Some(false),
             reverse: Some(false),
@@ -75,7 +75,7 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
         }) if construction.profile().is_none()
             && construction.axis().is_some()
             && construction.extent().is_none()
@@ -106,13 +106,13 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
+                    termination: cadmpeg_ir::features::extents::LinearTermination::Unresolved {},
                     ..
                 },
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
             ..
         })
     ));
@@ -128,7 +128,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Shell {
-            removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
             ..
@@ -137,7 +137,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Dome {
-            faces: cadmpeg_ir::features::FaceSelection::Native(_),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(_),
             height: None,
             elliptical: Some(false),
             reverse: Some(false),
@@ -146,7 +146,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
     assert!(matches!(
         decoded.ir().model.features[4].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-            extent: Some(cadmpeg_ir::features::LinearTermination::Blind {
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::Blind {
                 length: actual_length,
             }),
             ..
@@ -200,7 +200,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         decoded.ir().model.features[4].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
         }) if construction.profile().is_none()
             && construction.axis().is_some()
             && construction.extent().is_none()
@@ -208,14 +208,14 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     assert!(matches!(
         decoded.ir().model.features[6].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: cadmpeg_ir::features::RibConstruction {
+            construction: cadmpeg_ir::features::revolve::RibConstruction {
                 profile: Some(_),
                 direction: None,
                 thickness: Some(actual_thickness),
-                side: Some(cadmpeg_ir::features::RibSide::OneSided),
-                draft: cadmpeg_ir::features::RibDraft::None,
+                side: Some(cadmpeg_ir::features::revolve::RibSide::OneSided),
+                draft: cadmpeg_ir::features::revolve::RibDraft::None,
             },
-            op: cadmpeg_ir::features::BooleanOp::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Join,
         }) if actual_thickness.get() == 2.0
     ));
     assert!(matches!(

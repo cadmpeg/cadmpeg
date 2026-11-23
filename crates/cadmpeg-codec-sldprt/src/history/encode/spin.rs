@@ -9,19 +9,20 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        AngularTermination, BooleanOp, LoftSection, PathRef, PlanarProfileRef, RevolveConstruction,
-        RevolveExtent, SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent,
-        SweepTransformation, SweepTransition,
-    },
-    scalar::Angle,
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef};
+use cadmpeg_ir::features::revolve::{RevolveConstruction, RevolveExtent};
+use cadmpeg_ir::features::sweeps::{
+    SweepGuideRail, SweepMode, SweepOrientation, SweepPathExtent, SweepTransformation,
+    SweepTransition,
 };
+use cadmpeg_ir::scalar::Angle;
 
 /// The decoded fields of one `Sweep` operation, borrowed from the feature definition.
 #[derive(Clone, Copy)]
 pub(super) struct SweepDefinition<'a> {
-    pub(super) shape: &'a cadmpeg_ir::features::SweepShape,
+    pub(super) shape: &'a cadmpeg_ir::features::sweeps::SweepShape,
     pub(super) path: Option<&'a PathRef>,
     pub(super) orientation: Option<&'a SweepOrientation>,
     pub(super) transition: Option<&'a SweepTransition>,
@@ -330,7 +331,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(path_source) = path_source {
                 let retained_native_path = existing
                     .is_some_and(|record| !record.properties.contains_key("Path"))
-                    && matches!(path, Some(cadmpeg_ir::features::PathRef::Native(reference))
+                    && matches!(path, Some(cadmpeg_ir::features::profiles::PathRef::Native(reference))
                         if reference.starts_with("sldprt:feature-input:component-reference-curve:"));
                 if !retained_native_path {
                     properties.insert(cadmpeg_core::nonblank_literal!("Path"), path_source);
@@ -338,7 +339,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match shape.mode() {
                 SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                    op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
                 } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Operation"),
@@ -362,7 +363,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         match shape.mode() {
                             SweepMode::Surface {} => "Surface-Sweep",
                             SweepMode::Solid {
-                                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                                op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
                             }
                             | SweepMode::Solid { .. }
                             | SweepMode::Unresolved {} => "Sweep",
@@ -425,10 +426,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if sections
-                .iter()
-                .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
-            {
+            if sections.iter().any(|section| {
+                matches!(
+                    section,
+                    cadmpeg_ir::features::profiles::LoftSection::Point(_)
+                )
+            }) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses a point loft section",
                     feature.id
@@ -437,8 +440,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let profile_sources = sections
                 .iter()
                 .filter_map(|section| match section {
-                    cadmpeg_ir::features::LoftSection::Profile(profile) => Some(profile),
-                    cadmpeg_ir::features::LoftSection::Point(_) => None,
+                    cadmpeg_ir::features::profiles::LoftSection::Profile(profile) => Some(profile),
+                    cadmpeg_ir::features::profiles::LoftSection::Point(_) => None,
                 })
                 .map(|profile| {
                     profile_source(profile, record_sources, feature_sources, sketch_sources)

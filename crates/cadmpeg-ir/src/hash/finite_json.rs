@@ -10,12 +10,21 @@
 //! only error type a nested `Serialize` implementation can return. The refused
 //! value is recorded in a `FiniteGuard` the whole walk shares, so the caller
 //! reads back which float was refused.
+//!
+//! Readers of a whole IR value that need `serde_json`'s own float spelling or
+//! the names of the structs it holds take the same walk through
+//! [`write_serde_json`], so each IR type compiles one JSON serializer.
+//! [`to_json_value`] takes it too, so a `serde_json::Value` of an IR type
+//! reuses this serializer's code instead of compiling every IR type against
+//! `serde_json`'s value serializer as well.
 
 use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::ResourceLimit;
 
-pub(super) mod admission;
+pub(crate) mod admission;
+#[cfg(test)]
+mod tests;
 use admission::{Admission, CanonicalAdmission};
 use std::fmt::Display;
 
@@ -55,7 +64,48 @@ pub(super) fn write_canonical_json<T: Serialize + ?Sized>(
     writer: &mut dyn std::io::Write,
     value: &T,
 ) -> Result<(), CanonicalJsonError> {
-    let guard = FiniteGuard::new(admission);
+    write_json(admission, Floats::Canonical, None, writer, value)
+}
+
+/// Receives the structs and maps a [`write_serde_json`] walk writes, in
+/// writing order.
+pub(crate) trait Structs {
+    /// A struct named `name` begins: its JSON text follows.
+    fn begin(&self, name: &'static str);
+    /// The innermost struct that began has ended: its JSON text precedes.
+    fn end(&self);
+    /// A map begins: its JSON text follows.
+    fn map(&self) {}
+}
+
+/// Writes `value` as the pretty JSON `serde_json::to_writer_pretty` produces,
+/// admitting each value through `admission`.
+///
+/// Floats are spelled as `serde_json` spells them: negative zero keeps its
+/// sign and a non-finite float is `null`. `structs` receives each struct the
+/// walk writes.
+///
+/// # Errors
+///
+/// [`CanonicalJsonError::Resource`] when `admission` refuses a value, and
+/// [`CanonicalJsonError::Serialize`] when the value or the writer fails.
+pub(crate) fn write_serde_json<T: Serialize + ?Sized>(
+    admission: CanonicalAdmission<'_, '_>,
+    structs: Option<&dyn Structs>,
+    writer: &mut dyn std::io::Write,
+    value: &T,
+) -> Result<(), CanonicalJsonError> {
+    write_json(admission, Floats::SerdeJson, structs, writer, value)
+}
+
+fn write_json<T: Serialize + ?Sized>(
+    admission: CanonicalAdmission<'_, '_>,
+    floats: Floats,
+    structs: Option<&dyn Structs>,
+    writer: &mut dyn std::io::Write,
+    value: &T,
+) -> Result<(), CanonicalJsonError> {
+    let guard = FiniteGuard::new(admission, floats, structs);
     let mut json = serde_json::Serializer::pretty(writer);
     let outcome = value.serialize(FiniteSerializer::new(&mut json, &guard));
     if let Some(limit) = guard.resource.borrow_mut().take() {
@@ -81,14 +131,69 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
         .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
 }
 
+/// Returns the `serde_json::Value` that `serde_json::to_value` returns for
+/// `value`.
+///
+/// The value is written as JSON text through the canonical writer's
+/// serializer and read back. Floats pass as `serde_json::to_value` stores
+/// them: a non-finite float becomes `null`, negative zero stays negative, and
+/// an `f32` widens to `f64`. An object key is plain text, also a key that
+/// spells `serde_json`'s `RawValue` token.
+///
+/// # Errors
+///
+/// Returns the error of a `Serialize` implementation that fails, or that of
+/// a map key that is not a string.
+pub fn to_json_value<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<serde_json::Value, serde_json::Error> {
+    let mut bytes = Vec::new();
+    write_json_value_bytes(&mut bytes, value)?;
+    let text = String::from_utf8(bytes).map_err(serde_json::Error::custom)?;
+    crate::native::replay::value(&text)
+}
+
+/// Writes `value` into `bytes` as JSON text with `to_json_value` float
+/// semantics, reusing the canonical serializer's monomorphizations.
+pub(crate) fn write_json_value_bytes<T: Serialize + ?Sized>(
+    bytes: &mut Vec<u8>,
+    value: &T,
+) -> Result<(), serde_json::Error> {
+    write_json(
+        CanonicalAdmission::unlimited(),
+        Floats::Value,
+        None,
+        bytes,
+        value,
+    )
+    .map_err(|error| match error {
+        CanonicalJsonError::Serialize(error) => error,
+        error => serde_json::Error::custom(error),
+    })
+}
+
+/// How a walk writes a float.
+#[derive(Clone, Copy)]
+enum Floats {
+    /// Refuse a non-finite float and write negative zero as zero.
+    Canonical,
+    /// Write every float as `serde_json` writes it.
+    SerdeJson,
+    /// Write every float as `serde_json::to_value` stores it: an `f32` as the
+    /// `f64` it widens to.
+    Value,
+}
+
 /// Records the float that a [`FiniteSerializer`] walk refused.
-struct FiniteGuard<A: Admission> {
+struct FiniteGuard<'structs, A: Admission> {
     refused: Cell<Option<f64>>,
     admission: A,
+    floats: Floats,
+    structs: Option<&'structs dyn Structs>,
     resource: RefCell<Option<ResourceLimit>>,
 }
 
-impl<A: Admission> FiniteGuard<A> {
+impl<'structs, A: Admission> FiniteGuard<'structs, A> {
     fn admit<T, E: serde::ser::Error>(&self, result: Result<T, A::Error>) -> Result<T, E> {
         result.map_err(|error| {
             if let Some(limit) = A::resource(error) {
@@ -106,10 +211,12 @@ impl<A: Admission> FiniteGuard<A> {
     }
 
     /// Returns a guard that has refused nothing.
-    fn new(admission: A) -> Self {
+    fn new(admission: A, floats: Floats, structs: Option<&'structs dyn Structs>) -> Self {
         Self {
             refused: Cell::new(None),
             admission,
+            floats,
+            structs,
             resource: RefCell::new(None),
         }
     }
@@ -129,12 +236,12 @@ impl<A: Admission> FiniteGuard<A> {
 /// Serializes a value through `inner`, refusing every non-finite float.
 struct FiniteSerializer<'guard, S, A: Admission> {
     inner: S,
-    guard: &'guard FiniteGuard<A>,
+    guard: &'guard FiniteGuard<'guard, A>,
 }
 
 impl<'guard, S, A: Admission> FiniteSerializer<'guard, S, A> {
     /// Returns an adapter over `inner` that reports refusals through `guard`.
-    fn new(inner: S, guard: &'guard FiniteGuard<A>) -> Self {
+    fn new(inner: S, guard: &'guard FiniteGuard<'guard, A>) -> Self {
         Self { inner, guard }
     }
 }
@@ -142,7 +249,7 @@ impl<'guard, S, A: Admission> FiniteSerializer<'guard, S, A> {
 /// Wraps a nested value so it serializes through the adapter as well.
 struct FiniteValue<'guard, 'value, T: ?Sized, A: Admission> {
     value: &'value T,
-    guard: &'guard FiniteGuard<A>,
+    guard: &'guard FiniteGuard<'guard, A>,
 }
 
 impl<T: ?Sized + Serialize, A: Admission> Serialize for FiniteValue<'_, '_, T, A> {
@@ -155,7 +262,7 @@ impl<T: ?Sized + Serialize, A: Admission> Serialize for FiniteValue<'_, '_, T, A
 /// Wraps a compound serializer so its elements serialize through the adapter.
 struct FiniteCompound<'guard, C, A: Admission + 'guard> {
     inner: C,
-    guard: &'guard FiniteGuard<A>,
+    guard: &'guard FiniteGuard<'guard, A>,
     _depth: A::Depth<'guard>,
     _variant_depth: Option<A::Depth<'guard>>,
 }
@@ -163,7 +270,7 @@ struct FiniteCompound<'guard, C, A: Admission + 'guard> {
 impl<'guard, C, A: Admission> FiniteCompound<'guard, C, A> {
     fn new(
         inner: C,
-        guard: &'guard FiniteGuard<A>,
+        guard: &'guard FiniteGuard<'guard, A>,
         depth: A::Depth<'guard>,
         variant_depth: Option<A::Depth<'guard>>,
     ) -> Self {
@@ -196,20 +303,21 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
 
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        if value.is_finite() {
+        match self.guard.floats {
+            Floats::SerdeJson | Floats::Value => self.inner.serialize_f64(value),
             // `-0.0 + 0.0` is `0.0`, so a writer never writes negative zero.
-            self.inner.serialize_f64(value + 0.0)
-        } else {
-            Err(self.guard.refuse(value))
+            Floats::Canonical if value.is_finite() => self.inner.serialize_f64(value + 0.0),
+            Floats::Canonical => Err(self.guard.refuse(value)),
         }
     }
 
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
-        if value.is_finite() {
-            self.inner.serialize_f32(value + 0.0)
-        } else {
-            Err(self.guard.refuse(f64::from(value)))
+        match self.guard.floats {
+            Floats::SerdeJson => self.inner.serialize_f32(value),
+            Floats::Value => self.inner.serialize_f64(f64::from(value)),
+            Floats::Canonical if value.is_finite() => self.inner.serialize_f32(value + 0.0),
+            Floats::Canonical => Err(self.guard.refuse(f64::from(value))),
         }
     }
 
@@ -384,6 +492,9 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        if let Some(structs) = guard.structs {
+            structs.map();
+        }
         self.inner
             .serialize_map(len)
             .map(|inner| FiniteCompound::new(inner, guard, depth, None))
@@ -396,6 +507,9 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     ) -> Result<Self::SerializeStruct, Self::Error> {
         let depth = self.guard.enter::<S::Error>()?;
         let guard = self.guard;
+        if let Some(structs) = guard.structs {
+            structs.begin(name);
+        }
         self.inner
             .serialize_struct(name, len)
             .map(|inner| FiniteCompound::new(inner, guard, depth, None))
@@ -519,7 +633,12 @@ impl<C: SerializeStruct, A: Admission> SerializeStruct for FiniteCompound<'_, C,
     }
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.inner.end()
+        let structs = self.guard.structs;
+        let ok = self.inner.end()?;
+        if let Some(structs) = structs {
+            structs.end();
+        }
+        Ok(ok)
     }
 }
 

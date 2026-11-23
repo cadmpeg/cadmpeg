@@ -214,7 +214,8 @@ fn compare(
 /// The document as JSON without its scope, design and process arenas, native
 /// namespaces, and local-digest source attributes.
 fn outside_design(ir: &CadIr) -> Value {
-    let mut value = serde_json::to_value(ir).expect("serialize decoded document");
+    let mut value =
+        cadmpeg_ir::hash::finite_json::to_json_value(ir).expect("serialize decoded document");
     let Value::Object(document) = &mut value else {
         panic!("a document serializes as a JSON object");
     };
@@ -297,7 +298,9 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
     use cadmpeg_ir::examples::{directed_subd_sum, unit_cube};
-    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::report::decode::DecodeTransfer;
     use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
     use cadmpeg_ir::{CadIr, ContainerSummary, SourceFidelity};

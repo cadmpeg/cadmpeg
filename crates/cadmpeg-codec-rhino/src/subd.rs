@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::subd::SubdScheme;

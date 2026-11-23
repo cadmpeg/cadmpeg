@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::operands::{
+use crate::design::decode::operands::face_sources::{
     face_source_carrier_spec, face_source_record_is_registered, parse_face_source_carrier_prefix,
     FaceSourceType,
 };

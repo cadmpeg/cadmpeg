@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! An external member placed below a local component that two occurrences
-//! place.
+//! External member trees below repeated local component placements.
 
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::transform::Transform;
@@ -9,6 +8,15 @@ use crate::records::xref::XrefReference;
 
 #[test]
 fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() {
+    check_repeated_owners(2);
+}
+
+#[test]
+fn three_repeated_local_owners_expand_each_member_root_once() {
+    check_repeated_owners(3);
+}
+
+fn check_repeated_owners(placements: usize) {
     use crate::test_support::assembly_test::{
         f3d_without_brep_with_xref_placement, f3z_archive, XREF_ROLE,
     };
@@ -77,7 +85,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         ),
     ]);
     let mut children = Vec::new();
-    for index in 0..2 {
+    for index in 0..placements {
         let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
         let transform = if index == 0 {
             Transform::affine([
@@ -88,7 +96,12 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             .unwrap()
         } else {
             Transform::affine([
-                [1.0, 0.0, 0.0, 80.0],
+                [
+                    1.0,
+                    0.0,
+                    0.0,
+                    80.0 * f64::from(u32::try_from(index).unwrap()),
+                ],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
             ])
@@ -137,7 +150,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
-    assert_eq!(merged, 4);
+    assert_eq!(merged, 2 * placements);
     let member_definitions = children
         .iter()
         .map(|child| {
@@ -150,7 +163,32 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
                 .clone()
         })
         .collect::<Vec<_>>();
-    assert_eq!(member_definitions[0], member_definitions[1]);
+    assert!(member_definitions
+        .iter()
+        .all(|definition| definition == &member_definitions[0]));
+    let member_roots = crate::tree::listed(&ir.model, &member_definitions[0]);
+    assert_eq!(member_roots.len(), placements);
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits {
+            max_entities: u64::try_from(ir.model.occurrences.len()).unwrap(),
+            ..Default::default()
+        },
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &instance_scopes,
+    )
+    .unwrap();
+    for root in member_roots {
+        assert_eq!(
+            expanded
+                .occurrence_of
+                .values()
+                .filter(|occurrence| *occurrence == root)
+                .count(),
+            1
+        );
+    }
+    assert_eq!(expanded.occurrences.len(), ir.model.occurrences.len());
     crate::tree::own_once(&ctx, &mut ir, &instance_scopes).unwrap();
     assert_eq!(ir.geometry.bodies.len(), 2);
     assert_eq!(ir.geometry.bodies[0], root_body);
@@ -162,8 +200,6 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         .find(|definition| !definition.bodies.is_empty())
         .unwrap();
     assert_eq!(leaf_definition.bodies, [ir.geometry.bodies[1].id.clone()]);
-    // §8.1: the group, placed twice, owns its external occurrence once, and
-    // the member it places owns the leaf occurrence once.
     let external = crate::ids::neutral_xref_occurrence_id(0, 0);
     assert_eq!(crate::tree::listed(&ir.model, &group), [&external]);
     let placing = ir
@@ -188,8 +224,13 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         .occurrences
         .iter()
         .all(|occurrence| occurrence.overrides.is_empty()));
-    let expanded =
-        crate::tree::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let poses = crate::tree::world_poses(&ir.model);
     let mut translations = expanded
         .occurrence_of
@@ -208,7 +249,11 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         })
         .collect::<Vec<_>>();
     translations.sort_by(|left, right| left.partial_cmp(right).unwrap());
-    assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
+    let mut expected = vec![[25.0, 60.0]];
+    expected.extend(
+        (1..placements).map(|index| [80.0 * f64::from(u32::try_from(index).unwrap()) + 20.0, 5.0]),
+    );
+    assert_eq!(translations, expected);
     let references: Vec<XrefReference> = ir
         .native
         .namespace("f3d")

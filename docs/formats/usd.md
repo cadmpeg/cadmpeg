@@ -997,7 +997,21 @@ The surface normal is the cross product `∂S/∂u × ∂S/∂v` for `orientatio
 
 The trim curves are in the `(u, v)` parameter space of the patch. The curves of one loop join end to start and form a closed loop. The loops of `trimCurve:counts` follow each other; their curves follow each other in the flat arrays.
 
+The sum of `trimCurve:counts` is the number of trim curves. `trimCurve:orders`, `trimCurve:vertexCounts`, and `trimCurve:ranges` have one entry for each trim curve. Trim curve `k` of order `o` and `n` control points has `n + o` knots and `n` points. The range `(min, max)` of a trim curve is the part of its knot domain `[knots[o-1], knots[n]]` that the loop uses, with `min < max`. When `trimCurve:ranges` is absent, each trim curve uses its whole knot domain.
+
 A trim-curve point `(x, y, w)` is homogeneous: its parameter-space position is `(x / w, y / w)` and its weight is `w`.
+
+The UsdGeom schema states that the encoding follows `RiTrimCurve` (<https://openusd.org/release/api/class_usd_geom_nurbs_patch.html>):
+
+> The encoding mostly follows that of RiNuPatch and RiTrimCurve
+
+The `RiTrimCurve` reference that the schema links to defines the inside of the trim loops (<https://web.archive.org/web/20220626115506/https://renderman.pixar.com/resources/RenderMan_20/geometricPrimitives.html>):
+
+> Trim curves exclude certain areas from the non-uniform B-spline surface definition. The inside must be specified consistently using two rules: an odd winding rule that states that the inside consists of all regions for which an infinite ray from any point in the region will intersect the trim curve an odd number of times, and a curve orientation rule that states that the inside consists of the regions to the "left" as the curve is traced.
+
+In loops that obey both rules, a loop at an even nesting depth runs counterclockwise in `(u, v)` and a loop at an odd depth runs clockwise.
+
+This codec reads the region inside the trim loops by the odd winding rule as the surface, and writes each outer loop counterclockwise and each inner loop clockwise. The region that a `NurbsPatch` keeps, and the region of loops that disobey the curve orientation rule, are open item USD-01.
 
 ## 15. Shading
 
@@ -1170,10 +1184,10 @@ A joint prim relates two bodies through `rel physics:body0` and `rel physics:bod
 | `PhysicsSphericalJoint` | the origins coincide; the angles between the axes `physics:axis` stay within `physics:coneAngle0Limit` and `physics:coneAngle1Limit` (degrees, `-1` for no limit) |
 | `PhysicsDistanceJoint` | the distance between the origins is in `[physics:minDistance, physics:maxDistance]` (`-1` for no limit) |
 | `PhysicsJoint` | the limits of its `PhysicsLimitAPI` instances |
-| `PhysxPhysicsGearJoint` | couples the revolute joints `physics:hinge0` and `physics:hinge1`: \|ω₁\| = `physics:gearRatio` · \|ω₀\|, with ω₀ and ω₁ the angular velocities of their joints. For gears with `N0` and `N1` teeth the ratio is `N0 / N1` |
-| `PhysxPhysicsRackAndPinionJoint` | couples the revolute joint `physics:hinge` to the prismatic joint `physics:prismatic`: \|ω\| = `physics:ratio` · \|v\|, with ω the angular velocity of the revolute joint in degrees per second and v the linear velocity of the prismatic joint |
+| `PhysxPhysicsGearJoint` | couples the revolute joints `physics:hinge0` and `physics:hinge1`: ω₁ = −`physics:gearRatio` · ω₀, with ω₀ and ω₁ the angular velocities of their joints about their axes. A positive ratio turns the gears opposite ways. For external gears with `N0` and `N1` teeth the ratio is `N0 / N1` |
+| `PhysxPhysicsRackAndPinionJoint` | couples the revolute joint `physics:hinge` to the prismatic joint `physics:prismatic`: ω = `physics:ratio` · v, with ω the angular velocity of the revolute joint about its axis in degrees per second and v the linear velocity of the prismatic joint along its axis |
 
-The signs of the coupled velocities follow the joint frames. Each relationship of a coupling joint targets exactly one joint of its type. `physics:axis` is `X` (unauthored value), `Y`, or `Z`. `physics:lowerLimit` and `physics:upperLimit` (float, unauthored values `-inf` and `inf`) bound the motion: degrees for a revolute joint and lengths for a prismatic joint.
+The frames of a coupling joint do not change the coupling. Each relationship of a coupling joint targets exactly one joint of its type. `physics:axis` is `X` (unauthored value), `Y`, or `Z`. `physics:lowerLimit` and `physics:upperLimit` (float, unauthored values `-inf` and `inf`) bound the motion: degrees for a revolute joint and lengths for a prismatic joint.
 
 | Attribute | Type | Unauthored value | Meaning |
 | --- | --- | --- | --- |
@@ -1296,7 +1310,7 @@ When `BrepCurveUvNurbAPI` holds one curve for each edgeuse, curve `i` is the tri
 
 The surface normal of a face is `N = ∂S/∂u × ∂S/∂v`. The faceuse with `faceuse:orientationType = same` is the side of the face toward `N`; the faceuse with `opposite` is the other side. A `solidRegion` is in the B-rep; a `voidRegion` is outside it. A face that bounds a solid region and a void region has its outward normal toward the void region. A face whose two faceuses are in void regions is a sheet face.
 
-The edgeuses of a loop are head to tail. An edgeuse with `edgeuse:orientationType = same` goes from the start vertex of its edge to the end vertex; one with `opposite` goes from the end vertex to the start vertex. Seen from the side toward `N`, the outer loop of a face goes counterclockwise and each inner loop clockwise: the face is to the left of each loop. A seam edge, which a face uses on two sides, has two edgeuses in the loop. A loop with no edgeuses is a vertex loop, at the vertex `loop:vertexIndex`, such as a pole or an apex. The `loop:vertexIndex` of a loop with edgeuses has no meaning.
+The edgeuses of a loop are head to tail. An edgeuse with `edgeuse:orientationType = same` goes from the start vertex of its edge to the end vertex; one with `opposite` goes from the end vertex to the start vertex. Seen from the side toward `N`, the outer loop of a face goes counterclockwise and each inner loop clockwise: the face is to the left of each loop. A seam edge, which a face uses on two sides, has two edgeuses in the loop. A loop with no edgeuses is a vertex loop, at the vertex `loop:vertexIndex`, such as a pole or an apex. An edge whose start and end vertex are the same vertex and whose curve stays at that vertex is degenerate. An edgeuse of a degenerate edge in a loop with other edgeuses is a pole of the loop: the boundary passes through the vertex there, and the trim curve of the edgeuse is the side of the face's parameter domain that collapses to the vertex. The `loop:vertexIndex` of a loop with edgeuses has no meaning.
 
 `edgeuse:nextRadialEUIndex` is the next edgeuse in a right-hand traversal about the direction of the edge. An edgeuse of an edge that bounds one face once is its own next edgeuse. `edgeuse:thisRadialEntryType = topEntry` states that the traversal enters the face of the edgeuse from its `same` side, and `bottomEntry` from its `opposite` side.
 
@@ -1312,7 +1326,7 @@ A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `v
 
 ### 17.4 Geometry subsets
 
-A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` binds its material to the elements it selects.
+A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` belongs to the family `materialBind` and binds its material to the elements it selects.
 
 ### 17.5 Fallback prims
 

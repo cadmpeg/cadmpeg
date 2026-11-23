@@ -8,7 +8,7 @@
 
 use super::cursor::Cursor;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -81,6 +81,8 @@ pub(crate) enum AllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+    /// `0e <u24le>`.
+    TaggedU24,
 }
 
 /// One allocation reference with its addressing form retained.
