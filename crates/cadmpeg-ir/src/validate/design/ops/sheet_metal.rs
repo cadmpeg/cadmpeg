@@ -574,7 +574,12 @@ pub(super) fn check_sheet_metal(
                 findings,
             );
         }
-        SheetMetalKind::ApplyRule { .. }
+        // The attached plate, bend and unchanged corner operands are checked
+        // by the attached sheet-metal pass.
+        SheetMetalKind::AttachedPlate { .. }
+        | SheetMetalKind::AttachedBend { .. }
+        | SheetMetalKind::UnchangedCorner { .. }
+        | SheetMetalKind::ApplyRule { .. }
         | SheetMetalKind::FlatPattern { fixed: None }
         | SheetMetalKind::Native(_) => {}
     }

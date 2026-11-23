@@ -33,7 +33,7 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
-    let operation = typed(&legacy(kind, value), &[], &[]).expect("typed projection");
+    let operation = typed(&legacy(kind, value), &[], &[], &[]).expect("typed projection");
     let wire = serde_json::to_value(&operation).expect("v11 wire");
     let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
@@ -62,7 +62,8 @@ fn extrude() -> LegacyOperation {
 
 #[test]
 fn extrude_keeps_direction_sides_and_output() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[], &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(value.output.body, Some(BodyForm::Solid));
@@ -101,7 +102,8 @@ fn symmetric_extrude_keeps_total_travel() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[], &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(
@@ -847,7 +849,7 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
         .expect("regions"),
     );
     let FeatureOperation::Extrude(value) =
-        typed(&operation, &[source], &[]).expect("profile projection")
+        typed(&operation, &[source], &[], &[]).expect("profile projection")
     else {
         panic!("extrude");
     };
@@ -1056,7 +1058,8 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[], &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeOrigin::Plane(start)) = value.origin else {
