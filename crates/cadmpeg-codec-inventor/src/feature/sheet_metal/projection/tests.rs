@@ -1121,7 +1121,7 @@ fn the_joined_edge_collection_has_one_edge_item() {
 }
 
 #[test]
-fn a_seventeen_property_plate_without_a_joined_edge_or_list_has_no_selection() {
+fn a_seventeen_property_plate_without_a_joined_edge_or_list_stores_no_selection() {
     let mut fixture = selecting_fixture();
     fixture.plate = crate::test_support::sheet_metal::feature(
         100,
@@ -1143,7 +1143,52 @@ fn a_seventeen_property_plate_without_a_joined_edge_or_list_has_no_selection() {
             &index,
             &FeatureInventory::default()
         )),
-        Err(PlateRefusal::SelectionList)
+        Err(PlateRefusal::AttachmentNotStored)
+    );
+}
+
+#[test]
+fn the_joined_edge_collection_supplies_the_selection_sources() {
+    fn find(
+        fixture: &Fixture,
+        reference: crate::pmdc::PmDcReference,
+    ) -> Option<&crate::feature::PmDcFeatureProperty> {
+        fixture
+            .properties
+            .iter()
+            .find(|p| Some(p.identity.record_ordinal) == reference.record_ordinal())
+    }
+    let joined = joined_edge_fixture();
+    assert_eq!(
+        operands::selection_slot(&joined.plate),
+        operands::JOINED_EDGE_SLOT
+    );
+    assert_eq!(
+        operands::selection_sources(&joined.plate, |r| find(&joined, r)),
+        Some(vec![61])
+    );
+    let listed = selecting_fixture();
+    assert_eq!(
+        operands::selection_slot(&listed.plate),
+        operands::SELECTION_LIST_SLOT
+    );
+    assert_eq!(
+        operands::selection_sources(&listed.plate, |r| find(&listed, r)),
+        Some(vec![61])
+    );
+    // A 15-property plate has no slot-5 form.
+    let mut body = Fixture::body();
+    body.plate = crate::test_support::sheet_metal::feature(
+        100,
+        &[1, 2, 3, 4, 5, 52, 46, 6, 7, 8, 9, 10, 0, 12, 0],
+    );
+    assert_eq!(
+        operands::selection_slot(&body.plate),
+        operands::SELECTION_LIST_SLOT
+    );
+    assert_eq!(
+        operands::selection_sources(&body.plate, |r| find(&body, r)),
+        None
     );
 }
 

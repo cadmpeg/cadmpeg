@@ -501,48 +501,86 @@ pub(crate) fn bend<'a>(
 #[cfg(test)]
 mod tests;
 
+/// The slot of the 17-property plate that holds the joined-edge collection of
+/// a plate-and-bend face record.
+pub(crate) const JOINED_EDGE_SLOT: usize = 5;
+/// The slot of the attachment selection list.
+pub(crate) const SELECTION_LIST_SLOT: usize = 12;
+
+/// The plate slot that holds the attachment selection: the slot-12 list, or
+/// the slot-5 joined-edge collection of a 17-property plate with a null slot 12.
+pub(crate) fn selection_slot(source: &PmDcFeature) -> usize {
+    let slots = source.properties.references();
+    if PlateForm::of(source) == Some(PlateForm::Collection)
+        && slots
+            .get(SELECTION_LIST_SLOT)
+            .is_some_and(|reference| reference.index() == 0)
+    {
+        JOINED_EDGE_SLOT
+    } else {
+        SELECTION_LIST_SLOT
+    }
+}
+
+/// The edge-selector source indexes of the items of an edge collection, in
+/// item order, when every item is an edge item with source indexes and no
+/// source repeats in `sources`.
+fn collection_sources<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    sources: &mut Vec<u32>,
+) -> Option<()> {
+    let PmDcFeaturePropertyKind::References {
+        family: PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return None;
+    };
+    for reference in items.references() {
+        let PmDcFeaturePropertyKind::EdgeItem {
+            index_references,
+            index_reference_value: -1,
+            value: 0,
+        } = &property(*reference)?.kind
+        else {
+            return None;
+        };
+        if index_references.values().is_empty() {
+            return None;
+        }
+        for source in index_references.values() {
+            if sources.contains(source) {
+                return None;
+            }
+            sources.push(*source);
+        }
+    }
+    Some(())
+}
+
 pub(crate) fn selection_sources<'a>(
     source: &PmDcFeature,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
 ) -> Option<Vec<u32>> {
-    let root = property(*source.properties.references().get(12)?)?;
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::SheetMetalAttachmentSelections,
-        items,
-    } = &root.kind
-    else {
-        return None;
-    };
+    let slot = selection_slot(source);
+    let root = property(*source.properties.references().get(slot)?)?;
     let mut sources = Vec::new();
-    for reference in items.references() {
-        let SheetMetalProperty::EdgeSelection { edges } = sheet(property(*reference)?)? else {
-            return None;
-        };
+    if slot == JOINED_EDGE_SLOT {
+        collection_sources(root, &property, &mut sources)?;
+    } else {
         let PmDcFeaturePropertyKind::References {
-            family: PmDcFeatureReferenceFamily::EdgeCollection,
+            family: PmDcFeatureReferenceFamily::SheetMetalAttachmentSelections,
             items,
-        } = &property(*edges)?.kind
+        } = &root.kind
         else {
             return None;
         };
         for reference in items.references() {
-            let PmDcFeaturePropertyKind::EdgeItem {
-                index_references,
-                index_reference_value: -1,
-                value: 0,
-            } = &property(*reference)?.kind
-            else {
+            let SheetMetalProperty::EdgeSelection { edges } = sheet(property(*reference)?)? else {
                 return None;
             };
-            if index_references.values().is_empty() {
-                return None;
-            }
-            for source in index_references.values() {
-                if sources.contains(source) {
-                    return None;
-                }
-                sources.push(*source);
-            }
+            collection_sources(property(*edges)?, &property, &mut sources)?;
         }
     }
     (!sources.is_empty()).then_some(sources)

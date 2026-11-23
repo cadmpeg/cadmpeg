@@ -58,58 +58,7 @@ pub(super) fn read(
     let Ok(header) = carrier.header.as_ref() else {
         return Ok(resolved);
     };
-    let mut selectors = HashMap::new();
-    for segment in &document.segments {
-        if segment.kind != SegmentKind::PmDc {
-            continue;
-        }
-        let Some(version) = segment.registry.map(|registry| registry.version_major) else {
-            continue;
-        };
-        let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-            continue;
-        };
-        let RecordFrameState::Framed(table) = &bulk.records else {
-            continue;
-        };
-        let types = unique_index(
-            table
-                .records
-                .iter()
-                .map(|record| (record.ordinal, record.type_id)),
-        );
-        let bodies = unique_index(
-            table
-                .records
-                .iter()
-                .filter(|record| record.type_id == crate::pmdc::inventor_id(0x9087_4d47))
-                .filter_map(|record| {
-                    Some((
-                        record.ordinal,
-                        historical::source(record.payload, version).ok()?,
-                    ))
-                }),
-        );
-        let mut parsed = Vec::new();
-        for record in &table.records {
-            if record.type_id != crate::pmdc::inventor_id(0x9087_4d53) {
-                continue;
-            }
-            let selector = match historical::parse(ctx, record.payload, version) {
-                Ok(Some(selector)) => selector,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Ok(None) | Err(_) => continue,
-            };
-            if historical::links(
-                &selector,
-                |ordinal| types.get(&ordinal).copied().flatten(),
-                |ordinal| bodies.get(&ordinal).copied().flatten(),
-            ) {
-                parsed.push(selector);
-            }
-        }
-        selectors.insert(segment.pair.token.key().as_str(), parsed);
-    }
+    let selectors = selectors_by_token(ctx, document)?;
     if selectors.len() != 1 {
         return Ok(resolved);
     }
@@ -250,6 +199,67 @@ pub(super) fn read(
         resolved.clear();
     }
     Ok(resolved)
+}
+
+/// The edge selectors of each `PmDc` segment that link to their record types,
+/// by segment token.
+pub(in crate::feature) fn selectors_by_token<'a>(
+    ctx: &DecodeContext<'_>,
+    document: &'a crate::rse::RseInventory<'_>,
+) -> Result<HashMap<&'a str, Vec<historical::StoredSelector>>, CodecError> {
+    let mut selectors = HashMap::new();
+    for segment in &document.segments {
+        if segment.kind != SegmentKind::PmDc {
+            continue;
+        }
+        let Some(version) = segment.registry.map(|registry| registry.version_major) else {
+            continue;
+        };
+        let SegmentBulkState::Framed(bulk) = &segment.bulk else {
+            continue;
+        };
+        let RecordFrameState::Framed(table) = &bulk.records else {
+            continue;
+        };
+        let types = unique_index(
+            table
+                .records
+                .iter()
+                .map(|record| (record.ordinal, record.type_id)),
+        );
+        let bodies = unique_index(
+            table
+                .records
+                .iter()
+                .filter(|record| record.type_id == crate::pmdc::inventor_id(0x9087_4d47))
+                .filter_map(|record| {
+                    Some((
+                        record.ordinal,
+                        historical::source(record.payload, version).ok()?,
+                    ))
+                }),
+        );
+        let mut parsed = Vec::new();
+        for record in &table.records {
+            if record.type_id != crate::pmdc::inventor_id(0x9087_4d53) {
+                continue;
+            }
+            let selector = match historical::parse(ctx, record.payload, version) {
+                Ok(Some(selector)) => selector,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Ok(None) | Err(_) => continue,
+            };
+            if historical::links(
+                &selector,
+                |ordinal| types.get(&ordinal).copied().flatten(),
+                |ordinal| bodies.get(&ordinal).copied().flatten(),
+            ) {
+                parsed.push(selector);
+            }
+        }
+        selectors.insert(segment.pair.token.key().as_str(), parsed);
+    }
+    Ok(selectors)
 }
 
 pub(super) fn selected_owner(item: PmDcReference, edge: &historical::SelectedEdge) -> Option<i64> {
