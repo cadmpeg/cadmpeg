@@ -2,7 +2,9 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
-use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneAssumedCause};
+use super::compact_reference_planes::{
+    CompactReferencePlaneIndex, PlaneAssumedCause, TopReferenceSketches,
+};
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -56,7 +58,10 @@ use super::stream_readings::{
     is_revolve_profile, marker_reading, EntityIndex, MarkerReading, SolidEdges,
     UnboundMarkerReading,
 };
-use super::transforms::{record_component_marker_coordinates, sketch_frame_marker_transform};
+use super::transforms::{
+    record_component_marker_coordinates, sketch_frame_marker_transform, COMPACT_SKETCH_KIND,
+    LEGACY_CONFIG_SKETCH_KIND, MARKER_SKETCH_KIND,
+};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -563,9 +568,10 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<(SketchId, PlaneAssumedCause)>, CodecError> {
+) -> Result<(Vec<(SketchId, PlaneAssumedCause)>, TopReferenceSketches), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let mut top_references = TopReferenceSketches::default();
     let metadata_ids = history_metadata_ids(histories);
     let mut assumed_planes = Vec::new();
 
@@ -713,6 +719,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(ProfileSketchFrame {
                 frame: (origin, normal, u_axis),
                 assumed,
+                top_reference,
             }) = component_frame.map(ProfileSketchFrame::stored).or_else(|| {
                 profile_sketch_frame(
                     &lane.native_payload,
@@ -852,6 +859,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     assumed_planes.push((sketch_id.clone(), cause));
                 }
                 record_component_marker_coordinates(&mut features[feature_index], component_frame);
+                top_references.record(&sketch_id, top_reference);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -995,6 +1003,7 @@ pub(crate) fn project_compact_sketch_profiles(
                     assumed_planes.push((sketch_id.clone(), cause));
                 }
                 record_component_marker_coordinates(&mut features[feature_index], component_frame);
+                top_references.record(&sketch_id, top_reference);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1073,6 +1082,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 assumed_planes.push((sketch_id.clone(), cause));
             }
             record_component_marker_coordinates(&mut features[feature_index], component_frame);
+            top_references.record(&sketch_id, top_reference);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1082,7 +1092,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-    Ok(assumed_planes)
+    Ok((assumed_planes, top_references))
 }
 
 fn profile_entity(
@@ -1513,7 +1523,7 @@ pub(crate) fn project_marker_backed_sketches(
     entities: MarkerSketchEntities<'_>,
     sources: MarkerSources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<TopReferenceSketches, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let MarkerSketchEntities {
@@ -1537,7 +1547,7 @@ pub(crate) fn project_marker_backed_sketches(
         marker_owners.insert(owner);
     }
     let feature_frames = sketch_feature_frames(features, histories, lanes);
-    project_detached_legacy_config_sketches(
+    let mut top_references = project_detached_legacy_config_sketches(
         features,
         sketches,
         sketch_entities,
@@ -1681,6 +1691,7 @@ pub(crate) fn project_marker_backed_sketches(
                     )))
                 });
             let assumed = frame.and_then(|frame| frame.assumed);
+            let top_reference = frame.is_some_and(|frame| frame.top_reference);
             let frame = frame.map(|frame| frame.frame);
             let lane_key = lane
                 .id
@@ -1754,6 +1765,7 @@ pub(crate) fn project_marker_backed_sketches(
                             &mut features[feature_index],
                             component_frame,
                         );
+                        top_references.record(&sketch_id, top_reference);
                     }
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -3027,6 +3039,7 @@ pub(crate) fn project_marker_backed_sketches(
                     .assumed_planes
                     .push((sketch_id.clone(), cause));
             }
+            top_references.record(&sketch_id, top_reference);
             if let Some(unbound) = unbound {
                 held_geometry.unbound_readings.push(unbound);
                 continue;
@@ -3051,19 +3064,25 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
-    Ok(())
+    Ok(top_references)
 }
 
 /// The id of the sketch read from the compact records of feature `ordinal`
 /// in the lane keyed `lane_key`.
 fn compact_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
-    SketchId::mint(format!("sldprt:model:sketch#compact:{lane_key}:{ordinal}")).ok()
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{COMPACT_SKETCH_KIND}:{lane_key}:{ordinal}"
+    ))
+    .ok()
 }
 
 /// The id of the sketch read from the marker records of feature `ordinal`
 /// in the lane keyed `lane_key`.
 fn marker_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
-    SketchId::mint(format!("sldprt:model:sketch#markers:{lane_key}:{ordinal}")).ok()
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{MARKER_SKETCH_KIND}:{lane_key}:{ordinal}"
+    ))
+    .ok()
 }
 
 /// The closed profiles of a marker sketch's `projected` entities. A curve in
@@ -3726,9 +3745,10 @@ fn project_detached_legacy_config_sketches(
     lanes: &[FeatureInputLane],
     feature_frames: &HashMap<String, ProfileSketchFrame>,
     assumed_planes: &mut Vec<(SketchId, PlaneAssumedCause)>,
-) {
+) -> TopReferenceSketches {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let mut top_references = TopReferenceSketches::default();
 
     for lane in lanes
         .iter()
@@ -3748,7 +3768,13 @@ fn project_detached_legacy_config_sketches(
             frames.sort_unstable_by(|left, right| {
                 reference_plane_frame_key(&left.frame).cmp(&reference_plane_frame_key(&right.frame))
             });
-            frames.dedup_by(|left, right| left.frame == right.frame);
+            frames.dedup_by(|duplicate, kept| {
+                let same = duplicate.frame == kept.frame;
+                if same {
+                    kept.top_reference &= duplicate.top_reference;
+                }
+                same
+            });
             let [frame] = frames.as_slice() else {
                 continue;
             };
@@ -3779,12 +3805,13 @@ fn project_detached_legacy_config_sketches(
                 let ProfileSketchFrame {
                     frame: (origin, normal, u_axis),
                     assumed,
+                    top_reference,
                 } = feature_frames
                     .get(native_ref)
                     .copied()
                     .unwrap_or(detached_frame);
                 let Ok(sketch_id) = SketchId::mint(format!(
-                    "sldprt:model:sketch#legacy-config:{lane_key}:{}",
+                    "sldprt:model:sketch#{LEGACY_CONFIG_SKETCH_KIND}:{lane_key}:{}",
                     native_feature.ordinal
                 )) else {
                     break 'feature_edit;
@@ -3846,6 +3873,7 @@ fn project_detached_legacy_config_sketches(
                 if let Some(cause) = assumed {
                     assumed_planes.push((sketch_id.clone(), cause));
                 }
+                top_references.record(&sketch_id, top_reference);
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3854,6 +3882,7 @@ fn project_detached_legacy_config_sketches(
             }
         }
     }
+    top_references
 }
 
 fn legacy_config_hex_sketch(

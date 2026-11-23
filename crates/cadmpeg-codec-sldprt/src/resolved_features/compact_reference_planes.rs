@@ -196,11 +196,7 @@ impl CompactReferencePlaneIndex {
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
             |(offset, _)| *offset,
         );
-        (!records.is_empty()).then_some((
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ))
+        (!records.is_empty()).then(front_lane_fallback_frame)
     }
 
     fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
@@ -379,31 +375,24 @@ fn compact_principal_reference_plane_record(
     {
         return None;
     }
-    let (origin, normal, u_axis) =
-        principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Right);
-    let v_axis = normal.cross(u_axis);
-    let expected = if source == 4 {
-        [
-            u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z,
-            normal.z, origin.x, origin.y, origin.z, 1.0,
-        ]
+    let plane = if source == 3 {
+        cadmpeg_ir::features::PrincipalPlane::Top
     } else {
-        [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]
+        cadmpeg_ir::features::PrincipalPlane::Right
     };
-    expected
-        .into_iter()
-        .enumerate()
-        .all(|(index, expected)| {
-            View::f64_le_at(bytes, principal_component::BASIS + index * 8)
-                .is_some_and(|value| value == expected)
-        })
-        .then_some(if source == 3 {
-            cadmpeg_ir::features::PrincipalPlane::Top
-        } else {
-            cadmpeg_ir::features::PrincipalPlane::Right
-        })
+    let (origin, normal, u_axis) = principal_sketch_frame(plane);
+    let v_axis = normal.cross(u_axis);
+    [
+        u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z, normal.z,
+        origin.x, origin.y, origin.z, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    .all(|(index, expected)| {
+        View::f64_le_at(bytes, principal_component::BASIS + index * 8)
+            .is_some_and(|value| value == expected)
+    })
+    .then_some(plane)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -537,23 +526,19 @@ pub(super) fn principal_source(plane: cadmpeg_ir::features::PrincipalPlane) -> u
     }
 }
 
-pub(super) fn principal_top_component_frame() -> PlaneFrame {
+/// The frame the decoder keeps for a Front reference with a deferred principal
+/// component record (`sldprt-open-items.md` SF-01). No support plane stores it.
+fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        Vector3::new(0.0, 0.0, -1.0),
     )
 }
 
-/// The sketch frame a profile takes from its principal component records of
-/// `plane`; the profile's marker pairs are sketch coordinates in it.
-pub(super) fn principal_component_frame(plane: cadmpeg_ir::features::PrincipalPlane) -> PlaneFrame {
-    match plane {
-        cadmpeg_ir::features::PrincipalPlane::Top => principal_top_component_frame(),
-        plane => principal_sketch_frame(plane),
-    }
-}
-
+/// The model-space `(origin, normal, u-axis)` frame of a principal plane
+/// (`sldprt.md` §2): the Top frame is the frame its principal-plane component
+/// record stores.
 pub(crate) fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
 ) -> (Point3, Vector3, Vector3) {
@@ -566,7 +551,7 @@ pub(crate) fn principal_sketch_frame(
         ),
         PrincipalPlane::Top => (
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         ),
         PrincipalPlane::Right => (
@@ -574,6 +559,54 @@ pub(crate) fn principal_sketch_frame(
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
         ),
+    }
+}
+
+/// The profile sketches whose frame is the principal Top plane that their
+/// feature-input plane reference names (`ProfileSketchFrame::top_reference`), rather
+/// than a frame a component record or a stored plane gives (`sldprt.md` §3.3).
+#[derive(Debug, Default)]
+pub(crate) struct TopReferenceSketches(std::collections::HashSet<cadmpeg_ir::sketches::SketchId>);
+
+impl TopReferenceSketches {
+    pub(super) fn record(&mut self, sketch: &cadmpeg_ir::sketches::SketchId, top_reference: bool) {
+        if top_reference {
+            self.0.insert(sketch.clone());
+        }
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
+    /// The loss naming the recorded sketches that lie on the Top frame. Which
+    /// plane their reference gives them is open item DI-73: the B-rep of some
+    /// sketches bound this way lies on another principal plane.
+    pub(crate) fn note(
+        &self,
+        sketches: &[cadmpeg_ir::sketches::Sketch],
+    ) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let top = principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top);
+        let mut assumed = crate::loss::NamedCount::default();
+        for sketch in sketches {
+            if self.0.contains(&sketch.id)
+                && sketch
+                    .resolved_placement()
+                    .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+                    == Some(top)
+            {
+                assumed.push(sketch.name.as_deref().unwrap_or(sketch.id.as_str()));
+            }
+        }
+        (!assumed.is_empty()).then(|| {
+            crate::loss::SldprtLossCode::SketchTopPlaneBindingAssumed.note(format!(
+                "{} profile sketch(es) ({assumed}) are placed on the Top plane (origin 0,0,0, \
+                 normal +Y, u-axis +X) that their feature-input plane reference names; the plane \
+                 is assumed, because the B-rep of some sketches bound this way lies on another \
+                 principal plane (sldprt-open-items.md DI-73).",
+                assumed.count(),
+            ))
+        })
     }
 }
 
