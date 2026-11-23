@@ -2897,10 +2897,13 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
         if wire.companion_suppressed.is_some_and(|flag| {
+            use crate::layout::thread_hole_companion_tail as companion;
+            let tail = admitted.feature_ordinal_offset;
             admitted.kind() != DesignFeatureKind::Thread
                 || wire.tail_flags.is_some()
-                || flag.offset <= admitted.feature_ordinal_offset
-                || flag.offset >= admitted.paired_byte_offset
+                || admitted.paired_byte_offset.checked_sub(tail)
+                    != Some(u64_from_index(companion::LEN))
+                || tail.checked_add(u64_from_index(companion::FLAGS)) != Some(flag.offset)
         }) {
             return Err(DesignParameterScopePayloadError(
                 "companion_suppressed outside a Thread companion tail".into(),
