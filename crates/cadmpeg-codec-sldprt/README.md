@@ -111,10 +111,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 the retained `source_fidelity` sidecar replays an unchanged source image byte
 for byte after an integrity check, and patches supported edits in place.
 Geometry-only changes may retain or patch the native Parasolid partition when
-the entity graph and provenance permit it. Container regeneration requires a
-retained envelope with validated local, central-directory, and end-of-directory
-signature tokens. Source-less IR and unproved envelopes are refused before
-output is written.
+the entity graph and provenance permit it. Container regeneration reuses the
+`file_id` and the local, central-directory, and end-of-directory signature
+tokens of a proved retained envelope. For source-less IR or an unproved
+envelope it derives a nonzero `file_id` from a SHA-256 of the written members
+and three nonzero, distinct tokens from that `file_id`, and charges
+`export:record.residual-unavailable` naming each one. A member with no source
+member takes a placeholder time/date word and `internal_attrs`, charged the
+same way. Open item CM-16 holds the rules these fields lack. No serializer
+writes a saved property: each property carrier is written as its retained
+record stores it, and each saved property that carrier does not hold as the
+document states it is charged.
 
 Retained writing can synchronize supported feature, sketch, parameter,
 configuration, active-configuration XML, and PMI edits while rejecting
@@ -127,7 +134,7 @@ configuration snapshot that the decoder synthesizes from the model; an edit of
 that snapshot which the model does not state gets a
 `writer.configuration-snapshot-edit-unwritten` loss.
 
-With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
+Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
 writes analytic and non-periodic NURBS geometry, body and face base colors,
 selected document attributes, sequential triangle strips, feature history, and

@@ -13,6 +13,11 @@ use cadmpeg_ir::{
 };
 
 pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
+    let unwritten_bindings = if regenerated_brep {
+        super::face_colors_and_unwritten_bindings(ir).1
+    } else {
+        Vec::new()
+    };
     let mut losses = Vec::new();
     let mut charge = |count: usize, code: SldprtLossCode, records: &str| {
         if count != 0 {
@@ -160,6 +165,52 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.triangle_groups().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation triangle group",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.texture_assignments().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation texture assignment",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.texture_coordinates().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation texture coordinate set",
+    );
+    charge(
+        ir.model
+            .tessellations
+            .iter()
+            .map(|mesh| mesh.feature_edges().len())
+            .sum(),
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        "tessellation feature edge",
+    );
+    if !unwritten_bindings.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterAppearanceBindingsOmitted.note(format!(
+                "{} face appearance binding(s) state no colour, or a colour other than the one \
+             the face already has; the face is written with that one: {}",
+                unwritten_bindings.len(),
+                unwritten_bindings.join(", ")
+            )),
+        );
+    }
     losses
 }
 
@@ -177,14 +228,27 @@ pub(crate) enum Unwritten {
     UnknownName,
     /// A value has a type, count or range its record cannot hold.
     Unrepresentable,
+    /// An integer is wider than its record's 32-bit field (§3.4,
+    /// `export:value.unwritable`).
+    TooWide,
     /// The exporter cannot add, regenerate or edit this record in place.
     NoSerializer,
     /// The attribute's retained source position does not hold its record.
     RetainedMismatch,
-    /// A saved-property edit; the property carrier is written as stored.
+    /// A saved property the exporter cannot serialize; its carrier is
+    /// written as stored, or no carrier row is written.
     SavedProperty,
     /// A retained record the document no longer states; its bytes are kept.
     Removed,
+    /// The record's retained member is written as stored: the source holds
+    /// it in more than one member, unnamed, or with bytes its envelope
+    /// member does not hold.
+    OwnerCarried,
+    /// The source fidelity holds no bytes of the record's member.
+    OwnerUnavailable,
+    /// The record's member is generated from other records, which replace
+    /// the patched member.
+    OwnerRegenerated,
 }
 
 /// What the output holds for one attribute the semantic exporter did not
@@ -211,6 +275,7 @@ impl Unwritten {
             Self::Unrepresentable => {
                 "hold a value whose type, count or range their SLDPRT record cannot hold"
             }
+            Self::TooWide => "hold an integer wider than their SLDPRT record's 32-bit word",
             Self::NoSerializer => {
                 "state a record the SLDPRT semantic exporter cannot add, regenerate or edit in place"
             }
@@ -218,9 +283,19 @@ impl Unwritten {
                 "name a retained source position that does not hold their SLDPRT record"
             }
             Self::SavedProperty => {
-                "are saved-property edits the SLDPRT semantic exporter cannot serialize"
+                "are saved properties the SLDPRT semantic exporter cannot serialize"
             }
             Self::Removed => "are no longer stated by the document",
+            Self::OwnerCarried => {
+                "are stored in a retained member the SLDPRT semantic exporter does not patch: \
+                 one of several, unnamed, or unlike its source envelope member"
+            }
+            Self::OwnerUnavailable => {
+                "are stored in a member whose bytes the source fidelity does not hold"
+            }
+            Self::OwnerRegenerated => {
+                "are stored in a member the SLDPRT semantic exporter generates from other records"
+            }
         }
     }
 
@@ -271,25 +346,38 @@ impl UnwrittenAttributes {
         }
         grouped
             .into_iter()
-            .map(|((held, reason), ids)| {
-                let head = format!(
-                    "{} sldprt metadata attribute record(s) {}, {}",
-                    ids.len(),
-                    reason.stated(),
-                    reason.instead(held)
-                );
-                match held {
-                    Held::Source => cadmpeg_ir::codec::write::edit_dropped(
-                        EntityKind::SourceAttribute,
-                        format!("{head}: {}", ids.join(", ")),
+            .filter_map(|((held, reason), ids)| match (reason, held) {
+                (Unwritten::TooWide, held) => cadmpeg_ir::codec::write::value_unwritable(
+                    "SLDPRT",
+                    &format!(
+                        "names sldprt metadata attribute records that {}, {}",
+                        reason.stated(),
+                        reason.instead(held)
                     ),
-                    Held::Nothing => {
-                        let mut named = NamedCount::default();
-                        for id in ids {
-                            named.push(id);
-                        }
-                        SldprtLossCode::WriterAttributesOmitted.note(format!("{head}: {named}"))
+                    ids,
+                ),
+                (_, Held::Source) => cadmpeg_ir::codec::write::edit_dropped(
+                    EntityKind::SourceAttribute,
+                    "SLDPRT",
+                    &format!(
+                        "names sldprt metadata attribute records that {}, {}",
+                        reason.stated(),
+                        reason.instead(held)
+                    ),
+                    ids,
+                ),
+                (_, Held::Nothing) => {
+                    let head = format!(
+                        "{} sldprt metadata attribute record(s) {}, {}",
+                        ids.len(),
+                        reason.stated(),
+                        reason.instead(held)
+                    );
+                    let mut named = NamedCount::default();
+                    for id in ids {
+                        named.push(id);
                     }
+                    Some(SldprtLossCode::WriterAttributesOmitted.note(format!("{head}: {named}")))
                 }
             })
             .collect()
