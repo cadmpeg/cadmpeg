@@ -879,6 +879,46 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A one-sided reversal-`0` `Extrude` of a stream with serializer magic `1234` whose profile loop holds an arc: it gives the curve that takes the lowest token of such a loop and shows the range and its direction for an exterior loop that holds an arc. The stored order of the hole loops of a region with two or more holes and the order of their side-token ranges, which a writer of such a region must choose. The region order of multi-region profiles against the stored region order and the region geometry. The `AlongDistance` values of reversed-direction `Extrude` features against their token direction. A two-sided or symmetric `Extrude` of a loop of several lines. An `Extrude` whose stored profile normal is opposite its Sketch's normal, to tell whether the `AlongDistance` sign or the extrusion direction against the Sketch normal orders the tokens. The records of a split side face. A writer names side faces by the walk and stores the entries of a loop in ring order.
 
+### DR-1040. Side entries and side tokens of a sketch-driven Revolve
+
+**Question.** Which profile loop entries of a sketch-driven `Revolve` take side entries in its tracked-results table, in which order do their side tokens follow the loop, and when does the table hold no body entry or more than one?
+
+**Known.** `f3d.md` §3.1 "**Revolve tracked results.**" gives the table: consecutive keys from `3`, side entries of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` and body entries of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`, and the key after the last key. For a profile of one region with one loop, a table holds one of four runs: side entries from key `3` and then one body entry; side entries only; two runs of side entries that each end with a body entry; or side entries, one body entry, and a second run of side entries that ends the table. In a table of the first form the side entries can name the loop curves other than the axis line, one entry for each curve. In other tables a side entry names a curve that the stored loop does not hold, or a loop curve other than the axis line has no side entry. The side tokens of consecutive keys name curves that meet at a common end in some loops and curves that do not meet in others. The faces of a partial turn can carry the cap tokens `1` and `2` beside the side tokens. DR-883 gives the corresponding questions for the `Extrude`.
+
+**Need.** A one-sided full-turn new-body `Revolve` of a one-region profile of lines and arcs, saved in a stream with serializer magic `1234`, once with a profile line as the axis and once with a construction line beside the profile as the axis: the side entries and the side tokens of each, compared with the ring of "**Side-face walk.**". The same `Revolve` saved again after its profile is selected again following a sketch edit, with its table compared.
+
+### DR-1041. Prologue forms of the Revolve axis curve identity, carrier links, and side entry
+
+**Question.** What selects the 49-byte form of a `Revolve` axis curve identity over the 45-byte form, the 37-byte and the 157-byte forms of a carrier link over the 33-byte form, and the 33-byte form of a `Revolve` side entry over the 37-byte form?
+
+**Known.** `f3d.md` §3.1 "**Axis curve identity.**" gives the two forms of record `A + 3`: after the indexed header, ten zero bytes, or nine zero bytes, the byte `1`, and u32 `0`; then eight zero bytes and the two u64 identities. In the 49-byte form, the byte `1` and u32 `0` stand where the 157-byte carrier link stores its property-block presence byte and its property count. Record `C + 2` of the axis tracking carrier stores the same identities in the 45-byte form, also when record `A + 3` has the 49-byte form. "**Axis tracking carrier.**" gives the three forms of a carrier link of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`: 33 bytes, with ten zero bytes before the reference to the next record; 37 bytes, with nine zero bytes, the byte `1`, and u32 `0` before it; and the 157-byte record `C + 1` with a property block. In a stream with serializer magic `1234`, record `C + 1` of an axis tracking carrier is a 33-byte, 37-byte, or 157-byte link, and records `C + 3` and `C + 5` are 33-byte links or 37-byte links; 37-byte records `C + 3` and `C + 5` occur with a 157-byte record `C + 1`. "**Revolve tracked results.**" gives the 37-byte side entry, whose reference follows nine zero bytes, the byte `1`, and u32 `0`, and the 33-byte side entry, whose reference follows ten zero bytes. One tracked-results table can hold side entries of both forms.
+
+**Need.** `Revolve` features with a sketch-line axis saved in a stream with serializer magic `1234`, before and after an edit of the axis selection and of the profile, with the form of each record compared.
+
+### DR-1042. The 76-byte item tail of a Revolve
+
+**Question.** What selects the 76-byte item tail of a `Revolve` over the 77-byte item tail in a plain-reference stream?
+
+**Known.** `f3d.md` §3.1 "**Revolve item tail.**" gives the forms. The 76-byte tail stores the family ordinal at tail offset 0, the custom-label count at 8, the state bytes at 16, the tracked-results table at 19, the preceding history-state identity at 30, the evaluation epoch at 34, the evaluation duration at 38, the second evaluation epoch at 46, the item-tail companion at 50, the no-result flag at 61, the rolled-back flag at 62, the record-timestamp table at 63, and two zero bytes at 74. A plain-reference stream stores the 76-byte tail for its `Sketch`, `Extrude`, and `Revolve` items when its MetaStream header stores a serializer magic from `134223405` to `134223991`, and the 77-byte or the 87-byte tail when it stores serializer magic `134224396` or a larger value.
+
+**Need.** One design of a `Sketch`, an `Extrude`, and a `Revolve`, saved by builds that write the serializer magic values between `134223991` and `134224396`: the item tail of each scope compared.
+
+### DR-1043. Scope frame of a one-sided Revolve with serializer magic 1234
+
+**Question.** What is the scope frame of a one-sided version-2 sketch-driven `Revolve` in a stream with serializer magic `1234`?
+
+**Known.** `f3d.md` §3.1 "**Revolve scope frame.**" gives the one-sided version-2 frame of a plain-reference stream ([`sketch_revolve_scope_frame`](../layouts/f3d.md#sketch_revolve_scope_frame)), which the 77-byte item tail follows. In a stream with serializer magic `1234`, a two-sided version-2 `Revolve` scope stores the fields of that frame with these differences: the byte `0` at offset 35; the Two Sides flag `1` at offset 37; a marked reference to the `AgainstAngle` owner in the opposite-angle slot at offset 38, so that each later field stands ten bytes later; the zero u32 at offset 99; the ordered-reference count `7` at offset 205, with the ordered references in ascending record index; and the 78-byte item tail.
+
+**Need.** A one-sided full-turn new-body `Revolve` of a Sketch profile about a line of the same Sketch, saved in a stream with serializer magic `1234`: its scope frame compared field by field with `sketch_revolve_scope_frame`.
+
+### DR-1044. Body-presentation owner and Body owner of a Revolve result body
+
+**Question.** What is the layout of the body-presentation owner of a sketch-driven `Revolve`'s result body, which form of the `Body` owner does that result body store, and what selects it?
+
+**Known.** `f3d.md` §3.1 "**Revolve result body.**" gives the browser-node member and the body-presentation owner, which references one `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, type version `4`, twice. That `Body` owner has no paired header. After the indexed header it stores nine zero bytes, the byte `1`, and u32 `0`, and it references the snapshot body-map companion (type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`), the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`), a record of type `372234A0-2A6C-4122-8047-E74DBA04F326`, and the component aggregate. Its length is 89, 107, 151, or 1163 bytes in a plain-reference stream and 415 bytes in a stream with serializer magic `1234`; the 107-, 151-, 1163- and 415-byte forms also reference body-presentation owners. "Records of a sketch-driven Extrude" gives the 103-byte form of the `Body` owner of an `Extrude`. The body-presentation owner of type version `18` stores, after the indexed header, ten zero bytes, or nine zero bytes, the byte `1`, and u32 `0`, and then u32 `2`. The body-presentation owner of type version `19` starts with the prefix `sketch_extrude_body_presentation_owner_prefix` and the LP-UTF16 name `0_` followed by its own decimal record index.
+
+**Need.** A design of one Sketch and one one-sided new-body `Revolve`, saved in a stream with serializer magic `1234`: the `Body` owner of its result body compared with the 103-byte form.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
