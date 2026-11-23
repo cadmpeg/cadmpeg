@@ -72,6 +72,7 @@ its result.
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
+| Alibre Design `.AD_PRT`                           | L3    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L0    |
@@ -600,6 +601,37 @@ These gaps remain:
 ### Read profile
 - **Container and versions: Partial.** The codec admits the ZIP package through the shared archive snapshot, requires an `eModel` member, and reads its wrapper and zlib stream. The package members are listed with their roles.
 - **Geometry: Partial.** The model stream is walked and decoded. Shells become faceted bodies in millimetres, with colours, names, and the current display state. Only display meshes exist in the source.
+
+### Write and round trip
+- **Native write: None.**
+- **Round trip: None.**
+
+## Alibre Design `.AD_PRT`
+
+**Container:** Microsoft Compound File with a flat root; the `SAB_DATA` stream holds an ACIS binary body
+
+<!-- generated: dialects alibre -->
+
+**Ladder: L3.**
+
+| Dialect                  | Read     | Write |
+| ------------------------ | -------- | ----- |
+| `alibre:cfb-acis-binary` | detected | none  |
+| `alibre:unknown`         | refused  | none  |
+
+<!-- /generated: dialects alibre -->
+
+The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition.
+
+These gaps remain:
+
+- Faces of a lofted solid keep the solved B-spline cache as carrier, and their edges have no typed 3D curve (ALB-01, `alibre/geometry.procedural-surface-untyped`).
+- The feature model of `STEP_DATA` and every other stream do not transfer (ALB-02, ALB-03, `alibre/source.streams-undecoded`).
+- Assemblies and sheet-metal parts are not claimed (ALB-04).
+
+### Read profile
+- **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.
+- **Geometry: Partial.** Planes, cylinders, cones, tori, and B-spline carriers decode with exact topology. Procedural constructions stay unknown.
 
 ### Write and round trip
 - **Native write: None.**

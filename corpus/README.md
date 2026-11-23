@@ -31,7 +31,7 @@ The first accepted donation creates `corpus/manifest.toml`. Each later donation 
 
 ## Manifest format
 
-Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, and `sat`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, license, SHA-256, purpose, and optional expected topology. CC0 donations use `license = "CC0-1.0"`. The NIST specimen track uses `license = "LicenseRef-NIST-PD"`; see [`nist-pmi/README.md`](nist-pmi/README.md). Spreadsheets and publisher README files that have no codec stay out of `[[file]]`. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal CC0 entry:
+Valid format keys are `f3d`, `fcstd`, `inventor`, `sldprt`, `catia`, `nx`, `creo`, `rhino`, `iges`, `step`, `sat`, and `alibre`. The manifest records each file's name, format key, authoring application and version, source URL, acquisition date, license, SHA-256, purpose, and optional expected topology. CC0 donations use `license = "CC0-1.0"`. The NIST specimen track uses `license = "LicenseRef-NIST-PD"`; see [`nist-pmi/README.md`](nist-pmi/README.md). Spreadsheets and publisher README files that have no codec stay out of `[[file]]`. See [`manifest.example.toml`](manifest.example.toml) for an annotated template. A minimal CC0 entry:
 
 ```toml
 [[file]]

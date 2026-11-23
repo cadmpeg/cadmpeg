@@ -35,6 +35,7 @@ default = [
   "sat",
   "pvz",
   "edrawings",
+  "alibre",
   "usd",
   "onshape",
 ]
@@ -56,6 +57,7 @@ iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
 edrawings = ["cadmpeg-registry/edrawings"]
+alibre = ["cadmpeg-registry/alibre"]
 onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
