@@ -294,7 +294,7 @@ pub(super) fn project_edge_flange(
                 && settings.owner_record_index == u64::from(scope.record_index)
         });
         let settings = or_none!(matching.next());
-        if matching.next().is_some() || settings.mask != 0 {
+        if matching.next().is_some() || settings.mask != Some(0) {
             return Ok(None);
         }
         let thickness = or_none!(settings.rule_thickness).get() * 10.0;

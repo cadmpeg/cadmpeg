@@ -107,6 +107,8 @@ pub(crate) struct ParameterScopeSources<'a> {
     pub(crate) component_occurrences:
         &'a [crate::records::feature::assembly_features::DesignComponentOccurrence],
     pub(crate) recipes: &'a [crate::records::recipes::ConstructionRecipe],
+    pub(crate) sheet_metal_settings:
+        &'a [crate::records::sheet_metal_settings::DesignSheetMetalSettings],
 }
 
 #[derive(Debug, Default)]
@@ -131,6 +133,7 @@ pub(crate) fn decode_parameter_scopes(
         parameter_owners,
         component_occurrences,
         recipes,
+        sheet_metal_settings: _,
     } = sources;
     let mut given_up = Vec::new();
     let mut out = Vec::new();
@@ -984,6 +987,7 @@ pub(crate) fn decode_parameter_scopes(
             bytes,
             &records,
             &stream_types,
+            sources,
             &mut out[stream_scope_start..],
         )?;
         bind_joint_origin_frames_from_assemblies(

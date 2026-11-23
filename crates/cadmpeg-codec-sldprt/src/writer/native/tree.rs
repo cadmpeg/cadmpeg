@@ -9,7 +9,7 @@ use super::archive::{Archive, ClassMap};
 use super::block::{
     block, block_close, block_open, body_head, named, Oid, Schema, Tail, ADDED_FOLDER_TAIL, TAIL,
 };
-use super::{ids, Body, Facts, PLANE_HALF_EXTENT, TIME_STAMP};
+use super::{ids, Body, Facts, Feature, PLANE_HALF_EXTENT, TIME_STAMP};
 
 /// The sketch-record attribute block of the origin point: `ff ff`, a u16,
 /// a byte, eight `ff` bytes and f32 `-1`.
@@ -60,7 +60,7 @@ pub(super) fn resolved_features(
         comments,
     );
     favorites(&mut archive);
-    history(&mut archive);
+    history(&mut archive, facts.features);
     selection_sets(&mut archive);
     plain_folder(
         &mut archive,
@@ -122,12 +122,54 @@ pub(super) fn resolved_features(
         plane_data(&mut archive, plane);
     }
     origin(&mut archive);
+    // Dimension parameters take identifiers after the stored bodies' and the
+    // user features'.
+    let features = archive.count32(facts.bodies.len() + facts.features.len(), "feature count");
+    let first = archive.tree_id(ids::MARKUPS + 1);
+    let mut next_id = match first.checked_add(features) {
+        Some(id) => id,
+        None => archive.count32(usize::MAX, "object identifier"),
+    };
+    // A user sketch's plane reference holds an identifier in its trailer,
+    // which in native parts exceeds the origin sketch's (sldprt.md, EV-16).
+    // The tree numbers the sketches' from one past the last body identifier
+    // it writes, and from `102` in a part with no body, so each also differs
+    // from every body identifier it writes.
+    let body_ids = archive.count32(facts.bodies.len().max(1), "body count");
+    let mut plane_reference = match super::config::FIRST_BODY_ID.checked_add(body_ids) {
+        Some(id) => id,
+        None => archive.count32(usize::MAX, "object identifier"),
+    };
+    // The map index of each sketch written, by its object identifier.
+    let mut profiles = Vec::new();
+    for feature in facts.features {
+        match feature {
+            Feature::Sketch(sketch) => {
+                let reference = super::sketch::take_id(&mut archive, &mut plane_reference);
+                let profile =
+                    super::sketch::profile_feature(&mut archive, sketch, &mut next_id, reference)?;
+                profiles.push((sketch.feature_id, profile));
+            }
+            Feature::Extrusion(extrusion) => {
+                let Some(&(_, profile)) = profiles
+                    .iter()
+                    .find(|(sketch, _)| *sketch == extrusion.sketch_id)
+                else {
+                    return Err(CodecError::malformed(
+                        "SLDPRT native skeleton: an extrusion's sketch is no earlier feature",
+                    ));
+                };
+                let parameter = super::sketch::take_id(&mut archive, &mut next_id);
+                super::extrude::extrusion(&mut archive, extrusion, profile, part.atom, parameter);
+            }
+        }
+    }
     for (body, &component) in facts.bodies.iter().zip(&part.bodies) {
         base_body(&mut archive, body, component);
     }
     // The u16 after the map count is the top-level object count minus two.
     let tops = archive.count16(
-        DEFAULT_TREE_OBJECTS - 2 + facts.bodies.len(),
+        DEFAULT_TREE_OBJECTS - 2 + facts.features.len() + facts.bodies.len(),
         "top-level object count",
     );
     let (objects, _) = archive.finish()?;
@@ -141,6 +183,8 @@ pub(super) fn resolved_features(
 pub(super) struct PartRefs {
     /// The map index of the `moEnvFolder_c` object.
     pub(super) environment: u32,
+    /// The map index of the `moAtom_c` object.
+    pub(super) atom: u32,
     /// The map index of each body's `moCompSolidBody_c` or
     /// `moCompSurfaceBody_c` object.
     pub(super) bodies: Vec<u32>,
@@ -168,8 +212,14 @@ fn favorites(archive: &mut Archive) {
     archive.u32(1);
 }
 
-/// `moHistoryFolder_c` with no items.
-fn history(archive: &mut Archive) {
+/// The four u32 of a history item before its string.
+const HISTORY_ITEM_WORDS: [u32; 4] = [1, 0x4000_0000, u32::MAX, 0];
+
+/// `moHistoryFolder_c`: the folder, the item count and, in source order, a
+/// `moHistoryFeatItemData_c` per user feature: u16 `0`,
+/// [`HISTORY_ITEM_WORDS`], an empty `CString` and a `moCompFeature_c` naming
+/// the feature by its object identifier.
+fn history(archive: &mut Archive, features: &[Feature]) {
     plain_folder(
         archive,
         "moHistoryFolder_c",
@@ -177,7 +227,22 @@ fn history(archive: &mut Archive) {
         Oid::Tree(ids::HISTORY),
         TAIL,
     );
-    archive.u16(0);
+    let count = archive.count16(features.len(), "history item count");
+    archive.u16(count);
+    for feature in features {
+        let id = match feature {
+            Feature::Sketch(sketch) => sketch.feature_id,
+            Feature::Extrusion(extrusion) => extrusion.feature_id,
+        };
+        archive.object("moHistoryFeatItemData_c");
+        archive.u16(0);
+        archive.u32s(&HISTORY_ITEM_WORDS);
+        archive.cstring("");
+        archive.object("moCompFeature_c");
+        unit_component(archive, 0);
+        archive.u32(id);
+        archive.u32(TIME_STAMP);
+    }
 }
 
 /// `moSelectionSetFolder_c`: the folder, u16 `0` and u32 `1`.
@@ -231,8 +296,8 @@ fn annotations(archive: &mut Archive) {
 }
 
 /// A default reference plane.
-#[derive(Debug, Clone, Copy)]
-enum Plane {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::writer) enum Plane {
     Front,
     Top,
     Right,
@@ -250,10 +315,46 @@ impl Plane {
     }
 
     fn id(self) -> Oid {
+        Oid::Tree(self.tree_id())
+    }
+
+    /// The plane's `ids` value.
+    pub(super) fn tree_id(self) -> u32 {
         match self {
-            Self::Front => Oid::Tree(ids::FRONT_PLANE),
-            Self::Top => Oid::Tree(ids::TOP_PLANE),
-            Self::Right => Oid::Tree(ids::RIGHT_PLANE),
+            Self::Front => ids::FRONT_PLANE,
+            Self::Top => ids::TOP_PLANE,
+            Self::Right => ids::RIGHT_PLANE,
+        }
+    }
+
+    /// The u16 a sketch's `moCompRefPlane_c` writes after this plane's feature
+    /// number.
+    pub(super) fn reference_word(self) -> u16 {
+        match self {
+            Self::Front => 3,
+            Self::Top => 2,
+            Self::Right => 1,
+        }
+    }
+
+    /// The rotation a sketch's `moCompRefPlane_c` writes for this plane, row
+    /// by row, or none for Front; its columns are [`Self::axes`]. The zeros
+    /// carry the signs native parts write.
+    pub(super) fn reference_rotation(self) -> Option<[f64; 9]> {
+        match self {
+            Self::Front => None,
+            Self::Top => Some([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0]),
+            Self::Right => Some([-0.0, 0.0, 1.0, -0.0, 1.0, 0.0, -1.0, 0.0, 0.0]),
+        }
+    }
+
+    /// The plane's first and second in-plane axes and its normal in model
+    /// space: the columns of its rotation.
+    pub(in crate::writer) fn axes(self) -> [[f64; 3]; 3] {
+        match self {
+            Self::Front => [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            Self::Top => [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]],
+            Self::Right => [[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]],
         }
     }
 
@@ -269,11 +370,7 @@ impl Plane {
     /// The plane's normal: Front is the XY plane, Top the XZ plane and Right
     /// the YZ plane.
     fn normal(self) -> [f64; 3] {
-        match self {
-            Self::Front => [0.0, 0.0, 1.0],
-            Self::Top => [0.0, 1.0, 0.0],
-            Self::Right => [1.0, 0.0, 0.0],
-        }
+        self.axes()[2]
     }
 }
 
@@ -412,8 +509,17 @@ fn origin_point(archive: &mut Archive) {
     archive.u32(0);
 }
 
+/// The identifier in the origin sketch's plane-reference trailer: `101`, the
+/// lowest value native origin sketches of `swVersion` 14000 hold, which a
+/// native part holds beside body `101` and a user sketch's `102`, as a
+/// one-body part the tree writes does.
+/// Every user sketch's identifier exceeds it (sldprt.md §2.3, EV-16).
+pub(super) const ORIGIN_PLANE_REFERENCE: u32 = super::config::FIRST_BODY_ID;
+
 /// The origin sketch's plane: a `moCompRefPlane_c` naming the Front plane by
-/// its identifier, with the identity frame and an empty trailer.
+/// its identifier, with the identity frame and the trailer of the native
+/// origin sketches: three zero bytes, u32 `4`, i32 `-7`, u32 `0`,
+/// [`ORIGIN_PLANE_REFERENCE`], u32 `0` and no hops.
 fn origin_plane(archive: &mut Archive) {
     archive.object("moCompRefPlane_c");
     unit_component(archive, 0);
@@ -426,8 +532,10 @@ fn origin_plane(archive: &mut Archive) {
     archive.u8(0);
     archive.f64s(&[0.0, 0.0, 0.0, 1.0]);
     archive.zeros(3);
-    archive.u32(3);
-    archive.zeros(12);
+    archive.u32(4);
+    archive.i32(-7);
+    archive.u32(0);
+    archive.u32(ORIGIN_PLANE_REFERENCE);
     archive.u32(0);
     archive.u16(0);
     archive.u16(0);

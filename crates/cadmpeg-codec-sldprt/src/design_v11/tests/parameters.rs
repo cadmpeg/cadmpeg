@@ -1294,6 +1294,69 @@ fn a_reference_in_an_inch_document_states_its_product_in_inches() {
 }
 
 #[test]
+fn scalars_one_number_apart_state_one_length_and_further_apart_none() {
+    use super::super::parameters::NamedScalar;
+    use crate::resolved_features::parameter_classes::{StatedParameter, Statement};
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">37.5</Dimension>
+                <Dimension Name="D2">37.5</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let shown = |metres| NamedScalar {
+        stated: Some(Statement::Parameter(StatedParameter::Length(metres))),
+        driving: false,
+    };
+    // D1's scalars differ in the last bit; D2's by 5e-6 relative, though
+    // the display shows both.
+    let next = f64::from_bits(0.0375f64.to_bits() + 1);
+    let named = [
+        ("Sketch1", "D1", shown(0.0375)),
+        ("Sketch1", "D1", shown(next)),
+        ("Sketch1", "D2", shown(0.0375)),
+        ("Sketch1", "D2", shown(0.037_500_2)),
+    ];
+    let (_, parameters, notes) =
+        parameters_with_scalars(keywords, &[], &[], &[], &named, Some(UnitSymbol::Mm), None);
+    let parameter = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    let d1 = parameter("D1");
+    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!(
+        matches!(&d1.value, Some(ParameterValue::Number(value)) if value.get() == 0.0375 * 1000.0),
+        "the first counted scalar's value: {d1:#?}"
+    );
+    let d2 = parameter("D2");
+    assert!(d2.value.is_none(), "{d2:#?}");
+    let note = note_of(
+        &notes,
+        crate::loss::SldprtLossCode::DesignParameterValueUnread,
+    )
+    .expect("D2 is named");
+    assert!(
+        note.message.contains(&format!(
+            "1 whose stored values differ from the display or from each other ({})",
+            d2.id.as_str()
+        )),
+        "{}",
+        note.message
+    );
+}
+
+#[test]
 fn a_bare_display_number_states_no_unit() {
     use super::super::parameters::bare_display_number;
 
