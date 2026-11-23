@@ -1120,7 +1120,10 @@ fn an_extrude_of_a_sketch_on_a_construction_plane_stays_in_the_base_feature() {
     profile.plane = SketchPlane::Placed(Box::new(Construction {
         inputs: vec![unread()],
         resolved: Some(frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])),
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: std::collections::BTreeMap::new(),
     }));
     let (report, decoded) = write(&ir);
     assert_eq!(kinds(&decoded), ["sketch", "base"]);

@@ -60,7 +60,11 @@ pub(super) fn operation(
             .map(|placement| match placement {
                 HolePlacement::Directed { position, .. } => Some(Construction::<kinds::Point> {
                     resolved: Some(*position),
-                    ..Default::default()
+                    inputs: Vec::new(),
+                    after: Vec::new(),
+                    solution: None,
+                    mode: None,
+                    resolved_in: BTreeMap::new(),
                 }),
                 HolePlacement::Axis { .. } => None,
             })
@@ -116,7 +120,11 @@ pub(super) fn operation(
         .and_then(|direction| UnitVector3::normalized(direction.get()))
         .map(|direction| Construction {
             resolved: Some(direction),
-            ..Default::default()
+            inputs: Vec::new(),
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved_in: BTreeMap::new(),
         });
     let diameter = shape.diameter().map(Dimension::Literal).or_else(|| {
         let diameter = thread.minor_diameter.clone()?;

@@ -181,6 +181,8 @@ fn reversed_occurs_on_a_coincident_input_only_where_its_subject_is_a_line() {
 fn reversed_does_not_occur_on_a_native_relation() {
     let attach = |reversed: Option<bool>| {
         let mut input = json!({"role": {"subject": "whole", "relation": {"kind": "native", "value": "cad:attach"}}});
+        input["reference"] =
+            json!({"kind": "picks", "value": named(input_anchor(), vec![principal("x_axis")])});
         if let Some(reversed) = reversed {
             input["reversed"] = json!(reversed);
         }

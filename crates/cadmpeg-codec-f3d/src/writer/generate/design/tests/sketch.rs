@@ -145,7 +145,11 @@ pub(super) fn datum(name: &str, plane: PrincipalEntity) -> Feature {
         FeatureOperation::Datum(Box::new(Datum {
             element: DatumElement::Plane(Construction::<kinds::Plane> {
                 inputs: vec![picked(principal(plane))],
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             link: None,
             native_options: NativeOptions::new(),
@@ -232,7 +236,10 @@ impl Source {
             plane: SketchPlane::Placed(Box::new(Construction {
                 inputs: vec![self.input],
                 resolved: Some(self.frame),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             })),
             solve: SketchSolve {
                 state: None,

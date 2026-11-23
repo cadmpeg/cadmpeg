@@ -260,7 +260,11 @@ fn sketches_share_a_plane_only_where_the_source_names_the_same_support() {
         FeatureOperation::Datum(Box::new(Datum {
             element: DatumElement::Plane(Construction::<kinds::Plane> {
                 inputs: vec![unread()],
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             link: None,
             native_options: NativeOptions::new(),
