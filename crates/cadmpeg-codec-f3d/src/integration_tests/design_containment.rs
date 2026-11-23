@@ -518,34 +518,23 @@ fn native_validation_accepts_shared_sketch_members_only_without_an_owner() {
 }
 
 #[test]
-fn an_unread_primary_header_is_no_loss_below_design_depth() {
+fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
     let bytes = with_unread_primary_header();
-    for depth in [DecodeDepth::Container, DecodeDepth::Geometry] {
+    for depth in [DecodeDepth::Geometry, DecodeDepth::Design] {
         let mut options = DecodeOptions {
             depth,
             ..DecodeOptions::default()
         };
         options.policy.mode = DecodeMode::Strict;
-        let result = EditableDecodeResult::from(
-            crate::test_support::archive_session::decode(&mut Cursor::new(&bytes), &options)
-                .expect("strict decode below Design depth admits the archive"),
+        let failure = F3dCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .expect_err("strict decode refuses the unread header");
+        let DecodeFailure::StrictRejected { rejection } = &failure else {
+            panic!("expected a strict rejection at {depth:?}, got {failure:?}");
+        };
+        assert_eq!(
+            rejection.loss().code,
+            F3dLossCode::PrimaryRecordUndecoded.kind()
         );
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| loss.code != F3dLossCode::PrimaryRecordUndecoded.kind()));
     }
-    let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let failure = F3dCodec
-        .decode(&mut Cursor::new(&bytes), &options)
-        .expect_err("strict decode at Design depth refuses the unread header");
-    let DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(
-        rejection.loss().code,
-        F3dLossCode::PrimaryRecordUndecoded.kind()
-    );
 }

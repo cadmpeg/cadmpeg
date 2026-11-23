@@ -117,7 +117,7 @@ fn unreadable_curve_geometry_keeps_its_identity_and_sibling_geometry() {
         assert_eq!(curves.len(), 2);
         assert_eq!(curves[0].record_index, 41);
         assert!(curves[0].geometry.is_none());
-        assert_eq!(curves[0].geometry_offset, 144);
+        assert_eq!(curves[0].geometry_offset, expected_offset);
         assert_eq!(curves[1].geometry_offset, expected_offset);
         assert!(
             matches!(curves[1].geometry, Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(10.0, 0.0, 0.0))

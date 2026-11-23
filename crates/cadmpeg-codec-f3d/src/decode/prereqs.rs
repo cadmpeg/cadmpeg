@@ -3,10 +3,7 @@
 //!
 //! Design-intent decoding reads [`ProductPrereqs`] and never writes it.
 
-use cadmpeg_core::{
-    decode::{DecodeContext, DecodeDepth},
-    CodecError,
-};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 
 use crate::container::{self, BrepFacts, ContainerScan};
 use crate::design::decode::parameters::UnparsedParameterRecords;
@@ -281,13 +278,7 @@ pub(super) fn decode(
         &design_parameter_scopes,
         &design_types,
     )?;
-    // Below Design depth no reader consumes the primary frames, so a bad
-    // frame header is not a loss there.
-    let mut design_record_losses = if ctx.depth() >= DecodeDepth::Design {
-        crate::design::decode::meta::decode_primary_frame_losses(scan)?
-    } else {
-        Vec::new()
-    };
+    let mut design_record_losses = crate::design::decode::meta::decode_primary_frame_losses(scan)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,
         &mut design_record_losses,

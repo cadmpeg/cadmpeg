@@ -4275,14 +4275,20 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset, planar_z_noise) =
-            parsed_geometry.map_or((None, geometry_shift + 144, None), |parsed| {
+        let (geometry, geometry_offset, planar_z_noise) = parsed_geometry.map_or(
+            (
+                None,
+                unread_geometry_offset(payload, geometry_shift, curve_class),
+                None,
+            ),
+            |parsed| {
                 (
                     Some(parsed.geometry),
                     parsed.geometry_offset,
                     parsed.planar_z_noise,
                 )
-            });
+            },
+        );
 
         let planar_tail = geometry
             .as_ref()
@@ -4976,6 +4982,23 @@ fn scale_sketch_point(
 fn scaled_sketch_point(point_centimetres: FinitePoint3) -> Option<FinitePoint3> {
     let point = point_centimetres.get();
     FinitePoint3::new(Point3::new(point.x * 10.0, point.y * 10.0, point.z * 10.0))
+}
+
+/// The geometry offset reported for a curve whose geometry is unread: the
+/// payload behind a referenced analytic wrapper, or else the inline field.
+fn unread_geometry_offset(
+    payload: &[u8],
+    geometry_shift: usize,
+    class: Option<SketchCurveClass>,
+) -> usize {
+    let wrapped = matches!(
+        class,
+        Some(SketchCurveClass::Line | SketchCurveClass::Circular)
+    ) && payload
+        .get(geometry_shift..)
+        .and_then(referenced_analytic_payload)
+        .is_some();
+    geometry_shift + if wrapped { 11 + 133 } else { 133 }
 }
 
 fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {
