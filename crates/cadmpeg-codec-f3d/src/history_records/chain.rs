@@ -29,12 +29,20 @@ pub(crate) struct AsmIdentityMemberships {
     pub(crate) all_states_available: bool,
 }
 
+/// Cached decoded ASM record archive and subtype table reused between
+/// historical topology binding and historical body extraction.
+pub(crate) struct CachedRecordArchive {
+    pub(crate) archive: crate::history::HistoricalRecordArchive,
+    pub(crate) subtypes: cadmpeg_asm::nurbs::toks::SubtypeTable,
+}
+
 /// Derived state topologies. Clones start without materializations.
 #[derive(Default)]
 pub(crate) struct MaterializedTopologies {
     states: OnceLock<Vec<OnceLock<Option<Box<AsmHistoricalTopology>>>>>,
     order: OnceLock<Result<Option<Vec<usize>>, AsmTransitionError>>,
     validity_and_retained: OnceLock<(Vec<bool>, Vec<bool>)>,
+    record_archive: OnceLock<Box<CachedRecordArchive>>,
 }
 
 impl Clone for MaterializedTopologies {
@@ -218,10 +226,112 @@ fn replace_key_runs<'a, R: Clone + 'a>(
         .fold((0, 0), |(kept, replacing), (run, rows)| {
             (kept + run.len(), replacing + rows.len())
         });
+    let old_len = family.len();
+    // In-place left-to-right compaction is clobber-free whenever the cumulative
+    // net shift never turns positive (write cursor never passes read cursor).
+    if replacing <= kept {
+        let mut net = 0_isize;
+        let mut monotonic_shrink = true;
+        for (run, rows) in &resized {
+            let Some(delta) = isize::try_from(rows.len())
+                .ok()
+                .zip(isize::try_from(run.len()).ok())
+                .and_then(|(a, b)| a.checked_sub(b))
+                .and_then(|d| net.checked_add(d))
+            else {
+                monotonic_shrink = false;
+                break;
+            };
+            net = delta;
+            if net > 0 {
+                monotonic_shrink = false;
+                break;
+            }
+        }
+        if monotonic_shrink {
+            let mut write = first;
+            let mut read = first;
+            for (run, rows) in &resized {
+                let keep = run.start - read;
+                if keep > 0 {
+                    if write != read {
+                        for offset in 0..keep {
+                            family.swap(write + offset, read + offset);
+                        }
+                    }
+                    write += keep;
+                }
+                if !rows.is_empty() {
+                    family[write..write + rows.len()].clone_from_slice(rows);
+                    write += rows.len();
+                }
+                read = run.end;
+            }
+            let tail_keep = old_len - read;
+            if tail_keep > 0 {
+                if write != read {
+                    for offset in 0..tail_keep {
+                        family.swap(write + offset, read + offset);
+                    }
+                }
+                write += tail_keep;
+            }
+            family.truncate(write);
+            return Ok(());
+        }
+    }
     if let Some(growth) = replacing.checked_sub(kept) {
         family
             .try_reserve_exact(growth)
             .map_err(|_| AsmTransitionError::Allocation)?;
+        // In-place right-to-left expansion is clobber-free whenever the trailing
+        // write cursor stays at or ahead of the read cursor at every run.
+        if growth > 0 {
+            let mut gap = isize::try_from(growth).ok();
+            let mut monotonic_grow = gap.is_some();
+            for (run, rows) in resized.iter().rev() {
+                let Some(next_gap) = gap
+                    .and_then(|g| g.checked_sub(isize::try_from(rows.len()).ok()?))
+                    .and_then(|g| g.checked_add(isize::try_from(run.len()).ok()?))
+                else {
+                    monotonic_grow = false;
+                    break;
+                };
+                if next_gap < 0 {
+                    monotonic_grow = false;
+                    break;
+                }
+                gap = Some(next_gap);
+            }
+            if monotonic_grow {
+                if let Some(sample) = resized.iter().find_map(|(_, rows)| rows.first()).cloned() {
+                    let new_len = old_len + growth;
+                    drop(family.try_reserve(growth));
+                    for _ in 0..growth {
+                        family.push(sample.clone());
+                    }
+                    let mut write_end = new_len;
+                    let mut read_end = old_len;
+                    for (run, rows) in resized.into_iter().rev() {
+                        let keep = read_end - run.end;
+                        if keep > 0 {
+                            write_end -= keep;
+                            if write_end != run.end {
+                                for offset in (0..keep).rev() {
+                                    family.swap(write_end + offset, run.end + offset);
+                                }
+                            }
+                        }
+                        if !rows.is_empty() {
+                            write_end -= rows.len();
+                            family[write_end..write_end + rows.len()].clone_from_slice(rows);
+                        }
+                        read_end = run.start;
+                    }
+                    return Ok(());
+                }
+            }
+        }
     }
     let mut tail = family.split_off(first).into_iter();
     let mut position = first;
@@ -978,6 +1088,84 @@ impl AsmHistoricalTopology {
     }
 }
 
+fn reserve_topology_prefix(
+    states: &[AsmDeltaState],
+    ordinals_newest_first: &[usize],
+    topology: &mut AsmHistoricalTopology,
+) {
+    macro_rules! reserve_membership {
+        ($field:ident) => {{
+            let mut cur = topology.$field.len();
+            let mut peak = cur;
+            for &ordinal in ordinals_newest_first.iter().rev() {
+                if let Some(t) = states.get(ordinal).and_then(|s| s.transition.as_ref()) {
+                    let d = &t.topology.$field;
+                    cur = cur
+                        .checked_add(d.inserted.len())
+                        .and_then(|v| v.checked_sub(d.deleted.len()))
+                        .unwrap_or(0);
+                    peak = peak.max(cur);
+                }
+            }
+            if let Some(extra) = peak.checked_sub(topology.$field.len()) {
+                drop(topology.$field.try_reserve(extra));
+            }
+        }};
+    }
+    macro_rules! reserve_rows {
+        ($field:ident) => {{
+            let mut cur = topology.$field.len();
+            let mut peak = cur;
+            for &ordinal in ordinals_newest_first.iter().rev() {
+                if let Some(t) = states.get(ordinal).and_then(|s| s.transition.as_ref()) {
+                    let d = &t.rows.$field;
+                    cur = cur
+                        .checked_add(d.set.len())
+                        .and_then(|v| v.checked_sub(d.removed.len()))
+                        .unwrap_or(0);
+                    peak = peak.max(cur);
+                }
+            }
+            if let Some(extra) = peak.checked_sub(topology.$field.len()) {
+                drop(topology.$field.try_reserve(extra));
+            }
+        }};
+    }
+    reserve_membership!(bodies);
+    reserve_membership!(regions);
+    reserve_membership!(shells);
+    reserve_membership!(faces);
+    reserve_membership!(loops);
+    reserve_membership!(coedges);
+    reserve_membership!(edges);
+    reserve_membership!(vertices);
+    reserve_membership!(points);
+    reserve_membership!(surfaces);
+    reserve_membership!(curves);
+    reserve_membership!(pcurves);
+    reserve_rows!(surface_radii);
+    reserve_rows!(surface_cylinders);
+    reserve_rows!(surface_planes);
+    reserve_rows!(surface_axes);
+    reserve_rows!(curve_axes);
+    reserve_rows!(body_regions);
+    reserve_rows!(region_shells);
+    reserve_rows!(shell_faces);
+    reserve_rows!(shell_wire_edges);
+    reserve_rows!(shell_free_vertices);
+    reserve_rows!(body_design_links);
+    reserve_rows!(face_loops);
+    reserve_rows!(loop_coedges);
+    reserve_rows!(coedge_topology);
+    reserve_rows!(edge_vertices);
+    reserve_rows!(face_surfaces);
+    reserve_rows!(vertex_points);
+    reserve_rows!(edge_curves);
+    reserve_rows!(coedge_pcurves);
+    reserve_rows!(point_positions);
+    reserve_rows!(edge_samples);
+}
+
 impl AsmHistory {
     fn chain_order(&self) -> Result<Vec<usize>, AsmTransitionError> {
         let by_node: BTreeMap<_, _> = self
@@ -1053,6 +1241,7 @@ impl AsmHistory {
             return Ok(());
         };
         let mut topology = AsmHistoricalTopology::default();
+        reserve_topology_prefix(&self.states, &order, &mut topology);
         let mut versions = Vec::new();
         for index in order.into_iter().rev() {
             let transition = self.states[index]
@@ -1153,13 +1342,12 @@ impl AsmHistory {
         else {
             return;
         };
-        let advanced = order[position..older]
-            .iter()
-            .rev()
-            .try_for_each(|&ordinal| {
-                let transition = self.states.get(ordinal)?.transition.as_ref()?;
-                transition.apply_topology_sorted(&mut materialized).ok()
-            });
+        let slice = &order[position..older];
+        reserve_topology_prefix(&self.states, slice, &mut materialized);
+        let advanced = slice.iter().rev().try_for_each(|&ordinal| {
+            let transition = self.states.get(ordinal)?.transition.as_ref()?;
+            transition.apply_topology_sorted(&mut materialized).ok()
+        });
         if let Some(state) = cache.get_mut(index) {
             *state = OnceLock::from(advanced.map(|()| materialized));
         }
@@ -1198,7 +1386,9 @@ impl AsmHistory {
                         break;
                     }
                 }
-                for &ordinal in order.get(position..older_position)?.iter().rev() {
+                let slice = order.get(position..older_position)?;
+                reserve_topology_prefix(&self.states, slice, &mut materialized);
+                for &ordinal in slice.iter().rev() {
                     let transition = self.states.get(ordinal)?.transition.as_ref()?;
                     transition.apply_topology_sorted(&mut materialized).ok()?;
                 }
@@ -1373,8 +1563,24 @@ impl AsmHistory {
         })
     }
 
-    /// Drop all cached materializations.
+    /// Attach a decoded record archive and subtype table for reuse by late passes.
+    pub(crate) fn cache_record_archive(&self, archive: CachedRecordArchive) {
+        drop(self.materialized.record_archive.set(Box::new(archive)));
+    }
+
+    /// Borrow the cached record archive and subtype table, when present.
+    pub(crate) fn cached_record_archive(&self) -> Option<&CachedRecordArchive> {
+        self.materialized.record_archive.get().map(Box::as_ref)
+    }
+
+    /// Drop all cached state topology materializations while retaining
+    /// immutable chain metadata and the cached record archive.
     pub(crate) fn release_topologies(&mut self) {
+        self.materialized.states = OnceLock::new();
+    }
+
+    /// Drop all derived caches (used when `states` itself is mutated).
+    pub(crate) fn invalidate_all_caches(&mut self) {
         self.materialized = MaterializedTopologies::default();
     }
 }

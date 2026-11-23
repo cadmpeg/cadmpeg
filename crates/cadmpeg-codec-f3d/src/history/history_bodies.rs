@@ -921,12 +921,14 @@ fn fill_history(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    let cached = history.cached_record_archive();
+    let mut subtypes_charged = false;
     let mut subtypes = None;
     let mut joinable = Vec::<Joinable>::new();
     let mut newer = HashMap::<i64, HashSet<Option<i64>>>::new();
     let mut visited = 0;
     let mut failure = None;
-    super::walk_entity_versions(
+    super::walk_entity_versions_hashed(
         states,
         active_count,
         &archived_ids,
@@ -953,7 +955,7 @@ fn fill_history(
                 if produced.is_none() && consumed.is_none() {
                     continue;
                 }
-                if !archive_attempted {
+                if cached.is_none() && !archive_attempted {
                     archive_attempted = true;
                     match super::decode_record_archive(ctx, states, bytes, header.width) {
                         Ok(records) => archive = records,
@@ -963,7 +965,8 @@ fn fill_history(
                         }
                     }
                 }
-                let Some(archive) = archive.as_ref() else {
+                let archive_ref = cached.map(|c| &c.archive).or(archive.as_ref());
+                let Some(archive) = archive_ref else {
                     if want.consumed {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
                             "{} body slot {} state {state_id} has an incomplete record archive",
@@ -974,7 +977,7 @@ fn fill_history(
                 };
                 if bodies.len() >= MAX_HISTORY_BODIES
                     || !work.charge_by(work_units(versions.len()))
-                    || (subtypes.is_none() && !work.charge_by(work_units(archive.len())))
+                    || (!subtypes_charged && !work.charge_by(work_units(archive.len())))
                 {
                     losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
                         "{} body slot {} state {state_id} exceeds the history body cap",
@@ -982,9 +985,13 @@ fn fill_history(
                     )));
                     continue;
                 }
-                let subtypes = subtypes.get_or_insert_with(|| {
-                    archive_subtypes(archive, header.metadata.save_format_version)
-                });
+                subtypes_charged = true;
+                let subtypes = match cached {
+                    Some(cached) => &cached.subtypes,
+                    None => subtypes.get_or_insert_with(|| {
+                        archive_subtypes(archive, header.metadata.save_format_version)
+                    }),
+                };
                 let resolved;
                 let want = match &want.identity {
                     None => want,
@@ -1078,14 +1085,167 @@ fn archive_subtypes(
     archive: &super::HistoricalRecordArchive,
     version: Option<u32>,
 ) -> cadmpeg_asm::nurbs::toks::SubtypeTable {
-    let mut records = archive.values().cloned().collect::<Vec<_>>();
+    let mut records = archive.values().collect::<Vec<_>>();
     records.sort_by_key(|record| record.offset);
-    cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&records).with_save_format_version(version)
+    cadmpeg_asm::nurbs::toks::SubtypeTable::from_record_refs(&records)
+        .with_save_format_version(version)
+}
+
+/// Materialize the sorted full record table from a hashed slot-to-revision map.
+fn materialize_hashed_table(
+    versions: &super::binding::FastMap<i64, i64>,
+    archive: &super::HistoricalRecordArchive,
+) -> Option<Vec<cadmpeg_asm::sab::Record>> {
+    if versions.is_empty() {
+        return None;
+    }
+    let mut pairs: Vec<(i64, i64)> = versions.iter().map(|(&slot, &rev)| (slot, rev)).collect();
+    pairs.sort_unstable_by_key(|&(slot, _)| slot);
+    let mut records = Vec::with_capacity(pairs.len());
+    for (slot, rev) in pairs {
+        let record = archive.get(&rev)?;
+        if i64::try_from(record.index).ok() != Some(slot) {
+            return None;
+        }
+        for token in record.tokens.iter() {
+            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
+                continue;
+            };
+            if *reference >= 0 && !versions.contains_key(reference) {
+                return None;
+            }
+        }
+        records.push(record.clone());
+    }
+    Some(records)
+}
+
+/// Extract the closed subset of live records reachable from `body_slot`
+/// (plus `asmheader` at slot 0 when present) so decoding one history body
+/// avoids decoding every other body in the state.
+fn body_record_closure(
+    versions: &super::binding::FastMap<i64, i64>,
+    archive: &super::HistoricalRecordArchive,
+    body_slot: i64,
+) -> Option<Vec<cadmpeg_asm::sab::Record>> {
+    use cadmpeg_asm::brep::attributes::attribute_owner;
+    use cadmpeg_asm::sab::Token;
+
+    if versions.is_empty() {
+        return None;
+    }
+    let body_rev = versions.get(&body_slot)?;
+    let body_rec = archive.get(body_rev)?;
+    if body_rec.head() != "body" {
+        return None;
+    }
+
+    let mut incoming_containers: super::binding::FastMap<i64, Vec<i64>> =
+        super::binding::FastMap::default();
+    let mut incoming_attribs: super::binding::FastMap<i64, Vec<i64>> =
+        super::binding::FastMap::default();
+    for (&slot, rev) in versions {
+        let record = archive.get(rev)?;
+        if i64::try_from(record.index).ok() != Some(slot) {
+            return None;
+        }
+        for token in record.tokens.iter() {
+            let Token::Ref(reference) = token else {
+                continue;
+            };
+            if *reference >= 0 && !versions.contains_key(reference) {
+                return None;
+            }
+        }
+        match record.head() {
+            "lump" | "region" => {
+                if let Some(owner) = record.ref_at(5) {
+                    incoming_containers.entry(owner).or_default().push(slot);
+                }
+            }
+            "shell" => {
+                if let Some(owner) = record.ref_at(7) {
+                    incoming_containers.entry(owner).or_default().push(slot);
+                }
+            }
+            "subshell" => {
+                if let Some(owner) = record.ref_at(3) {
+                    incoming_containers.entry(owner).or_default().push(slot);
+                }
+            }
+            _ => {}
+        }
+        if record.name.ends_with("-attrib") {
+            if let Some(owner) = attribute_owner(record) {
+                incoming_attribs.entry(owner).or_default().push(slot);
+            }
+        }
+    }
+
+    let mut visited: super::binding::FastSet<i64> = super::binding::FastSet::default();
+    let mut queue: Vec<i64> = vec![body_slot];
+    if let Some(rev0) = versions.get(&0) {
+        if archive
+            .get(rev0)
+            .is_some_and(|rec| rec.head() == "asmheader")
+        {
+            visited.insert(0);
+        }
+    }
+    while let Some(slot) = queue.pop() {
+        if !visited.insert(slot) {
+            continue;
+        }
+        let Some(record) = versions.get(&slot).and_then(|rev| archive.get(rev)) else {
+            continue;
+        };
+        if slot != body_slot && record.head() == "body" {
+            visited.remove(&slot);
+            continue;
+        }
+        for token in record.tokens.iter() {
+            if let Token::Ref(target) = *token {
+                if target >= 0 && !visited.contains(&target) {
+                    queue.push(target);
+                }
+            }
+        }
+        if let Some(children) = incoming_containers.get(&slot) {
+            for &child in children {
+                if !visited.contains(&child) {
+                    queue.push(child);
+                }
+            }
+        }
+        if let Some(attribs) = incoming_attribs.get(&slot) {
+            for &attrib in attribs {
+                if !visited.contains(&attrib) {
+                    queue.push(attrib);
+                }
+            }
+        }
+    }
+
+    let mut slots: Vec<i64> = visited.into_iter().collect();
+    slots.sort_unstable();
+    let mut records = Vec::with_capacity(slots.len());
+    for slot in slots {
+        let rev = versions.get(&slot)?;
+        let record = archive.get(rev)?;
+        if i64::try_from(record.index).ok() != Some(slot) {
+            return None;
+        }
+        records.push(record.clone());
+    }
+    Some(records)
 }
 
 fn build(
     ctx: &DecodeContext<'_>,
-    (archive, versions): (&super::HistoricalRecordArchive, &BTreeMap<i64, i64>),
+    (archive, versions): (
+        &super::HistoricalRecordArchive,
+        &super::binding::FastMap<i64, i64>,
+    ),
     bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
@@ -1096,36 +1256,57 @@ fn build(
     position: (usize, usize, bool),
 ) -> Result<Option<Built>, CodecError> {
     let (ordinal, nest_index, keep_records) = position;
-    let Some(table) =
-        cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
-    else {
-        return Ok(None);
-    };
-    let brep = match cadmpeg_asm::brep::decode_with_table(
-        ctx,
-        &table,
-        bytes,
-        (Some(tables.0), tables.1),
-        "f3d:history",
-        crate::ids::ID_FORMAT,
-        cadmpeg_asm::brep::DecodePurpose::Model,
-    ) {
-        Ok(brep) => brep,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
-    let Some(body) = brep
-        .bodies
-        .iter()
-        .find(|body| super::body_closures::stable_ref(body.id.as_str()) == Some(want.slot))
-        .map(|body| body.id.clone())
-    else {
-        return Ok(None);
-    };
-    let mut scratch = CadIr::empty();
-    cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
-    let Extract::Nest(topology) = extract(ctx, &scratch.geometry, body.as_str())? else {
-        return Ok(None);
+    let decode_table =
+        |table: &[cadmpeg_asm::sab::Record]| -> Result<Option<Box<BodyTopology>>, CodecError> {
+            let brep = match cadmpeg_asm::brep::decode_with_table(
+                ctx,
+                table,
+                bytes,
+                (Some(tables.0), tables.1),
+                "f3d:history",
+                crate::ids::ID_FORMAT,
+                cadmpeg_asm::brep::DecodePurpose::Model,
+            ) {
+                Ok(brep) => brep,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => return Ok(None),
+            };
+            let Some(body) = brep
+                .bodies
+                .iter()
+                .find(|body| super::body_closures::stable_ref(body.id.as_str()) == Some(want.slot))
+                .map(|body| body.id.clone())
+            else {
+                return Ok(None);
+            };
+            let mut scratch = CadIr::empty();
+            cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
+            match extract(ctx, &scratch.geometry, body.as_str())? {
+                Extract::Nest(topology) => Ok(Some(topology)),
+                Extract::Absent | Extract::NotClosed => Ok(None),
+            }
+        };
+    let topology = if let Some(subset) = body_record_closure(versions, archive, want.slot) {
+        match decode_table(&subset)? {
+            Some(topology) => topology,
+            None => {
+                let Some(table) = materialize_hashed_table(versions, archive) else {
+                    return Ok(None);
+                };
+                let Some(topology) = decode_table(&table)? else {
+                    return Ok(None);
+                };
+                topology
+            }
+        }
+    } else {
+        let Some(table) = materialize_hashed_table(versions, archive) else {
+            return Ok(None);
+        };
+        let Some(topology) = decode_table(&table)? else {
+            return Ok(None);
+        };
+        topology
     };
     let records = keep_records.then(|| (*topology).clone());
     let mut map = IdentityMap::new(|id: &str| {
@@ -1206,7 +1387,10 @@ struct Built {
 /// reads the persistent design links on its bodies.
 fn identity_body_slot(
     ctx: &DecodeContext<'_>,
-    (archive, versions): (&super::HistoricalRecordArchive, &BTreeMap<i64, i64>),
+    (archive, versions): (
+        &super::HistoricalRecordArchive,
+        &super::binding::FastMap<i64, i64>,
+    ),
     bytes: &[u8],
     tables: (
         &cadmpeg_asm::kernel_header::KernelHeader,
@@ -1214,9 +1398,7 @@ fn identity_body_slot(
     ),
     identity: &BodyIdentity,
 ) -> Result<Option<i64>, CodecError> {
-    let Some(table) =
-        cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
-    else {
+    let Some(table) = materialize_hashed_table(versions, archive) else {
         return Ok(None);
     };
     match cadmpeg_asm::brep::decode_with_table(
