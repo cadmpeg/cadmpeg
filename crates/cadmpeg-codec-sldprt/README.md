@@ -185,9 +185,11 @@ present or absent) writes the record in the shape of the new variant, and a
 drops and each source property it drops. A difference that remains with every edit kept as stored, or that a
 parameter or rename edit causes, is named in a `writer.feature-edit-unwritten`
 loss.
-The writer has no compound-file serializer: an edited compound-file part is
-written as its stored part, and a `writer.compound-file-edit-unwritten` loss
-(severity error) states that no edit is written. `cadmpeg convert
+An edited compound-file part is written into a native envelope, and
+`export:native.records-omitted` names each compound-file stream that the write
+neither generates nor replaces. Where that write refuses, the output is the
+stored part, and a `writer.compound-file-edit-unwritten` loss (severity error)
+states that no edit is written. `cadmpeg convert
 --reject-lossy=export` refuses such a write; `--reject-errors` does not, because
 it judges the written file's check findings, not export losses.
 

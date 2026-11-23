@@ -274,11 +274,11 @@ fn a_rename_beside_decoder_resolved_fillet_edges_is_written() {
     a_rename_keeps_every_other_record(ftc_08(), is_hole);
 }
 
-/// The writer has no compound-file serializer. An edited compound-file part
-/// is written as its stored part, and the write states that no edit is
-/// written.
+/// An edited compound-file part whose write into a native envelope refuses
+/// (a global parameter no feature record can hold) is written as its stored
+/// part, and the write states the refusal and that no edit is written.
 #[test]
-fn an_edited_compound_file_part_is_written_as_stored_and_named() {
+fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored() {
     let source = cadmpeg_test_support::compound::compound_fixture();
     let mut decoded = EditableDecodeResult::from(decode(source.clone()));
     decoded.ir_mut().model.parameters.push(DesignParameter {
@@ -303,7 +303,41 @@ fn an_edited_compound_file_part_is_written_as_stored_and_named() {
     assert_eq!(output, source);
     let losses = messages(&report, SldprtLossCode::WriterCompoundFileEditUnwritten);
     assert_eq!(losses.len(), 1, "{:?}", report.losses);
-    assert!(losses[0].contains("compound-file writer"), "{}", losses[0]);
+    assert!(
+        losses[0].contains("global SLDPRT parameter") && losses[0].contains("compound-file writer"),
+        "{}",
+        losses[0]
+    );
+}
+
+/// A compound-file part with no decode baseline is written into a native
+/// envelope, which holds none of the part's compound-file streams: the write
+/// names the stream.
+#[test]
+fn a_compound_file_part_with_no_decode_baseline_is_written_into_a_native_envelope() {
+    let source = cadmpeg_test_support::compound::compound_fixture();
+    let mut decoded = EditableDecodeResult::from(decode(source));
+    if let Some(meta) = decoded.ir_mut().source.as_mut() {
+        meta.attributes
+            .remove(crate::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
+    }
+
+    let (report, output) = write(&decoded);
+
+    assert!(
+        !crate::container::is_compound_file(&output),
+        "{:?}",
+        report.losses
+    );
+    assert!(messages(&report, SldprtLossCode::WriterCompoundFileEditUnwritten).is_empty());
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("sldprt:file:compound-stream#")
+        }),
+        "{:?}",
+        report.losses
+    );
 }
 
 /// The source document decoded from the retained source image.

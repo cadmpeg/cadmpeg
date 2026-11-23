@@ -186,10 +186,10 @@ impl SldprtCodec {
     /// conservative branch, which reproduces the document from the IR instead of
     /// replaying bytes that may no longer describe it.
     ///
-    /// The semantic writer has no compound-file serializer. An edited
-    /// compound-file part is written as its stored part, and a
-    /// `writer.compound-file-edit-unwritten` loss states that no edit is
-    /// written.
+    /// The semantic writer writes a compound-file part into a native
+    /// envelope. Where it refuses one, the output is the stored compound-file
+    /// part, and a `writer.compound-file-edit-unwritten` loss states that no
+    /// edit is written.
     ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
@@ -218,17 +218,33 @@ impl SldprtCodec {
         };
         if let Some(reason) = skipped {
             if let Some(image) = image.filter(|image| container::is_compound_file(image)) {
-                writer.write_all(image)?;
-                return Ok(Written::StoredCompoundFile {
-                    loss: loss::SldprtLossCode::WriterCompoundFileEditUnwritten.note(match reason {
-                        ReplaySkipped::BaselineMissing => {
-                            "The document has no decode baseline, so whether it is edited since decode is not known; SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries no edit of the document."
-                        }
-                        _ => {
-                            "The document is edited since decode; SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries none of the edits."
-                        }
-                    }),
-                });
+                let mut bytes = Vec::new();
+                return match Self::write_semantic(
+                    ir,
+                    annotations,
+                    records,
+                    SemanticFidelity::ReplaySkipped(reason),
+                    &mut bytes,
+                ) {
+                    Ok(written) => {
+                        writer.write_all(&bytes)?;
+                        Ok(written)
+                    }
+                    Err(error) => {
+                        writer.write_all(image)?;
+                        let state = match reason {
+                            ReplaySkipped::BaselineMissing => {
+                                "The document has no decode baseline, so whether it is edited since decode is not known"
+                            }
+                            _ => "The document is edited since decode",
+                        };
+                        Ok(Written::StoredCompoundFile {
+                            loss: loss::SldprtLossCode::WriterCompoundFileEditUnwritten.note(format!(
+                                "{state}; the native-envelope write of the compound-file part refuses it ({error}), SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries no edit of the document."
+                            )),
+                        })
+                    }
+                };
             }
             return Self::write_semantic(
                 ir,

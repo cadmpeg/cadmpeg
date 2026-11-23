@@ -460,7 +460,7 @@ pub(crate) enum SldprtLossCode {
     /// property of the feature.
     WriterFeatureRecordReshaped,
     /// A compound-file part edited since decode is written as its stored
-    /// part: the writer has no compound-file serializer, so no edit of the
+    /// part, as its write into a native envelope refuses: no edit of the
     /// document is written.
     WriterCompoundFileEditUnwritten,
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the

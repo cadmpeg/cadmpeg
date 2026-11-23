@@ -154,17 +154,6 @@ pub(crate) fn write_semantic_with_records(
             "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
         ));
     }
-    // The envelope is regenerated from the source's block container; a
-    // compound-file source has none. An inherited write of an edited
-    // compound-file part writes the stored part instead.
-    if source_scan
-        .as_ref()
-        .is_some_and(|scan| scan.blocks.is_empty() && !scan.compound_streams.is_empty())
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writes of compound-file parts need a compound-file writer".into(),
-        ));
-    }
     let member_records = source_scan
         .as_ref()
         .map(|scan| member_records(scan, retained_records, annotations))
