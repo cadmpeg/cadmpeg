@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Plain-schema 13006 partition and Deltas streams built from POINT and GROUP
-//! nodes, for main-line replay tests.
+//! Plain-schema 13006 partition and Deltas streams built from POINT, GROUP,
+//! and LIMIT nodes, for main-line replay tests.
 
 use crate::pointer;
-use crate::records::node_type::{GROUP, POINT};
+use crate::records::node_type::{GROUP, LIMIT, POINT};
 
 const SCHEMA: &[u8] = b"SCH_1_13006";
 
@@ -63,6 +63,39 @@ impl TestNode {
         } else {
             for coordinate in [f64::from(self.value), 0.0, 0.0] {
                 out.extend(coordinate.to_be_bytes());
+            }
+        }
+    }
+}
+
+/// One LIMIT node. A partition stores each Hvec row as `(x, y, z)`; a Deltas
+/// stream stores eight more reals after them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestLimit {
+    /// Node index.
+    pub xmt: u32,
+    /// The `(x, y, z)` of each Hvec row.
+    pub rows: Vec<[f64; 3]>,
+}
+
+impl TestLimit {
+    fn write(&self, out: &mut Vec<u8>, deltas: bool) {
+        out.extend(LIMIT.to_be_bytes());
+        out.extend(
+            u32::try_from(self.rows.len())
+                .unwrap_or(u32::MAX)
+                .to_be_bytes(),
+        );
+        pointer::write(out, self.xmt).unwrap_or_default();
+        out.push(b'T');
+        for row in &self.rows {
+            for value in row {
+                out.extend(value.to_be_bytes());
+            }
+            if deltas {
+                for extra in 0..8_u8 {
+                    out.extend(f64::from(extra).to_be_bytes());
+                }
             }
         }
     }
@@ -136,6 +169,15 @@ impl DeltasStream {
     pub fn nodes(mut self, nodes: &[TestNode]) -> Self {
         for node in nodes {
             node.write(&mut self.0, true);
+        }
+        self
+    }
+
+    /// Deltas images of `limits`.
+    #[must_use]
+    pub fn limits(mut self, limits: &[TestLimit]) -> Self {
+        for limit in limits {
+            limit.write(&mut self.0, true);
         }
         self
     }

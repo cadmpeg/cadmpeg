@@ -2,7 +2,7 @@
 use super::{MainLine, MainLineError, Replay, ReplayError, StateNode};
 use crate::records::node_type::{GROUP, POINT};
 use crate::records::{DeltasRecords, NodeFields, PrimaryRecords};
-use crate::test_support::replay::{partition, DeltasStream, Mark, TestNode};
+use crate::test_support::replay::{partition, DeltasStream, Mark, TestLimit, TestNode};
 use crate::test_support::with_decode_context;
 
 const C: Mark = Mark {
@@ -506,5 +506,36 @@ fn every_state_writes_as_a_partition_that_reads_back_to_its_nodes() {
                 assert_eq!(written_images(&replay.transmit().unwrap()), images(&replay));
             }
         }
+    });
+}
+
+#[test]
+fn a_restored_hvec_image_writes_the_rows_a_partition_stores() {
+    let rows = vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    let stream = DeltasStream::new(C)
+        .limits(&[TestLimit {
+            xmt: 14,
+            rows: rows.clone(),
+        }])
+        .terminator()
+        .map(&[(11, POINT)])
+        .nodes(&[TestNode::point(10, 1, 1)])
+        .terminator()
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    let partition_bytes = partition(&current());
+    with_decode_context(|_ctx| {
+        let records = DeltasRecords::read(&stream).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        replay.step().unwrap();
+        let state = replay.state().get(14).unwrap();
+        assert_eq!(state.hvec_points("hvec"), Some(rows.clone()));
+        let bytes = replay.transmit().unwrap();
+        let written = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        let limit = written.nodes().find(|node| node.index() == 14).unwrap();
+        assert_eq!(limit.hvec_points("hvec"), Some(rows));
     });
 }

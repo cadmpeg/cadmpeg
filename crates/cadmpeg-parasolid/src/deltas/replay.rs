@@ -786,9 +786,10 @@ impl<'r> Replay<'_, 'r> {
     /// The state at [`Replay::mark`] as a partition transmit: the
     /// partition's header, the state's partition nodes in partition order,
     /// its delta images in node-index order, and the partition's terminator.
-    /// Each node type carries its declaration at its first node; a delta
-    /// image loses the status byte after each pointer element. At the
-    /// current mark the result is the partition's bytes.
+    /// Each node type carries its declaration at its first node. A delta
+    /// image loses the status byte after each pointer element, and each of
+    /// its Hvec values keeps the `(x, y, z)` row that a partition stores.
+    /// At the current mark the result is the partition's bytes.
     ///
     /// # Errors
     ///

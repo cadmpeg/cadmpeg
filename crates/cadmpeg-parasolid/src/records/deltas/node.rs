@@ -53,8 +53,9 @@ impl<'r> DeltasNode<'r> {
         self.source.get(range.start.checked_add(2)?..range.end)
     }
 
-    /// The node as a node sequence encodes it: its variable count, identity,
-    /// and fields, with no status byte after a pointer element.
+    /// The node as a partition encodes it: its variable count, identity, and
+    /// fields, with no status byte after a pointer element and the
+    /// `(x, y, z)` row of each Hvec value.
     pub(crate) fn primary_encoding(&self) -> Option<Vec<u8>> {
         let mut out = Vec::new();
         if let Some(count) = self.instance.variable_length() {
@@ -64,15 +65,22 @@ impl<'r> DeltasNode<'r> {
         let identity_end = fields.first().map_or(self.range.end, |field| field.start);
         out.extend_from_slice(self.source.get(self.instance.identity_at()..identity_end)?);
         for (index, (field, range)) in self.plan().fields.iter().zip(fields).enumerate() {
-            if field.data_type != DataType::Pointer {
+            if !matches!(field.data_type, DataType::Pointer | DataType::Hvec) {
                 out.extend_from_slice(self.source.get(range.clone())?);
                 continue;
             }
             for value in self.values_at(index)? {
-                let FieldValue::Pointer { target, .. } = value else {
-                    return None;
-                };
-                crate::pointer::write(&mut out, target.get())?;
+                match value {
+                    FieldValue::Pointer { target, .. } => {
+                        crate::pointer::write(&mut out, target.get())?;
+                    }
+                    FieldValue::HvecBits(row) => {
+                        for real in &row[..3] {
+                            out.extend(real.to_bits().to_be_bytes());
+                        }
+                    }
+                    _ => return None,
+                }
             }
         }
         Some(out)
