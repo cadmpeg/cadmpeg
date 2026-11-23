@@ -120,7 +120,6 @@ pub(super) fn write(
     swept.group(out, &records.group, records.selection.record, PROFILE_ROLE)?;
     swept.start(
         out,
-        types::START_RECORD,
         &records.start,
         &[records.group.record, records.along[0], records.taper[0]],
     )?;
@@ -155,7 +154,7 @@ fn scope(
     records: &ExtrudeRecords,
     out: &mut DesignRecords,
 ) -> Result<(), CodecError> {
-    let class = ctx.class(types::EXTRUDE_SCOPE.guid)?;
+    let class = ctx.class_of(records.scope.record)?;
     let [_, _, normal] = swept
         .sketch
         .origin_plane()
@@ -206,7 +205,7 @@ fn scope(
     ] {
         out.reference(reference);
     }
-    swept.tail(out, FAMILY, records.start.record)
+    swept.tail(out, records.start.record)
 }
 
 /// The values the writer chooses where f3d.md and f3d-open-items.md leave

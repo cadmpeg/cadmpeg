@@ -142,7 +142,7 @@ impl SelectionRecords {
 /// The side-face entry and curve record of each side face, and the body
 /// entry.
 #[derive(Clone, Debug)]
-pub(in crate::writer::generate::design) struct ResultRecords {
+pub(super) struct ResultRecords {
     sides: Vec<[u32; 2]>,
     body: u32,
 }
@@ -214,6 +214,8 @@ impl Classes {
 /// Writes the records of a swept item of `ctx` that share their form.
 pub(super) struct Swept<'a> {
     ctx: &'a Context<'a>,
+    /// The feature-family name of the item.
+    family: &'a str,
     classes: Classes,
     scope: &'a ScopeRecords,
     /// The position of the profile's sketch in [`Context::sketches`].
@@ -238,7 +240,7 @@ impl<'a> Swept<'a> {
     /// timeline items, whose profile lies on sketch `sketch`.
     pub(super) fn new(
         ctx: &'a Context<'a>,
-        family: &str,
+        family: &'a str,
         scope: &'a ScopeRecords,
         sketch: usize,
         preceding: usize,
@@ -261,6 +263,7 @@ impl<'a> Swept<'a> {
             })?;
         Ok(Self {
             ctx,
+            family,
             classes: Classes::of(ctx)?,
             scope,
             sketch_index: sketch,
@@ -276,21 +279,16 @@ impl<'a> Swept<'a> {
     }
 
     /// The end of the scope frame: the current history state, the family
-    /// name `family`, the 78-byte item tail and the paired record; then the
-    /// scope's record-timestamp table, which lists the start record `start`,
-    /// and its item-tail companion.
-    pub(super) fn tail(
-        &self,
-        out: &mut DesignRecords,
-        family: &str,
-        start: u32,
-    ) -> Result<(), CodecError> {
+    /// name, the 78-byte item tail and the paired record; then the scope's
+    /// record-timestamp table, which lists the start record `start`, and its
+    /// item-tail companion.
+    pub(super) fn tail(&self, out: &mut DesignRecords, start: u32) -> Result<(), CodecError> {
         let scope = self.scope;
         // The 78-byte item tail: family ordinal 1, no label, state bytes
         // `00 00 00`, the preceding state, the evaluation values, `s0 = s1 =
         // 0`.
         out.u32(HEAD_STATE)
-            .lp_utf16(family)?
+            .lp_utf16(self.family)?
             .u32(1)
             .u32(0)
             .u32(0)
@@ -378,18 +376,16 @@ impl<'a> Swept<'a> {
         )
     }
 
-    /// The start record of type `row` with its selection identity,
-    /// item-tail companion and record-timestamp table, which lists
-    /// `inputs`.
+    /// The start record with its selection identity, item-tail companion and
+    /// record-timestamp table, which lists `inputs`.
     pub(super) fn start(
         &self,
         out: &mut DesignRecords,
-        row: TypeRow,
         records: &StartRecords,
         inputs: &[u32],
     ) -> Result<(), CodecError> {
         let classes = &self.classes;
-        out.record(&self.ctx.class(row.guid)?, records.record)
+        out.record(&self.ctx.class_of(records.record)?, records.record)
             .zeros(10)
             .reference(self.scope.record)
             .u32(1)
@@ -503,6 +499,15 @@ impl<'a> Swept<'a> {
         records: &ResultRecords,
         entries: impl Iterator<Item = (&'p ProfileLoop, usize)>,
     ) -> Result<(), CodecError> {
+        let entries = entries.collect::<Vec<_>>();
+        if entries.len() != records.sides.len() {
+            return Err(CodecError::malformed(format_args!(
+                "{} tracked results: {} side records for {} loop entries",
+                self.family,
+                records.sides.len(),
+                entries.len()
+            )));
+        }
         let classes = &self.classes;
         let tracked = self.scope.tracked;
         let sides = count(records.sides.len())?;
@@ -518,7 +523,7 @@ impl<'a> Swept<'a> {
             .u64(body_key + 1)
             .header(&classes.object, tracked)
             .zeros(9);
-        for ((profile_loop, position), [entry, curve]) in entries.zip(&records.sides) {
+        for ((profile_loop, position), [entry, curve]) in entries.into_iter().zip(&records.sides) {
             out.record(&classes.side, *entry)
                 .zeros(9)
                 .byte(1)
