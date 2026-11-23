@@ -224,7 +224,7 @@ fn api_export_with_identity_fields(
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
 ) -> Vec<u8> {
-    api_export_build(linked, terminal, blank, false)
+    api_export_build(linked, terminal, blank, false, "child.f3d")
 }
 
 fn api_export_build(
@@ -232,6 +232,7 @@ fn api_export_build(
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
     keep_redirections: bool,
+    child_path: &str,
 ) -> Vec<u8> {
     use std::io::Read;
     let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
@@ -248,9 +249,10 @@ fn api_export_build(
         entry.read_to_end(&mut bytes).unwrap();
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
+            let target = [(XREF_ROLE, "ChildKey", child_path)];
             let mut extension =
                 crate::test_support::manifest_test::api_reference_extension(if linked {
-                    &[(XREF_ROLE, "ChildKey", "child.f3d")]
+                    &target
                 } else {
                     &[]
                 });
@@ -381,7 +383,7 @@ fn api_export_manifest_terminal_lineage_identifies_root() {
 #[test]
 fn api_export_terminal_lineage_wins_over_design_zero_and_charges_loss() {
     const TERMINAL: &str = "urn:adsk.wipprod:dm.lineage:TerminalKey";
-    let bytes = api_export_build(false, Some((1, TERMINAL)), None, true);
+    let bytes = api_export_build(false, Some((1, TERMINAL)), None, true, "child.f3d");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -408,7 +410,7 @@ fn api_export_terminal_lineage_wins_over_design_zero_and_charges_loss() {
 
 #[test]
 fn api_export_without_terminal_takes_design_zero_lineage() {
-    let bytes = api_export_build(false, None, None, true);
+    let bytes = api_export_build(false, None, None, true, "child.f3d");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -561,4 +563,85 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
             .count(),
         2
     );
+}
+
+const CHILD_LINEAGE: &str = "urn:adsk.wipprod:dm.lineage:ChildKey";
+const CHILD_VERSION: &str = "urn:adsk.wipprod:fs.file:vf.ChildKey?version=7";
+
+/// A cache-path-named reference of an F3Z root without `RedirectionsStream.dat`,
+/// decoded against a description that states `objects`.
+fn decode_lineage_bundle(objects: &[(&str, &str, &str)]) -> cadmpeg_ir::codec::DecodeResult {
+    let root = api_export_build(true, None, None, false, "cache/original-child.f3d");
+    let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
+    let objects: Vec<_> = objects
+        .iter()
+        .map(|(path, lineage, version)| {
+            serde_json::json!({"relativePath": path, "lineage": lineage, "about": version})
+        })
+        .collect();
+    let description =
+        serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":objects}]}});
+    let bytes = f3z_archive_with_design_description(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("child.f3d", child),
+            ("other.f3d", child),
+        ],
+        &serde_json::to_vec(&description).unwrap(),
+    );
+    crate::test_support::archive_session::decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+fn loss_count(decoded: &cadmpeg_ir::codec::DecodeResult, code: &str) -> usize {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == code)
+        .count()
+}
+
+#[test]
+fn f3z_reference_without_redirections_resolves_by_lineage_and_version() {
+    let decoded = decode_lineage_bundle(&[
+        ("root.f3d", "urn:lineage:root", "urn:version:root"),
+        ("child.f3d", CHILD_LINEAGE, CHILD_VERSION),
+    ]);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 6);
+    assert_eq!(loss_count(&decoded, "xref.redirection-from-lineage"), 1);
+    assert_eq!(loss_count(&decoded, "xref.member-missing"), 0);
+    let references = &f3d_native(decoded.ir()).xref_references;
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].relative_path.as_str(), "child.f3d");
+}
+
+#[test]
+fn f3z_reference_without_unique_lineage_match_keeps_the_path() {
+    let cases: [&[(&str, &str, &str)]; 4] = [
+        // No entry states the reference's lineage.
+        &[("child.f3d", "urn:lineage:other", CHILD_VERSION)],
+        // The lineage matches, the version differs.
+        &[("child.f3d", CHILD_LINEAGE, "urn:version:other")],
+        // Two members state the same pair.
+        &[
+            ("child.f3d", CHILD_LINEAGE, CHILD_VERSION),
+            ("other.f3d", CHILD_LINEAGE, CHILD_VERSION),
+        ],
+        // The one match names no archive member.
+        &[("absent.f3d", CHILD_LINEAGE, CHILD_VERSION)],
+    ];
+    for objects in cases {
+        let decoded = decode_lineage_bundle(objects);
+        assert_eq!(loss_count(&decoded, "xref.redirection-from-lineage"), 0);
+        assert_eq!(loss_count(&decoded, "xref.member-missing"), 1);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 0);
+        let references = &f3d_native(decoded.ir()).xref_references;
+        assert_eq!(
+            references[0].relative_path.as_str(),
+            "cache/original-child.f3d"
+        );
+    }
 }

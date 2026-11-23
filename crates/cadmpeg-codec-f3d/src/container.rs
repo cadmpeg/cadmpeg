@@ -274,6 +274,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
     pub(crate) manifest_reference_extension: Option<View<'a>>,
     pub(crate) manifest_lineage_urn: Option<String>,
+    /// Archive members by document identity, set on an F3Z member scan.
+    pub(crate) lineage_members: Option<Arc<crate::xref::lineage::LineageMembers>>,
     /// Optional archive entries the scan could not open.
     pub(crate) given_up: Vec<GivenUpPart>,
     /// Design `BulkStream` record runs after the last indexed record, by
@@ -318,6 +320,7 @@ impl<'a> ContainerScan<'a> {
             manifest_diagnostics: self.manifest_diagnostics.clone(),
             manifest_reference_extension: self.manifest_reference_extension,
             manifest_lineage_urn: self.manifest_lineage_urn.clone(),
+            lineage_members: self.lineage_members.clone(),
             given_up: self.given_up.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
@@ -796,6 +799,7 @@ fn scan_in<'a>(
         manifest_diagnostics,
         manifest_reference_extension,
         manifest_lineage_urn,
+        lineage_members: None,
         given_up,
         unindexed_record_runs: Vec::new(),
         inflated_entries,

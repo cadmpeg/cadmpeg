@@ -168,13 +168,15 @@ impl<'a> F3zSession<'a> {
                 "archive session requires F3Z".into(),
             ));
         }
-        let (model_root, omitted_drawing_root, mut archive) =
+        let mut identity_losses = Vec::new();
+        let (model_root, omitted_drawing_root, identities, mut archive) =
             super::observer::phase(super::observer::F3zPhase::Classify, || {
                 let (model_root, omitted_drawing_root) = archive::model_root(ctx, &scan)?;
-                let archive = archive::classify_members(ctx, &scan, true)?;
-                Ok((model_root, omitted_drawing_root, archive))
+                let identities = archive::document_identities(ctx, &scan, &mut identity_losses)?;
+                let archive = archive::classify_members(ctx, &scan, &identities, true)?;
+                Ok((model_root, omitted_drawing_root, identities, archive))
             })?;
-        let identities = archive::document_identities(ctx, &scan, &mut archive.losses)?;
+        archive.losses.append(&mut identity_losses);
         let (checkpoint, mut members) =
             super::observer::phase(super::observer::F3zPhase::SessionOpen, || {
                 archive.member_checkpoint(&model_root)?;

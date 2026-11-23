@@ -8,6 +8,7 @@
 //! a BREP-less placement assembly.
 
 pub(crate) mod api_export;
+pub(crate) mod lineage;
 pub(crate) mod operation_pose;
 
 use cadmpeg_core::container::ContainerRole;
@@ -288,7 +289,13 @@ fn reference_data(
     let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
         Ok(bytes) => bytes,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return api_export::decode(ctx, scan),
+        Err(_) => {
+            let mut table = api_export::decode(ctx, scan)?;
+            if let (Some(table), Some(index)) = (&mut table, &scan.lineage_members) {
+                lineage::resolve(table, index);
+            }
+            return Ok(table);
+        }
     };
     parse(ctx, bytes).map(Some)
 }

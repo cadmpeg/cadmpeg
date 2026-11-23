@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
+use crate::xref::lineage::LineageMembers;
 
 const MANIFEST_ENTRY: &str = "Manifest.json";
 const DESIGN_DESCRIPTION_ENTRY: &str = "DesignDescription.json";
@@ -141,6 +142,8 @@ pub(super) struct ArchiveSession {
     pub(super) members: BTreeMap<String, ClassifiedMember>,
     pub(super) layers: DialectLayers,
     pub(super) losses: Vec<LossNote>,
+    /// Members by document identity, for references without a redirection table.
+    lineage: std::sync::Arc<LineageMembers>,
 }
 
 /// Facts read from a member's container scan during classification.
@@ -183,7 +186,8 @@ impl ArchiveSession {
         let root = outer.member_view(&arena, path)?;
         let local = self.member_checkpoint(path)?.resume(&arena);
         local.take_trace();
-        let scan = crate::container::scan_member(&local, root, path)?;
+        let mut scan = crate::container::scan_member(&local, root, path)?;
+        scan.lineage_members = Some(self.lineage.clone());
         work(&scan)
     }
 }
@@ -246,14 +250,21 @@ fn member_metadata(
 
 /// Classifies all F3D members and attaches each nested layer to its archive path.
 ///
+/// `identities` are the archive's document identities by member path; a member
+/// reference without a redirection table resolves through them.
+///
 /// Each member is inflated and scanned once. With `with_metadata`, the same
 /// scan also yields the member references and placement role for the member
 /// list; the session keeps those owned facts and drops the scan.
 pub(super) fn classify_members<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
+    identities: &BTreeMap<String, cadmpeg_ir::products::ExternalDocument>,
     with_metadata: bool,
 ) -> Result<ArchiveSession, CodecError> {
+    let lineage = std::sync::Arc::new(LineageMembers::new(identities, |path| {
+        crate::container::is_f3d_name(path) && scan.has_entry(path)
+    }));
     let mut members = BTreeMap::new();
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
@@ -279,9 +290,11 @@ pub(super) fn classify_members<'a>(
                 });
                 root.and_then(|view| {
                     ctx.with_arena(&arena, |local| {
-                        let member_scan = super::observer::timed(&mut timing.nested_scan, || {
-                            crate::container::scan_member(local, view, member_path)
-                        })?;
+                        let mut member_scan =
+                            super::observer::timed(&mut timing.nested_scan, || {
+                                crate::container::scan_member(local, view, member_path)
+                            })?;
+                        member_scan.lineage_members = Some(lineage.clone());
                         Ok(super::observer::timed(&mut timing.layers, || {
                             crate::dialect::classify_layers(&member_scan)
                         })
@@ -350,6 +363,7 @@ pub(super) fn classify_members<'a>(
         members,
         layers,
         losses,
+        lineage,
     })
 }
 

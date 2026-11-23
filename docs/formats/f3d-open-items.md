@@ -4212,3 +4212,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1062. Manifest reference to a changed member version
+
+**Question.** Which archive member does a manifest reference name when the member's design object states the reference's lineage URN and a different version URN?
+
+**Known.** `f3d.md` §1.5 resolves a reference without `RedirectionsStream.dat` only to the one member that states both the reference's `LineageUrn` and its `URL`. A reference whose pair has no such member keeps its target path.
+
+**Need.** A bundle whose referencing member stores an earlier version URN than the version URN that the design object of the referenced member states, with the `RedirectionsStream.dat` of a Fusion-written archive of the same designs for comparison.
+
+**Conflict.** None.
