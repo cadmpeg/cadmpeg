@@ -7852,8 +7852,8 @@ pub(crate) mod typed_reference_parameter_scope_tail {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 70;
     /// Offset of `second_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 90;
-    /// Offset of `suppressed_flag` (`u8`). Spec §3.1.
-    pub(crate) const SUPPRESSED_FLAG: usize = 141;
+    /// Offset of `no_result_flag` (`u8`). Spec §3.1.
+    pub(crate) const NO_RESULT_FLAG: usize = 141;
     /// Offset of `rolled_back_flag` (`u8`). Spec §3.1.
     pub(crate) const ROLLED_BACK_FLAG: usize = 142;
     /// Offset of `third_reference` (`bytes[51]`). Spec §3.1.

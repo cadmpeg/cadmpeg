@@ -5,5 +5,6 @@ mod archive;
 pub mod compound;
 pub mod compression;
 mod layout;
+pub mod scan;
 
 pub use archive::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};

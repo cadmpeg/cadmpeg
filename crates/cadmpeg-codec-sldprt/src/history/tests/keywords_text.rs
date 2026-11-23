@@ -225,7 +225,7 @@ fn application_element_is_kept_to_the_level_bound_and_the_cut_is_named() {
         cut.message.contains(r#"Application element "Simulation" nests 17 element levels"#)
             && cut
                 .message
-                .contains("1 element below level 16 is not kept, the first a Group element inside the level-16 Group element"),
+                .contains("1 element below level 16 is not kept (the first: element Group inside the level-16 element Group)"),
         "{}",
         cut.message
     );
@@ -317,4 +317,86 @@ fn other_xml_that_does_not_parse_is_not_a_history() {
     );
     assert!(decoded.histories.is_empty());
     assert!(codes(&decoded.losses).is_empty());
+}
+
+#[test]
+fn a_branching_cut_counts_every_element_below_the_bound_and_keeps_the_text_runs() {
+    let text = format!(
+        r#"<Keywords Name="Part"><Application Name="Simulation">{}lead<A><B><C/></B></A>mid<D/>tail{}</Application></Keywords>"#,
+        "<Group>".repeat(MAX_APPLICATION_LEVELS - 1),
+        "</Group>".repeat(MAX_APPLICATION_LEVELS - 1)
+    );
+    let decoded = decode("swXmlContents/KeyWords", text.as_bytes());
+    let application = stored_application(&decoded.histories[0]);
+    assert_eq!(levels(application), MAX_APPLICATION_LEVELS);
+    let mut deepest = application;
+    while let [HistoryElementContent::Element(child), ..] = deepest.content.as_slice() {
+        deepest = child;
+    }
+    assert_eq!(
+        deepest.content,
+        ["lead", "mid", "tail"].map(|value| HistoryElementContent::Text(value.into()))
+    );
+    let cut = decoded
+        .losses
+        .iter()
+        .find(|loss| loss.code == SldprtLossCode::HistoryApplicationNestingCut.kind())
+        .unwrap();
+    assert!(
+        cut.message.contains("nests 19 element levels")
+            && cut
+                .message
+                .contains("4 elements below level 16 are not kept")
+            && cut
+                .message
+                .contains("(the first: element A inside the level-16 element Group)"),
+        "{}",
+        cut.message
+    );
+}
+
+#[test]
+fn forms_the_history_drops_are_counted_once_per_member() {
+    let decoded = decode(
+        "swXmlContents/KeyWords",
+        br#"<Keywords xmlns:s="urn:s" Name="Part">
+  <!-- note --><?pi data?>
+  <s:Feature id="1" Name="Boss" s:Kind="x"><Dimension Name="D1"> 12mm </Dimension><Dimension Name="D2"> </Dimension></s:Feature>
+</Keywords>"#,
+    );
+    let notes = decoded
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::HistoryXmlNormalised.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].message,
+        "Keywords member swXmlContents/KeyWords: the native history drops 1 comment(s), 1 processing instruction(s), the edge whitespace of 2 text value(s), the namespace of 2 name(s); a SolidWorks write that regenerates the history writes the text without them"
+    );
+
+    let separated = decode(
+        "swXmlContents/KeyWords",
+        br#"<Keywords Name="Part"><Feature id="1" Name="Boss">lead<!---->text<!-- x -->more<!----><a/><!----></Feature></Keywords>"#,
+    );
+    let notes = separated
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::HistoryXmlNormalised.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert!(
+        notes[0].message.contains("drops 3 comment(s);"),
+        "{}",
+        notes[0].message
+    );
+
+    let plain = decode(
+        "swXmlContents/KeyWords",
+        b"<Keywords Name=\"Part\">\n  <Feature id=\"1\" Name=\"Boss\"><Dimension Name=\"D1\">12mm</Dimension></Feature>\n</Keywords>",
+    );
+    assert!(plain
+        .losses
+        .iter()
+        .all(|loss| loss.code != SldprtLossCode::HistoryXmlNormalised.kind()));
 }

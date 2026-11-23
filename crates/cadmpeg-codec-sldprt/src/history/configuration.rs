@@ -621,6 +621,7 @@ pub(crate) fn project_configuration_sketch_states(
     lanes: &[crate::records::FeatureInputLane],
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
+    plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     let solid = crate::resolved_features::stream_readings::SolidEdges::new(
@@ -632,10 +633,9 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let mut held_handles =
-            crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
-                &ir.model.sketch_entities,
-            );
+        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+            &ir.model.sketch_entities,
+        );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -726,7 +726,7 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
-            held_handles.hold_assumed_planes(
+            plane_bindings.extend(
                 crate::resolved_features::profiles::project_compact_sketch_profiles(
                     ctx,
                     &mut features,
@@ -737,21 +737,24 @@ pub(crate) fn project_configuration_sketch_states(
                     &mut losses,
                 )?,
             );
-            crate::resolved_features::profiles::project_marker_backed_sketches(
-                ctx,
-                &mut features,
-                &mut ir.model.sketches,
-                crate::resolved_features::profiles::MarkerSketchEntities {
-                    projected: &mut ir.model.sketch_entities,
-                    held: &mut held_handles,
-                },
-                crate::resolved_features::profiles::MarkerSources {
-                    histories,
-                    lanes: scoped_lanes,
-                    solid: &solid,
-                },
-                &mut losses,
-            )?;
+            let mut held_handles = held_handles;
+            plane_bindings.extend(
+                crate::resolved_features::profiles::project_marker_backed_sketches(
+                    ctx,
+                    &mut features,
+                    &mut ir.model.sketches,
+                    crate::resolved_features::profiles::MarkerSketchEntities {
+                        projected: &mut ir.model.sketch_entities,
+                        held: &mut held_handles,
+                    },
+                    crate::resolved_features::profiles::MarkerSources {
+                        histories,
+                        lanes: scoped_lanes,
+                        solid: &solid,
+                    },
+                    &mut losses,
+                )?,
+            );
             crate::resolved_features::profiles::project_sketch_block_profiles(
                 &mut features,
                 &mut ir.model.sketches,
@@ -826,7 +829,6 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
             )?;
             crate::resolved_features::profiles::finalize_unread_marker_entities(
-                &ir.model.sketches,
                 &mut ir.model.sketch_entities,
                 held_handles,
                 &mut losses,

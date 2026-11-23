@@ -573,6 +573,186 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
     }
 }
 
+/// The 88-byte companion tail of Thread scope 12, which owns Hole 5.
+fn thread_companion_tail(suppressed: bool) -> Vec<u8> {
+    use crate::layout::thread_hole_companion_tail as companion;
+    let marked = |tail: &mut [u8], at: usize, record_index: u32| {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    let mut tail = vec![0; companion::LEN];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    marked(&mut tail, companion::FIRST_COMPANION, 9);
+    tail[companion::PREVIOUS_HISTORY_STATE..companion::PREVIOUS_HISTORY_STATE + 4]
+        .copy_from_slice(&8u32.to_le_bytes());
+    tail[companion::EVALUATION_DURATION..companion::EVALUATION_DURATION + 8]
+        .copy_from_slice(&0.25f64.to_le_bytes());
+    marked(&mut tail, companion::SECOND_COMPANION, 8);
+    tail[companion::FLAGS] = u8::from(suppressed);
+    marked(&mut tail, companion::THIRD_COMPANION, 7);
+    marked(&mut tail, companion::HOLE, 5);
+    tail
+}
+
+/// A Thread scope 12 with current state 9 and two references, ending in
+/// `tail`; returns the frame and the end of the feature-family name.
+fn thread_scope_frame(tail: &[u8]) -> (Vec<u8>, usize) {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"344");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    push_marked(&mut bytes, 16);
+    push_marked(&mut bytes, 19);
+    bytes.extend_from_slice(&9u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Thread");
+    let kind_end = bytes.len();
+    bytes.extend_from_slice(tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    (bytes, kind_end)
+}
+
+fn parse_thread_scope(
+    bytes: &[u8],
+) -> Option<crate::records::feature::scope::DesignParameterScope> {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    super::parse_parameter_scope(
+        bytes,
+        &indexed_record_offsets_for_test(bytes),
+        12,
+        &"344".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+}
+
+/// The suppression flag of a Thread companion tail decodes as the Thread's
+/// suppression, with its location, and the tail stores no item tail state:
+/// the flag byte sits where an item tail stores its `01` marker. The
+/// reciprocal Hole tails leave the tail state unread.
+#[test]
+fn a_thread_companion_tail_decodes_its_suppression_flag() {
+    use crate::layout::thread_hole_companion_tail as companion;
+    for suppressed in [false, true] {
+        let (bytes, kind_end) = thread_scope_frame(&thread_companion_tail(suppressed));
+        let scope = parse_thread_scope(&bytes).expect("Thread companion tail");
+        assert_eq!(scope.previous_history_state_id(), Some(8));
+        assert_eq!(scope.tail_flags, None, "suppressed {suppressed}");
+        assert_eq!(
+            scope.companion_suppressed,
+            Some(crate::records::identity::Located {
+                value: suppressed,
+                offset: cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS),
+            })
+        );
+        let wire = serde_json::to_value(&scope).unwrap();
+        assert_eq!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                wire.clone()
+            )
+            .unwrap(),
+            scope
+        );
+        let flag_at = cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS);
+        for offset in [
+            scope.feature_ordinal_offset(),
+            flag_at - 1,
+            flag_at + 1,
+            scope.paired_byte_offset(),
+        ] {
+            let mut moved = wire.clone();
+            moved["companion_suppressed"]["offset"] = offset.into();
+            assert!(
+                serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                    moved
+                )
+                .is_err(),
+                "offset {offset}"
+            );
+        }
+        for (members, further) in [
+            (&[12][..], false),
+            (&[12][..], true),
+            (&[12, 100][..], false),
+            (&[12, 100][..], true),
+        ] {
+            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
+                .expect("reciprocal Hole tail");
+            assert_eq!(scope.tail_flags, None, "{members:?} {further}");
+            assert_eq!(scope.companion_suppressed, None, "{members:?} {further}");
+        }
+    }
+}
+
+/// Two envelopes of one Thread that differ only in the suppression flag of
+/// their companion tail keep the later envelope with its own flag,
+/// whichever envelope is primary-indexed, and one note names both flags.
+#[test]
+fn thread_envelopes_that_differ_only_in_the_companion_flag_keep_the_later() {
+    use super::{admit_history_bound_scope_variants, SupersededScopeEnvelopes};
+    use crate::design::test_support::indexed_record_offsets_for_test;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    for flags in [[false, true], [true, false]] {
+        let frames =
+            flags.map(|suppressed| thread_scope_frame(&thread_companion_tail(suppressed)).0);
+        let bytes = frames.concat();
+        let records = indexed_record_offsets_for_test(&bytes);
+        let scopes = [0, frames[0].len()].map(|start| {
+            let mut scope = super::parse_parameter_scope(
+                &bytes,
+                &records,
+                12,
+                &"344".to_owned().try_into().unwrap(),
+                cadmpeg_core::decode::u64_from_index(start),
+            )
+            .unwrap()
+            .expect("Thread envelope");
+            scope.id = format!("f3d:stream:design-parameter-scope#{start}");
+            scope
+        });
+        let later_at = scopes[1].byte_offset();
+        let note = format!(
+            "Feature scope f3d:stream:design-parameter-scope#{later_at} (record 12): the decoder kept companion suppression flag={} from its later envelope at byte {later_at} (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 0, companion suppression flag={}.",
+            u8::from(flags[1]),
+            u8::from(flags[0]),
+        );
+        for primary_at in [None, Some(0), Some(later_at)] {
+            let mut variants = scopes.to_vec();
+            let primary = primary_at
+                .map(|at| ("f3d:stream".to_owned(), at))
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>();
+            let superseded = admit_history_bound_scope_variants(&ctx, &mut variants, &[], &primary)
+                .expect("the document decodes");
+            let [kept] = variants.as_slice() else {
+                panic!("one retained envelope")
+            };
+            let case = format!("flags {flags:?}, primary {primary_at:?}");
+            assert_eq!(kept.byte_offset(), later_at, "{case}");
+            assert_eq!(
+                kept.companion_suppressed, scopes[1].companion_suppressed,
+                "{case}"
+            );
+            assert_eq!(kept.tail_flags, None, "{case}");
+            assert_eq!(
+                superseded,
+                SupersededScopeEnvelopes {
+                    primary_indexed: 0,
+                    tail_flags: vec![note.clone()],
+                },
+                "{case}"
+            );
+        }
+    }
+}
+
 #[test]
 fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
@@ -588,6 +768,7 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
         Some("Tapped Hole")
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
+    assert_eq!(scope.tail_flags, None);
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }

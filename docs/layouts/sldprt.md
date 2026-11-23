@@ -3211,6 +3211,55 @@ Parsed by:
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
 
+## `view_bytes`
+
+Spec §Configuration objects · layout: byte offsets · size: 115 B
+
+A view's bytes after its name and frame, in a part of swVersion below 15000.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `unit` | `f64` | little | spec | hold f64 `1` at +24 |
+| 58 | 8 | `scale` | `f64` | little | spec | the view's scale as an f64 at +58 |
+| 69 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +69 |
+| 73 | 8 | `minus_one_real` | `f64` | little | spec | f64 `-1` at +73 |
+| 85 | 4 | `index` | `u32` | little | spec | the view's index as a little-endian u32 at +85 |
+
+Unstated regions:
+
+- `0..24` (24 B): Zero bytes.
+- `32..58` (26 B): Zero bytes.
+- `66..69` (3 B): Zero bytes.
+- `81..85` (4 B): Zero bytes.
+- `89..115` (26 B): Zero bytes.
+
+## `annotation_view_tail`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+The bytes a `moAnnotationView_c` writes after the view bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 1 | `area` | `u8` | little | spec | a byte at +10 |
+| 28 | 4 | `one` | `u32` | little | spec | little-endian u32 `1` at +28 · value `1` |
+| 34 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +34 |
+| 38 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +38 |
+| 42 | 4 | `minus_one_second` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+| 46 | 4 | `minus_one_third` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+
+Unstated regions:
+
+- `0..10` (10 B): Zero bytes.
+- `11..28` (17 B): Zero bytes.
+- `32..34` (2 B): Zero bytes.
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B
@@ -4063,9 +4112,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `source` | `u32` | little | spec | Its source identifier and selector are |
+| 0 | 4 | `source` | `u32` | little | spec | The plane's feature number; a time stamp in the padded form (compact_principal_plane_component_padded). |
+| 4 | 4 | `time_stamp` | `u32` | little | spec | A time stamp; zero in the padded form. |
 | 8 | 2 | `reserved` | `bytes[2]` | little | spec | A principal-plane component record has the 138-byte extent |
-| 10 | 4 | `selector` | `u32` | little | spec | Its source identifier and selector are |
+| 10 | 4 | `selector` | `u32` | little | spec | Its selector is the principal-plane selector |
 | 14 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
 | 15 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
 | 87 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
@@ -4076,8 +4126,35 @@ Parsed by:
 
 Unstated regions:
 
-- `4..8` (4 B): Opaque identity.
 - `130..138` (8 B): Opaque continuation.
+
+## `compact_principal_plane_component_padded`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+The principal-plane component record with its feature number one word earlier. The 138-byte record of compact_principal_plane_component starts at +4: its source word is the time stamp and its time-stamp word is the padding.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/compact_reference_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_number` | `u32` | little | spec | The plane's feature number, the word before the 138-byte record. |
+| 4 | 4 | `time_stamp` | `u32` | little | spec | A time stamp, at +0 of the 138-byte record. |
+| 8 | 4 | `padding` | `u32` | little | spec | Zero, at +4 of the 138-byte record. · value `0` |
+| 12 | 2 | `reserved` | `bytes[2]` | little | spec | From the reserved field on, the two forms are the same |
+| 14 | 4 | `selector` | `u32` | little | spec | Its selector is the principal-plane selector |
+| 18 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
+| 19 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
+| 91 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
+| 115 | 8 | `scale` | `f64` | little | spec | its homogeneous scale is `1` |
+| 123 | 3 | `trailer_reserved` | `bytes[3]` | little | spec | From the reserved field on, the two forms are the same |
+| 126 | 4 | `trailer_kind` | `u32` | little | spec | From the reserved field on, the two forms are the same |
+| 130 | 4 | `trailer_sentinel` | `u32` | little | spec | From the reserved field on, the two forms are the same |
+
+Unstated regions:
+
+- `134..142` (8 B): Opaque continuation.
 
 ## `sketch_array_first_entry_prefix`
 

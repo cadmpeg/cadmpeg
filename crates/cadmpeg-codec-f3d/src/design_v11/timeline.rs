@@ -80,6 +80,16 @@ pub(super) fn project(
         .iter()
         .map(|scope| (scope.id.as_str(), scope))
         .collect::<HashMap<_, _>>();
+    let companion_suppressed = scope_inputs
+        .records
+        .iter()
+        .filter_map(|scope| {
+            Some((
+                (native_stream(&scope.id)?, u64::from(scope.record_index)),
+                scope.companion_suppressed?.value,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
         if let Some(stream) = native_stream(timeline.id()) {
@@ -114,13 +124,21 @@ pub(super) fn project(
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
                 let flags = tail_flags.get(&(stream, item.value)).copied();
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let feature = positioned
+                let feature = match positioned
                     .get(&(stream, ordinal))
                     .and_then(|candidates| item_feature(candidates, item.value))
-                    .map_or_else(
-                        || unprojected_item(stream, timeline, item.value, &item_types, flags),
-                        |feature| resolved_item(feature, bodies, &scopes, losses),
-                    );
+                {
+                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
+                    None => unprojected_item(
+                        stream,
+                        timeline,
+                        item.value,
+                        &item_types,
+                        flags,
+                        companion_suppressed.get(&(stream, item.value)).copied(),
+                        losses,
+                    ),
+                };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
                 ordinal = ordinal
@@ -280,23 +298,33 @@ fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<Featur
 
 /// The feature of an item the v10 projection did not resolve: its record
 /// type's family, or a native operation named by that type, suppressed as
-/// its scope tail `flags` state.
+/// its scope tail `flags` state or its Thread companion suppression flag
+/// `companion` states.
 fn unprojected_item(
     stream: &str,
     timeline: &DesignFeatureTimeline,
     record: u64,
     types: &ItemTypes<'_>,
     flags: Option<DesignScopeTailFlags>,
+    companion: Option<bool>,
+    losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let id = item_feature_id(stream, record);
+    if let Some(flags) = flags {
+        losses.extend(flags.assumption_notes(&format!("feature {id}")));
+    }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
     Feature {
-        id: item_feature_id(stream, record),
+        id,
         name: None,
-        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed)),
+        suppressed: flags
+            .map(|flags| flags.suppressed())
+            .or(companion)
+            .map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
             refine: None,

@@ -29,7 +29,7 @@ use cadmpeg_core::bytes::contains;
 use crate::container::{
     is_embedded_document, unwrapped_name, virtual_component_key, xml_text, ContainerScan,
 };
-use crate::loss::SldprtLossCode;
+use crate::loss::{named, SldprtLossCode};
 
 use self::native::{NativeAssembly, NativeDefinition, NativePlacement, NativePrototype};
 
@@ -47,8 +47,6 @@ const MATE_CLASS_TOKEN: &[u8] = b"moMate";
 const METRES_TO_MILLIMETRES: f64 = 1000.0;
 /// Largest admitted deviation of the matrix column that must be `(0, 0, 0, 1)`.
 const EPS_HOMOGENEOUS_COLUMN: f64 = 1e-9;
-/// Number of names that one loss message lists before it counts the rest.
-const NAMED_PER_NOTE: usize = 8;
 
 /// Product definitions, occurrences, and losses projected from one assembly.
 #[derive(Debug)]
@@ -478,19 +476,6 @@ impl Tally {
             );
         }
     }
-}
-
-fn named<S: AsRef<str>>(names: &[S]) -> String {
-    let mut text = names
-        .iter()
-        .take(NAMED_PER_NOTE)
-        .map(|name| format!("`{}`", name.as_ref()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    if names.len() > NAMED_PER_NOTE {
-        text = format!("{text}, and {} more", names.len() - NAMED_PER_NOTE);
-    }
-    text
 }
 
 struct Walk<'w, 'a> {

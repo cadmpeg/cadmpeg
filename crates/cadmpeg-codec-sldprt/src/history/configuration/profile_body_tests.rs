@@ -80,6 +80,7 @@ fn projected(ir: &CadIr, annotations: &cadmpeg_ir::Annotations, exact: &ExactPro
         &native.feature_input_lanes,
         exact,
         &mut annotations.clone(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
     projected
