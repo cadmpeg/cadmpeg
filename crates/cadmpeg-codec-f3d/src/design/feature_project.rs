@@ -89,6 +89,7 @@ mod revolve_target;
 pub(crate) mod shell_fallback;
 mod silhouette_split;
 mod split_face;
+mod surface_extend;
 mod surface_offset;
 mod surface_patch;
 mod surface_untrim;
@@ -534,28 +535,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
-                    if let Some((operation, distance)) =
-                        scope.surface_extend_operation().and_then(|operation| {
-                            cadmpeg_ir::scalar::PositiveLength::new(operation.distance.get() * 10.0)
-                                .map(|distance| (operation, distance))
-                        })
-                    {
-                        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                            faces: cadmpeg_ir::features::selections::FaceSelection::Native(format!(
-                                "{}{}{}",
-                                native_scope,
-                                ":design-record#",
-                                u64::from(operation.boundary_record_index)
-                            )),
-                            distance: Some(distance),
-                            method: operation.extension(),
-                        })
-                    } else {
+                    surface_extend::project_surface_extend(
+                        scope,
+                        edge_operands,
+                    )
+                    .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
                         })
-                    }
+                    })
                 }
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
                     .surface_offset_operation()
