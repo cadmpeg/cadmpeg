@@ -129,7 +129,9 @@ fn polyline(
     range: Option<[f64; 2]>,
 ) -> Result<Option<Sampled>, CodecError> {
     let knots = pcurve.knots();
-    let degree = usize::try_from(pcurve.degree()).unwrap_or(usize::MAX);
+    let Ok(degree) = usize::try_from(pcurve.degree()) else {
+        return Ok(None);
+    };
     let domain = knots
         .get(degree)
         .zip(
