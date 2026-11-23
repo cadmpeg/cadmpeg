@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What the full decoder reads back from a written part, compared with the
-//! caller's whole document. A write whose part reads back changed where no
-//! edit touches it is written again with the stored record of the edited
-//! feature that changes it; a change that no stored record removes is named.
+//! document the write must read back as: the decoded source with the edits
+//! the write carries applied ([`expected`]). Each difference is removed,
+//! by writing again with the stored record of the edited feature that causes
+//! it, or named by a loss that names its record.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,16 +14,15 @@ use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use serde_json::Value;
 
 use super::brep_agreement::stale_after_edit;
-use super::edits::{listed, ConstructionLeaf, FeatureClaims};
+use super::edits::{listed, ConstructionLeaf, FeatureClaims, UnwrittenEdits, UnwrittenPart};
 use crate::history::extrude_direction::{
-    cleared_reversal, reversal_flag, settled_travel, written_reversal_flag, REVERSE,
-    REVERSE_DECODED,
+    reversal_flag, settled_travel, written_reversal_flag, REVERSE, REVERSE_DECODED,
 };
 use crate::writer::SemanticOutput;
 
 pub(crate) mod document;
 
-use document::{Change, Difference, Document};
+use document::{agree, agrees_with_reported, disagreement, Change, Difference, Document, Pairing};
 
 /// The construction edits of a write, and the parameters its parameter edits
 /// reach.
@@ -56,45 +56,67 @@ pub(crate) struct ReadBack {
     /// Edits called written that do not read back as edited and whose
     /// stored record does not write, each with why.
     pub(super) unkept: Vec<String>,
+    /// Differences the write of the unedited source reads back as well, by
+    /// arena: no held-back edit removes them, so they are named at once.
+    pub(super) defects: Vec<String>,
+    /// Why the written part is not compared with the document: it does not
+    /// decode again or does not serialize, and no written edit is left to
+    /// hold back.
+    pub(super) unread: Option<String>,
+    /// The features whose tree place (`ordinal`) or output bodies
+    /// (`outputs`) read back other than the document states, with that
+    /// field: no loss calls them written.
+    pub(crate) misread: HashSet<(FeatureId, String)>,
     /// What reads back other than the document states and no edit explains.
     unexplained: Vec<String>,
+    /// The definition each claimed feature must read back with, in wire
+    /// form: its source definition with each edit as the claims judge it.
+    definitions: HashMap<FeatureId, Value>,
 }
 
 /// The relative difference up to which two real numbers read back the same:
 /// a millimetre value stored in metres moves in its last bits.
 const READ_BACK_RELATIVE_TOLERANCE: f64 = 1.0e-9;
 
-/// Whether `left` and `right` are equal up to the read-back tolerance on each
-/// real number; with `ids_move`, every two native ids count as equal.
-pub(crate) fn same_read_back(left: &Value, right: &Value, ids_move: bool) -> bool {
-    match (left, right) {
-        (Value::Number(left), Value::Number(right)) => match (left.as_f64(), right.as_f64()) {
-            (Some(left), Some(right)) => {
-                (left - right).abs()
-                    <= READ_BACK_RELATIVE_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+/// Whether real numbers `left` and `right` are equal up to the read-back
+/// tolerance.
+fn close(left: f64, right: f64) -> bool {
+    (left - right).abs() <= READ_BACK_RELATIVE_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+}
+
+/// The numbers of `text` and the text around them, each number as `#`.
+fn numbers_of(text: &str) -> (String, Vec<f64>) {
+    let mut skeleton = String::with_capacity(text.len());
+    let mut numbers = Vec::new();
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let signed = bytes[index] == b'-'
+            && bytes.get(index + 1).is_some_and(u8::is_ascii_digit)
+            && (index == 0 || !bytes[index - 1].is_ascii_alphanumeric());
+        if bytes[index].is_ascii_digit() || signed {
+            let start = index;
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_digit()
+                    || (bytes[index] == b'.'
+                        && bytes.get(index + 1).is_some_and(u8::is_ascii_digit)))
+            {
+                index += 1;
             }
-            _ => left == right,
-        },
-        (Value::String(left), Value::String(right)) if ids_move => {
-            left == right || (left.starts_with("sldprt:") && right.starts_with("sldprt:"))
+            if let Ok(number) = text[start..index].parse::<f64>() {
+                numbers.push(number);
+                skeleton.push('#');
+                continue;
+            }
+            skeleton.push_str(&text[start..index]);
+            continue;
         }
-        (Value::Array(left), Value::Array(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|(left, right)| same_read_back(left, right, ids_move))
-        }
-        (Value::Object(left), Value::Object(right)) => {
-            left.len() == right.len()
-                && left.iter().all(|(key, value)| {
-                    right
-                        .get(key)
-                        .is_some_and(|other| same_read_back(value, other, ids_move))
-                })
-        }
-        _ => left == right,
+        let character = text[index..].chars().next().unwrap_or_default();
+        skeleton.push(character);
+        index += character.len_utf8().max(1);
     }
+    (skeleton, numbers)
 }
 
 /// Sets the place `pointer` of `value` to `leaf`, or removes it for `None`.
@@ -326,70 +348,117 @@ impl<'a> Judge<'a> {
                 ..ReadBack::default()
             };
         }
-        let decoded = crate::SldprtCodec
+        let decoded = match crate::SldprtCodec
             .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-            .ok();
-        let written = decoded.as_ref().map(cadmpeg_ir::codec::DecodeResult::ir);
-        let settled = written.map_or_else(HashSet::new, |written| {
-            settled_by_solid(
-                self.input,
-                &source.ir,
-                claims,
-                &output.written.kept_definitions,
-                written,
+        {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                return ReadBack::unreadable(claims, format!("does not decode again ({error})"));
+            }
+        };
+        let round_trip = self.round_trip;
+        // The writer's own losses that name a record as omitted or as
+        // holding the source state without the edit, and the parameters
+        // the driven-dimension omission loss counts.
+        let naming = output
+            .losses
+            .iter()
+            .chain(&output.unwritten.notes())
+            .filter(|loss| {
+                let code = loss.code.local_code();
+                code == "edit.dropped" || code.ends_with("omitted")
+            })
+            .map(|loss| loss.message.clone())
+            .chain(
+                crate::resolved_features::write_prepare::omitted_driven_parameters(self.input)
+                    .iter()
+                    .map(|id| id.as_str().to_owned()),
             )
-        });
-        let mut read_back = ReadBack::of_claims(&claims.features, written, &settled);
-        if let Some(written) = written {
-            let round_trip = self.round_trip;
-            self.judge_part(
-                &mut read_back,
-                claims,
-                (&source.ir, &output.coverage.omitted(self.input)),
-                (written, &settled),
-                &mut |stated| baseline_of(round_trip, source, stated),
-            );
-        }
-        read_back
+            .collect::<Vec<_>>();
+        self.judge(
+            claims,
+            &output.written,
+            (&source.ir, &output.coverage.omitted(self.input), &naming),
+            decoded.ir(),
+            None,
+            &mut |stated| baseline_of(round_trip, source, stated),
+        )
     }
 
-    /// Compares `written` with the caller's document whole. A change of a
-    /// claimed feature or its parameters beyond its edits withholds that
-    /// feature. Every other difference that no edit, no arena the write omits
-    /// and no unedited write of the source explains is unexplained. `source`
-    /// is the decoded source document and the labels of the arenas the write
-    /// omits, whose `arena.omitted` losses name their records. `settled`
-    /// holds the claimed features whose travel reads back as the stored solid
-    /// settles it ([`settled_by_solid`]).
-    fn judge_part(
+    /// Judges `written`, the written part decoded, against the document the
+    /// write must read back as. `unwritten` holds the edits the write states
+    /// it does not carry; `source` is the decoded source document, the
+    /// labels of the arenas the write omits, whose `arena.omitted` losses
+    /// name their records, and the messages of the writer's losses that
+    /// name a record as omitted or as dropping its edit. `settled` holds the
+    /// claimed features whose travel reads back as the stored solid settles
+    /// it; `None` finds them ([`settled_by_solid`]).
+    fn judge(
         &mut self,
-        read_back: &mut ReadBack,
         claims: &ReadBackClaims,
-        (source, omitted): (&CadIr, &[&str]),
-        (written, settled): (&CadIr, &HashSet<FeatureId>),
+        unwritten: &UnwrittenEdits,
+        (source, omitted, naming): (&CadIr, &[&str], &[String]),
+        written: &CadIr,
+        settled: Option<&HashSet<FeatureId>>,
         baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
-    ) {
+    ) -> ReadBack {
         if self.stated.is_none() {
             self.stated = Document::of(self.input);
         }
         if self.source.is_none() {
             self.source = Document::of(source);
         }
-        let (Some(stated), Some(read)) = (self.stated.as_ref(), Document::of(written)) else {
-            return;
+        let (Some(stated), Some(source_records), Some(read)) = (
+            self.stated.as_ref(),
+            self.source.as_ref(),
+            Document::of(written),
+        ) else {
+            return ReadBack::unreadable(claims, "does not serialize".to_owned());
         };
-        let pairing = document::pair(stated, &read);
+        let expected = expected(self.input, stated, source_records, claims, unwritten);
+        let pairing = document::pair(&expected, &read);
+        let settled = settled.cloned().unwrap_or_else(|| {
+            settled_by_solid(
+                self.input,
+                source,
+                claims,
+                &unwritten.kept_definitions,
+                written,
+                &pairing,
+            )
+        });
+        let mut read_back = ReadBack::of_claims(&claims.features, written, &pairing, &settled);
         let scope = Scope::of(
-            self.input,
             claims,
-            (stated, self.source.as_ref()),
-            omitted,
-            settled,
+            (&expected, source_records),
+            (omitted, naming),
+            (&settled, &read_back.definitions, &pairing),
         );
+        let differences = document::differences(&expected, &read, &pairing);
+        // The parameters a variant edit adds or drops, by id and by the form
+        // a key of an unpaired record reports, and the claimed feature of
+        // each.
+        let reshaped = differences
+            .iter()
+            .filter(|difference| difference.arena == "model.parameters")
+            .filter_map(
+                |difference| match scope.classify(difference, &HashMap::new()) {
+                    Class::Reshaped(id, _) => {
+                        let parameter = difference.id.clone()?;
+                        Some([
+                            (document::reported_form(&parameter), id.clone()),
+                            (parameter, id),
+                        ])
+                    }
+                    _ => None,
+                },
+            )
+            .flatten()
+            .collect::<HashMap<_, _>>();
         let mut claim_changes = HashMap::<FeatureId, Vec<String>>::new();
-        let mut unexplained = Vec::new();
-        for difference in document::differences(stated, &read, &pairing) {
-            match scope.classify(&difference) {
+        let mut general = Vec::new();
+        for difference in differences {
+            match scope.classify(&difference, &reshaped) {
                 Class::Explained => {}
                 Class::Claim(id, change) => claim_changes.entry(id).or_default().push(change),
                 Class::Reshaped(id, change) => match read_back
@@ -400,7 +469,7 @@ impl<'a> Judge<'a> {
                     Some((_, changes)) => changes.push(change),
                     None => read_back.reshaped.push((id, vec![change])),
                 },
-                Class::Unexplained => unexplained.push(difference),
+                Class::General => general.push(difference),
             }
         }
         for claim in &claims.features {
@@ -424,39 +493,147 @@ impl<'a> Judge<'a> {
                     .push(format!("feature {} ({})", claim.id, listed(&changes)));
             }
         }
-        if unexplained.is_empty() || !read_back.withhold.is_empty() {
-            // A feature withheld in this pass may be what changed the rest:
-            // the next pass judges the part again.
-            return;
-        }
-        let unexplained = self.unexplained_by_baseline(baseline, &unexplained);
-        if unexplained.is_empty() {
-            return;
-        }
-        read_back.unexplained = unexplained;
-    }
-
-    /// The labels of `differences` that the source document written with no
-    /// edit does not have as well.
-    fn unexplained_by_baseline(
-        &mut self,
-        baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
-        differences: &[Difference],
-    ) -> Vec<String> {
-        if self.baseline.is_none() {
-            self.baseline = Some(self.source.as_ref().map(&mut *baseline).unwrap_or_default());
-        }
-        let baseline = self.baseline.as_deref().unwrap_or_default();
-        differences
+        read_back.misread = general
             .iter()
-            .filter(|difference| {
-                !baseline
-                    .iter()
-                    .any(|base| same_difference(base, difference))
+            .filter(|difference| difference.arena == "model.features")
+            .filter_map(|difference| {
+                let field = difference.segments().into_iter().next()?;
+                let id = FeatureId::mint(difference.id.clone()?).ok()?;
+                matches!(field.as_str(), "ordinal" | "outputs").then_some((id, field))
             })
-            .map(Difference::label)
-            .collect()
+            .collect();
+        if general.is_empty() {
+            return read_back;
+        }
+        if self.baseline.is_none() {
+            self.baseline = Some(baseline(source_records));
+        }
+        let base = self.baseline.as_deref().unwrap_or_default();
+        let (defects, unexplained): (Vec<_>, Vec<_>) = general
+            .into_iter()
+            .partition(|difference| base.iter().any(|base| same_difference(base, difference)));
+        read_back.defects = by_arena(&defects);
+        read_back.unexplained = unexplained.iter().map(Difference::label).collect();
+        read_back
     }
+}
+
+/// `differences` by arena: the arena, how many, and the first of them.
+fn by_arena(differences: &[Difference]) -> Vec<String> {
+    let mut arenas = std::collections::BTreeMap::<&str, Vec<String>>::new();
+    for difference in differences {
+        arenas
+            .entry(difference.arena.as_str())
+            .or_default()
+            .push(difference.label());
+    }
+    arenas
+        .into_iter()
+        .map(|(arena, labels)| {
+            format!(
+                "{arena}: {} difference(s) ({})",
+                labels.len(),
+                listed(&labels)
+            )
+        })
+        .collect()
+}
+
+/// The document `input`, whose records are `stated`, as the written part
+/// must read back: the decoded source document, whose records are `source`,
+/// with the edits the write carries applied. An edit the write states it
+/// does not carry reads back as the source: the dependencies of a claimed
+/// feature, the parts of a parameter edit and the configuration parameter
+/// values in `unwritten`. A renamed feature is stated by its edited name
+/// where the decoder restates the name. The construction leaves of a claimed
+/// feature are judged by its claims ([`ReadBack::of_claims`]), and the
+/// records a carried edit reaches by [`Scope::substitutes`].
+fn expected(
+    input: &CadIr,
+    stated: &Document,
+    source: &Document,
+    claims: &ReadBackClaims,
+    unwritten: &UnwrittenEdits,
+) -> Document {
+    fn restore(expected: &mut Document, source: &Document, arena: &str, id: &str, field: &str) {
+        let original = source
+            .record(arena, id)
+            .and_then(|record| record.get(field))
+            .cloned();
+        if let Some(Value::Object(record)) = expected.record_mut(arena, id) {
+            match original {
+                Some(value) => {
+                    record.insert(field.to_owned(), value);
+                }
+                None => {
+                    record.remove(field);
+                }
+            }
+        }
+    }
+    let mut expected = stated.clone();
+    for claim in &claims.features {
+        if claim.dependencies_unwritten {
+            restore(
+                &mut expected,
+                source,
+                "model.features",
+                claim.id.as_str(),
+                "dependencies",
+            );
+        }
+    }
+    for (id, part) in &unwritten.parameters {
+        let fields: &[&str] = match part {
+            UnwrittenPart::Whole => &["value", "expression", "display"],
+            UnwrittenPart::Value => &["value"],
+            UnwrittenPart::Expression => &["expression"],
+        };
+        for field in fields {
+            restore(
+                &mut expected,
+                source,
+                "model.parameters",
+                id.as_str(),
+                field,
+            );
+        }
+    }
+    for (configuration, parameter) in &unwritten.configuration_values {
+        let original = source
+            .record("model.configurations", configuration)
+            .and_then(|record| record.get("parameter_values"))
+            .and_then(|values| values.get(parameter.as_str()))
+            .cloned();
+        if let Some(Value::Object(values)) = expected
+            .record_mut("model.configurations", configuration)
+            .and_then(|record| record.get_mut("parameter_values"))
+        {
+            match original {
+                Some(value) => {
+                    values.insert(parameter.as_str().to_owned(), value);
+                }
+                None => {
+                    values.remove(parameter.as_str());
+                }
+            }
+        }
+    }
+    for feature in &input.model.features {
+        let (Some(new), Some(old)) = (
+            feature.name.as_deref(),
+            source
+                .record("model.features", feature.id.as_str())
+                .and_then(|record| record.get("name"))
+                .and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        if old != new {
+            expected.rename_feature(feature.id.as_str(), old, new);
+        }
+    }
+    expected
 }
 
 /// The claimed features whose travel and `reverse_decoded` mark, which the
@@ -473,6 +650,7 @@ fn settled_by_solid(
     claims: &ReadBackClaims,
     kept: &HashSet<FeatureId>,
     written: &CadIr,
+    pairing: &Pairing,
 ) -> HashSet<FeatureId> {
     fn feature<'ir>(ir: &'ir CadIr, id: &FeatureId) -> Option<&'ir Feature> {
         ir.model.features.iter().find(|feature| &feature.id == id)
@@ -484,7 +662,7 @@ fn settled_by_solid(
             let (Some(original), Some(current), Some(read)) = (
                 feature(source, &claim.id),
                 feature(input, &claim.id),
-                claim.read(written),
+                claim.read(written, pairing),
             ) else {
                 return false;
             };
@@ -558,36 +736,47 @@ fn same_difference(base: &Difference, difference: &Difference) -> bool {
         }
 }
 
-/// What a difference between the caller's document and the written part is.
+/// How a difference between the expected document and the written part is
+/// removed or named.
 enum Class {
-    /// The edit or a record that mirrors it.
+    /// The claims judge it, or a loss of the write names it.
     Explained,
-    /// A change of claimed feature `0` beyond its edits.
+    /// A change of claimed feature `0` beyond its edits: the feature is held
+    /// back, or named when no edit of it is written.
     Claim(FeatureId, String),
-    /// A parameter a variant edit of feature `0` adds or drops.
+    /// A parameter a variant edit of feature `0` adds or drops, named.
     Reshaped(FeatureId, String),
-    Unexplained,
+    /// Held back when holding back the written edits removes it, else named.
+    General,
 }
 
-/// The records an edit of the write touches.
+/// The records an edit of the write reaches, and what the edits state.
 struct Scope<'a> {
-    stated: &'a Document,
-    source: Option<&'a Document>,
     claims: HashMap<&'a str, &'a FeatureClaims>,
-    /// Parameters the parameter edits judge.
+    /// Parameters the parameter edits reach.
     affected: HashSet<String>,
     /// Parameters of a claimed feature.
     owned: HashSet<String>,
     /// Features that own an affected parameter.
     owners: HashSet<String>,
     /// Every id above, each claimed feature and each model record the caller
-    /// changed against the source: a design record or a leaf
-    /// keyed by one mirrors the edit.
+    /// changed against the source: a design record or an entry keyed by one
+    /// may restate the edit.
     touched: HashSet<String>,
-    /// The source and the caller's name of each renamed feature.
-    renames: Vec<(String, String)>,
+    /// Each carried edit of a number: the source value and the edited one.
+    numbers: Vec<(f64, f64)>,
+    /// Each carried edit of a text: the source text and the edited one.
+    texts: Vec<(String, String)>,
     /// The arenas the write omits, as the document names them.
     omitted: HashSet<String>,
+    /// The messages of the writer's losses that name a record as omitted or
+    /// as dropping its edit.
+    naming: &'a [String],
+    /// The definition each claimed feature must read back with.
+    definitions: &'a HashMap<FeatureId, Value>,
+    /// The claimed feature that owns each parameter of a claimed feature.
+    parameter_owners: HashMap<String, &'a str>,
+    pairing: &'a Pairing,
     /// The claimed extrusions whose edit clears the reversal the decoder
     /// read.
     cleared: HashSet<&'a str>,
@@ -598,11 +787,14 @@ struct Scope<'a> {
 
 impl<'a> Scope<'a> {
     fn of(
-        input: &CadIr,
         claims: &'a ReadBackClaims,
-        (stated, source): (&'a Document, Option<&'a Document>),
-        omitted: &[&str],
-        settled: &'a HashSet<FeatureId>,
+        (expected, source): (&Document, &Document),
+        (omitted, naming): (&[&str], &'a [String]),
+        (settled, definitions, pairing): (
+            &'a HashSet<FeatureId>,
+            &'a HashMap<FeatureId, Value>,
+            &'a Pairing,
+        ),
     ) -> Self {
         let claimed = claims
             .features
@@ -618,45 +810,78 @@ impl<'a> Scope<'a> {
             .keys()
             .map(|id| (*id).to_owned())
             .collect::<HashSet<_>>();
-        let owned = stated.owned_by("model.parameters", &claimed_ids);
-        let owners = input
-            .model
-            .parameters
+        let owned = expected.owned_by("model.parameters", &claimed_ids);
+        let parameter_owners = claims
+            .features
             .iter()
-            .filter(|parameter| affected.contains(parameter.id.as_str()))
-            .filter_map(|parameter| parameter.owner.as_ref())
-            .map(|owner| owner.as_str().to_owned())
-            .collect::<HashSet<_>>();
-        let changed = source
-            .map(|source| stated.changed_model_records(source))
-            .unwrap_or_default();
-        let renames = source
-            .map(|source| {
-                input
-                    .model
-                    .features
-                    .iter()
-                    .filter_map(|feature| {
-                        let new = feature.name.as_deref()?;
-                        let old = source
-                            .record("model.features", feature.id.as_str())?
-                            .get("name")?
-                            .as_str()?;
-                        (old != new).then(|| (old.to_owned(), new.to_owned()))
-                    })
-                    .collect()
+            .flat_map(|claim| {
+                expected
+                    .owned_by(
+                        "model.parameters",
+                        &HashSet::from([claim.id.as_str().to_owned()]),
+                    )
+                    .into_iter()
+                    .map(move |parameter| (parameter, claim.id.as_str()))
             })
-            .unwrap_or_default();
+            .collect::<HashMap<_, _>>();
+        let owners = affected
+            .iter()
+            .filter_map(|id| {
+                let parameter = expected.record("model.parameters", id)?;
+                let owner = parameter.get("owner")?;
+                owner
+                    .as_str()
+                    .or_else(|| owner.get("value").and_then(Value::as_str))
+                    .map(str::to_owned)
+            })
+            .collect::<HashSet<_>>();
+        let changed = expected.changed_model_records(source);
+        let mut numbers = Vec::new();
+        let mut texts = Vec::new();
+        for edit in claims
+            .features
+            .iter()
+            .flat_map(|claim| &claim.edits)
+            .filter(|edit| edit.written)
+        {
+            match (&edit.source, &edit.edited) {
+                (Value::Number(old), Value::Number(new)) => {
+                    if let (Some(old), Some(new)) = (old.as_f64(), new.as_f64()) {
+                        numbers.push((old, new));
+                    }
+                }
+                (Value::String(old), Value::String(new)) => texts.push((old.clone(), new.clone())),
+                _ => {}
+            }
+        }
+        for id in &affected {
+            let (Some(old), Some(new)) = (
+                source.record("model.parameters", id),
+                expected.record("model.parameters", id),
+            ) else {
+                continue;
+            };
+            if let (Some(old), Some(new)) = (
+                old.pointer("/value/value").and_then(Value::as_f64),
+                new.pointer("/value/value").and_then(Value::as_f64),
+            ) {
+                if !close(old, new) {
+                    numbers.push((old, new));
+                }
+            }
+            if let (Some(old), Some(new)) = (
+                old.get("expression").and_then(Value::as_str),
+                new.get("expression").and_then(Value::as_str),
+            ) {
+                if old != new {
+                    texts.push((old.to_owned(), new.to_owned()));
+                }
+            }
+        }
         let cleared = claims
             .features
             .iter()
-            .filter(|claim| {
-                input
-                    .model
-                    .features
-                    .iter()
-                    .any(|feature| feature.id == claim.id && cleared_reversal(feature))
-            })
+            .filter(|claim| claim.clears_reversal)
             .map(|claim| claim.id.as_str())
             .collect();
         let touched = claimed_ids
@@ -668,14 +893,13 @@ impl<'a> Scope<'a> {
             .cloned()
             .collect();
         Self {
-            stated,
-            source,
             claims: claimed,
             affected,
             owned,
             owners,
             touched,
-            renames,
+            numbers,
+            texts,
             omitted: omitted
                 .iter()
                 .flat_map(|label| {
@@ -686,19 +910,46 @@ impl<'a> Scope<'a> {
                     }
                 })
                 .collect(),
+            naming,
+            definitions,
+            parameter_owners,
+            pairing,
             cleared,
             settled,
         }
     }
 
-    fn classify(&self, difference: &Difference) -> Class {
+    /// How `difference` is removed or named. `reshaped` holds the
+    /// parameters a variant edit adds or drops, as a key reports them, and
+    /// the claimed feature of each.
+    fn classify(&self, difference: &Difference, reshaped: &HashMap<String, FeatureId>) -> Class {
+        // The `arena.omitted` loss names the arena and its record count.
         if self.omitted.contains(&difference.arena) {
             return Class::Explained;
         }
         let id = difference.id.as_deref().unwrap_or_default();
+        if !id.is_empty() && self.naming.iter().any(|message| names_id(message, id)) {
+            return Class::Explained;
+        }
         let segments = difference.segments();
         let field = segments.first().map(String::as_str).unwrap_or_default();
         let owner = difference.owner.as_deref().unwrap_or_default();
+        let restating =
+            difference.arena.starts_with("design.") || difference.arena == "model.configurations";
+        if let Some(claim) = [id, owner]
+            .into_iter()
+            .chain(segments.iter().map(String::as_str))
+            .find_map(|key| reshaped.get(key.trim_end_matches('\'')))
+            .filter(|_| restating)
+        {
+            return Class::Reshaped(
+                claim.clone(),
+                format!("restates it in {}", difference.label()),
+            );
+        }
+        if let Some(class) = self.configured_state(difference, &segments) {
+            return class;
+        }
         match difference.arena.as_str() {
             "model.features" => {
                 if let Some(claim) = self.claims.get(id) {
@@ -707,83 +958,107 @@ impl<'a> Scope<'a> {
                 if self.owners.contains(id)
                     && matches!(field, "definition" | "source_properties" | "source_content")
                 {
-                    return Class::Explained;
+                    return self.restated(difference);
                 }
             }
             "model.parameters" => {
-                if self.affected.contains(id) {
-                    return Class::Explained;
-                }
                 let added = matches!(difference.change, Change::Added { .. });
                 if self.owned.contains(id) || (added && self.claims.contains_key(owner)) {
                     if let Some(claim) = self.claims.get(owner) {
-                        return Self::owned_parameter(claim, difference, field);
+                        return self.owned_parameter(claim, difference, field);
                     }
+                }
+                if self.affected.contains(id) && matches!(field, "value" | "expression" | "display")
+                {
+                    return self.restated(difference);
                 }
             }
             arena
                 if arena.starts_with("design.")
                     && (self.touched.contains(id) || self.touched.contains(owner)) =>
             {
-                return Class::Explained;
+                return self.restated(difference);
             }
             _ => {}
         }
-        // A key that names an unpaired record is that record's entry; the
-        // record's own difference judges it.
-        if segments.iter().any(|segment| {
-            self.touched.contains(segment) || segment.contains(document::UNPAIRED_DIGITS)
-        }) || self.caller_changed(difference)
-            || self.renamed(difference)
+        if segments
+            .iter()
+            .any(|segment| self.touched.contains(segment))
         {
-            return Class::Explained;
+            return self.restated(difference);
         }
-        Class::Unexplained
+        Class::General
     }
 
-    /// A difference of claimed feature `claim`'s own record: its definition
-    /// is judged by the claims, and its content and source property values
-    /// mirror the edited records.
+    /// A difference of claimed feature `claim`'s own record. Its definition
+    /// and its edited source properties are judged by the claims, and its
+    /// reshaped content and source properties are named by the reshape
+    /// loss. A change of what its record states from the edit (its written
+    /// dependencies, its content, a source property it drops) holds the
+    /// feature back; a change of another field takes the general route.
     fn claimed_feature(
         &self,
         claim: &FeatureClaims,
         difference: &Difference,
         segments: &[String],
     ) -> Class {
-        let Change::Leaf {
-            stated, written, ..
-        } = &difference.change
-        else {
-            return Class::Explained;
+        let (stated, written) = match &difference.change {
+            Change::Leaf {
+                stated, written, ..
+            } => (stated, written),
+            Change::Removed => {
+                return Class::Claim(claim.id.clone(), "its record missing".into());
+            }
+            Change::Added { .. } => {
+                return Class::Claim(claim.id.clone(), "a second record".into());
+            }
         };
         match segments.first().map(String::as_str).unwrap_or_default() {
-            "definition" | "source_content" => Class::Explained,
-            "dependencies" if claim.dependencies_edited => Class::Explained,
-            "source_properties" => match segments.get(1) {
-                Some(key)
-                    if segments.len() == 2 && self.travel_record(claim, key, written.is_none()) =>
+            "definition" => Class::Explained,
+            "dependencies" if claim.dependencies_unwritten => Class::General,
+            "source_content" if claim.reshapes() => {
+                Class::Reshaped(claim.id.clone(), "restates its record content".into())
+            }
+            "source_properties" if segments.len() == 2 => {
+                let key = &segments[1];
+                if self.travel_record(claim, key, written.is_none())
+                    || claim.edits_source_property(key)
                 {
-                    Class::Explained
+                    return Class::Explained;
                 }
-                Some(key)
-                    if stated.is_some()
-                        && written.is_none()
-                        && segments.len() == 2
-                        && !claim.edits_source_property(key) =>
-                {
-                    if claim.reshapes() {
+                match (stated, written) {
+                    (Some(_), None) if claim.reshapes() => {
                         Class::Reshaped(claim.id.clone(), format!("drops source property {key}"))
-                    } else {
-                        Class::Claim(
-                            claim.id.clone(),
-                            format!("its source property {key} missing"),
-                        )
                     }
+                    (Some(_), None) => Class::Claim(
+                        claim.id.clone(),
+                        format!("its source property {key} missing"),
+                    ),
+                    (None, Some(_)) if claim.reshapes() => {
+                        Class::Reshaped(claim.id.clone(), format!("adds source property {key}"))
+                    }
+                    // A written edit of a lane-derived group writes the
+                    // whole group into the record, which the decoder then
+                    // reads; the claims judge the definition it states.
+                    (_, Some(_))
+                        if claim.any_written()
+                            && crate::records::LANE_DERIVED_GROUPS
+                                .iter()
+                                .any(|group| group.properties.contains(&key.as_str())) =>
+                    {
+                        Class::Explained
+                    }
+                    _ => self.restated(difference),
                 }
-                _ => Class::Explained,
-            },
-            _ if self.caller_changed(difference) || self.renamed(difference) => Class::Explained,
-            field => Class::Claim(claim.id.clone(), format!("its {field} changed")),
+            }
+            "dependencies" | "source_content" => Class::Claim(
+                claim.id.clone(),
+                format!(
+                    "its {} changed",
+                    segments.first().map(String::as_str).unwrap_or_default()
+                ),
+            ),
+            _ => Class::General,
         }
     }
 
@@ -791,7 +1066,7 @@ impl<'a> Scope<'a> {
     /// written part `dropped` or not, is the record form of its travel as the
     /// write states it: the reversal flag that an edit clearing the reversal
     /// drops, or the `reverse_decoded` mark of a travel the stored solid
-    /// settles.
+    /// settles, which the stale-solid loss names.
     fn travel_record(&self, claim: &FeatureClaims, key: &str, dropped: bool) -> bool {
         match key {
             REVERSE => dropped && self.cleared.contains(claim.id.as_str()),
@@ -801,13 +1076,18 @@ impl<'a> Scope<'a> {
     }
 
     /// A difference of a parameter of claimed feature `claim`: its value,
-    /// expression and display mirror the edit. A value edit adds and drops
-    /// none; a variant edit's added or dropped parameter is named.
-    fn owned_parameter(claim: &FeatureClaims, difference: &Difference, field: &str) -> Class {
+    /// expression and display restate the edit. A value edit adds and drops
+    /// no parameter; a variant edit's added or dropped parameter is named.
+    fn owned_parameter(
+        &self,
+        claim: &FeatureClaims,
+        difference: &Difference,
+        field: &str,
+    ) -> Class {
         let name = difference.name.as_deref().unwrap_or("<unnamed>");
         let change = match difference.change {
             Change::Leaf { .. } if matches!(field, "expression" | "value" | "display") => {
-                return Class::Explained;
+                return self.restated(difference);
             }
             Change::Leaf { .. } => format!("its parameter {name} changed"),
             Change::Removed => format!("its parameter {name} missing"),
@@ -824,77 +1104,181 @@ impl<'a> Scope<'a> {
         }
     }
 
-    /// Whether the caller changed the place of `difference` against the
-    /// source: the edit itself, which the edit's own write path judges.
-    fn caller_changed(&self, difference: &Difference) -> bool {
-        let Some(source) = self.source else {
-            return false;
-        };
-        let arena = difference.arena.as_str();
-        match (&difference.change, difference.id.as_deref()) {
-            (Change::Leaf { pointer, .. }, Some(id)) => {
-                let Some(stated) = self.stated.record(arena, id) else {
-                    return false;
-                };
-                let Some(original) = source.record(arena, id) else {
-                    return true;
-                };
-                match (stated.pointer(pointer), original.pointer(pointer)) {
-                    (Some(left), Some(right)) => {
-                        cadmpeg_ir::compare::values_agree(left, right).is_err()
-                    }
-                    (None, None) => false,
-                    _ => true,
-                }
+    /// A difference of a record a carried edit reaches: the edit applied
+    /// when the leaf reads back as [`Self::substitutes`] states, else a
+    /// difference to remove or name.
+    fn restated(&self, difference: &Difference) -> Class {
+        if let Change::Leaf {
+            stated: Some(stated),
+            written: Some(written),
+            ..
+        } = &difference.change
+        {
+            if self.substitutes(stated, written) {
+                return Class::Explained;
             }
-            (Change::Removed, Some(id)) => source.record(arena, id).is_none(),
-            (Change::Added { .. }, _) => difference
-                .name
-                .as_deref()
-                .is_some_and(|name| source.named(arena, name) && !self.stated.named(arena, name)),
-            _ => false,
+        }
+        match self.reshaping_claim(difference) {
+            Some(claim) => Class::Reshaped(
+                claim.id.clone(),
+                format!("restates it in {}", difference.label()),
+            ),
+            None => Class::General,
         }
     }
 
-    /// Whether `difference` is a text that states a renamed feature by its
-    /// caller's name where the document states it by its source name.
-    fn renamed(&self, difference: &Difference) -> bool {
-        let Change::Leaf {
-            stated: Some(Value::String(stated)),
-            written: Some(Value::String(written)),
-            ..
-        } = &difference.change
-        else {
-            return false;
+    /// The claim whose variant edit reshapes the record `difference` is of:
+    /// a claimed feature, a parameter of one, or a record keyed by either.
+    fn reshaping_claim(&self, difference: &Difference) -> Option<&'a FeatureClaims> {
+        let claim_of = |key: &str| -> Option<&'a FeatureClaims> {
+            match self.claims.get(key) {
+                Some(claim) => Some(*claim),
+                None => self.claims.get(self.parameter_owners.get(key)?).copied(),
+            }
         };
-        let mut text = stated.clone();
-        for (old, new) in &self.renames {
-            text = text.replace(old.as_str(), new);
+        let segments = difference.segments();
+        let keys = [difference.id.as_deref(), difference.owner.as_deref()]
+            .into_iter()
+            .flatten()
+            .chain(segments.iter().map(String::as_str))
+            .collect::<Vec<_>>();
+        keys.into_iter()
+            .find_map(claim_of)
+            .filter(|claim| claim.reshapes())
+    }
+
+    /// A difference of a configuration's state of a claimed feature's
+    /// definition: that state reads back as the definition the claims judge
+    /// the feature must read back with, or holds the feature back.
+    fn configured_state(&self, difference: &Difference, segments: &[String]) -> Option<Class> {
+        let [states, feature, definition, rest @ ..] = segments else {
+            return None;
+        };
+        if difference.arena != "model.configurations"
+            || states.as_str() != "feature_states"
+            || definition.as_str() != "definition"
+        {
+            return None;
         }
-        text == *written
+        let (claim, expected) = self
+            .claims
+            .get(feature.as_str())
+            .and_then(|claim| Some((claim, self.definitions.get(&claim.id)?)))?;
+        let mut pointer = String::new();
+        for segment in rest {
+            pointer.push('/');
+            pointer.push_str(&segment.replace('~', "~0").replace('/', "~1"));
+        }
+        let Change::Leaf { written, .. } = &difference.change else {
+            return None;
+        };
+        let agrees = match (expected.pointer(&pointer), written) {
+            (Some(expected), Some(written)) => {
+                agrees_with_reported(expected, written, self.pairing)
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        Some(if agrees {
+            Class::Explained
+        } else if claim.reshapes() {
+            Class::Reshaped(
+                claim.id.clone(),
+                format!("restates it in {}", difference.label()),
+            )
+        } else {
+            Class::General
+        })
+    }
+
+    /// Whether `written` is `stated` with a carried edit applied: the source
+    /// number of a carried edit read back as its edited number, the source
+    /// text of a carried text edit read back as its edited text, or a text
+    /// whose numbers each read back scaled as a carried number edit scales
+    /// its value, with the rest of the text the same.
+    fn substitutes(&self, stated: &Value, written: &Value) -> bool {
+        substitutes(&self.numbers, &self.texts, stated, written)
+    }
+}
+
+/// Whether `message` names record id `id`: the id, followed by no letter,
+/// digit or `:` that would make it another id.
+fn names_id(message: &str, id: &str) -> bool {
+    message.match_indices(id).any(|(at, _)| {
+        !message[at + id.len()..]
+            .starts_with(|character: char| character.is_ascii_alphanumeric() || character == ':')
+    })
+}
+
+/// Whether `written` is `stated` with one of the carried edits `numbers`
+/// (source and edited number) and `texts` (source and edited text) applied:
+/// the source number read back as the edited one, the source text read
+/// back as the edited one, or a text whose numbers each read back scaled as
+/// a number edit scales its value, with the rest of the text the same.
+fn substitutes(
+    numbers: &[(f64, f64)],
+    texts: &[(String, String)],
+    stated: &Value,
+    written: &Value,
+) -> bool {
+    match (stated, written) {
+        (Value::Number(stated), Value::Number(written)) => {
+            let (Some(stated), Some(written)) = (stated.as_f64(), written.as_f64()) else {
+                return false;
+            };
+            numbers
+                .iter()
+                .any(|(old, new)| close(stated, *old) && close(written, *new))
+        }
+        (Value::String(stated), Value::String(written)) => {
+            if texts
+                .iter()
+                .any(|(old, new)| old == stated && new == written)
+            {
+                return true;
+            }
+            let (stated_text, stated_numbers) = numbers_of(stated);
+            let (written_text, written_numbers) = numbers_of(written);
+            stated_text == written_text
+                && stated_numbers.len() == written_numbers.len()
+                && stated_numbers
+                    .iter()
+                    .zip(&written_numbers)
+                    .any(|(stated, written)| !close(*stated, *written))
+                && numbers.iter().any(|(old, new)| {
+                    *old != 0.0
+                        && stated_numbers
+                            .iter()
+                            .zip(&written_numbers)
+                            .all(|(stated, written)| {
+                                close(*stated, *written) || close(*written, stated * new / old)
+                            })
+                })
+        }
+        _ => false,
     }
 }
 
 impl ReadBack {
     /// Judges `claims`, none of which asks to withhold its feature, against
-    /// `written`, the written part decoded; `None` when it does not decode.
-    /// The travel of a feature of `settled` and its `reverse_decoded` mark
-    /// read back as the stored solid settles them.
+    /// `written`, the written part decoded, found through `pairing`. Each
+    /// leaf compares exactly through the pairing. The travel of a feature of
+    /// `settled` and its `reverse_decoded` mark read back as the stored solid
+    /// settles them.
     fn of_claims(
         claims: &[FeatureClaims],
-        written: Option<&CadIr>,
+        written: &CadIr,
+        pairing: &Pairing,
         settled: &HashSet<FeatureId>,
     ) -> Self {
         let mut read_back = Self::default();
         for claim in claims {
-            let read = written
-                .and_then(|written| claim.read(written))
-                .and_then(|read| {
-                    Some((
-                        read,
-                        serde_json::to_value(read.evaluation.definition()).ok()?,
-                    ))
-                });
+            let read = claim.read(written, pairing).and_then(|read| {
+                Some((
+                    read,
+                    serde_json::to_value(read.evaluation.definition()).ok()?,
+                ))
+            });
             let Some((read, read_definition)) = read else {
                 if claim.any_written() {
                     read_back
@@ -921,7 +1305,11 @@ impl ReadBack {
                 let got = match &edit.leaf {
                     ConstructionLeaf::Definition(pointer) => {
                         let got = read_definition.pointer(pointer).cloned();
-                        put(&mut expected, pointer, got.clone());
+                        put(
+                            &mut expected,
+                            pointer,
+                            got.as_ref().map(|got| pairing.stated_ids(got)),
+                        );
                         got.unwrap_or(Value::Null)
                     }
                     ConstructionLeaf::SourceProperty(key) => read
@@ -930,10 +1318,10 @@ impl ReadBack {
                         .map_or(Value::Null, |value| Value::String(value.clone())),
                     ConstructionLeaf::Dependencies => continue,
                 };
-                let as_edited = same_read_back(&got, &edit.edited, true);
+                let as_edited = agree(&edit.edited, &got, pairing);
                 if edit.written {
                     failed |= !as_edited && !settled_leaf(&edit.leaf);
-                } else if !same_read_back(&got, &edit.source, true) {
+                } else if !agree(&edit.source, &got, pairing) {
                     if as_edited {
                         read_back
                             .carried
@@ -947,13 +1335,16 @@ impl ReadBack {
                 put(
                     &mut expected,
                     travel,
-                    read_definition.pointer(travel).cloned(),
+                    read_definition
+                        .pointer(travel)
+                        .map(|got| pairing.stated_ids(got)),
                 );
             }
-            if !same_read_back(&expected, &read_definition, true) {
+            if let Some(places) = disagreement(&expected, &read_definition, pairing) {
                 failed = true;
-                neither.push("the rest of its definition".into());
+                neither.push(format!("the rest of its definition (at {places})"));
             }
+            read_back.definitions.insert(claim.id.clone(), expected);
             if failed && claim.any_written() {
                 read_back
                     .withhold
@@ -963,6 +1354,37 @@ impl ReadBack {
             }
         }
         read_back
+    }
+
+    /// A pass whose written part is not compared with the document, because
+    /// it `reason` (does not decode again, or does not serialize): each
+    /// written edit is held back, and with none written the reason is named.
+    fn unreadable(claims: &ReadBackClaims, reason: String) -> Self {
+        let withhold = claims
+            .features
+            .iter()
+            .filter(|claim| claim.any_written())
+            .map(|claim| {
+                (
+                    claim.id.clone(),
+                    format!(
+                        "SLDPRT feature {} written as edited gives a part that {reason}",
+                        claim.id
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        if withhold.is_empty() {
+            Self {
+                unread: Some(reason),
+                ..Self::default()
+            }
+        } else {
+            Self {
+                withhold,
+                ..Self::default()
+            }
+        }
     }
 
     fn withholds(&self, id: &FeatureId) -> bool {

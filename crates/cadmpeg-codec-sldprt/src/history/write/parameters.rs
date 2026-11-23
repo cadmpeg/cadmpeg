@@ -281,7 +281,12 @@ fn sync_neutral_parameters(
     // dimension whose reference relation the write does not write stays out
     // of its feature's record; the export charges it.
     let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
-    let parameters = without_omitted_driven(parameters, &omitted);
+    let stated = parameters;
+    let parameters = without_omitted_driven(stated.clone(), &omitted);
+    let left_out = stated
+        .into_iter()
+        .filter(|parameter| !parameters.iter().any(|kept| kept.id == parameter.id))
+        .collect::<Vec<_>>();
     let features = ir
         .model
         .features
@@ -424,6 +429,21 @@ fn sync_neutral_parameters(
             )
         })
         .collect::<HashMap<_, _>>();
+    // A parameter the write leaves out is out of its feature's record.
+    for parameter in &left_out {
+        let Some(record) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| record_of(native, &record_ids, owner))
+        else {
+            continue;
+        };
+        record.parameters.remove(parameter.name.as_str());
+        record.dimension_properties.remove(parameter.name.as_str());
+        record.content.retain(
+            |item| !matches!(item, FeatureContent::Dimension(stated) if stated == &parameter.name),
+        );
+    }
     if let Some(source) = source_parameters.as_ref() {
         let current = parameters
             .iter()
@@ -433,7 +453,10 @@ fn sync_neutral_parameters(
         let mut originals = source
             .values()
             .copied()
-            .filter(|original| !is_reference_relation_parameter(original))
+            .filter(|original| {
+                !is_reference_relation_parameter(original)
+                    && !left_out.iter().any(|parameter| parameter.id == original.id)
+            })
             .collect::<Vec<_>>();
         originals.sort_by(|left, right| left.id.cmp(&right.id));
         for original in originals {
@@ -925,6 +948,63 @@ pub(super) fn restore_equivalent_parameter_expressions(
         };
         if desired_value == evaluated_value {
             desired.clone_from(expression);
+        }
+    }
+}
+
+/// The relative difference up to which a stored dimension text states its
+/// millimetre value.
+const STORED_SCALE_TOLERANCE: f64 = 1.0e-9;
+
+/// States each edited text of `written` in the scale of the text the record
+/// stored for it, `stored`. A record stores a length dimension's text as a
+/// number in the part's display unit, after a radius or diameter sign, and
+/// its value in the lane scalar. Where the stored number is not the
+/// millimetre value `stated` gives for it, the edited millimetre number is
+/// scaled by the same ratio.
+pub(super) fn state_in_stored_scale(
+    stored: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    stated: impl Fn(&str) -> Option<f64>,
+    written: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    // A dimension text: an optional radius or diameter sign, then a number.
+    let number = |text: &str| -> Option<(String, f64)> {
+        let text = text.trim();
+        let digits = text.find(|character: char| {
+            character.is_ascii_digit() || character == '-' || character == '.'
+        })?;
+        let (sign, number) = text.split_at(digits);
+        if !matches!(sign, "" | "R" | "r" | "\u{2300}" | "\u{00d8}") {
+            return None;
+        }
+        let number = number
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())?;
+        Some((sign.to_owned(), number))
+    };
+    for (name, text) in written.iter_mut() {
+        let Some(original) = stored.get(name).filter(|original| *original != text) else {
+            continue;
+        };
+        let (Some((sign, original_number)), Some((edited_sign, edited)), Some(value)) =
+            (number(original), number(text), stated(name.as_str()))
+        else {
+            continue;
+        };
+        if sign != edited_sign
+            || value == 0.0
+            || (original_number - value).abs()
+                <= STORED_SCALE_TOLERANCE * original_number.abs().max(value.abs()).max(1.0)
+        {
+            continue;
+        }
+        if let Some(scaled) = cadmpeg_ir::scalar::FiniteReal::new(edited * original_number / value)
+        {
+            *text = format!(
+                "{sign}{}",
+                crate::history::literals::format_f64_literal(scaled)
+            );
         }
     }
 }

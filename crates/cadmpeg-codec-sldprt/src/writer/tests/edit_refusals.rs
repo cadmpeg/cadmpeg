@@ -1195,3 +1195,120 @@ fn a_variant_edit_names_the_parameter_its_record_gains() {
         .iter()
         .any(|parameter| parameter.name == "Depth"));
 }
+
+/// The blind depth of the extent under `value`.
+fn first_depth(value: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
+    use serde_json::Value;
+    if value.get("extent").is_some() {
+        return value.pointer_mut("/extent/first/termination/length");
+    }
+    match value {
+        Value::Object(fields) => fields.values_mut().find_map(first_depth),
+        Value::Array(items) => items.iter_mut().find_map(first_depth),
+        _ => None,
+    }
+}
+
+fn named_feature<'a>(ir: &'a CadIr, name: &str) -> &'a Feature {
+    ir.model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap()
+}
+
+/// Two features whose tree places are swapped: each reads back where the
+/// document places it, or a read-back loss names it and no stale-solid
+/// note calls its place written.
+#[test]
+fn a_swapped_pair_is_written_in_place_or_named() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let names = ["Boss-Extrude4", "Cut-Extrude1"];
+    {
+        let mut ir = decoded.ir_mut();
+        let ordinals = names.map(|name| named_feature(&ir, name).ordinal);
+        for (name, ordinal) in names.iter().zip(ordinals.iter().rev()) {
+            ir.model
+                .features
+                .iter_mut()
+                .find(|feature| feature.name.as_deref() == Some(*name))
+                .unwrap()
+                .ordinal = *ordinal;
+        }
+    }
+
+    let (report, output) = write(&decoded);
+
+    let written = decode(output);
+    let messages = all_messages(&report);
+    for name in names {
+        let asked = named_feature(decoded.ir(), name);
+        if named_feature(written.ir(), name).ordinal == asked.ordinal {
+            continue;
+        }
+        assert!(
+            messages.iter().any(
+                |message| message.contains(asked.id.as_str()) && message.contains("reads back")
+            ),
+            "{name}: {messages:?}"
+        );
+        assert!(
+            stale(&report)
+                .iter()
+                .all(|message| !(message.contains(asked.id.as_str())
+                    && message.contains("edited place"))),
+            "{name}: {:?}",
+            stale(&report)
+        );
+    }
+}
+
+/// A depth edit in the same save as a removed hole reads back as edited:
+/// the edited extrusion is found through the pairing, whatever the
+/// removal does to the tree places.
+#[test]
+fn a_depth_edit_beside_a_removed_hole_is_carried() {
+    let mut decoded = EditableDecodeResult::from(ftc_06().clone());
+    let depth = {
+        let mut ir = decoded.ir_mut();
+        let hole = named_feature(&ir, "#97 (0.0059) Diameter Hole1").id.clone();
+        ir.model.features.retain(|feature| feature.id != hole);
+        let extrusion = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
+            .unwrap();
+        let mut depth = 0.0;
+        edit_definition(extrusion, |wire| {
+            let leaf = first_depth(wire).unwrap();
+            depth = leaf.as_f64().unwrap() + 1.0;
+            *leaf = serde_json::json!(depth);
+        });
+        depth
+    };
+
+    let (report, output) = write(&decoded);
+
+    let written = decode(output);
+    let mut wire = serde_json::to_value(
+        named_feature(written.ir(), "Boss-Extrude1")
+            .evaluation
+            .definition(),
+    )
+    .unwrap();
+    let read = first_depth(&mut wire).unwrap().as_f64().unwrap();
+    assert!(
+        (read - depth).abs() <= 1.0e-9,
+        "{read} {:?}",
+        unwritten(&report)
+    );
+    let id = named_feature(decoded.ir(), "Boss-Extrude1").id.as_str();
+    assert!(
+        unwritten(&report)
+            .iter()
+            .all(|message| !message.contains(&format!("feature {id} "))),
+        "{:?}",
+        unwritten(&report)
+    );
+}

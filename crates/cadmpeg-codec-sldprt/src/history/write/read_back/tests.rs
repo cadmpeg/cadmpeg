@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{FeatureId, ParameterId};
 
 use super::document::{differences, pair, Change, Difference, Document};
 use super::{Judge, ReadBack, ReadBackClaims};
-use crate::history::write::edits::{construction_edits, SourceEdits};
+use crate::history::write::edits::{construction_edits, SourceEdits, UnwrittenEdits};
 use crate::test_support::nist::ftc_06;
 
 /// The source part, the part with the first real definition leaf of one
@@ -80,15 +80,14 @@ fn judge_settled(
     written: &CadIr,
     settled: &HashSet<FeatureId>,
 ) -> ReadBack {
-    let mut read_back = ReadBack::of_claims(&claims.features, Some(written), settled);
-    Judge::new(input, &|_| None).judge_part(
-        &mut read_back,
+    Judge::new(input, &|_| None).judge(
         claims,
-        (source, &[]),
-        (written, settled),
+        &UnwrittenEdits::default(),
+        (source, &[], &[]),
+        written,
+        Some(settled),
         &mut |_| Vec::new(),
-    );
-    read_back
+    )
 }
 
 /// A feature other than `id` with a name.
@@ -351,7 +350,14 @@ fn a_travel_whose_reversal_flag_reads_back_otherwise_is_not_settled() {
     let (source, input, id) = travel_edited(false);
     let claims = claims(&source, &input, &id, true);
 
-    let settled = super::settled_by_solid(&input, &source, &claims, &HashSet::new(), &source);
+    let settled_in = |written: &CadIr| {
+        let pairing = pair(
+            &Document::of(&input).unwrap(),
+            &Document::of(written).unwrap(),
+        );
+        super::settled_by_solid(&input, &source, &claims, &HashSet::new(), written, &pairing)
+    };
+    let settled = settled_in(&source);
     assert!(settled.contains(&id), "{settled:?}");
 
     let mut written = source.clone();
@@ -365,6 +371,255 @@ fn a_travel_whose_reversal_flag_reads_back_otherwise_is_not_settled() {
         cadmpeg_core::text::NonBlankString::new("Reverse".to_owned()).unwrap(),
         "true".to_owned(),
     );
-    let settled = super::settled_by_solid(&input, &source, &claims, &HashSet::new(), &written);
+    let settled = settled_in(&written);
     assert!(!settled.contains(&id), "{settled:?}");
+}
+
+/// `ir` with the first string that `matches` outside a record's own id
+/// replaced as `edit` states.
+fn with_string(ir: &CadIr, matches: fn(&str) -> bool, edit: fn(&str) -> String) -> CadIr {
+    fn walk(
+        value: &mut serde_json::Value,
+        matches: fn(&str) -> bool,
+        edit: fn(&str) -> String,
+    ) -> bool {
+        match value {
+            serde_json::Value::String(text) if matches(text) => {
+                *text = edit(text);
+                true
+            }
+            serde_json::Value::Array(items) => {
+                items.iter_mut().any(|item| walk(item, matches, edit))
+            }
+            serde_json::Value::Object(fields) => fields
+                .iter_mut()
+                .filter(|(key, _)| key.as_str() != "id")
+                .any(|(_, item)| walk(item, matches, edit)),
+            _ => false,
+        }
+    }
+    let mut wire = serde_json::to_value(ir).unwrap();
+    let homes = ["geometry", "model", "design", "process"];
+    assert!(
+        homes
+            .iter()
+            .any(|home| walk(&mut wire[*home], matches, edit)),
+        "a string to edit"
+    );
+    serde_json::from_value(wire).unwrap()
+}
+
+/// The differences between FTC-06 and FTC-06 written at another block
+/// offset with one string edited.
+fn differences_with_string(matches: fn(&str) -> bool, edit: fn(&str) -> String) -> Vec<String> {
+    let source = ftc_06().ir().clone();
+    let block = history_block(&source);
+    let written = with_string(&moved(&source, &block, "1"), matches, edit);
+    let (stated, read) = (
+        Document::of(&source).unwrap(),
+        Document::of(&written).unwrap(),
+    );
+    let pairing = pair(&stated, &read);
+    differences(&stated, &read, &pairing)
+        .iter()
+        .map(Difference::label)
+        .collect()
+}
+
+/// The last run of digits of `text` plus one.
+fn last_number_plus_one(text: &str) -> String {
+    let start = text
+        .rfind(|character: char| !character.is_ascii_digit())
+        .map_or(0, |index| index + 1);
+    let number = text[start..].parse::<u64>().unwrap();
+    format!("{}{}", &text[..start], number + 1)
+}
+
+#[test]
+fn a_changed_relation_kind_is_one_difference() {
+    let found = differences_with_string(
+        |text| text.starts_with("sldprt:sketch-relation:"),
+        last_number_plus_one,
+    );
+
+    assert_eq!(found.len(), 1, "{found:?}");
+}
+
+#[test]
+fn one_changed_digit_of_an_edge_selection_is_one_difference() {
+    let found = differences_with_string(
+        |text| text.starts_with("sldprt:feature-input:edge-selection-vectors:"),
+        |text| {
+            let at = text
+                .find(|character: char| character.is_ascii_digit())
+                .unwrap();
+            let digit = text.as_bytes()[at] - b'0';
+            format!("{}{}{}", &text[..at], (digit + 1) % 10, &text[at + 1..])
+        },
+    );
+
+    assert_eq!(found.len(), 1, "{found:?}");
+}
+
+#[test]
+fn a_changed_solver_line_index_is_one_difference() {
+    let found = differences_with_string(
+        |text| text.starts_with("sldprt:") && text.contains("solver-line"),
+        last_number_plus_one,
+    );
+
+    assert_eq!(found.len(), 1, "{found:?}");
+}
+
+/// A leaf the caller changed that reads back as the source is a difference,
+/// and the read-back names the feature's tree place as misread.
+#[test]
+fn a_reordered_feature_that_reads_back_in_source_order_is_a_difference() {
+    let source = ftc_06().ir().clone();
+    let mut input = source.clone();
+    let mut named = input
+        .model
+        .features
+        .iter_mut()
+        .filter(|feature| feature.name.is_some());
+    let (first, second) = (named.next().unwrap(), named.next().unwrap());
+    std::mem::swap(&mut first.ordinal, &mut second.ordinal);
+    let ids = [first.id.clone(), second.id.clone()];
+
+    let read_back = judge(&source, &input, &ReadBackClaims::default(), &source);
+
+    assert_eq!(
+        read_back
+            .unexplained
+            .iter()
+            .filter(|label| label.ends_with("at /ordinal"))
+            .count(),
+        2,
+        "{:?}",
+        read_back.unexplained
+    );
+    for id in ids {
+        assert!(
+            read_back
+                .misread
+                .contains(&(id.clone(), "ordinal".to_owned())),
+            "{:?}",
+            read_back.misread
+        );
+    }
+}
+
+/// A difference the write of the unedited source reads back as well is
+/// named at once, by arena; holding an edit back cannot remove it.
+#[test]
+fn a_difference_the_unedited_write_has_is_named_by_arena() {
+    let (source, input, id) = edited();
+    let claims = claims(&source, &input, &id, true);
+    let mut written = input.clone();
+    let sibling = other(&mut written, &id);
+    sibling.suppressed = Some(!sibling.suppressed.unwrap_or(false));
+    let sibling = sibling.id.clone();
+    let mut round_trip = source.clone();
+    let twin = round_trip
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id == sibling)
+        .unwrap();
+    twin.suppressed = Some(!twin.suppressed.unwrap_or(false));
+
+    let read_back = Judge::new(&input, &|_| None).judge(
+        &claims,
+        &UnwrittenEdits::default(),
+        (&source, &[], &[]),
+        &written,
+        Some(&HashSet::new()),
+        &mut |stated| {
+            let read = Document::of(&round_trip).unwrap();
+            differences(stated, &read, &pair(stated, &read))
+        },
+    );
+
+    assert!(read_back.withhold.is_empty(), "{:?}", read_back.withhold);
+    assert!(
+        read_back.unexplained.is_empty(),
+        "{:?}",
+        read_back.unexplained
+    );
+    assert_eq!(read_back.defects.len(), 1, "{:?}", read_back.defects);
+    assert!(
+        read_back.defects[0].starts_with("model.features: 1 difference(s)")
+            && read_back.defects[0].contains(sibling.as_str()),
+        "{}",
+        read_back.defects[0]
+    );
+}
+
+/// A claimed feature is found through the pairing: a write that renumbers
+/// every feature still reads its edit back.
+#[test]
+fn a_claimed_feature_whose_ordinal_moves_is_found_through_the_pairing() {
+    let (source, input, id) = edited();
+    let claims = claims(&source, &input, &id, true);
+    let mut written = input.clone();
+    for feature in &mut written.model.features {
+        feature.ordinal += 1;
+    }
+
+    let read_back = judge(&source, &input, &claims, &written);
+
+    assert!(read_back.withhold.is_empty(), "{:?}", read_back.withhold);
+    assert!(
+        read_back
+            .unexplained
+            .iter()
+            .all(|label| label.ends_with("at /ordinal")),
+        "{:?}",
+        read_back.unexplained
+    );
+}
+
+#[test]
+fn a_record_an_edit_reaches_reads_back_with_the_edit_applied() {
+    let numbers = [(152.4, 153.4)];
+    let texts = [("6".to_owned(), "6.03937007874016".to_owned())];
+    let agrees = |stated: serde_json::Value, written: serde_json::Value| {
+        super::substitutes(&numbers, &texts, &stated, &written)
+    };
+
+    assert!(agrees(serde_json::json!(152.4), serde_json::json!(153.4)));
+    assert!(agrees(
+        serde_json::json!("6"),
+        serde_json::json!("6.03937007874016")
+    ));
+    assert!(agrees(
+        serde_json::json!("6[in]"),
+        serde_json::json!("6.03937007874016[in]")
+    ));
+    assert!(agrees(
+        serde_json::json!("152.4mm"),
+        serde_json::json!("153.4mm")
+    ));
+    assert!(!agrees(serde_json::json!(152.4), serde_json::json!(160.0)));
+    assert!(!agrees(serde_json::json!("6"), serde_json::json!("153.4")));
+    assert!(!agrees(
+        serde_json::json!("6[in]"),
+        serde_json::json!("6.03937007874016[mm]")
+    ));
+    assert!(!agrees(serde_json::json!(100.0), serde_json::json!(101.0)));
+}
+
+/// A written part that does not decode again holds each written edit back,
+/// and with none written it is named.
+#[test]
+fn a_written_part_that_does_not_decode_is_named() {
+    let (source, input, id) = edited();
+
+    let unwritten = ReadBack::unreadable(&claims(&source, &input, &id, false), "fails".into());
+    let written = ReadBack::unreadable(&claims(&source, &input, &id, true), "fails".into());
+
+    assert!(unwritten.withhold.is_empty());
+    assert_eq!(unwritten.unread.as_deref(), Some("fails"));
+    assert_eq!(written.withhold.len(), 1, "{:?}", written.withhold);
+    assert!(written.unread.is_none());
 }

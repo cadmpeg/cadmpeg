@@ -288,6 +288,20 @@ pub(in crate::history) fn sync_neutral_features(
     }
 
     let renames = synchronize_feature_input_names(features, native)?;
+    // The millimetre value of each length parameter of the decoded source,
+    // by owner and name: what the stored text of that dimension states.
+    let source_lengths = edits
+        .source()
+        .into_iter()
+        .flat_map(|source| &source.model.parameters)
+        .filter_map(|parameter| match &parameter.value {
+            Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) => Some((
+                (parameter.owner.as_ref()?, parameter.name.as_str()),
+                length.get(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
 
     let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
@@ -745,6 +759,29 @@ pub(in crate::history) fn sync_neutral_features(
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
+    // The lane scalars hold the edited millimetre values; each edited text
+    // is stated in the scale of the text the record stored.
+    let features_by_record = record_ids
+        .iter()
+        .map(|(feature, record)| (record.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for record in native
+        .feature_histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        let (Some(stored), Some(feature)) = (
+            original_parameters.get(&record.id),
+            features_by_record.get(record.id.as_str()),
+        ) else {
+            continue;
+        };
+        super::parameters::state_in_stored_scale(
+            stored,
+            |name| source_lengths.get(&(*feature, name)).copied(),
+            &mut record.parameters,
+        );
+    }
     let projected_features = project_features_with_native_inputs(native)?;
     let projected_features = projected_features
         .into_iter()

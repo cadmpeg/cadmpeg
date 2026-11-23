@@ -337,6 +337,7 @@ impl SldprtCodec {
             native.as_ref(),
             image,
             &written,
+            &read_back.misread,
         )?;
         Ok(Written::Semantic {
             path: if records.is_empty() {

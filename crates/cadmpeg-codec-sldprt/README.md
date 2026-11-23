@@ -151,40 +151,61 @@ gate (a revolution axis; a coordinate-system or reference-axis frame; a
 reference-plane frame with the plane's reference; a move-face translation; an
 extrusion's end conditions and depths; the two directions of a linear
 pattern); an edit of one member writes every member the encoding states. An
-extrusion depth is written under the dimension name the record holds. The
-full decoder reads the written part again, and the read-back compares the whole
-document with it: every record of every arena of the geometry, model, design
-and process homes, the units, the tolerances and the source attributes. The
-native namespaces hold the encoding, and the read-back leaves them out. A
-write moves the block and lane offsets and the history indices that ids embed,
-so records pair by content: a record pairs with the record whose wire form is
-the same once each paired id is replaced by its pair. The edit accounts for
-the records the caller changed, the expression, value and display of a
-parameter of an edited feature, the design records and configuration entries
-keyed by an edited record, the definition of a feature that owns an edited
-parameter, and text that names a renamed feature. An edit that clears an
-extrusion's reversal drops its `Reverse` property, the record form of that
-edit. The decoder settles an extrusion's travel and
-its `reverse_decoded` mark against the stored solid; for an edit that the
+extrusion depth is written under the dimension name the record holds, and an
+edited dimension text keeps the scale of the text the record stored (a part
+whose display unit is not the millimetre states its texts in that unit).
+
+The full decoder reads the written part again, and the read-back compares it
+with the document the write must equal: the decoded source with the edits the
+write carries applied. An edit that a loss names as not written reads back as
+the source. A carried edit of a number or a text reads back with its edited
+value in each record that restates it: the parameters of the edited feature,
+the feature that owns an edited parameter, and the design records and
+configuration entries keyed by them; a configuration's state of an edited
+feature reads back as that feature's definition. A renamed feature reads back
+with its edited name in its design records and in each `name@feature`
+reference. The comparison covers every record of every arena of the geometry,
+model, design and process homes, the units, the tolerances and the source
+attributes. The native namespaces hold the encoding, and the read-back leaves
+them out. A write moves the block and lane offsets and the history indices
+that ids embed, so records pair by content: a record pairs with the record
+whose wire form is the same once each paired id is replaced by its pair; a
+record with a name pairs by name and owner, and records with no name pair by
+the form of their ids. An edited feature is found in the written part through
+this pairing. Paired records compare exactly: a string compares character by
+character once each paired id is replaced, and only the locator digits of a
+native reference (after its `#`) are offsets that a write moves.
+
+Each difference from that document is removed or named. A difference that a
+written edit causes is removed: that feature is written with its stored
+definition record, and its `writer.feature-edit-unwritten` loss names each
+differing record and the place in it. With several written edits, each one in
+turn is withheld alone, and the one whose withholding removes the difference
+is kept as stored; when no single edit removes it, every written edit is. An
+edited feature that reads back with a parameter added or removed, a source
+property missing, or its content or written dependencies changed is written
+with its stored definition record in the same way. A variant edit (a change of
+termination kind, of a list, or of a field that is present or absent) writes
+the record in the shape of the new variant, and a
+`writer.feature-record-reshaped` loss names each parameter or source property
+that shape adds or drops and each record that restates the new variant. An
+edit that clears an extrusion's reversal drops its `Reverse` property, the
+record form of that edit. The decoder settles an extrusion's travel and its
+`reverse_decoded` mark against the stored solid; for an edit that the
 `writer.solid-stale-after-edit` loss names, these read back as the stale solid
 decides once the reversal flag reads back as written, and that loss names the
-difference. The source part written with
-no edit and decoded again gives the differences that every write of the part
-has, and those are accounted for as well. Any other difference (a sibling
-default plane that changes kind, a sketch on an edited plane that moves) is
-caused by a written edit: that feature is written with its stored definition
-record, and its `writer.feature-edit-unwritten` loss names each differing
-record and the place in it. With several written edits, each one in turn is
-withheld alone, and the one whose withholding removes the difference is kept
-as stored; when no single edit removes it, every written edit is. An edited
-feature that reads back with a parameter added or removed or a source property
-missing is written with its stored definition record in the same way. A
-variant edit (a change of termination kind, of a list, or of a field that is
-present or absent) writes the record in the shape of the new variant, and a
-`writer.feature-record-reshaped` loss names each parameter that shape adds or
-drops and each source property it drops. A difference that remains with every edit kept as stored, or that a
-parameter or rename edit causes, is named in a `writer.feature-edit-unwritten`
-loss.
+difference. A difference that the source part, written with no edit and
+decoded again, has as well is a writer difference that no edit causes: a
+`writer.read-back-differs` loss names it by arena, count and first records. A
+record that a writer loss names as omitted or as holding its source state
+without the edit (`export:edit.dropped`), and an arena that an `arena.omitted`
+loss names, are named there. A difference that remains with every edit kept
+as stored, or that a parameter, rename or tree-order edit causes, is named in
+a `writer.feature-edit-unwritten` loss, and no stale-solid loss calls a tree
+place or an output body written that reads back otherwise. A written part that
+does not decode again or does not serialize holds every written edit back; with
+none left, a `writer.read-back-unread` loss (severity error) names it.
+
 An edited compound-file part is written into a native envelope, and
 `export:native.records-omitted` names each compound-file stream that the write
 neither generates nor replaces. Where that write refuses, or its envelope lands

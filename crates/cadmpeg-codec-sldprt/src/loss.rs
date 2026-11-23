@@ -474,6 +474,12 @@ pub(crate) enum SldprtLossCode {
     /// part, as its write into a native envelope refuses or lands on another
     /// dialect: no edit of the document is written.
     WriterCompoundFileEditUnwritten,
+    /// The written part, decoded again, differs from the document as the
+    /// write of the unedited source does: a writer defect no edit causes.
+    WriterReadBackDiffers,
+    /// The written part does not decode again or does not serialize, so it
+    /// is not compared with the document.
+    WriterReadBackUnread,
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
@@ -742,6 +748,8 @@ impl SldprtLossCode {
         Self::WriterFeatureEditUnwritten,
         Self::WriterFeatureRecordReshaped,
         Self::WriterCompoundFileEditUnwritten,
+        Self::WriterReadBackDiffers,
+        Self::WriterReadBackUnread,
         Self::WriterExtrudeReversalUnwritten,
         Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
@@ -965,6 +973,8 @@ impl SldprtLossCode {
             Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
             Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
             Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
+            Self::WriterReadBackDiffers => "writer.read-back-differs",
+            Self::WriterReadBackUnread => "writer.read-back-unread",
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
             Self::WriterExtrudeReversalConfigurationCleared => {
                 "writer.extrude-reversal-configuration-cleared"
@@ -1060,6 +1070,8 @@ impl SldprtLossCode {
             Self::WriterFeatureEditUnwritten => Severity::Warning,
             Self::WriterFeatureRecordReshaped => Severity::Warning,
             Self::WriterCompoundFileEditUnwritten => Severity::Error,
+            Self::WriterReadBackDiffers => Severity::Warning,
+            Self::WriterReadBackUnread => Severity::Error,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
@@ -1279,6 +1291,8 @@ impl SldprtLossCode {
             Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterCompoundFileEditUnwritten => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackDiffers => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1819,6 +1833,8 @@ mod tests {
                 "writer.feature-edit-unwritten",
                 "writer.feature-record-reshaped",
                 "writer.compound-file-edit-unwritten",
+                "writer.read-back-differs",
+                "writer.read-back-unread",
                 "writer.extrude-reversal-unwritten",
                 "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",

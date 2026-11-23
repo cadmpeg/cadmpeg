@@ -17,7 +17,9 @@ use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 use crate::records::FeatureInputLane;
 
+use super::read_back::document::Pairing;
 use super::read_back::{ReadBack, ReadBackClaims};
+use crate::history::extrude_direction::cleared_reversal;
 
 /// Which part of a parameter edit the output does not carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,17 +280,15 @@ pub(crate) struct EditClaim {
 /// states them.
 pub(crate) struct FeatureClaims {
     pub(super) id: FeatureId,
-    /// The caller's and the source's name: a rename is written, and ids move
-    /// across a write.
-    pub(super) names: [Option<String>; 2],
-    pub(super) ordinal: u64,
     pub(super) source_definition: Value,
     /// An edit moves a record field and the written records read back as the
     /// source: the record would state an edit the output does not carry.
     pub(super) withhold: bool,
-    /// The caller edits the feature's dependencies, which the projection
-    /// judges.
-    pub(super) dependencies_edited: bool,
+    /// The caller edits the feature's dependencies, and the written records
+    /// do not carry the edit.
+    pub(super) dependencies_unwritten: bool,
+    /// The edit clears the reversal the decoder read.
+    pub(super) clears_reversal: bool,
     pub(super) edits: Vec<EditClaim>,
 }
 
@@ -330,13 +330,14 @@ impl FeatureClaims {
         })
     }
 
-    /// The feature of `written` with this feature's ordinal and name.
-    pub(super) fn read<'a>(&self, written: &'a CadIr) -> Option<&'a Feature> {
-        let mut found = written.model.features.iter().filter(|feature| {
-            feature.ordinal == self.ordinal && self.names.contains(&feature.name)
-        });
-        let feature = found.next()?;
-        found.next().is_none().then_some(feature)
+    /// The feature of `written` that this feature pairs with.
+    pub(super) fn read<'a>(&self, written: &'a CadIr, pairing: &Pairing) -> Option<&'a Feature> {
+        let id = pairing.written_id(self.id.as_str())?;
+        written
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == id)
     }
 }
 
@@ -428,6 +429,17 @@ impl UnwrittenLosses {
             notes.push(SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
                 "SLDPRT written part reads back {} other than the document states, and no edit of the write is left to keep as stored.",
                 listed(&read_back.changed)
+            )));
+        }
+        if !read_back.defects.is_empty() {
+            notes.push(SldprtLossCode::WriterReadBackDiffers.note(format!(
+                "SLDPRT written part reads back other than the document states in {}; the write of the unedited source reads back the same, so no edit of the write causes it.",
+                read_back.defects.join("; ")
+            )));
+        }
+        if let Some(reason) = &read_back.unread {
+            notes.push(SldprtLossCode::WriterReadBackUnread.note(format!(
+                "SLDPRT written part {reason}, so it is not compared with the document."
             )));
         }
         notes
@@ -803,21 +815,25 @@ impl<'source> SourceEdits<'source> {
         edits: impl IntoIterator<Item = (ConstructionEdit, bool)>,
         withhold: bool,
     ) {
+        let mut dependencies_written = false;
         let edits = edits
             .into_iter()
-            .filter_map(|(edit, written)| edit.claim(original, current, written))
+            .filter_map(|(edit, written)| {
+                dependencies_written |= written && edit.is_dependencies();
+                edit.claim(original, current, written)
+            })
             .collect::<Vec<_>>();
         let Ok(source_definition) = serde_json::to_value(original.evaluation.definition()) else {
             return;
         };
-        if edits.is_empty() && !withhold {
+        if edits.is_empty() && !withhold && original.dependencies == current.dependencies {
             return;
         }
         self.claims.features.push(FeatureClaims {
             id: current.id.clone(),
-            dependencies_edited: original.dependencies != current.dependencies,
-            names: [current.name.clone(), original.name.clone()],
-            ordinal: current.ordinal,
+            dependencies_unwritten: original.dependencies != current.dependencies
+                && !dependencies_written,
+            clears_reversal: cleared_reversal(current),
             source_definition,
             withhold,
             edits,

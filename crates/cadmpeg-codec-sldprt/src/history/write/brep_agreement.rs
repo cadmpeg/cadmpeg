@@ -33,6 +33,9 @@ use crate::native::SldprtNative;
 /// edits the write does not carry: the construction edit of a feature in its
 /// `kept_definitions` is not written, and a part
 /// of a parameter edit it names does not reach the written history, so no
+/// stale-solid loss calls them written. `misread` holds the features whose
+/// tree place (`ordinal`) or output bodies (`outputs`) the written part reads
+/// back other than the document states; the read-back names them, and no
 /// stale-solid loss calls them written. Without the retained source image,
 /// [`imageless_losses`] names what it can tell.
 pub(crate) fn stale_solid_losses(
@@ -40,6 +43,7 @@ pub(crate) fn stale_solid_losses(
     native: Option<&SldprtNative>,
     source_image: Option<&[u8]>,
     unwritten: &UnwrittenEdits,
+    misread: &HashSet<(FeatureId, String)>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let kept_definitions = &unwritten.kept_definitions;
     let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
@@ -94,7 +98,7 @@ pub(crate) fn stale_solid_losses(
             ir,
             baseline,
             &hash_ctx,
-            kept_definitions,
+            (kept_definitions, misread),
             &mut named,
             &mut losses,
         )?;
@@ -226,10 +230,12 @@ fn feature_edits(
     ir: &CadIr,
     source: &CadIr,
     hash_ctx: &DecodeContext<'_>,
-    kept_definitions: &HashSet<FeatureId>,
+    (kept_definitions, misread): (&HashSet<FeatureId>, &HashSet<(FeatureId, String)>),
     named: &mut HashSet<FeatureId>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let misread_field =
+        |id: &FeatureId, field: &str| misread.contains(&(id.clone(), field.to_owned()));
     let baseline = &source.model.features;
     // Whether a construction edit, a removal or an output edit explains the
     // changed feature digest; only an unexplained change is a tree edit.
@@ -249,6 +255,9 @@ fn feature_edits(
         if original.evaluation.outputs() != feature.evaluation.outputs() {
             explained = true;
             named.insert(feature.id.clone());
+            if misread_field(&feature.id, "outputs") {
+                continue;
+            }
             losses.push(stale(format!(
                 "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
                 feature_label(feature)
@@ -343,7 +352,10 @@ fn feature_edits(
             "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
         ));
     }
-    for feature in moved {
+    for feature in moved
+        .into_iter()
+        .filter(|feature| !misread_field(&feature.id, "ordinal"))
+    {
         losses.push(stale(format!(
             "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
             feature_label(feature)

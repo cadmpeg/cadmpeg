@@ -21,6 +21,9 @@ pub(crate) struct Entry {
     /// pair.
     pub(crate) id: String,
     pub(crate) change: EntryChange,
+    /// An added record's content: its wire form without its own id, each
+    /// unpaired written id by its digit-free form.
+    pub(crate) content: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +48,7 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
     let mut value = serde_json::to_value(written).expect("the written document serializes");
     rename(&mut value, &renames);
     let renamed: CadIr = serde_json::from_value(value).expect("the renamed document reads");
+    let renamed_records = Document::of(&renamed).expect("the renamed document serializes");
     let diff = cadmpeg_ir::diff::diff(stated, &renamed);
     let mut entries = Vec::new();
     for arena in diff.per_arena {
@@ -56,13 +60,12 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
             arena: name.clone(),
             id,
             change,
+            content: None,
         };
-        entries.extend(
-            arena
-                .added
-                .into_iter()
-                .map(|id| entry(id, EntryChange::Added)),
-        );
+        entries.extend(arena.added.into_iter().map(|id| Entry {
+            content: renamed_records.find(&id).map(content),
+            ..entry(id, EntryChange::Added)
+        }));
         entries.extend(
             arena
                 .removed
@@ -92,38 +95,69 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
                 arena: "source.attributes".into(),
                 id: change.key.to_string(),
                 change: EntryChange::Modified(vec!["value".into()]),
+                content: None,
             }),
     );
     entries
 }
 
+/// `record` as an added entry compares it: its wire form without its own id,
+/// each unpaired written id by its digit-free form.
+fn content(record: &Value) -> String {
+    fn text(text: &str) -> String {
+        match text.strip_suffix(":written") {
+            Some(id) => id
+                .chars()
+                .map(|character| {
+                    if character.is_ascii_digit() {
+                        'N'
+                    } else {
+                        character
+                    }
+                })
+                .collect(),
+            None => text.to_owned(),
+        }
+    }
+    fn shape(value: &Value) -> Value {
+        match value {
+            Value::String(id) => Value::String(text(id)),
+            Value::Array(items) => Value::Array(items.iter().map(shape).collect()),
+            Value::Object(entries) => Value::Object(
+                entries
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "id")
+                    .map(|(key, value)| (text(key), shape(value)))
+                    .collect(),
+            ),
+            other => other.clone(),
+        }
+    }
+    shape(record).to_string()
+}
+
 /// The entries of `entries` that `baseline` does not hold: the same arena,
-/// record and change. An added record is matched by arena alone, because its
-/// written id is the written part's own.
+/// record and change; an added record by its content, because its written
+/// id is the written part's own.
 pub(crate) fn beyond(entries: Vec<Entry>, baseline: &[Entry]) -> Vec<Entry> {
     entries
         .into_iter()
-        .filter(|entry| {
-            !baseline
-                .iter()
-                .any(|base| match (&base.change, &entry.change) {
-                    (EntryChange::Added, EntryChange::Added) => base.arena == entry.arena,
-                    _ => base == entry,
-                })
-        })
+        .filter(|entry| !baseline.contains(entry))
         .collect()
 }
 
-/// The entries of `entries` that no loss of `messages` names: by the
-/// record's id, or by an `arena.omitted` loss for its arena.
+/// The entries of `entries` that no loss of `messages` names as differing,
+/// missing or added: a read-back loss that names the record's id, or an
+/// `arena.omitted` loss for its arena.
 pub(crate) fn unnamed(entries: Vec<Entry>, messages: &[&str]) -> Vec<Entry> {
     entries
         .into_iter()
         .filter(|entry| {
             let arena = format!("arena `{}`", entry.arena);
-            !messages
-                .iter()
-                .any(|message| message.contains(&entry.id) || message.contains(&arena))
+            !messages.iter().any(|message| {
+                (message.contains(&entry.id) && message.contains("reads back"))
+                    || (message.contains(&arena) && message.contains("omitted"))
+            })
         })
         .collect()
 }
