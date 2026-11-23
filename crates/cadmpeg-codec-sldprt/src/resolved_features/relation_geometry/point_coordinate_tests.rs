@@ -13,6 +13,8 @@ use crate::records::{
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureSource,
 };
+use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
+use crate::resolved_features::stream_readings::SolidEdges;
 use crate::resolved_features::transforms::tests::marker;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
@@ -20,6 +22,7 @@ use cadmpeg_ir::features::parameters::{
 use cadmpeg_ir::features::{
     ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
+use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;
@@ -27,6 +30,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement, SketchProfiles,
 };
+use cadmpeg_ir::topology::{Point as BrepPoint, Vertex};
 use std::collections::BTreeMap;
 
 /// A sketch feature that binds its sketch, the sketch's entities and the lane
@@ -143,6 +147,7 @@ fn project_point(coordinates_m: [f64; 2]) -> (Vec<SketchEntity>, Vec<LossNote>, 
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     (entities, losses, point_id)
 }
@@ -410,13 +415,53 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     assert!(loss.message.contains(&marker), "{}", loss.message);
 }
 
+/// What reaches [`fixture`]'s point marker in [`project_between_readings`].
+#[derive(Clone, Copy, Debug)]
+enum Reach {
+    /// The relation operand, as on main.
+    Relation,
+    /// Only the links of a list-read record whose stored code is a relation.
+    ListedRecord,
+}
+
+/// What marks one of the two places in [`project_between_readings`].
+#[derive(Clone, Copy, Debug)]
+enum Mark {
+    /// The centre of a circle of the sketch.
+    Curve(Point2),
+    /// A vertex of the solid, at the place on the sketch plane z = 0.
+    Vertex(Point2),
+}
+
 /// Projects the relation point of [`fixture`]'s marker stored at (3, 9) mm in
 /// a sketch whose three anchors fit the marker transform
 /// `(u, v) -> (v + 100, u + 200)`, which places the point at (109, 203), and
-/// whose unresolved frame reads the pair as it stands, at (3, 9). A circle is
-/// centred on each of `witnesses`.
-fn project_between_readings(witnesses: &[Point2]) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
-    let (feature, entities, lane, marker) = fixture([0.003, 0.009]);
+/// whose frame (origin 0, normal +z, u along +x) reads the pair as it
+/// stands, at (3, 9).
+fn project_between_readings(
+    reach: Reach,
+    marks: &[Mark],
+) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
+    let (feature, entities, mut lane, marker_id) = fixture([0.003, 0.009]);
+    if let Reach::ListedRecord = reach {
+        lane.relation_instances.clear();
+        let mut curve = marker("listed-curve", None);
+        curve = curve.with_test_position(curve.ordinal(), 99);
+        curve.reclassify(SketchInputKind::LineOrCircle);
+        curve.listed_curve = Some(crate::records::ListedCurveOverride {
+            form: "line",
+            code: 4,
+            stored: SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        });
+        curve.links = crate::records::SketchInputLinks::new(
+            0,
+            vec![SketchInputLink {
+                local_id: 1,
+                entity_ref: marker_id.clone(),
+            }],
+        );
+        lane.sketch_entities.push(curve);
+    }
     let sketch = entities[0].sketch.clone();
     let mut entities = [(100.0, 200.0), (101.0, 202.0), (104.0, 207.0)]
         .into_iter()
@@ -432,23 +477,49 @@ fn project_between_readings(witnesses: &[Point2]) -> (Vec<SketchEntity>, Vec<Los
             )
         })
         .collect::<Vec<_>>();
-    for (index, center) in witnesses.iter().enumerate() {
-        entities.push(SketchEntity::new(
-            SketchEntityId::mint(format!("synthetic:test:id#witness-{index}")).unwrap(),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                center: *center,
-                radius: Length::new(1.0).unwrap(),
-            })
-            .unwrap(),
-        ));
+    let mut points = Vec::new();
+    let mut vertices = Vec::new();
+    for (index, mark) in marks.iter().enumerate() {
+        match *mark {
+            Mark::Curve(center) => entities.push(SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#witness-{index}")).unwrap(),
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center,
+                    radius: Length::new(1.0).unwrap(),
+                })
+                .unwrap(),
+            )),
+            Mark::Vertex(place) => {
+                let point = PointId::mint(format!("synthetic:test:id#point-{index}")).unwrap();
+                points.push(BrepPoint::new(
+                    point.clone(),
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        place.u, place.v, 0.0,
+                    ))
+                    .unwrap(),
+                    None,
+                ));
+                vertices.push(Vertex {
+                    id: VertexId::mint(format!("synthetic:test:id#vertex-{index}")).unwrap(),
+                    point,
+                    tolerance: None,
+                    native_ref: None,
+                });
+            }
+        }
     }
     let frame = Sketch {
         id: sketch,
         name: None,
         configuration: None,
         visible: None,
-        placement: SketchPlacement::Unresolved {},
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         profiles: SketchProfiles::default(),
         native_ref: None,
     };
@@ -457,8 +528,9 @@ fn project_between_readings(witnesses: &[Point2]) -> (Vec<SketchEntity>, Vec<Los
         std::slice::from_ref(&frame),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &SolidEdges::new(&[], &vertices, &points, &[]),
     );
-    (entities, losses, marker)
+    (entities, losses, marker_id)
 }
 
 const FITTED: Point2 = Point2 { u: 109.0, v: 203.0 };
@@ -483,29 +555,39 @@ fn assert_near(actual: Point2, expected: Point2) {
 }
 
 #[test]
-fn a_curve_centre_on_the_fitted_place_draws_the_relation_point_there() {
-    let (entities, losses, marker) = project_between_readings(&[FITTED]);
+fn a_relation_reached_marker_with_two_readings_is_drawn_at_the_fitted_place() {
+    let (entities, losses, marker) = project_between_readings(Reach::Relation, &[]);
     assert_near(drawn_at(&entities, &marker), FITTED);
     assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]
-fn a_curve_centre_on_the_frame_place_draws_the_relation_point_there() {
-    let (entities, losses, marker) = project_between_readings(&[FRAMED]);
-    assert_near(drawn_at(&entities, &marker), FRAMED);
-    assert!(losses.is_empty(), "{losses:?}");
+fn a_listed_record_marker_is_drawn_at_the_one_place_a_mark_witnesses() {
+    for (mark, expected) in [
+        (Mark::Vertex(FRAMED), FRAMED),
+        (Mark::Vertex(FITTED), FITTED),
+        (Mark::Curve(FITTED), FITTED),
+        (Mark::Curve(FRAMED), FRAMED),
+    ] {
+        let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, &[mark]);
+        assert_near(drawn_at(&entities, &marker), expected);
+        assert!(losses.is_empty(), "{mark:?}: {losses:?}");
+    }
 }
 
 #[test]
-fn two_readings_that_no_curve_or_both_curves_mark_draw_no_relation_point() {
-    for (witnesses, reason) in [
+fn a_listed_record_marker_that_no_mark_or_both_marks_witness_is_named_and_not_drawn() {
+    for (marks, reason) in [
         (&[][..], "no curve end or centre"),
-        (&[FITTED, FRAMED][..], "lies on each of them"),
+        (
+            &[Mark::Curve(FITTED), Mark::Vertex(FRAMED)][..],
+            "lies on each of them",
+        ),
     ] {
-        let (entities, losses, marker) = project_between_readings(witnesses);
+        let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, marks);
         assert!(relation_points(&entities, &marker).is_empty());
         let [loss] = losses.as_slice() else {
-            panic!("one loss for {witnesses:?}: {losses:?}");
+            panic!("one loss for {marks:?}: {losses:?}");
         };
         assert_eq!(
             loss.code,

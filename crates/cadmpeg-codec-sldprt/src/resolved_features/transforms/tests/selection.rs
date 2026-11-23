@@ -391,6 +391,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     let projected_len = entities.len();
     project_relation_point_geometry(
@@ -398,6 +399,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
@@ -594,6 +596,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
 
     assert!(entities.iter().any(|entity| {
@@ -759,6 +762,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         std::slice::from_ref(&sketch_record),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
 
     assert_eq!(entities.len(), 2);
@@ -860,6 +864,7 @@ fn relation_points_stay_drawn_from_a_listed_curve_with_a_relation_code() {
             std::slice::from_ref(&sketch_record),
             std::slice::from_ref(&feature),
             std::slice::from_ref(&lane),
+            &crate::resolved_features::stream_readings::SolidEdges::default(),
         );
         entities
     };

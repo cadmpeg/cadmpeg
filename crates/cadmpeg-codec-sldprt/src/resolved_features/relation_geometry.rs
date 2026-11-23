@@ -30,6 +30,7 @@ use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
 };
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -443,17 +444,24 @@ pub(crate) fn append_relation_point_notes(
 }
 
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
+///
+/// A point marker that a relation reaches as on main (a relation operand, a
+/// marker of relation kind, and the markers linked to them) is placed as on
+/// main: at the unique fitted marker-transform place, else at the sketch
+/// frame's reading. A point marker reached only through a list-read record
+/// whose stored code is a relation (DI-77) is placed where the two readings
+/// agree, or where only one exists; where they differ, at the one place that
+/// a curve end or centre of its sketch or a vertex or circular-edge centre of
+/// `solid` marks, and nowhere, with a note, where neither or both are marked.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
+    solid: &super::stream_readings::SolidEdges,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    // The distance at which a curve end or centre of the sketch marks a
-    // reading of a relation point's place.
-    const WITNESS_MM: f64 = 1.0e-5;
 
     let mut losses = Vec::new();
     let mut sketches_by_feature = HashMap::new();
@@ -640,8 +648,13 @@ pub(crate) fn project_relation_point_geometry(
                     f64_from_i64(position_v)? * QUANTUM,
                 ))
             };
-            let position = match (fitted.and_then(to_point), framed.and_then(to_point)) {
-                (Some(fitted), Some(framed)) if fitted != framed => {
+            let fitted = fitted.and_then(to_point);
+            let framed = framed.and_then(to_point);
+            let position = match (fitted, framed) {
+                (Some(fitted), Some(framed))
+                    if fitted != framed && !referenced.contains(marker.id()) =>
+                {
+                    let record = sketches.iter().find(|candidate| candidate.id == *sketch);
                     let witnessed = |position: Point2| {
                         entities
                             .iter()
@@ -652,17 +665,29 @@ pub(crate) fn project_relation_point_geometry(
                             .any(|(locus, role)| {
                                 role != SketchLocusRole::Entity
                                     && (locus.u - position.u).hypot(locus.v - position.v)
-                                        <= WITNESS_MM
+                                        <= LINEAR_RESOLUTION_MM
                             })
+                            || record
+                                .and_then(cadmpeg_ir::sketches::Sketch::resolved_placement)
+                                .and_then(|(origin, normal, u_axis)| {
+                                    let (normal, u_axis) = (normal.get(), u_axis.get());
+                                    Some(
+                                        origin
+                                            .get()
+                                            .translated(u_axis, position.u)
+                                            .translated(normal.unit()?.cross(u_axis), position.v),
+                                    )
+                                })
+                                .is_some_and(|point| solid.marks(point))
                     };
                     match (witnessed(fitted), witnessed(framed)) {
                         (true, false) => fitted,
                         (false, true) => framed,
                         (both, _) => {
                             let witnesses = if both {
-                                "a curve end or centre of the sketch lies on each of them"
+                                "a curve end or centre of the sketch, or a vertex or circular-edge centre of the solid, lies on each of them"
                             } else {
-                                "no curve end or centre of the sketch lies on either of them"
+                                "no curve end or centre of the sketch and no vertex or circular-edge centre of the solid lies on either of them"
                             };
                             losses.push(
                                 crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled

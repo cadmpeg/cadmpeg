@@ -815,6 +815,7 @@ pub(crate) fn project_configuration_sketch_states(
                     &ir.model.sketches,
                     &features,
                     scoped_lanes,
+                    &solid,
                 );
             crate::resolved_features::relation_geometry::append_relation_point_notes(
                 &mut losses,

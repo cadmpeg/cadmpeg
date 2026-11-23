@@ -3589,6 +3589,12 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    let solid = crate::resolved_features::stream_readings::SolidEdges::new(
+        &brep.edges,
+        &brep.vertices,
+        &brep.points,
+        &brep.curves,
+    );
     plane_bindings.extend(
         crate::resolved_features::profiles::project_marker_backed_sketches(
             ctx,
@@ -3601,12 +3607,7 @@ fn build_geometry_ir(
             crate::resolved_features::profiles::MarkerSources {
                 histories: &histories,
                 lanes: sketch_lanes,
-                solid: &crate::resolved_features::stream_readings::SolidEdges::new(
-                    &brep.edges,
-                    &brep.vertices,
-                    &brep.points,
-                    &brep.curves,
-                ),
+                solid: &solid,
             },
             &mut pmi_losses,
         )?,
@@ -3658,6 +3659,7 @@ fn build_geometry_ir(
             &sketches,
             &ir.model.features,
             sketch_lanes,
+            &solid,
         ),
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
@@ -5066,6 +5068,7 @@ fn build_metadata_ir(
             &ir.model.sketches,
             &ir.model.features,
             sketch_lanes,
+            &crate::resolved_features::stream_readings::SolidEdges::default(),
         ),
     );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
