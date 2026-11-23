@@ -603,7 +603,7 @@ option `2`, and side extents `[1, 0]`.
 
 ### DR-654. Stored profile loop curves off the selected material boundary
 
-**Question.** Which piece of a line that ends inside the selected material does a typed profile loop list, and in which of the regions that the line enters does a loop list it?
+**Question.** Which sketch curves does a typed profile loop list when two coincident curves share one boundary interval, which piece of a line that ends inside the selected material does it list, and in which of the regions that the line enters does a loop list it?
 
 **Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. Each stored entry has a decoded piece on a selected atomic boundary, a line or circle with a shared boundary interval under `feature.profile-coincident-boundary-assumed`, or a piece in the interior of a selected region, which the loop traverses as a slit under `feature.profile-partial-entry-assumed`. For such a line, the second and third entry fields can equal the ordinal and count of the line piece inside the region when the other curves of that region divide the line. Two coincident lines listed as separate entries resolve under the transition reading: the alias line takes its certified boundary interval and charges `feature.profile-coincident-boundary-assumed`, and an entry with several pieces, or a piece with no identity use in the selected boundary, also charges `feature.profile-partial-entry-assumed`. A Cut whose stored transition inserts, deletes, and updates no face has no changed plane and no certificate, so its selection stays native.
 
