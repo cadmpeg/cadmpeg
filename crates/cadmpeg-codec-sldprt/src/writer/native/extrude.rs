@@ -5,7 +5,7 @@
 //! only are zero.
 
 use super::archive::Archive;
-use super::block::{block_close, block_open, named, named_operation, Oid, Schema, Tail, TAIL};
+use super::block::{block_close, block_open, named, named_operation, Schema, Tail, TAIL};
 use super::config::FIRST_BODY_ID;
 
 /// A blind extrusion the tree writes.
@@ -180,12 +180,7 @@ fn depth_display(archive: &mut Archive, depth: f64, parameter_id: u32) {
     archive.object("ParallelPlaneDistanceDim_c");
     archive.u32(1);
     archive.object("moLengthParameter_c");
-    named(
-        archive,
-        Some(DEPTH_NAME),
-        Schema::Plain,
-        Oid::Plain(u32::MAX),
-    );
+    named(archive, Some(DEPTH_NAME), Schema::Plain, u32::MAX);
     archive.u16(0);
     archive.f64(depth);
     archive.zeros(3);
