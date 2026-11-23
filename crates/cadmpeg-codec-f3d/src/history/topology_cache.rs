@@ -26,7 +26,7 @@ pub(super) struct VertexBoundaryIndex {
 }
 impl VertexBoundaryIndex {
     pub(super) fn new(topology: &AsmHistoricalTopology) -> Self {
-        let boundaries = super::face_boundary_edge_index(topology);
+        let boundaries = super::treatment_candidates::face_boundary_edge_index(topology);
         let vertices = topology
             .vertices
             .iter()

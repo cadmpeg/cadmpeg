@@ -329,14 +329,14 @@ pub(super) fn treatment_faces(
     output: &AsmHistoricalTopology,
 ) -> Option<TreatmentFaces> {
     let inserted = &transition.topology.faces.inserted;
-    let carriers = super::unique_face_carriers(output);
+    let carriers = super::treatment_candidates::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
     // A result face on a new carrier that persists from the preceding
     // topology, or that the transition does not list as inserted, could be
     // an unlisted blend.
     let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
     let listed = inserted.iter().copied().collect::<HashSet<_>>();
-    let preceding_carriers = super::unique_face_carriers(input);
+    let preceding_carriers = super::treatment_candidates::unique_face_carriers(input);
     for face in &output.faces {
         let carrier = carriers.get(face).copied().flatten()?;
         if !input_surfaces.contains(&carrier)
@@ -366,11 +366,11 @@ pub(super) fn treatment_faces(
     if blend_faces.is_empty() {
         return None;
     }
-    let output_boundaries = super::face_boundary_edge_index(output);
-    let input_boundaries = super::face_boundary_edge_index(input);
+    let output_boundaries = super::treatment_candidates::face_boundary_edge_index(output);
+    let input_boundaries = super::treatment_candidates::face_boundary_edge_index(input);
     // A face whose boundary does not rebuild, or that has no single carrier,
     // could hide a support or a shared edge, in either state.
-    let input_carriers = super::unique_face_carriers(input);
+    let input_carriers = super::treatment_candidates::unique_face_carriers(input);
     let rebuilt = |faces: &[i64],
                    boundaries: &HashMap<i64, HashSet<i64>>,
                    carriers: &HashMap<i64, Option<i64>>| {
@@ -383,7 +383,12 @@ pub(super) fn treatment_faces(
     {
         return None;
     }
-    let supports = super::treatment_face_supports(&blend_faces, output, input, &output_boundaries);
+    let supports = super::treatment_candidates::treatment_face_supports(
+        &blend_faces,
+        output,
+        input,
+        &output_boundaries,
+    );
     if supports.len() != blend_faces.len() {
         return None;
     }
@@ -848,7 +853,14 @@ pub(crate) fn bind_treatment_edges(
         .iter()
         .map(|feature| {
             is_fillet(feature)
-                .then(|| super::face_selection_state(feature, scopes, scope_histories, histories))
+                .then(|| {
+                    super::face_selections::face_selection_state(
+                        feature,
+                        scopes,
+                        scope_histories,
+                        histories,
+                    )
+                })
                 .flatten()
         })
         .collect::<Vec<_>>();
@@ -857,7 +869,7 @@ pub(crate) fn bind_treatment_edges(
         .zip(&states)
         .map(|(feature, state)| {
             if state.is_none() && is_fillet(feature) {
-                super::unbound_face_selection_candidates(
+                super::face_selections::unbound_face_selection_candidates(
                     feature,
                     scopes,
                     scope_histories,
@@ -881,11 +893,15 @@ pub(crate) fn bind_treatment_edges(
         }
     }
     let mut available = HashSet::new();
-    super::visit_states_oldest_first(histories, gates, |history, previous, job| {
-        if history.topology(previous).is_some() {
-            available.insert(job);
-        }
-    });
+    super::binding_histories::visit_states_oldest_first(
+        histories,
+        gates,
+        |history, previous, job| {
+            if history.topology(previous).is_some() {
+                available.insert(job);
+            }
+        },
+    );
     let histories = &*histories;
     let mut notes = Vec::new();
     let mut inferred_scope_histories = Vec::new();
@@ -988,7 +1004,7 @@ pub(crate) fn bind_treatment_edges(
 /// The transition, input topology and output topology of a fillet state.
 pub(super) fn fillet_states<'a>(
     histories: &'a [AsmHistory],
-    state: &super::FaceSelectionState<'_>,
+    state: &super::face_selections::FaceSelectionState<'_>,
 ) -> Option<(
     &'a AsmHistoricalTransition,
     &'a AsmHistoricalTopology,

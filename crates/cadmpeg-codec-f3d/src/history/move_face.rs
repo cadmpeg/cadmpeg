@@ -199,9 +199,9 @@ fn shared_surface_selection(
         .iter()
         .filter(|reference| reference.design_reference >= 0)
         .any(|reference| {
-            super::effective_faces(reference)
+            super::face_resolution::effective_faces(reference)
                 .iter()
-                .map(|face| super::stable_ref(face.as_str()))
+                .map(|face| super::body_closures::stable_ref(face.as_str()))
                 .collect::<Option<BTreeSet<_>>>()
                 .is_some_and(|named| named == moved_set)
         })

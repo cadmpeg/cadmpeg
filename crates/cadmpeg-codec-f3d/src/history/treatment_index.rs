@@ -15,10 +15,14 @@ pub(super) struct TreatmentIndex {
 }
 impl TreatmentIndex {
     fn new(result: &AsmHistoricalTopology, preceding: &AsmHistoricalTopology) -> Self {
-        let result_boundaries = super::face_boundary_edge_index(result);
-        let preceding_boundaries = super::face_boundary_edge_index(preceding);
-        let rows =
-            super::treatment_face_supports(&result.faces, result, preceding, &result_boundaries);
+        let result_boundaries = super::treatment_candidates::face_boundary_edge_index(result);
+        let preceding_boundaries = super::treatment_candidates::face_boundary_edge_index(preceding);
+        let rows = super::treatment_candidates::treatment_face_supports(
+            &result.faces,
+            result,
+            preceding,
+            &result_boundaries,
+        );
         let supports = rows
             .into_iter()
             .map(|(face, carrier, supports, _)| (face, (carrier, supports)))

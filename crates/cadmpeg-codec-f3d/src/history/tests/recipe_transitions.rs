@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! History-module unit tests.
 
-use crate::history::{
-    bind_face_operand_history_candidates, bind_feature_face_selections, bind_sweep_result_modes,
-    historical_brep_source, select_legacy_extrude_face_candidate, BindingHistories,
-    LegacyFaceResolution,
+use crate::history::binding_histories::BindingHistories;
+use crate::history::face_operand_history::bind_face_operand_history_candidates;
+use crate::history::face_resolution::{
+    historical_brep_source, select_legacy_extrude_face_candidate, LegacyFaceResolution,
 };
+use crate::history::face_selections::bind_feature_face_selections;
+use crate::history::feature_outputs::bind_sweep_result_modes;
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
@@ -182,10 +184,10 @@ fn split_face_case() -> (
         native_ref: Some(scope_id),
     }];
 
-    super::super::bind_feature_face_selections(
+    super::super::face_selections::bind_feature_face_selections(
         &mut features,
         &mut [],
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: &[scope],
             groups: &[group],
             operands: &[operand],
@@ -1017,7 +1019,7 @@ fn hole_case_with(
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: &[scope],
             groups: &[],
             operands: &[],
