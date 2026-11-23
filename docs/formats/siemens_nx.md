@@ -1047,8 +1047,9 @@ node-index space. The state at the current mark is the partition. One step
 removes the node of each map entry, adds each restored image, and then
 replaces each node that has an older image by that image. Before the step,
 each map entry names a present node of the entry's kind, no restored image
-names a node that remains after the removal, and each older image names a
-node of its own kind. Every non-null pointer of every state resolves in that
+names a node that remains after the removal, each older image names a node
+of its own kind that remains after the removal, and no two restored images
+and no two older images name one node. Every non-null pointer of every state resolves in that
 state, and the state at the initial mark holds no BODY, FACE, EDGE, or VERTEX
 node. A zero-length delta leaves the state unchanged. A merged delta spans
 the changes of deleted intermediate marks, whose states are not stored. A

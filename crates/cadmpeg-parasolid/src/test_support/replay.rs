@@ -134,7 +134,7 @@ pub struct Mark {
 }
 
 impl Mark {
-    fn write(self, out: &mut Vec<u8>) {
+    fn write(self, out: &mut Vec<u8>, forward: bool) {
         out.extend(4_u16.to_be_bytes());
         for value in [self.xmt, self.preceding, 1, 1, 1] {
             pointer::write(out, value).unwrap_or_default();
@@ -142,7 +142,7 @@ impl Mark {
         for value in [0_u32; 4] {
             out.extend(value.to_be_bytes());
         }
-        out.push(0);
+        out.push(u8::from(forward));
         out.extend(self.identifier.to_be_bytes());
     }
 }
@@ -160,7 +160,7 @@ impl DeltasStream {
         pointer::write(&mut bytes, 2).unwrap_or_default();
         pointer::write(&mut bytes, current.xmt).unwrap_or_default();
         bytes.extend(current.identifier.to_be_bytes());
-        current.write(&mut bytes);
+        current.write(&mut bytes, false);
         Self(bytes)
     }
 
@@ -204,7 +204,16 @@ impl DeltasStream {
     #[must_use]
     pub fn marks(mut self, marks: &[Mark]) -> Self {
         for mark in marks {
-            mark.write(&mut self.0);
+            mark.write(&mut self.0, false);
+        }
+        self
+    }
+
+    /// PMARK nodes whose deltas are forward, heading a PMARK section.
+    #[must_use]
+    pub fn forward_marks(mut self, marks: &[Mark]) -> Self {
+        for mark in marks {
+            mark.write(&mut self.0, true);
         }
         self
     }

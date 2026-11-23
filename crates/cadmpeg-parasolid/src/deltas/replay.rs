@@ -48,6 +48,11 @@ pub enum MainLineError {
         /// Identifier of the initial mark.
         identifier: u32,
     },
+    /// A main-line mark other than the initial mark has a forward delta.
+    ForwardDelta {
+        /// Identifier of the mark.
+        identifier: u32,
+    },
 }
 
 impl std::fmt::Display for MainLineError {
@@ -69,6 +74,12 @@ impl std::fmt::Display for MainLineError {
                 write!(
                     formatter,
                     "the initial mark {identifier} carries delta content"
+                )
+            }
+            Self::ForwardDelta { identifier } => {
+                write!(
+                    formatter,
+                    "the main-line mark {identifier} has a forward delta"
                 )
             }
         }
@@ -119,6 +130,13 @@ pub enum ReplayError {
         /// Node index.
         xmt: u32,
     },
+    /// Two older images of one delta name one node.
+    OlderRepeated {
+        /// Identifier of the mark whose delta was applied.
+        mark: u32,
+        /// Node index.
+        xmt: u32,
+    },
     /// An older image has another type than the node it overwrites.
     OlderKind {
         /// Identifier of the mark whose delta was applied.
@@ -156,6 +174,9 @@ impl std::fmt::Display for ReplayError {
             }
             Self::OlderAbsent { mark, xmt } => {
                 write!(formatter, "delta of mark {mark} overwrites absent node {xmt}")
+            }
+            Self::OlderRepeated { mark, xmt } => {
+                write!(formatter, "delta of mark {mark} overwrites node {xmt} twice")
             }
             Self::OlderKind {
                 mark,
@@ -342,8 +363,8 @@ impl<'r> MainLine<'r> {
     /// # Errors
     ///
     /// Returns [`MainLineError`] when the stream has no prefix, a mark is
-    /// repeated or absent, the links cycle, a main-line delta is incomplete,
-    /// or the initial mark carries content.
+    /// repeated or absent, the links cycle, a main-line delta is incomplete
+    /// or forward, or the initial mark carries content.
     pub fn read(records: &'r DeltasRecords<'_>) -> Result<Self, MainLineError> {
         let complete = *records.end() == DeltasEnd::Complete;
         let (current, sections) = sections(records)?;
@@ -412,6 +433,11 @@ impl<'r> MainLine<'r> {
                 }
                 break;
             };
+            if mark.delta_is_forward() {
+                return Err(MainLineError::ForwardDelta {
+                    identifier: mark.identifier(),
+                });
+            }
             contents.push(content.ok_or(MainLineError::IncompleteDelta {
                 identifier: mark.identifier(),
             })?);
@@ -695,23 +721,26 @@ impl<'r> State<'r> {
             }
             removed.insert(xmt, found);
         }
-        let mut restored = BTreeMap::new();
+        let mut restored = BTreeSet::new();
         for node in &delta.content.restored {
             let xmt = node.index();
             let present = self.nodes.contains_key(&xmt) && !removed.contains_key(&xmt);
-            if present || restored.insert(xmt, node.kind()).is_some() {
+            if present || !restored.insert(xmt) {
                 return Err(ReplayError::RestoredPresent { mark, xmt });
             }
         }
+        let mut older = BTreeSet::new();
         for node in &delta.content.older {
             let xmt = node.index();
-            let found = restored.get(&xmt).copied().or_else(|| {
-                self.nodes
-                    .get(&xmt)
-                    .filter(|_| !removed.contains_key(&xmt))
-                    .map(NodeFields::kind)
-            });
-            let found = found.ok_or(ReplayError::OlderAbsent { mark, xmt })?;
+            if !older.insert(xmt) {
+                return Err(ReplayError::OlderRepeated { mark, xmt });
+            }
+            let found = self
+                .nodes
+                .get(&xmt)
+                .filter(|_| !removed.contains_key(&xmt))
+                .ok_or(ReplayError::OlderAbsent { mark, xmt })?
+                .kind();
             if found != node.kind() {
                 return Err(ReplayError::OlderKind {
                     mark,

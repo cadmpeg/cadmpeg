@@ -302,7 +302,7 @@ fn first_step(stream: &[u8]) -> (Result<(), ReplayError>, usize, u32) {
 
 #[test]
 fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
-    let cases: [Case<'_>; 7] = [
+    let cases: [Case<'_>; 9] = [
         (
             &[],
             &[(14, POINT)],
@@ -343,6 +343,18 @@ fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
             &[(11, POINT)],
             &[TestNode::point(11, 1, 0)],
             ReplayError::OlderAbsent { mark: 9, xmt: 11 },
+        ),
+        (
+            &[TestNode::point(14, 1, 0)],
+            &[],
+            &[TestNode::point(14, 1, 1)],
+            ReplayError::OlderAbsent { mark: 9, xmt: 14 },
+        ),
+        (
+            &[],
+            &[],
+            &[TestNode::point(10, 1, 1), TestNode::point(10, 1, 2)],
+            ReplayError::OlderRepeated { mark: 9, xmt: 10 },
         ),
         (
             &[],
@@ -409,6 +421,10 @@ fn a_broken_main_line_is_a_typed_error() {
         .nodes(&[TestNode::point(20, 1, 0)])
         .terminator()
         .finish();
+    let forward = delta_b(delta_c(DeltasStream::new(C)).forward_marks(&[B]))
+        .marks(&[A])
+        .terminator()
+        .finish();
     with_decode_context(|_ctx| {
         assert_eq!(
             main_line_error(&missing),
@@ -426,6 +442,10 @@ fn a_broken_main_line_is_a_typed_error() {
         assert_eq!(
             main_line_error(&initial),
             MainLineError::InitialDelta { identifier: 3 }
+        );
+        assert_eq!(
+            main_line_error(&forward),
+            MainLineError::ForwardDelta { identifier: 6 }
         );
         assert_eq!(main_line_error(b"XX"), MainLineError::MissingPrefix);
     });

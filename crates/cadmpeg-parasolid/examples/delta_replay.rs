@@ -3,7 +3,7 @@
 //!
 //! Usage: `delta_replay PARTITION DELTAS [PARTITION DELTAS ...]`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_parasolid::deltas::replay::{MainLine, Replay};
 use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
@@ -17,22 +17,6 @@ fn kind(error: &impl std::fmt::Debug) -> String {
         .next()
         .unwrap_or_default()
         .to_owned()
-}
-
-/// Per-delta counts of entries §4.2 leaves without a step rule: older images
-/// of nodes the same delta restores, and repeated older images.
-fn unruled(line: &MainLine<'_>) -> (usize, usize) {
-    let mut restored_older = 0;
-    let mut repeated_older = 0;
-    for delta in line.deltas() {
-        let restored: BTreeSet<u32> = delta.restored().iter().map(|node| node.index()).collect();
-        let mut older = BTreeSet::new();
-        for node in delta.older() {
-            restored_older += usize::from(restored.contains(&node.index()));
-            repeated_older += usize::from(!older.insert(node.index()));
-        }
-    }
-    (restored_older, repeated_older)
 }
 
 /// Write the state as a partition and record the outcome.
@@ -83,7 +67,6 @@ fn replay(partition: &[u8], deltas: &[u8]) -> Value {
         .iter()
         .filter(|delta| delta.mark().delta_is_forward())
         .count();
-    let (restored_older, repeated_older) = unruled(&line);
     let mut out = json!({
         "deltas_end": end,
         "marks": marks,
@@ -91,8 +74,6 @@ fn replay(partition: &[u8], deltas: &[u8]) -> Value {
         "nonempty": nonempty,
         "creating_groups": groups,
         "forward": forward,
-        "restored_older": restored_older,
-        "repeated_older": repeated_older,
     });
     let primary = match PrimaryRecords::read(partition) {
         Ok(Some(primary)) => primary,
