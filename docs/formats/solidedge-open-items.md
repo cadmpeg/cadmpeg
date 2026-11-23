@@ -1,13 +1,5 @@
 # Solid Edge open items
 
-### DR-1009. Document identity and kind
-
-**Question.** Which directory entries and stored fields identify a Solid Edge document and distinguish part, sheet-metal, and assembly documents?
-
-**Known.** The codec requires the root paths `JGlobal` and `JSitesList` in a CFB directory. Detection applies the same predicate to each input extension.
-
-**Need.** Establish the directory signature and the document-kind field from native document bytes.
-
 ### DR-1010. Active partition stream and framing
 
 **Question.** Which streams contain the active Parasolid partitions, and how does each stream bound its partition bytes?

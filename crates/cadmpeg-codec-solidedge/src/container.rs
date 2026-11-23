@@ -11,14 +11,22 @@ use cadmpeg_ir::{ContainerKind, ContainerSummary};
 use crate::dialect;
 use crate::loss::SolidEdgeLossCode;
 
+/// Root entries that identify a Solid Edge document.
+const SITES_LIST: &str = "JSitesList";
+const PSM_ROOTS: &str = "PSMroots";
+/// Root entries that identify a family-of-assemblies document.
+const FAMILY_INFO: &str = "FamilyInfo";
+const FAMILY_PUBLISH: &str = "FOAPublishData";
+
 fn evidence<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
-    let mut sites = false;
-    let mut global = false;
+    let (mut sites, mut roots, mut info, mut publish) = (false, false, false, false);
     for path in paths {
-        sites |= path.eq_ignore_ascii_case("JSitesList");
-        global |= path.eq_ignore_ascii_case("JGlobal");
+        sites |= path.eq_ignore_ascii_case(SITES_LIST);
+        roots |= path.eq_ignore_ascii_case(PSM_ROOTS);
+        info |= path.eq_ignore_ascii_case(FAMILY_INFO);
+        publish |= path.eq_ignore_ascii_case(FAMILY_PUBLISH);
     }
-    sites && global
+    (sites && roots) || (info && publish)
 }
 
 pub(crate) fn detect(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {

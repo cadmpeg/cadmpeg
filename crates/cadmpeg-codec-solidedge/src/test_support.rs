@@ -3,19 +3,24 @@
 
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
-pub(crate) fn compound() -> Vec<u8> {
+/// Compound document whose root holds the two named stream entries.
+pub(crate) fn compound_with(first: &str, second: &str) -> Vec<u8> {
     let mut file = cadmpeg_test_support::compound::compound_fixture();
     let directory = &mut file[512..1024];
     directory[128..192].fill(0);
-    name(&mut directory[128..256], "JGlobal");
+    name(&mut directory[128..256], first);
     put_u32(directory, 128 + 72, 2);
     let entry = &mut directory[256..384];
-    name(entry, "JSitesList");
+    name(entry, second);
     entry[66] = 2;
     entry[67] = 0;
     entry[68..80].fill(0xff);
     put_u32(entry, 116, 0xffff_fffe);
     file
+}
+
+pub(crate) fn compound() -> Vec<u8> {
+    compound_with("PSMroots", "JSitesList")
 }
 
 fn name(entry: &mut [u8], value: &str) {

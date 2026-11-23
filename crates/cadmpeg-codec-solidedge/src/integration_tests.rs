@@ -18,6 +18,34 @@ fn directory_signature_detects_solid_edge() {
     ctx.finish_session().unwrap();
 }
 
+fn detect(bytes: &[u8]) -> Confidence {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let confidence = SolidEdgeCodec.detect(&ctx, root).unwrap();
+    ctx.finish_session().unwrap();
+    confidence
+}
+
+#[test]
+fn family_directory_signature_detects_solid_edge() {
+    let bytes = test_support::compound_with("FamilyInfo", "FOAPublishData");
+    assert_eq!(detect(&bytes), Confidence::High);
+}
+
+#[test]
+fn incomplete_directory_signatures_are_rejected() {
+    for pair in [
+        ("JSitesList", "Payload"),
+        ("PSMroots", "Payload"),
+        ("JGlobal", "JSitesList"),
+        ("FamilyInfo", "PSMroots"),
+    ] {
+        let bytes = test_support::compound_with(pair.0, pair.1);
+        assert_eq!(detect(&bytes), Confidence::No, "{pair:?}");
+    }
+}
+
 #[test]
 fn generic_compound_file_has_no_solid_edge_identity() {
     let bytes = cadmpeg_test_support::compound::compound_fixture();
