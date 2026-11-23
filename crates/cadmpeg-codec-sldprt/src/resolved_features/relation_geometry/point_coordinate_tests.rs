@@ -1,9 +1,17 @@
 use super::{append_relation_point_notes, project_relation_point_geometry};
-use crate::history::configuration::project_configuration_sketch_states;
+use crate::history::configuration::{
+    align_configuration_parameter_kinds, project_configuration_design_states,
+    project_configuration_sketch_states,
+};
+use crate::history::extrude_direction::settle_projected_configurations;
+use crate::history::project::project_features;
+use crate::history::write::configurations::prepare_configurations_for_write;
 use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance,
+    Configuration, Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureInputOperand,
+    FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    FeatureSource,
 };
 use crate::resolved_features::transforms::tests::marker;
 use cadmpeg_ir::features::parameters::{
@@ -12,11 +20,12 @@ use cadmpeg_ir::features::parameters::{
 use cadmpeg_ir::features::{
     ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
-    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchPlacement, SketchProfiles,
 };
 use std::collections::BTreeMap;
 
@@ -258,4 +267,145 @@ fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach
     let mut merged = losses.clone();
     append_relation_point_notes(&mut merged, losses.clone());
     assert_eq!(merged, losses);
+}
+
+/// The writer projects the configuration states again when they differ from
+/// the document's baseline. A relation point charge of that projection falls
+/// on the decode's projection as well, so the write goes on and its report
+/// names the marker whose point is not drawn.
+#[test]
+fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point() {
+    let subnormal = f64::MIN_POSITIVE / 4.0;
+    let (bound, entities, mut lane, marker) = fixture([subnormal, subnormal]);
+    lane.configuration = Some("0".into());
+    let FeatureDefinition::Operation(FeatureOperation::Sketch {
+        sketch: SketchFeatureBinding::Planar(Some(sketch)),
+    }) = bound.evaluation.definition().clone()
+    else {
+        panic!("the fixture binds its sketch");
+    };
+    let native = SldprtNative {
+        feature_histories: vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: vec![Configuration {
+                id: "configuration-native".into(),
+                parent: "history".into(),
+                ordinal: 0,
+                source_index: Some(0),
+                name: "configuration".into(),
+                material: None,
+                properties: BTreeMap::new(),
+            }],
+            features: vec![NativeFeature {
+                id: "feature-native".into(),
+                parent: "history".into(),
+                xml_tag: "Sketch".into(),
+                tree_parent: None,
+                source_id: FeatureSource::from_value(1),
+                ordinal: 1,
+                name: "Sketch1".into(),
+                kind: "Sketch".into(),
+                input_class: None,
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }],
+        feature_input_lanes: vec![lane],
+        pmi_dimensions: Vec::new(),
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features = project_features(&native.feature_histories).unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch,
+        name: Some("Sketch1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities = entities;
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").unwrap(),
+        ordinal: 0,
+        active: false,
+        source_index: Some(0),
+        name: Some("configuration".into()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("configuration-native".into()),
+    });
+
+    // The configuration states as the decode projects them from these
+    // records; the document holds no baseline, so the write projects them
+    // again.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut decoded = ir.clone();
+    let unprojected = project_configuration_design_states(
+        &ctx,
+        &mut decoded,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+        &[],
+        None,
+    )
+    .unwrap();
+    assert_eq!(unprojected, 0);
+    settle_projected_configurations(&mut decoded);
+    align_configuration_parameter_kinds(&mut decoded);
+    let decode_losses = project_configuration_sketch_states(
+        &ctx,
+        &mut decoded,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+        &crate::resolved_features::profiles::ExactProfiles::default(),
+        &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
+    )
+    .unwrap();
+    assert!(
+        decode_losses.iter().any(|loss| loss.code
+            == SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
+            && loss.message.contains(&marker)),
+        "the configuration pass charges the marker: {decode_losses:?}"
+    );
+    ir.model.configurations = decoded.model.configurations;
+
+    let losses = prepare_configurations_for_write(
+        &ir,
+        &mut Some(native),
+        &cadmpeg_ir::Annotations::default(),
+        |_| Ok(None),
+    )
+    .expect("a relation point charge does not refuse the write");
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
+    );
+    assert!(loss.message.contains(&marker), "{}", loss.message);
 }
