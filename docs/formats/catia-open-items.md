@@ -26,7 +26,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A CATIA-authored compact program and an independent behavior check must establish its record boundaries and operations before semantic transfer.
 
-**Note.** The 79-file reference population contains zero exact legacy catalog openers. Its 319 plain `CATCatalogManager` strings do not establish that production. Constructed `Foo` fixtures test opaque retention and identifier detection only.
+**Note.** The exact legacy catalog opener is known only from constructed fixtures. A plain `CATCatalogManager` string does not establish that production. Constructed `Foo` fixtures test opaque retention and identifier detection only.
 
 ### DI-02. Unresolved schema-role selectors
 
@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A real legacy specimen and a schema-local role mapping must identify the selected role before assigning field semantics.
 
-**Note.** The 79-file reference population has no required legacy catalog opener and therefore no legacy role-selector population. The selector bytes in constructed framing tests remain unnamed; their following field codes do not supply a role mapping.
+**Note.** The required legacy catalog opener, and with it the legacy role-selector production, is known only from constructed fixtures. The selector bytes in constructed framing tests remain unnamed; their following field codes do not supply a role mapping.
 
 ### DI-04. Opaque inline values and head-slot namespaces
 
@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** An independent schema or behavior check must assign each opaque value's namespace and distinguish head-slot roles before those values can supply typed fields or neutral dependencies.
 
-**Note.** The 15 complete compact inline records in `v6-engine-hex-screw-m8x55.CATPart` select earlier lead-`12` anchors. Each anchor's second head reference equals its paired entity identity and exceeds the associated catalog's 495-entry range. The inline anchor incidence still selects an exact same-graph field. This does not establish a replacement head-role order. Repeated values, adjacent values, and a coincident catalog name do not establish a role for an opaque inline value.
+**Note.** Complete compact inline records can select earlier lead-`12` anchors. Each such anchor's second head reference equals its paired entity identity and exceeds the entry range of the associated catalog. The inline anchor incidence still selects an exact same-graph field. This does not establish a replacement head-role order. Repeated values, adjacent values, and a coincident catalog name do not establish a role for an opaque inline value.
 
 ### DI-05. Compact inline schema selectors
 
@@ -64,7 +64,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the lead-`54` result incidence independently of its current class predicate before transferring a separator-form result.
 
-**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. All other incidences in those frames select other roles. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`. A positive result assignment awaits a real witness. The code decides what the specification leaves open: `native.rs:2689` `output_entity` applies the same `paramout` predicate to the lead-`54` trailing slot as to lead-`12` `ref(h)`, and `formula.rs:374` and `decode.rs:1148,1154,1161` consume that slot as a bound formula output and counted result.
+**Note.** Stored lead-`12` frames have an `h` that selects an entity of class `paramout`. Stored lead-`54` frames have a `d` that selects an entity of class `Volume`. All other incidences in those frames select other roles. The existing positive lead-`54` fixture is synthetic; the stored lead-`54` frames establish its trailing incidence and rejection of `Volume`. A positive result assignment awaits a real witness. The code decides what the specification leaves open: `native.rs:2689` `output_entity` applies the same `paramout` predicate to the lead-`54` trailing slot as to lead-`12` `ref(h)`, and `formula.rs:374` and `decode.rs:1148,1154,1161` consume that slot as a bound formula output and counted result.
 
 ### DI-08. Legacy relation `body` selector
 
@@ -74,7 +74,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve a nonlocal selector to bind the relation context.
 
-**Note.** None of the 79 retained CATIA files contains the required legacy catalog opener. The local self-identity rule and synthetic nonlocal rejection do not establish the nonlocal selector namespace.
+**Note.** The required legacy catalog opener is known only from constructed fixtures. The local self-identity rule and synthetic nonlocal rejection do not establish the nonlocal selector namespace.
 
 ### DI-09. Legacy relation `param` selector
 
@@ -84,7 +84,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve a nonlocal selector to bind the relation result.
 
-**Note.** None of the 79 retained CATIA files contains the required legacy catalog opener. A synthetic same-run binding or nonlocal rejection does not establish an external parameter identity.
+**Note.** The required legacy catalog opener is known only from constructed fixtures. A synthetic same-run binding or nonlocal rejection does not establish an external parameter identity.
 
 ### DI-13. Active configuration state
 
@@ -164,17 +164,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native incidences assign annotation-set ownership, capture membership, active TPS-view state, and annotation geometry targets?
 
-**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target.
+**Known.** Cameras, TPS views, annotation sets, and captures have separate relations. An annotation set owns annotation, capture, and TPS-view collections. A capture owns a set reference and visually manages annotations and TPS views. Its current state governs future TPS membership; its active-view and viewpoint states govern display behavior. These states do not define a parametric model variant. Native `CATCameraFeat` catalogs and ordered camera programs retain camera data. View and capture field-class names can pair with tolerance, circle, and model-schema values; the class name alone does not identify an instance or membership relation. Range-only `DiameterThread` and `FeatureRSUR` dimensions are separate from the two-selector constraint-range production. Their retained values do not identify an annotation set, capture, view, or geometric target. `catia.md` §7.3.1 transfers the characteristic, magnitude, datum frame, and secondary activation of a tolerance record, and each `CATMmrTTRS` root as a source shape aspect. A parallelism tolerance record can select a chain that reaches one `ShortBrpLocation` label of the form `2(E,<n>)`. A surface-profile tolerance record can select an aggregate with 32 members; one member reaches a `2(E,<n>)` label, and recursive traversal reaches 33 locations. That surface-profile record can also have `Seg3TolNumValue` and `Seg3TolTabValue` fields that store a millimetre value, for example `0.03`, and an activation role separate from the `TolWiDRF` declaration.
 
-**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
-
-**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Contextual entity references select the two scalars and distinct geometry-reference chains. The first chain reaches `ShortBrpLocation` label `2(E,227)`. The second selects an aggregate with 32 members; one member reaches label `2(E,220)`, and recursive traversal reaches 33 locations. The second record also selects a `0.127` scalar and fields named `Seg3TolNumValue` and `Seg3TolTabValue`. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
+**Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production. Each `CATMmrTTRS` root needs the face or edge relation that it selects, and the `Seg3` segment needs its tolerance role. A `TolWiDRF` key that zero or several distinct field members carry, or a key in a field with a member that fails to resolve, needs its owner relation: the secondary value transfers with `attributes.pmi-field-key-unresolved`, and the key stays native.
 
 ### DI-29. Sheet topology roots
 
 **Question.** Which native records own sheet bodies and their surface representations?
 
-**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. The Fill Boundary field selects the sketch by both entity reference and persistent key. Six native line programs form two directed triangular components in the sketch chart. The source endpoint references select the six shared point records. The chart lifts the components to the STEP sheet vertices; the largest line-to-point residual is `0.000000942 mm`. The two reconstructed sheet areas are `7.7961625330 mm²` and `7.7961620861 mm²`, versus `7.7961625247 mm²` and `7.7961620847 mm²` in STEP. A seventh line extends beyond the two components and has a different management-flag field. The decoder transfers independent closed components as sheet bodies and reports `topology.sheet-components-inferred` for member exclusion and result grouping.
+**Known.** A part can store its solid in one FBB group and one-face sheets outside it: the FBB face rows cover the faces of the solid, and `SurfacicReps` supplies analytic carriers for a subset of those faces. A Fill feature's Boundary field selects the sketch by both entity reference and persistent key. Native line programs of that sketch can form closed directed components in the sketch chart, for example two triangles from six lines. The source endpoint references select the shared point records. The chart lifts each component to the vertices of one sheet in the STEP export of the same model, with line-to-point residuals at or below `0.000000942 mm` and sheet areas that agree within `0.00000001 mm²`. A further line in the same sketch can extend beyond the components and has a different management-flag field. The decoder transfers independent closed components as sheet bodies and reports `topology.sheet-components-inferred` for member exclusion and result grouping.
 
 **Need.** Establish the management-flag and construction-state meanings and the Fill result grouping. Transfer the source-selected chart and directed boundary uses with their identity encoding.
 
@@ -184,11 +182,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which source-schema identity and catalog index does each compact or fixed-width selector use, and how does a selected value program bind to its owner?
 
-**Known.** `catia.md` §7.3 defines the current fixed-width selector lookup and the value-chain productions. FTC-07 has compact definition bytes `F3 F4` on both `0.762` scalar candidates. Reading each byte as a one-based identity selects the catalog entries `LENGTH` and `TolNumValue`. A fixed selector `324` on a `0.127` scalar selects `RefTolNumValue` under the same interpretation.
+**Known.** `catia.md` §7.3 defines the current fixed-width selector lookup and the value-chain productions. Tolerance scalar candidates can carry compact definition bytes `F3 F4`. Reading each byte as a one-based identity selects the entries `LENGTH` and `TolNumValue` of the associated catalog. Under the same interpretation, a fixed selector `324` on a tolerance scalar selects `RefTolNumValue`.
 
 **Need.** Resolve complete selector and value-program framing across definition, value, and suffix fields. Preserve each decoded scalar and its source owner when changing a lookup. Establish contextual entity-reference encoding independently of schema indexing.
 
 **Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
+
+### DI-31. Non-semantic feature control frame content
+
+**Question.** Which fields of a `CATTPSNonSemanticGDT` annotation and its drafting object graph give the tolerance characteristic, the magnitude with its unit, and the datum references?
+
+**Known.** A general-note frame such as `profile .06 | A | B | C` has one `CATTPSNonSemanticGDT` entity and no `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, or `TolBloc` production; the typed tolerances and their secondary values account for every other tolerance of the STEP export. No source field stores the magnitude as binary64 in either unit (`0.06` in or `1.524` mm) or as binary32 `0.06`; binary32 `1.524` occurrences lie outside every entity record. The drafting catalog stores the frame as consecutive entries `DftGDT`, `ToleranceType`, `BoxNumber`, `UpperText`, `StringList`, and RTF cells whose texts are the magnitude and datum labels of the frame (`.06`, `A`, `B`, and `C`). No decoded field references the cell entries. The `StringList` object record has an empty payload, and the records of three consecutive entities have no decoded head. The unit is stated only as general-note text, for example `UNITS: INCHES`.
+
+**Need.** A typed characteristic, a numeric magnitude with a typed unit, and an owner relation from the annotation to its cells transfer the frame as a semantic tolerance. Without them the frame stays native, and its tolerance is absent from the transferred tolerances.
 
 ### DI-32. `E7` and `E8` literals beside a contradicting formula
 
@@ -204,7 +210,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the explicit A-family rolling-ball scalar jet parameterize, which incidence identifies its target, and what does the tail control `03` or `05` mean?
 
-**Known.** `catia.md` §6.2 "The rolling-ball tail starts after the knot lane" defines the complete 79-byte, 87-byte, and `87 + 24*K`-byte productions. The scalar jet contains no curve identity. Its sampled values fit class-`15` parameter domains and include exact source knots. Four NIST source curves have overlapping domains, so containment cannot select a target. The absent-jet branch supplies no map. Both raw controls remain separate from neutral orientation.
+**Known.** `catia.md` §6.2 "The rolling-ball tail starts after the knot lane" defines the complete 79-byte, 87-byte, 89-byte, `87 + 24*K`-byte, and `89 + 24*K`-byte productions. The scalar jet contains no curve identity. Its sampled values fit class-`15` parameter domains and include exact source knots. Several source curves can have overlapping domains, so containment cannot select a target. The absent-jet branch supplies no map. Both raw controls remain separate from neutral orientation.
 
 **Need.** Establish the scalar jet's meaning and target through an independent construction incidence. Establish tail-control semantics through an independently identified field in another encoding or a controlled producer change. Preserve these fields without assigning a target or sign until those relations are proven.
 
@@ -275,7 +281,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Conflict.** A record-distance reading and a weighted-address reading can select different wrappers for a backward-distance operand. Their parameter ranges do not distinguish the alternatives when the selected wrappers have no evaluable domain.
 
-In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
+Treating consecutive operand values as one parameter representation can join two consecutive source operands whose stored source intervals differ, for example approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches can have matching source intervals and adjacent face carriers, with chart-side operands `2` and `6` and map source operands that differ by 9. The chart-side-to-source offsets of the two matches then differ by 5, so a single additive offset cannot hold both matches. The chart-side frames and the distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
 
 ### SN-40. Overlapping three-reference endpoint station tags
 
@@ -304,9 +310,9 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Identify the serialized factory context and any additional typed identity relation for support tags outside the admitted circle, cylinder-header, standard-carrier, and canonical-alias relations. Require a source-closed relation and its chart and endpoint invariants.
 
-**Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
+**Conflict.** A unique class-`19` record and a pcurve whose `op1` equals that record's tag can occupy the same source extent while their U intervals differ and the pcurve is not constant in V. Two distinct tags can lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
-**Note.** In FTC-07, class-`5f` and class-`62` owner references bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. Scaling the jet coordinates by the sphere radius makes both lifts follow their edge curves. The class-`06` compressed station controls need an independent decoding. The solid area and volume remain unavailable because other face curves and orientation relations also fail measurement.
+**Note.** Class-`5f` and class-`62` owner references can bind two class-`20` jets to consecutive spherical edge uses. Each jet interval equals its class-`25` source interval. The class-`06` compressed station controls need an independent decoding.
 
 ### SN-15. Additional standard-conic branch relations
 
@@ -314,11 +320,11 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and defines a branch when one candidate's exact extrema fit all available incident-face boxes. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
 
-**Note.** Public FTC-07 has 28 ellipse trims retained under the bounds-excess inference in §5.8, with reported excesses from 0.003397 to 0.004548 mm. Independent interior-arc verification remains required to settle this relation.
+**Note.** Ellipse trims retained under the bounds-excess inference in §5.8 have reported excesses from 0.003397 to 0.004548 mm. Independent interior-arc verification remains required to settle this relation.
 
 **Need.** Establish a source-bound parameter or boundary incidence for the remaining unresolved branches. Independently verify interior points of the inferred ellipse arcs and agreement between incident carriers to settle the bounds-excess inference recorded in §5.8.
 
-**Conflict.** In FTC-07, a cylinder face's AABB-center azimuth lies about `1.38e-7` radians beyond an edge endpoint. Strict angular containment selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The STEP twin's short arc and the native face box select the other interval.
+**Conflict.** A cylinder face's AABB-center azimuth can lie about `1.38e-7` radians beyond an edge endpoint. Strict angular containment then selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The native face box and the short arc of the STEP export of the same model select the other interval.
 
 ### SN-17. Unbound fixed-nine carrier context
 
@@ -328,7 +334,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Identify another source-closed carrier relation before evaluating an unbound rectangle as owned geometry. Preserve the parameter and Cartesian lanes independently of whether that relation resolves.
 
-**Conflict.** All 112 tagged packets admit at least one A5 geometry candidate under domain, corner, and 25-by-25 interior checks; 40 admit multiple candidates. Candidate uniqueness supplies no serialized identity. In the spring witness, the alternative carrier at offset 52715 passes the corner-box test but fails at interior sites. Its U domain also ends 0.0010119222600337707 parameter units below the stored rectangle; the interior comparison uses the common domain. Neither numeric proximity nor envelope containment assigns a carrier.
+**Conflict.** Each tagged packet admits at least one A5 geometry candidate under domain, corner, and 25-by-25 interior checks, and a packet can admit several candidates. Candidate uniqueness supplies no serialized identity. An alternative carrier can pass the corner-box test but fail at interior sites. Its U domain can also end 0.0010119222600337707 parameter units below the stored rectangle; the interior comparison uses the common domain. Neither numeric proximity nor envelope containment assigns a carrier.
 
 **Note.** The all-compact face-boundary predicate remains separate. Tagged alternating and width-coded envelopes do not bind a standard face by its AABB or by source position.
 
@@ -340,9 +346,9 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Resolve the referenced objects in their actual allocation or factory namespace and verify their geometry against the rolling-ball center and limiting loci before assigning those roles. Preserve every unassigned reference and addressing form.
 
-**Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. In the spray-bottle hand record, references 781, 778, and 780 have no retained outer alias-row target; the `[base+3,base,base+2]` numeric pattern alone supplies no locus identity.
+**Conflict.** The public generic-fillet description lists center points, first limit, and second limit. The serialized jet stores first limit, second limit, and center instead. Public constructor descriptions therefore do not establish bridge wire order. Three references of one construction can follow the numeric pattern `[base+3,base,base+2]` and have no retained outer alias-row target; that pattern alone supplies no locus identity.
 
-**Note.** Independent standard-versus-STEP topology verifies all 134 eyebolt faces uniquely by joint adjacency refinement. The spring graph has 42 indistinguishable face pairs and admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
+**Note.** Joint adjacency refinement of independent standard and STEP topology can assign every face of a part uniquely. A face graph with indistinguishable face pairs admits an exact graph isomorphism without a unique face assignment. Those geometric/topological associations do not turn a local owner integer into a standard ordinal.
 
 ### SN-23. Class-`0x61` roster controls and member identities
 
@@ -354,7 +360,7 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Need.** Resolve result selection in other container forms. Verify chart parity for additional carrier forms. Establish a selector oracle for control `8`.
 
-**Conflict.** A source-local 53-member roster and the current 700-face shell have different cardinalities. Descending numeric reference order agrees with six independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
+**Conflict.** A source-local roster and the current shell can have different cardinalities, for example 53 members and 700 faces. Descending numeric reference order agrees with independent face-orientation sequences, but numeric order alone does not supply an allocation-to-standard identity relation.
 
 ### SN-25. Local boundary-domain location and final identity
 
@@ -376,21 +382,40 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Question.** Which allocation-scoped relation maps a closed owner boundary to the standard face and edge-support records?
 
-**Known.** `catia.md` §6.4 "A fixed-nine packet has a closed owner-boundary cycle" defines the typed cycle and its endpoint closure. The fixed-nine and counted-owner grammars preserve distinct reference forms and tails. The counted numeric-tail and adjacent A5 chart production constrain a standard face carrier through its stored bounds and vertices. The class-`5b` interval prefix and class-`5c` parallel reference/item lane have bounded structure; neither assigns a standard support identity. A 79-file source sweep contains 94 contiguous ten-record boundary blocks, of which 86 close under the five-reference edge grammar. The other eight use the separate four-reference edge production. A broader nine-allocation-reference sweep contains 135 closed four-edge graphs: 131 have five-byte tails and four have 62-byte tails. The fixed-nine native route retains two of the four long-tail graphs; the other two use the counted allocation-reference grammar. These populations have different admission rules.
+**Known.** `catia.md` §6.4 "A fixed-nine packet has a closed owner-boundary cycle" defines the typed cycle and its endpoint closure. The fixed-nine and counted-owner grammars preserve distinct reference forms and tails. The counted numeric-tail and adjacent A5 chart production constrain a standard face carrier through its stored bounds and vertices. The class-`5b` interval prefix and class-`5c` parallel reference/item lane have bounded structure; neither assigns a standard support identity. A contiguous ten-record boundary block closes under the five-reference edge grammar or uses the separate four-reference edge production. A closed four-edge graph with nine allocation references has a five-byte or a 62-byte tail. A graph with a 62-byte tail is retained by the fixed-nine native route or uses the counted allocation-reference grammar. These populations have different admission rules.
 
 **Need.** Establish a source-closed allocation bridge to standard support identities. Assign the class-`5b` interval frame and suffix, class-`5c` item and terminal meanings, and the remaining owner-tail controls from an independent semantic relation. Broader counted-packet cycle projection requires its own complete endpoint and source-closure rules.
 
-**Conflict.** The proposed universal face-node offset `target − final_owner_reference = m + 1` for a second owned-child operand `m ≥ 2` has three source counterexamples: spray-bottle at `369117` gives `m=2`, difference `0`; NIST CTC 01 at `1887263` and `1920192` gives `m=6`, difference `−7`. The bounded `27 03`/`27 05` prelude with difference `+10` remains a separate admitted relation. Numerical overlap across source namespaces does not establish an identity join.
+**Conflict.** The proposed universal face-node offset `target − final_owner_reference = m + 1` for a second owned-child operand `m ≥ 2` has source counterexamples: `m=2` with difference `0`, and `m=6` with difference `−7`. The bounded `27 03`/`27 05` prelude with difference `+10` remains a separate admitted relation. Numerical overlap across source namespaces does not establish an identity join.
 
-**Note.** Existing native retention passes full model checking for 5,214 copied control frames and 19,277 copied owner frames. Both existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
+**Note.** Existing native retention of copied control frames and copied owner frames passes full model checking. The existing typed boundary cycles match independently reconstructed source endpoints. Unassigned meanings remain open; no cross-source geometry binding follows from these structural results.
 
 ### SN-38. Two-edge sheet face orientation
 
 **Question.** Which native relation assigns the absolute face sense of a closed two-edge sheet relative to its surface chart?
 
-**Known.** The class-`62` complement relation determines the endpoint pairing in four isolated faces. The curved face has forward sense in CATIA STEP; two selector-`d8` planar faces have reversed sense. Both planar face boundaries and areas agree with native pcurve lifts independently of their sense. The last singleton class-`61` record before the boundary owner has occurrence bit one on the curved face and bit zero on both selector-`d8` planar faces; the independent tilted planar face has bit one.
+**Known.** The class-`62` complement relation determines the endpoint pairing of isolated closed two-edge faces. In the CATIA STEP export, a curved face of this form has forward sense and a selector-`d8` planar face has reversed sense. Planar face boundaries and areas agree with native pcurve lifts independently of their sense. The last singleton class-`61` record before the boundary owner has occurrence bit one on the curved face and bit zero on a selector-`d8` planar face; a tilted planar face has bit one.
 
-**Need.** Prove the last singleton class-`61` to selected-face identity beyond an isolated one-face source and establish its chart-parity rule for additional surface carriers. A third tilted planar face uses carrier and pcurve productions outside the currently decoded variants.
+**Need.** Prove the last singleton class-`61` to selected-face identity beyond an isolated one-face source and establish its chart-parity rule for additional surface carriers. A tilted planar face can also use carrier and pcurve productions outside the currently decoded variants.
+
+### SN-41. Trimmed-face box extent
+
+**Question.** Which construction produces the stored trimmed-face AABB of a curved face, and what bounds its distance from the exact face extent?
+
+**Known.** `catia.md` §5.8 "A standard circle without an admitted native edge support" retains a witnessed ellipse interval whose extrema exceed a face box beyond the `2e-3` mm allowance when its complement exceeds that box by more, and charges `geometry.conic-branch-bounds-inferred`. On standard faces, the box exceeds the exact face extent by at most binary32 rounding except on a few faces, and it can lie inside the extent by more than `2e-3` mm. The following readings are falsified:
+
+- The box is the exact trimmed extent: cylinder faces can fall short by more than `2e-3` mm.
+- The box covers only the boundary vertices: half-cylinder faces whose four vertices lie in one axial plane reach `11.1091` mm from that plane at radius `11.1125` mm.
+- The box is a control-net or conservative bound: it never exceeds the exact extent.
+- The shortfall is binary32 rounding: `3.4e-3` mm is several hundred ulps at the coordinate scale.
+- The shortfall follows a fixed angular step: under one tolerance, a face of radius `2.197` mm falls short by `7.3e-3` mm and a face of radius `11.1125` mm by `3.4e-3` mm.
+- The shortfall is bounded by `0.01` mm: the per-document peaks fall in two groups, `0.0034`–`0.0100` mm and `0.020`–`0.26` mm.
+- The bound scales with part size: in the first group the peak stays at or below `0.0100` mm for part sizes from `4.8` to `780` mm.
+- The saving release selects the bound: documents saved by the same release fall in both groups.
+
+The two groups match a tessellation chord tolerance that differs between documents. The trim mesh stores handles without coordinates, so a mesh-vertex box has no direct check.
+
+**Need.** A stored or derived per-file tolerance replaces the smaller-excess rule with a containment test, and removes the loss that rule records.
 
 ## 4. Object stream
 
@@ -398,11 +423,11 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Question.** What is the semantic difference between terminal controls `03` and `05` in a `b5 03 5f` face?
 
-**Known.** `catia.md` §6.7 "`b5 03 5f` (per-face node)" defines both terminal forms and retains them independently of loop location and face orientation. A 79-file source sweep contains 29,555 counted faces. Among 3,250 outer loops with complete line-only pcurves, 618 contradict a direct terminal-to-winding assignment; the exterior loop control agrees with all measured windings. The terminal value also differs from a referenced loop's primary control in 4,688 resolved loop occurrences. These are different control fields.
+**Known.** `catia.md` §6.7 "`b5 03 5f` (per-face node)" defines both terminal forms and retains them independently of loop location and face orientation. On outer loops with complete line-only pcurves, the terminal can contradict a direct terminal-to-winding assignment, and the exterior loop control agrees with every measured winding. The terminal value can also differ from a referenced loop's primary control. These are different control fields.
 
 **Need.** Establish the terminal's writer-level meaning and selection rule through an independent source relation. Shared byte encodings alone do not assign allocation-addressing semantics.
 
-**Conflict.** The retained private air-filter quote at physical offset `571941` names face `45375` and loop `45372`; the source frame names face `45379` and loop `45376`. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
+**Conflict.** A retained quote of a face frame can name face and loop identities that are each 4 less than the identities in the source frame. The terminal is `05` in both descriptions. The source bytes govern the identity witness.
 
 ### OS-04. Object-stream body dimension
 
@@ -477,9 +502,9 @@ different, independently constrained orientation route.
 
 **Question.** What scalar roles and control values define an active E5 NURBS extrapolation branch?
 
-**Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation.
+**Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation. Sheet-owned tensor suffixes retain two compact descriptors and optional counts. Unapplied descriptors, flags, and continuation scalars are reported with `geometry.surface-extrapolation-not-transferred`.
 
-**Need.** We must identify an active branch before interpreting its continuation fields.
+**Need.** We must identify an active branch before interpreting its continuation fields. Establish the knot remap, reversal, and restriction for descending or changed active limits before admitting new chart-changing forms.
 
 ## 7. Container and route selection
 
@@ -509,4 +534,16 @@ different, independently constrained orientation route.
 
 **Need.** An independent presentation-object incidence must establish the selector's target namespace. A face-selector rule must identify a native face independently before binding its appearance.
 
-**Note.** The four reference `FeatureForColor` groups in CTC-05 and STC-10 carry black-alpha-127 assets, selector atom `1`, and UUID-named atom `12`. Their 434 governing FBB rows are all pale blue. The sibling AP242 black styles reach 20 annotation-curve occurrences and 68 tessellated-annotation occurrences, respectively, and zero advanced faces. These groups supply no face-selector witness.
+**Note.** A `FeatureForColor` group can carry a black-alpha-127 asset, selector atom `1`, and UUID-named atom `12` while all its governing FBB rows store a pale-blue face color. In the AP242 export of the same model, the black style reaches annotation-curve and tessellated-annotation occurrences and zero advanced faces. These groups supply no face-selector witness.
+
+### RW-01. Extended rational weight-row controls
+
+**Question.** Which non-palindromic A5 weight-row controls select reflected columns and leading repeats?
+
+**Known.** Controls `0003` and `0007` in command `01` expand a complete symmetric row. Additional command-`01` controls and command `05` admit finite row programs under a reflected-column mask and leading-repeat reading. The decoder reports `geometry.surface-weights-inferred` when it emits that reading.
+
+**Need.** Independently authored rational surfaces that distinguish each mask bit, leading-repeat count, and consumed scalar count.
+
+**Conflict.** The extended controls previously failed the row-prefix gate. No decoded rational NURBS surface validates these extended readings.
+
+**Note.** The legacy symmetric and flat-grid forms retain their established readings.

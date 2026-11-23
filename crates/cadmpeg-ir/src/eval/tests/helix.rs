@@ -5,7 +5,8 @@ use crate::math::Point3;
 use crate::math::Vector3;
 use crate::CadIr;
 
-use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
 use crate::ids::{CurveId, ProceduralCurveId};
 
 fn helix_fixture() -> (CadIr, CurveId) {
@@ -15,9 +16,9 @@ fn helix_fixture() -> (CadIr, CurveId) {
         ProceduralCurveId::mint("test:model:entity#helix-evaluation-construction")
             .expect("valid identity");
     let definition = ProceduralCurveDefinition::Helix(
-        crate::geometry::HelixCurveConstruction::try_new(
+        crate::geometry::helix::HelixCurveConstruction::try_new(
             [0.25, 2.0],
-            crate::geometry::HelixFrame {
+            crate::geometry::helix::HelixFrame {
                 center: Point3::new(1.0, -2.0, 3.0),
                 major: Vector3::new(2.0, 0.0, 0.0),
                 minor: Vector3::new(0.0, 2.0, 0.0),
@@ -48,7 +49,9 @@ fn helix_fixture() -> (CadIr, CurveId) {
     (ir, curve_id)
 }
 
-fn helix_of(definition: &ProceduralCurveDefinition) -> &crate::geometry::HelixCurveConstruction {
+fn helix_of(
+    definition: &ProceduralCurveDefinition,
+) -> &crate::geometry::helix::HelixCurveConstruction {
     let ProceduralCurveDefinition::Helix(helix) = definition else {
         panic!("helix construction expected");
     };
@@ -171,9 +174,9 @@ fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
 fn helix_angle_range_can_span_both_large_finite_signs() {
     let parameter = 1e308;
     let definition = ProceduralCurveDefinition::Helix(
-        crate::geometry::HelixCurveConstruction::try_new(
+        crate::geometry::helix::HelixCurveConstruction::try_new(
             [-parameter, parameter],
-            crate::geometry::HelixFrame {
+            crate::geometry::helix::HelixFrame {
                 center: Point3::new(0.0, 0.0, 0.0),
                 major: Vector3::new(1.0, 0.0, 0.0),
                 minor: Vector3::new(0.0, 1.0, 0.0),
@@ -239,7 +242,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     .expect("helix target");
 
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &curve_id,
         target.get(),
@@ -267,7 +270,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         "residual={residual}"
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &curve_id,
         target.get(),

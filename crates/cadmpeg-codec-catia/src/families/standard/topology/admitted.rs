@@ -1,6 +1,7 @@
 //! Immutable standard topology with closed cycles and owned-table references.
 
-use cadmpeg_ir::features::{FinitePoint3, NonEmptyMembers};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::selections::NonEmptyMembers;
 
 use super::{CoedgeUse, EdgeRow, StandardTopologyDraft};
 
@@ -107,7 +108,7 @@ mod tests {
         BoundaryDraft, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopologyDraft,
         StandardTopologyDraft,
     };
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
 
     fn coedge(edge_row: usize, start_vertex: usize, end_vertex: usize) -> CoedgeUse {
         CoedgeUse {

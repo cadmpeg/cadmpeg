@@ -80,7 +80,7 @@ fn a_scope_group_record_is_not_a_face_operand() {
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let operands = |groups: &[DesignConstructionOperandGroup]| {
-                crate::design::decode::operands::decode_face_operands(
+                crate::design::decode::operands::face_operands::decode_face_operands(
                     ctx,
                     scan,
                     std::slice::from_ref(&scope),
@@ -173,7 +173,7 @@ fn terminal_profile_member_cannot_borrow_the_next_group_recipe() {
     let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let operands = crate::design::decode::operands::decode_face_operands(
+            let operands = crate::design::decode::operands::face_operands::decode_face_operands(
                 ctx,
                 scan,
                 &[scope],
@@ -303,17 +303,18 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
             .collect();
         crate::test_support::with_decode_context(|ctx| {
             crate::test_support::zip_test::with_scan(&archive, |scan| {
-                let operands = crate::design::decode::operands::decode_face_operands(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    &groups,
-                    &headers,
-                    std::slice::from_ref(&recipe),
-                    &[],
-                )
-                .unwrap()
-                .0;
+                let operands =
+                    crate::design::decode::operands::face_operands::decode_face_operands(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        &groups,
+                        &headers,
+                        std::slice::from_ref(&recipe),
+                        &[],
+                    )
+                    .unwrap()
+                    .0;
                 assert_eq!(
                     operands
                         .iter()
@@ -391,7 +392,7 @@ fn sweep_profile_member_is_a_face_operand_only_as_a_topology_recipe() {
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let operands = |types: &[crate::records::entity_header::SegmentType]| {
-                crate::design::decode::operands::decode_face_operands(
+                crate::design::decode::operands::face_operands::decode_face_operands(
                     ctx,
                     scan,
                     std::slice::from_ref(&scope),
@@ -473,7 +474,7 @@ fn a_pattern_face_seed_group_member_is_a_face_operand() {
                     offset: 1026,
                 }])
                 .unwrap();
-                crate::design::decode::operands::decode_face_operands(
+                crate::design::decode::operands::face_operands::decode_face_operands(
                     ctx,
                     scan,
                     std::slice::from_ref(&scope),
@@ -568,17 +569,18 @@ fn surface_face_groups_retain_owned_face_recipe_members() {
         let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
         crate::test_support::with_decode_context(|ctx| {
             crate::test_support::zip_test::with_scan(&archive, |scan| {
-                let operands = crate::design::decode::operands::decode_face_operands(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&selection),
-                    std::slice::from_ref(&header),
-                    std::slice::from_ref(&recipe),
-                    &[],
-                )
-                .unwrap()
-                .0;
+                let operands =
+                    crate::design::decode::operands::face_operands::decode_face_operands(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&selection),
+                        std::slice::from_ref(&header),
+                        std::slice::from_ref(&recipe),
+                        &[],
+                    )
+                    .unwrap()
+                    .0;
                 assert_eq!(operands.len(), 1);
                 assert_eq!(operands[0].record_index(), 100);
                 assert_eq!(operands[0].scope_record_index, 50);
@@ -587,17 +589,18 @@ fn surface_face_groups_retain_owned_face_recipe_members() {
                 assert_eq!(operands[0].group_member_ordinal(), Some(0));
                 assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::Face);
                 selection.operand_role = DesignConstructionOperandRole::Other(refused_role);
-                let unrelated = crate::design::decode::operands::decode_face_operands(
-                    ctx,
-                    scan,
-                    std::slice::from_ref(&scope),
-                    std::slice::from_ref(&selection),
-                    std::slice::from_ref(&header),
-                    std::slice::from_ref(&recipe),
-                    &[],
-                )
-                .unwrap()
-                .0;
+                let unrelated =
+                    crate::design::decode::operands::face_operands::decode_face_operands(
+                        ctx,
+                        scan,
+                        std::slice::from_ref(&scope),
+                        std::slice::from_ref(&selection),
+                        std::slice::from_ref(&header),
+                        std::slice::from_ref(&recipe),
+                        &[],
+                    )
+                    .unwrap()
+                    .0;
                 assert!(unrelated.is_empty());
             });
         });
@@ -658,7 +661,7 @@ fn surface_untrim_loop_groups_retain_exact_edge_recipe_members() {
     let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let operands = crate::design::decode::operands::decode_edge_operands(
+            let operands = crate::design::decode::operands::edge_operands::decode_edge_operands(
                 ctx,
                 scan,
                 &[scope],

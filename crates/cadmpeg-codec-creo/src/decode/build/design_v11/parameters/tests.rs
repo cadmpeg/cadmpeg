@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::design::ops::sketch::{Planar, SketchConstraint};
-use cadmpeg_ir::features::{DistinctMembers, FeatureId};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
@@ -49,8 +50,19 @@ fn scope() -> ProductDefinitionId {
 }
 
 fn project_one(parameter: &LegacyParameter) -> DesignParameter {
-    let names = BTreeMap::from([(parameter.id.clone(), parameter.name.as_str())]);
-    project_parameter(parameter, &scope(), &names)
+    project_with(parameter, &[parameter])
+}
+
+fn project_with(parameter: &LegacyParameter, all: &[&LegacyParameter]) -> DesignParameter {
+    let names = all
+        .iter()
+        .map(|parameter| (parameter.id.clone(), parameter.name.as_str()))
+        .collect();
+    let kinds = all
+        .iter()
+        .map(|parameter| (parameter.id.clone(), kind_and_value(parameter).0))
+        .collect();
+    project_parameter(parameter, &scope(), &names, &kinds)
 }
 
 fn neutral_text(parameter: &DesignParameter) -> String {
@@ -135,11 +147,7 @@ fn resolved_dependencies_are_references_matched_without_case() {
     let target = parameter("1", "span", "2", Some(length(2.0)));
     let mut relation = parameter("2", "copy", "SPAN+d3:1+1[span]", Some(length(3.0)));
     relation.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
-    let names = BTreeMap::from([
-        (target.id.clone(), target.name.as_str()),
-        (relation.id.clone(), relation.name.as_str()),
-    ]);
-    let projected = project_parameter(&relation, &scope(), &names);
+    let projected = project_with(&relation, &[&target, &relation]);
     assert_eq!(
         source_tokens(&projected),
         [
@@ -149,6 +157,32 @@ fn resolved_dependencies_are_references_matched_without_case() {
             }),
             ExpressionToken::Text("+d3:1+1[span]".to_owned()),
         ]
+    );
+}
+
+#[test]
+fn a_relation_that_is_one_reference_is_neutral_where_the_kinds_agree() {
+    let target = parameter("1", "span", "2", Some(length(2.0)));
+    let mut copy = parameter("2", "copy", "SPAN", Some(length(2.0)));
+    copy.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+    let projected = project_with(&copy, &[&target, &copy]);
+    assert_eq!(
+        projected.definition,
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(
+            ParameterRef {
+                target: RefTarget::Parameter(target.id.clone()),
+                through: None,
+            }
+        ))))
+    );
+
+    let mut turn = parameter("3", "turn", "SPAN", Some(angle(2.0)));
+    turn.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+    let projected = project_with(&turn, &[&target, &turn]);
+    assert_eq!(
+        source_tokens(&projected),
+        [ExpressionToken::Text("SPAN".to_owned())],
+        "a reference of another kind stays text, so the source holds a text token"
     );
 }
 
@@ -252,4 +286,102 @@ fn a_radial_dimension_presentation_is_stated_only_where_the_dimension_differs() 
             Some(DimensionDisplay::Radius)
         ]
     );
+}
+
+#[test]
+fn the_parameters_that_drop_a_dependency_are_named_in_one_note() {
+    let target = parameter("1", "span", "2", Some(length(2.0)));
+    let depends = |mut parameter: LegacyParameter| {
+        parameter.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+        parameter
+    };
+    let turns = (2..=10)
+        .map(|key| {
+            depends(parameter(
+                &key.to_string(),
+                &format!("turn{key}"),
+                "SPAN",
+                Some(angle(2.0)),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut ir = CadIr::empty();
+    ir.model.parameters = [target.clone()]
+        .into_iter()
+        .chain(turns.iter().cloned())
+        .chain([
+            depends(parameter("11", "copy", "SPAN", Some(length(2.0)))),
+            depends(parameter("12", "sum", "span+1[mm]", Some(length(3.0)))),
+        ])
+        .collect();
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| project(ctx, &mut ir, &scope(), &mut losses))
+        .expect("projection");
+    let [note] = losses.as_slice() else {
+        panic!("one note: {losses:?}");
+    };
+    assert_eq!(
+        note.code,
+        CreoLossCode::DesignParameterReferenceAsText.kind()
+    );
+    let named = turns[..8]
+        .iter()
+        .map(|turn| format!("{} ({})", turn.id, target.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+    assert_eq!(
+        note.message,
+        format!(
+            "9 parameters hold a parameter the decoder resolved as their dependency as text, \
+             or omit it, and state no dependency on it (each with the dependencies it loses): \
+             {named}, ..."
+        )
+    );
+}
+
+#[test]
+fn the_names_a_relation_leaves_out_as_a_cycle_are_named_in_the_note() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x04r=a\0a=r\0theta=t*360\0z=1\0"
+        .to_vec();
+    let data = crate::test_support::build_prt("c", &[("DEPDB_DATA", payload)]);
+    let result = crate::CreoCodec
+        .decode(&mut std::io::Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let [r, a, _, _] = result.ir().model.parameters.as_slice() else {
+        panic!("four curve-expression parameters");
+    };
+    let notes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == CreoLossCode::DesignParameterReferenceAsText.kind())
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one note: {:?}", result.report().losses);
+    };
+    assert_eq!(
+        note.message,
+        format!(
+            "2 parameters hold a parameter the decoder resolved as their dependency as text, \
+             or omit it, and state no dependency on it (each with the dependencies it loses): \
+             {} (cyclic a), {} (cyclic r)",
+            r.id, a.id
+        )
+    );
+}
+
+#[test]
+fn a_model_whose_parameters_hold_every_dependency_has_no_note() {
+    let target = parameter("1", "span", "2", Some(length(2.0)));
+    let mut copy = parameter("2", "copy", "SPAN", Some(length(2.0)));
+    copy.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
+    let mut ir = CadIr::empty();
+    ir.model.parameters = vec![target, copy];
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| project(ctx, &mut ir, &scope(), &mut losses))
+        .expect("projection");
+    assert!(losses.is_empty(), "{losses:?}");
 }

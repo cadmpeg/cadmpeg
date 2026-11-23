@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Derived base scopes take the timeline position of the owner they name.
 
-use crate::design::feature_project::authored_scope_ordinals;
+use crate::design::feature_project::scope_order::authored_scope_ordinals;
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::derived_base::DesignDerivedBaseOwner;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -144,6 +144,7 @@ fn a_derived_base_group_yields_to_a_claimed_owner_or_a_positioned_member() {
                 owner_record: 50,
                 owner_reference_offset: 0,
                 copy_sources: Vec::new(),
+                owner_timeline_name: None,
             },
         );
     }

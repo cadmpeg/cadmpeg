@@ -57,7 +57,7 @@ fn parent_child_composition_uses_column_point_order() {
             .compose(child)
             .unwrap()
             .apply_point(Point3::new(1.0, 0.0, 0.0))
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 }
@@ -303,7 +303,7 @@ fn instance_definition_readers_follow_source_minor_boundaries() {
     append_crc_suffix(&mut reference, &[0xa5, 0x5a]);
     let mut reader = BoundedReader::new(&reference, 0, reference.len()).expect("chunk bounds");
     let parsed = parse_file_reference(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &reference,
         &mut reader,
         ArchiveVersion::V6,
@@ -1619,7 +1619,7 @@ fn contradictory_standard_unit_detail_preserves_scale_and_name() {
     let mut reader = BoundedReader::new(&data, 0, data.len()).expect("bounded units");
     let mut warnings = Diagnostics::new();
     let units = super::unit_detail(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &mut reader,
         archive,
@@ -1649,7 +1649,7 @@ fn file_reference_fixtures_have_valid_nested_checksums() {
             BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded file reference");
         let mut warnings = Diagnostics::new();
         let reference = parse_file_reference(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &mut reader,
             archive,

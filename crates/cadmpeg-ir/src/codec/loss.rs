@@ -3,7 +3,8 @@
 //!
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
-//! holds, so every codec reports them under one namespace.
+//! holds, and for the records its normalizer gave up, so every codec reports
+//! them under one namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -22,6 +23,9 @@ pub(crate) enum DecodeLossCode {
         /// The requested class the document does not hold.
         class: ArenaClass,
     },
+    /// The normalizer gave up records part way, which keep spellings the
+    /// decoder stated.
+    NormalizeIncomplete,
 }
 
 impl DecodeLossCode {
@@ -29,27 +33,43 @@ impl DecodeLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
+            Self::NormalizeIncomplete => "normalize.incomplete",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::DepthNotDelivered { .. } => Severity::Error,
+            Self::NormalizeIncomplete => Severity::Warning,
         }
     }
 
     /// Shared category of the content the shallower depth left out.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::DepthNotDelivered { class } = self;
-        match class {
-            ArenaClass::Model => LossTaxonomy::GeometryNotTransferred,
-            ArenaClass::Design | ArenaClass::Process => LossTaxonomy::ParametricRecordOmitted,
+        match self {
+            Self::DepthNotDelivered {
+                class: ArenaClass::Model,
+            } => LossTaxonomy::GeometryNotTransferred,
+            Self::DepthNotDelivered {
+                class: ArenaClass::Design | ArenaClass::Process,
+            } => LossTaxonomy::ParametricRecordOmitted,
+            Self::NormalizeIncomplete => LossTaxonomy::DecodeDiagnostic,
+        }
+    }
+
+    /// A shallower delivery refuses a strict decode. A record the
+    /// normalizer gave up keeps all its content in a spelling the decoder
+    /// stated, so it refuses nothing.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::DepthNotDelivered { .. } => Some(Severity::Warning),
+            Self::NormalizeIncomplete => None,
         }
     }
 
     fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(Some(Severity::Warning))
+            .with_strict_floor(self.strict_floor())
             .into()
     }
 

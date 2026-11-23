@@ -71,7 +71,10 @@ fn draft_edge_groups_require_an_explicit_parting_tool_or_fixed_edge_reference() 
                 DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
             let ctx = super::super::Ctx::new(&ir, &data, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), expected, "tool={tool} fixed={fixed:?}");
         }
     });
@@ -240,7 +243,10 @@ fn reference_findings(
         });
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         findings
     })
 }
@@ -298,12 +304,18 @@ fn hole_construction_group_accepts_its_retained_auxiliary_role() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X21);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty());
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -340,12 +352,18 @@ fn move_face_group_requires_the_selected_face_role() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty(), "{findings:?}");
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -386,7 +404,10 @@ fn align_group_requires_the_body_or_geometry_role() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.len(), findings_expected, "{role:?} {findings:?}");
         }
     });
@@ -427,7 +448,10 @@ fn mesh_face_group_scope_keeps_native_body_group_guards() {
                 }
                 let ctx = super::super::Ctx::new(&ir, &native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_construction_operand_groups(&ctx, &mut findings);
+                super::super::construction_operands::validate_construction_operand_groups(
+                    &ctx,
+                    &mut findings,
+                );
                 assert_eq!(findings.is_empty(), mutation == 0, "{findings:?}");
             });
         }
@@ -465,12 +489,18 @@ fn thread_face_group_does_not_require_a_specialized_thread_payload() {
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty(), "{findings:?}");
         native.design_construction_operand_groups[0].operand_role =
             DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.len(), 1);
     });
 }
@@ -536,7 +566,10 @@ fn revolve_target_group_requires_a_scope_without_an_angle_construction() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(
                 findings.len(),
                 finding_count,
@@ -612,7 +645,10 @@ fn invalid_group_records(native: &crate::native::F3dNative) -> Vec<String> {
         let ir = cadmpeg_ir::CadIr::empty();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        super::super::validate_construction_operand_groups(&ctx, &mut findings);
+        super::super::construction_operands::validate_construction_operand_groups(
+            &ctx,
+            &mut findings,
+        );
         findings
             .iter()
             .filter(|finding| {
@@ -806,7 +842,10 @@ fn a_loft_construction_group_admits_the_point_role() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
         }
     });
@@ -838,7 +877,10 @@ fn a_surface_patch_group_admits_boundary_profile_and_interior_roles() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
         }
     });
@@ -877,7 +919,10 @@ fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             findings.len()
         };
         let seed_table = || vec![300, 100, 101];
@@ -937,7 +982,10 @@ fn sheet_metal_fold_and_line_bend_groups_validate_their_source_roles() {
                 DesignConstructionOperandRole::Other(role);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.is_empty(), valid, "{findings:?}");
         });
     }

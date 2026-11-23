@@ -34,6 +34,44 @@ pub(crate) fn file_root_id() -> ProductDefinitionId {
     )
 }
 
+pub(crate) fn state_root_definition(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    if ctx.container_only() {
+        return Ok(losses);
+    }
+    let design = match ir.native.namespace("f3d") {
+        Some(namespace) => namespace
+            .arena_iter_as_for_decode::<crate::records::xref::XrefDesign>(ctx, "xref_designs")
+            .next()
+            .transpose()?,
+        None => None,
+    };
+    let document = design.as_ref().map(crate::xref::document_identity);
+    if let Some(root) =
+        ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
+    {
+        if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
+            // The manifest terminal supplies only the lineage; the version
+            // always comes from design ordinal zero.
+            if let (Some(kept), Some(other)) = (&document.document_id, &identity.document_id) {
+                if kept != other {
+                    losses.push(F3dLossCode::XrefLineageDisagrees.note(format!(
+                        "file root lineage {:?} (manifest terminal) disagrees with design ordinal 0 lineage {:?}; the manifest terminal supplies the root lineage",
+                        kept.as_str(),
+                        other.as_str()
+                    )));
+                }
+            }
+            document.document_id = document.document_id.take().or(identity.document_id);
+            document.version = document.version.take().or(identity.version);
+        }
+    }
+    Ok(losses)
+}
+
 /// The file's root definition in `model`, added when it is absent.
 pub(crate) fn file_root(model: &mut Model) -> &mut ProductDefinition {
     let id = file_root_id();
@@ -148,11 +186,15 @@ pub(crate) fn is_top_level(definitions: &[ProductDefinition], occurrence: &Occur
     cadmpeg_ir::products::owner(definitions, occurrence).is_none_or(ProductDefinition::is_root)
 }
 
-/// The occurrence `occurrence` sits in, or `None` at the top level.
-pub(crate) fn parent<'m>(
+/// The occurrence `occurrence` sits in, or `None` at the top level. Where
+/// the owning definition has several placements, the placement is the one
+/// whose identity `occurrence` extends, or whose archive member instance
+/// scope (`instance_scopes`) `occurrence` is in.
+fn parent<'m>(
     definitions: &[ProductDefinition],
     occurrences: &'m [Occurrence],
     occurrence: &OccurrenceId,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Option<&'m Occurrence> {
     let owner = cadmpeg_ir::products::owner(definitions, occurrence)?;
     if owner.is_root() {
@@ -165,10 +207,28 @@ pub(crate) fn parent<'m>(
     let Some(second) = placements.next() else {
         return Some(first);
     };
-    std::iter::once(first)
+    let candidates = std::iter::once(first)
         .chain(std::iter::once(second))
         .chain(placements)
+        .collect::<Vec<_>>();
+    candidates
+        .iter()
+        .copied()
         .find(|candidate| extends(occurrence, &candidate.id))
+        .or_else(|| {
+            let scope = instance_scope(occurrence.as_str())?;
+            let mut matching = candidates
+                .iter()
+                .copied()
+                .filter(|candidate| match instance_scopes.get(&candidate.id) {
+                    Some(instance) => instance == scope,
+                    None => instance_scope(candidate.id.as_str()) == Some(scope),
+                });
+            match (matching.next(), matching.next()) {
+                (Some(placement), None) => Some(placement),
+                _ => None,
+            }
+        })
 }
 
 /// The occurrence each nested occurrence sits in.
@@ -176,10 +236,22 @@ pub(crate) fn parent_ids(
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
 ) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
+    parent_ids_in_members(definitions, occurrences, &BTreeMap::new())
+}
+
+/// [`parent_ids`] for a model that places archive member instances:
+/// `instance_scopes` maps each occurrence that places one to the identity
+/// scope of that instance, which names the placement of a member's own
+/// occurrences below a definition several occurrences place.
+pub(crate) fn parent_ids_in_members(
+    definitions: &[ProductDefinition],
+    occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
+) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
     occurrences
         .iter()
         .filter_map(|occurrence| {
-            parent(definitions, occurrences, &occurrence.id)
+            parent(definitions, occurrences, &occurrence.id, instance_scopes)
                 .map(|parent| (occurrence.id.clone(), parent.id.clone()))
         })
         .collect()
@@ -191,6 +263,14 @@ fn extends(child: &OccurrenceId, parent: &OccurrenceId) -> bool {
         .as_str()
         .strip_prefix(parent.as_str())
         .is_some_and(|rest| rest.starts_with(':'))
+}
+
+fn belongs_to_placement<T: PartialEq + Copy>(
+    assigned: Option<T>,
+    placement: T,
+    first: Option<T>,
+) -> bool {
+    assigned.or(first).is_none_or(|parent| parent == placement)
 }
 
 /// The archive member instance scope of an identity rescoped into it
@@ -269,6 +349,9 @@ pub(crate) fn own_once(
     ir: &mut cadmpeg_ir::CadIr,
     instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Result<Vec<LossNote>, CodecError> {
+    use crate::records::feature::assembly_features::DesignComponentOccurrence;
+    use cadmpeg_ir::products::OperandContainer;
+
     let model = &ir.model;
     let roots = model
         .product_definitions
@@ -398,11 +481,8 @@ pub(crate) fn own_once(
             let Some(&child) = occurrence_at.get(child.as_str()) else {
                 continue;
             };
-            let belongs = !several
-                || match assigned.get(&child) {
-                    Some(&placement) => placement == occurrence,
-                    None => first.is_none_or(|first| first == occurrence),
-                };
+            let belongs =
+                !several || belongs_to_placement(assigned.get(&child).copied(), occurrence, first);
             if belongs && !visited[child] {
                 stack.push((child, Some(node), prototype));
             }
@@ -634,6 +714,126 @@ pub(crate) fn own_once(
         stated.push(occurrence);
     }
 
+    if !ir.model.assembly_joints.is_empty() {
+        let mut native_keys = BTreeMap::new();
+        if let Some(namespace) = ir.native.namespace("f3d") {
+            for carrier in namespace.arena_iter_as_for_decode::<DesignComponentOccurrence>(
+                ctx,
+                "design_component_occurrences",
+            ) {
+                let carrier = carrier?;
+                native_keys.insert(carrier.id, carrier.occurrence_guid.as_str().to_owned());
+            }
+            for reference in namespace
+                .arena_iter_as_for_decode::<crate::records::xref::XrefReference>(
+                    ctx,
+                    "xref_references",
+                )
+            {
+                let reference = reference?;
+                if let Some(key) = reference
+                    .placement_source
+                    .and_then(|source| source.occurrence_guid)
+                {
+                    native_keys.insert(reference.id, key.as_str().to_owned());
+                }
+            }
+            for scope in namespace
+                .arena_iter_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
+                    ctx,
+                    "design_parameter_scopes",
+                )
+            {
+                let scope = scope?;
+                if let Some(key) = scope
+                    .component_insert_construction()
+                    .and_then(|construction| construction.occurrence_key.as_ref())
+                {
+                    native_keys.insert(scope.id.clone(), key.value.as_str().to_owned());
+                }
+            }
+        }
+        let native_key = |at: usize| {
+            let source = &occurrences[nodes[at].occurrence];
+            source
+                .native_ref
+                .as_ref()
+                .and_then(|id| native_keys.get(id))
+                .cloned()
+                .or_else(|| {
+                    let parent = nodes[at].parent.map(|p| &occurrences[nodes[p].occurrence]);
+                    let relative = relative_key(source, parent);
+                    let key = relative.strip_prefix(':').unwrap_or(&relative);
+                    (source.native_ref.is_none() && !key.contains([':', '#']))
+                        .then(|| key.to_owned())
+                })
+        };
+        let mut keyed = BTreeMap::new();
+        for &at in instances.keys().filter(|&&at| !nodes[at].transparent) {
+            if let Some(key) = native_key(at) {
+                keyed
+                    .entry((definition_id(nodes[at].owner), key.to_ascii_lowercase()))
+                    .and_modify(|target| *target = None)
+                    .or_insert_with(|| Some(identities[&at].clone()));
+            }
+        }
+        let mut selections = HashMap::new();
+        for (index, node) in nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| !node.transparent)
+        {
+            let mut chain = Vec::new();
+            let mut current = Some(index);
+            while let Some(at) = current {
+                if !nodes[at].transparent {
+                    chain.push(at);
+                }
+                current = nodes[at].parent;
+            }
+            let Some(top) = chain.pop() else { continue };
+            if chain.is_empty() || instances[&nodes[top].canonical].len() != 1 {
+                continue;
+            }
+            let keys = chain
+                .into_iter()
+                .rev()
+                .map(|at| {
+                    let key = native_key(nodes[at].canonical)?;
+                    let target = keyed
+                        .get(&(definition_id(nodes[at].owner), key.to_ascii_lowercase()))
+                        .and_then(Option::as_ref);
+                    (target == Some(&identities[&nodes[at].canonical])).then_some(key)
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(keys) = keys {
+                selections.insert(
+                    occurrences[node.occurrence].id.clone(),
+                    (occurrences[nodes[top].occurrence].id.clone(), keys),
+                );
+            }
+        }
+        for connector in ir
+            .model
+            .assembly_joints
+            .iter_mut()
+            .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors_mut)
+        {
+            if let OperandContainer::Occurrence {
+                occurrence,
+                occurrence_path,
+            } = &mut connector.operand.container
+            {
+                if let Some((top, keys)) = selections.get(occurrence) {
+                    let mut path = keys.clone();
+                    path.append(occurrence_path);
+                    *occurrence = top.clone();
+                    *occurrence_path = path;
+                }
+            }
+        }
+    }
+
     let mut rewrite = SharedIdentities {
         ctx,
         map: &identity_map,
@@ -853,15 +1053,17 @@ pub(crate) struct Expanded {
     pub(crate) occurrences: Vec<Occurrence>,
     /// The occurrence each expanded instance is an instance of.
     pub(crate) occurrence_of: BTreeMap<OccurrenceId, OccurrenceId>,
+    pub(crate) parents: BTreeMap<OccurrenceId, OccurrenceId>,
 }
 
 /// Expands the instance tree of `definitions` and `occurrences` as
 /// [`own_once`] found it, each instance at the values its top-level
-/// occurrence's overrides give it. An expansion past the default entity
-/// limit, which bounds the decoder's own, is refused.
+/// occurrence's overrides give it. The decode policy bounds the instance count.
 pub(crate) fn expand(
+    limits: &cadmpeg_core::decode::ResourceLimits,
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Result<Expanded, CodecError> {
     /// One instance to expand: its occurrence, the instance it sits in, and
     /// its path below its top-level occurrence.
@@ -880,10 +1082,33 @@ pub(crate) fn expand(
         .enumerate()
         .map(|(index, definition)| (definition.id.as_str(), index))
         .collect::<HashMap<_, _>>();
+    let mut placements = vec![Vec::new(); definitions.len()];
+    for (index, occurrence) in occurrences.iter().enumerate() {
+        if let Some(&definition) = definition_at.get(occurrence.prototype.as_str()) {
+            placements[definition].push(index);
+        }
+    }
+    let mut assigned = BTreeMap::new();
+    for (definition, row) in definitions.iter().enumerate() {
+        if placements[definition].len() < 2 {
+            continue;
+        }
+        for child in &row.occurrences {
+            let Some(&child) = occurrence_at.get(child.as_str()) else {
+                continue;
+            };
+            if let Some(placement) =
+                assignment(child, &placements[definition], occurrences, instance_scopes)
+            {
+                assigned.insert(&child.id, &occurrences[placement].id);
+            }
+        }
+    }
     let mut expanded = Expanded {
         definitions: definitions.to_vec(),
         occurrences: Vec::new(),
         occurrence_of: BTreeMap::new(),
+        parents: BTreeMap::new(),
     };
     for definition in &mut expanded.definitions {
         if !definition.is_root() {
@@ -902,7 +1127,6 @@ pub(crate) fn expand(
         })
         .collect::<Vec<_>>();
     stack.reverse();
-    let limits = cadmpeg_core::decode::ResourceLimits::default();
     let mut seen = BTreeSet::new();
     while let Some(pending) = stack.pop() {
         let Some(&occurrence) = occurrence_at.get(pending.occurrence.as_str()) else {
@@ -952,10 +1176,16 @@ pub(crate) fn expand(
         expanded
             .occurrence_of
             .insert(instance.clone(), occurrence.id.clone());
+        if let Some(parent) = pending.parent {
+            expanded.parents.insert(instance.clone(), parent);
+        }
         expanded.occurrences.push(copy);
         let top = pending.top.unwrap_or(occurrence);
         if let Some(&prototype) = definition_at.get(occurrence.prototype.as_str()) {
             for child in definitions[prototype].occurrences.iter().rev() {
+                if !belongs_to_placement(assigned.get(child).copied(), &occurrence.id, None) {
+                    continue;
+                }
                 let mut path = pending.path.clone();
                 path.push(child.clone());
                 stack.push(Pending {
@@ -989,8 +1219,14 @@ pub(crate) fn stated(
 /// [`expand`] gives it.
 #[cfg(test)]
 pub(crate) fn world_poses(model: &Model) -> BTreeMap<OccurrenceId, Transform> {
-    let expanded = expand(&model.product_definitions, &model.occurrences).expect("expand");
-    let parents = parent_ids(&expanded.definitions, &expanded.occurrences);
+    let expanded = expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("expand");
+    let parents = &expanded.parents;
     let local = expanded
         .occurrences
         .iter()

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::thread::{exact_thread_construction, thread_modeled_flag_loss};
+use crate::design::decode::scopes::thread::{
+    exact_thread_construction, thread_modeled_entries_loss, thread_modeled_flag_loss,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadExtended, DesignThreadForm,
@@ -226,6 +228,32 @@ fn extended(construction: &DesignThreadConstruction) -> &DesignThreadExtended {
 }
 
 #[test]
+fn the_extended_standard_trailer_reads_both_hands_and_rejects_other_flags() {
+    for owner_marked in [false, true] {
+        for (flag, expected) in [(0, Some(false)), (1, Some(true)), (2, None)] {
+            let mut fixture = Fixture::modeled();
+            fixture.owner_marked = owner_marked;
+            let mut bytes = fixture.bytes();
+            *bytes.last_mut().unwrap() = flag;
+            let decoded = fixture.decode_bytes(&bytes);
+            assert_eq!(decoded.is_some(), flag < 2);
+            assert_eq!(
+                decoded
+                    .as_ref()
+                    .and_then(|value| extended(value).right_handed),
+                expected,
+            );
+            if let Some(decoded) = decoded {
+                assert!(decoded.modeled);
+                assert_eq!(decoded.profile.as_str(), "ISO Metric profile");
+                assert_eq!(extended(&decoded).class, "6g");
+                assert!(extended(&decoded).external);
+            }
+        }
+    }
+}
+
+#[test]
 fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
     let construction = Fixture::cosmetic().decode().expect("cosmetic thread");
     assert_eq!(construction.form, DesignThreadForm::StandardExtended);
@@ -299,10 +327,33 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let cosmetic = Fixture::cosmetic().decode().expect("cosmetic thread");
     assert!(!cosmetic.modeled);
     assert!(thread_modeled_flag_loss(&scope, &cosmetic).is_none());
-    let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
-    cases.push(("flag without entry", flagged));
+    let flagged_construction = flagged.decode().expect("flag without entry");
+    assert!(flagged_construction.modeled);
+    assert_eq!(
+        flagged_construction.form,
+        DesignThreadForm::StandardExtended
+    );
+    let mut framed_scope = scope.clone();
+    framed_scope
+        .try_edit(|draft| {
+            draft.frame_length = 600;
+            draft.paired_byte_offset = 600;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        thread_modeled_entries_loss(&flagged.bytes(), &framed_scope, &flagged_construction)
+            .expect("entries-absent loss")
+            .code,
+        crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.kind()
+    );
+    assert!(
+        thread_modeled_entries_loss(&Fixture::modeled().bytes(), &framed_scope, &construction)
+            .is_none()
+    );
+    let mut cases = Vec::new();
     let mut two = Fixture::modeled();
     two.entries = 2;
     cases.push(("two entries", two));

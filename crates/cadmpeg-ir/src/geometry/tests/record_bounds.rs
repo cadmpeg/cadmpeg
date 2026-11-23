@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 use serde::{
     de::{value::Error, value::F64Deserializer, value::SeqDeserializer, IntoDeserializer, Visitor},
     Deserialize, Deserializer,
 };
 
-use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds};
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{ProceduralSurface, RecordBounds};
 use crate::ids::{ProceduralSurfaceId, SurfaceId};
 
 fn id() -> ProceduralSurfaceId {

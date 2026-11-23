@@ -471,6 +471,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             partially_resolved_edge_members: 1,
             unresolved_edge_selections: 1,
             unrepaired_lost_edge_references: 1,
+            unplaced_linked_scopes: Vec::new(),
+            record_ordered_linked_scopes: Vec::new(),
         }
     );
 
@@ -508,7 +510,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unreachable!();
         };
         groups[2].edges =
-            cadmpeg_ir::features::EdgeSelection::historical(
+            cadmpeg_ir::features::selections::EdgeSelection::historical(
                 cadmpeg_ir::ids::FeatureInputTopologyId::mint(
                     "test:model:feature-input#history-input",
                 )
@@ -999,6 +1001,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         category: None,
         base_color: Some(material),
         properties: Default::default(),
+        native_ref: None,
     });
     let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
@@ -1010,6 +1013,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         object_type: None,
         visible: None,
         channels: Default::default(),
+        native_ref: None,
     };
     ir.model.appearance_bindings = vec![
         binding("body", AppearanceTarget::Body(body)),
@@ -1119,7 +1123,8 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
 
 #[test]
 fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for (faces, expected) in [
         (FaceSelection::Native("native:face-group".into()), 1),

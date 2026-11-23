@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::features::{
+use crate::features::selections::{
     EdgeSelection, FaceSelection, GeneratedEdgeRef, GeneratedFaceRef, VertexSelection,
 };
 use serde_json::json;

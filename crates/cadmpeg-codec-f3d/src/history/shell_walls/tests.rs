@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{removed_face_selection, wall_offset};
+use super::{bind_shell_removed_faces, removed_face_selection, wall_offset, ShellWalls};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalEntityDelta,
     AsmHistoricalPlane, AsmHistoricalRowsDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition,
 };
-use cadmpeg_ir::features::ShellMode;
+use cadmpeg_ir::features::operation_settings::ShellMode;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn point(x: f64, y: f64, z: f64) -> Point3 {
@@ -310,4 +312,96 @@ fn a_shell_on_both_sides_walls_each_side_at_half_its_thickness() {
     assert_eq!(wall_offset(2.0, None), Some(2.0));
     assert_eq!(wall_offset(2.0, Some(ShellMode::Skin)), None);
     assert_eq!(wall_offset(2.0, Some(ShellMode::Pipe)), None);
+}
+
+fn bind_selection(
+    selection: &mut FaceSelection,
+    member_count: usize,
+    changed: &AsmHistoricalTransition,
+    output: &State,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::topology::construction::DesignConstructionOperandGroup;
+
+    let members: Vec<_> = (7..7 + member_count).collect();
+    let offsets: Vec<_> = (0..member_count).map(|ordinal| ordinal * 11).collect();
+    let group: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
+        "id": "f3d:test:group#43", "byte_offset": 0, "class_tag": "261",
+        "record_index": 43, "scope_record_index": 42, "scope_reference_ordinal": 0,
+        "members": members, "member_offsets": offsets, "role": 68_719_476_736_u64,
+        "role_offset": 0, "paired_byte_offset": 200, "paired_class_tag": "266",
+        "frame": {
+            "member_count_offset": 0, "opaque_index": 1, "opaque_index_offset": 18,
+            "opaque_scalar": 0.0, "opaque_scalar_offset": 22, "trailing_flags": [],
+            "trailing_record_indices": [], "trailing_record_offsets": [], "variant": false
+        }
+    }))
+    .unwrap();
+    let scope = DesignParameterScope::empty("f3d:test:scope#42", DesignFeatureKind::Shell, 42);
+    bind_shell_removed_faces(
+        selection,
+        &FeatureId::mint("f3d:test:feature#42").unwrap(),
+        &scope,
+        &[group],
+        &ShellWalls {
+            thickness: 2.0,
+            mode: None,
+            previous_state_id: 3,
+            transition: changed,
+            input: Some(&box_faces().0),
+            output: Some(&output.0),
+        },
+    )
+}
+
+fn historical_selection(slots: &[i64]) -> FaceSelection {
+    let feature = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let prefix = crate::ids::feature_input_prefix(&feature, 3);
+    FaceSelection::historical(
+        crate::ids::history_input_state_id(&prefix),
+        slots
+            .iter()
+            .map(|&slot| crate::ids::history_input_face_id(&prefix, slot))
+            .collect(),
+        "f3d:test:group#43".into(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn recipe_faces_survive_a_different_wall_set_with_equal_cardinality() {
+    let output = box_faces().plane(20, point(20.0, 15.0, 18.0), vector(0.0, 0.0, 1.0));
+    let changed = transition(&[2, 4], &[]);
+    assert_eq!(removed(&[7], 2.0, &changed, &output), Some(vec![4]));
+    let expected = historical_selection(&[2]);
+    let mut selection = expected.clone();
+    let loss = bind_selection(&mut selection, 1, &changed, &output).unwrap();
+    assert_eq!(selection, expected);
+    assert_eq!(
+        loss.code.local_code(),
+        "feature.shell-removed-faces-assumed"
+    );
+    let feature = FeatureId::mint("f3d:test:feature#42").unwrap();
+    let prefix = crate::ids::feature_input_prefix(&feature, 3);
+    for slot in [2, 4] {
+        assert!(loss
+            .message
+            .contains(crate::ids::history_input_face_id(&prefix, slot).as_str()));
+    }
+    assert!(loss.message.contains("the recipe faces are retained"));
+}
+
+#[test]
+fn equal_face_sets_preserve_recipe_member_order_without_a_loss() {
+    let expected = historical_selection(&[4, 2]);
+    let mut selection = expected.clone();
+    assert!(bind_selection(&mut selection, 2, &transition(&[4, 2], &[]), &box_faces()).is_none());
+    assert_eq!(selection, expected);
+}
+
+#[test]
+fn an_unresolved_group_keeps_the_wall_selection() {
+    let mut selection = FaceSelection::Native("f3d:test:group#43".into());
+    assert!(bind_selection(&mut selection, 1, &transition(&[2], &[]), &inside_shell()).is_none());
+    assert_eq!(selection, historical_selection(&[2]));
 }

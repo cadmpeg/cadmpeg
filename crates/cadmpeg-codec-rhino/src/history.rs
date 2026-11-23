@@ -945,8 +945,8 @@ struct CageJson<'a>(&'a crate::cage::Cage);
 
 struct MeshVertices<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -988,8 +988,8 @@ impl serde::Serialize for MeshVertices<'_> {
 
 struct MeshTriangles<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -1068,8 +1068,8 @@ impl serde::Serialize for MeshTriangles<'_> {
 
 struct MeshStripLengths<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -1093,8 +1093,8 @@ impl serde::Serialize for MeshStripLengths<'_> {
 
 struct MeshNormals<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -1448,12 +1448,16 @@ fn extended_geometry_json(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
-    warnings: &mut Diagnostics,
-    refusal: &mut Option<cadmpeg_core::CodecError>,
+    sink: &mut GeometrySink<'_>,
 ) -> Option<String> {
+    let GeometrySink {
+        warnings,
+        refusal,
+        mesh_budget,
+        ..
+    } = sink;
     let data = expand.data();
     if crate::mesh::supported_class(value.class_id) {
-        let mut budget = crate::mesh::MeshBudget::new();
         let mesh = optional_geometry(
             crate::mesh::decode(
                 expand,
@@ -1472,7 +1476,7 @@ fn extended_geometry_json(
                     scale,
                     userdata: &value.userdata,
                 },
-                &mut budget,
+                mesh_budget,
             ),
             refusal,
         )?;
@@ -1515,7 +1519,6 @@ fn extended_geometry_json(
             .ok(),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
-        let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = optional_geometry(
             crate::extrusion::decode(
                 expand,
@@ -1527,7 +1530,7 @@ fn extended_geometry_json(
                     scale,
                 },
                 &value.userdata,
-                &mut budget,
+                mesh_budget,
             ),
             refusal,
         )?;
@@ -1547,11 +1550,11 @@ fn extended_geometry_json(
     } else if crate::brep::supported_class(value.class_id) {
         crate::decode::embedded_brep_json(
             expand,
-            data,
             value.class_data_range.clone(),
             archive,
             writer_version,
             scale,
+            mesh_budget,
             refusal,
         )
     } else if value.class_id == crate::hatch::CLASS {
@@ -1688,6 +1691,7 @@ fn extended_geometry_json(
 /// in `geometry.curves`/`surfaces` fails `Check::CarrierReachability`.
 struct GeometrySink<'a> {
     warnings: &'a mut Diagnostics,
+    mesh_budget: &'a mut crate::mesh::MeshBudget,
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
@@ -1807,8 +1811,7 @@ fn structured_value_properties(
                             archive,
                             writer_version,
                             scale,
-                            sink.warnings,
-                            &mut sink.refusal,
+                            sink,
                         );
                         if sink.refusal.is_some() {
                             return Ok(());
@@ -1928,6 +1931,30 @@ fn structured_value_properties(
     Ok(())
 }
 
+/// The identity key of each record: its UUID where no earlier record holds
+/// it and it is not nil, else its source offset.
+fn record_keys(records: &[HistoryRecord]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    records
+        .iter()
+        .map(|record| {
+            if !record.id.is_nil() && seen.insert(record.id) {
+                format!("{}", record.id)
+            } else {
+                format!("offset-{}", record.source_range.start)
+            }
+        })
+        .collect()
+}
+
+fn feature_id_text(key: &str) -> String {
+    format!("rhino:history:feature#{key}")
+}
+
+fn native_record_id(key: &str) -> String {
+    format!("rhino:history:record#{key}")
+}
+
 /// Projects source history into ordered neutral native operations.
 /// Projects history records into native features and carrier geometry.
 ///
@@ -1942,6 +1969,7 @@ pub(crate) fn project(
         Option<i64>,
         MillimeterScale,
     )>,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
 ) -> Result<(usize, usize, usize, usize), ProjectionError> {
@@ -1949,6 +1977,7 @@ pub(crate) fn project(
 
     let mut sink = GeometrySink {
         warnings,
+        mesh_budget,
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
@@ -1956,19 +1985,10 @@ pub(crate) fn project(
     };
     let mut ids = Vec::new();
     let mut native_ids = Vec::new();
-    let mut seen_record_ids = HashSet::new();
 
-    for record in records {
-        let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
-        let key = if unique {
-            Ok(format!("{}", record.id))
-        } else {
-            Ok(format!("offset-{}", record.source_range.start))
-        }
-        .map_err(ProjectionError::Codec)?;
-        let feature_id = format!("rhino:history:feature#{key}");
-        ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
-        native_ids.push(format!("rhino:history:record#{key}"));
+    for key in record_keys(records) {
+        ids.push(FeatureId::mint(feature_id_text(&key)).map_err(|error| error.to_string())?);
+        native_ids.push(native_record_id(&key));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
@@ -2079,8 +2099,9 @@ pub(crate) fn project(
         );
         let properties = named_properties(&native_ids[index], properties, sink.warnings);
         let parameters = named_properties(&native_ids[index], parameters, sink.warnings);
-        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-            .map_err(|error| ProjectionError::Codec(error.into()))?;
+        let dependencies =
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+                .map_err(|error| ProjectionError::Codec(error.into()))?;
 
         let feature_id_text = ids[index].as_str().to_owned();
         let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
@@ -2098,7 +2119,7 @@ pub(crate) fn project(
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
                     parameters,
@@ -2145,6 +2166,8 @@ pub(crate) fn project(
         sink.redundant_repairs,
     ))
 }
+
+pub(crate) mod v11;
 
 #[cfg(test)]
 pub(crate) mod tests;

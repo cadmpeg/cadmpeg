@@ -4,7 +4,8 @@ use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance}
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::pmi::{PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget};
 
-use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
+use super::{datum_names, MM_PER_INCH, VALUE_TOLERANCE};
+use crate::test_support::nist::ftc_06;
 
 fn named_position<'a>(ir: &'a cadmpeg_ir::CadIr, name: &str) -> &'a cadmpeg_ir::pmi::PmiAnnotation {
     let annotation = ir
@@ -107,7 +108,7 @@ fn assert_radius_count(geometries: &[(f64, [f64; 3], [f64; 3])], radius: f64, co
 
 #[test]
 fn ftc_06_emits_base_datums_with_face_targets() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     let expected = [
         ("G", 1, "cylinder"),
@@ -174,7 +175,7 @@ fn ftc_06_emits_base_datums_with_face_targets() {
 
 #[test]
 fn ftc_06_positions_target_typed_cylinders_only() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     let position = named_position(ir, "Position12");
     assert_eq!(position.targets.len(), 8);
@@ -257,7 +258,7 @@ fn ftc_06_positions_target_typed_cylinders_only() {
 
 #[test]
 fn ftc_06_diameter8_targets_both_counted_spheres() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let spherical_target_losses = result
         .report()
         .losses
@@ -335,7 +336,7 @@ fn ftc_06_diameter8_targets_both_counted_spheres() {
 
 #[test]
 fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     let annotation = ir
         .model
@@ -388,7 +389,7 @@ fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
 
 #[test]
 fn ftc_06_row_89_display_depicts_the_individually_applied_position() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let individually = super::depicted_names(result.ir())
         .into_iter()
         .filter(|(text, _)| text.as_deref() == Some("4X INDIVIDUALLY"))

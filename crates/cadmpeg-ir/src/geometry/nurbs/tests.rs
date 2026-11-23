@@ -7,7 +7,7 @@ use crate::{
 
 #[test]
 fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{KnotVector, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
     let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).expect("finite point");
     let rows = vec![
@@ -213,7 +213,7 @@ fn admitted_surface_grid_preserves_the_existing_wire() {
 
 #[test]
 fn owned_curve_mapping_preserves_polynomial_and_rational_poles() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
     let rational = NurbsCurve::from_lanes(
@@ -288,7 +288,7 @@ fn a_refused_surface_pole_edit_keeps_the_prior_poles() {
 
 #[test]
 fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::NurbsCurve;
 
     let polynomial = NurbsCurve::from_lanes(
@@ -346,7 +346,7 @@ fn curve_map_updates_every_polynomial_and_rational_pole_atomically() {
 
 #[test]
 fn surface_map_updates_every_polynomial_and_rational_pole_atomically() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     let rational = surface();
@@ -490,7 +490,7 @@ fn bspline_surface_edit_refusal_keeps_control_points() {
         }
         let mut moved = point.get();
         moved.z = 3.0;
-        crate::features::FinitePoint3::new(moved)
+        crate::features::geometry::FinitePoint3::new(moved)
             .ok_or_else(|| NurbsError::Structure("non-finite pole".into()))
     });
     assert_eq!(
@@ -520,7 +520,7 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .try_map_control_points(|_, point| {
             let mut moved = point.get();
             moved.x = f64::NAN;
-            crate::features::FinitePoint3::new(moved).ok_or(())
+            crate::features::geometry::FinitePoint3::new(moved).ok_or(())
         })
         .is_err());
     assert_eq!(surface, original);
@@ -531,7 +531,7 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .try_map_control_points(|_, point| {
             let mut moved = point.get();
             moved.z = 2.0;
-            crate::features::FinitePoint3::new(moved).ok_or(())
+            crate::features::geometry::FinitePoint3::new(moved).ok_or(())
         })
         .unwrap();
     assert!(surface
@@ -577,7 +577,9 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     assert_eq!(surface.control_grid(), surface.pole_grid().raw_points());
     assert_eq!(surface.poles(), surface.pole_grid().raw_points().concat());
     assert_eq!(
-        surface.pole(1, 0).map(crate::features::FinitePoint3::get),
+        surface
+            .pole(1, 0)
+            .map(crate::features::geometry::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(surface.pole(2, 0), None);
@@ -645,7 +647,7 @@ fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
 
 #[test]
 fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{NurbsCurve, NurbsSurfaceAxis, NurbsSurfaceLanes};
     use crate::geometry::pcurve::PcurveNurbs;
     use crate::math::Point2;
@@ -737,7 +739,7 @@ fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
 
 #[test]
 fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{BsplineSurface, KnotVector};
     use crate::math::Point3;
 
@@ -763,7 +765,7 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
 
 #[test]
 fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::geometry::nurbs::{
         bezier::positive_controls, NurbsCurve, NurbsError, NurbsPoles3, NurbsSurfaceAxis,
         NurbsSurfaceLanes,
@@ -956,7 +958,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
 #[test]
 fn context_free_pole_reconstruction_does_not_enter_a_decode_constructor() {
     use super::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurfaceAxis, PoleValue};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
 
     #[derive(Clone, Copy)]
     struct Pole(Point3);
@@ -1082,7 +1084,7 @@ fn standard_weighted_pole_pairing_preserves_order_and_first_refusal() {
 #[test]
 fn admitted_pole_conversion_keeps_all_four_owned_storage_shapes() {
     use super::{NurbsPoleGrid, NurbsPoles3, PoleValue, WeightedPole3};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::scalar::NonZeroReal;
     use cadmpeg_core::CodecError;
 
@@ -1192,7 +1194,7 @@ mod knot_admission;
 fn surface_cache_fit_round_trips_and_rejects_invalid_values() {
     let mut surface = surface();
     assert_eq!(surface.cache_fit_tolerance(), None);
-    let fit = crate::geometry::FitTolerance::try_new(0.125).expect("fit");
+    let fit = crate::geometry::legacy_cache::FitTolerance::try_new(0.125).expect("fit");
     surface.set_cache_fit_tolerance(Some(fit));
     let wire = serde_json::to_value(&surface).expect("wire");
     assert_eq!(wire["cache_fit_tolerance"], 0.125);

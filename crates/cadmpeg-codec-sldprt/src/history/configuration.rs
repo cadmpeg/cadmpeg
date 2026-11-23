@@ -11,14 +11,15 @@ mod lane_tests;
 mod profile_body_tests;
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::{
-    features::{
-        ConfigurationEvaluation, DatumPlaneReference, DesignConfiguration, FaceSelection,
-        FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, ParameterValue,
-    },
-    scalar::{Angle, Length},
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, DesignConfiguration, ParameterValue,
 };
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::bind::bind_unique_sketch_feature;
@@ -43,18 +44,20 @@ fn configuration_definitions(
 
 fn apply_configuration_state(
     feature: &mut cadmpeg_ir::features::Feature,
-    state: &cadmpeg_ir::features::ConfigurationFeatureState,
+    state: &cadmpeg_ir::features::parameters::ConfigurationFeatureState,
 ) {
     let state = state.clone();
     let (outputs, suppressed) = match state.evaluation {
-        ConfigurationEvaluation::Suppressed {} => {
-            (cadmpeg_ir::features::DistinctMembers::default(), true)
-        }
+        ConfigurationEvaluation::Suppressed {} => (
+            cadmpeg_ir::features::selections::DistinctMembers::default(),
+            true,
+        ),
         ConfigurationEvaluation::Active { outputs } => (outputs, false),
     };
     feature.suppressed = Some(suppressed);
     feature.dependencies = state.dependencies;
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::new(state.definition, outputs);
+    feature.evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::new(state.definition, outputs);
 }
 
 fn copy_configuration_features(
@@ -69,7 +72,7 @@ fn copy_configuration_features(
 
 fn copy_configuration_state_features(
     features: &[cadmpeg_ir::features::Feature],
-    states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
+    states: &BTreeMap<FeatureId, cadmpeg_ir::features::parameters::ConfigurationFeatureState>,
 ) -> Vec<cadmpeg_ir::features::Feature> {
     let mut copied = Vec::new();
     for feature in features {
@@ -85,7 +88,10 @@ fn copy_configuration_state_features(
 
 fn configuration_feature_state(
     feature: cadmpeg_ir::features::Feature,
-) -> (FeatureId, cadmpeg_ir::features::ConfigurationFeatureState) {
+) -> (
+    FeatureId,
+    cadmpeg_ir::features::parameters::ConfigurationFeatureState,
+) {
     let (definition, outputs) = feature.evaluation.into_parts();
     let evaluation = if feature.suppressed.unwrap_or(false) {
         ConfigurationEvaluation::Suppressed {}
@@ -94,7 +100,7 @@ fn configuration_feature_state(
     };
     (
         feature.id,
-        cadmpeg_ir::features::ConfigurationFeatureState {
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState {
             evaluation,
             dependencies: feature.dependencies,
             definition,
@@ -143,14 +149,15 @@ pub(crate) fn enrich_history_parameters_values_only(
 /// sketch-block, split-line, parameter, reference-plane, reference-point,
 /// coordinate-system, PMI, evaluated-parameter, reference-axis, and
 /// revolution-input enrichments; the read path additionally applies
-/// hole-construction enrichment (selected by `mode`).
+/// hole-construction enrichment (selected by `mode`). Returns the loss notes
+/// of the enrichments.
 pub(crate) fn enrich_history_semantic(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
-) -> Result<usize, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(
         ctx, histories, lanes,
     )?;
@@ -185,8 +192,15 @@ pub(crate) fn enrich_history_semantic(
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(ctx, histories)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
-    crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
-    Ok(ambiguous_body_features)
+    let mut losses = Vec::new();
+    if ambiguous_body_features > 0 {
+        losses.push(crate::loss::SldprtLossCode::FeatureBodyPathAmbiguous.note(format!(
+            "{ambiguous_body_features} feature(s) retain ambiguous compact body-path candidates because a local identifier also spells a complete tagged entry."
+        )));
+    }
+    losses
+        .extend(crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes));
+    Ok(losses)
 }
 
 /// The shared compact/generated projection block, declared once for both codec
@@ -602,7 +616,7 @@ pub(super) fn restore_configuration_tree_node_definitions(
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: *role,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }));
     }
 }
@@ -615,11 +629,21 @@ pub(crate) fn project_configuration_sketch_states(
     lanes: &[crate::records::FeatureInputLane],
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
+    plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
+    let solid = crate::resolved_features::stream_readings::SolidEdges::new(
+        &ir.geometry.edges,
+        &ir.geometry.vertices,
+        &ir.geometry.points,
+        &ir.geometry.curves,
+    );
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
+        let held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::after_finalized(
+            &ir.model.sketch_entities,
+        );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
@@ -710,25 +734,35 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 exact,
             );
-            crate::resolved_features::profiles::project_compact_sketch_profiles(
-                ctx,
-                &mut features,
-                &mut ir.model.sketches,
-                &mut ir.model.sketch_entities,
-                histories,
-                scoped_lanes,
-                &mut losses,
-            )?;
-            let mut held_handles = Vec::new();
-            crate::resolved_features::profiles::project_marker_backed_sketches(
-                ctx,
-                &mut features,
-                &mut ir.model.sketches,
-                &mut ir.model.sketch_entities,
-                &mut held_handles,
-                histories,
-                scoped_lanes,
-            )?;
+            plane_bindings.extend(
+                crate::resolved_features::profiles::project_compact_sketch_profiles(
+                    ctx,
+                    &mut features,
+                    &mut ir.model.sketches,
+                    &mut ir.model.sketch_entities,
+                    histories,
+                    scoped_lanes,
+                    &mut losses,
+                )?,
+            );
+            let mut held_handles = held_handles;
+            plane_bindings.extend(
+                crate::resolved_features::profiles::project_marker_backed_sketches(
+                    ctx,
+                    &mut features,
+                    &mut ir.model.sketches,
+                    crate::resolved_features::profiles::MarkerSketchEntities {
+                        projected: &mut ir.model.sketch_entities,
+                        held: &mut held_handles,
+                    },
+                    crate::resolved_features::profiles::MarkerSources {
+                        histories,
+                        lanes: scoped_lanes,
+                        solid: &solid,
+                    },
+                    &mut losses,
+                )?,
+            );
             crate::resolved_features::profiles::project_sketch_block_profiles(
                 &mut features,
                 &mut ir.model.sketches,
@@ -875,6 +909,17 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::resolved_features::sweeps::bind(
+                &mut features,
+                histories,
+                scoped_lanes,
+                crate::resolved_features::sweeps::Geometry {
+                    sketches: &ir.model.sketches,
+                    entities: &mut ir.model.sketch_entities,
+                    spatial_entities: &mut ir.model.spatial_sketch_entities,
+                },
+                &mut losses,
+            );
             crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]
@@ -939,18 +984,20 @@ fn inherit_configuration_shared_semantics(
                 .as_ref()
                 .map(copy_configuration_plane_reference);
         } else if let (
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face }),
-            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: base_face }),
+            Some(cadmpeg_ir::features::datums::DatumPlaneReference::Face { face }),
+            Some(cadmpeg_ir::features::datums::DatumPlaneReference::Face { face: base_face }),
         ) = (reference, base_reference)
         {
             let incomplete = match face {
-                cadmpeg_ir::features::FaceSelection::Faces(faces)
-                | cadmpeg_ir::features::FaceSelection::Resolved { faces, .. } => faces.is_empty(),
-                cadmpeg_ir::features::FaceSelection::Historical { .. } => false,
-                cadmpeg_ir::features::FaceSelection::Generated { .. } => false,
-                cadmpeg_ir::features::FaceSelection::HistoricalPartial { .. } => true,
-                cadmpeg_ir::features::FaceSelection::Unresolved
-                | cadmpeg_ir::features::FaceSelection::Native(_) => true,
+                cadmpeg_ir::features::selections::FaceSelection::Faces(faces)
+                | cadmpeg_ir::features::selections::FaceSelection::Resolved { faces, .. } => {
+                    faces.is_empty()
+                }
+                cadmpeg_ir::features::selections::FaceSelection::Historical { .. } => false,
+                cadmpeg_ir::features::selections::FaceSelection::Generated { .. } => false,
+                cadmpeg_ir::features::selections::FaceSelection::HistoricalPartial { .. } => true,
+                cadmpeg_ir::features::selections::FaceSelection::Unresolved
+                | cadmpeg_ir::features::selections::FaceSelection::Native(_) => true,
             };
             if incomplete {
                 face.clone_from(base_face);
@@ -1200,7 +1247,7 @@ fn inherit_configuration_reference_plane_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: &FeatureId,
     definition: &mut FeatureDefinition,
-    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
+    dependencies: &mut cadmpeg_ir::features::selections::DistinctMembers<FeatureId>,
     base: &ConfigurationDefinitions<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Some(FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {

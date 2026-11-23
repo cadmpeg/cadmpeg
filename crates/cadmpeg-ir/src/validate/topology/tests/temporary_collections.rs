@@ -12,13 +12,13 @@ fn topology_regeneration_references_keep_byte_order_and_uniqueness() {
             PatternSeed::Feature(second.clone()),
         ],
         pattern: PatternKind::new(PatternTransform::Mirror {
-            plane_origin: crate::features::FinitePoint3::new(crate::math::Point3::new(
+            plane_origin: crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
                 0.0, 0.0, 0.0,
             ))
             .unwrap(),
-            plane_normal: crate::features::FeatureDirection3::new(crate::math::Vector3::new(
-                1.0, 0.0, 0.0,
-            ))
+            plane_normal: crate::features::geometry::FeatureDirection3::new(
+                crate::math::Vector3::new(1.0, 0.0, 0.0),
+            )
             .unwrap(),
         })
         .unwrap(),
@@ -29,10 +29,12 @@ fn topology_regeneration_references_keep_byte_order_and_uniqueness() {
 
 #[test]
 fn topology_profile_reference_borrows_the_selection_payload() {
-    let profile = crate::features::ProfileRef::Planar(crate::features::PlanarProfileRef::Sketch(
-        crate::sketches::SketchId::mint("test:model:sketch#profile").unwrap(),
-    ));
-    let crate::features::ProfileRef::Planar(original) = &profile else {
+    let profile = crate::features::profiles::ProfileRef::Planar(
+        crate::features::profiles::PlanarProfileRef::Sketch(
+            crate::sketches::SketchId::mint("test:model:sketch#profile").unwrap(),
+        ),
+    );
+    let crate::features::profiles::ProfileRef::Planar(original) = &profile else {
         panic!("planar fixture");
     };
     let super::super::ProfileReference::Planar(borrowed) =

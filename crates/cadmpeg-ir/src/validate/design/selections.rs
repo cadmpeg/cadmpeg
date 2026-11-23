@@ -22,13 +22,12 @@ use crate::design::selection::{
 };
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
-use crate::products;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
 use super::index::{DesignIndex, StateAt};
 use super::names::{derived_kinds, nested};
-use super::records::{MemberKey, PositionKey};
+use super::records::{DesignRecords, MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
 use super::{native_text, record_finding, Held, Holder};
@@ -105,17 +104,17 @@ pub(super) fn check<'a>(
                     format_args!("an instance-body path states a step configuration"),
                 );
             }
-            check_path(index, None, path, &moved, at, findings);
+            check_path(&index.records, None, path, &moved, at, findings);
         }
     }
     Ok(())
 }
 
 /// The anchors a holder admits (§5.8 Anchors).
-fn check_anchor(
-    index: &DesignIndex<'_>,
-    site: Site<'_>,
-    selection: &SelectionView<'_>,
+fn check_anchor<'a>(
+    index: &DesignIndex<'a>,
+    site: Site<'a>,
+    selection: &SelectionView<'a>,
     findings: &mut Vec<Finding>,
 ) {
     let at = site.holder.record();
@@ -311,7 +310,7 @@ fn check_pick<'a>(
     index: &DesignIndex<'a>,
     states: &'a States<'a>,
     site: Site<'a>,
-    pick: &Picked,
+    pick: &'a Picked,
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
@@ -341,7 +340,7 @@ fn check_pick<'a>(
     check_principal(index, site, pick, findings);
     match &pick.context {
         Some(PickContext::Occurrence(path)) => check_path(
-            index,
+            &index.records,
             site.owner.map(ProductDefinitionId::as_str),
             path,
             moved,
@@ -359,7 +358,7 @@ fn check_pick<'a>(
             check_definition(index, assembly, at, findings);
             for path in own.iter().chain(target) {
                 check_path(
-                    index,
+                    &index.records,
                     Some(assembly.definition.as_str()),
                     path,
                     moved,
@@ -469,9 +468,9 @@ fn anchored_states<'a>(
 
 /// An `Entity` pick matches an entity of its stored anchored state by the
 /// matching rule of §5.7, and its `resolved` entries are records of it.
-fn check_in_state(
-    states: &States<'_>,
-    state: &Stored<'_>,
+fn check_in_state<'a>(
+    states: &States<'a>,
+    state: &Stored<'a>,
     pick: &Picked,
     at: &str,
     findings: &mut Vec<Finding>,
@@ -504,21 +503,18 @@ fn check_in_state(
         return;
     }
     let matched = match state {
-        Stored::Extents(extents) => states
-            .extent_table(extents)
-            .into_iter()
-            .any(|(_, entry)| entry.name.as_ref() == Some(name)),
-        Stored::Evaluation(evaluation) => states.table(evaluation).is_none_or(|table| {
-            table
-                .values()
-                .any(|entry| entry.name.as_ref() == Some(name))
-        }),
+        Stored::Extents(extents) => states.extents_contain_name(extents, name),
+        Stored::Evaluation(evaluation) => states
+            .evaluation_contains_name(evaluation, name)
+            .unwrap_or(true),
     };
     if !matched {
-        super::error(
+        record_finding(
             findings,
-            at,
-            format_args!("an Entity pick's name matches no entity of its anchored state"),
+            Check::Design,
+            Severity::Warning,
+            Some(at),
+            format_args!("an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
         );
     }
 }
@@ -593,10 +589,10 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
 
 /// A target's feature depend-orders at or before the anchor (§5.3); a
 /// back-edge inside a dependency cycle is that cycle's Warning.
-fn check_target_order(
-    index: &DesignIndex<'_>,
-    site: Site<'_>,
-    pick: &Picked,
+fn check_target_order<'a>(
+    index: &DesignIndex<'a>,
+    site: Site<'a>,
+    pick: &'a Picked,
     findings: &mut Vec<Finding>,
 ) {
     let Some(target) = index.target_feature(&pick.target) else {
@@ -675,12 +671,12 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
     }
 }
 
-/// `Principal.container` names an ordered container of the pick's
-/// definition.
-fn check_principal(
-    index: &DesignIndex<'_>,
-    site: Site<'_>,
-    pick: &Picked,
+/// `Principal.container` names an ordered container of the scope that spans
+/// the definition the pick resolves in (§5.1, §5.2).
+fn check_principal<'a>(
+    index: &DesignIndex<'a>,
+    site: Site<'a>,
+    pick: &'a Picked,
     findings: &mut Vec<Finding>,
 ) {
     let PickTarget::Principal {
@@ -696,9 +692,11 @@ fn check_principal(
     let ordered = matches!(record, crate::design::container::Container::Ordered { .. });
     let definition = resolving_definition(index, site.owner, pick);
     let scope = index.scope_of(MemberKey::Container(container.as_str()));
-    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope)) if definition != scope.as_str());
+    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope))
+        if definition != scope.as_str()
+            && !index.records.spanned_definitions(scope.as_str()).contains(definition));
     if !ordered || elsewhere {
-        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
+        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of the scope that spans its definition", container.as_str()),
         );
     }
 }
@@ -727,7 +725,7 @@ fn check_definition(
 
 /// The occurrences whose owner some state restates, whose membership the
 /// current listing does not decide.
-fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
+pub(in crate::validate) fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
     ir.design
         .evaluations
         .iter()
@@ -741,8 +739,8 @@ fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
 /// `Occurrence` step names an occurrence placed in the previous step's
 /// prototype, or in the root for the first step; every step after a
 /// `Native` step is `Native`.
-fn check_path(
-    index: &DesignIndex<'_>,
+pub(in crate::validate) fn check_path(
+    records: &DesignRecords<'_>,
     root: Option<&str>,
     path: &OccurrencePath,
     moved: &BTreeSet<&str>,
@@ -769,7 +767,7 @@ fn check_path(
             }
             StepRef::Occurrence(occurrence) => occurrence,
         };
-        let Some(record_) = index.records.occurrences.get(occurrence.as_str()) else {
+        let Some(record_) = records.occurrences.get(occurrence.as_str()) else {
             record(format_args!(
                 "an occurrence path names occurrence {}, which does not exist",
                 occurrence.as_str()
@@ -777,9 +775,7 @@ fn check_path(
             return;
         };
         if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
-            let placed_in =
-                products::owner(&index.records.ir.model.product_definitions, occurrence)
-                    .map(|owner| owner.id.as_str());
+            let placed_in = records.occurrence_owner(occurrence.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
                 record(format_args!(
                     "occurrence path step {} is not an occurrence of the previous step's prototype",

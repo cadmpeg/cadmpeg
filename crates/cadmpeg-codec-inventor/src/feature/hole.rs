@@ -3,7 +3,8 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_ir::features::{holes::HolePlacement, LinearTermination};
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::holes::HolePlacement;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::Length;
 
@@ -66,7 +67,7 @@ pub(super) fn termination(
                         return None;
                     }
                     Some(LinearTermination::ToFace {
-                        face: cadmpeg_ir::features::FaceSelection::Native(record.id()),
+                        face: cadmpeg_ir::features::selections::FaceSelection::Native(record.id()),
                         offset: None,
                     })
                 }
@@ -163,12 +164,12 @@ pub(super) fn placements(
             let coordinate =
                 |row: usize| (rows[row][0] * u + rows[row][1] * v + rows[row][3]) * 10.0;
             Some(HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     coordinate(0),
                     coordinate(1),
                     coordinate(2),
                 ))?,
-                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
             })
         })
         .collect()

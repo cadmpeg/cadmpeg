@@ -12,9 +12,9 @@
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32};
 
 use crate::design::dimension::ParameterRef;
-use crate::design::expr::{BinaryOp, Constant, Function, MeasureKind, Node, UnaryOp};
+use crate::design::expr::{BendVariable, BinaryOp, Constant, Function, MeasureKind, Node, UnaryOp};
 use crate::design::parameter::ParameterValue;
-use crate::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
+use crate::design::units::{Quantity, Unit, ValueKind};
 use crate::math::portable::Portable;
 use crate::scalar::FiniteReal;
 
@@ -58,48 +58,12 @@ const MASS: Quantity = Quantity {
     angle: 0,
     time: 0,
 };
-const TIME: Quantity = Quantity {
-    length: 0,
-    mass: 0,
-    angle: 0,
-    time: 1,
-};
 const VOLUME: Quantity = Quantity {
     length: 3,
     mass: 0,
     angle: 0,
     time: 0,
 };
-
-/// The factor from a symbol to the canonical unit of its quantity, and that
-/// quantity.
-fn symbol(symbol: UnitSymbol) -> (f64, Quantity) {
-    use std::f64::consts::PI;
-    match symbol {
-        UnitSymbol::Nm => (1.0 / 1_000_000.0, Quantity::LENGTH),
-        UnitSymbol::Um => (1.0 / 1_000.0, Quantity::LENGTH),
-        UnitSymbol::Mm => (1.0, Quantity::LENGTH),
-        UnitSymbol::Cm => (10.0, Quantity::LENGTH),
-        UnitSymbol::M => (1_000.0, Quantity::LENGTH),
-        UnitSymbol::Km => (1_000_000.0, Quantity::LENGTH),
-        UnitSymbol::In => (25.4, Quantity::LENGTH),
-        UnitSymbol::Ft => (304.8, Quantity::LENGTH),
-        UnitSymbol::Yd => (914.4, Quantity::LENGTH),
-        UnitSymbol::Mi => (1_609_344.0, Quantity::LENGTH),
-        UnitSymbol::Rad => (1.0, Quantity::ANGLE),
-        UnitSymbol::Deg => (PI / 180.0, Quantity::ANGLE),
-        UnitSymbol::Grad => (PI / 200.0, Quantity::ANGLE),
-        UnitSymbol::Arcmin => (PI / 10_800.0, Quantity::ANGLE),
-        UnitSymbol::Arcsec => (PI / 648_000.0, Quantity::ANGLE),
-        UnitSymbol::Rev => (2.0 * PI, Quantity::ANGLE),
-        UnitSymbol::S => (1.0, TIME),
-        UnitSymbol::Min => (60.0, TIME),
-        UnitSymbol::H => (3_600.0, TIME),
-        UnitSymbol::G => (1.0 / 1_000.0, MASS),
-        UnitSymbol::Kg => (1.0, MASS),
-        UnitSymbol::Lb => (0.453_592_37, MASS),
-    }
-}
 
 fn scaled(quantity: Quantity, by: i8) -> Option<Quantity> {
     Some(Quantity {
@@ -130,11 +94,11 @@ fn combined(left: Quantity, right: Quantity, sign: i8) -> Result<Quantity, EvalE
 /// # Errors
 ///
 /// Returns [`EvalError::Domain`] where an exponent overflows.
-pub(super) fn unit_factor(unit: &Unit) -> Result<(f64, Quantity), EvalError> {
+pub(crate) fn unit_factor(unit: &Unit) -> Result<(f64, Quantity), EvalError> {
     let mut factor = 1.0;
     let mut quantity = DIMENSIONLESS;
     for item in &unit.0 {
-        let (scale, of) = symbol(item.symbol);
+        let (scale, of) = item.symbol.canonical();
         let power = item.power.get();
         factor *= scale.powi(i32::from(power));
         let raised = scaled(of, power).ok_or(EvalError::Domain("a quantity exponent overflows"))?;
@@ -194,7 +158,7 @@ fn same(left: Quantity, right: Quantity, what: &str) -> Result<Quantity, EvalErr
 }
 
 /// The value of a literal exponent: a number, or a negated number.
-fn literal_exponent(node: &Node<ParameterRef>) -> Option<f64> {
+fn literal_exponent<R>(node: &Node<R>) -> Option<f64> {
     match node {
         Node::Number { value, unit } if unit.0.is_empty() => Some(value.get()),
         Node::Unary {
@@ -302,11 +266,11 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
-fn binary(
+fn binary<R>(
     op: BinaryOp,
     left: Value,
     right: Value,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Value, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Subtract => {
@@ -489,12 +453,12 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Task<'a, R = ParameterRef> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
-    Branch(&'a Node<ParameterRef>, &'a Node<ParameterRef>),
+    Branch(&'a Node<R>, &'a Node<R>),
 }
 
 /// Evaluates a neutral design expression tree on canonical values.
@@ -509,6 +473,15 @@ enum Task<'a> {
 pub fn evaluate(
     root: &Node<ParameterRef>,
     reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
+) -> Result<Value, EvalError> {
+    evaluate_tree(root, reference)
+}
+
+/// [`evaluate`] over a tree of any reference type: a design expression, or
+/// a process expression whose references are `ParamRef`s.
+pub(super) fn evaluate_tree<R>(
+    root: &Node<R>,
+    reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();
@@ -594,7 +567,7 @@ pub fn evaluate(
 
 /// The type of an expression node (§5.13).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum Type {
+pub(crate) enum Type {
     /// A number of a quantity.
     Number(Quantity),
     /// A Boolean.
@@ -608,7 +581,7 @@ pub(super) enum Type {
 impl Type {
     /// The type of a parameter of a kind, `None` for a `Native` kind, which
     /// has no §5.13 type.
-    pub(super) const fn of_kind(kind: &ValueKind) -> Option<Self> {
+    pub(crate) const fn of_kind(kind: &ValueKind) -> Option<Self> {
         match kind {
             ValueKind::Quantity(quantity) => Some(Self::Number(*quantity)),
             ValueKind::Integer => Some(Self::Number(DIMENSIONLESS)),
@@ -678,11 +651,11 @@ fn expect_quantity(operand: Type, expected: Quantity, what: &str) -> Result<(), 
     }
 }
 
-fn binary_type(
+fn binary_type<R>(
     op: BinaryOp,
     left: Type,
     right: Type,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Type, String> {
     let domain = |error: EvalError| error.to_string();
     Ok(match op {
@@ -804,26 +777,47 @@ fn branch_type(then: Type, otherwise: Type) -> Result<Type, String> {
     }
 }
 
-enum Check<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Check<'a, R = ParameterRef> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
     If,
 }
 
-/// Type-checks a parameter's neutral expression tree by the semantics table
-/// of §5.13 and the function arities of part 10, every branch of an `if`
-/// included. `reference` gives a reference's type, or why the reference has
-/// none. A parameter's expression has no law path and no bend in scope, so
-/// the law parameter and the bend variables are refused.
+/// Where an expression occurs, which decides the variables in scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExpressionSite {
+    /// A parameter's expression, an override's, or a program's: no law path
+    /// and no bend is in scope.
+    Parameter,
+    /// An `AngleRange.value`: the bend variables are in scope.
+    BendAllowance,
+    /// A `Law::Expression`: the law parameter, dimensionless, is in scope.
+    Law,
+}
+
+/// The quantity of a bend variable.
+const fn bend_quantity(variable: BendVariable) -> Quantity {
+    match variable {
+        BendVariable::Angle => Quantity::ANGLE,
+        BendVariable::InsideRadius | BendVariable::Thickness => Quantity::LENGTH,
+    }
+}
+
+/// Type-checks a neutral expression tree by the semantics table of §5.13
+/// and the function arities of part 10, every branch of an `if` included.
+/// `reference` gives a reference's type, or why the reference has none. The
+/// law parameter is refused outside a law, and the bend variables outside a
+/// bend allowance.
 ///
 /// # Errors
 ///
 /// Returns why a node does not type-check.
-pub(super) fn check_types(
-    root: &Node<ParameterRef>,
-    reference: &dyn Fn(&ParameterRef) -> Result<Type, String>,
+pub(crate) fn check_types<R>(
+    root: &Node<R>,
+    site: ExpressionSite,
+    reference: &dyn Fn(&R) -> Result<Type, String>,
 ) -> Result<Type, String> {
     let mut tasks = vec![Check::Visit(root)];
     let mut types: Vec<Type> = Vec::new();
@@ -841,12 +835,20 @@ pub(super) fn check_types(
                 Node::Measure(measure) => {
                     types.push(Type::Number(measure_quantity(&measure.kind)));
                 }
-                Node::LawParameter => {
-                    return Err("the law parameter occurs only in a law expression".into());
-                }
-                Node::Bend(_) => {
-                    return Err("a bend variable occurs only in a bend allowance".into());
-                }
+                Node::LawParameter => match site {
+                    ExpressionSite::Law => types.push(Type::Number(DIMENSIONLESS)),
+                    ExpressionSite::Parameter | ExpressionSite::BendAllowance => {
+                        return Err("the law parameter occurs only in a law expression".into());
+                    }
+                },
+                Node::Bend(variable) => match site {
+                    ExpressionSite::BendAllowance => {
+                        types.push(Type::Number(bend_quantity(*variable)));
+                    }
+                    ExpressionSite::Parameter | ExpressionSite::Law => {
+                        return Err("a bend variable occurs only in a bend allowance".into());
+                    }
+                },
                 Node::Unary { op, operand } => {
                     tasks.push(Check::Unary(*op));
                     tasks.push(Check::Visit(operand));
@@ -904,7 +906,7 @@ pub(super) fn check_types(
 /// # Errors
 ///
 /// Returns the difference where it is not.
-pub(super) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
+pub(crate) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
     match (kind, found) {
         (ValueKind::Native(name), _) => Err(format!("the kind {name} has no neutral value")),
         (_, Type::Unknown) => Ok(()),
@@ -915,7 +917,7 @@ pub(super) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
 
 /// A cache as an expression value of the declared kind, or `None` where the
 /// two do not agree.
-pub(super) fn cache_value(kind: &ValueKind, cache: &ParameterValue) -> Option<Value> {
+pub(crate) fn cache_value(kind: &ValueKind, cache: &ParameterValue) -> Option<Value> {
     match (kind, cache) {
         (ValueKind::Quantity(quantity), ParameterValue::Number(value)) => Some(Value::Number {
             value: value.get(),

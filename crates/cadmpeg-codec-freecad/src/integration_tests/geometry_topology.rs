@@ -600,7 +600,7 @@ fn assert_curve_interpolation_points(curve: &cadmpeg_ir::geometry::nurbs::NurbsC
         .filter(|span| span[1] > span[0])
         .map(|span| (span[0] + span[1]) * 0.5)
         .collect::<Vec<_>>();
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     for point in points {
         let parameter = seeds
             .iter()
@@ -638,7 +638,7 @@ fn assert_surface_interpolation_points(surface: &cadmpeg_ir::geometry::nurbs::Nu
         Point3::new(10.0, 5.0, 2.0),
         Point3::new(10.0, 10.0, 0.0),
     ];
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     for point in points {
         let parameters = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
             &context,
@@ -660,7 +660,10 @@ fn assert_surface_interpolation_points(surface: &cadmpeg_ir::geometry::nurbs::Nu
     }
 }
 
-fn points_match(points: &[cadmpeg_ir::features::FinitePoint3], expected: &[[f64; 3]]) -> bool {
+fn points_match(
+    points: &[cadmpeg_ir::features::geometry::FinitePoint3],
+    expected: &[[f64; 3]],
+) -> bool {
     points.len() == expected.len()
         && points.iter().zip(expected).all(|(actual, expected)| {
             let actual = actual.get();

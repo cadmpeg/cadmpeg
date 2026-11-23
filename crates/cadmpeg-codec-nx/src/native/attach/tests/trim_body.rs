@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::attach::offset_store_trim_body_feature_definition;
-use cadmpeg_ir::features::{BodySelection, BodyTrimSide, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {

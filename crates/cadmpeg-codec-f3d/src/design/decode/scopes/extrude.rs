@@ -25,6 +25,7 @@ use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::layout::current_extrude_shape_target_extent_prefix as extrude_target;
 use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
+use crate::layout::legacy_class_330_blind_cut_extrude_frame as class_330_cut;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_reference_extrude_profile_normal as legacy_reference_normal;
@@ -41,6 +42,7 @@ use crate::layout::typed_reference_extrude_anchor_prefix as typed_reference_anch
 use crate::layout::typed_reference_extrude_prologue as typed_prologue;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOpaqueDistanceWord;
+use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudePrologueReference;
 use crate::records::feature::extrude::DesignExtrudeReferenceType;
@@ -66,6 +68,81 @@ fn extrude_start_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeStart> {
         2 => Some(DesignExtrudeStart::FromFace),
         _ => None,
     }
+}
+
+fn exact_class_330_blind_cut(
+    frame: &[u8],
+    start: usize,
+    references: &[u32],
+) -> Option<DesignExtrudePrologue> {
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
+
+    let [_, _, _, _, distance, taper, auxiliary] = references else {
+        return None;
+    };
+    if references
+        .iter()
+        .enumerate()
+        .any(|(index, reference)| *reference == 0 || references[..index].contains(reference))
+    {
+        return None;
+    }
+    let operation = offset_23_extrude_prologue::OPERATION;
+    let field = |offset| operation + offset;
+    let normal_at = field(extrude_fields::PROFILE_NORMAL);
+    if frame.get(offset_23_extrude_prologue::ZERO_RUN_12..operation)? != [0; 12]
+        || extrude_operation_at(frame, operation)? != DesignExtrudeOperation::Cut
+        || View::u32_le_at(frame, field(extrude_fields::DIRECTION))? != 1
+        || View::u32_le_at(frame, field(extrude_fields::FACE_EXTEND))? != 2
+        || !flag_byte_at(frame, field(extrude_fields::GEOMETRY_KIND))?
+        || extrude_start_at(frame, field(extrude_fields::START_SUPPORT))?
+            != DesignExtrudeStart::ProfilePlane
+        || frame.get(field(extrude_fields::ZERO_RUN_3)..normal_at)? != [0; 3]
+    {
+        return None;
+    }
+    let normal = f64s_at::<3>(frame, normal_at)?;
+    let squared_length = normal
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if !squared_length.is_finite() || (squared_length - 1.0).abs() > PROFILE_NORMAL_UNIT_EPS {
+        return None;
+    }
+    let mut cursor = field(extrude_fields::LEN);
+    for reference in [
+        None,
+        None,
+        Some(*distance),
+        Some(*auxiliary),
+        None,
+        Some(*taper),
+        None,
+    ] {
+        if let Some(reference) = reference {
+            if marked_record_reference(frame, cursor)? != reference {
+                return None;
+            }
+            cursor += 11;
+        } else {
+            if frame.get(cursor) != Some(&0) {
+                return None;
+            }
+            cursor += 1;
+        }
+    }
+    if cursor != class_330_cut::FIRST_SIDE_EXTENT
+        || View::u32_le_at(frame, class_330_cut::FIRST_SIDE_EXTENT)? != 1
+        || View::u32_le_at(frame, class_330_cut::SECOND_SIDE_EXTENT)? != 0
+        || View::u32_le_at(frame, class_330_cut::REFERENCE_COUNT)?
+            != class_330_cut::REFERENCE_COUNT_VALUE
+    {
+        return None;
+    }
+    DesignExtrudePrologue::legacy_class_330_blind_cut(
+        u64_from_index(start),
+        flag_byte_at(frame, field(extrude_fields::DIRECTION_REVERSED))?,
+    )
 }
 
 pub(super) fn exact_extrude_prologue(
@@ -133,6 +210,17 @@ pub(super) fn exact_extrude_prologue(
             reference_count_at,
             reference_members,
         );
+    }
+    if class_tag == "330"
+        && paired_class_tag == "262"
+        && paired_at.checked_sub(start) == Some(class_330_cut::LEN)
+        && reference_count_at.checked_sub(start) == Some(class_330_cut::REFERENCE_COUNT)
+    {
+        if let Some(prologue) =
+            exact_class_330_blind_cut(bytes.get(start..paired_at)?, start, reference_members)
+        {
+            return Some(prologue);
+        }
     }
     let current = exact_shifted_reference_aware_extrude_prologue(
         bytes,

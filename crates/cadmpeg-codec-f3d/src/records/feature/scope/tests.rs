@@ -391,7 +391,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             reference_type_offset: 0,
         });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = cadmpeg_ir::native::NativeNamespace::default();
     native
         .set_arena(
@@ -658,11 +658,12 @@ fn native_profile_wire_round_trips_and_rejects_null() {
     let (archive, mut scope, headers, entities) =
         crate::test_support::multiple_profiles::fixture(2);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::decode::operands::bind_sketch_profiles(
+        crate::design::decode::operands::sketch_profiles::bind_sketch_profiles(
             scan,
             std::slice::from_mut(&mut scope),
             &headers,
             &entities,
+            &mut Vec::new(),
         )
         .unwrap();
         let wire = serde_json::to_value(&scope).unwrap();

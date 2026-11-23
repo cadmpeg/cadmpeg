@@ -239,7 +239,7 @@ fn text_plane_triangle_stream(scale: f64, [du, dv]: [f64; 2]) -> Vec<u8> {
 
 #[test]
 fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (scale, offset) in [1.0, 25.4, 10.0]
         .into_iter()
         .flat_map(|scale| [[0.0, 0.0], [3.0, -2.0]].map(|offset| (scale, offset)))
@@ -589,8 +589,9 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
 #[test]
 fn sat_encodings_admit_declared_and_actual_entities_once() {
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    // Six native records and five emitted neutral entities.
-    options.policy.limits.max_entities = 11;
+    // Six native records, five emitted neutral entities, and the root
+    // definition.
+    options.policy.limits.max_entities = 12;
     for bytes in [
         text_sphere_stream(1.0),
         binary_sphere_stream(BinaryFixtureKind::Asm),
@@ -1067,11 +1068,10 @@ fn invalid_edge_tolerance_has_a_loss_and_retains_its_source_record() {
 
 #[test]
 fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
-    use cadmpeg_ir::geometry::{
-        pcurve::{PcurveGeometry, PcurveNurbs},
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition,
-        SupportPcurve,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+    use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+    use cadmpeg_ir::geometry::ProceduralCurve;
     use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::CadIr;

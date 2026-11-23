@@ -26,7 +26,7 @@ fn varied_controls(count: u32) -> Vec<[f64; 4]> {
 
 #[test]
 fn refining_net_matches_strict_knot_insertion() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let degree = 3;
     let count = 40_u32;
     let mut knots = vec![0.0; degree + 1];
@@ -62,7 +62,7 @@ fn refining_net_matches_strict_knot_insertion() {
 
 #[test]
 fn bezier_extraction_matches_the_ir_extraction() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let degree = 3;
     let controls = varied_controls(30);
     // Unclamped ends and internal knots of multiplicity one to four.
@@ -90,7 +90,7 @@ fn bezier_extraction_matches_the_ir_extraction() {
 
 #[test]
 fn bezier_extraction_of_a_long_curve_inserts_each_knot_near_its_span() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let count = 1_u32 << 18;
     let degree = 2;
     let knots: Vec<f64> = (0..=count + 2).map(f64::from).collect();
@@ -140,7 +140,7 @@ fn rational_surface() -> NurbsSurface {
 fn rational_multispan_surface_crop_preserves_points_and_normal_chart() {
     let source = rational_surface();
     let cropped = trim_surface(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &source,
         [[0.2, 0.8], [0.1, 0.9]],
     )
@@ -167,7 +167,7 @@ fn rational_multispan_surface_crop_preserves_points_and_normal_chart() {
 #[test]
 fn surface_crop_refuses_ranges_outside_the_basis() {
     let source = rational_surface();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for ranges in [
         [[0.0, 1.1], [0.0, 1.0]],
         [[0.0, 1.0], [-0.1, 1.0]],
@@ -179,7 +179,7 @@ fn surface_crop_refuses_ranges_outside_the_basis() {
 
 #[test]
 fn surface_crop_refuses_a_discontinuous_terminal_boundary() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

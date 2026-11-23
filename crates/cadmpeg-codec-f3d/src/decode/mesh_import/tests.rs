@@ -31,7 +31,7 @@ fn import_feature(native_ref: Option<String>) -> Feature {
         source_tag: Some("Base Mesh Feature".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Base Mesh Feature".into(),
                 parameters: Default::default(),
@@ -102,6 +102,7 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
             count: 0,
             unjoined: 0,
             tessellations_by_scope: Default::default(),
+            scopeless_tessellations: Vec::new(),
         };
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive, |scan| {

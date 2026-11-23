@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{EdgeSelection, FaceSelection, FeatureOperation, FiniteVector3, ThickenSide};
+use super::FeatureOperation;
+use crate::features::direct_edit::ThickenSide;
+use crate::features::geometry::FiniteVector3;
+use crate::features::selections::{EdgeSelection, FaceSelection};
 use crate::scalar::PositiveLength;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[doc = "Trim loops removed by a surface untrim."]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -69,7 +72,7 @@ impl FeatureOperation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[doc = "Projection method used by a `SplitFace` operation."]

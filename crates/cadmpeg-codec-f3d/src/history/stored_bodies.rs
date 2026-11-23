@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind stored-body scopes and report unresolved construction semantics.
 
-use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Body;
 use std::collections::HashMap;
@@ -18,7 +19,7 @@ impl<'a> ActiveBodies<'a> {
     pub(super) fn new(bodies: &'a [Body], primary_brep: Option<&'a str>) -> Self {
         let mut by_slot = HashMap::<i64, Vec<&BodyId>>::new();
         for body in bodies {
-            if let Some(slot) = super::stable_ref(body.id.as_str()) {
+            if let Some(slot) = super::body_closures::stable_ref(body.id.as_str()) {
                 by_slot.entry(slot).or_default().push(&body.id);
             }
         }
@@ -42,7 +43,7 @@ impl<'a> ActiveBodies<'a> {
         } else if id.starts_with("f3d:brep:") {
             self.unqualified_source == Some(source)
         } else {
-            super::entity_in_brep_source(id, source)
+            super::face_resolution::entity_in_brep_source(id, source)
         }
     }
 
@@ -81,7 +82,7 @@ impl<'a> ActiveBodies<'a> {
         &self,
         slots: &[i64],
         source: Option<&str>,
-    ) -> Option<cadmpeg_ir::features::DistinctMembers<BodyId>> {
+    ) -> Option<cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
         let mut bodies = Vec::new();
         for slot in slots {
             let body = self.unique_member(*slot, source)?;
@@ -96,7 +97,7 @@ impl<'a> ActiveBodies<'a> {
 
 pub(super) fn bound_result_bodies(
     feature: &Feature,
-) -> Option<&cadmpeg_ir::features::DistinctMembers<BodyId>> {
+) -> Option<&cadmpeg_ir::features::selections::DistinctMembers<BodyId>> {
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { bodies, .. },
@@ -105,17 +106,43 @@ pub(super) fn bound_result_bodies(
     }
 }
 
-/// A Base Feature scope projected as a copying move, whose outputs are the
-/// copies its projection bound.
-pub(super) fn is_base_feature_copy(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+/// A Base Feature scope projected as a copying move or as inserted copies,
+/// whose outputs are the copies its projection bound.
+pub(super) fn has_projection_bound_base_feature_outputs(
+    feature: &Feature,
+    scopes: &[DesignParameterScope],
+) -> bool {
     matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
-    ) && feature
+        FeatureDefinition::Operation(
+            FeatureOperation::MoveBody { .. } | FeatureOperation::InsertBodies { .. }
+        )
+    ) && is_base_feature_scope(feature, scopes)
+}
+
+fn is_base_feature_scope(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+    feature
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))
         .is_some_and(|scope| scope.kind() == DesignFeatureKind::BaseFeature)
+}
+
+/// The bodies that a Base Feature scope's feature produces at its own
+/// state: its resolved stored bodies, or the copies that a paste into
+/// another component inserts.
+pub(super) fn base_feature_result_bodies<'a>(
+    feature: &'a Feature,
+    scopes: &[DesignParameterScope],
+) -> Option<&'a [BodyId]> {
+    if let Some(bodies) = bound_result_bodies(feature) {
+        return Some(bodies.as_slice());
+    }
+    (matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::InsertBodies { .. })
+    ) && is_base_feature_scope(feature, scopes))
+    .then(|| feature.evaluation.outputs().as_slice())
 }
 
 pub(super) fn bind_history_outputs(
@@ -213,6 +240,11 @@ pub(crate) fn losses(
                             "{} pastes copies with zero translation and no rotation; the paste stores no placement.",
                             scope.id
                         )));
+                        continue;
+                    }
+                    Some(FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                        ..
+                    })) => {
                         continue;
                     }
                     Some(FeatureDefinition::Operation(FeatureOperation::BaseFeature {

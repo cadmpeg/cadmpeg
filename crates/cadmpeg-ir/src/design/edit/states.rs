@@ -146,7 +146,7 @@ pub(super) fn reached(
         ($($field:ident $arm:ident),*) => {
             $(
                 for record in &topology.$field {
-                    let json = serde_json::to_value(record).map_err(malformed)?;
+                    let json = crate::hash::finite_json::to_json_value(record).map_err(malformed)?;
                     let own = record.record_identity();
                     let mut found = Vec::new();
                     let mut stack = vec![&json];
@@ -219,7 +219,26 @@ fn apply_map<K: Ord + Clone, V: Clone>(
     }
 }
 
+fn set_all<K: Ord + Clone, V: Clone>(map: &BTreeMap<K, V>) -> BTreeMap<K, Option<V>> {
+    map.iter()
+        .map(|(key, value)| (key.clone(), Some(value.clone())))
+        .collect()
+}
+
 impl State {
+    /// The state as a delta over `Empty`.
+    pub(super) fn delta(&self) -> StateDelta {
+        StateDelta {
+            records: self.records.clone(),
+            removed: Vec::new(),
+            names: set_all(&self.names),
+            owners: set_all(&self.owners),
+            members: set_all(&self.members),
+            instance_bodies: set_all(&self.instance_bodies),
+            poses: set_all(&self.poses),
+        }
+    }
+
     fn apply(&mut self, delta: &StateDelta) {
         let removed: BTreeSet<String> = delta
             .removed
@@ -309,10 +328,29 @@ impl CadIr {
             .filter_map(|body| Some((body.clone(), self.body_owner(body)?.clone())))
             .filter(|(_, owner)| owner != scope)
             .collect();
+        let bodies: std::collections::BTreeSet<&BodyId> = current.bodies.iter().collect();
+        let spanned = self.spanned_definitions(scope);
+        let instance_bodies = self
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| spanned.contains(definition.id.as_str()))
+            .flat_map(|definition| &definition.instance_bodies)
+            .filter_map(|entry| {
+                let kept: Vec<BodyId> = entry
+                    .bodies
+                    .iter()
+                    .filter(|body| bodies.contains(body))
+                    .cloned()
+                    .collect();
+                (!kept.is_empty()).then(|| (entry.occurrence.clone(), kept))
+            })
+            .collect();
         Ok(State {
             records,
             names,
             owners,
+            instance_bodies,
             poses: current.poses.clone(),
             ..State::default()
         })
@@ -324,7 +362,8 @@ impl CadIr {
         scope: &ProductDefinitionId,
         at: &Position,
     ) -> Option<&CurrentState> {
-        self.design_scope(scope)?
+        self.design
+            .design_scope(scope)?
             .current
             .iter()
             .find(|current| &current.at == at)

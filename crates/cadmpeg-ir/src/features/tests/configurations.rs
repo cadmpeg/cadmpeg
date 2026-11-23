@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::examples::unit_cube;
-use crate::features::{ConfigurationEvaluation, DistinctMembers, FeatureContent};
+use crate::features::parameters::ConfigurationEvaluation;
+use crate::features::selections::DistinctMembers;
+use crate::features::FeatureContent;
 use crate::math::Point3;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::ids::BodyId;
-    use crate::{
-        features::{
-            ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
-            DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
-            FeatureOperation, ParameterId, ParameterValue,
-        },
-        scalar::{Angle, Length},
+    use crate::features::parameters::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration, DesignParameter,
+        ParameterValue,
     };
+    use crate::features::{
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+    };
+    use crate::ids::BodyId;
+    use crate::scalar::{Angle, Length};
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -47,7 +49,9 @@ fn configuration_body_membership_round_trips_and_validates() {
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: Some(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap()),
+        bodies: Some(
+            crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+        ),
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::new(),
         native_ref: None,
@@ -85,19 +89,19 @@ fn configuration_body_membership_round_trips_and_validates() {
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![BodyId::mint(
-                    "synthetic:test:body#missing-output",
-                )
-                .expect("valid identity")])
+                outputs: crate::features::selections::DistinctMembers::try_from(vec![
+                    BodyId::mint("synthetic:test:body#missing-output").expect("valid identity"),
+                ])
                 .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:feature#missing-dependency",
-            )
-            .expect("identity grammar")])
+            dependencies: crate::features::selections::DistinctMembers::try_from(vec![
+                FeatureId::mint("synthetic:test:feature#missing-dependency")
+                    .expect("identity grammar"),
+            ])
             .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -151,10 +155,12 @@ fn configuration_body_membership_round_trips_and_validates() {
             source_text: None,
             source_content: FeatureContent::default(),
 
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                    position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
+                    position: crate::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
                     construction: None,
                 }),
             ),
@@ -165,12 +171,16 @@ fn configuration_body_membership_round_trips_and_validates() {
         first_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+                outputs: crate::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                    .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![later_feature.clone()])
-                .unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(vec![
+                later_feature.clone(),
+            ])
+            .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -188,7 +198,8 @@ fn configuration_body_membership_round_trips_and_validates() {
             evaluation: ConfigurationEvaluation::Suppressed {},
             dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -217,7 +228,8 @@ fn configuration_body_membership_round_trips_and_validates() {
             evaluation: ConfigurationEvaluation::Suppressed {},
             dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -236,12 +248,16 @@ fn configuration_body_membership_round_trips_and_validates() {
         later_feature.clone(),
         ConfigurationFeatureState {
             evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+                outputs: crate::features::selections::DistinctMembers::try_from(vec![body.clone()])
+                    .unwrap(),
             },
-            dependencies: crate::features::DistinctMembers::try_from(vec![first_feature.clone()])
-                .unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(vec![
+                first_feature.clone(),
+            ])
+            .unwrap(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -257,7 +273,8 @@ fn configuration_body_membership_round_trips_and_validates() {
             evaluation: ConfigurationEvaluation::Suppressed {},
             dependencies: DistinctMembers::default(),
             definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         },
@@ -284,7 +301,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = Some(
-        crate::features::DistinctMembers::try_from(vec![BodyId::mint(
+        crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
             "synthetic:test:body#missing",
         )
         .expect("valid identity")])
@@ -329,7 +346,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 
 #[test]
 fn configuration_name_preserves_resolution_state() {
-    use crate::features::DesignConfiguration;
+    use crate::features::parameters::DesignConfiguration;
 
     let unresolved = serde_json::json!({
         "id": "synthetic:test:configuration#0",
@@ -363,9 +380,9 @@ fn configuration_name_preserves_resolution_state() {
 
 #[test]
 fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
+    use crate::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, FeatureOperation,
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     use std::collections::BTreeMap;
 
@@ -376,14 +393,15 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         ),
@@ -443,12 +461,12 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
 
 #[test]
 fn configuration_evaluation_wire_is_flat_and_strict() {
-    use crate::features::ConfigurationEvaluation;
+    use crate::features::parameters::ConfigurationEvaluation;
     use crate::ids::BodyId;
 
     let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
     let active = ConfigurationEvaluation::Active {
-        outputs: crate::features::DistinctMembers::try_from(vec![body]).unwrap(),
+        outputs: crate::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
     };
     let wire = serde_json::to_value(&active).unwrap();
     assert_eq!(
@@ -478,7 +496,7 @@ fn configuration_evaluation_wire_is_flat_and_strict() {
 
 #[test]
 fn active_configuration_evaluation_can_have_no_body_outputs() {
-    use crate::features::ConfigurationEvaluation;
+    use crate::features::parameters::ConfigurationEvaluation;
 
     let active = ConfigurationEvaluation::Active {
         outputs: DistinctMembers::default(),

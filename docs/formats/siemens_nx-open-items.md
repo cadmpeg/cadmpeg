@@ -167,7 +167,7 @@ until their enclosing sequence is established.
 
 **Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
 
-**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`, a byte of `00` or `01` precedes every reference, and a byte of `00` or `01` follows the last reference. Otherwise it reads consecutive references. A consecutive run that satisfies the prefixed form then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
 ### PS-42. Control values outside a terminated sequence
 
@@ -184,6 +184,14 @@ until their enclosing sequence is established.
 **Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
 
 **Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
+### PS-44. SWEPT_SURF surface parameterization
+
+**Question.** What is the role of `scale` in the SWEPT_SURF parameterization, and what are the pcurve parameters when the section is a LINE or another analytic curve?
+
+**Known.** `siemens_nx.md` §6.2.1 defines the record and the linear sweep along `sweep × scale`. A pcurve at constant `v` across the full `u` range of a B-curve section is the section moved along the sweep. The decoder keeps pcurve parameters unchanged on this surface.
+
+**Need.** We must know the parameterization to evaluate a pcurve on every swept surface.
 
 ## 2. Object model and body composition
 
@@ -302,19 +310,20 @@ prove absence from an earlier construction state.
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md` §2 derives active state from the closed output-and-dependency graph and admits retained-history primary-body and partition-scoped body-write closure witnesses when neutral output projection cannot bind an operation to the selected body. `siemens_nx.md` §7.1 defines the feature-history journal, status rows, diagnostic messages, `m_rollForwardStates` groups, and object state-counter map. An audit-trail section has a distinct role-gated complete-row grammar and the native decoder retains its ordinal, optional selector, timestamp, tagged value, exact row bytes, and source offsets. The native decoder retains exact status codes and payloads, message values and count/severity words, group rows, and counter-map rows. The three retained Drone tables support a counter-row ordinal endpoint domain with 261 in-range uses; list positions and the counter rows' object-index values belong to separate lanes. Status code `41` with plain payload is the built, normal state. The first three common-frame state bytes remain an untyped operation-state prefix; bytes 3 through 7 are legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations. The `m_objectStateCollection` member has declaration code `78` in both UG_PART and RMFastLoad. That code is not a section-local class ordinal: the UG_PART class ordinals differ, and RMFastLoad does not declare the collection class. The product-anchored control form retains an aligned u32 value lane whose in-range values address same-store data blocks; it does not declare class references. An object record retains its object identifier and bounded bytes, but no class binding or typed field value.
+**Known.** `siemens_nx.md` §2 derives active state from the closed output-and-dependency graph and admits retained-history primary-body and partition-scoped body-write closure witnesses when neutral output projection cannot bind an operation to the selected body. `siemens_nx.md` §7.1 defines the feature-history journal, status rows, diagnostic messages, `m_rollForwardStates` groups, and object state-counter map. An audit-trail section has a distinct role-gated complete-row grammar and the native decoder retains its ordinal, optional selector, timestamp, tagged value, exact row bytes, and source offsets. The native decoder retains exact status codes and payloads, message values and count/severity words, group rows, and counter-map rows. The retained group tables and counter maps support a counter-row ordinal endpoint domain: every endpoint value is in the row-ordinal range of the following counter map; list positions and the counter rows' object-index values belong to separate lanes. Status code `41` with plain payload is the built, normal state. The first three common-frame state bytes remain an untyped operation-state prefix; bytes 3 through 7 are legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations. The `m_objectStateCollection` member has declaration code `78` in both UG_PART and RMFastLoad. That code is not a section-local class ordinal: the UG_PART class ordinals differ, and RMFastLoad does not declare the collection class. The product-anchored control form retains an aligned u32 value lane whose in-range values address same-store data blocks; it does not declare class references. An object record retains its object identifier and bounded bytes, but no class binding or typed field value.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
 
-**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two counter-row ordinal endpoints in the worked Drone tables, but a counter-row ordinal does not identify an operation or a typed suppression value. The operation identity, state-object identity, and typed state value require separate unique joins. The `78` member code does not supply the missing class reference. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two counter-row ordinal endpoints, but a counter-row ordinal does not identify an operation or a typed suppression value. The operation identity, state-object identity, and typed state value require separate unique joins. The `78` member code does not supply the missing class reference. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
 
-**Note.** Independent raw replay of the three worked Drone tables establishes
-38, 38, and 17 groups and 1,073, 1,109, and 1,447 counter rows, respectively.
-Their 261 endpoint uses all address the adjacent counter map. The −90° specimen
-contains a complete raw group and counter table even when those arenas emit no
-rows. An emitted zero therefore does not establish raw absence or group-census
-completeness. These tables provide no independently identified suppressed
-operation or complete operation-to-state-object join.
+**Note.** Independent raw replay of a group table and its counter map
+establishes their group and counter-row counts; tables of 17 and 38 groups
+with 1,073 to 1,447 counter rows occur. Every endpoint use addresses the
+adjacent counter map. A part can contain a complete raw group and counter table
+even when those arenas emit no rows. An emitted zero therefore does not
+establish raw absence or group-census completeness. The group and counter
+tables provide no independently identified suppressed operation or complete
+operation-to-state-object join.
 
 ### OM-11. `DELETE` construction-payload fields
 
@@ -326,7 +335,7 @@ operation or complete operation-to-state-object join.
 
 **Conflict.** Physical column boundaries split inner frames. Consecutive block ordinals and physical adjacency do not establish field boundaries. A repeated inner header does not identify operands or delimit every following field.
 
-**Note.** The worked spur-gear-housing payload repeats `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
+**Note.** A `DELETE` construction payload can repeat `2d fb 7c df d9 d7 bd bb 00 00 00 50 28 00 00 2a` at payload-relative offsets `0`, `177`, and `354`. Directory-bounded offset-table candidates without the admitted product frame require a separate store-grammar proof; monotonic offsets alone do not establish an OM store.
 
 ### OM-12. Arrangement-specific component state
 
@@ -767,11 +776,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Known.** `siemens_nx.md` §7.2 "A complex part contains current body images and historical or tool bodies" names plain cached tool bodies and requires feature-history operand bindings when `RMFastLoad` membership does not select the current images. When membership selects no body, the decoder withholds the plain-stream bodies of a part that also has partition-stream bodies and charges `history.plain-images-withheld`. The terminal-lineage selector then selects among the remaining bodies; `history.sub-body-composition-unresolved` remains when it does not resolve them.
 
-In the NIST CTC-03 part, the one partition solid equals the solid of the revision C STEP export in face count, surface kinds, area, volume, and vertex box, and the ten plain-stream sheets have no counterpart in that export. Three parts with NX-written STEP exports contain one partition body and two to five plain-stream bodies; each export contains only the partition body. In ten NIST parts with same-revision STEP exports, no plain-stream body has an export body of the same kind and face count; one plain-stream plane has no vertices and is not compared.
+A part can hold one partition solid and ten plain-stream sheets; the partition solid equals the solid of its same-revision STEP export in face count, surface kinds, area, volume, and vertex box, and the plain-stream sheets have no counterpart in that export. A part with an NX-written STEP export can contain one partition body and two to five plain-stream bodies; the export contains only the partition body. No plain-stream body has a body of the same kind and face count in a same-revision STEP export. A plain-stream plane can have no vertices; that comparison excludes it.
 
 **Need.** Identify the serialized state that marks a body image as current, and the rule for parts with several partition streams.
 
-**Conflict.** The terminal-lineage statuses mark plain-stream bodies as terminal in five parts, including the three parts whose NX-written STEP exports omit them. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
+**Conflict.** The terminal-lineage statuses can mark plain-stream bodies as terminal, also in parts whose NX-written STEP exports omit those bodies. §7.2 states that historical and tool bodies can own partition streams, so a partition stream does not by itself mark a body as current.
 
 ## 3. Assembly and material data
 
@@ -815,9 +824,9 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized relation binds a placement to its parent component and to its prototype when one placement UUID covers several prototypes, and which field selects the length unit of an assembly part?
 
-**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In the three flat assemblies with STEP exports, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. All 36 MTC placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
+**Known.** `siemens_nx.md` §2.3 "The matrix maps the child part frame into the frame of the assembly part" defines the pose, and "A placement UUID that occurs once in the FastLoad UUID table" defines the single-prototype UUID binding. The decoder emits placements bound by that rule when every numeric length expression of the part declares millimetres, and charges `assembly.placement-unit-from-expressions`. It withholds the other placements with `assembly.placement-frame-unresolved`. The decoder attaches every emitted placement to the assembly root and charges `assembly.placement-parent-assumed`. In a flat assembly with a STEP export, every STEP occurrence is a direct child of the root, and the root-attached placements give the STEP positions. Placement owners have zero recognized `RecordOrdinal16` parent edges under the bounded same-section ordinal parser; unrecognized reference encodings remain possible.
 
-The first trailer byte descends from `0x3f` to `0x1c` in MTC placement-record order. In another assembly, the first trailer byte plus the placement's record ordinal in its record directory is 65 for all 22 placements.
+In placement-record order, the first trailer byte can descend from `0x3f` to `0x1c` across the 36 placements of an assembly. The first trailer byte plus the placement's record ordinal in its record directory can have one value for every placement of an assembly; the value 65 occurs across 22 placements.
 
 The third trailer byte has one value for all placements of one child part and distinct values for distinct child parts, also inside one UUID group. Its values increase in the order of the first placement of each child part. Most values are even. Placements whose trailer second byte is not `f0` carry other values in that position.
 

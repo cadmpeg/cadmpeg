@@ -20,7 +20,21 @@ pub(crate) enum DesignSheetMetalSettingsInputs {
         slots: [Option<u64>; 9],
         rule_reference_tail: V3RuleReferenceTail,
     },
+    /// A version-3 frame whose first byte after the ten zero bytes is `01`.
+    /// A present reference then occupies the position of the u32 mask, and
+    /// twelve zero bytes precede the rule reference. The role of the first
+    /// reference is unassigned.
+    V3LeadingReference {
+        first: u64,
+        rule_reference_tail: V3RuleReferenceTail,
+    },
 }
+
+/// Bytes between the leading reference and the rule reference of a
+/// [`DesignSheetMetalSettingsInputs::V3LeadingReference`] frame.
+pub(crate) const V3_LEADING_ZERO_RUN: usize =
+    crate::layout::sheet_metal_settings_leading_prefix::LEN
+        - crate::layout::sheet_metal_settings_leading_prefix::ZERO_RUN_12;
 
 /// Exact suffix bytes; their control meaning is unassigned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,13 +49,35 @@ impl DesignSheetMetalSettingsInputs {
     pub(crate) fn version(&self) -> u32 {
         match self {
             Self::V2 { .. } => 2,
-            Self::V3 { .. } => 3,
+            Self::V3 { .. } | Self::V3LeadingReference { .. } => 3,
         }
     }
     pub(crate) fn slots(&self) -> &[Option<u64>] {
         match self {
             Self::V2 { slots } => slots,
             Self::V3 { slots, .. } => slots,
+            Self::V3LeadingReference { .. } => &[],
+        }
+    }
+    /// The reference stored where the mask-and-slots form stores its mask.
+    pub(crate) fn leading_reference(&self) -> Option<u64> {
+        match self {
+            Self::V3LeadingReference { first, .. } => Some(*first),
+            Self::V2 { .. } | Self::V3 { .. } => None,
+        }
+    }
+    /// Bytes of the leading reference and its zero run, or of the optional
+    /// slots, between the mask position and the rule reference.
+    pub(crate) fn optional_width(&self) -> u64 {
+        match self {
+            Self::V2 { .. } | Self::V3 { .. } => self
+                .slots()
+                .iter()
+                .map(|slot| if slot.is_some() { 11 } else { 1 })
+                .sum::<u64>(),
+            Self::V3LeadingReference { .. } => {
+                11 + cadmpeg_core::decode::u64_from_index(V3_LEADING_ZERO_RUN)
+            }
         }
     }
     pub(crate) fn rule_reference_tail_width(&self) -> u64 {
@@ -50,8 +86,16 @@ impl DesignSheetMetalSettingsInputs {
             Self::V3 {
                 rule_reference_tail: V3RuleReferenceTail::ZeroPair,
                 ..
+            }
+            | Self::V3LeadingReference {
+                rule_reference_tail: V3RuleReferenceTail::ZeroPair,
+                ..
             } => 2,
             Self::V3 {
+                rule_reference_tail: V3RuleReferenceTail::OneZeroPair,
+                ..
+            }
+            | Self::V3LeadingReference {
                 rule_reference_tail: V3RuleReferenceTail::OneZeroPair,
                 ..
             } => 3,
@@ -67,7 +111,8 @@ pub(crate) struct DesignSheetMetalSettings {
     pub(crate) record_index: u64,
     pub(crate) byte_offset: u64,
     pub(crate) paired_byte_offset: u64,
-    pub(crate) mask: u32,
+    /// The u32 override mask; absent in the leading-reference form.
+    pub(crate) mask: Option<u32>,
     pub(crate) inputs: DesignSheetMetalSettingsInputs,
     pub(crate) rule_record_index: u64,
     pub(crate) presentation_record_index: u64,
@@ -80,6 +125,7 @@ pub(crate) struct DesignSheetMetalSettings {
     pub(crate) rule_thickness_offset: Option<u64>,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_mask, u32, "mask");
 cadmpeg_core::named_optional_field!(
     deserialize_rule_thickness,
     cadmpeg_ir::scalar::PositiveReal,
@@ -98,7 +144,12 @@ pub(crate) struct DesignSheetMetalSettingsWire {
     pub(crate) record_index: u64,
     pub(crate) byte_offset: u64,
     pub(crate) paired_byte_offset: u64,
-    pub(crate) mask: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mask"
+    )]
+    pub(crate) mask: Option<u32>,
     pub(crate) inputs: DesignSheetMetalSettingsInputs,
     pub(crate) rule_record_index: u64,
     pub(crate) presentation_record_index: u64,
@@ -124,6 +175,7 @@ impl DesignSheetMetalSettings {
     }
     pub(crate) fn record_references(&self) -> impl Iterator<Item = u64> + '_ {
         std::iter::once(self.record_index)
+            .chain(self.inputs.leading_reference())
             .chain(self.inputs.slots().iter().flatten().copied())
             .chain([
                 self.rule_record_index,
@@ -139,6 +191,9 @@ impl TryFrom<DesignSheetMetalSettingsWire> for DesignSheetMetalSettings {
     fn try_from(wire: DesignSheetMetalSettingsWire) -> Result<Self, Self::Error> {
         if wire.paired_byte_offset <= wire.byte_offset {
             return Err("settings paired header must follow the primary header".into());
+        }
+        if wire.mask.is_some() == wire.inputs.leading_reference().is_some() {
+            return Err("settings mask is present exactly when no leading reference is".into());
         }
         let id =
             NativeRecordId::try_f3d_new(wire.id, "design-sheet-metal-settings", wire.byte_offset)?;
@@ -167,7 +222,8 @@ struct DesignSheetMetalSettingsWireRef<'a> {
     record_index: u64,
     byte_offset: u64,
     paired_byte_offset: u64,
-    mask: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mask: Option<u32>,
     inputs: &'a DesignSheetMetalSettingsInputs,
     rule_record_index: u64,
     presentation_record_index: u64,

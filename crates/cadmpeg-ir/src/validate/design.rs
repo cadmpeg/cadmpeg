@@ -12,20 +12,28 @@
 //! pick, and an operation whose operands are not stated are legal partial
 //! statements that no rule about their operands checks.
 
+mod caches;
 mod configurations;
 mod constructions;
 mod containers;
-mod evaluations;
+mod dimensions;
+pub(super) mod evaluations;
+mod expressions;
 #[cfg(test)]
-mod fixture;
+pub(super) mod fixture;
 mod index;
 mod linkage;
 mod names;
+mod parameter_records;
+#[cfg(test)]
+mod parameter_tests;
 mod parameters;
-mod records;
-mod resolved;
-mod selections;
+mod programs;
+pub(super) mod records;
+pub(super) mod resolved;
+pub(super) mod selections;
 mod states;
+mod tolerances;
 mod walk;
 
 #[cfg(test)]
@@ -119,14 +127,24 @@ struct Held<'a> {
 }
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
-/// container, position, evaluation, current-geometry, configuration, name,
-/// selection, and construction rules.
+/// container, position, evaluation, current-geometry, configuration,
+/// parameter, expression, program, dimension, cache, name, selection, and
+/// construction rules.
 pub(super) fn check_design(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    if ir.design.is_empty() {
+        linkage::check_scope(ir, findings);
+        tolerances::check_definition_general_tolerances(ir, findings);
+        if !ir.process.parameters.is_empty() {
+            let records = records::DesignRecords::new(ir);
+            expressions::check_process_parameters(&records, findings);
+        }
+        return Ok(());
+    }
     let mut index = DesignIndex::new(ir);
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
@@ -135,6 +153,12 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
+    parameter_records::check_parameter_records(records, findings);
+    programs::check_programs(records, findings);
+    expressions::check_expressions(ctx, records, findings)?;
+    dimensions::check_dimensions(records, findings);
+    tolerances::check_tolerances(records, findings);
+    caches::check_caches(records, findings);
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
@@ -292,6 +316,16 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
         findings,
         Check::Design,
         Severity::Error,
+        Some(entity),
+        message,
+    );
+}
+
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+    super::record_finding(
+        findings,
+        Check::Design,
+        Severity::Warning,
         Some(entity),
         message,
     );

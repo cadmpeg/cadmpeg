@@ -6,5 +6,5 @@ pub(super) mod edges;
 pub(super) mod equations;
 pub(super) mod pcurve_geometry;
 pub(super) mod pcurves;
-pub(super) mod planes;
+pub(crate) mod planes;
 pub(super) mod vertices;

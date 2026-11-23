@@ -41,10 +41,75 @@
         {
           "id": "usd:stage:body#prototype0",
           "kind": "general",
-          "name": "Leg0"
+          "name": "Leg"
         }
       ],
-      "coedges": [],
+      "coedges": [
+        {
+          "edge": "usd:stage:edge#/Plant/Roof:edge:0",
+          "id": "usd:stage:coedge#/Plant/Roof:orientedEdge:0",
+          "owner_loop": "usd:stage:loop#/Plant/Roof:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:0"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Plant/Roof:orientedEdge:0",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Plant/Roof:edge:1",
+          "id": "usd:stage:coedge#/Plant/Roof:orientedEdge:1",
+          "owner_loop": "usd:stage:loop#/Plant/Roof:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:1"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Plant/Roof:orientedEdge:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Plant/Roof:edge:2",
+          "id": "usd:stage:coedge#/Plant/Roof:orientedEdge:2",
+          "owner_loop": "usd:stage:loop#/Plant/Roof:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:2"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Plant/Roof:orientedEdge:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "usd:stage:edge#/Plant/Roof:edge:3",
+          "id": "usd:stage:coedge#/Plant/Roof:orientedEdge:3",
+          "owner_loop": "usd:stage:loop#/Plant/Roof:loop:0",
+          "pcurves": [
+            {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
+              "pcurve": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:3"
+            }
+          ],
+          "radial_next": "usd:stage:coedge#/Plant/Roof:orientedEdge:3",
+          "sense": "forward"
+        }
+      ],
       "curves": [
         {
           "geometry": {
@@ -97,6 +162,148 @@
             }
           },
           "id": "usd:stage:curve#/Plant/Frame/Rail:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 2,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 1999.9999999999998,
+                    "y": 0.0,
+                    "z": 4000.000000000001
+                  },
+                  {
+                    "x": 4000.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 4000.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 4000.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:1"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 2,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 4000.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 2000.0000000000005,
+                    "y": 3000.000000000001,
+                    "z": 4000.000000000001
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:2"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 3000.0,
+                    "z": 3000.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 3000.0
+                  }
+                ]
+              }
+            }
+          },
+          "id": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:3"
         }
       ],
       "edges": [
@@ -113,22 +320,219 @@
             "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
           },
           "id": "usd:stage:edge#/Plant/Frame/Rail:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:0",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Roof:vertex:1",
+            "start": "usd:stage:vertex#/Plant/Roof:vertex:0"
+          },
+          "id": "usd:stage:edge#/Plant/Roof:edge:0"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:1",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Roof:vertex:2",
+            "start": "usd:stage:vertex#/Plant/Roof:vertex:1"
+          },
+          "id": "usd:stage:edge#/Plant/Roof:edge:1"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:2",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Roof:vertex:3",
+            "start": "usd:stage:vertex#/Plant/Roof:vertex:2"
+          },
+          "id": "usd:stage:edge#/Plant/Roof:edge:2"
+        },
+        {
+          "carrier": {
+            "curve": "usd:stage:curve#/Plant/Roof:curve3d-nurbs:3",
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Roof:vertex:0",
+            "start": "usd:stage:vertex#/Plant/Roof:vertex:3"
+          },
+          "id": "usd:stage:edge#/Plant/Roof:edge:3"
         }
       ],
       "faces": [
         {
-          "id": "usd:stage:face#/Plant/Roof",
+          "id": "usd:stage:face#/Plant/Roof:face:0",
           "loops": {
-            "kind": "unspecified",
-            "loops": []
+            "inner": [],
+            "kind": "classified",
+            "outer": "usd:stage:loop#/Plant/Roof:loop:0"
           },
           "sense": "forward",
-          "shell": "usd:stage:shell#/Plant/Roof",
-          "surface": "usd:stage:surface#/Plant/Roof"
+          "shell": "usd:stage:shell#/Plant/Roof:shell:0",
+          "surface": "usd:stage:surface#/Plant/Roof:surface-nurbs:0"
         }
       ],
-      "loops": [],
-      "pcurves": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "usd:stage:coedge#/Plant/Roof:orientedEdge:0",
+              "usd:stage:coedge#/Plant/Roof:orientedEdge:1",
+              "usd:stage:coedge#/Plant/Roof:orientedEdge:2",
+              "usd:stage:coedge#/Plant/Roof:orientedEdge:3"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "usd:stage:face#/Plant/Roof:face:0",
+          "id": "usd:stage:loop#/Plant/Roof:loop:0"
+        }
+      ],
+      "pcurves": [
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:0",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 1.0,
+                  "v": 0.0
+                },
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:1",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 1.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 1.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:2",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        },
+        {
+          "geometry": {
+            "degree": 1,
+            "kind": "nurbs",
+            "knots": [
+              0.0,
+              0.0,
+              1.0,
+              1.0
+            ],
+            "periodic": false,
+            "poles": {
+              "kind": "polynomial",
+              "points": [
+                {
+                  "u": 0.0,
+                  "v": 1.0
+                },
+                {
+                  "u": 0.0,
+                  "v": 0.0
+                }
+              ]
+            }
+          },
+          "id": "usd:stage:pcurve#/Plant/Roof:pcurve-nurbs:3",
+          "metadata": {
+            "form": {},
+            "kind": "general"
+          }
+        }
+      ],
       "points": [
         {
           "id": "usd:stage:point#/Plant/Frame/Rail:0:0",
@@ -145,6 +549,38 @@
             "y": 0.0,
             "z": 2333.3333333333335
           }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Roof:vertex:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Roof:vertex:1",
+          "position": {
+            "x": 4000.0,
+            "y": 0.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Roof:vertex:2",
+          "position": {
+            "x": 4000.0,
+            "y": 3000.0,
+            "z": 3000.0
+          }
+        },
+        {
+          "id": "usd:stage:point#/Plant/Roof:vertex:3",
+          "position": {
+            "x": 0.0,
+            "y": 3000.0,
+            "z": 3000.0
+          }
         }
       ],
       "procedural_curves": [],
@@ -159,9 +595,9 @@
         },
         {
           "body": "usd:stage:body#/Plant/Roof",
-          "id": "usd:stage:region#/Plant/Roof",
+          "id": "usd:stage:region#/Plant/Roof:region:0",
           "shells": [
-            "usd:stage:shell#/Plant/Roof"
+            "usd:stage:shell#/Plant/Roof:shell:0"
           ]
         }
       ],
@@ -177,9 +613,9 @@
           "region": "usd:stage:region#/Plant/Frame/Rail"
         },
         {
-          "id": "usd:stage:shell#/Plant/Roof",
+          "id": "usd:stage:shell#/Plant/Roof:shell:0",
           "members": [],
-          "region": "usd:stage:region#/Plant/Roof"
+          "region": "usd:stage:region#/Plant/Roof:region:0"
         }
       ],
       "subds": [],
@@ -251,7 +687,7 @@
               "v_periodic": false
             }
           },
-          "id": "usd:stage:surface#/Plant/Roof"
+          "id": "usd:stage:surface#/Plant/Roof:surface-nurbs:0"
         }
       ],
       "vertices": [
@@ -262,6 +698,22 @@
         {
           "id": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
           "point": "usd:stage:point#/Plant/Frame/Rail:0:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Roof:vertex:0",
+          "point": "usd:stage:point#/Plant/Roof:vertex:0"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Roof:vertex:1",
+          "point": "usd:stage:point#/Plant/Roof:vertex:1"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Roof:vertex:2",
+          "point": "usd:stage:point#/Plant/Roof:vertex:2"
+        },
+        {
+          "id": "usd:stage:vertex#/Plant/Roof:vertex:3",
+          "point": "usd:stage:point#/Plant/Roof:vertex:3"
         }
       ]
     },
@@ -872,7 +1324,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "angle": "radian",

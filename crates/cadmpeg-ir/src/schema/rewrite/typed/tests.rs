@@ -98,7 +98,7 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
             self.0.rewrite_identities(ctx, map).map(Self)
         }
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source = std::collections::BTreeMap::from([(OrderedKey(2), 4_u8), (OrderedKey(1), 3)]);
     let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
     let rewritten = source.rewrite_identities(&ctx, &mut map).unwrap();
@@ -147,7 +147,7 @@ fn typed_identity_rewrite_retains_its_grammar_proof_through_the_cache() {
 #[test]
 fn typed_rewrite_skips_identity_free_point_grids() {
     let rows = (0..4096)
-        .map(|_| vec![crate::features::FinitePoint3::ZERO; 4])
+        .map(|_| vec![crate::features::geometry::FinitePoint3::ZERO; 4])
         .collect::<Vec<_>>();
     let outer = rows.as_ptr();
     let inner = rows[0].as_ptr();
@@ -164,7 +164,7 @@ fn typed_rewrite_skips_identity_free_point_grids() {
     assert!(rows
         .iter()
         .flatten()
-        .all(|point| *point == crate::features::FinitePoint3::ZERO));
+        .all(|point| *point == crate::features::geometry::FinitePoint3::ZERO));
     map.finish().unwrap();
     drop(map);
     ctx.finish_session().unwrap();
@@ -172,7 +172,7 @@ fn typed_rewrite_skips_identity_free_point_grids() {
 
 #[test]
 fn typed_hash_index_qualifies_thousands_of_long_identities_and_rejects_collisions() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let prefix = "x".repeat(128);
     let mut map = IdentityMap::new(|source: &str| {
         Ok(format!(
@@ -198,7 +198,7 @@ fn typed_hash_index_qualifies_thousands_of_long_identities_and_rejects_collision
 
 #[test]
 fn a_callback_resource_refusal_fuses_later_identity_and_text_rewrites() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let limit = cadmpeg_core::decode::ResourceLimit::allocation_failed(
         ResourceDimension::RetainedBytes,
         4096,
@@ -245,7 +245,7 @@ fn typed_rewrite_reuses_owned_sequence_storage() {
     let pointer = values.as_ptr();
     let capacity = values.capacity();
     assert!(capacity > values.len());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
     let values = values.rewrite_identities(&ctx, &mut map).unwrap();
     assert_eq!(values.len(), 4096);

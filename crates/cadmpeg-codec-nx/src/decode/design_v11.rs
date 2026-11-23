@@ -20,9 +20,10 @@ use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureOperation as LegacyOperation,
-    FeatureTreeNodeRole, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -30,7 +31,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 mod parameters;
 
 /// The root definition of an NX part that states no assembly root.
-const PART_ROOT: &str = "nx:document:product-definition#root";
+pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
 
 /// Project the decoded NX history into `ir.design` as the design of
@@ -80,6 +81,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
         active_arrangements,
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(container);
     design.features.extend(features);

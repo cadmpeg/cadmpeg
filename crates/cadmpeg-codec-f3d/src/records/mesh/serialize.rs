@@ -67,15 +67,14 @@ impl Serialize for BodyRef<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            scope_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            scope_record_index: Option<u32>,
             #[serde(skip_serializing_if = "Option::is_none")]
             scope_body_ordinal: Option<u32>,
             body_words: &'a super::DesignMeshBodyWords,
             body_words_offset: u64,
             #[serde(skip_serializing_if = "<[super::DesignMeshSplitStream]>::is_empty")]
             split_streams: &'a [super::DesignMeshSplitStream],
-            #[serde(skip_serializing_if = "<[super::DesignMeshHistoryStream]>::is_empty")]
-            history_streams: &'a [super::DesignMeshHistoryStream],
             #[serde(skip_serializing_if = "Option::is_none")]
             face_group_metadata: Option<&'a super::DesignMeshFaceGroups>,
             body_record: RecordRef<'a>,
@@ -140,7 +139,6 @@ impl Serialize for BodyRef<'_> {
             body_words_offset: body.placement.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
             split_streams: &body.split_streams,
-            history_streams: &body.history_streams,
             face_group_metadata: body.face_group_metadata.as_ref(),
             body_record: RecordRef::from_identity(&body.placement.record),
             body_name: body.placement.body_name.as_deref(),
@@ -316,6 +314,8 @@ impl Serialize for DesignMeshFeature {
             collection_base_record: RecordRef<'a>,
             #[serde(skip_serializing_if = "Option::is_none")]
             collection_flagged_data: Option<&'a super::DesignMeshFlaggedCollection>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_received_count: Option<u32>,
             texture_table_record: RecordRef<'a>,
             body_count_offsets: [u64; 2],
             body_record_indices: SliceColumn<'a, DesignMeshBody, u32>,
@@ -347,6 +347,7 @@ impl Serialize for DesignMeshFeature {
             collection_record: RecordRef::from_identity(self.collection.record()),
             collection_base_record: RecordRef::collection_base(&self.collection),
             collection_flagged_data: self.collection.flagged_data.as_ref(),
+            collection_received_count: self.collection.received_count(),
             texture_table_record: RecordRef::from_identity(self.texture_table.record()),
             body_count_offsets: self.body_count_offsets(),
             body_record_indices: SliceColumn::new(&self.bodies, |body| {

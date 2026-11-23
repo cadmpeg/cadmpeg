@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole construction, placement, and compatible dimensions.
 
-use super::{FeatureDirection3, FinitePoint3};
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// One complete spatial placement in a hole operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -468,7 +468,7 @@ pub enum HoleKind {
 }
 
 /// Mutually exclusive ordinary and source-native threaded hole constructions.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -557,7 +557,7 @@ impl HoleKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum PartialCounterboreDimension {
@@ -565,7 +565,7 @@ enum PartialCounterboreDimension {
     Depth { depth: PositiveLength },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum PartialCountersinkDimension {
@@ -573,7 +573,7 @@ enum PartialCountersinkDimension {
     Angle { angle: InteriorAngle },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
@@ -792,7 +792,7 @@ pub enum HoleBottom {
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleBottomWire {
@@ -838,7 +838,7 @@ impl From<HoleBottomWire> for HoleBottom {
 }
 
 /// Standard sizing and optional physical-thread construction for a hole.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1122,7 +1122,7 @@ mod length_mapping_tests {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleThreadDepthWire {

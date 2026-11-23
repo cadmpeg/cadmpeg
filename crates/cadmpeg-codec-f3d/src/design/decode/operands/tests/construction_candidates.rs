@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::operands::{
+use crate::design::decode::operands::construction_groups::{
     parse_construction_operand_group, ConstructionOperandGroupParse, RecordFrame,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};

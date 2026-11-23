@@ -11,7 +11,9 @@ use serde_json::{json, Value};
 use crate::design::container::Container;
 use crate::design::evaluation::{CurrentState, EvaluationStatus};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
-use crate::design::names::{NameEntry, NameTable, TopoName};
+use crate::design::names::{
+    GenerationRole, HoleFaceRole, InstanceIndex, NameEntry, NameKind, NameTable, TopoName,
+};
 use crate::design::refs::EntityRef;
 use crate::design::scope::DesignScope;
 use crate::design::selection::{Anchor, PickTarget, Picked, Witness};
@@ -131,6 +133,7 @@ fn timeline(features: Vec<Feature>) -> CadIr {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     ir.design.features = features;
     ir.design
@@ -453,6 +456,57 @@ fn a_principal_entity_a_datum_restates_is_picked_through_the_datum() {
     );
 }
 
+/// The planes in a Fusion scope `part` that places component `bracket`,
+/// with plane `b` a feature of `bracket` picking the timeline's origin.
+fn bracket_plane_on_the_timeline_origin() -> CadIr {
+    use crate::products::{Occurrence, ProductDefinition, Storage};
+    let mut features = planes();
+    features[1] = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "coincident",
+            Some(named(
+                input_anchor(),
+                vec![json!({"target": {"kind": "principal", "value": {
+                    "entity": "xy_plane",
+                    "container": key("container", "timeline")
+                }}})],
+            )),
+            None,
+        )])),
+    );
+    features[1].component = Some(id("product_definition", "bracket"));
+    let mut ir = timeline(features);
+    let occurrence = Occurrence::new(
+        id("occurrence", "bracket"),
+        id("product_definition", "bracket"),
+        None,
+    );
+    let mut part = ProductDefinition::new(id("product_definition", "part"), Storage::Embedded);
+    part.occurrences.push(occurrence.id.clone());
+    ir.model.product_definitions = vec![
+        ProductDefinition::new(id("product_definition", "bracket"), Storage::Embedded),
+        part,
+    ];
+    ir.model.occurrences.push(occurrence);
+    ir
+}
+
+#[test]
+fn a_principal_container_is_of_the_scope_that_spans_the_picks_definition() {
+    assert_clean(&bracket_plane_on_the_timeline_origin());
+
+    let mut ir = bracket_plane_on_the_timeline_origin();
+    ir.model.product_definitions[1].occurrences.clear();
+    ir.model.occurrences.clear();
+    assert_finding(
+        &ir,
+        Check::Design,
+        Severity::Error,
+        "not an ordered container of the scope that spans its definition",
+    );
+}
+
 #[test]
 fn a_coordinates_reference_picks_a_frame_first() {
     let mut features = planes();
@@ -688,7 +742,31 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "b"))),
     );
-    assert_finding(&ir, Check::Design, Severity::Error, "matches no entity");
+    assert_finding(&ir, Check::Design, Severity::Warning, "matches no entity");
+
+    for name in [
+        TopoName::Generated {
+            kind: NameKind::Face,
+            feature: id("feature", "removed"),
+            role: Some(GenerationRole::Hole(HoleFaceRole::BoreWall)),
+            generator: None,
+            index: None,
+        },
+        TopoName::Instance {
+            feature: id("feature", "removed"),
+            instance: InstanceIndex(vec![1]),
+            of: Box::new(generated("face", "a")),
+        },
+    ] {
+        let mut ir = named_cube();
+        publish(&mut ir, current_pick(PickTarget::Entity(name.clone())));
+        let errors: Vec<_> = findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.severity == Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "a lost operand is no Error: {errors:#?}");
+        assert_finding(&ir, Check::Design, Severity::Warning, "lost operand");
+    }
 
     let mut ir = named_cube();
     let mut pick = current_pick(PickTarget::Entity(generated("face", "a")));
@@ -768,7 +846,7 @@ fn the_walk_at_the_construction_ceiling_runs_on_a_small_stack() {
 
 #[test]
 fn the_walk_reaches_a_selection_inside_an_operation() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature = feature(
         "a",
         json!({"kind": "extract", "value": {

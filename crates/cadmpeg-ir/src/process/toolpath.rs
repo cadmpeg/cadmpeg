@@ -16,7 +16,8 @@ use super::technology::{Coolant, SpindleDirection};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::ids::{MachiningFeatureId, OperationId, ToolpathId};
 use crate::design::units::{AngularSpeed, Duration, Feed};
-use crate::features::{ConfigurationId, FinitePoint3};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ConfigurationId;
 use crate::scalar::{FiniteReal, Fraction};
 use crate::transform::Transform;
 use crate::units::UnitVector3;
@@ -56,7 +57,7 @@ pub struct Toolpath {
 }
 
 /// The content of a toolpath.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -79,7 +80,7 @@ pub enum ToolpathContent {
 }
 
 /// One motion or event of a toolpath.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -214,7 +215,7 @@ pub enum Motion {
 }
 
 /// A heater of an additive machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Heater {
@@ -279,7 +280,7 @@ pub enum MovementClass {
 }
 
 /// A typed value of a toolpath attribute or cycle parameter.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
