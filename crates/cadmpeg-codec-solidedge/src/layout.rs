@@ -320,6 +320,28 @@ pub(crate) mod assembly_reference {
     pub(crate) const UNIT: usize = 221;
 }
 
+/// Byte offsets for the `occurrence_structure_header` record.
+///
+/// Spec §9.4. Record length 20 B.
+pub(crate) mod occurrence_structure_header {
+    /// Record length in bytes. Spec §9.4.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `count` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const COUNT: usize = 16;
+}
+
+/// Byte offsets for the `occurrence_structure_entry` record.
+///
+/// Spec §9.4. Record length 20 B.
+pub(crate) mod occurrence_structure_entry {
+    /// Record length in bytes. Spec §9.4.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `flags` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const FLAGS: usize = 0;
+    /// Offset of `object` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const OBJECT: usize = 8;
+}
+
 /// Byte offsets for the `file_moniker` record.
 ///
 /// Spec §9.3. Record length 22 B.

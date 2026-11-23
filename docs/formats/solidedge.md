@@ -543,3 +543,20 @@ header, then a file moniker at offset 12:
 A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
+
+### 9.4 Occurrence structure list
+
+The stream `Preview/Structure/IOT` lists the occurrences that take part in
+the assembly. A 20-byte header holds a `u32` entry count `n` at offset 16.
+`n` entries of 20 bytes follow, so the stream is 20 + 20·`n` bytes long. An
+entry stores:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |
+| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence that the references collection (§9.1) lists and the stream
+does not list is suppressed. Its `CLSID_JAsmReference` object and the
+references collection are the same as for an active occurrence. A hidden
+occurrence keeps its entry.

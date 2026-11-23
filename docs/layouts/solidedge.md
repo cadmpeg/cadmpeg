@@ -418,6 +418,38 @@ Unstated regions:
 - `16..113` (97 B): The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier.
 - `117..125` (8 B): §9.2 states no field between the site identifier and the rotation.
 
+## `occurrence_structure_header`
+
+Spec §9.4 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `count` | `u32` | little | spec | A 20-byte header holds a `u32` entry count `n` at offset 16. |
+
+Unstated regions:
+
+- `0..16` (16 B): §9.4 states no field before the entry count.
+
+## `occurrence_structure_entry`
+
+Spec §9.4 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `flags` | `u32` | little | spec | \| 0 \| `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence \| |
+| 8 | 4 | `object` | `u32` | little | spec | \| 8 \| `u32` identifier of the `CLSID_JAsmReference` object (§9.2) \| |
+
+Unstated regions:
+
+- `4..8` (4 B): §9.4 states no field between the flags and the occurrence identifier.
+- `12..20` (8 B): §9.4 states no field after the occurrence identifier.
+
 ## `file_moniker`
 
 Spec §9.3 · layout: byte offsets · size: 22 B

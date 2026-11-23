@@ -95,19 +95,3 @@
 **Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
-
-### DR-1026. Occurrence visibility
-
-**Question.** Where does an assembly store that an occurrence is hidden?
-
-**Known.** Hiding an occurrence leaves its `CLSID_JAsmReference` object (§9.2), `JAsmRefAttr`, `JSitesList` and `PSMroots` unchanged. It changes the 512-byte `JVisibleData` stream throughout, and that stream does not read as plain records.
-
-**Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
-
-### DR-1035. Occurrence suppression
-
-**Question.** Where does an assembly store that an occurrence is suppressed?
-
-**Known.** The state word of a `CLSID_JAsmReference` object (§9.2) states grounding. It is `4` for a non-grounded occurrence whether or not the occurrence is suppressed.
-
-**Need.** An assembly saved with one occurrence suppressed and its copy with the occurrence active, and the same pair with the occurrence grounded.
