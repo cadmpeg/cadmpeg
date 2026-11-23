@@ -419,3 +419,119 @@ fn a_stored_body_the_encoder_cannot_write_is_left_out_with_its_configuration() {
             .all(|(bodies, _)| *bodies == 0));
     }
 }
+
+/// Two configurations: `First`, not active, whose partition holds a triangle
+/// whose face names `Boss` as its producer in `FACE_ID_2001`, and, with
+/// `modified`, whose body names `Cut` as the last feature that modified it;
+/// and `Second`, active, with a triangle of its own. Both lanes list `Boss`
+/// and `Cut`.
+fn stored_producers(modified: bool) -> Vec<u8> {
+    use crate::test_support::history::resolved_feature_classes_with_ids;
+    use crate::test_support::parasolid::{int_list_attribute, triangle_body};
+    let mut stored = triangle_body();
+    stored.extend(int_list_attribute(
+        "FACE_ID_2001",
+        &[9, 9, 1, 1],
+        1100,
+        10,
+        &[36, 7, 0x6523_4178, 0],
+    ));
+    if modified {
+        stored.extend(int_list_attribute(
+            "LAST_BODY_MODIFYING_FEATURE_ID",
+            &[9, 1],
+            1120,
+            900,
+            &[9],
+        ));
+    }
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &stored),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 701, 10.0),
+        ),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords Name="Bracket">
+    <Configuration Name="First" SourceIndex="0"/>
+    <Configuration Name="Second" SourceIndex="1"/>
+    <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+    <Extrusion Name="Cut" Type="CutExtrude" id="9"/>
+</Keywords>"#,
+    ));
+    for lane in 0..2 {
+        source.extend(make_block(
+            0x44 + lane,
+            &format!("Contents/Config-{lane}-ResolvedFeatures"),
+            &resolved_feature_classes_with_ids(&[
+                ("moExtrusion_c", "Boss", 7),
+                ("moExtrusion_c", "Cut", 9),
+            ]),
+        ));
+    }
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    source
+}
+
+fn outputs_unstated(result: &cadmpeg_test_support::EditableDecodeResult) -> Vec<&str> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::ConfigStateOutputsUnstated.kind())
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// An output of a stored state whose feature a face of the body names in
+/// the configuration's evaluation is stated there, and charges no loss.
+#[test]
+fn a_stored_output_a_face_name_states_charges_no_loss() {
+    let result = decode(stored_producers(false));
+    assert!(matches!(stored_states(result.ir()).as_slice(), [(1, 1)]));
+    assert!(
+        outputs_unstated(&result).is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+/// An output of a stored state that only the last-modifying-feature
+/// attribute gives, for a feature that names no face of the body, is
+/// charged, once for its configuration.
+#[test]
+fn a_stored_output_no_face_name_states_is_charged() {
+    let result = decode(stored_producers(true));
+    let configuration = result
+        .ir()
+        .design
+        .evaluations
+        .iter()
+        .find_map(|evaluation| {
+            evaluation
+                .content
+                .as_ref()
+                .and(evaluation.configuration.as_ref())
+        })
+        .unwrap();
+    let [message] = outputs_unstated(&result)[..] else {
+        panic!("one loss: {:#?}", result.report().losses);
+    };
+    assert!(message.contains(configuration.as_str()), "{message}");
+    assert!(message.contains(": 1 feature output(s)"), "{message}");
+}

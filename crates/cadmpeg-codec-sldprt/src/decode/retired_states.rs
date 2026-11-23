@@ -8,20 +8,25 @@
 //! evaluation. [`retire`] then removes them from the geometry, with what the
 //! model says of them: the body membership, which the evaluation states; the
 //! document feature outputs that name them, which state the current
-//! geometry; and the configuration feature-state outputs that name them and
-//! the appearance bindings on them, which a model record cannot yet state of
-//! a state that is not current (interim, §8), each with one loss per
-//! configuration. The display tables bind to the active configuration's
-//! faces only, so none names a retired record.
+//! geometry; the configuration feature-state outputs that name them, which
+//! the evaluation's name table states where a face of the body carries a
+//! name of the feature (§5.7), with one loss per configuration for the
+//! outputs no such name states; and the appearance bindings on them, which a
+//! model target cannot yet name in a state that is not current (interim,
+//! §8), with one loss per configuration. The display tables bind to the
+//! active configuration's faces only, so none names a retired record.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::evaluation::StateBase;
+use cadmpeg_ir::design::names::TopoName;
+use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
-use cadmpeg_ir::features::ConfigurationId;
+use cadmpeg_ir::features::{ConfigurationId, FeatureId};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -31,8 +36,9 @@ use crate::loss::SldprtLossCode;
 
 /// Removes the `retired` geometry records, which the evaluations of
 /// configurations that are not active hold, with every model reference to
-/// them: [`retire_model`], with one loss per configuration whose feature
-/// states named them as outputs; the appearance bindings on them, and the
+/// them: [`retire_model`], with one loss per configuration for the feature
+/// outputs on them that its evaluation's face names do not state; the
+/// appearance bindings on them, and the
 /// appearances only those bindings used, with one loss per configuration;
 /// their annotations and the unknown-record links to them.
 pub(super) fn retire(
@@ -94,9 +100,9 @@ pub(super) fn retire(
     for (configuration, count) in retire_model(ir, retired) {
         losses.push(SldprtLossCode::ConfigStateOutputsUnstated.note(format!(
             "configuration {configuration}: {count} feature output(s) on the bodies of its state \
-             are not stated, because a model feature state cannot name a body of a state that \
-             is not current, and an evaluation states which definition owns a body, not which \
-             feature produces it."
+             are not stated: a model feature state cannot name a body of a state that is not \
+             current, and the configuration's evaluation names that feature on no face of that \
+             body."
         )));
     }
     ir.model
@@ -147,12 +153,14 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
 /// outputs and configuration feature-state outputs that name them, and the
 /// body list of each configuration whose bodies they are, since its
 /// evaluation states them. Returns, per configuration whose state holds the
-/// bodies, the number of configuration feature-state outputs removed.
+/// bodies, the number of configuration feature-state outputs removed whose
+/// feature the configuration's evaluation names on no face of the body.
 fn retire_model(
     ir: &mut CadIr,
     retired: &BTreeMap<String, ConfigurationId>,
 ) -> BTreeMap<ConfigurationId, usize> {
     let gone = |id: &str| retired.contains_key(id);
+    let named = named_producers(ir, retired);
     let mut unstated = BTreeMap::<ConfigurationId, usize>::new();
     remove_records(&mut ir.geometry, retired);
     for feature in &mut ir.model.features {
@@ -180,10 +188,16 @@ fn retire_model(
         {
             configuration.bodies = None;
         }
-        for state in configuration.feature_states.values_mut() {
+        for (feature, state) in &mut configuration.feature_states {
             if let ConfigurationEvaluation::Active { outputs } = &mut state.evaluation {
                 for body in outputs.iter() {
-                    if let Some(owner) = retired.get(body.as_str()) {
+                    let Some(owner) = retired.get(body.as_str()) else {
+                        continue;
+                    };
+                    let stated = named
+                        .get(&(owner.clone(), body.clone()))
+                        .is_some_and(|features| features.contains(feature));
+                    if !stated {
                         *unstated.entry(owner.clone()).or_default() += 1;
                     }
                 }
@@ -192,6 +206,92 @@ fn retire_model(
         }
     }
     unstated
+}
+
+/// Per configuration of `retired` and body of its state, the features that
+/// the names of the body's faces in the configuration's evaluations name
+/// (§5.7).
+fn named_producers(
+    ir: &CadIr,
+    retired: &BTreeMap<String, ConfigurationId>,
+) -> BTreeMap<(ConfigurationId, BodyId), BTreeSet<FeatureId>> {
+    let configurations = retired.values().collect::<BTreeSet<_>>();
+    let mut named = BTreeMap::<_, BTreeSet<FeatureId>>::new();
+    for evaluation in &ir.design.evaluations {
+        let (Some(configuration), Some(content)) = (&evaluation.configuration, &evaluation.content)
+        else {
+            continue;
+        };
+        if !configurations.contains(configuration) {
+            continue;
+        }
+        let records = &content.delta.records;
+        let region_body = records
+            .regions
+            .iter()
+            .map(|region| (&region.id, &region.body))
+            .collect::<HashMap<_, _>>();
+        let shell_body = records
+            .shells
+            .iter()
+            .filter_map(|shell| Some((&shell.id, *region_body.get(&shell.region)?)))
+            .collect::<HashMap<_, _>>();
+        let face_body = records
+            .faces
+            .iter()
+            .filter_map(|face| Some((&face.id, *shell_body.get(&face.shell)?)))
+            .collect::<HashMap<_, _>>();
+        for (entity, entry) in &content.delta.names {
+            let EntityRef::Face(face) = entity else {
+                continue;
+            };
+            let (Some(body), Some(name)) = (
+                face_body.get(face),
+                entry.as_ref().and_then(|entry| entry.name.as_ref()),
+            ) else {
+                continue;
+            };
+            let features = named
+                .entry((configuration.clone(), (*body).clone()))
+                .or_default();
+            name_features(name, &mut |feature| {
+                features.insert(feature.clone());
+            });
+        }
+    }
+    named
+}
+
+/// The features a face's name states made it: the feature of the name and of
+/// each name it was made from. The names of other entities that a name holds
+/// (the faces a blend joins, beside an edge, or at a vertex) are not followed.
+fn name_features(name: &TopoName, found: &mut impl FnMut(&FeatureId)) {
+    match name {
+        TopoName::Generated { feature, .. } | TopoName::Blend { feature, .. } => found(feature),
+        TopoName::Instance { feature, of, .. } => {
+            found(feature);
+            name_features(of, found);
+        }
+        TopoName::Modified { feature, from } => {
+            found(feature);
+            name_features(from, found);
+        }
+        TopoName::Split { feature, from, .. } => {
+            if let Some(feature) = feature {
+                found(feature);
+            }
+            name_features(from, found);
+        }
+        TopoName::Merged { feature, from } => {
+            if let Some(feature) = feature {
+                found(feature);
+            }
+            for from in from {
+                name_features(from, found);
+            }
+        }
+        TopoName::Bounded { .. } | TopoName::Meeting { .. } | TopoName::Root { .. } => {}
+    }
 }
 
 /// The state the design stores for a model configuration whose body list

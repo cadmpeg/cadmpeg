@@ -74,7 +74,8 @@ pub(crate) enum SldprtLossCode {
     /// The imported-feature body streams of a configuration that is not
     /// active are not taken into its state.
     ConfigStateImportedBodiesNotTransferred,
-    /// The bodies that features produce in a state that is not current are
+    /// A feature output on a body of a state that is not current, whose
+    /// feature no face name of that body in the state's evaluation names, is
     /// not stated.
     ConfigStateOutputsUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.

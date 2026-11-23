@@ -120,7 +120,9 @@ fn active_state(outputs: &[&BodyId]) -> ConfigurationFeatureState {
 }
 
 /// The feature states of a configuration that name the bodies its
-/// evaluation holds lose those outputs, with one loss that counts them.
+/// evaluation holds lose those outputs, with one loss that counts those whose
+/// feature no face name in the evaluation names: here every one, since the
+/// configuration has no evaluation.
 #[test]
 fn the_outputs_on_a_retired_body_go_with_a_loss_counting_them() {
     let configuration = ConfigurationId::mint("sldprt:model:configuration#7:0").unwrap();
