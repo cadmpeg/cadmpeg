@@ -266,3 +266,27 @@ fn full_decode_states_folder_members_as_features_and_reports_the_folder() {
     assert!(codes.iter().any(|code| code == "feature.folder-unread"));
     assert!(!codes.iter().any(|code| code == "feature.kind-unknown"));
 }
+
+#[test]
+fn geometry_depth_decode_states_no_design_records() {
+    use cadmpeg_core::decode::DecodeDepth;
+    use test_support::Feature;
+
+    let bytes = test_support::feature_document(&[
+        Feature::Part("JMProtrusionFunction"),
+        Feature::Part("JMRevolvedProtrusionFunction"),
+    ]);
+    let options = DecodeOptions {
+        depth: DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap();
+    let ir = result.ir();
+    assert!(ir.design.scopes.is_empty());
+    assert!(ir.design.containers.is_empty());
+    assert!(ir.design.features.is_empty());
+    assert!(ir.design.sheet_metal_rules.is_empty());
+    assert!(ir.check_scope().is_ok());
+}
