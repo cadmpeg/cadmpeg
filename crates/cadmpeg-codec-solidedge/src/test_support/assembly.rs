@@ -207,31 +207,61 @@ fn unit_string(name: &str) -> Vec<u8> {
     bytes
 }
 
-/// The member table: a header and one record per `(name, listed)` member. A
-/// record holds the name, the empty prefix list, two blocks, the entries of
-/// `listed` and a trailer.
-pub(crate) fn member_table(members: &[(&str, &[u32])]) -> Vec<u8> {
+/// One record of the member table.
+pub(crate) struct RecordSpec<'a> {
+    pub(crate) name: &'a str,
+    /// The first list: the occurrences the member excludes.
+    pub(crate) excluded: &'a [u32],
+    /// The second list: the occurrences of the family.
+    pub(crate) listed: &'a [u32],
+    /// The last word of the record.
+    pub(crate) word: u32,
+}
+
+/// The member table of `records`: a header, then per record the name, the
+/// first list, 12 bytes, two blocks, the second list and the trailing words.
+pub(crate) fn member_table_of(records: &[RecordSpec<'_>]) -> Vec<u8> {
     let mut bytes = b"\x44\xf5\x90\x6c\x03\0\0\0QQP\0\0\xa0\0\0".to_vec();
-    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
-    for (ordinal, (name, listed)) in members.iter().enumerate() {
+    bytes.extend_from_slice(&u32::try_from(records.len()).unwrap().to_le_bytes());
+    for (ordinal, record) in records.iter().enumerate() {
         bytes.extend_from_slice(b"QQQ\0");
         bytes.extend_from_slice(&(0xa001 + u32::try_from(ordinal).unwrap()).to_le_bytes());
-        bytes.extend_from_slice(&unit_string(name));
-        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&unit_string(record.name));
+        bytes.extend_from_slice(&u32::try_from(record.excluded.len()).unwrap().to_le_bytes());
+        for id in record.excluded {
+            bytes.extend_from_slice(&id.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 12]);
         for _ in 0..2 {
             bytes.extend_from_slice(&1_u32.to_le_bytes());
             bytes.extend_from_slice(&[0x5a; 16]);
             bytes.extend_from_slice(&0_u32.to_le_bytes());
         }
-        bytes.extend_from_slice(&u32::try_from(listed.len()).unwrap().to_le_bytes());
-        for id in *listed {
+        bytes.extend_from_slice(&u32::try_from(record.listed.len()).unwrap().to_le_bytes());
+        for id in record.listed {
             bytes.extend_from_slice(&id.to_le_bytes());
             bytes.extend_from_slice(&[0; 13 * 8 + 3]);
         }
         bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&record.word.to_le_bytes());
     }
     bytes
+}
+
+/// The member table with one record per `(name, listed)` member: no
+/// exclusion and the last word `3`.
+pub(crate) fn member_table(members: &[(&str, &[u32])]) -> Vec<u8> {
+    member_table_of(
+        &members
+            .iter()
+            .map(|&(name, listed)| RecordSpec {
+                name,
+                excluded: &[],
+                listed,
+                word: 3,
+            })
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// One member storage of a family document.

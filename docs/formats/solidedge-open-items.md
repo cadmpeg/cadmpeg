@@ -104,13 +104,10 @@
 
 **Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
 
-### DR-1043. Member record lists and member storage content
+### DR-1043. Member record fields and activation in larger families
 
-**Question.** What do the first list of a member record (§9.5), the 12 bytes after it, the class identifiers of the two blocks, the bytes after the second list, and the last 3 bytes of a second-list entry state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
+**Question.** What do the 12 bytes after the first list, the class identifiers of the two blocks, the bytes after the second list before the state word, and the last 3 bytes of a second-list entry state (§9.5)? Which member is active in a family of three or more members, and what do the bits of the state word other than bit 1 state?
 
-**Known.** The first list is empty in the master member and holds one object identifier in another member. Each block starts with `u32` `1` and ends with `u32` `0`. A second-list entry holds the occurrence object identifier and the 13 `f64` words of its placement. The record trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list.
+**Known.** Each block starts with `u32` `1` and ends with `u32` `0`. The 12 bytes are zero in every record. The 112 bytes after the second list, the state word excluded, are equal in every record of every family. The last 3 bytes of an entry are zero. The state word of the second record is 3 in both active states of a family of two members.
 
-**Conflict.** Two documents of one family, the first placing both components of the member storage and the second placing one, store the same `FamilyInfo` (the name of the first member), the same member table except one word, and the same `IOT/Default` stream (108 bytes) in every member storage and in the master storage. The first list is empty in the first member record and holds one object identifier, one of the two second-list identifiers, in the second member record, in both documents. The active member therefore has an empty first list in both documents, and the first list does not select the component that the second document leaves out. The words that differ are the trailer word of the first member record (`3` in the first document, `1` in the second) and, in one pair, the length of the bytes after the second list of that record (12 fewer in the second document).
-
-**Need.** Families whose members differ in suppressed, replaced, and moved components, with the stored members table of each, and a family whose `FamilyInfo` names a member other than the first.
-
+**Need.** Families of three or more members with each member active in turn, a family whose `FamilyInfo` names a member other than the first, and members that differ in replaced and moved components, with the stored member table of each state.

@@ -387,7 +387,7 @@ pub(crate) fn project<'a>(
         Some(flags) => {
             for (id, occurrence) in &mut occurrences {
                 let entry = flags.get(id);
-                occurrence.suppressed = Some(entry.is_none());
+                occurrence.suppressed = Some(entry.is_none() || snapshot.excludes(*id));
                 occurrence.visible = entry.map(|bits| bits & HIDDEN_FLAG == 0);
             }
         }
@@ -395,6 +395,11 @@ pub(crate) fn project<'a>(
             "the occurrence structure list does not read; the occurrences state no suppression \
              or visibility",
         )),
+    }
+    for (id, occurrence) in &mut occurrences {
+        if snapshot.excludes(*id) {
+            occurrence.suppressed = Some(true);
+        }
     }
     let occurrences: Vec<Occurrence> = occurrences
         .into_iter()

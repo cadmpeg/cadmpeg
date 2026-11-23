@@ -631,8 +631,9 @@ document (`JSitesList`, `PSMroots`, `PSMcluster0`, `PSMtypetable`,
 this specification is relative to the storage of the selected member.
 
 A name is a `u32` count of UTF-16LE units that includes the terminating zero
-unit, followed by the units. `FamilyInfo` holds the name of the active member.
-The active member is the member storage with that name.
+unit, followed by the units. `FamilyInfo` holds the name of a member. The
+document is read from the member storage with that name. Activating another
+member leaves `FamilyInfo` unchanged.
 
 `FOAPublishData` lists the members as records of the identifier `0xa000 + k`
 (`k` from 1) and the member name.
@@ -655,12 +656,25 @@ name, followed by:
 An entry of the second list is the `u32` identifier of a `CLSID_JAsmReference`
 object, the 13 `f64` words of the placement of §9.2 (rotation, translation and
 the word `1`) and 3 bytes. A record ends before the next record tag or at the
-end of the stream.
+end of the stream. The last `u32` of a record is its state word.
 
-The active member places the occurrences of §§9.1 to 9.3 whose object identifier
-its record lists in the second list, taken from the references collection of its
-own storage. A member storage holds the `CLSID_JAsmReference` objects of the
-family; the record states which of them the member places.
+The second list of every record names every occurrence of the family. The first list of a record names the
+occurrences that the member excludes; it is empty for a member that excludes
+none. The member storage of a member holds the `CLSID_JAsmReference` objects of
+the occurrences that the member does not exclude, and its references
+collection (§9.1) lists those objects. The placement of an occurrence is equal
+in every member storage that holds its object.
+
+The state word of the first record is 3 while the first member is the active
+member and 1 while another member is active. The state word of every other
+record is 3. In a family of two members the active member is therefore the
+first member when bit 1 (`2`) of the state word of the first record is set and
+the second member otherwise.
+
+The active member places the occurrences of its record's second list, taken
+from the references collection of the storage that `FamilyInfo` names. An
+occurrence in the first list of the active member's record is excluded: it
+keeps its object and placement and is suppressed in the active state.
 
 ## 10. Sheet metal
 

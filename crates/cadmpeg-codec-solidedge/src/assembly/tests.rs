@@ -9,8 +9,8 @@ use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
 use crate::test_support::{
     assembly_document, assembly_document_with_structure, family_document, family_info,
-    member_table, mirror_document, structure_stream, MemberSpec, MirrorSpec, OccurrenceSpec,
-    SiteSpec,
+    member_table, member_table_of, mirror_document, structure_stream, MemberSpec, MirrorSpec,
+    OccurrenceSpec, RecordSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -412,4 +412,51 @@ fn family_naming_no_member_storage_places_nothing() {
     ));
     assert!(occurrences(&result).is_empty());
     assert_eq!(count(&result, "family.member-unread"), 1);
+}
+
+/// Occurrence identifiers of a family of four, in insertion order.
+const FOUR: [u32; 4] = [20, 21, 22, 23];
+
+/// The suppression of each occurrence of a family of four whose second member
+/// excludes `excluded`, with the first record's last word `word`.
+fn suppression(word: u32, excluded: &[u32]) -> Vec<Option<bool>> {
+    let table = member_table_of(&[
+        RecordSpec {
+            name: "alpha",
+            excluded: &[],
+            listed: &FOUR,
+            word,
+        },
+        RecordSpec {
+            name: "beta",
+            excluded,
+            listed: &FOUR,
+            word: 3,
+        },
+    ]);
+    let members = [member("alpha", &FOUR, &FOUR)];
+    let result = decode(family_document(
+        family_info("alpha"),
+        Some(table),
+        &members,
+        &[site()],
+    ));
+    assert_eq!(count(&result, "family.member-unread"), 0);
+    occurrences(&result)
+        .iter()
+        .map(|occurrence| occurrence.suppressed)
+        .collect()
+}
+
+#[test]
+fn family_member_state_suppresses_the_excluded_occurrences_it_keeps() {
+    let off = Some(false);
+    let on = Some(true);
+    // The first member is active: nothing is excluded.
+    assert_eq!(suppression(3, &[21]), [off; 4]);
+    // The second member is active.
+    assert_eq!(suppression(1, &[]), [off; 4]);
+    assert_eq!(suppression(1, &[20]), [on, off, off, off]);
+    assert_eq!(suppression(1, &[23]), [off, off, off, on]);
+    assert_eq!(suppression(1, &[21, 23]), [off, on, off, on]);
 }
