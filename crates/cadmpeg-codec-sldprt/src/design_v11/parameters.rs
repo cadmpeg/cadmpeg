@@ -242,10 +242,11 @@ impl<'a> Decoded<'a> {
     /// in a part whose length unit `unit` is not read, where it drives the
     /// model, a reading that holds on the stored results of typed
     /// dimensions. A driving scalar outranks the others. The scalars that
-    /// count state one parameter, whose class is the kind and whose stored
-    /// value the value, assumed where every one of them is a
-    /// [`Statement::Assumed`]; otherwise the reason the dimension has no
-    /// value.
+    /// count state one parameter where they state one class and values that
+    /// are one number (see [`same_parameter`]); its class is the kind and the
+    /// first counted scalar's stored value the value, assumed where every one
+    /// of them is a [`Statement::Assumed`]. Otherwise the reason the
+    /// dimension has no value.
     fn named_dimension(
         &self,
         feature: &str,
@@ -283,10 +284,11 @@ impl<'a> Decoded<'a> {
             return Err(reason);
         };
         let parameter = |scalar: &NamedScalar| scalar.stated.and_then(Statement::parameter);
-        if counted
-            .iter()
-            .any(|scalar| parameter(scalar) != parameter(first))
-        {
+        if counted.iter().any(|scalar| {
+            !parameter(scalar)
+                .zip(parameter(first))
+                .is_some_and(|(stated, first)| same_parameter(stated, first))
+        }) {
             return Err(Unvalued::Disagrees);
         }
         let (kind, value) = parameter(first)
@@ -417,6 +419,24 @@ impl Shown {
     fn shows(self, value: f64) -> bool {
         (value - self.number).abs()
             <= self.rounding + EPS_STORED_DISPLAY * value.abs().max(self.number.abs())
+    }
+}
+
+/// Whether two stored values are one number within [`EPS_STORED_DISPLAY`],
+/// relative to the larger.
+fn same_stored(a: f64, b: f64) -> bool {
+    (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs())
+}
+
+/// Whether the records `a` and `b` state one parameter: one class, and one
+/// count or real values that are one number (see [`same_stored`]).
+fn same_parameter(a: StatedParameter, b: StatedParameter) -> bool {
+    match (a, b) {
+        (StatedParameter::Length(a), StatedParameter::Length(b))
+        | (StatedParameter::Angle(a), StatedParameter::Angle(b))
+        | (StatedParameter::Scaler(a), StatedParameter::Scaler(b)) => same_stored(a, b),
+        (StatedParameter::Count(a), StatedParameter::Count(b)) => a == b,
+        _ => false,
     }
 }
 
@@ -1054,8 +1074,7 @@ fn read(
 /// radians store (`docs/formats/sldprt.md`).
 fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<ParameterValue> {
     let metres = number * canonical(unit?)?.1 / MM_PER_M;
-    let same = |a: f64, b: f64| (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs());
-    (number != 0.0 && same(metres, stored) && !same(number, stored))
+    (number != 0.0 && same_stored(metres, stored) && !same_stored(number, stored))
         .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
         .flatten()
 }
