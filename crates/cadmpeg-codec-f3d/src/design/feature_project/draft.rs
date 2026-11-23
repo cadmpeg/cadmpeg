@@ -547,7 +547,9 @@ pub(super) fn selected_historical_face_selection(
     design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::selections::FaceSelection> {
     let previous_state_id =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
+        crate::history::history_states::effective_scope_previous_history_state_id(
+            scope, histories,
+        )?;
     let stream = native_stream(&scope.id)?;
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return None;

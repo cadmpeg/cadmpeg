@@ -37,7 +37,9 @@ pub(super) fn resolved_split_face_path(
     use cadmpeg_ir::features::profiles::PathRef;
 
     let previous_state_id =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
+        crate::history::history_states::effective_scope_previous_history_state_id(
+            scope, histories,
+        )?;
     let stream = native_stream(&scope.id)?;
     let feature = crate::ids::neutral_feature_id(scope);
     let prefix = crate::ids::feature_input_prefix(&feature, previous_state_id);

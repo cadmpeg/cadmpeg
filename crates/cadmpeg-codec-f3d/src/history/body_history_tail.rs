@@ -86,14 +86,16 @@ pub(crate) fn collect(
             continue;
         };
         let head = &history.states()[head];
-        let Some((current, _)) = super::feature_history_states(feature, scopes, histories) else {
+        let Some((current, _)) =
+            super::feature_outputs::feature_history_states(feature, scopes, histories)
+        else {
             tails.push(unproved(head.id.clone(), None, Some(head.state_id), false));
             continue;
         };
         if current == head.state_id {
             continue;
         }
-        let Some(slot) = super::stable_ref(body.as_str()) else {
+        let Some(slot) = super::body_closures::stable_ref(body.as_str()) else {
             tails.push(unproved(
                 head.id.clone(),
                 Some(current),
@@ -152,11 +154,11 @@ fn changed_after(
         let changes = [
             (
                 state,
-                super::changed_topology_family_refs(&transition.topology, false),
+                super::body_closures::changed_topology_family_refs(&transition.topology, false),
             ),
             (
                 before,
-                super::changed_topology_family_refs(&transition.topology, true),
+                super::body_closures::changed_topology_family_refs(&transition.topology, true),
             ),
         ];
         for (state, changed) in changes {
@@ -186,7 +188,7 @@ fn changed_after(
             if !work.charge_by(work_units(slots)) {
                 return true;
             }
-            let Some(touched) = super::bodies_touching(topology, &[&changed]) else {
+            let Some(touched) = super::body_closures::bodies_touching(topology, &[&changed]) else {
                 return true;
             };
             if touched.iter().any(|bodies| bodies.contains(&body)) {

@@ -100,7 +100,7 @@ pub(super) fn bind_revolve_shape_target(
         };
     } else if let Some(face) = resolved_historical_face_group(
         scope,
-        crate::history::effective_scope_previous_history_state_id(scope, histories),
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories),
         group,
         face_operands,
     )
