@@ -368,6 +368,7 @@ struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
     history_only_body_bindings: usize,
     incomplete_features: usize,
+    surface_extend_edges_as_faces: usize,
     native_reference_images: usize,
     assumed_reference_image_flags: usize,
     native_decals: usize,
@@ -1786,6 +1787,13 @@ fn design_projection_gaps(
     };
     for feature in &ir.model.features {
         gaps.incomplete_features += usize::from(feature_is_incomplete(feature));
+        gaps.surface_extend_edges_as_faces += usize::from(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                faces: FaceSelection::Historical { .. },
+                ..
+            })
+        ));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -2774,6 +2782,14 @@ fn report_design_projection_gaps(
             "{} feature scope(s) have no complete neutral feature definition: {}.",
             gaps.incomplete_features,
             IncompleteFamilyCounts(&incomplete_families)
+        ),
+    )?;
+    push(
+        F3dLossCode::FeatureSurfaceExtendEdgesAsFaces,
+        gaps.surface_extend_edges_as_faces,
+        format_args!(
+            "{} SurfaceExtend feature(s) store boundary edges and state the input-state face that carries each edge recipe and has a boundary edge the feature changes; the edge choice on each face stays native.",
+            gaps.surface_extend_edges_as_faces
         ),
     )?;
     let mut uninterpreted_scopes = 0;
