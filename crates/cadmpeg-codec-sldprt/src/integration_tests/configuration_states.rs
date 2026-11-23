@@ -178,7 +178,7 @@ fn a_stored_configuration_state_writes_its_partition() {
         panic!("one evaluation");
     };
     let stored = &evaluation.content.as_ref().unwrap().delta.records;
-    let sections = crate::writer::configuration_partitions(ir, 0.001).unwrap();
+    let sections = crate::writer::configuration_partitions(ir, 0.001, &mut Vec::new()).unwrap();
     let section = format!("Contents/Config-{}-Partition", first.source_index.unwrap());
     let (_, payload) = sections
         .iter()

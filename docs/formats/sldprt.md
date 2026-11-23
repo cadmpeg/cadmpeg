@@ -72,7 +72,11 @@ The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **bi
 
 Native compressed members use ZIP local-file-header fields with a substituted
 four-byte signature token and nibble-swapped member names. The signature token
-is retained as opaque bytes. The archive coordinate zero is absolute file offset
+is retained as opaque bytes. Every local header of one file carries one local
+token, every central header carries one central token (§1.3), and the
+end-of-directory root carries a third (§1.4). The three tokens are nonzero and
+pairwise distinct. `file_id` is nonzero, and files with the same `file_id`
+carry the same three tokens. The archive coordinate zero is absolute file offset
 8. The field marker begins four bytes after the local signature. In the native
 DEFLATE profile, the marker is `14 00 06 00 08 00`: version needed 20,
 general-purpose flags 6, and compression method 8.
@@ -129,7 +133,8 @@ and modification date in the high half. It does not identify a payload type.
 The time encodes seconds divided by two in bits 0..4, minutes in bits 5..10,
 and hours in bits 11..15. The date encodes day in bits 0..4, month in bits
 5..8, and year minus 1980 in bits 9..15. Preserve the raw bits even when they
-do not form a valid calendar date or clock time. Local and central fields for
+do not form a valid calendar date or clock time. Several members of one file
+can carry the same word. Local and central fields for
 one member carry the same raw time/date, CRC, sizes, name length, and name.
 
 ### 1.2 Cache-cell section-index grid
@@ -223,11 +228,12 @@ of a central header, beginning at central signature +32:
 
 
 `comment_len` is the file-comment byte count. `disk_start` identifies the disk
-on which the local member begins. `internal_attrs` bit 0 is the ZIP producer's
-apparently-text hint; zero indicates apparently binary data. It does not
-identify XML or a SolidWorks payload family. `external_attrs` uses the host
-system interpretation selected by `version_made_by`. These are fields, even
-when their values are zero.
+on which the local member begins. In the ZIP APPNOTE, `internal_attrs` bit 0 is
+the producer's apparently-text hint. In SolidWorks files the bit does not
+identify XML or a SolidWorks payload family, and the rule that sets it is open
+(CM-16). `external_attrs` uses the host
+system interpretation selected by `version_made_by`. `version_made_by`,
+`comment_len`, `disk_start` and `external_attrs` are zero.
 
 `local_offset` is relative to archive coordinate zero at absolute file offset
 8. Thus the local signature is at `local_offset + 8` and its field marker is
@@ -365,6 +371,8 @@ Payload kind is determined from **decompressed bytes**, not from `type_id`.
 | `unqlite`                                       | UnQLite database            |
 
 An XML payload stores its text as UTF-8, as UTF-16LE after the BOM `ff fe`, or as UTF-8 after one lead byte `85` or `86`. The `swXmlContents/KeyWords` section and a compound-file `KeyWords__ZLB` stream hold the Keywords feature history, a `Keywords` root element. Its first child element can be an `Application` element whose `Keyword` children each hold a `Name` attribute and a text value (CM-18).
+
+A stored Keywords member begins with the XML declaration `<?xml version="1.0" encoding="UTF-8"?>` and CRLF before the `Keywords` root, after lead byte `86`, after lead byte `85`, or with no lead byte (CM-17).
 
 PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, height, planes, bit depth, compression, and image size are in the 40-byte BITMAPINFOHEADER after the leading file-size word. The `swSolidWorks` XML root carries version, creation time, and path; its `swModel` child carries model and configuration names.
 
@@ -1918,6 +1926,10 @@ A `moPart_c` object writes, in order:
 | optionally 29 bytes of thread data written without a tag, a `moCThreadRefMgr_c` and a `moPrtExplViewManager_c` object |
 | with the view manager, eight zero bytes, eight `ff` bytes and 26 bytes; without it, 51 zero bytes; then the next object identifier as u32 and eight zero bytes |
 
+The part's first u32 is the byte count from its end to the u32 that follows the twenty zero bytes. That u32 is the byte count from its end to the end of the stream.
+
+In a part of `swVersion` 14000 the bytes between the `moSketchBlockMgr_c` and the `moPrtExplViewManager_c` are a `moCThreadRefMgr_c` object or untagged thread data. The untagged thread data opens with thirteen zero bytes and little-endian u32 `1`. Its shortest form is 25 bytes: thirteen zero bytes, u32 `1`, u32 `0` and a u32.
+
 The *marker block* writes `aaaaaaaa bbbbbbbb`. Before `swVersion` 12000 it continues with a fixed 74 bytes (10000) or 82 (11000). Otherwise it writes a little-endian u32 *a*; when *a* is `1`, u32 `0x18`, u32 `0x10`, u32 `1`, a u32 count and that many points of three f64; then 78 bytes (12000) or 82 (14000 and above), the next object identifier as u32, from 19000 a u32 count *k*, *k* eight-byte entries and a u32, and u16 `0`.
 
 A `moVisualProperties_c` body writes u32 colour, u32, u32 colour, two `CString` values (the second the material), six f64 and a u32 flag. With the flag set: two f64, 88 bytes, a `CString`, six bytes, two f64 and six u32 (five before 15000); with it clear, five u32. Then a `CString`, a u32 and a u32 appearance flag. With an appearance: u32 count, u32, the appearance name, 81 bytes, the texture path, twelve bytes, a `CString`, 76 bytes; from 13000 a `CString` and u32; from 13000 up to 19000 three `CString` values and 92 bytes. Then a `CString`, a u32 and, except in 13000–14999, a second u32; a `CString`, two u32, a `CString` and twenty bytes. From 17000 a u32 follows; when it is non-zero, 192 bytes, five `CString` values, four bytes, two `CString` values, 28 bytes, two `CString` values, eight bytes and three `CString` values.
@@ -1944,9 +1956,11 @@ The part's `moUnitComponent_c` (its *part-header form*) writes u16 `2`, a byte, 
 | `moPrtExplViewManager_c` | a feature head and feature block |
 | light (in `moEnvFolder_c`) | three f64, twenty bytes, a `CString`, twelve bytes, f64, u32, f64, u32; a directional light adds three f64 and eight bytes |
 
+The 115 bytes of a `moView_c` hold f64 `1` at +24, the view's scale as an f64 at +58 (`1`, or `0.8` in the notes-area view), i32 `-1` at +69, f64 `-1` at +73 and the view's index as a little-endian u32 at +85: `0` to `9` for the ten standard views in the order *Normal To*, *Front*, *Back*, *Left*, *Right*, *Top*, *Bottom*, *Isometric*, *Trimetric*, *Dimetric*, and `200` and up for the annotation views. Their other bytes are zero. The 50 bytes after an annotation view's bytes hold a byte at +10 (`4` in the notes-area view, `0` in the others), little-endian u32 `1` at +28, i32 `-1` at +34, a little-endian u32 at +38, and i32 `-1` at +42 and +46; their other bytes are zero.
+
 A `moSketchBlockMgr_c` writes a named head (null name) and feature block, twelve more bytes of a 16-byte identifier, u32, u32 identifier, u32, u16, a `suObList`, u32, u32, a u32 count *k*, *k* identifiers, 30 bytes and a `moPMarkRecord_c` pointer (a null pointer is followed by the record's body in place), a `suObList`, a u32 and two `CString` values.
 
-A `moRelMgr_c` writes a u16 relation count and that many `moRelation_c` objects, a u16, and the document's detailing settings in place: a head (`CString`, 24 or 32 bytes, the standard name, 205 bytes, `CString`, u32, `CString`), unit names (48 or 52 bytes, a u32 count and that many `CString` values), a u32, 108 bytes (before 15000) or 200, from 16000 a u16 count and that many `CString` values, a font (`CString`, 64 bytes and, from 17000, a u32 weight), a header block, and ten dimension styles. **The remainder of the detailing settings is read by a per-version template of gap lengths and `CString` positions, not by a decoded grammar** (open item EV-19). The manager ends with 0, 8, 12, 16 or 20 bytes by version, a u16 count and that many parameter objects (named head, u16 `0`, f64, a byte).
+A `moRelMgr_c` writes a u16 relation count and that many `moRelation_c` objects, a u16, and the document's detailing settings in place: a head (`CString`, 24 or 32 bytes, the standard name, 205 bytes, `CString`, u32, `CString`), unit names (48 or 52 bytes, a u32 count and that many `CString` values), a u32, 108 bytes (before 15000) or 200, from 16000 a u16 count and that many `CString` values, a font (`CString`, 64 bytes and, from 17000, a u32 weight), a header block, and ten dimension styles. **The remainder of the detailing settings is read by a per-version template of gap lengths and `CString` positions, not by a decoded grammar** (open item EV-19). In a part of `swVersion` 14000 the remainder also holds `moLengthUserUnits_c` objects among its byte runs and `CString` values. Each is a length unit whose dual-unit pointer is null, followed in place by a unit's base form and a little-endian u16. The manager ends with 0, 8, 12, 16 or 20 bytes by version, a u16 count and that many parameter objects (named head, u16 `0`, f64, a byte).
 
 #### Sketch objects
 
@@ -2085,7 +2099,7 @@ A configuration table (`moNativeConfigurationTableFeature_c`, a child of `moConf
 
 A reference point (`moRefPoint_c`) writes the feature, 112 bytes, the point (three f64), a little-endian u32 type (`4`: a face's centre), ten zero bytes and its data object; a `moFaceCenterRefPointData_c` writes the face reference, its handle block (whose face form can have twelve zero bytes after the identifier and no i32 `-1`), a box (four f64) and about fifteen bytes to the next object. A `moCompRefPoint_c` has the layout of `moCompRefAxis_c`, with the point's three f64 as its geometry. A `moFacePtRefPlnData_c` (a plane through a point on a face) has the layout of `moPerLinePtRefPlnData_c` with a kind of `6` and ends with eight zero bytes and u32 `1` after its references. A move-face feature (`moMoveFace_c`) writes the feature, its body head, units and `moPMarkRecord_c`, two f64 (distances), fourteen bytes of u16 flags, a u16 count and that many faces (`moCompFace_c`, u16 `0` between them), u32 `0`, a `suObList`, its display objects and 260 bytes (a frame among them) to the next object or the stream's end. A `moLineAxisData_c` (an axis along a line) writes fourteen f64, the line's reference and an axis tail.
 
-A sketch picture (`moSketchBitmap_c`) writes the feature and a `moSketchBitmapData_c`: six f64 (an origin, two pixel scales, an angle), the width and height in pixels (little-endian u32), u32 `0`, the picture's name (`CString`) and u32 `1`; references and a further record follow (open item EV-23). A `moBaseBody_c` that ends its stream has no final u32 `0`. A thin feature's specification can end with eight zero bytes before the next object (`swVersion` 18000). A plane referenced from a face's plane data can take the mirror form (a box, a point and a normal, the frame and 21 zero bytes after the handle block's i32 `-1`) outside a mirror pattern. A version-12000 handle block's version can be `0` (some parts).
+A sketch picture (`moSketchBitmap_c`) writes the feature and a `moSketchBitmapData_c`: six f64 (an origin, two pixel scales, an angle), the width and height in pixels (little-endian u32), u32 `0`, the picture's name (`CString`) and u32 `1`; references and a further record follow (open item EV-23). A `moBaseBody_c` writes, after its `moPMarkRecord_c`, a `CString`, a little-endian u32 and its name as a `CString`; the next object follows the name. A thin feature's specification can end with eight zero bytes before the next object (`swVersion` 18000). A plane referenced from a face's plane data can take the mirror form (a box, a point and a normal, the frame and 21 zero bytes after the handle block's i32 `-1`) outside a mirror pattern. A version-12000 handle block's version can be `0` (some parts).
 
 A combine-bodies feature (`moCombineBodies_c`) writes the feature, its body head, units and `moPMarkRecord_c`; its target body (`moCompSolidBody_c`); a little-endian u32 count and that many body identifiers; a u32 (the operation); eight zero bytes; a little-endian u16 count and that many tool bodies (`moSolidRef_w`); a u32 count and that many identifiers; a u32; a handle block (zero bytes, an identifier, u32 `0`, i32 `-1`, u32 `0`, three i32 `-12345`, u32 `0`, the version, twelve zero bytes, i32 `-1`), eight zero bytes and u32 `1` (and a zero byte in some). A `moCompRefAxis_c` (a reference axis used by a sketch) writes its component, the feature number, a time stamp, bytes up to a handle block whose identifier precedes its three i32 `-12345` by twelve zero bytes (u32 `0`, the version, twelve zero bytes, i32 `-1` after them), and the axis geometry (105 bytes: a value, a point, a direction, two f64 `0.5`); the next object ends it (open item EV-23). A reference's handle block can be the in-context form (u16 `0`, u16 `1`, a context component, twelve zero bytes and i32 `-1`; a surface axis's cylinder). An axis tail whose reference already holds its handle block up to the i32 `-1` and four zero bytes continues with four zero bytes and its seven f64. A linear pattern can end with thirteen zero bytes. An entity's name in an old handle block (some parts) is preceded by two zero bytes.
 
@@ -2789,8 +2803,8 @@ The header fields have these meanings:
   ATTRIBUTE list; the last two walk the list for one definition.
 
 A stream declares named attribute families through KEY and ATTRIB_DEF nodes.
-A `00 4f` KEY node carries a big-endian u32 byte length, a u16 transmit index,
-and that many printable ASCII bytes. A `00 54` CHAR_VALUES node carries the
+A `00 4f` KEY node carries a big-endian u32 byte length, a transmit index in
+the pointer form of §4, and that many printable ASCII bytes. A `00 54` CHAR_VALUES node carries the
 same u32 byte length and u16 transmit index, followed by that many bytes. No
 record starts inside the length, index or text of either node. The
 ATTRIB_DEF `identifier` pointer selects that KEY in the same stream.
@@ -2815,6 +2829,8 @@ type_id is the native numeric attribute type.
 actions contains eight event-action bytes.
 field_names is the field-name reference.
 legal_owners contains fourteen Boolean owner-class fields.
+node_index, next_definition, identifier and field_names are pointers (§4):
+each wide one moves the fields after it by two bytes.
 An embedded schema edit of ATTRIB_DEF can declare another `legal_owners`
 extent, such as sixteen; the field-type bytes then start after that extent.
 The complete record includes every declared field-type byte. Field codes
@@ -3108,7 +3124,7 @@ The orientation marker of a compact surface record (`00 32` through `00 36`) ori
 
 ### 7.2 B-spline and list carriers
 
-A bridge's `refs[4]` can point to a `00 7c` **surface-use wrapper** (a first-class carrier for list/NURBS surfaces) instead of a compact analytic surface. Ownership check: `00 7c.refs[1] == owning 00 0e bridge attr`. The wrapper's `child0` → `00 7e` **surface descriptor**. After the optional marker, the descriptor body is 42 bytes. Offsets below are relative to the descriptor attribute (`+0`): `+0` is the descriptor attribute (`u16`); `+2` is the `u_periodic` logical byte; `+3` is the `v_periodic` logical byte; `+4` and `+6` are `u_degree` and `v_degree` (`u16`); `+8` and `+12` are `u_pole_count` and `v_pole_count` (`u32`); `+16` and `+17` are the `u_knot_type` and `v_knot_type` bytes; `+18` and `+22` are `u_distinct_knot_count` and `v_distinct_knot_count` (`u32`); `+26` is the `rational` logical byte; `+27` is the `u_closed` logical byte and `+28` is the `v_closed` logical byte; `+29` is the `surface_form` byte; `+30` is `vertex_dim` (`u16`); and `+32..+41` are the five terminal u16 BE refs `[control_grid, u_mult, v_mult, u_knot, v_knot]`. Logical bytes are `0` or `1`. `vertex_dim` is `3` for non-rational control data and `4` for rational homogeneous control data, matching `rational`. `u_pole_count` and `v_pole_count` exceed their degrees. The referenced control array has `u_pole_count * v_pole_count * vertex_dim` values. Each multiplicity sum is `pole_count + degree + 1`, and each unique-knot array has its declared distinct count. A knot array can contain trailing physical entries after the descriptor's distinct-knot count when every matching trailing multiplicity is zero. Those entries contribute no knots, and their f64 bits are ignored. The wrapper's sense byte `+` selects the parametric normal `normalize(Pu × Pv)`, and `-` selects its negative; the point parameterization is the same for both. `child1` → `00 7d` **scale node** (for a curved surface, a diagonal parameter-space scale; both `1.0` = identity).
+A bridge's `refs[4]` can point to a `00 7c` **surface-use wrapper** (a first-class carrier for list/NURBS surfaces) instead of a compact analytic surface. Ownership check: `00 7c.refs[1] == owning 00 0e bridge attr`. The wrapper's `child0` → `00 7e` **surface descriptor**. After the optional marker, the descriptor body is 42 bytes. Offsets below are relative to the descriptor attribute (`+0`): `+0` is the descriptor attribute (`u16`); `+2` is the `u_periodic` logical byte; `+3` is the `v_periodic` logical byte; `+4` and `+6` are `u_degree` and `v_degree` (`u16`); `+8` and `+12` are `u_pole_count` and `v_pole_count` (`u32`); `+16` and `+17` are the `u_knot_type` and `v_knot_type` bytes; `+18` and `+22` are `u_distinct_knot_count` and `v_distinct_knot_count` (`u32`); `+26` is the `rational` logical byte; `+27` is the `u_closed` logical byte and `+28` is the `v_closed` logical byte; `+29` is the `surface_form` byte; `+30` is `vertex_dim` (`u16`); and `+32..+41` are the five terminal u16 BE refs `[control_grid, u_mult, v_mult, u_knot, v_knot]`. The wrapper attribute, its `child0` and `child1`, the descriptor attribute and its five references are pointers (§4); each wide one moves the fields after it by two bytes. Logical bytes are `0` or `1`. `vertex_dim` is `3` for non-rational control data and `4` for rational homogeneous control data, matching `rational`. `u_pole_count` and `v_pole_count` exceed their degrees. The referenced control array has `u_pole_count * v_pole_count * vertex_dim` values. Each multiplicity sum is `pole_count + degree + 1`, and each unique-knot array has its declared distinct count. A knot array can contain trailing physical entries after the descriptor's distinct-knot count when every matching trailing multiplicity is zero. Those entries contribute no knots, and their f64 bits are ignored. The wrapper's sense byte `+` selects the parametric normal `normalize(Pu × Pv)`, and `-` selects its negative; the point parameterization is the same for both. `child1` → `00 7d` **scale node** (for a curved surface, a diagonal parameter-space scale; both `1.0` = identity).
 
 B-spline **array records** are reached by attr reference, not inline:
 
@@ -3119,11 +3135,13 @@ B-spline **array records** are reached by attr reference, not inline:
 00 count:u8 attr u16 BE values[count]                                      ; compact referenced array
 ```
 
-The compact form has a nonzero count. The descriptor reference role selects its element width: control-grid and unique-knot references select f64 BE values, and multiplicity references select u16 BE values. A compact control array count equals `u_pole_count * v_pole_count * vertex_dim`. A compact knot and multiplicity pair has one common physical count at least as large as the declared distinct-knot count. Multiplicities inside the declared prefix are nonzero, and every trailing multiplicity is zero.
+The `attr` of each array record is a pointer (§4): past `0x7fff` it takes the 4-byte form, and the values follow it.
+
+The compact form has a nonzero count. A compact array does not start inside a framed descriptor: a quotient word `00 0q` followed by a reference there is part of the descriptor's references (§4). The descriptor reference role selects its element width: control-grid and unique-knot references select f64 BE values, and multiplicity references select u16 BE values. A compact control array count equals `u_pole_count * v_pole_count * vertex_dim`. A compact knot and multiplicity pair has one common physical count at least as large as the declared distinct-knot count. Multiplicities inside the declared prefix are nonzero, and every trailing multiplicity is zero.
 
 For rational arrays (`dimension == 4`) `00 2d` and compact control arrays store `[x*w, y*w, z*w, w]` per pole, and every weight `w` is positive. Surface control grids use native index `u*n_v + v`. A trailing zero-multiplicity array entry is not part of the knot vector; its paired f64 slot is physically present but ignored.
 
-Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. The multiplicity and knot arrays hold at least `knot_count` entries. The multiplicities in that prefix are nonzero and sum to `control_count + degree + 1`; every trailing multiplicity is zero. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
+Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). The descriptor attr and the three array attrs are pointers (§4). Among the flags, body +15 is the `periodic` logical and body +17 the `rational` logical. The multiplicity and knot arrays hold at least `knot_count` entries. The multiplicities in that prefix are nonzero and sum to `control_count + degree + 1`; every trailing multiplicity is zero. A `00 86` carrier has the [`parasolid_b_curve_short`](../layouts/sldprt.md#parasolid_b_curve_short) layout (§2): its NURBS pointer, after the sense byte, names the descriptor. A wide pointer shifts the later fields (§4), and a tripled carrier stores its pointers in cells (§4.3). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
 An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. The header stores the transmit index, a u32 node ID, five node pointers and the orientation marker. The header pointers and source-curve index use the node pointer encoding of §4. After the header, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates are the referenced source curve at the two interval parameters to within the linear resolution, `1e-8` m (`1e-5` mm), and a wrapper whose two ends each lie within that distance of the source retains the source curve's geometry and bounds its use. A wrapper whose source is a surface-intersection carrier follows the rule in §7.3 instead.
 
@@ -3424,6 +3442,24 @@ The native default dictionary permits multiple names for one PID and an administ
 An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
 
 The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
+
+### 8.2 Fixed-form streams
+
+A block-envelope part holds these streams in these forms:
+
+| Stream | Form |
+| --- | --- |
+| `Contents/OleItems` | little-endian u32 `0`, or a longer stream |
+| `Contents/eModelLic` | little-endian u32 |
+| `Contents/MBLinkData` | six zero bytes, or a longer stream; the part can omit it |
+| `_MO_VERSION_<v>/AssyVisualData` | little-endian u32 `0`; `<v>` is a version number, and the part can omit the stream or hold two |
+| `Contents/User Units Table` | no bytes, or a longer stream; the part can omit it |
+| `Contents/View Orientation Data` | no bytes, or a UTF-8 XML document whose root element is `VIEWS`; the part can omit it |
+| `Contents/CnfgObjs` | in a part with no configuration objects, little-endian u32 `0` and one or two empty `CString` values; otherwise the class declarations of §2.2 |
+
+`swXmlContents/Features` is a UTF-8 XML document, the XML declaration and a carriage return and line feed, then a root element `swSolidWorks` in namespace `http://www.solidworks.com/sw2003/schema`. Its `swVersion` attribute is the part's version. It holds `swHeader/swFile` (`swDocType`, `swCreationTime`, `swPath`), `swModelList/swModel` (`swName`, the active configuration's `swConfigurationName` and `swConfigurationId`), one `swConfigurationList/swConfiguration` per configuration (`swName`, `swID`, `swReference`) and `swExtFeatureList`.
+
+`swXmlContents/KeyWords`, or `swXmlContents/KeyWords__ZLB` in a compound-file part, holds the Keywords document after a lead byte `0x85` or `0x86`: the XML declaration, a carriage return and line feed, and the `Keywords` root element. Its child elements are grouped by tag in ascending tag order, and ordered within one tag by `id` compared as text.
 
 ## 9. Units
 
