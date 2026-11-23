@@ -135,7 +135,7 @@ fn scoped_cube() -> CadIr {
         kind: OrderedKind::Timeline,
         members: vec![Member::Feature(sketch), Member::Feature(extrude.clone())],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     ir.design.scopes.push(DesignScope {
@@ -794,9 +794,9 @@ fn the_timeline_is_written_without_its_folders_and_rollback() {
         first: 0,
         last: 1,
     });
-    *rollback = Rollback::Before(Member::Feature(
+    *rollback = Some(Rollback::Before(Member::Feature(
         FeatureId::mint(EXTRUDE).expect("identity grammar"),
-    ));
+    )));
     let (report, _) = write(&ir);
     let omitted = loss(
         &report,
@@ -831,7 +831,7 @@ fn place_part_scope(ir: &mut CadIr) -> (ProductDefinitionId, ContainerId) {
             FeatureId::mint(HOLE).expect("identity grammar"),
         )],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     ir.design.scopes.push(DesignScope {

@@ -137,8 +137,12 @@ fn is_history(feature: &LegacyFeature) -> bool {
     }
 }
 
-/// One ordered timeline of the history in construction order, with its one
-/// current state at the end, which holds every current body.
+/// One ordered timeline of the history in construction order. The decoder
+/// reads no current feature (part 11, entry B.96), so the rollback of a
+/// timeline with members is unstated and its one current state, at
+/// `After(Container(timeline))` (§5.3), holds every current body. A timeline
+/// with no member has no member to stand before: it is built through its end,
+/// and its current state is at its start.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -148,16 +152,17 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(id.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let (rollback, at) = if members.is_empty() {
+        (Some(Rollback::End), Position::Start(id.clone()))
+    } else {
+        (None, Position::After(Member::Container(id.clone())))
+    };
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     };
     let current = vec![CurrentState {

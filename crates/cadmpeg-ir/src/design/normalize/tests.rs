@@ -336,7 +336,7 @@ fn document() -> CadIr {
             Member::Container(id("container", "body")),
         ],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     design.containers.push(Container::Ordered {
@@ -347,7 +347,7 @@ fn document() -> CadIr {
             Member::Feature(feature("fillet")),
         ],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     design
@@ -759,7 +759,7 @@ fn a_rollback_after_a_nested_container_is_the_state_entering_it() {
         kind: OrderedKind::Body,
         members: vec![Member::Feature(feature("fillet"))],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     normalize(&mut ir).unwrap();

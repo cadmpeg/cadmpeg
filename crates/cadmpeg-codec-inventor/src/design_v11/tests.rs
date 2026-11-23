@@ -66,7 +66,7 @@ fn project_part(ir: &mut CadIr) {
     place_current_bodies(ir).expect("placement");
 }
 
-fn timeline(ir: &CadIr) -> (&Vec<Member>, &Rollback) {
+fn timeline(ir: &CadIr) -> (&Vec<Member>, Option<&Rollback>) {
     let root = &ir.design.scopes[0].roots[0];
     let Container::Ordered {
         members,
@@ -82,7 +82,7 @@ fn timeline(ir: &CadIr) -> (&Vec<Member>, &Rollback) {
     else {
         panic!("timeline")
     };
-    (members, rollback)
+    (members, rollback.as_ref())
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn rollback_uses_the_first_member_below_end_of_part() {
         let expected = features.get(below).map_or(Rollback::End, |f| {
             Rollback::Before(Member::Feature(f.id.clone()))
         });
-        assert_eq!(timeline(&ir).1, &expected);
+        assert_eq!(timeline(&ir).1, Some(&expected));
         let expected_at = below.checked_sub(1).map_or_else(
             || Position::Start(ir.design.scopes[0].roots[0].clone()),
             |i| Position::After(Member::Feature(features[i].id.clone())),
@@ -143,7 +143,7 @@ fn source_suppression_keeps_rollback_at_end() {
     unknown.suppressed = None;
     let mut ir = part(vec![suppressed, unknown]);
     project_part(&mut ir);
-    assert_eq!(timeline(&ir).1, &Rollback::End);
+    assert_eq!(timeline(&ir).1, Some(&Rollback::End));
     assert_eq!(
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))
@@ -199,7 +199,7 @@ fn flat_pattern_has_a_second_root_timeline() {
         members,
         &[Member::Feature(flat.id), Member::Feature(model.id)]
     );
-    assert_eq!(rollback, &Rollback::End);
+    assert_eq!(rollback, &Some(Rollback::End));
     assert_eq!(ir.design.scopes[0].current.len(), 1);
 }
 
@@ -252,7 +252,7 @@ fn native_header_flags_supply_suppression_for_unplaced_features() {
         ir.design.features[0].suppressed,
         Some(Dimension::Literal(true))
     );
-    assert_eq!(timeline(&ir).1, &Rollback::End);
+    assert_eq!(timeline(&ir).1, Some(&Rollback::End));
 }
 
 #[test]

@@ -367,12 +367,14 @@ fn check_base(
             if !exists {
                 return;
             }
-            if matches!(position, PositionKey::After(MemberKey::Container(_))) {
+            if matches!(position, PositionKey::After(MemberKey::Container(_)))
+                && !records.design.at_unstated_rollback(position)
+            {
                 super::error(
                     findings,
                     id,
                     format_args!(
-                        "state base names {position}; a rollback position is spelled through its member"
+                        "state base names {position}; a stated rollback position is spelled through its member"
                     ),
                 );
             }

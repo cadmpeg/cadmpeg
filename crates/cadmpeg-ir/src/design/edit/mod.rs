@@ -50,7 +50,7 @@ use crate::design::container::Container;
 use crate::design::dimension::ParameterRef;
 use crate::design::feature::FeatureDefinition;
 use crate::design::ids::{ContainerId, ParameterProgramId};
-use crate::design::refs::Member;
+use crate::design::refs::{Member, Position};
 use crate::document::Design;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::ProductDefinitionId;
@@ -171,6 +171,20 @@ pub enum Literal {
     Text(String),
 }
 
+/// What [`Editor::set_active_configuration`] left out (§4).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ConfigurationSwitch {
+    /// The positions of the scope's current states at an unstated rollback
+    /// (§5.2): `After(Container(c))`, which no evaluation may name (part
+    /// 10). The switch reads each as built through `c`'s end, so the incoming
+    /// state is the incoming configuration's evaluation after `c`'s last
+    /// feature; the outgoing configuration's state there is not written as an
+    /// evaluation, and the evaluations and process states based on it are
+    /// rebased so that their resolved states are unchanged. Where an incoming
+    /// state replaces it, the outgoing state leaves the document.
+    pub unspelled: Vec<Position>,
+}
+
 /// An editing session over a document on which validation (part 10) reports
 /// no Error. The document changes only through its methods while it lives,
 /// and each refuses an edit whose result would hold an Error, leaving the
@@ -220,15 +234,15 @@ impl Editor<'_> {
 
     /// Applies an edit to a copy of the document, and keeps the copy only
     /// where the edit succeeds and validation reports no Error in it.
-    fn apply(
+    fn apply<T>(
         &mut self,
-        edit: impl FnOnce(&mut CadIr) -> Result<(), EditError>,
-    ) -> Result<(), EditError> {
+        edit: impl FnOnce(&mut CadIr) -> Result<T, EditError>,
+    ) -> Result<T, EditError> {
         let mut next = self.document.clone();
-        edit(&mut next)?;
+        let done = edit(&mut next)?;
         errors(&next)?;
         *self.document = next;
-        Ok(())
+        Ok(done)
     }
 
     /// Sets a parameter's value to a literal: its base definition becomes a
@@ -382,6 +396,11 @@ impl Editor<'_> {
     /// configuration, and takes the incoming configuration's entry. Other
     /// scopes, and the scope's other records, are untouched.
     ///
+    /// A current state at an unstated rollback is read as built through its
+    /// container's end, and its outgoing state, which has no spelling as an
+    /// evaluation, is not written: the returned [`ConfigurationSwitch`]
+    /// lists each such state's position.
+    ///
     /// # Errors
     ///
     /// Returns [`EditError::UnknownScope`] for a definition with no scope,
@@ -392,7 +411,7 @@ impl Editor<'_> {
         &mut self,
         scope: &ProductDefinitionId,
         configuration: &ConfigurationId,
-    ) -> Result<(), EditError> {
+    ) -> Result<ConfigurationSwitch, EditError> {
         self.apply(|document| document.set_active_configuration(scope, configuration))
     }
 }

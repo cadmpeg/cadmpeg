@@ -704,8 +704,14 @@ fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
                 None => format!("{id} folder (members {}..={})", folder.first, folder.last),
             })
             .collect::<Vec<_>>();
-        if let Rollback::Before(member) = rollback {
+        if let Some(Rollback::Before(member)) = rollback {
             values.push(format!("{id} rollback (before {})", member_id(member)));
+        }
+        if rollback.is_none() {
+            losses.push(F3dLossCode::WriterRollbackAssumed.note(format!(
+                "{id}: the document does not state the timeline's rollback; it is written built \
+                 through its end, with the current geometry as the state after its last feature"
+            )));
         }
         if placement.is_some() {
             values.push(format!("{id} placement"));

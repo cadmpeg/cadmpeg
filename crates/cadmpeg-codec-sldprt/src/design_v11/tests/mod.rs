@@ -125,7 +125,7 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
         kind: OrderedKind::Timeline,
         members,
         folders,
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     }] = ir.design.containers.as_slice()
     else {
@@ -195,7 +195,8 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
     };
     assert_eq!(
         current.at,
-        Position::After(Member::Feature(feature_named(&ir, "Odd").id.clone()))
+        Position::After(Member::Container(id.clone())),
+        "the part stores no current mark, so the timeline's rollback is unstated"
     );
     assert_eq!(
         current

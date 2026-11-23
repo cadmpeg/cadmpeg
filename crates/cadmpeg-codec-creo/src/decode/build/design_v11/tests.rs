@@ -2,6 +2,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::design::container::Rollback;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{FeatureContent, FeatureId};
@@ -57,7 +58,7 @@ fn no_names(ir: &CadIr) -> names::Names {
     )
 }
 
-fn timeline(ir: &CadIr) -> (&[Member], &Rollback) {
+fn timeline(ir: &CadIr) -> (&[Member], Option<&Rollback>) {
     let root = &ir.design.scopes[0].roots[0];
     match ir.design.containers.iter().find(|c| c.id() == root) {
         Some(Container::Ordered {
@@ -65,7 +66,7 @@ fn timeline(ir: &CadIr) -> (&[Member], &Rollback) {
             rollback,
             kind: OrderedKind::Timeline,
             ..
-        }) => (members, rollback),
+        }) => (members, rollback.as_ref()),
         _ => panic!("the scope root is no timeline"),
     }
 }
@@ -89,13 +90,13 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
             Member::Feature(extrude.id.clone())
         ]
     );
-    assert_eq!(rollback, &Rollback::End);
+    assert_eq!(rollback, None, "the decoder reads no insert position");
     let scope = &ir.design.scopes[0];
     assert_eq!(scope.definition, definition);
     assert_eq!(scope.current.len(), 1);
     assert_eq!(
         scope.current[0].at,
-        Position::After(Member::Feature(extrude.id.clone()))
+        Position::After(Member::Container(scope.roots[0].clone()))
     );
     assert_eq!(scope.current[0].bodies, [ir.geometry.bodies[0].id.clone()]);
     assert_eq!(ir.model, model);
@@ -121,6 +122,12 @@ fn an_empty_timeline_holds_its_current_state_at_its_start() {
         project_timeline(ctx, &mut ir, &definition, &BTreeSet::new(), &names)
     })
     .expect("timeline");
+    let (_, rollback) = timeline(&ir);
+    assert_eq!(
+        rollback,
+        Some(&Rollback::End),
+        "a timeline with no member has no member to stand before"
+    );
     let root = ir.design.scopes[0].roots[0].clone();
     assert_eq!(ir.design.scopes[0].current[0].at, Position::Start(root));
 }

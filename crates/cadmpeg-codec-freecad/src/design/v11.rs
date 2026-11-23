@@ -72,22 +72,30 @@ pub(crate) fn project(
             .cloned()
             .map(Member::Feature)
             .collect::<Vec<_>>();
-        let tip = body
-            .tip
-            .as_ref()
-            .and_then(|tip| body.members.iter().position(|member| member == tip));
-        let rollback = match tip {
-            Some(index) => members
-                .get(index + 1)
-                .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
-            None => members
-                .first()
-                .map_or(Rollback::End, |first| Rollback::Before(first.clone())),
+        // A stored empty `Tip` builds no member; a `Tip` that names no member
+        // of the Body fixes no rollback (cadir-v11.md §5.2), and the state at
+        // it is spelled `After(Container(body))`.
+        let (rollback, at) = match &body.tip {
+            None => (
+                Some(
+                    members
+                        .first()
+                        .map_or(Rollback::End, |first| Rollback::Before(first.clone())),
+                ),
+                Position::Start(id.clone()),
+            ),
+            Some(tip) => match body.members.iter().position(|member| member == tip) {
+                Some(index) => (
+                    Some(
+                        members
+                            .get(index + 1)
+                            .map_or(Rollback::End, |next| Rollback::Before(next.clone())),
+                    ),
+                    Position::After(members[index].clone()),
+                ),
+                None => (None, Position::After(Member::Container(id.clone()))),
+            },
         };
-        let at = tip.map_or_else(
-            || Position::Start(id.clone()),
-            |index| Position::After(members[index].clone()),
-        );
         let touched = body
             .native_ref
             .as_deref()

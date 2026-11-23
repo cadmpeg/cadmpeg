@@ -245,7 +245,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
     };
     assert_eq!(*kind, OrderedKind::Timeline);
     assert!(folders.is_empty());
-    assert_eq!(*rollback, Rollback::End);
+    assert_eq!(*rollback, Some(Rollback::End));
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}")
     };
@@ -395,7 +395,7 @@ fn rollback_of(
         panic!("ordered container")
     };
     (
-        rollback,
+        rollback.expect("the flags state the rollback"),
         members,
         losses.into_iter().map(|loss| loss.code).collect(),
     )
@@ -458,15 +458,15 @@ fn the_current_state_stands_at_the_rollback_marker() {
     let members = [10, 20, 30]
         .map(|key| Member::Feature(FeatureId::mint(format!("f3d:model:feature#{key}")).unwrap()));
     assert_eq!(
-        super::rollback_position(&id, &members, &Rollback::End),
+        super::rollback_position(&id, &members, Some(&Rollback::End)),
         Position::After(members[2].clone())
     );
     assert_eq!(
-        super::rollback_position(&id, &members, &Rollback::Before(members[1].clone())),
+        super::rollback_position(&id, &members, Some(&Rollback::Before(members[1].clone()))),
         Position::After(members[0].clone())
     );
     assert_eq!(
-        super::rollback_position(&id, &members, &Rollback::Before(members[0].clone())),
+        super::rollback_position(&id, &members, Some(&Rollback::Before(members[0].clone()))),
         Position::Start(id.clone())
     );
 }

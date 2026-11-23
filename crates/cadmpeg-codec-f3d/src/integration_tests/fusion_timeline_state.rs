@@ -33,8 +33,8 @@ fn timeline_state(bytes: &[u8]) -> (BTreeMap<String, bool>, Option<String>, Vec<
         panic!("one ordered timeline")
     };
     let marker = match rollback {
-        Rollback::End => None,
-        Rollback::Before(Member::Feature(id)) => Some(
+        None | Some(Rollback::End) => None,
+        Some(Rollback::Before(Member::Feature(id))) => Some(
             ir.design
                 .features
                 .iter()
@@ -42,7 +42,7 @@ fn timeline_state(bytes: &[u8]) -> (BTreeMap<String, bool>, Option<String>, Vec<
                 .and_then(|feature| feature.name.clone())
                 .expect("named marker feature"),
         ),
-        Rollback::Before(member) => panic!("marker before {member:?}"),
+        Some(Rollback::Before(member)) => panic!("marker before {member:?}"),
     };
     (suppressed, marker, codes)
 }

@@ -15,10 +15,7 @@
                 "kind": "feature",
                 "value": "creo:model:feature#4"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -99,8 +96,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "feature",
-                  "value": "creo:model:feature#4"
+                  "kind": "container",
+                  "value": "creo:model:timeline#root"
                 }
               },
               "bodies": [],

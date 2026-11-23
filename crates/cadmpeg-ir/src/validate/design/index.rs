@@ -20,7 +20,7 @@ use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 
 use super::names::mentioned_features;
-use super::records::{by_id, members, DesignRecords, MemberKey, PositionKey};
+use super::records::{by_id, entering_at, members, DesignRecords, MemberKey, PositionKey};
 use super::Held;
 
 /// A state whose dependencies a rule reads.
@@ -235,7 +235,10 @@ impl<'a> DesignIndex<'a> {
                     let inner = self.records.containers.get(id).copied()?;
                     self.add_subtree(inner, &mut found);
                 }
-                let (container, index) = self.place(key)?;
+                let Some((container, index)) = self.place(key) else {
+                    let root = matches!(key, MemberKey::Container(id) if self.records.roots.contains_key(id));
+                    return root.then(|| self.closure(found));
+                };
                 if let (Container::Unordered { .. }, MemberKey::Feature(feature)) = (container, key)
                 {
                     found.insert(feature);
@@ -248,23 +251,21 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// The one spelling of the state entering a feature of an ordered
-    /// container (§5.3): `Start` of the container before its first member,
-    /// else the position after the member before it.
+    /// container (§5.3): the position after the nearest feature before it,
+    /// else `Start` of the container.
     pub(super) fn entering(&self, feature: &str) -> Option<PositionKey<'a>> {
         let (container, index) = self.place(MemberKey::Feature(feature))?;
         let Container::Ordered { id, members, .. } = container else {
             return None;
         };
-        Some(match index.checked_sub(1) {
-            None => PositionKey::Start(id.as_str()),
-            Some(before) => PositionKey::After(MemberKey::of(members.get(before)?)),
-        })
+        Some(entering_at(id.as_str(), members.get(..index)?))
     }
 
     /// The position whose state a position names (§5.3): for
     /// `After(Container(c))` of an ordered container `c`, the position at
-    /// `c`'s rollback, which has no state of its own; any other position is
-    /// itself. `None` where a rollback names no member of its container.
+    /// `c`'s rollback, which has no state of its own, and the position itself
+    /// where that rollback is unstated; any other position is itself. `None`
+    /// where a rollback names no member of its container.
     pub(super) fn rollback_position<'p>(
         &self,
         mut position: PositionKey<'p>,
@@ -281,7 +282,11 @@ impl<'a> DesignIndex<'a> {
             else {
                 return Some(position);
             };
-            position = DesignRecords::rollback_position(container)?;
+            let at = DesignRecords::rollback_position(container)?;
+            if at == position {
+                return Some(at);
+            }
+            position = at;
         }
         None
     }
@@ -352,7 +357,8 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// Adds every feature of a container's tree, up to each ordered
-    /// container's rollback position.
+    /// container's rollback position: every member where it is unstated,
+    /// which reads every member as before it (part 10).
     fn add_subtree(&self, container: &'a Container, found: &mut HashSet<&'a str>) {
         let mut stack = vec![container];
         let mut seen = HashSet::new();
@@ -365,8 +371,8 @@ impl<'a> DesignIndex<'a> {
                     members, rollback, ..
                 } => {
                     let end = match rollback {
-                        Rollback::End => members.len(),
-                        Rollback::Before(at) => members
+                        None | Some(Rollback::End) => members.len(),
+                        Some(Rollback::Before(at)) => members
                             .iter()
                             .position(|member| member == at)
                             .unwrap_or(members.len()),
