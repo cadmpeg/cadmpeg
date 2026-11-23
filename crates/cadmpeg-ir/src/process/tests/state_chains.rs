@@ -100,6 +100,7 @@ fn document(evaluations: Vec<Evaluation>, states: Vec<ProcessState>) -> String {
     let mut ir = CadIr::empty();
     ir.design.evaluations = evaluations;
     ir.process.states = states;
+    ir.finalize();
     serde_json::to_string(&ir).unwrap()
 }
 

@@ -209,6 +209,16 @@ EXCEPTIONS = {
     "crates/cadmpeg-ir/src/document.rs:VersionProbe": "private one-field pre-pass; the document is re-read through CadIrReadWire, which denies",
 }
 
+# Set or map fields admitted by declaring path and field label, each with the
+# reason its reader admits a second spelling. An entry is interim: it names
+# the gap whose ruling removes it.
+SET_SPELLING_EXCEPTIONS = {
+    "crates/cadmpeg-ir/src/pmi.rs:PmiDimension.modifiers":
+        "interim (RULINGS-P P7-D5, gap 20261119-ERR1-C-I6-3): reading adds no "
+        "refusal main lacks before errata item Q, and main read the modifiers "
+        "as a list in any order, so the set reads every list main reads",
+}
+
 SKIP_BASENAMES = {
     "tests.rs",
     "golden_tests.rs",
@@ -4034,6 +4044,8 @@ def set_spelling_failures():
                 continue
             line = set_spelling_lines(item)
             for label, offset, attributes, field_type in read_fields(item):
+                if f"{path.as_posix()}:{label}" in SET_SPELLING_EXCEPTIONS:
+                    continue
                 failure = spelling.field_failure(item, attributes, field_type)
                 if failure is not None:
                     found.append((path, line(offset), f"{label}: {failure}"))

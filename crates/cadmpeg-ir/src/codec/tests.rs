@@ -253,9 +253,10 @@ impl CodecBackend for ForeignIdentityCodec {
 fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
     let mut ir = unit_cube().unwrap();
     let dimension = crate::pmi::PmiDimension {
-        modifiers: vec![crate::pmi::DimensionModifier::Other(
-            "Statistical".to_owned(),
-        )],
+        modifiers: [crate::pmi::DimensionModifier::Other(
+            cadmpeg_core::nonblank_literal!("Statistical"),
+        )]
+        .into(),
         ..crate::pmi::PmiDimension::new(crate::pmi::PmiDimensionKind::Size)
     };
     ir.model.pmi.push(crate::pmi::PmiAnnotation::new(
@@ -270,7 +271,7 @@ fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
     };
     assert_eq!(
         dimension.modifiers,
-        [crate::pmi::DimensionModifier::Statistical]
+        [crate::pmi::DimensionModifier::Statistical].into()
     );
 }
 
@@ -625,4 +626,85 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     let result = decode_result(ir);
     assert_eq!(result.ir().scope(), ContentScope::full());
     assert_eq!(result.ir().model.parameters.len(), 1);
+}
+
+/// A decoder that emits the cube's first point three times; with `differ`
+/// the later copies hold another `native_ref`.
+struct RepeatedIdentityCodec {
+    differ: bool,
+}
+
+impl CodecBackend for RepeatedIdentityCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the repeated identity test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        for copy in ["second", "third"] {
+            let mut point = ir.geometry.points[0].clone();
+            if self.differ {
+                point.native_ref = Some(copy.into());
+            }
+            ir.geometry.points.push(point);
+        }
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+    let result = RepeatedIdentityCodec { differ: true }
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    let repeated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code)
+        .collect::<Vec<_>>();
+    let [loss] = repeated.as_slice() else {
+        panic!("one loss for the one repeated id: {repeated:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(
+        loss.message.contains(cube.geometry.points[0].id.as_str())
+            && loss.message.contains("2 dropped"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn the_sealed_wrapper_states_one_record_for_equal_copies_of_an_id_and_charges_nothing() {
+    let result = RepeatedIdentityCodec { differ: false }
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code));
 }

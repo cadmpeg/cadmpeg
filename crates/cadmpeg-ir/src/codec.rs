@@ -228,7 +228,8 @@ impl DecodeResult {
         decoded: Decoded,
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
-        let result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
+        let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
+        result.keep_first_of_repeated_ids();
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -332,6 +333,26 @@ impl DecodeResult {
             report: DecodeReport::from_body(classification, body),
             source_fidelity,
         })
+    }
+
+    /// Keeps one copy of each id a decoder emitted more than once in one
+    /// arena. Copies that hold one value are one record, and the wrapper
+    /// states it (§2.8). Where the copies differ, §2.8 states none and gives
+    /// the id up with the records that need it; that give-up pass does not
+    /// exist yet, so meanwhile the first copy in the decoder's emission order
+    /// is kept, the others are dropped, and one `decode/id.repeated` loss per
+    /// id names it, the arena, and the copies.
+    fn keep_first_of_repeated_ids(&mut self) {
+        for repeated in self.ir.drop_repeated_ids() {
+            self.report.losses.push(DecodeLossCode::IdRepeated.note(format!(
+                "the decoder emitted {} {} times in arena {}, and the copies differ; the first \
+                 copy is kept and {} dropped, so a reference meant for a dropped copy names the first",
+                repeated.id,
+                repeated.dropped + 1,
+                repeated.arena,
+                repeated.dropped
+            )));
+        }
     }
 
     /// Borrow the finalized IR.

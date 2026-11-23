@@ -18962,7 +18962,7 @@
               "const": "other"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/NonBlankString"
             }
           },
           "additionalProperties": false,
@@ -59460,11 +59460,12 @@
               "const": "dimension"
             },
             "modifiers": {
-              "description": "Qualifiers in source order, each once.",
+              "description": "The qualifiers, a set: each is stated once and their order carries no\nmeaning.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/DimensionModifier"
-              }
+              },
+              "uniqueItems": true
             },
             "nominal": {
               "description": "A literal nominal, or the design parameter that drives the\nannotation.",
