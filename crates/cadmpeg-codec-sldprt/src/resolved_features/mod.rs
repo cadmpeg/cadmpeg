@@ -25,6 +25,10 @@ const VALUE_ONLY_SCALAR_HEADER: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
 ];
 
+/// The id prefix of a sketch relation instance, which is also the geometry
+/// carrier of a curve built from a dimension record.
+pub(crate) const RELATION_INSTANCE_ID_PREFIX: &str = "sldprt:feature-input:relation-instance#";
+
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 
 const SKETCH_ANGLE_TOLERANCE: f64 = 1.0e-9;

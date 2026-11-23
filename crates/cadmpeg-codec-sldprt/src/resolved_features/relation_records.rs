@@ -1,7 +1,7 @@
 //! Relation instance records and scalar roles.
 
 use super::scalars::FeatureObjectNames;
-use super::SKETCH_POINT_TOLERANCE;
+use super::{RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::HistoryMetadata;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
@@ -478,7 +478,7 @@ pub(super) fn relation_instances(
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
         instances.push(FeatureInputRelationInstance {
-            id: format!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
+            id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{offset}"),
             parent: lane.id.clone(),
             ordinal,
             offset,
@@ -519,10 +519,7 @@ pub(super) fn relation_instances(
         }
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
         instances.push(FeatureInputRelationInstance {
-            id: format!(
-                "sldprt:feature-input:relation-instance#{lane_key}:{}",
-                scalar.offset
-            ),
+            id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{}", scalar.offset),
             parent: lane.id.clone(),
             ordinal: u32::try_from(instances.len()).map_err(|_| {
                 CodecError::malformed("SLDPRT relation instance ordinal overflows u32")

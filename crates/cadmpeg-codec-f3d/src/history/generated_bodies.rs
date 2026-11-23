@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body selections that name the bodies of earlier features.
 
+use super::body_closures::stable_ref;
+use super::body_selections::{historical_body_slot, FeatureBodySelectionInputs};
 use super::stored_bodies::ActiveBodies;
-use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
 use crate::history_records::{AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistory};
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
@@ -466,7 +467,7 @@ fn combine_side_binding(
     let scope = scope.ok_or("the Combine has no scope")?;
     let history = scope_state_history(scope, context.scope_histories, inputs.histories)
         .ok_or("no one bound history holds its input and result states")?;
-    let source = super::historical_brep_source(&history.id)
+    let source = super::face_resolution::historical_brep_source(&history.id)
         .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
     let producer = |slot: i64| -> Option<Producer> {
         let mut inserting = history
@@ -533,7 +534,7 @@ fn combine_side_binding(
                 .iter()
                 .cloned()
                 .zip(natives(side.slots.len()))
-                .map(|(body, native)| super::body_member(body, native))
+                .map(|(body, native)| super::face_resolution::body_member(body, native))
                 .collect::<Option<Vec<_>>>()
                 .ok_or("a native member is blank")?;
             BodySelection::ResolvedSet {
@@ -643,7 +644,7 @@ fn reverse_normal_binding(
     let history = scope
         .and_then(|scope| scope_state_history(scope, context.scope_histories, inputs.histories))
         .ok_or("no one bound history holds its input and result states")?;
-    let source = super::historical_brep_source(&history.id)
+    let source = super::face_resolution::historical_brep_source(&history.id)
         .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
     let live = slots
         .iter()
@@ -685,8 +686,9 @@ fn live_seed_binding(
 ) -> Option<ModelBodies> {
     let histories = context.inputs.histories;
     let history = scope_state_history(scope, context.scope_histories, histories)?;
-    let previous = super::effective_scope_previous_history_state_id(scope, histories)?;
-    let mut current = super::terminal_state(history)?.state_id;
+    let previous =
+        super::history_states::effective_scope_previous_history_state_id(scope, histories)?;
+    let mut current = super::edge_operand_history::terminal_state(history)?.state_id;
     let mut passed_previous = false;
     let mut steps = 0;
     while current != seed_state {
@@ -736,12 +738,12 @@ fn live_seed_binding(
         {
             return None;
         }
-        current = super::transition_or_header_previous_state_id(history, state)?;
+        current = super::history_states::transition_or_header_previous_state_id(history, state)?;
     }
     if !(passed_previous || current == previous) {
         return None;
     }
-    let source = super::historical_brep_source(&history.id)?;
+    let source = super::face_resolution::historical_brep_source(&history.id)?;
     history_model_bodies(context, feature, history, source, slots)
 }
 
@@ -836,11 +838,18 @@ fn scope_state_history<'h>(
     histories: &'h [AsmHistory],
 ) -> Option<&'h AsmHistory> {
     let state_id = scope.history_state_id()?;
-    let previous = super::effective_scope_previous_history_state_id(scope, histories)?;
+    let previous =
+        super::history_states::effective_scope_previous_history_state_id(scope, histories)?;
     if scope_histories.contains_key(&scope.id) {
-        super::bound_history_state_pair(&scope.id, state_id, previous, scope_histories, histories)
+        super::history_states::bound_history_state_pair(
+            &scope.id,
+            state_id,
+            previous,
+            scope_histories,
+            histories,
+        )
     } else {
-        super::unique_history_state_pair(histories, state_id, previous)
+        super::history_states::unique_history_state_pair(histories, state_id, previous)
     }
     .map(|(history, _, _)| history)
 }
@@ -853,13 +862,16 @@ fn scope_history<'h>(
     histories: &'h [AsmHistory],
 ) -> Option<&'h AsmHistory> {
     if scope_histories.contains_key(&scope.id) {
-        return super::bound_scope_history(&scope.id, scope_histories, histories);
+        return super::history_states::bound_scope_history(&scope.id, scope_histories, histories);
     }
     let state_id = scope.history_state_id()?;
-    match super::effective_scope_previous_history_state_id(scope, histories) {
-        Some(previous) => super::unique_history_state_pair(histories, state_id, previous)
-            .map(|(history, _, _)| history),
-        None => super::unique_history_state(histories, state_id).map(|(history, _)| history),
+    match super::history_states::effective_scope_previous_history_state_id(scope, histories) {
+        Some(previous) => {
+            super::history_states::unique_history_state_pair(histories, state_id, previous)
+                .map(|(history, _, _)| history)
+        }
+        None => super::history_states::unique_history_state(histories, state_id)
+            .map(|(history, _)| history),
     }
 }
 

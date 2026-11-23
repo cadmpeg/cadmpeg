@@ -213,17 +213,17 @@ pub(in crate::history) fn sync_neutral_features(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     // The end specs whose reversal flag an edit clears, read from the stored
-    // records as the decoder read them. A scan the context refuses finds no
-    // flag, and the write names each reversal it could not clear.
+    // records as the decoder read them; `None` where the context refuses the
+    // scan.
     let reversed_end_specs = if features.iter().any(cleared_reversal) {
         crate::resolved_features::terminations::reversed_end_specs(
             &ctx,
             &native.feature_histories,
             &native.feature_input_lanes,
         )
-        .unwrap_or_default()
+        .ok()
     } else {
-        HashMap::new()
+        Some(HashMap::new())
     };
     let mut cleared = Vec::new();
     enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
@@ -497,7 +497,8 @@ pub(in crate::history) fn sync_neutral_features(
     }
     let losses = clear_reversals(
         &cleared,
-        &reversed_end_specs,
+        reversed_end_specs.as_ref(),
+        &ir.model.configurations,
         &mut native.feature_input_lanes,
     );
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
@@ -561,22 +562,34 @@ pub(in crate::history) fn sync_neutral_features(
 
 /// Writes `0` to the end-spec reversal word of each extrusion whose decoded
 /// reversal an edit cleared, each paired with whether its record states the
-/// flag as a Keywords attribute, which the encoder already dropped. Names
-/// each extrusion whose flag the write could not clear.
+/// flag as a Keywords attribute, which the encoder already dropped.
+/// `reversed_end_specs` is `None` where the writer could not scan the stored
+/// end specs. Names each extrusion whose flag the write could not clear, and
+/// each lane outside the active configuration whose flag it cleared. Where
+/// the part has fewer than two configurations, every lane holds the model's
+/// state.
 fn clear_reversals(
     cleared: &[(&cadmpeg_ir::features::Feature, bool)],
-    reversed_end_specs: &HashMap<String, Vec<EndSpecAnchor>>,
+    reversed_end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>,
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     lanes: &mut [crate::records::FeatureInputLane],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::layout::extrusion_end_spec_header::REVERSAL;
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    let lane_configurations =
+        crate::history::configuration::configuration_lane_assignments(configurations, lanes)
+            .into_iter()
+            .map(|(configuration, lane)| (lane, &configurations[configuration]))
+            .collect::<HashMap<_, _>>();
     let mut losses = Vec::new();
     for (feature, stated) in cleared {
         let anchors = feature
             .native_ref
             .as_deref()
-            .and_then(|record| reversed_end_specs.get(record))
+            .and_then(|record| reversed_end_specs?.get(record))
             .map_or(&[][..], Vec::as_slice);
-        let mut unwritten = anchors.is_empty() && !stated;
+        let mut unwritten = anchors.is_empty() && (!stated || reversed_end_specs.is_none());
+        let mut configuration_lanes = std::collections::BTreeMap::new();
         for anchor in anchors {
             let at = anchor.offset + REVERSAL;
             match lanes
@@ -584,13 +597,56 @@ fn clear_reversals(
                 .and_then(|lane| lane.native_payload.get_mut(at..at + 4))
             {
                 Some(word) => word.copy_from_slice(&0_u32.to_le_bytes()),
-                None => unwritten = true,
+                None => {
+                    unwritten = true;
+                    continue;
+                }
             }
+            let lane = &lanes[anchor.lane].id;
+            let place = match lane_configurations.get(&anchor.lane) {
+                Some(configuration) if configuration.active => continue,
+                Some(configuration) => {
+                    let state = match configuration
+                        .feature_states
+                        .get(&feature.id)
+                        .map(|state| state.definition.operation())
+                    {
+                        Some(FeatureOperation::Extrude {
+                            direction: ExtrudeDirection::ProfileNormal {},
+                            ..
+                        }) => "whose state there travels along the normal over that flag: the written flag can change that configuration's extrusion",
+                        Some(FeatureOperation::Extrude {
+                            direction: ExtrudeDirection::ReversedProfileNormal {},
+                            ..
+                        }) => "whose state there travels against the normal: that configuration is written along it",
+                        _ => "which states no resolved travel for it: that configuration is written along it",
+                    };
+                    format!(
+                        "in lane {lane} of configuration {}, {state}",
+                        crate::history::extrude_direction::configuration_label(configuration)
+                    )
+                }
+                None if configurations.len() < 2 => continue,
+                None => format!(
+                    "in lane {lane}, which the writer assigns to no configuration: the configuration that lane holds is written along it"
+                ),
+            };
+            configuration_lanes.insert(anchor.lane, place);
         }
         let extrusion = crate::history::extrude_direction::label(feature);
         if unwritten {
+            let cause = if reversed_end_specs.is_none() {
+                "the writer could not read the end specs of the stored records, so the written record can keep the stored reversal"
+            } else {
+                "the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal"
+            };
             losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
-                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal."
+                "Extrusion {extrusion} is edited to travel along the profile normal, and {cause}."
+            )));
+        }
+        for place in configuration_lanes.into_values() {
+            losses.push(SldprtLossCode::WriterExtrudeReversalConfigurationCleared.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer also cleared its end-spec reversal flag {place}."
             )));
         }
     }
@@ -1104,5 +1160,193 @@ mod tests {
         let written = written_with_an_added_datum_point(&source);
         assert_eq!(source_ids(&written, "High"), [Some(u32::MAX - 1)]);
         assert_eq!(source_ids(&written, "Added"), [Some(2)]);
+    }
+
+    /// A projected one-direction join `Extrude` whose record states the
+    /// reversal flag, edited to travel along the profile normal.
+    fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+            "id":"history", "features":[{
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
+            }]
+        }))
+        .expect("synthetic history");
+        let mut feature = crate::history::project::project_features(&[history])
+            .expect("feature projection")
+            .into_iter()
+            .next()
+            .expect("the extrusion");
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ProfileNormal {};
+            }
+        });
+        assert!(crate::history::extrude_direction::cleared_reversal(
+            &feature
+        ));
+        feature
+    }
+
+    /// A cleared reversal with no end-spec flag to clear is named, unless its
+    /// record states the flag as a Keywords attribute, which the encoder
+    /// drops. Where the writer could not scan the stored end specs, every
+    /// cleared reversal is named, the stated one too.
+    #[test]
+    fn a_cleared_reversal_without_a_flag_to_clear_is_named() {
+        use crate::loss::SldprtLossCode;
+        use crate::resolved_features::terminations::EndSpecAnchor;
+        use std::collections::HashMap;
+        let feature = cleared_extrusion();
+        let scanned = HashMap::<String, Vec<EndSpecAnchor>>::new();
+        let unwritten = |stated: bool, end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>| {
+            super::clear_reversals(&[(&feature, stated)], end_specs, &[], &mut [])
+                .into_iter()
+                .map(|loss| {
+                    assert_eq!(
+                        loss.code,
+                        SldprtLossCode::WriterExtrudeReversalUnwritten.kind()
+                    );
+                    loss.message
+                })
+                .collect::<Vec<_>>()
+        };
+        let named = unwritten(false, Some(&scanned));
+        assert_eq!(named.len(), 1, "{named:?}");
+        assert!(named[0].contains("Extrusion \"Extrude\" ("), "{named:?}");
+        assert!(unwritten(true, Some(&scanned)).is_empty());
+        for stated in [false, true] {
+            let named = unwritten(stated, None);
+            assert_eq!(named.len(), 1, "{named:?}");
+            assert!(
+                named[0].contains("could not read the end specs")
+                    && named[0].contains("can keep the stored reversal"),
+                "{named:?}"
+            );
+        }
+    }
+
+    /// The write clears the flag in every lane that holds it, and names each
+    /// lane outside the active configuration: a lane of an inactive
+    /// configuration, also where that configuration's state reads along the
+    /// normal over the flag, and a lane that the writer assigns to no
+    /// configuration. A part with one configuration has the model's state in
+    /// every lane.
+    #[test]
+    fn a_cleared_lane_outside_the_active_configuration_is_named() {
+        use crate::layout::extrusion_end_spec_header::REVERSAL;
+        use crate::loss::SldprtLossCode;
+        use crate::resolved_features::terminations::EndSpecAnchor;
+        use cadmpeg_ir::features::parameters::{
+            ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
+        };
+        use cadmpeg_ir::features::selections::DistinctMembers;
+        use cadmpeg_ir::features::ConfigurationId;
+        use std::collections::{BTreeMap, HashMap};
+        let feature = cleared_extrusion();
+        let configuration = |name: &str, ordinal, active| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:id#{name}"))
+                .expect("identity grammar"),
+            ordinal,
+            active,
+            source_index: None,
+            name: Some(name.to_owned()),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        let mut along = configuration("Along", 2, false);
+        along.feature_states.insert(
+            feature.id.clone(),
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Active {
+                    outputs: DistinctMembers::default(),
+                },
+                dependencies: DistinctMembers::default(),
+                definition: feature.evaluation.definition().clone(),
+            },
+        );
+        let configurations = [
+            configuration("Default", 0, true),
+            configuration("Alternate", 1, false),
+            along,
+        ];
+        let lane = |id: &str, configuration: Option<&str>| -> crate::records::FeatureInputLane {
+            let payload = format!("{}01{}", "00".repeat(REVERSAL), "00".repeat(31 - REVERSAL));
+            let mut value = serde_json::json!({
+                "id": id,
+                "native_payload": payload,
+                "classes": [],
+                "names": []
+            });
+            if let Some(configuration) = configuration {
+                value["configuration"] = configuration.into();
+            }
+            serde_json::from_value(value).expect("synthetic lane")
+        };
+        let anchors = HashMap::from([(
+            feature.native_ref.clone().expect("the record"),
+            (0..4)
+                .map(|lane| EndSpecAnchor {
+                    lane,
+                    offset: 0,
+                    reversed: true,
+                })
+                .collect::<Vec<_>>(),
+        )]);
+        let named = |configurations: &[DesignConfiguration]| {
+            let mut lanes = [
+                lane("lane-default", Some("0")),
+                lane("lane-alternate", Some("1")),
+                lane("lane-along", Some("2")),
+                lane("lane-shared", None),
+            ];
+            let losses = super::clear_reversals(
+                &[(&feature, false)],
+                Some(&anchors),
+                configurations,
+                &mut lanes,
+            );
+            for lane in &lanes {
+                assert_eq!(lane.native_payload[REVERSAL..REVERSAL + 4], [0; 4]);
+            }
+            losses
+                .into_iter()
+                .map(|loss| {
+                    assert_eq!(
+                        loss.code,
+                        SldprtLossCode::WriterExtrudeReversalConfigurationCleared.kind()
+                    );
+                    loss.message
+                })
+                .collect::<Vec<_>>()
+        };
+        let messages = named(&configurations);
+        assert_eq!(messages.len(), 3, "{messages:?}");
+        assert!(
+            messages[0].contains("lane lane-alternate of configuration \"Alternate\" (")
+                && messages[0].contains("which states no resolved travel for it"),
+            "{messages:?}"
+        );
+        assert!(
+            messages[1].contains("lane lane-along of configuration \"Along\" (")
+                && messages[1].contains("travels along the normal over that flag"),
+            "{messages:?}"
+        );
+        assert!(
+            messages[2].contains("lane lane-shared, which the writer assigns to no configuration"),
+            "{messages:?}"
+        );
+        assert!(named(&configurations[..1]).is_empty());
     }
 }

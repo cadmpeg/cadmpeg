@@ -28,7 +28,7 @@ fn fragment_blend_operand(
         )
         .unwrap();
     operand.recipe_state_id = Some(1);
-    let boundaries = crate::history::face_boundary_contexts_for_slots(
+    let boundaries = crate::history::face_boundaries::face_boundary_contexts_for_slots(
         &[10, 13, 11],
         input,
         &mut crate::history::topology_cache::TopologyQueryCache::default(),

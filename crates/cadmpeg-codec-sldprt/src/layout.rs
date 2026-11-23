@@ -53,11 +53,13 @@ pub(crate) mod feature_input_operand_cell12 {
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
-/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
 /// ```
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 2;
     /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
     pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
 }
@@ -3563,6 +3565,43 @@ pub(crate) mod compact_principal_plane_component {
     pub(crate) const TRAILER_KIND: usize = 122;
     /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
     pub(crate) const TRAILER_SENTINEL: usize = 126;
+}
+
+/// Byte offsets for the `compact_principal_plane_component_padded` record.
+///
+/// Spec §2. Record length 142 B.
+///
+/// ```text
+/// The principal-plane component record with its feature number one word earlier. The 138-byte record of compact_principal_plane_component starts at +4: its source word is the time stamp and its time-stamp word is the padding.
+/// ```
+pub(crate) mod compact_principal_plane_component_padded {
+    /// Offset of `feature_number` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const FEATURE_NUMBER: usize = 0;
+    /// Offset of `time_stamp` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TIME_STAMP: usize = 4;
+    /// Offset of `padding` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING: usize = 8;
+    /// Stated value of `padding` (`u32`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const PADDING_VALUE: u32 = 0x0000_0000;
+    /// Offset of `selector` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const SELECTOR: usize = 14;
+    /// Offset of `matrix_present` (`u8`). Spec §2.
+    #[cfg(test)]
+    pub(crate) const MATRIX_PRESENT: usize = 18;
+    /// Offset of `basis` (`f64[9]`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const BASIS: usize = 19;
+    /// Offset of `trailer_kind` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_KIND: usize = 126;
+    /// Offset of `trailer_sentinel` (`u32`, little-endian). Spec §2.
+    #[cfg(test)]
+    pub(crate) const TRAILER_SENTINEL: usize = 130;
 }
 
 /// Byte offsets for the `extrusion_compact_operation_trailer` record.
