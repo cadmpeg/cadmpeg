@@ -216,8 +216,12 @@ fn tail_flags(
     flags_at: usize,
 ) -> crate::records::feature::scope::DesignScopeTailFlags {
     crate::records::feature::scope::DesignScopeTailFlags {
-        suppression: [state[0] == 1, state[1] == 1],
-        unevaluated: state[2] == 1,
+        suppression: [state[0] != 0, state[1] != 0],
+        unevaluated: state[2] != 0,
+        wide_state: state
+            .iter()
+            .any(|byte| *byte > 1)
+            .then_some(cadmpeg_ir::native::bytes::NativeBytes::new(state)),
         state_offset: u64_from_index(state_at),
         no_result: flags[0] == 1,
         rolled_back: flags[1] == 1,
@@ -284,20 +288,37 @@ fn plain_tail_state_bytes_are_zero_unless_the_no_result_flag_is_set() {
     }
 }
 
-/// A state byte above `1` beside a set no-result flag leaves the tail state
-/// unread; the scope still decodes.
+/// A state byte above `1` beside a set no-result flag is read as set; the
+/// tail keeps its stored state bytes and its lane flags, and the scope
+/// reloads unchanged.
 #[test]
-fn a_plain_tail_state_byte_above_one_leaves_the_tail_state_unread() {
-    for byte in 0..3 {
-        let mut state = [0; 3];
-        state[byte] = 2;
-        let (bytes, _) = plain_labeled_frame(&PlainTail {
-            state,
-            flags: (1, 0),
-            ..PlainTail::default()
-        });
-        let scope = parse_plain(&bytes).expect("plain scope");
-        assert_eq!(scope.tail_flags, None, "state {state:?}");
+fn a_plain_tail_state_byte_above_one_is_read_as_set() {
+    for long_form in [true, false] {
+        for byte in 0..3 {
+            let mut state = [0; 3];
+            state[byte] = 2;
+            let (bytes, kind_end) = plain_labeled_frame(&PlainTail {
+                long_form,
+                state,
+                flags: (1, 1),
+                ..PlainTail::default()
+            });
+            let scope = parse_plain(&bytes).expect("plain scope");
+            let state_at = kind_end + 16 + 2 * LABEL.len();
+            let flags_at = kind_end + 62 + usize::from(long_form) + 2 * LABEL.len();
+            let flags = tail_flags(state, [1, 1], state_at, flags_at);
+            assert_eq!(scope.tail_flags, Some(flags), "state {state:?}");
+            assert_eq!(flags.stored_state(), state);
+            assert_eq!(flags.suppressed(), byte < 2, "state {state:?}");
+            let wire = serde_json::to_value(&scope).unwrap();
+            assert_eq!(
+                serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                    wire
+                )
+                .unwrap(),
+                scope
+            );
+        }
     }
 }
 
@@ -344,6 +365,51 @@ fn typed_tails_read_their_state_bytes_and_lane_flags() {
             );
             assert_eq!(scope.previous_history_state_id(), Some(41));
         }
+    }
+}
+
+/// A typed tail state byte above `1` is read as set, with its lane flags.
+#[test]
+fn a_typed_tail_state_byte_above_one_is_read_as_set() {
+    for labeled in [false, true] {
+        let shift = if labeled { 2 * LABEL.len() } else { 0 };
+        for byte in 0..3 {
+            let mut state = [0; 3];
+            state[byte] = 2;
+            let (bytes, kind_end) = typed_flagged_frame(labeled, [1, 1], state);
+            assert_eq!(
+                parse(&bytes).and_then(|scope| scope.tail_flags),
+                Some(tail_flags(
+                    state,
+                    [1, 1],
+                    kind_end + 16 + shift,
+                    kind_end + 141 + shift
+                )),
+                "labeled {labeled}, state {state:?}"
+            );
+        }
+    }
+}
+
+/// Stored state bytes reload only where one is above `1` and they agree with
+/// the set state bytes.
+#[test]
+fn scope_wire_refuses_stored_state_bytes_that_disagree_with_the_set_bytes() {
+    let (bytes, _) = plain_labeled_frame(&PlainTail {
+        state: [0, 0, 2],
+        flags: (1, 0),
+        ..PlainTail::default()
+    });
+    let scope = parse_plain(&bytes).expect("plain scope");
+    let wire = serde_json::to_value(&scope).unwrap();
+    for stored in ["000001", "000200", "020002"] {
+        let mut changed = wire.clone();
+        changed["tail_flags"]["wide_state"] = serde_json::json!(stored);
+        assert!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(changed)
+                .is_err(),
+            "stored {stored:?}"
+        );
     }
 }
 
@@ -530,5 +596,77 @@ fn carried_flags_of_an_earlier_envelope_reload() {
             serde_json::from_value::<DesignParameterScope>(serde_json::to_value(kept).unwrap())
                 .expect("the kept scope reloads");
         assert_eq!(&reloaded, kept, "unread {unread:?}");
+    }
+}
+
+/// Two envelopes of one record that differ only in a state byte of `2` keep
+/// the later envelope with its own tail state, whichever envelope is
+/// primary-indexed, and one note names both states.
+#[test]
+fn envelopes_that_differ_only_in_a_state_byte_of_two_keep_the_later() {
+    use crate::design::decode::scopes::parameter_scope::{
+        admit_history_bound_scope_variants, parse_parameter_scope, SupersededScopeEnvelopes,
+    };
+
+    let tag = crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    for states in [[[0, 0, 0], [0, 0, 2]], [[0, 0, 2], [0, 0, 0]]] {
+        let frames = states.map(|state| {
+            plain_labeled_frame(&PlainTail {
+                state,
+                flags: (1, 0),
+                ..PlainTail::default()
+            })
+            .0
+        });
+        let bytes = frames.concat();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let scopes = [0, frames[0].len()].map(|start| {
+            let mut scope =
+                parse_parameter_scope(&bytes, &records, 12, &tag, u64_from_index(start))
+                    .unwrap()
+                    .expect("envelope");
+            scope.id = format!("f3d:stream:design-parameter-scope#{start}");
+            scope
+        });
+        let stream = "f3d:stream".to_owned();
+        let note = format!(
+            "Feature scope {} (record 12): the decoder kept state={}, no-result=true, rolled-back=false from its later envelope at byte {} (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 0, state={}, no-result=true, rolled-back=false.",
+            scopes[1].id,
+            states[1].map(|byte| byte.to_string()).concat(),
+            scopes[1].byte_offset(),
+            states[0].map(|byte| byte.to_string()).concat(),
+        );
+        for primary_at in [None, Some(0), Some(scopes[1].byte_offset())] {
+            let mut variants = scopes.to_vec();
+            let primary = primary_at
+                .map(|at| (stream.clone(), at))
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>();
+            let superseded = admit_history_bound_scope_variants(&ctx, &mut variants, &[], &primary)
+                .expect("the document decodes");
+            let [kept] = variants.as_slice() else {
+                panic!("one retained envelope")
+            };
+            let case = format!("states {states:?}, primary {primary_at:?}");
+            assert_eq!(kept.byte_offset(), scopes[1].byte_offset(), "{case}");
+            assert_eq!(kept.tail_flags, scopes[1].tail_flags, "{case}");
+            assert_eq!(
+                kept.tail_flags.map(|flags| flags.stored_state()),
+                Some(states[1]),
+                "{case}"
+            );
+            assert_eq!(
+                superseded,
+                SupersededScopeEnvelopes {
+                    primary_indexed: 0,
+                    tail_flags: vec![note.clone()],
+                },
+                "{case}"
+            );
+        }
     }
 }

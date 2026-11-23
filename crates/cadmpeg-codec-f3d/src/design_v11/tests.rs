@@ -347,6 +347,7 @@ fn tail_flags(suppression: [bool; 2], no_result: bool, rolled_back: bool) -> Des
     DesignScopeTailFlags {
         suppression,
         unevaluated: false,
+        wide_state: None,
         state_offset: 0,
         no_result,
         rolled_back,
@@ -518,6 +519,48 @@ fn an_unprojected_item_takes_its_suppression_from_its_scope_tail_state_bytes() {
             assumed,
             "{case}"
         );
+    }
+}
+
+/// An unprojected Thread item whose scope stores the companion tail takes
+/// its suppression from the companion suppression flag.
+#[test]
+fn an_unprojected_item_takes_its_suppression_from_its_thread_companion_flag() {
+    for suppressed in [false, true] {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#100"),
+            crate::records::feature::scope::DesignFeatureKind::Thread,
+            7,
+        );
+        scope.companion_suppressed = Some(Located {
+            value: suppressed,
+            offset: scope.feature_ordinal_offset() + 62,
+        });
+        let mut losses = Vec::new();
+        let documents = crate::test_support::with_decode_context(|ctx| {
+            super::timeline::project(
+                ctx,
+                &[],
+                &[timeline(STREAM, 0, &[7, 8])],
+                &[],
+                &super::timeline::ScopeInputs {
+                    records: std::slice::from_ref(&scope),
+                    tail_flags: &super::timeline::TailFlags::new(),
+                },
+                &BTreeSet::new(),
+                &mut losses,
+            )
+        })
+        .unwrap();
+        let [thread, other] = documents[""].features.as_slice() else {
+            panic!("two features")
+        };
+        assert_eq!(
+            thread.suppressed,
+            Some(Dimension::Literal(suppressed)),
+            "suppressed {suppressed}"
+        );
+        assert_eq!(other.suppressed, None, "suppressed {suppressed}");
     }
 }
 

@@ -1310,8 +1310,8 @@ pub(crate) fn bind_profile_revolution_axes(
     }
 }
 
-/// Name the revolutions whose axis lies outside the plane of their profile
-/// sketch (open item DI-85). The axis is kept: the stored record is the only
+/// Name the revolutions whose axis lies outside the plane the decoder binds
+/// their profile sketch to (open item DI-85). The axis is kept: the stored record is the only
 /// axis the revolution states. The plane origin and the axis point are model
 /// positions, which coincide within the linear resolution.
 pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
@@ -1388,8 +1388,8 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
     }
     (!named.is_empty()).then(|| {
         crate::loss::SldprtLossCode::FeatureRevolveAxisOffProfilePlane.note(format!(
-            "{} revolution(s) keep a stored axis that lies outside the plane of their \
-             profile sketch (sldprt-open-items.md DI-85): {named}.",
+            "{} revolution(s) keep a stored axis that lies outside the plane the decoder \
+             binds their profile sketch to (sldprt-open-items.md DI-85): {named}.",
             named.count(),
         ))
     })

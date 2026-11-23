@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -51,6 +51,49 @@ fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>) {
     .write_to(&mut output)
     .unwrap();
     (report, output)
+}
+
+/// Decode without the native envelope fixture, so that the write plans
+/// through the public encoder.
+fn decode_without_envelope(source: &[u8]) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
+            .unwrap(),
+    )
+}
+
+/// Write with the retained source image reduced to its digest.
+fn write_without_source_image(decoded: &mut EditableDecodeResult) -> (ExportReport, Vec<u8>) {
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let mut output = Vec::new();
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut output)
+        .unwrap();
+    (report, output)
+}
+
+/// The stale-solid note of a write without the retained source image.
+fn imageless_note(records: &str) -> String {
+    format!(
+        "The {records} differ from the decoded source. The stored solid is written as decoded, \
+         and without the retained source image the writer cannot tell whether the edit shapes it."
+    )
+}
+
+fn has_synthesized_snapshot(decoded: &EditableDecodeResult) -> bool {
+    decoded
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("sldprt_configuration_snapshot_synthesized")
 }
 
 fn stale_messages(report: &ExportReport) -> Vec<&str> {
@@ -356,7 +399,7 @@ fn extrusion_parameter_value_edit_is_written_and_named() {
 }
 
 #[test]
-fn removing_referenced_extrusion_parameter_is_malformed() {
+fn removing_referenced_extrusion_parameter_is_written_and_named() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -364,17 +407,14 @@ fn removing_referenced_extrusion_parameter_is_malformed() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let parameter_id = decoded.ir().model.parameters[0].id.clone();
     decoded.ir_mut().model.parameters.clear();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let (report, _) = write(&decoded);
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(_)),
-        "{error:?}"
+        stale_messages(&report)
+            .iter()
+            .any(|message| message.contains(parameter_id.as_str())),
+        "{:#?}",
+        report.losses
     );
-    assert!(error.to_string().contains(parameter_id.as_str()), "{error}");
 }
 
 #[test]
@@ -408,40 +448,90 @@ fn native_extrusion_depth_edit_is_written_and_named() {
 }
 
 #[test]
-fn native_extrusion_edit_without_source_image_is_refused() {
+fn native_extrusion_edit_without_source_image_is_written_and_named() {
     let source = sldprt_with_body_and_history(&triangle_body());
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
-        .id
-        .clone();
+    let mut decoded = decode_without_envelope(&source);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
             .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
     });
-    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (report, _) = write_without_source_image(&mut decoded);
+    assert_eq!(
+        stale_messages(&report),
+        [imageless_note("native history records").as_str()]
+    );
     assert!(decoded
         .source_fidelity()
         .retained_record(crate::SOURCE_IMAGE_ID)
         .unwrap()
         .data()
         .is_none());
-    assert!(!native_id.is_empty());
+}
+
+#[test]
+fn an_unedited_write_without_the_source_image_reports_no_stale_solid() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode_without_envelope(&source);
+    assert!(has_synthesized_snapshot(&decoded));
+    let (report, _) = write_without_source_image(&mut decoded);
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
     assert!(
-        error
-            .to_string()
-            .contains("validated retained local, central and EOCD signature tokens"),
-        "{error}"
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
+}
+
+#[test]
+fn an_unedited_write_without_a_sidecar_reports_no_stale_solid() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let decoded = decode_without_envelope(&source);
+    assert!(has_synthesized_snapshot(&decoded));
+    let report = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut Vec::new())
+        .unwrap();
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    assert!(
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_feature_rename_without_the_source_image_is_named_as_an_edit_that_may_not_shape_the_solid() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode_without_envelope(&source);
+    decoded.ir_mut().model.features[0].name = Some("RenamedBoss".into());
+    let (report, _) = write_without_source_image(&mut decoded);
+    assert_eq!(
+        stale_messages(&report),
+        [imageless_note("features").as_str()]
+    );
+    assert!(
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_parameter_rename_without_the_source_image_is_named_as_an_edit_that_may_not_shape_the_solid() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode_without_envelope(&source);
+    decoded.ir_mut().model.parameters[0].name = "RenamedDepth".into();
+    let (report, _) = write_without_source_image(&mut decoded);
+    assert_eq!(
+        stale_messages(&report),
+        [imageless_note("parameters").as_str()]
+    );
+    assert!(
+        unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
     );
 }
 
@@ -502,6 +592,16 @@ fn a_model_suppression_with_an_unedited_snapshot_is_written_and_named_once() {
     );
     assert!(
         unwritten_messages(&report).is_empty(),
+        "{:?}",
+        report.losses
+    );
+    // The written part restates the active snapshot from the model, so its
+    // active configuration states the suppression the model states.
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.invalid"),
         "{:?}",
         report.losses
     );
@@ -600,7 +700,71 @@ fn a_parameter_value_edited_only_in_the_synthesized_snapshot_is_named_unwritten(
 }
 
 #[test]
-fn a_suppressed_feature_an_active_feature_depends_on_is_refused_as_the_decoder_states_it() {
+fn a_snapshot_only_parameter_edit_without_the_source_image_is_named_unwritten() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let mut decoded = decode_without_envelope(&source);
+    assert!(has_synthesized_snapshot(&decoded));
+    let depth = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap()
+        .id
+        .clone();
+    *decoded
+        .ir_mut()
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.active)
+        .unwrap()
+        .parameter_values
+        .get_mut(&depth)
+        .unwrap() = cadmpeg_ir::features::parameters::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
+    );
+
+    let (report, output) = write_without_source_image(&mut decoded);
+
+    assert!(stale_messages(&report).is_empty(), "{:?}", report.losses);
+    let unwritten = unwritten_messages(&report);
+    assert_eq!(unwritten.len(), 1, "{:?}", report.losses);
+    assert!(
+        unwritten[0].contains(depth.as_str()) && unwritten[0].contains("does not write"),
+        "{}",
+        unwritten[0]
+    );
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    let written_depth = written
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    assert_eq!(written_depth.expression, "12.5mm");
+    assert_eq!(
+        written
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .find(|configuration| configuration.active)
+            .unwrap()
+            .parameter_values
+            .get(&written_depth.id),
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(12.5).unwrap()
+        ))
+    );
+}
+
+#[test]
+fn a_dependency_its_operands_do_not_state_is_refused() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -634,7 +798,10 @@ fn a_suppressed_feature_an_active_feature_depends_on_is_refused_as_the_decoder_s
     .unwrap_err();
 
     assert!(
-        error.to_string().contains("suppressed dependency state"),
+        error.to_string().contains(&format!(
+            "SLDPRT feature {} dependencies are inconsistent",
+            cut.as_str()
+        )),
         "{error}"
     );
 }

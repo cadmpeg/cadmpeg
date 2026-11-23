@@ -1409,8 +1409,11 @@ fn revolution_axis_outside_the_profile_plane_is_named_and_kept() {
         note.code,
         crate::loss::SldprtLossCode::FeatureRevolveAxisOffProfilePlane.kind()
     );
-    assert!(note.message.starts_with("1 revolution(s) "));
-    assert!(note.message.ends_with("DI-85): Revolve1."));
+    assert_eq!(
+        note.message,
+        "1 revolution(s) keep a stored axis that lies outside the plane the decoder \
+         binds their profile sketch to (sldprt-open-items.md DI-85): Revolve1."
+    );
 }
 
 /// A profile object and a revolution object whose interval holds, at each
