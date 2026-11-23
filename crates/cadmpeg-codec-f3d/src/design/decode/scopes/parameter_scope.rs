@@ -1142,11 +1142,13 @@ pub(crate) fn admit_history_bound_scope_variants(
                 continue;
             };
             let Some(previous_state_id) =
-                crate::history::header_scope_previous_history_state_id(scope, histories)
+                crate::history::history_states::header_scope_previous_history_state_id(
+                    scope, histories,
+                )
             else {
                 continue;
             };
-            if crate::history::unique_header_history_state_pair(
+            if crate::history::history_states::unique_header_history_state_pair(
                 histories,
                 state_id,
                 previous_state_id,
@@ -1378,7 +1380,9 @@ fn envelopes_differing_from(
         histories.map(|histories| {
             (
                 scope.history_state_id(),
-                crate::history::header_scope_previous_history_state_id(scope, histories),
+                crate::history::history_states::header_scope_previous_history_state_id(
+                    scope, histories,
+                ),
             )
         })
     };

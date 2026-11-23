@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::direct_body_fixture;
+use crate::history::binding_histories::BindingHistories;
 use crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates;
-use crate::history::BindingHistories;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
     AsmHistory,
@@ -463,7 +463,9 @@ fn body_recipes_resolve_design_link_307_8_before_body_deletion() {
         attributes: vec![attribute],
         ..Default::default()
     };
-    let tagged = crate::history::historical_topology(&brep).unwrap().unwrap();
+    let tagged = crate::history::topology_rows::historical_topology(&brep)
+        .unwrap()
+        .unwrap();
     crate::test_support::history::edit(&mut history, 1, |topology, _| {
         topology.body_design_links = tagged.body_design_links;
     });

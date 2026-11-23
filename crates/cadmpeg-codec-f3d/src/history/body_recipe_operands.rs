@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind body-recipe operands to preceding history bodies.
 
-use super::body_index::CompleteBodyIndex;
-use super::{
-    active_brep_face_matches_source, bodies_touching, effective_scope_previous_history_state_id,
-    face_changes_across_state_chain, historical_brep_source, history_state_index,
-    history_state_indexes, projection_was_finalized, selection, stable_ref,
-    unique_history_state_pair, visit_state_groups_oldest_first, BindingHistories,
+use super::binding_histories::{
+    history_state_indexes, visit_state_groups_oldest_first, BindingHistories,
 };
+use super::body_closures::{bodies_touching, stable_ref};
+use super::body_index::CompleteBodyIndex;
+use super::face_boundaries::face_changes_across_state_chain;
+use super::face_resolution::{active_brep_face_matches_source, historical_brep_source};
+use super::history_states::{
+    effective_scope_previous_history_state_id, history_state_index, unique_history_state_pair,
+};
+use super::{projection_was_finalized, selection};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use std::collections::{BTreeSet, HashMap};
 

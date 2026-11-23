@@ -27,7 +27,7 @@ fn edge_loops_match_a_scan_of_the_coedge_rows() {
         ],
         ..AsmHistoricalTopology::default()
     };
-    let index = crate::history::HistoricalBodyIndex::new(&topology);
+    let index = crate::history::historical_index::HistoricalBodyIndex::new(&topology);
     for edge in [40, 41, 42, 43] {
         let scanned = topology
             .coedge_topology

@@ -15,21 +15,25 @@ mod base_feature_history;
 mod edge_recipe_faces;
 mod treatment;
 
-use crate::history::bind_scope_histories;
-use crate::history::bodies_intersecting;
-use crate::history::bound_history_state_pair;
-use crate::history::bound_scope_history;
-use crate::history::edge_changes_across_state_chain;
-use crate::history::edge_recipe_reference_context;
-use crate::history::effective_scope_previous_history_state_id;
-use crate::history::face_changes_across_state_chain;
+use crate::history::body_closures::bodies_intersecting;
+use crate::history::edge_operand_history::historical_edge_axis;
+use crate::history::face_boundaries::edge_changes_across_state_chain;
+use crate::history::face_boundaries::edge_recipe_reference_context;
+use crate::history::face_boundaries::face_changes_across_state_chain;
+use crate::history::face_boundaries::historical_loop_boundary;
+use crate::history::face_boundaries::preceding_support_face_slots;
+use crate::history::face_boundaries::EdgeBoundaryContext;
+use crate::history::face_boundaries::FaceBoundaryArena;
+use crate::history::face_resolution::resolve_pattern_face_by_surface_radius;
 use crate::history::face_support::historical_face_support_contexts;
-use crate::history::header_scope_previous_history_state_id;
-use crate::history::historical_edge_axis;
-use crate::history::historical_loop_boundary;
-use crate::history::historical_topology;
-use crate::history::preceding_support_face_slots;
-use crate::history::resolve_pattern_face_by_surface_radius;
+use crate::history::history_states::bound_history_state_pair;
+use crate::history::history_states::bound_scope_history;
+use crate::history::history_states::effective_scope_previous_history_state_id;
+use crate::history::history_states::header_scope_previous_history_state_id;
+use crate::history::history_states::unique_header_history_state_pair;
+use crate::history::history_states::unique_history_state;
+use crate::history::history_states::unique_history_state_pair;
+use crate::history::scope_histories::bind_scope_histories;
 use crate::history::selection::boundary_edges_in_changes;
 use crate::history::selection::faces_in_topology;
 use crate::history::selection::historical_edge_context;
@@ -41,13 +45,9 @@ use crate::history::selection::recipe_selector_candidates;
 use crate::history::selection::snapshot_edge_identity_revision;
 use crate::history::selection::EdgeContextIndex;
 use crate::history::selection::HistoricalIdentityIndex;
-use crate::history::terminal_edge_recipe_faces;
-use crate::history::terminal_edge_recipe_reference_faces;
-use crate::history::unique_header_history_state_pair;
-use crate::history::unique_history_state;
-use crate::history::unique_history_state_pair;
-use crate::history::EdgeBoundaryContext;
-use crate::history::FaceBoundaryArena;
+use crate::history::topology_rows::historical_topology;
+use crate::history::treatment_candidates::terminal_edge_recipe_faces;
+use crate::history::treatment_candidates::terminal_edge_recipe_reference_faces;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmHistoricalCoedge;
 use crate::history_records::AsmHistoricalEdge;
@@ -1864,7 +1864,7 @@ fn edge_recipe_scope_binding_with_peer(
                 "recipe_references": [],
                 "recipe_program_offset": 0,
                 "recipe_program": [],
-                "candidate_faces": [crate::history::historical_face_id(1).unwrap()],
+                "candidate_faces": [crate::history::face_operand_history::historical_face_id(1).unwrap()],
                 "next_record_index": index + 24,
                 "next_byte_offset": 160
             }))
@@ -1885,7 +1885,9 @@ fn edge_recipe_scope_binding_with_peer(
                     token_offset: 0,
                     design_reference: reference,
                     design_reference_offset: 0,
-                    candidate_faces: vec![crate::history::historical_face_id(1).unwrap()],
+                    candidate_faces: vec![
+                        crate::history::face_operand_history::historical_face_id(1).unwrap(),
+                    ],
                     candidate_edges: Vec::new(),
                     alternate_selector_faces: Vec::new(),
                     alternate_selector_edges: Vec::new(),

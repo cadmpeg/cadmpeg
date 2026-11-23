@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{merge_operand_list_bindings, tool_replacement_loss, unbound_refusals};
-use crate::history::{CombineOperandRefusal, CombineOperandSide};
+use crate::history::body_selections::{CombineOperandRefusal, CombineOperandSide};
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
 use cadmpeg_ir::features::FeatureId;

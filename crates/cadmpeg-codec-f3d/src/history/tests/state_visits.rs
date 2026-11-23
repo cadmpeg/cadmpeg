@@ -3,7 +3,7 @@
 
 use cadmpeg_asm::kernel_header::RefWidth;
 
-use crate::history::{visit_state_groups_oldest_first, BindingHistories};
+use crate::history::binding_histories::{visit_state_groups_oldest_first, BindingHistories};
 use crate::history_records::AsmHistory;
 use crate::test_support::history_stream::DesignScale;
 
