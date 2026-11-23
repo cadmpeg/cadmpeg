@@ -27,6 +27,7 @@ default = [
   "sat",
   "pvz",
   "edrawings",
+  "alibre",
   "usd",
   "onshape",
 ]
@@ -44,6 +45,7 @@ iges = ["dep:cadmpeg-codec-iges"]
 sat = ["dep:cadmpeg-codec-sat"]
 pvz = ["dep:cadmpeg-codec-pvz"]
 edrawings = ["dep:cadmpeg-codec-edrawings"]
+alibre = ["dep:cadmpeg-codec-alibre"]
 onshape = ["dep:cadmpeg-codec-onshape", "step"]
 usd = ["dep:cadmpeg-codec-usd"]
 
@@ -67,6 +69,7 @@ cadmpeg-codec-step = { workspace = true, optional = true }
 cadmpeg-codec-sat = { workspace = true, optional = true }
 cadmpeg-codec-pvz = { workspace = true, optional = true }
 cadmpeg-codec-edrawings = { workspace = true, optional = true }
+cadmpeg-codec-alibre = { workspace = true, optional = true }
 cadmpeg-codec-onshape = { workspace = true, optional = true }
 cadmpeg-codec-usd = { workspace = true, optional = true }
 serde.workspace = true

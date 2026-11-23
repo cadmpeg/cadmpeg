@@ -65,6 +65,12 @@ hidden = [
 fuzz = "required"
 
 [[crate]]
+id = "alibre"
+names = ["AlibreCodec"]
+fuzz = "absent"
+fuzz_reason = "focused targets call AlibreCodec"
+
+[[crate]]
 id = "edrawings"
 names = ["EdrawingsCodec"]
 fuzz = "required"

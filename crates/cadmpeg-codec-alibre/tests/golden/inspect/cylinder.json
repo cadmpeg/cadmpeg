@@ -1,0 +1,222 @@
+{
+  "container_kind": "cfb",
+  "entries": [
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "5",
+        "start_sector": "55"
+      },
+      "kind": "stored",
+      "name": "DESIGN_PARAMETER_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 28
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "3",
+        "start_sector": "1"
+      },
+      "kind": "stored",
+      "name": "AUTOGRAPH_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 68
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "11",
+        "start_sector": "64"
+      },
+      "kind": "stored",
+      "name": "PROP_DATA",
+      "role": "properties",
+      "size": {
+        "kind": "exact",
+        "size": 952
+      }
+    },
+    {
+      "attributes": {
+        "acis_save_format_version": "3300",
+        "allocation": "mini",
+        "directory_id": "4",
+        "header_scale": "10",
+        "kernel_family": "acis",
+        "product_family": "Alibre, Inc",
+        "product_version": "ACIS 33.0.1 NT",
+        "start_sector": "3"
+      },
+      "kind": "stored",
+      "name": "SAB_DATA",
+      "role": "acis-binary",
+      "size": {
+        "kind": "exact",
+        "size": 3325
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "12",
+        "start_sector": "61"
+      },
+      "kind": "stored",
+      "name": "VERSION",
+      "role": "metadata",
+      "size": {
+        "kind": "exact",
+        "size": 165
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "regular",
+        "directory_id": "1",
+        "start_sector": "13"
+      },
+      "kind": "stored",
+      "name": "STEP_DATA",
+      "role": "root-exchange",
+      "size": {
+        "kind": "exact",
+        "size": 16903
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "7",
+        "start_sector": "57"
+      },
+      "kind": "stored",
+      "name": "HOLE_OPERATIONS_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 20
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "9",
+        "start_sector": "59"
+      },
+      "kind": "stored",
+      "name": "CUSTOM_ITEM_PROP_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "2",
+        "start_sector": "0"
+      },
+      "kind": "stored",
+      "name": "GLOBAL_PARAMETER_DATA_CACHE",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 20
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "8",
+        "start_sector": "58"
+      },
+      "kind": "stored",
+      "name": "STANDARD_DESIGN_PROP_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 12
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "10",
+        "start_sector": "60"
+      },
+      "kind": "stored",
+      "name": "LIGHT_CONFIGURATION_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 48
+      }
+    },
+    {
+      "attributes": {
+        "allocation": "mini",
+        "directory_id": "6",
+        "start_sector": "56"
+      },
+      "kind": "stored",
+      "name": "EXTERNAL_THREAD_OPERATIONS_DATA",
+      "role": "stream",
+      "size": {
+        "kind": "exact",
+        "size": 12
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [
+        {
+          "admission": {
+            "kind": "unverified",
+            "using": "save-format-217"
+          },
+          "declared": {
+            "reference_width": "4",
+            "save_format_major": "33",
+            "save_format_minor": "0"
+          },
+          "dialect": "acis:save-format-binary-other"
+        }
+      ],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
+        "dialect": "alibre:cfb-acis-binary"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [
+    {
+      "code": {
+        "kind": "namespaced",
+        "value": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "alibre",
+          "strict_floor": "warning"
+        }
+      },
+      "message": "the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "CFB v3 with 12 streams"
+  ]
+}

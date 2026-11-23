@@ -533,6 +533,85 @@ pub(crate) fn lex(
     Ok(out)
 }
 
+/// Rewrite records of a save format with the extended entity base to the base
+/// the shared decoders read: entity id, then pattern reference.
+///
+/// A record qualifies when its third value is an integer followed by a
+/// reference; that integer is removed. A `body` record then also stores one
+/// integer before its first-lump reference, which is removed too.
+pub fn normalize_extended_base(records: &mut [Record], save_format: Option<u32>) {
+    if !save_format
+        .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version))
+    {
+        return;
+    }
+    for record in records {
+        let value_positions: Vec<usize> = record
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| !token.is_payload_ident())
+            .map(|(position, _)| position)
+            .take(5)
+            .collect();
+        let value = |nth: usize| value_positions.get(nth).map(|&at| &record.tokens[at]);
+        if !matches!(value(2), Some(Token::Long(_))) || !matches!(value(3), Some(Token::Ref(_))) {
+            continue;
+        }
+        let mut drop = vec![value_positions[2]];
+        if record.head() == "body"
+            && matches!(value(3), Some(Token::Ref(_)))
+            && matches!(value(4), Some(Token::Long(_)))
+        {
+            drop.push(value_positions[4]);
+        }
+        let kept: Vec<Token> = record
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(position, _)| !drop.contains(position))
+            .map(|(_, token)| token.clone())
+            .collect();
+        record.tokens = kept.into();
+    }
+}
+
+/// Identifier intern table of a stream that writes `name%<u32 LE>` for the
+/// first use of an identifier and `%<u32 LE>` for each later use.
+struct NameTable {
+    enabled: bool,
+    entries: std::collections::BTreeMap<u32, String>,
+}
+
+impl NameTable {
+    /// The identifier text with its table suffix resolved.
+    fn resolve(&mut self, raw: &str, offset: usize) -> Result<String, StreamError> {
+        if !self.enabled {
+            return Ok(raw.to_owned());
+        }
+        let bytes = raw.as_bytes();
+        let Some(split) = bytes.len().checked_sub(5) else {
+            return Ok(raw.to_owned());
+        };
+        if bytes[split] != b'%' {
+            return Ok(raw.to_owned());
+        }
+        let Some(id) = View::u32_le_at(bytes, split + 1) else {
+            return Ok(raw.to_owned());
+        };
+        let name = &raw[..split];
+        if name.is_empty() {
+            return self.entries.get(&id).cloned().ok_or_else(|| StreamError {
+                format: StreamFormat::Binary,
+                offset,
+                reason: format!("identifier refers to undefined name-table entry {id}"),
+            });
+        }
+        self.entries.insert(id, name.to_owned());
+        Ok(name.to_owned())
+    }
+}
+
 /// Frame `bytes[start..limit]` into an indexed record table.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
@@ -556,6 +635,35 @@ pub fn frame(
         ref_width,
         declared_entities,
         false,
+        false,
+    )
+}
+
+/// Frame like [`frame`], or like [`frame_history`] when
+/// `eof_terminates_final_record` is set, for the save format the header
+/// declares. A save format of [`EXTENDED_ACIS_SAVE_FORMATS`] stores identifiers
+/// through the intern table, which framing resolves.
+pub fn frame_for_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: RefWidth,
+    header: &crate::kernel_header::KernelHeader,
+    eof_terminates_final_record: bool,
+) -> Result<Vec<Record>, StreamFailure> {
+    let intern_names = header
+        .save_format_version
+        .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version));
+    frame_impl(
+        ctx,
+        bytes,
+        start,
+        limit,
+        ref_width,
+        header.entity_count,
+        eof_terminates_final_record,
+        intern_names,
     )
 }
 
@@ -569,7 +677,16 @@ pub fn frame_history(
     ref_width: RefWidth,
     declared_entities: Option<u64>,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, true)
+    frame_impl(
+        ctx,
+        bytes,
+        start,
+        limit,
+        ref_width,
+        declared_entities,
+        true,
+        false,
+    )
 }
 
 fn frame_impl(
@@ -580,6 +697,7 @@ fn frame_impl(
     ref_width: RefWidth,
     declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
+    intern_names: bool,
 ) -> Result<Vec<Record>, StreamFailure> {
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
@@ -608,6 +726,10 @@ fn frame_impl(
     let mut records = Vec::new();
     let mut pos = start;
     let mut index = 0usize;
+    let mut names = NameTable {
+        enabled: intern_names,
+        entries: Default::default(),
+    };
 
     while pos < limit {
         let rec_start = pos;
@@ -642,11 +764,11 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    let part = s.to_owned();
+                    let part = names.resolve(s, token_offset)?;
                     name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    let part = s.to_owned();
+                    let part = names.resolve(s, token_offset)?;
                     name_parts.push(part);
                     name_done = true;
                     // The history partition opens with the delta_state record.
@@ -657,6 +779,8 @@ fn frame_impl(
                     }
                 }
                 Lexed::Ident(identifier) => {
+                    let identifier = names.resolve(identifier, token_offset)?;
+                    let identifier = identifier.as_str();
                     if payload_start
                         && name_parts
                             .iter()
@@ -671,6 +795,8 @@ fn frame_impl(
                     tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
+                    let identifier = names.resolve(identifier, token_offset)?;
+                    let identifier = identifier.as_str();
                     if payload_start
                         && name_parts
                             .iter()
@@ -818,6 +944,44 @@ mod tests {
             frame(bytes, 0, bytes.len(), RefWidth::Eight).unwrap().len(),
             1
         );
+    }
+
+    fn framed_for(save_format: u32, bytes: &[u8]) -> Vec<Record> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("test stream fits the service input limit");
+        let header = crate::kernel_header::KernelHeader {
+            save_format_version: Some(save_format),
+            entity_count: None,
+            flags: None,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            scale: None,
+            linear: None,
+            angular: None,
+        };
+        super::frame_for_header(&ctx, bytes, 0, bytes.len(), RefWidth::Four, &header, false)
+            .unwrap_or_else(|_| panic!("test stream frames"))
+    }
+
+    #[test]
+    fn identifier_table_applies_only_to_the_extended_save_formats() {
+        let mut bytes = vec![0x0d, 9];
+        bytes.extend_from_slice(b"body%\x01\x00\x00\x00");
+        bytes.push(0x11);
+        bytes.extend_from_slice(&[0x0d, 5, b'%', 1, 0, 0, 0, 0x11]);
+        let extended = framed_for(3300, &bytes);
+        assert_eq!(
+            extended
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            ["body", "body"]
+        );
+        let older = framed_for(21800, &bytes);
+        assert_eq!(older[0].name, "body%\x01\x00\x00\x00");
+        assert_eq!(older[1].name, "%\x01\x00\x00\x00");
     }
 
     fn framed(

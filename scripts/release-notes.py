@@ -56,6 +56,7 @@ AREAS = {
     "creo": "Creo",
     "pvz": "Creo View",
     "edrawings": "eDrawings",
+    "alibre": "Alibre",
     "nx": "NX",
     "rhino": "Rhino",
     "catia": "CATIA",

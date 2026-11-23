@@ -137,29 +137,22 @@ fn decode_acis_binary(
         None
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
-            Some(limit) => sab::frame(
-                ctx,
-                bytes,
-                start,
-                limit,
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-            None => sab::frame_history(
-                ctx,
-                bytes,
-                start,
-                bytes.len(),
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-        };
-        let records = framed.map_err(|failure| {
+        let limit = acis_header::solved_record_limit_with_header(bytes, header);
+        let framed = sab::frame_for_header(
+            ctx,
+            bytes,
+            start,
+            limit.unwrap_or(bytes.len()),
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+            &header.metadata,
+            limit.is_none(),
+        );
+        let mut records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
         let brep = decode_with_header(
             ctx,
             &records,

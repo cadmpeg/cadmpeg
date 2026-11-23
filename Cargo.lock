@@ -244,6 +244,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-alibre"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-codec-step",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+ "serde_json",
+]
+
+[[package]]
 name = "cadmpeg-codec-catia"
 version = "0.6.12"
 dependencies = [
@@ -600,6 +613,7 @@ dependencies = [
 name = "cadmpeg-registry"
 version = "0.6.12"
 dependencies = [
+ "cadmpeg-codec-alibre",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-edrawings",
