@@ -10,6 +10,7 @@ use crate::{test_support, SolidEdgeCodec};
 
 const EPS_SPHERE_RADIUS_MM: f64 = 1.0e-12;
 const EPS_RESOLUTION_MM: f64 = 1.0e-15;
+const EPS_RING_VERTEX_MM: f64 = 1.0e-9;
 
 #[test]
 fn directory_signature_detects_solid_edge() {
@@ -273,4 +274,32 @@ fn empty_partition_preserves_stated_body_resolution() {
         assert!((result.ir().tolerances.linear.get() - 1.0e-9).abs() < EPS_RESOLUTION_MM);
         assert_geometry_valid(result.ir());
     }
+}
+
+#[test]
+fn vertexless_ring_edge_is_bounded_by_one_vertex_on_its_carrier() {
+    let bytes = test_support::with_partitions(&[test_support::disc_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 1);
+    assert_eq!(ir.geometry.vertices.len(), 1);
+    assert_eq!(ir.geometry.points.len(), 1);
+    let ends = ir.geometry.edges[0].ends.as_ref().expect("bounded ring");
+    assert_eq!(ends.start, ends.end);
+    assert_eq!(ends.start, ir.geometry.vertices[0].id);
+    let position = ir.geometry.points[0].position().get();
+    let radius_mm = 5.0;
+    let distance = (position.x * position.x + position.y * position.y).sqrt();
+    assert!((distance - radius_mm).abs() < EPS_RING_VERTEX_MM);
+    assert!(position.z.abs() < EPS_RING_VERTEX_MM);
+    let range = ir.geometry.edges[0]
+        .carrier
+        .param_range()
+        .expect("ring range")
+        .get();
+    assert!((range[1] - range[0] - std::f64::consts::TAU).abs() < EPS_RING_VERTEX_MM);
+    assert_geometry_valid(ir);
 }

@@ -349,6 +349,66 @@ pub(crate) fn cube_partition() -> Vec<u8> {
     bytes
 }
 
+/// A planar disc face of radius 5 mm bounded by one ring edge on a circle, with
+/// no vertex: the single fin is its own successor and predecessor.
+pub(crate) fn disc_partition() -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let header_len = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..header_len].to_vec();
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 6]);
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    pointers(&mut bytes, &[1; 3]);
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    pointers(&mut bytes, &[1; 6]);
+    node(&mut bytes, 13, 3);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 4, 1, 1, 1, 1]);
+    node(&mut bytes, 14, 4);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    real(&mut bytes, 0.0);
+    pointers(&mut bytes, &[1, 1, 6, 3, 5]);
+    bytes.push(b'+');
+    pointers(&mut bytes, &[1; 5]);
+    node(&mut bytes, 50, 5);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+    bytes.push(b'+');
+    vector(&mut bytes, [0.0, 0.0, 0.0]);
+    vector(&mut bytes, [0.0, 0.0, 1.0]);
+    vector(&mut bytes, [1.0, 0.0, 0.0]);
+    node(&mut bytes, 15, 6);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 7, 4, 1]);
+    node(&mut bytes, 16, 8);
+    integer(&mut bytes, 0);
+    pointer(&mut bytes, 1);
+    real(&mut bytes, 0.0);
+    pointers(&mut bytes, &[7, 1, 1, 9, 1, 1, 2]);
+    node(&mut bytes, 31, 9);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+    bytes.push(b'+');
+    vector(&mut bytes, [0.0, 0.0, 0.0]);
+    vector(&mut bytes, [0.0, 0.0, 1.0]);
+    vector(&mut bytes, [1.0, 0.0, 0.0]);
+    real(&mut bytes, 0.005);
+    node(&mut bytes, 17, 7);
+    pointers(&mut bytes, &[1, 6, 7, 7, 1, 1, 8, 1, 1]);
+    bytes.push(b'+');
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
 fn wire_id(base: u16, index: usize) -> u16 {
     base + u16::try_from(index).unwrap()
 }
