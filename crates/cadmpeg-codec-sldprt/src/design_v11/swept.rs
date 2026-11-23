@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What the extrude and revolve projections share: the member walk that
 //! finds each `Unresolved` feature of a family with the sketches and bodies
-//! before it, the profile sketch, the boolean, and the profile check.
+//! before it, the boolean, and the profile check.
 
 use std::collections::{HashMap, HashSet};
 
