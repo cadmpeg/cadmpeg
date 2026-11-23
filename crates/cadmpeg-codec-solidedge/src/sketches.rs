@@ -23,6 +23,7 @@ use cadmpeg_ir::scalar::{Angle, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
+use crate::construction;
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::{arc_2d, circle_2d, line_2d, profile, profile_2d};
 use crate::loss::SolidEdgeLossCode;
@@ -336,7 +337,7 @@ pub(crate) fn project(
             name: None,
             plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
                 resolved: Some(profile.frame),
-                ..Construction::default()
+                ..construction::empty()
             })),
             solve: SketchSolve {
                 state: None,
