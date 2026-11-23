@@ -138,6 +138,13 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
+    /// A sketch keeps the retained Front fallback frame although its profile
+    /// holds principal component records, because `sldprt.md` §3.3 does not
+    /// place the profile: its Front declaration is the feature-input lane's
+    /// default, another declaration or a custom component record lies beside
+    /// the records, or the records name more than one plane. The note states
+    /// which.
+    SketchPlaneAssumed,
     /// A sketch marker that the marker layouts skip and only its `sgSketch`
     /// record admits gives no entity, because that record gives none in the
     /// sketch.
@@ -187,10 +194,12 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
-    /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
     FeatureExtrudeReversalContradicted,
-    /// Extrusion travels against its profile normal on its end-spec reversal
-    /// flag alone: the solid neither holds nor contradicts that travel.
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
@@ -366,6 +375,9 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in a lane outside the active configuration.
+    WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -473,6 +485,7 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
+        Self::SketchPlaneAssumed,
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
@@ -567,6 +580,7 @@ impl SldprtLossCode {
         Self::WriterFeatureRecordReshaped,
         Self::WriterCompoundFileEditUnwritten,
         Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -641,6 +655,7 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchPlaneAssumed => "sketch.plane-assumed",
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
@@ -740,6 +755,9 @@ impl SldprtLossCode {
             Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
             Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -794,6 +812,7 @@ impl SldprtLossCode {
             Self::WriterFeatureRecordReshaped => Severity::Warning,
             Self::WriterCompoundFileEditUnwritten => Severity::Error,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterDrivenDimensionsOmitted => Severity::Warning,
@@ -848,6 +867,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
@@ -956,7 +976,9 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterSolidStaleAfterEdit | Self::WriterExtrudeReversalUnwritten => {
+            Self::WriterSolidStaleAfterEdit
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
@@ -1098,6 +1120,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
@@ -1343,6 +1366,7 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
+                "sketch.plane-assumed",
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
@@ -1437,6 +1461,7 @@ mod tests {
                 "writer.feature-record-reshaped",
                 "writer.compound-file-edit-unwritten",
                 "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

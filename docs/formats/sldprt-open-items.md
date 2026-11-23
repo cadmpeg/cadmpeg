@@ -1150,27 +1150,15 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
 
-### SF-01. Remaining Top reference forms and profile coordinates
+### SF-01. Remaining principal component reference forms and profile coordinates
 
-**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references with principal component records, mixed Top and Right component records, enclosing-context component records, lane component references, block definitions, and nested profile streams?
 
-**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
+**Known.** `sldprt.md` §3.3 defines local Top and Right component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. A profile with a Front reference and principal component records that §3.3 does not place takes the retained Front fallback N=-Y and U=-Z, and the decoder charges `sketch.plane-assumed`. A profile with Right component records can have curves that lie on edges of the final solid only under the mirrored Right mapping, or under none of the principal mappings. Nested profile streams carry their own coordinate records.
 
-**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls. For Right component records, a mirrored-polarity control separates the §3.3 Right mapping from its mirror, and the comparison separates finite edge support from intersections with carrier extensions.
 
-**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
-
-### SF-02. Right component ownership and profile coordinates
-
-**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
-
-**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
-
-**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
-
-**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
-
-**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+**Conflict.** The local Top component's N=+Y and the declared Top fallback's N=+Z select different normal axes. The Right component's N=+X and the retained fallback's N=-Y select different normal axes.
 
 ### SF-03. Sign of the decoded sketch normal off the principal planes
 
@@ -1180,7 +1168,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** A decoded normal of the wrong sign reverses the travel of each extrusion on that sketch. Sketches on datum planes of both orientations and sketches off the origin must establish the field that sets the sign.
 
-**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). Where the solid neither holds nor contradicts a decoded reversal, the decoder keeps the reversal and names it (`feature.extrude-reversal-assumed`). The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
+**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). Where the solid neither holds nor contradicts a decoded reversal, the decoder keeps the reversal and names it (`feature.extrude-reversal-assumed`). A configuration state reads the flag of its own lane. The decoder takes the decoded B-rep as the solid of the active configuration (the active solid). Where the model feature travels against the normal, the state of the active configuration follows the model feature. The decoder tests each other reversed state of the active configuration against the active solid. An inactive state whose definition equals the model feature's or the active state's takes the active solid's verdict on that feature or state. Where the active solid contradicts the reversal of an extrusion, the reversed state of that extrusion travels along the normal in every configuration, and the decoder names each such state that the model feature's note does not name, with its configuration (`feature.extrude-reversal-contradicted`). For this fallback the decoder takes the sketch normal of the extrusion as the same in every configuration. Each other reversed configuration state rests on its flag, and the decoder names it with its configuration (`feature.extrude-reversal-assumed`). A write that clears a model reversal writes `0` to the flag in every lane, and names each lane outside the active configuration whose flag it clears (`writer.extrude-reversal-configuration-cleared`). To decide whether an edit changed the lanes, a write reads the configuration states back from the lanes and settles them by the same rules against the same solid, recovering each model extrusion's reading before the settlement from the direction the decoder left. The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
 
 ### DI-69. Extrusion Boolean carriers
 

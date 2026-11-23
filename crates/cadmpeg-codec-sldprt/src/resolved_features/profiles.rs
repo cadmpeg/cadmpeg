@@ -2,7 +2,7 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
-use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneAssumedCause};
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -35,8 +35,8 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::holes::{
-    feature_input_sketch_frame, feature_input_sketch_marker_transform, principal_top_profile_frame,
-    sketch_feature_frames,
+    feature_input_sketch_marker_transform, principal_component_profile_frame, profile_sketch_frame,
+    sketch_feature_frames, ProfileSketchFrame,
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
@@ -56,7 +56,7 @@ use super::stream_readings::{
     is_revolve_profile, marker_reading, EntityIndex, MarkerReading, SolidEdges,
     UnboundMarkerReading,
 };
-use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
+use super::transforms::{record_component_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -563,10 +563,11 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<(SketchId, PlaneAssumedCause)>, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
+    let mut assumed_planes = Vec::new();
 
     let native_features = crate::records::HistoryFeatures::new(histories);
     let feature_positions = FeaturePositions::new(features);
@@ -702,18 +703,25 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let top_frame =
-                principal_top_profile_frame(&plane_frames, &plane_index, context_start, start, end);
-            let Some((origin, normal, u_axis)) = top_frame.or_else(|| {
-                feature_input_sketch_frame(
+            let component_frame = principal_component_profile_frame(
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            );
+            let Some(ProfileSketchFrame {
+                frame: (origin, normal, u_axis),
+                assumed,
+            }) = component_frame.map(ProfileSketchFrame::stored).or_else(|| {
+                profile_sketch_frame(
                     &lane.native_payload,
                     &plane_frames,
                     &plane_index,
-                    context_start,
-                    start,
-                    end,
+                    [context_start, start, end],
                 )
-            }) else {
+            })
+            else {
                 continue;
             };
             let lane_key = lane
@@ -840,7 +848,10 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+                if let Some(cause) = assumed {
+                    assumed_planes.push((sketch_id.clone(), cause));
+                }
+                record_component_marker_coordinates(&mut features[feature_index], component_frame);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -980,7 +991,10 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+                if let Some(cause) = assumed {
+                    assumed_planes.push((sketch_id.clone(), cause));
+                }
+                record_component_marker_coordinates(&mut features[feature_index], component_frame);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1055,7 +1069,10 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
-            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+            if let Some(cause) = assumed {
+                assumed_planes.push((sketch_id.clone(), cause));
+            }
+            record_component_marker_coordinates(&mut features[feature_index], component_frame);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1065,7 +1082,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-    Ok(())
+    Ok(assumed_planes)
 }
 
 fn profile_entity(
@@ -1118,6 +1135,9 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
+    /// The sketches that take the retained Front fallback frame; the
+    /// finalize pass charges each one that remains.
+    assumed_planes: Vec<(SketchId, PlaneAssumedCause)>,
     /// Each marker that the marker layouts skip and only its `sgSketch`
     /// record admits, whose record then gives no entity in its sketch, by
     /// sketch and marker reference, with the record's conflict where it
@@ -1134,6 +1154,12 @@ pub(crate) struct HeldMarkerGeometry {
 }
 
 impl HeldMarkerGeometry {
+    /// Holds `sketches`, which take the retained Front fallback frame, for
+    /// the finalize pass.
+    pub(crate) fn hold_assumed_planes(&mut self, sketches: Vec<(SketchId, PlaneAssumedCause)>) {
+        self.assumed_planes.extend(sketches);
+    }
+
     /// Held geometry for a projection over `sketch_entities` after an
     /// earlier finalize pass over them.
     pub(crate) fn after_finalized(sketch_entities: &[SketchEntity]) -> Self {
@@ -1162,6 +1188,7 @@ impl HeldMarkerGeometry {
 /// and whose record gives no entity. Returns the unbound marker readings,
 /// which the model pass notes once every binding is made.
 pub(crate) fn finalize_unread_marker_entities(
+    sketches: &[Sketch],
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1173,10 +1200,20 @@ pub(crate) fn finalize_unread_marker_entities(
         chord_conflicts,
         unchecked,
         finalized,
+        assumed_planes,
         unread_admitted,
         unbound_readings,
         mut index_basis_assumptions,
     } = held;
+    let mut causes = HashMap::<&SketchId, PlaneAssumedCause>::new();
+    for (sketch, cause) in &assumed_planes {
+        causes.entry(sketch).or_insert(*cause);
+    }
+    losses.extend(sketches.iter().filter_map(|sketch| {
+        causes
+            .get(&sketch.id)
+            .map(|cause| plane_assumed_note(&sketch.id, *cause))
+    }));
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
         let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
@@ -1286,6 +1323,47 @@ fn finalizes_planar<'a>(
             }
             _ => true,
         })
+}
+
+/// The loss of a sketch that takes the retained Front fallback frame, with
+/// the reason `sldprt.md` §3.3 places its profile on no principal plane.
+fn plane_assumed_note(
+    sketch: &SketchId,
+    cause: PlaneAssumedCause,
+) -> cadmpeg_ir::report::loss::LossNote {
+    use cadmpeg_ir::features::PrincipalPlane;
+    let plane = |plane| match plane {
+        PrincipalPlane::Front => "Front",
+        PrincipalPlane::Top => "Top",
+        PrincipalPlane::Right => "Right",
+    };
+    let records = |named: Option<PrincipalPlane>| {
+        named.map_or_else(
+            || "its profile holds principal component records".to_owned(),
+            |named| {
+                format!(
+                    "its profile's principal component records name the {} plane",
+                    plane(named)
+                )
+            },
+        )
+    };
+    let cause = match cause {
+        PlaneAssumedCause::LaneDefault { named } => format!(
+            "{}, but neither the profile nor its context declares a plane: the Front declaration is the feature-input lane's default, and sldprt.md §3.3 places only a profile that declares Front itself",
+            records(named)
+        ),
+        PlaneAssumedCause::OtherDeclaration => "its profile holds principal component records, but the plane declarations of the profile and its context do not name the Front source alone, so sldprt.md §3.3 does not place it".to_owned(),
+        PlaneAssumedCause::CustomComponent => "its profile holds principal component records beside a custom component record, so sldprt.md §3.3 does not place it".to_owned(),
+        PlaneAssumedCause::MixedPrincipal => "the principal component records of its profile name more than one plane, so sldprt.md §3.3 does not place it".to_owned(),
+        PlaneAssumedCause::Unapplied(named) => format!(
+            "{}, which sldprt.md §3.3 places, but the reading that built this sketch does not apply the placement",
+            records(Some(named))
+        ),
+    };
+    crate::loss::SldprtLossCode::SketchPlaneAssumed.note(format!(
+        "sketch {sketch}: {cause}; the sketch keeps the retained Front frame (normal -Y, u-axis -Z)"
+    ))
 }
 
 impl From<CodecError> for MarkerGeometryFailure {
@@ -1466,6 +1544,7 @@ pub(crate) fn project_marker_backed_sketches(
         &native_features,
         lanes,
         &feature_frames,
+        &mut held_geometry.assumed_planes,
     );
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
@@ -1572,9 +1651,9 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let top_frame = (!block_definition)
+            let component_frame = (!block_definition)
                 .then(|| {
-                    principal_top_profile_frame(
+                    principal_component_profile_frame(
                         &plane_frames,
                         &plane_index,
                         context_start,
@@ -1583,25 +1662,26 @@ pub(crate) fn project_marker_backed_sketches(
                     )
                 })
                 .flatten();
-            let frame = top_frame.or_else(|| {
-                feature_input_sketch_frame(
-                    &lane.native_payload,
-                    &plane_frames,
-                    &plane_index,
-                    context_start,
-                    start,
-                    end,
-                )
-            });
-            let frame = frame
+            let frame = component_frame
+                .map(ProfileSketchFrame::stored)
+                .or_else(|| {
+                    profile_sketch_frame(
+                        &lane.native_payload,
+                        &plane_frames,
+                        &plane_index,
+                        [context_start, start, end],
+                    )
+                })
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
-                    block_definition.then_some((
+                    block_definition.then_some(ProfileSketchFrame::stored((
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
-                    ))
+                    )))
                 });
+            let assumed = frame.and_then(|frame| frame.assumed);
+            let frame = frame.map(|frame| frame.frame);
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -1665,9 +1745,14 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
-                        record_top_marker_coordinates(
+                        if let Some(cause) = assumed {
+                            held_geometry
+                                .assumed_planes
+                                .push((sketch_id.clone(), cause));
+                        }
+                        record_component_marker_coordinates(
                             &mut features[feature_index],
-                            top_frame.is_some(),
+                            component_frame,
                         );
                     }
                     features[feature_index].evaluation.set_definition(
@@ -2937,11 +3022,16 @@ pub(crate) fn project_marker_backed_sketches(
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
             sketches.push(sketch);
+            if let Some(cause) = assumed {
+                held_geometry
+                    .assumed_planes
+                    .push((sketch_id.clone(), cause));
+            }
             if let Some(unbound) = unbound {
                 held_geometry.unbound_readings.push(unbound);
                 continue;
             }
-            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+            record_component_marker_coordinates(&mut features[feature_index], component_frame);
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
@@ -3634,7 +3724,8 @@ fn project_detached_legacy_config_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     native_features: &crate::records::HistoryFeatures<'_>,
     lanes: &[FeatureInputLane],
-    feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
+    feature_frames: &HashMap<String, ProfileSketchFrame>,
+    assumed_planes: &mut Vec<(SketchId, PlaneAssumedCause)>,
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -3655,9 +3746,9 @@ fn project_detached_legacy_config_sketches(
                 .filter_map(|feature| feature_frames.get(feature).copied())
                 .collect::<Vec<_>>();
             frames.sort_unstable_by(|left, right| {
-                reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
+                reference_plane_frame_key(&left.frame).cmp(&reference_plane_frame_key(&right.frame))
             });
-            frames.dedup();
+            frames.dedup_by(|left, right| left.frame == right.frame);
             let [frame] = frames.as_slice() else {
                 continue;
             };
@@ -3685,7 +3776,10 @@ fn project_detached_legacy_config_sketches(
                 let Some(markers) = markers_by_feature.get(native_ref) else {
                     break 'feature_edit;
                 };
-                let (origin, normal, u_axis) = feature_frames
+                let ProfileSketchFrame {
+                    frame: (origin, normal, u_axis),
+                    assumed,
+                } = feature_frames
                     .get(native_ref)
                     .copied()
                     .unwrap_or(detached_frame);
@@ -3749,6 +3843,9 @@ fn project_detached_legacy_config_sketches(
                 let sketch_id = sketch.id.clone();
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch);
+                if let Some(cause) = assumed {
+                    assumed_planes.push((sketch_id.clone(), cause));
+                }
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
