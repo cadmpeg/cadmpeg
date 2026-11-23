@@ -25,6 +25,7 @@ fn scope(definition: ProductDefinitionId) -> DesignScope {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     }
 }
 
@@ -34,7 +35,7 @@ fn kept_loss() -> LossNote {
 
 #[test]
 fn a_failed_projection_leaves_the_document_as_it_was_with_one_loss() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = crate::examples::unit_cube().expect("cube fixture");
     let geometry = ir.geometry.clone();
     let model = ir.model.clone();
@@ -67,7 +68,7 @@ fn a_failed_projection_leaves_the_document_as_it_was_with_one_loss() {
 
 #[test]
 fn a_projection_that_succeeds_keeps_its_records() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     project_layer(&ctx, "test", &mut ir, &mut losses, |ir, _| {
@@ -81,7 +82,7 @@ fn a_projection_that_succeeds_keeps_its_records() {
 
 #[test]
 fn an_error_that_ends_the_session_ends_the_decode() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     let error = project_layer(&ctx, "test", &mut ir, &mut losses, |_, _| {

@@ -68,7 +68,7 @@ fn decode_preserves_counted_curve_expression_programs() {
             axis_origin,
             axis_direction,
             radius,
-            shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+            shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch },
             revolutions,
             start_angle,
             clockwise,
@@ -112,7 +112,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(result.ir().model.parameters[0].name, "r");
     assert_eq!(
         result.ir().model.parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(5.0).unwrap()
         ))
     );
@@ -291,19 +291,19 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
             .map(|parameter| parameter.value.as_ref())
             .collect::<Vec<_>>(),
         [
-            Some(&cadmpeg_ir::features::ParameterValue::Real(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(100.0).unwrap()
             )),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
             )),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap()
             )),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
             )),
-            Some(&cadmpeg_ir::features::ParameterValue::Real(
+            Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(101.0).unwrap()
             )),
         ]
@@ -430,25 +430,25 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         values["x"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(4.0).unwrap()
         ))
     );
     assert_eq!(
         values["sum"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(10.0).unwrap()
         ))
     );
     assert_eq!(
         values["product"],
-        Some(&cadmpeg_ir::features::ParameterValue::Real(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(24.0).unwrap()
         ))
     );
@@ -642,13 +642,13 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         values["x"],
-        Some(&cadmpeg_ir::features::ParameterValue::Length(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(6.0).unwrap()
         ))
     );
     assert_eq!(
         values["y"],
-        Some(&cadmpeg_ir::features::ParameterValue::Length(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(4.0).unwrap()
         ))
     );
@@ -692,19 +692,19 @@ fn decode_evaluates_dimensioned_relation_string_conversion() {
 
     assert_eq!(
         values["length_text"],
-        Some(&cadmpeg_ir::features::ParameterValue::String(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::String(
             "25.4".to_owned()
         ))
     );
     assert_eq!(
         values["angle_text"],
-        Some(&cadmpeg_ir::features::ParameterValue::String(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::String(
             "28.648".to_owned()
         ))
     );
     assert_eq!(
         values["force_text"],
-        Some(&cadmpeg_ir::features::ParameterValue::String(
+        Some(&cadmpeg_ir::features::parameters::ParameterValue::String(
             "2000".to_owned()
         ))
     );
@@ -766,14 +766,14 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
     assert_eq!(copy.name, "copy");
     assert_eq!(
         copy.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
     assert_eq!(present.name, "present");
     assert_eq!(
         present.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
         ))
     );
@@ -824,7 +824,7 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
     assert_eq!(parameter.name, "result");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(6.0).unwrap()
         ))
     );
@@ -1028,7 +1028,7 @@ fn decode_binds_curve_expression_dependencies_to_unique_dimensions() {
     assert!(!relation.properties.contains_key("external_dependencies"));
     assert_eq!(
         relation.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(1.0 + 1.0f64.to_radians()).unwrap()
         ))
     );
@@ -1133,7 +1133,7 @@ fn decode_evaluates_relation_model_name_from_unique_counted_header() {
     };
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::String(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::String(
             "widget".to_owned()
         ))
     );
@@ -1156,11 +1156,12 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     assert_eq!(parameters[0].properties["declared_unit"], "inch");
     assert_eq!(
         parameters[0].value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(50.8).unwrap()
         ))
     );
-    let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(copy)) = &parameters[1].value
+    else {
         panic!("dimensioned copy");
     };
     assert!((copy.get() - 76.2).abs() < 1.0e-12);
@@ -1191,7 +1192,8 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
         native.fields().unwrap()["assignments"][2]["value"]["length_power"],
         -1
     );
-    let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
+    let Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) = &parameters[3].value
+    else {
         panic!("angle parameter");
     };
     assert!((angle.get() - 2.0f64.atan()).abs() < 1.0e-12);
@@ -1393,7 +1395,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix_payload) =
         &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("placed helix");
@@ -1426,7 +1428,7 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(helix_payload) =
         &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("placed helix");

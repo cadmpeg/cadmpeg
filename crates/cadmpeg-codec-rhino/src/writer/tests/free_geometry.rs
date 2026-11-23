@@ -29,7 +29,7 @@ fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("rhino:test:point#a").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.25, -2.5, 3.75))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.25, -2.5, 3.75))
             .expect("a finite position is a point"),
         None,
     ));
@@ -72,7 +72,7 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
         cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive finite tolerance");
     ir.geometry.points.push(Point::new(
         PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -392,10 +392,12 @@ fn standalone_mesh_round_trips_across_archive_versions() {
 
     ir.model.tessellations[0] = ir.model.tessellations[0]
         .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![
+            cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some("synthetic:test:group#0".into()),
+                vec![0],
+            ),
+        ])
         .expect("valid triangle group partition");
     assert!(matches!(
         RhinoCodec.plan(
@@ -637,7 +639,7 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         });
         ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
             point,
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 cadmpeg_core::convert::f64_from_index(index)
                     .expect("fixture index is exactly representable"),
                 cadmpeg_core::convert::f64_from_index(index)
@@ -679,7 +681,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -697,7 +699,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(decoded.ir().native.namespace("rhino").is_some());
     decoded.ir_mut().geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
             .expect("a finite position is a point"),
     );
 
@@ -723,7 +725,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -866,7 +868,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         "test:model:point#independent"
             .try_into()
             .expect("synthetic support fixture is admitted"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("synthetic support fixture is admitted"),
         None,
     ));
@@ -874,7 +876,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         "test:model:point#support"
             .try_into()
             .expect("synthetic support fixture is admitted"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
             .expect("synthetic support fixture is admitted"),
         Some(support.clone()),
     ));
@@ -883,7 +885,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
             .try_into()
             .expect("synthetic support fixture is admitted"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("synthetic support fixture is admitted"),
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         ))),

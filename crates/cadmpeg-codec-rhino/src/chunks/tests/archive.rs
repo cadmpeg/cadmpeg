@@ -504,7 +504,8 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .iter()
         .find(|curve| !curve.id.as_str().contains("component"))
         .expect("root compound");
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) = root.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Compound(compound) =
+        root.definition()
     else {
         panic!("compound definition");
     };
@@ -838,7 +839,7 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         .is_some_and(|tolerance| (tolerance.get() - 0.2).abs() < EPS_TOPOLOGY_TOLERANCE)));
     assert!(geometry.pcurves.iter().all(|pcurve| pcurve
         .fit_tolerance()
-        .map(cadmpeg_ir::geometry::FitTolerance::get)
+        .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get)
         == Some(0.04)));
     assert_eq!(
         result

@@ -63,6 +63,7 @@ pub(super) struct FaceRecipeIndex {
     edge_faces: HashMap<i64, Vec<i64>>,
     endpoints: HashMap<i64, Option<[i64; 2]>>,
     corners: HashMap<i64, Vec<Corner>>,
+    vertex_edges: HashMap<i64, BTreeSet<i64>>,
 }
 
 impl FaceRecipeIndex {
@@ -72,6 +73,12 @@ impl FaceRecipeIndex {
         let mut face_loops = HashMap::new();
         let mut edge_faces = HashMap::<_, Vec<_>>::new();
         let mut corners = HashMap::<_, Vec<_>>::new();
+        let mut vertex_edges = HashMap::<_, BTreeSet<_>>::new();
+        for row in &topology.edge_vertices {
+            for vertex in [row.start_vertex, row.end_vertex] {
+                vertex_edges.entry(vertex).or_default().insert(row.edge);
+            }
+        }
         let mut coedge_rows = HashMap::new();
         for row in &topology.coedge_topology {
             coedge_rows
@@ -80,14 +87,17 @@ impl FaceRecipeIndex {
                 .or_insert(Some(row));
         }
         for &face in &topology.faces {
-            let Some(loops) = super::relation_members(&topology.face_loops, face) else {
+            let Some(loops) = super::face_resolution::relation_members(&topology.face_loops, face)
+            else {
                 continue;
             };
             let mut boundary = Vec::new();
             let mut loop_boundaries = Vec::new();
             let mut face_corners = Vec::new();
             let complete = loops.iter().all(|&loop_| {
-                let Some(coedges) = super::relation_members(&topology.loop_coedges, loop_) else {
+                let Some(coedges) =
+                    super::face_resolution::relation_members(&topology.loop_coedges, loop_)
+                else {
                     return false;
                 };
                 if coedges.is_empty() {
@@ -154,7 +164,18 @@ impl FaceRecipeIndex {
             edge_faces,
             endpoints,
             corners,
+            vertex_edges,
         }
+    }
+
+    /// Whether every edge of the topology that meets `vertex`, including
+    /// the edges of faces without a complete boundary, bounds a corner there.
+    fn corners_cover_vertex_edges(&self, vertex: i64, corners: &[Corner]) -> bool {
+        self.vertex_edges.get(&vertex).is_some_and(|edges| {
+            edges
+                .iter()
+                .all(|edge| corners.iter().any(|corner| corner.edges.contains(edge)))
+        })
     }
 
     fn fan(&self, edge: i64, vertex: i64, first_face: i64) -> Option<Vec<i64>> {
@@ -186,6 +207,74 @@ impl FaceRecipeIndex {
         }
     }
 
+    /// The face fan at the one vertex of a closed edge: the two faces that
+    /// the edge bounds, when no other edge meets that vertex.
+    fn closed_edge_fan(&self, edge: i64, vertex: i64) -> Option<Vec<i64>> {
+        let corners = self.corners.get(&vertex)?;
+        let [first, second] = corners.as_slice() else {
+            return None;
+        };
+        (first.edges == [edge, edge]
+            && second.edges == [edge, edge]
+            && self.corners_cover_vertex_edges(vertex, corners))
+        .then(|| vec![first.face, second.face])
+    }
+
+    fn branching_fan_matches(
+        &self,
+        edge: i64,
+        vertex: i64,
+        first_face: i64,
+        ordinals: &[i32],
+        lanes: &[BTreeSet<i64>],
+    ) -> bool {
+        let Some(corners) = self.corners.get(&vertex) else {
+            return false;
+        };
+        if ordinals.len() != corners.len()
+            || !self.corners_cover_vertex_edges(vertex, corners)
+            || corners
+                .iter()
+                .any(|corner| corner.edges[0] == corner.edges[1])
+        {
+            return false;
+        }
+        let mut incidence = HashMap::<_, Vec<_>>::new();
+        for (index, corner) in corners.iter().enumerate() {
+            for &incident in &corner.edges {
+                incidence.entry(incident).or_default().push(index);
+            }
+        }
+        if incidence.get(&edge).is_none_or(|uses| uses.len() != 2)
+            || incidence.values().filter(|uses| uses.len() == 4).count() != 1
+            || incidence.values().any(|uses| !matches!(uses.len(), 2 | 4))
+        {
+            return false;
+        }
+        let Some(ordinal_lanes) = ordinals
+            .iter()
+            .map(|&ordinal| usize::try_from(ordinal).ok().and_then(|i| lanes.get(i)))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+        (0..corners.len()).any(|start| {
+            [false, true].into_iter().any(|reverse| {
+                let pattern = (0..corners.len())
+                    .map(|offset| {
+                        let index = if reverse {
+                            (start + corners.len() - offset) % corners.len()
+                        } else {
+                            (start + offset) % corners.len()
+                        };
+                        ordinal_lanes[index]
+                    })
+                    .collect::<Vec<_>>();
+                corner_walk_matches(edge, first_face, corners, &incidence, &pattern)
+            })
+        })
+    }
+
     fn node_matches(
         &self,
         node: &DesignFaceRecipeStructure,
@@ -201,6 +290,10 @@ impl FaceRecipeIndex {
         let Some(Some(vertices)) = self.endpoints.get(&edge) else {
             return false;
         };
+        let closed = vertices[0] == vertices[1];
+        if closed != (node.sides.len() == 1) || node.sides.is_empty() {
+            return false;
+        }
         let Some(root) = usize::try_from(node.root).ok().and_then(|i| lanes.get(i)) else {
             return false;
         };
@@ -215,20 +308,31 @@ impl FaceRecipeIndex {
         {
             return false;
         }
-        let (Some(first), Some(second)) = (
+        let ordinals = |side: usize| {
+            let side = &node.sides[side];
+            std::iter::once(side.header_value)
+                .chain(side.scalars.iter().copied())
+                .collect::<Vec<_>>()
+        };
+        if closed {
+            return self
+                .closed_edge_fan(edge, vertices[0])
+                .is_some_and(|fan| fan_matches(&ordinals(0), &fan, lanes));
+        }
+        let fans = [
             self.fan(edge, vertices[0], *left),
             self.fan(edge, vertices[1], *left),
-        ) else {
-            return false;
+        ];
+        let matches = |side: usize, endpoint: usize| {
+            let ordinals = ordinals(side);
+            match fans[endpoint].as_deref() {
+                Some(fan) => fan_matches(&ordinals, fan, lanes),
+                None => {
+                    self.branching_fan_matches(edge, vertices[endpoint], *left, &ordinals, lanes)
+                }
+            }
         };
-        let matches = |side: usize, fan: &[i64]| {
-            let side = &node.sides[side];
-            let ordinals = std::iter::once(side.header_value)
-                .chain(side.scalars.iter().copied())
-                .collect::<Vec<_>>();
-            fan_matches(&ordinals, fan, lanes)
-        };
-        matches(0, &first) && matches(1, &second) || matches(1, &first) && matches(0, &second)
+        matches(0, 0) && matches(1, 1) || matches(1, 0) && matches(0, 1)
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
@@ -236,6 +340,13 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve_loop(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        if operand
+            .recipe_nodes
+            .iter()
+            .any(|node| !node.has_two_side_clauses())
+        {
+            return None;
+        }
         self.resolve_boundary(operand, true)
     }
 
@@ -262,8 +373,8 @@ impl FaceRecipeIndex {
             if reference.design_reference < 0 {
                 continue;
             }
-            for face in super::effective_faces(reference) {
-                if let Some(slot) = super::stable_ref(face.as_str()) {
+            for face in super::face_resolution::effective_faces(reference) {
+                if let Some(slot) = super::body_closures::stable_ref(face.as_str()) {
                     if self.boundaries.contains_key(&slot) {
                         lane.insert(slot);
                     }
@@ -277,7 +388,7 @@ impl FaceRecipeIndex {
             .collect::<Option<Vec<_>>>()?;
         if nodes
             .iter()
-            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
+            .any(|node| !node.has_valid_boundary_edge_ordinals(&operand.recipe_references))
         {
             return None;
         }
@@ -298,17 +409,26 @@ impl FaceRecipeIndex {
     }
 
     fn resolve_boundary(&self, operand: &DesignFaceOperand, single_loop: bool) -> Option<i64> {
+        self.resolve_prepared_boundary(self.prepare(operand)?, single_loop)
+    }
+
+    fn resolve_prepared_boundary(
+        &self,
+        recipe: BoundaryRecipe<'_>,
+        single_loop: bool,
+    ) -> Option<i64> {
         let BoundaryRecipe {
             lanes,
             nodes,
             candidates,
-        } = self.prepare(operand)?;
+        } = recipe;
         let mut resolved = None;
         for face in candidates {
             let boundary = self.boundaries.get(&face)?;
+            let loops = self.loops.get(&face)?;
             let whole = 0..boundary.len();
             let ranges = if single_loop {
-                self.loops.get(&face)?.as_slice()
+                loops.as_slice()
             } else {
                 std::slice::from_ref(&whole)
             };
@@ -456,6 +576,53 @@ fn complete_assignment(choices: &[Vec<i64>], work: &WorkBudget) -> Result<bool, 
         }
     }
     Ok(true)
+}
+
+fn corner_walk_matches(
+    edge: i64,
+    first_face: i64,
+    corners: &[Corner],
+    incidence: &HashMap<i64, Vec<usize>>,
+    pattern: &[&BTreeSet<i64>],
+) -> bool {
+    let mut stack = vec![(edge, 0)];
+    let mut path = Vec::new();
+    let mut visited = HashSet::new();
+    while let Some((current, next)) = stack.last_mut() {
+        if path.len() == corners.len() && *current == edge {
+            return true;
+        }
+        let Some(&index) = incidence
+            .get(current)
+            .and_then(|choices| choices.get(*next))
+        else {
+            stack.pop();
+            if let Some(previous) = path.pop() {
+                visited.remove(&previous);
+            }
+            continue;
+        };
+        *next += 1;
+        let corner = &corners[index];
+        if visited.contains(&index)
+            || path.is_empty() && corner.face != first_face
+            || !pattern[path.len()].contains(&corner.face)
+        {
+            continue;
+        }
+        let following = if corner.edges[0] == *current {
+            corner.edges[1]
+        } else {
+            corner.edges[0]
+        };
+        if (following == edge) != (path.len() + 1 == corners.len()) {
+            continue;
+        }
+        visited.insert(index);
+        path.push(index);
+        stack.push((following, 0));
+    }
+    false
 }
 
 fn fan_matches(ordinals: &[i32], fan: &[i64], lanes: &[BTreeSet<i64>]) -> bool {

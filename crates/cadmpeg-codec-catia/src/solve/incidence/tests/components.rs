@@ -1,7 +1,7 @@
 use crate::solve::incidence::compact_boundary_domain_viable;
+use crate::solve::mesh_quotient::quotient::MeshQuotient;
 use crate::solve::mesh_quotient::AssignmentOrder;
 use crate::solve::mesh_quotient::MeshPartialEndpointConstraint;
-use crate::solve::mesh_quotient::MeshQuotient;
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
 use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
@@ -492,13 +492,16 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
         },
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
-    let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &candidates,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -537,13 +540,16 @@ fn deferred_quotient_retains_unknown_exact_run_direction() {
         },
     )];
     let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
-    let mut quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let mut quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &candidates,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -585,7 +591,7 @@ fn deferred_gap_search_propagates_quotient_forced_edge_order() {
     );
     let budget = WorkBudget::new(10_000);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -646,7 +652,7 @@ fn ordered_structural_equations_propagate_without_direction_enumeration() {
         .expect("second closed edge");
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -684,7 +690,7 @@ fn ordered_face_preparation_does_not_sign_whole_mesh_alternatives() {
     let mut quotient = MeshQuotient::new(vec![broad; 4]);
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -729,7 +735,7 @@ fn ordered_cycle_final_search_retains_domain_forced_directions() {
     ]);
     let budget = WorkBudget::new(100);
 
-    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_ordered_face_quotients(
         &ctx,
         &domains,
         &candidates,
@@ -779,7 +785,7 @@ fn ordered_components_retain_unknown_edges_in_the_abstract_quotient() {
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
-    crate::solve::mesh_quotient::propagate_common_boundary_components(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_boundary_components(
         &ctx,
         &domains,
         &candidates,
@@ -811,7 +817,7 @@ fn unordered_components_close_cycles_in_the_abstract_quotient() {
             .collect(),
     );
 
-    crate::solve::mesh_quotient::propagate_common_boundary_components(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_boundary_components(
         &ctx,
         &domains,
         &candidates,
@@ -880,7 +886,7 @@ fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let budget = WorkBudget::new(10_000);
 
     assert!(
-        crate::solve::mesh_quotient::bounded_unordered_cycle_assignments(
+        crate::solve::mesh_quotient::common_propagation::bounded_unordered_cycle_assignments(
             &(0..8).collect::<Vec<_>>(),
             &quotient,
             16,
@@ -916,7 +922,7 @@ fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
             .collect(),
     );
 
-    crate::solve::mesh_quotient::propagate_common_boundary_components(
+    crate::solve::mesh_quotient::common_propagation::propagate_common_boundary_components(
         &ctx,
         &domains,
         &candidates,
@@ -965,10 +971,13 @@ fn deferred_faces_share_one_endpoint_quotient() {
         )
     };
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
 
     assert!(
@@ -1015,7 +1024,7 @@ fn compact_faces_share_one_physical_edge_direction_gauge() {
         MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]),
         MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 3, 4]),
     ];
-    let quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
         &choices,
         4,
         &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
@@ -1060,10 +1069,13 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     };
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let assignment = [Some([0, 1]), Some([0, 1])];
-    let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let budget = WorkBudget::new(10_000);
     let first = domain(false);
     let conflicting = domain(true);

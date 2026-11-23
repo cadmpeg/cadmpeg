@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical feature selection and persistent identity resolution.
 
+use super::body_closures::{same_axis_line, stable_ref};
+use super::edge_operand_history::{design_axis, historical_edge_axis};
+use super::history_states::{
+    bound_scope_history, effective_scope_previous_history_state_id, history_state_reaches,
+    unique_history_state_pair,
+};
+use super::treatment_candidates::treatment_edge_candidates;
 use super::{
-    bound_scope_history, design_axis, effective_scope_previous_history_state_id,
-    historical_edge_axis, history_state_reaches, projection_was_finalized, same_axis_line,
-    stable_ref, treatment_edge_candidates, unique_history_state_pair,
-    EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9, EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9,
-    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
+    projection_was_finalized, EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9,
+    EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9, EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8,
+    EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9,
 };
 use crate::history_records::{
     AsmHistoricalCoedge, AsmHistoricalTopology, AsmHistory, AsmTopologyScope,
@@ -286,13 +291,13 @@ pub(super) fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Opt
 }
 
 pub(super) fn bind_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
 ) {
-    let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+    let cadmpeg_ir::features::selections::FaceSelection::Native(native) = selection else {
         return;
     };
     if native == &scope.id {
@@ -384,7 +389,10 @@ pub(super) fn bind_face_selection(
             scope,
             operands.iter().filter(selected),
         ) {
-            if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
+            if !matches!(
+                resolved,
+                cadmpeg_ir::features::selections::FaceSelection::Native(_)
+            ) {
                 *selection = resolved;
             }
         }
@@ -487,7 +495,7 @@ pub(super) fn bind_face_selection(
         faces.push(candidate.clone());
     }
     if !faces.is_empty() {
-        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+        *selection = cadmpeg_ir::features::selections::FaceSelection::Resolved {
             faces,
             native: native.to_owned(),
         };
@@ -495,14 +503,14 @@ pub(super) fn bind_face_selection(
 }
 
 pub(super) fn bind_body_recipe_face_selection(
-    selection: &mut cadmpeg_ir::features::FaceSelection,
+    selection: &mut cadmpeg_ir::features::selections::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
 ) {
-    use cadmpeg_ir::features::FaceSelection;
+    use cadmpeg_ir::features::selections::FaceSelection;
 
     let FaceSelection::Native(native) = selection else {
         return;
@@ -557,7 +565,9 @@ pub(super) fn bind_body_recipe_face_selection(
         faces.push(face);
     }
     let native = native.to_owned();
-    if let Ok(historical) = cadmpeg_ir::features::FaceSelection::historical(state, faces, native) {
+    if let Ok(historical) =
+        cadmpeg_ir::features::selections::FaceSelection::historical(state, faces, native)
+    {
         *selection = historical;
     }
 }
@@ -961,6 +971,12 @@ pub(crate) fn bind_entity_selection_history(
             .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
             .flat_map(|(primary, secondary)| std::iter::once(primary).chain(secondary)),
     );
+    let primaries = operands
+        .iter()
+        .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
+        .map(|(primary, _)| primary)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.historical_face_candidates.clear();
@@ -968,7 +984,8 @@ pub(crate) fn bind_entity_selection_history(
         let Some((primary, secondary)) = operand.topology_identities() else {
             continue;
         };
-        operand.historical_face_candidates = entity_selection_face_candidates(primary, histories);
+        operand.historical_face_candidates =
+            entity_selection_face_candidates(primary, &identities_by_history);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -1010,6 +1027,12 @@ pub(crate) fn bind_hole_selection_history(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let primaries = scopes
+        .iter()
+        .filter_map(|scope| scope.hole_construction()?.face_selection.as_ref())
+        .map(|selection| selection.primary_identity)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for scope in scopes {
         let Some(construction) = scope.hole_construction_mut() else {
             continue;
@@ -1018,7 +1041,7 @@ pub(crate) fn bind_hole_selection_history(
             continue;
         };
         selection.historical_face_candidates =
-            entity_selection_face_candidates(selection.primary_identity, histories);
+            entity_selection_face_candidates(selection.primary_identity, &identities_by_history);
     }
 }
 
@@ -1260,7 +1283,9 @@ pub(crate) fn bind_mirror_selection_planes(
         // A scope that stores no preceding state takes it from its history
         // state.
         let previous_history_state_id =
-            crate::history::effective_scope_previous_history_state_id(scope, histories);
+            crate::history::history_states::effective_scope_previous_history_state_id(
+                scope, histories,
+            );
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
@@ -1380,19 +1405,22 @@ pub(crate) fn bind_mirror_selection_planes(
                     continue;
                 }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
-                    let persistent_candidates = if let Some(identity) = identity
-                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                        entity_selection_face_candidates(identity.local_id, histories)
-                    } else {
-                        Vec::new()
-                    };
-                    let primary_candidates =
-                        entity_selection_face_candidates(operand.primary_identity, histories);
                     let mut local_ids = vec![operand.primary_identity];
                     local_ids.extend(
                         identity
                             .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity)
                             .map(|identity| identity.local_id),
+                    );
+                    let identities_by_history = per_history_identities(histories, &local_ids);
+                    let persistent_candidates = if let Some(identity) = identity
+                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                        entity_selection_face_candidates(identity.local_id, &identities_by_history)
+                    } else {
+                        Vec::new()
+                    };
+                    let primary_candidates = entity_selection_face_candidates(
+                        operand.primary_identity,
+                        &identities_by_history,
                     );
                     let mut faces = Vec::new();
                     for candidate in primary_candidates.iter().chain(&persistent_candidates) {
@@ -1431,8 +1459,8 @@ pub(crate) fn bind_mirror_selection_planes(
             continue;
         }
         let (Some(origin), Some(normal)) = (
-            cadmpeg_ir::features::FinitePoint3::new(plane.origin),
-            cadmpeg_ir::features::FiniteVector3::new(plane.normal),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(plane.origin),
+            cadmpeg_ir::features::geometry::FiniteVector3::new(plane.normal),
         ) else {
             continue;
         };
@@ -1667,7 +1695,7 @@ pub(crate) fn design_geometry_origin_plane(ordinal: usize) -> Option<HistoricalM
 /// planes take u axes `+x`, `+z`, and `+y`.
 pub(crate) fn design_geometry_origin_plane_frame(
     ordinal: usize,
-) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame> {
     let u_axis = match ordinal {
         0 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         1 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -1675,7 +1703,11 @@ pub(crate) fn design_geometry_origin_plane_frame(
         _ => return None,
     };
     let plane = design_geometry_origin_plane(ordinal)?;
-    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(plane.origin, plane.normal, u_axis)
+    cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame::new(
+        plane.origin,
+        plane.normal,
+        u_axis,
+    )
 }
 
 pub(super) fn historical_mirror_plane(
@@ -1958,15 +1990,33 @@ pub(super) fn historical_mirror_coedge_plane(
         .then_some(first.clone())
 }
 
+/// Each history paired with its own identity index over `local_ids`.
+pub(super) fn per_history_identities<'a>(
+    histories: &'a [AsmHistory],
+    local_ids: &[u64],
+) -> Vec<(&'a AsmHistory, HistoricalIdentityIndex)> {
+    histories
+        .iter()
+        .map(|history| {
+            (
+                history,
+                HistoricalIdentityIndex::build(
+                    std::slice::from_ref(history),
+                    local_ids.iter().copied(),
+                ),
+            )
+        })
+        .collect()
+}
+
 pub(super) fn entity_selection_face_candidates(
     local_id: u64,
-    histories: &[AsmHistory],
+    histories: &[(&AsmHistory, HistoricalIdentityIndex)],
 ) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     let mut candidates = Vec::new();
-    'histories: for history in histories {
-        let identities = HistoricalIdentityIndex::build(std::slice::from_ref(history), [local_id]);
+    'histories: for (history, identities) in histories {
         let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(local_id)
         else {
             continue;
@@ -2071,7 +2121,7 @@ pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
     identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    histories: super::BindingHistories<'_>,
+    histories: super::binding_histories::BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
     lineage_scopes: &HashSet<String>,
 ) {
@@ -2191,7 +2241,7 @@ pub(crate) fn bind_edge_identity_history(
     }
     let mut treatment_candidates_by_transition =
         HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
-    super::visit_state_groups_oldest_first(
+    super::binding_histories::visit_state_groups_oldest_first(
         histories,
         jobs,
         |histories, history_index, previous_index, group| {
@@ -2644,9 +2694,8 @@ fn historical_identity_faces(
 pub(super) fn feature_selected_input_state_id(
     feature: &cadmpeg_ir::features::Feature,
 ) -> Option<i64> {
-    use cadmpeg_ir::features::{
-        BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let parse_state = |state: &cadmpeg_ir::ids::FeatureInputTopologyId| {
         state
             .as_str()
@@ -2696,7 +2745,7 @@ pub(super) fn feature_selected_input_state_id(
         }
         FeatureOperation::SplitFace { targets, tool, .. } => {
             for selection in std::iter::once(targets).chain(match tool {
-                cadmpeg_ir::features::SplitFaceTool::Faces(faces) => Some(faces),
+                cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => Some(faces),
                 _ => None,
             }) {
                 if let FaceSelection::Historical { state, .. }

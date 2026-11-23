@@ -30,9 +30,8 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name,
-    feature_source_properties_with, insert_feature_source_property, schema_operation_kind,
-    SchemaClassList,
+    feature_parameters, feature_reference_name, feature_source_properties_with,
+    insert_feature_source_property, schema_operation_kind, FeatureOutputIndex, SchemaClassList,
 };
 use super::super::native::annotate;
 use super::super::sketch_ids::owning_feature_definition_ref;
@@ -84,6 +83,7 @@ fn refresh_feature_outputs(
     scan: &ContainerScan,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let output_index = FeatureOutputIndex::new(scan, ir);
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -94,9 +94,9 @@ fn refresh_feature_outputs(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from(feature_output_bodies(
-            ctx, scan, ir, feature_id,
-        )?)
+        let outputs = cadmpeg_ir::features::selections::DistinctMembers::try_from(
+            output_index.output_bodies(ctx, feature_id)?,
+        )
         .map_err(cadmpeg_core::CodecError::from)?;
         output_updates.push((index, outputs));
     }
@@ -164,13 +164,13 @@ pub(super) fn emit_model_features(
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id).is_some() {
                     datum_plane_feature_definition(&datum.plane())
                 } else {
@@ -206,13 +206,13 @@ pub(super) fn emit_model_features(
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 if scan
                     .features
                     .legacy_rounds
@@ -231,9 +231,9 @@ pub(super) fn emit_model_features(
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
-                cadmpeg_ir::features::DistinctMembers::try_from(feature_output_bodies(
-                    ctx, scan, ir, feature_id,
-                )?)
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                    FeatureOutputIndex::new(scan, ir).output_bodies(ctx, feature_id)?,
+                )
                 .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: None,
@@ -255,7 +255,7 @@ pub(super) fn emit_model_features(
         }
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
-        let outputs = feature_output_bodies(ctx, scan, ir, operation.feature_id)?;
+        let outputs = FeatureOutputIndex::new(scan, ir).output_bodies(ctx, operation.feature_id)?;
         let mut source_properties =
             feature_source_properties_with(scan, &schema_classes, operation.feature_id);
         let mut parameters = feature_parameters(scan, operation.feature_id);
@@ -397,20 +397,6 @@ pub(super) fn emit_model_features(
             if existing.native_ref.is_none() {
                 existing.native_ref = native_ref;
             }
-            let mut combined_outputs = Vec::new();
-            for body in existing.evaluation.outputs() {
-                let copy = copy_body_id(body)?;
-                combined_outputs.push(copy);
-            }
-            for output in outputs {
-                if !combined_outputs.contains(&output) {
-                    combined_outputs.push(output);
-                }
-            }
-            existing.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from(combined_outputs)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-            );
             refresh_feature_outputs(ctx, scan, ir)?;
             continue;
         }
@@ -435,7 +421,7 @@ pub(super) fn emit_model_features(
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
             name,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
                 .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(
                 format_args!("creo:model:feature#{}", operation.feature_id),
@@ -445,9 +431,9 @@ pub(super) fn emit_model_features(
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)
                     .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref,
@@ -547,37 +533,36 @@ pub(super) fn emit_model_features(
             );
         }
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
-        let feature =
-            Feature {
-                product_definition: None,
-                id,
-                ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
-                name: Some(match reference_name {
-                    Some(name) => name.to_owned(),
-                    None => format!("{kind} id {feature_id}"),
-                }),
-                suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(
-                    feature_dependencies(scan, ir, feature_id, &prototype_feature_dependencies)?,
+        let feature = Feature {
+            product_definition: None,
+            id,
+            ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
+            name: Some(match reference_name {
+                Some(name) => name.to_owned(),
+                None => format!("{kind} id {feature_id}"),
+            }),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                feature_dependencies(scan, ir, feature_id, &prototype_feature_dependencies)?,
+            )
+            .map_err(cadmpeg_core::CodecError::from)?,
+            source_properties: cadmpeg_core::text::named_entries(
+                format_args!("creo:model:feature#{feature_id}"),
+                source_properties,
+            )?,
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
+                definition,
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                    FeatureOutputIndex::new(scan, ir).output_bodies(ctx, feature_id)?,
                 )
                 .map_err(cadmpeg_core::CodecError::from)?,
-                source_properties: cadmpeg_core::text::named_entries(
-                    format_args!("creo:model:feature#{feature_id}"),
-                    source_properties,
-                )?,
-                source_tag: None,
-                source_text: None,
-                source_content: cadmpeg_ir::features::FeatureContent::default(),
-
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
-                    definition,
-                    cadmpeg_ir::features::DistinctMembers::try_from(feature_output_bodies(
-                        ctx, scan, ir, feature_id,
-                    )?)
-                    .map_err(cadmpeg_core::CodecError::from)?,
-                ),
-                native_ref: owning_feature_definition_ref(scan, feature_id),
-            };
+            ),
+            native_ref: owning_feature_definition_ref(scan, feature_id),
+        };
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
     }

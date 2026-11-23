@@ -3,7 +3,7 @@
 use crate::native::frame::FiniteFrame;
 use crate::native::PropertyRecord;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::{FiniteVector, UnitVector3};

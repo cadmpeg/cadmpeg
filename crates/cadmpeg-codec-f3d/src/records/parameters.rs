@@ -42,7 +42,7 @@ pub(crate) enum DesignParameterKind {
 
 /// Admitted Design parameter family discriminator values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u64)]
+#[repr(u32)]
 pub(crate) enum DesignParameterDiscriminator {
     Code0 = 0,
     Code1 = 1,
@@ -54,7 +54,8 @@ pub(crate) enum DesignParameterDiscriminator {
 }
 
 impl DesignParameterDiscriminator {
-    pub(crate) fn code(self) -> u64 {
+    /// The stored u32 value (f3d.md §3.1).
+    pub(crate) fn code(self) -> u32 {
         match self {
             Self::Code0 => 0,
             Self::Code1 => 1,
@@ -99,8 +100,13 @@ pub(crate) enum DesignParameterSource {
     Owned(OwnedDesignParameter),
 }
 
-/// Localized source kinds of a document parameter.
-const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 2] = ["User Parameter", "Paramètre utilisateur"];
+/// Localized source kinds of a document parameter, which name it in the frame
+/// forms that store no document flag.
+const DOCUMENT_PARAMETER_SOURCE_KINDS: [&str; 3] = [
+    "User Parameter",
+    "Paramètre utilisateur",
+    "Parâmetro do usuário",
+];
 
 /// Whether a parameter source kind names a document parameter.
 pub(crate) fn is_document_source_kind(source_kind: &str) -> bool {
@@ -333,6 +339,16 @@ fn check_parameter_discriminator_offset(
     Ok(())
 }
 
+/// A dimension `source_kind` with a trailing `-<digits>` instance suffix removed.
+pub(crate) fn dimension_kind_stem(source_kind: &str) -> &str {
+    source_kind
+        .rsplit_once('-')
+        .filter(|(_, instance)| {
+            !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or(source_kind, |(stem, _)| stem)
+}
+
 impl DesignParameter {
     /// Source family and ownership.
     pub(crate) fn source(&self) -> &DesignParameterSource {
@@ -483,6 +499,13 @@ impl DesignParameter {
         }
     }
 
+    /// The source kind with a trailing `-<digits>` instance suffix removed.
+    pub(crate) fn dimension_kind(&self) -> NonBlankString {
+        let source_kind = self.source_kind();
+        NonBlankString::new(dimension_kind_stem(source_kind.as_str()))
+            .unwrap_or_else(|| source_kind.clone())
+    }
+
     /// The source kind as text.
     pub(crate) fn source_kind_str(&self) -> &str {
         self.source_kind().as_str()
@@ -554,7 +577,7 @@ impl Serialize for DesignParameter {
             byte_offset: self.byte_offset,
             class_tag: self.class_tag.as_str(),
             record_index: self.record_index,
-            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator: family_discriminator.map(|value| u64::from(value.value.code())),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: self.source_ordinal,
             owner_record_index: self.owner_record_index(),
@@ -745,7 +768,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             byte_offset,
             class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
-            family_discriminator: family_discriminator.map(|value| value.value.code()),
+            family_discriminator: family_discriminator.map(|value| u64::from(value.value.code())),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),
             source_ordinal: parameter.source_ordinal,
             owner_record_index,

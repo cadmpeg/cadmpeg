@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::RecordFrame;
+use super::construction_groups::RecordFrame;
 use crate::design::decode::{meta, sketch::indexed_record_header_at};
 use crate::metastream::MetaStream;
 use crate::records::entity_header::SegmentTypeData;

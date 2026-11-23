@@ -88,6 +88,7 @@ pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
         || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
+        || payload.starts_with(b"\x85<?xml")
     {
         PayloadFamily::Xml
     } else {
@@ -286,6 +287,14 @@ impl<'a> Section<'a> {
         match self {
             Self::Block(block) => format!("block@{}", block.offset),
             Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+        }
+    }
+
+    /// The member's bytes as the file stores them, before `__ZLB` inflation.
+    pub(crate) fn stored_payload(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => &block.payload,
+            Self::Compound(stream) => &stream.payload,
         }
     }
 
@@ -1264,8 +1273,14 @@ pub(crate) fn virtual_component_key(name: &str) -> Option<String> {
     (key.len() > VIRTUAL_SUFFIX.len() && key.ends_with(VIRTUAL_SUFFIX)).then_some(key)
 }
 
+/// Lead bytes that a section stores before its XML text.
+const XML_LEAD_MARKERS: [u8; 2] = [0x85, 0x86];
+
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
-    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
+    let bytes = match bytes.split_first() {
+        Some((lead, rest)) if XML_LEAD_MARKERS.contains(lead) => rest,
+        _ => bytes,
+    };
     if bytes.starts_with(&[0xff, 0xfe]) {
         let mut view = View::over_retained(&bytes[2..]);
         let mut units = Vec::new();

@@ -20,10 +20,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{self, admission::EvaluationAdmission};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::AnnotationBuilder;
@@ -67,6 +68,7 @@ enum SheetSurfaceFit {
 
 #[derive(Clone, Copy, Default)]
 struct SheetBoundaryRecovery {
+    untransferred_plane_bounds: Option<[[f64; 2]; 2]>,
     rolling_extension_mm: f64,
     affine_vertex_shift_mm: f64,
 }

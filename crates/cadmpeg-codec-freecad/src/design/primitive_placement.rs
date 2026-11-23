@@ -4,7 +4,7 @@
 use super::{body_membership_property, property};
 use crate::native::{sole_named_property, ObjectRecord, PropertyRecord};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FeatureRigidPlacement;
+use cadmpeg_ir::features::geometry::FeatureRigidPlacement;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn carries_frame(properties: &[&PropertyRecord]) -> bool {

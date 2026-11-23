@@ -19,7 +19,7 @@ use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
 };
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetData};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
 };
@@ -43,6 +43,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::CadIr;
 
+use crate::brep::patch::Trims;
 use crate::layers::Resource;
 use crate::loss::UsdLossCode;
 use crate::schema::curves::Curves;
@@ -208,7 +209,12 @@ struct Tallies {
     /// `UsdPhysics` body properties that were not carried, by attribute
     /// path.
     physics_properties: Vec<String>,
-    trims: usize,
+    /// Patches whose trim loops do not bound a face, with the reason.
+    trims: Vec<String>,
+    /// Patches whose trim loop directions disagree with their nesting.
+    trim_regions: Vec<String>,
+    /// Patches whose faces have no loop, with the reason.
+    boundaries: Vec<String>,
     ranges: usize,
     display_colors: usize,
     materials: BTreeSet<String>,
@@ -667,7 +673,7 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            body.name = Some(definition_name(prim, key).to_owned());
                         }
                         bodies
                     }
@@ -809,7 +815,7 @@ impl Builder<'_, '_, '_, '_> {
             id: crate::ids::body(key),
             kind,
             transform: None,
-            name: Some(prim.name.clone()),
+            name: Some(definition_name(prim, key).to_owned()),
             color,
             visible: None,
             native_ref: None,
@@ -868,7 +874,8 @@ impl Builder<'_, '_, '_, '_> {
             .model
             .tessellations
             .push(tessellation.with_body(Some(body.clone())));
-        self.material(prim, key)?;
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
         }
@@ -920,9 +927,8 @@ impl Builder<'_, '_, '_, '_> {
         let mut groups: Vec<TessellationTriangleGroup> = mesh
             .subsets
             .iter()
-            .map(|subset| TessellationTriangleGroup {
-                source_id: Some(subset.path.clone()),
-                triangles: subset.triangles.clone(),
+            .map(|subset| {
+                TessellationTriangleGroup::new(Some(subset.path.clone()), subset.triangles.clone())
             })
             .collect();
         if !groups.is_empty() {
@@ -937,10 +943,7 @@ impl Builder<'_, '_, '_, '_> {
                 .filter(|triangle| !claimed.contains(triangle))
                 .collect();
             if !rest.is_empty() {
-                groups.push(TessellationTriangleGroup {
-                    source_id: None,
-                    triangles: rest,
-                });
+                groups.push(TessellationTriangleGroup::new(None, rest));
             }
         }
         let coordinates = mesh
@@ -972,8 +975,14 @@ impl Builder<'_, '_, '_, '_> {
             .map_err(|error| error.to_string())
     }
 
-    /// Binds the material of `prim` to the tessellation of definition `key`.
-    fn material(&mut self, prim: &Prim<'_>, key: &str) -> Result<(), CodecError> {
+    /// Binds the material of `prim`, whose definition is `key`, to `target`: the tessellation of
+    /// a mesh, the face of a patch.
+    fn material(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        target: AppearanceTarget,
+    ) -> Result<(), CodecError> {
         let Some(bound) =
             crate::schema::shading::bound_material(self.stage, prim, &mut self.issues)
         else {
@@ -989,13 +998,13 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string())
-                .into(),
+            target: target.into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -1011,7 +1020,7 @@ impl Builder<'_, '_, '_, '_> {
         if self.appearances.insert(surface.material.clone()) {
             let mut record = surface_appearance(surface);
             record.textures = self.textures(surface)?;
-            record.library_id = self.module(surface)?;
+            record.library_id = self.module(surface);
             self.ir.model.appearances.push(record);
         }
         Ok(crate::ids::appearance(&surface.material))
@@ -1051,20 +1060,19 @@ impl Builder<'_, '_, '_, '_> {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
 
     /// The MDL module of `surface`: the identity of the file it names, or
     /// the path as written for a module that the MDL search path finds.
-    fn module(&self, surface: &SurfaceShader) -> Result<Option<String>, CodecError> {
-        let Some((path, layer)) = &surface.module else {
-            return Ok(None);
-        };
-        Ok(Some(match self.layers.texture(self.ctx, *layer, path)? {
+    fn module(&self, surface: &SurfaceShader) -> Option<String> {
+        let (path, layer) = surface.module.as_ref()?;
+        Some(match self.layers.texture(self.ctx, *layer, path) {
             Resource::Located(id) => id,
             Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
-        }))
+        })
     }
 
     /// The texture references of `surface`, with an asset for each image
@@ -1073,33 +1081,29 @@ impl Builder<'_, '_, '_, '_> {
         let mut out = Vec::new();
         for slot in &surface.textures {
             let texture = &slot.texture;
-            let resource = self
-                .layers
-                .texture(self.ctx, texture.layer, &texture.file)?;
-            let (identity, content) = match resource {
-                Resource::Embedded { id, bytes } => (
-                    id,
-                    AssetData::new(bytes).map(|data| AssetContent::Embedded { data }),
-                ),
-                Resource::Located(id) => {
-                    let uri = NonBlankString::new(id.clone());
-                    (id, uri.map(|uri| AssetContent::External { uri }))
-                }
+            let resource = self.layers.texture(self.ctx, texture.layer, &texture.file);
+            let identity = match &resource {
+                Resource::Embedded { id, .. } | Resource::Located(id) => id.clone(),
                 Resource::Unlocated => {
                     self.tallies.unlocated_textures.insert(texture.file.clone());
-                    let uri = NonBlankString::new(texture.file.clone());
-                    (
-                        texture.file.clone(),
-                        uri.map(|uri| AssetContent::External { uri }),
-                    )
+                    texture.file.clone()
                 }
-            };
-            let Some(content) = content else {
-                self.tallies.materials.insert(surface.material.clone());
-                continue;
             };
             let asset = crate::ids::asset(&identity);
             if !self.ir.model.assets.iter().any(|known| known.id == asset) {
+                let content = match resource {
+                    Resource::Embedded { package, name, .. } => {
+                        let bytes = package.snapshot.open(self.ctx, &name)?.window().to_vec();
+                        AssetData::new(bytes).map(|data| AssetContent::Embedded { data })
+                    }
+                    Resource::Located(_) | Resource::Unlocated => {
+                        NonBlankString::new(identity).map(|uri| AssetContent::External { uri })
+                    }
+                };
+                let Some(content) = content else {
+                    self.tallies.materials.insert(surface.material.clone());
+                    continue;
+                };
                 self.ctx.charge_entities(1, "usd_texture_asset")?;
                 let name = texture
                     .file
@@ -1282,16 +1286,67 @@ impl Builder<'_, '_, '_, '_> {
             self.tallies.rejected_patches.push(prim.path.clone());
             return Ok(None);
         };
-        if !patch.trims.is_empty() || patch.trims_malformed {
-            self.tallies.trims += 1;
-        }
-        if patch.range_narrowed {
-            self.tallies.ranges += 1;
-        }
         let Some(surface) = self.patch_surface(&patch) else {
             self.tallies.rejected_patches.push(prim.path.clone());
             return Ok(None);
         };
+        let reason = match crate::brep::patch::bounded(&patch) {
+            Ok(bounded) => {
+                match bounded.trims {
+                    Trims::Absent => {}
+                    Trims::Read { region_assumed } => {
+                        if region_assumed {
+                            self.tallies.trim_regions.push(prim.path.clone());
+                        }
+                    }
+                    Trims::Dropped(reason) => {
+                        self.tallies.trims.push(format!("{}: {reason}", prim.path));
+                    }
+                }
+                if bounded.range_ignored {
+                    self.tallies.ranges += 1;
+                }
+                let first = self.ir.geometry.faces.len();
+                match self.brep_body(prim, key, &bounded.brep)? {
+                    Ok(body) => {
+                        let faces: Vec<_> = self
+                            .ir
+                            .geometry
+                            .faces
+                            .get(first..)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|face| face.id.clone())
+                            .collect();
+                        for (ordinal, face) in faces.into_iter().enumerate() {
+                            let binding = if ordinal == 0 {
+                                key.to_owned()
+                            } else {
+                                format!("{key}#face{ordinal}")
+                            };
+                            self.material(prim, &binding, AppearanceTarget::Face(face))?;
+                        }
+                        return Ok(Some(body));
+                    }
+                    Err(reason) => reason,
+                }
+            }
+            Err(reason) => reason,
+        };
+        self.tallies
+            .boundaries
+            .push(format!("{}: {reason}", prim.path));
+        self.unbounded_patch(prim, key, &patch, surface)
+    }
+
+    /// Adds the sheet body of `patch` as one face with no loop.
+    fn unbounded_patch(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        patch: &PatchData,
+        surface: NurbsSurface,
+    ) -> Result<Option<cadmpeg_ir::ids::BodyId>, CodecError> {
         let surface_id = crate::ids::surface(key);
         self.ir.geometry.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -1326,6 +1381,7 @@ impl Builder<'_, '_, '_, '_> {
             native_ref: None,
         });
         self.body(prim, key, BodyKind::Sheet);
+        self.material(prim, key, AppearanceTarget::Face(face))?;
         self.transferred = true;
         self.admit("usd_patch")?;
         Ok(Some(crate::ids::body(key)))
@@ -1498,6 +1554,7 @@ fn surface_appearance(surface: &SurfaceShader) -> Appearance {
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 
@@ -1787,19 +1844,39 @@ fn tally_losses(tallies: &Tallies, issues: &Issues, metrics: &Metrics) -> Vec<Lo
     );
     push(
         UsdLossCode::NurbsTrimNotTransferred,
-        tallies.trims > 0,
+        !tallies.trims.is_empty(),
         format!(
-            "trim curves of {} NURBS patches were not transferred; each face covers its \
-             whole patch",
-            tallies.trims
+            "trim curves of {} NURBS patches were not transferred; each face is bounded by \
+             the sides of its parameter range: {}",
+            tallies.trims.len(),
+            joined(tallies.trims.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::NurbsTrimRegionAssumed,
+        !tallies.trim_regions.is_empty(),
+        format!(
+            "the trim loops of {} NURBS patches run against the direction of their nesting \
+             depth; each face keeps the region inside an odd number of loops: {}",
+            tallies.trim_regions.len(),
+            joined(tallies.trim_regions.iter().cloned())
+        ),
+    );
+    push(
+        UsdLossCode::NurbsBoundaryNotTransferred,
+        !tallies.boundaries.is_empty(),
+        format!(
+            "{} NURBS patches have no boundary; each is one face with no loop: {}",
+            tallies.boundaries.len(),
+            joined(tallies.boundaries.iter().cloned())
         ),
     );
     push(
         UsdLossCode::NurbsRangeNotTransferred,
         tallies.ranges > 0,
         format!(
-            "{} NURBS patches state a range narrower than their knot domain; each face covers \
-             the knot domain",
+            "{} NURBS patches state a range outside their knot domain; each face is bounded \
+             by the knot domain on that axis",
             tallies.ranges
         ),
     );

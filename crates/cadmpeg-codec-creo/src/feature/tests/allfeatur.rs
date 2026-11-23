@@ -401,7 +401,7 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
+            if matches!(group.edges, cadmpeg_ir::features::selections::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
     assert_eq!(
@@ -690,7 +690,7 @@ fn scan_partitions_allfeatur_positional_round_operands() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         }) if matches!(groups.as_slice(), [group]
-            if matches!(&group.edges, cadmpeg_ir::features::EdgeSelection::Native(selection)
+            if matches!(&group.edges, cadmpeg_ir::features::selections::EdgeSelection::Native(selection)
                 if selection == "creo:allfeatur:replay_edgs_affected#4:9")
                 && group.radius.is_unresolved())
     ));

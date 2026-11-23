@@ -44,7 +44,7 @@ fn native_scalar_must_match_an_existing_discrete_parameter() {
 }
 
 #[test]
-fn fillet_display_placeholder_establishes_length_unit() {
+fn fillet_dimensions_are_lengths() {
     let feature = crate::records::Feature {
         id: "feature".into(),
         parent: "history".into(),
@@ -74,19 +74,25 @@ fn fillet_display_placeholder_establishes_length_unit() {
     numeric
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
-    assert_eq!(scalar_unit_from_feature_parameter(&numeric, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&numeric, "D1"),
+        Some(super::ScalarUnit::Length)
+    );
 
     let mut cosmetic_thread = numeric.clone();
     cosmetic_thread.kind = "CosmeticThread".into();
-    cosmetic_thread.input_class = Some("CosmeticThread_c".into());
-    cosmetic_thread.parameters.clear();
-    cosmetic_thread
-        .parameters
-        .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
-    assert_eq!(
-        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2"),
-        None
-    );
+    cosmetic_thread.input_class = Some("moCosmeticThread_c".into());
+    cosmetic_thread.parameters = BTreeMap::from([
+        (cadmpeg_core::nonblank_literal!("D1"), "12".into()),
+        (cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into()),
+    ]);
+    for name in ["D1", "D2"] {
+        assert_eq!(
+            scalar_unit_from_feature_parameter(&cosmetic_thread, name),
+            Some(super::ScalarUnit::Length),
+            "{name}"
+        );
+    }
 
     let mut variable = numeric;
     variable.kind = "VarFillet".into();
@@ -105,7 +111,10 @@ fn fillet_display_placeholder_establishes_length_unit() {
         scalar_unit_from_feature_parameter(&variable, "D01"),
         Some(super::ScalarUnit::Length)
     );
-    assert_eq!(scalar_unit_from_feature_parameter(&variable, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&variable, "D1"),
+        Some(super::ScalarUnit::Length)
+    );
 }
 
 #[test]
@@ -260,6 +269,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             role: FeatureInputScalarRole::Driving,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
@@ -348,6 +358,7 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
                 role: FeatureInputScalarRole::Native,
                 operands: Vec::new(),
                 archive_class: None,
+                archive_object_id: None,
             })
             .collect();
 
@@ -387,4 +398,112 @@ fn parameter_indexes_match_the_class_name_and_scalar_scans() {
             assert_eq!(owners.owned(feature, start, end), expected);
         }
     }
+}
+
+#[test]
+fn extrude_depths_take_their_stored_metres_over_the_inch_display() {
+    let extrude = |end_condition: &str, end_condition_2: Option<&str>| crate::records::Feature {
+        id: "feature".into(),
+        parent: "history".into(),
+        xml_tag: "Extrusion".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(1738),
+        ordinal: 0,
+        name: "Boss-Extrude1".into(),
+        kind: "Extrusion".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::from([
+            (cadmpeg_core::nonblank_literal!("D1"), "1.5".into()),
+            (cadmpeg_core::nonblank_literal!("D2"), "6".into()),
+        ]),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("EndCondition"),
+            end_condition.to_owned(),
+        )])
+        .into_iter()
+        .chain(end_condition_2.map(|condition| {
+            (
+                cadmpeg_core::nonblank_literal!("EndCondition2"),
+                condition.to_owned(),
+            )
+        }))
+        .collect(),
+        text: None,
+        content: vec![
+            FeatureContent::Dimension("D1".into()),
+            FeatureContent::Dimension("D2".into()),
+        ],
+    };
+    let name = |id: &str, ordinal, offset, value: &str| FeatureInputName {
+        id: id.into(),
+        parent: "lane".into(),
+        ordinal,
+        offset,
+        object_id: None,
+        value: value.into(),
+    };
+    let scalar = |id: &str, ordinal, offset, name: &str, metres| FeatureInputScalar {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal,
+        offset,
+        object_id: 1739,
+        name: name.into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(metres).expect("finite test scalar"),
+        role: FeatureInputScalarRole::Native,
+        operands: Vec::new(),
+        archive_class: None,
+        archive_object_id: None,
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 160].into(),
+        classes: Vec::new(),
+        names: vec![
+            FeatureInputName {
+                object_id: ObjectId::from_value(1738),
+                ..name("feature-name", 0, 0, "Boss-Extrude1")
+            },
+            name("d1-name", 1, 64, "D1"),
+            name("d2-name", 2, 100, "D2"),
+        ],
+        scalars: vec![
+            scalar("d1", 0, 128, "d1-name", 0.0381),
+            scalar("d2", 1, 144, "d2-name", 0.1524),
+        ],
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let enriched = |end_condition, end_condition_2| {
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::default(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![extrude(end_condition, end_condition_2)],
+        }];
+        enrich_history_parameters(&mut histories, [&lane], true);
+        histories.remove(0).features.remove(0).parameters
+    };
+
+    let second_blind = enriched("Blind", Some("Blind"));
+    assert_eq!(second_blind["D1"], "38.1mm");
+    assert_eq!(second_blind["D2"], "152.4mm");
+    let two_sided = enriched("TwoSided", None);
+    assert_eq!(two_sided["D1"], "38.1mm");
+    assert_eq!(two_sided["D2"], "152.4mm");
+    let one_sided = enriched("Blind", None);
+    assert_eq!(one_sided["D1"], "38.1mm");
+    assert_eq!(one_sided["D2"], "6");
 }

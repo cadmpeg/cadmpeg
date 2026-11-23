@@ -95,6 +95,12 @@ and property entities into `CadIr`. Lengths convert to millimetres from the
 Global unit system. Directions, ratios, angles, knots, weights, and UV
 parameters keep their native scale.
 
+Global fields become source attributes: `sender_product`, `native_file_name`,
+`native_system_id`, `preprocessor_version`, `model_scale`, `units_flag`,
+`native_units`, `author`, `organization`, `iges_version_flag`, and
+`drafting_standard`. The Global field disposition matrix in the
+[specification][spec] states each value.
+
 Records that block faithful transfer land in `DecodeReport::losses`.
 `native.iges` retains physical cards and typed or generic entity data.
 `SourceFidelity` retains the complete source image and its SHA-256 digest;
@@ -107,7 +113,7 @@ closure against the decoded model. Coverage for each envelope lives in the
 Regenerate the deterministic stress corpus into a directory of your choice:
 
 ```sh
-cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
+cargo run -p cadmpeg-codec-iges --example iges_stress -- OUTPUT_DIRECTORY
 ```
 
 Six files, 3–8 MB each, cover composite chains, trimmed surfaces, counted

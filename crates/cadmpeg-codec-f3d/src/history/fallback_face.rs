@@ -13,8 +13,9 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::body_closures::stable_ref;
 use super::topology_cache::{endpoint_index, TopologyQueryCache, VertexBoundaryIndex};
-use super::{boundary_vertices_for_faces, stable_ref};
+use super::vertex_recipes::boundary_vertices_for_faces;
 use crate::history_records::AsmHistoricalTopology;
 use crate::loss::F3dLossCode;
 use crate::records::topology::face::{prefix_operand_ordinals, DesignFaceOperand};
@@ -136,17 +137,21 @@ impl OperandLanes {
 /// The prefix-operand ordinals that the recipe's parsed nodes name: each
 /// node's root, first prelude value and fan values. A node without a parsed
 /// structure, or one that names an ordinal outside the operands, names none.
-/// `None` when no node names an ordinal.
+/// `None` when no node has a parsed structure; an empty set when nodes have
+/// one and none names an ordinal.
 fn node_ordinals(operand: &DesignFaceOperand) -> Option<HashSet<usize>> {
-    let nodes: Vec<_> = operand
+    let parsed: Vec<_> = operand
         .recipe_nodes
         .iter()
         .filter_map(|node| node.recipe_structure.as_ref())
-        .filter(|node| node.has_valid_operand_ordinals(&operand.recipe_references))
         .collect();
-    if nodes.is_empty() {
+    if parsed.is_empty() {
         return None;
     }
+    let nodes: Vec<_> = parsed
+        .into_iter()
+        .filter(|node| node.has_valid_boundary_edge_ordinals(&operand.recipe_references))
+        .collect();
     Some(
         nodes
             .iter()

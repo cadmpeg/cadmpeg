@@ -7,7 +7,8 @@ use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
-use crate::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::index::{identities::BorrowedIdentities, ModelIndex};
 use crate::report::{
     check::{Check, Finding},

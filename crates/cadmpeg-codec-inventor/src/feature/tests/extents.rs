@@ -401,6 +401,11 @@ fn build_extent_extrusion(
             },
         ),
     ];
+    properties.retain(|property| {
+        extra
+            .iter()
+            .all(|other| other.identity.record_ordinal != property.identity.record_ordinal)
+    });
     properties.extend(extra);
     for property in &mut properties {
         let type_id = match property.kind {
@@ -662,7 +667,9 @@ fn entity_link_record() -> PmDcEntityStyleLink {
     )
 }
 
-fn extrude_definition(feature: &Feature) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
+fn extrude_definition(
+    feature: &Feature,
+) -> (&ExtrudeExtent, &cadmpeg_ir::features::extents::ExtrudeStart) {
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Extrude { extent, start, .. }) => {
             (extent, start)
@@ -813,7 +820,7 @@ fn extrusion_extent_branches_project_exactly() {
 
     let from_to = extent_extrusion(6, false, &[(8, 41), (11, 40)], Vec::new()).expect("from-to");
     let (extent, start) = extrude_definition(&from_to);
-    let cadmpeg_ir::features::ExtrudeStart::FromPlane { plane, native, .. } = start else {
+    let cadmpeg_ir::features::extents::ExtrudeStart::FromPlane { plane, native, .. } = start else {
         panic!("from-to extrusion starts at a plane: {start:?}");
     };
     assert_eq!(native.as_str(), work_plane(41).id());
@@ -964,10 +971,11 @@ fn assert_native_profile_validator(
     else {
         panic!("extrusion fixture");
     };
-    *profile =
-        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(
+    *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
             "inventor:pmdc:feature-property#generated-999".into(),
-        ));
+        ),
+    );
     assert!(!extrusion::matches(index, source, label, &changed));
     let mut changed = definition.clone();
     let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut changed else {
@@ -990,7 +998,7 @@ fn assert_native_profile_validator(
     let FeatureDefinition::Operation(FeatureOperation::Extrude { start, .. }) = &mut changed else {
         panic!("extrusion fixture");
     };
-    *start = cadmpeg_ir::features::ExtrudeStart::ProfilePlane {};
+    *start = cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {};
     if changed != *definition {
         assert!(!extrusion::matches(index, source, label, &changed));
     }
@@ -1119,8 +1127,8 @@ fn native_profile_extrusion_forms_and_validator_operands() {
         };
         assert_eq!(
             profile,
-            cadmpeg_ir::features::ProfileRef::Planar(
-                cadmpeg_ir::features::PlanarProfileRef::Native(
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
                     "inventor:pmdc:feature-property#generated-2".into()
                 )
             )
@@ -1288,8 +1296,8 @@ fn native_profile_keeps_the_complete_boundary_patch() {
             };
             assert_eq!(
                 *profile,
-                cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Native(
+                cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                    cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
                         "inventor:pmdc:feature-property#generated-22".into()
                     )
                 )
@@ -1344,6 +1352,81 @@ fn native_profile_refuses_unequal_patch_references_and_zero_blind_length() {
         Vec::new(),
         |index| index.sketch_ids.clear(),
         |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn fixed_distance_cut_with_zero_length_keeps_native_operands_and_loss() {
+    let case = ExtentCase {
+        output: Output::Solid,
+        operation: 2,
+        extent: 1,
+        symmetric: false,
+        solid_input: SolidInput::None,
+    };
+    let reversed = || {
+        vec![test_property(
+            4,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        )]
+    };
+    let positive = build_extent_extrusion(
+        case,
+        &[],
+        reversed(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |_, _, _, _| {},
+    )
+    .expect("positive fixed-distance cut");
+    assert!(matches!(
+        positive.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Cut,
+            ..
+        })
+    ));
+    assert!(build_extent_extrusion(
+        case,
+        &[(4, 74)],
+        reversed(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |source, label, index, projected| {
+            assert!(projected.is_none());
+            assert!(!crate::feature::extrusion::matches(
+                index,
+                source,
+                label,
+                positive.evaluation.definition()
+            ));
+            assert!(crate::feature::extrusion::indexed_operands(
+                source,
+                label,
+                index,
+                Output::Solid
+            )
+            .is_none());
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("projection context");
+            let mut losses = Vec::new();
+            assert!(
+                crate::feature::extrusion::project(&ctx, source, label, index, &mut losses)
+                    .is_none()
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.namespace(), "inventor");
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.extrusion-operands-native"
+            );
+        }
     )
     .is_none());
 }
@@ -1409,8 +1492,8 @@ fn native_profile_direction_and_operation_values_are_exact() {
         assert_eq!(
             *direction,
             ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::Z_AXIS.reversed(),
-                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Custom {}),
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::Z_AXIS.reversed(),
+                source: Some(cadmpeg_ir::features::extents::ExtrusionDirectionSource::Custom {}),
             }
         );
     }
@@ -1624,9 +1707,11 @@ fn work_point_extent_ends_at_a_resolved_plane() {
             *extent = ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToVertex {
-                        vertex: cadmpeg_ir::features::VertexSelection::Native(
-                            cadmpeg_ir::features::SelectionReference::new(native.clone())
-                                .expect("native point reference"),
+                        vertex: cadmpeg_ir::features::selections::VertexSelection::Native(
+                            cadmpeg_ir::features::selections::SelectionReference::new(
+                                native.clone(),
+                            )
+                            .expect("native point reference"),
                         ),
                     },
                     draft: None,
@@ -1655,7 +1740,7 @@ fn work_point_extent_ends_at_a_resolved_plane() {
     assert_eq!(plane.u_axis().get(), Vector3::new(1.0, 0.0, 0.0));
     assert!(matches!(
         extrude_definition(&feature).1,
-        cadmpeg_ir::features::ExtrudeStart::ProfilePlane {}
+        cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
     ));
 }
 

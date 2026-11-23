@@ -65,8 +65,8 @@ pub(crate) fn print_load_notice(document: &LoadedDocument) {
 pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Refuse export when validation reports an error in what the output writes.
+    pub(crate) reject_errors: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -358,7 +358,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, OpenUSD usda/usd; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usd; use --input-format to override detection",
         path.display()
     )
 }
@@ -487,7 +487,7 @@ pub(crate) fn convert(
     let result = (|| {
         let policy = ConversionPolicy {
             losses: conversion.losses,
-            allow_errors: conversion.allow_errors,
+            reject_errors: conversion.reject_errors,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;

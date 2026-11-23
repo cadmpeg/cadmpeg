@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 /// Semantic route checks for hand-written source readers.
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use syn::spanned::Spanned;
 
-use super::roots::RootShadows;
+use super::roots::{crate_of, RootShadows};
 use super::{
     collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, read_source,
     skip_meta_value,
 };
-use classify::same_crate;
+use resolve::Lookups;
 
 /// One route shape a hand-written reader is allowed to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -196,6 +197,7 @@ struct SourceIndex {
     symbols: Vec<SymbolKey>,
     /// Where a crate root can name another item than its real crate.
     shadows: RootShadows,
+    lookups: OnceCell<Lookups>,
 }
 
 impl SourceIndex {
@@ -203,6 +205,16 @@ impl SourceIndex {
     fn read_file(&mut self, items: &[syn::Item], path: &str, source: &str, scope: &[String]) {
         collect_source_items(items, path, source, scope, self);
         self.shadows.record_tokens(path, source);
+    }
+
+    /// The tables keyed for resolution, built at the first resolution.
+    fn lookups(&self) -> &Lookups {
+        let lookups = self.lookups.get_or_init(|| Lookups::new(self));
+        assert!(
+            lookups.indexes(self),
+            "the source index changed after its first resolution"
+        );
+        lookups
     }
 
     /// Records every glob import whose target lies outside its own crate,
@@ -219,7 +231,7 @@ impl SourceIndex {
                         || self.symbols.iter().any(|symbol| {
                             symbol.kind == SymbolKind::Module
                                 && symbol.name == first
-                                && same_crate(&symbol.path, &import.path)
+                                && crate_of(&symbol.path) == crate_of(&import.path)
                         }))
             })
             .map(|import| (import.path.clone(), import.target.segments.join("::")))
@@ -1413,20 +1425,10 @@ impl DeclarationResolver {
         if depth > 8 || path.leading_colon.is_some() {
             return None;
         }
-        let [binding] = self
-            .index
-            .imports
-            .iter()
-            .filter(|import| {
-                import.path == file
-                    && import.scope == scope
-                    && !import.glob
-                    && import.alias == *first
-            })
-            .collect::<Vec<_>>()[..]
-        else {
+        let [position] = self.index.lookups().explicit(file, scope, first) else {
             return None;
         };
+        let binding = &self.index.imports[*position];
         let target: Vec<String> = binding
             .target
             .segments

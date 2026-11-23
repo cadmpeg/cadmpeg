@@ -1,4 +1,4 @@
-use super::super::CurveOffsetCoordinate;
+use super::super::curve_offsets::CurveOffsetCoordinate;
 
 #[test]
 fn offset_coordinate_admission_and_wire_accept_exactly_three_coordinates() {

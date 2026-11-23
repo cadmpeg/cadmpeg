@@ -7,7 +7,7 @@
 //! non-negative; a value that is not finite becomes unavailable with
 //! `evaluation.non-finite`.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use serde::Serialize;
@@ -431,6 +431,8 @@ pub enum Method {
     CriticalPoints,
     /// A NURBS Bézier control-net bound.
     ControlHull,
+    /// Trimmed surface bounds refined by Bézier subdivision.
+    SurfaceSubdivision,
     /// Volume, centroid, closure and mass properties from face fluxes.
     DivergenceQuadrature,
     /// The sum of member values.

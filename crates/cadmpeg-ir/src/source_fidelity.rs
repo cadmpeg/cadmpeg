@@ -115,7 +115,7 @@ pub enum DecodeSidecarParseError {
 
 /// The retained image of a source record: its bytes, or the length and digest
 /// of bytes that are not retained.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RetainedBytes {

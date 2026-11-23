@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 
 use crate::native::{ObjectRecord, PropertyRecord};
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
@@ -9,9 +9,12 @@ use crate::design::evaluation::{EvaluationStatus, StateBase};
 use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
+use crate::design::read;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
+use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 use crate::validate::design::fixture::{
     after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
     document, evaluation, feature, id, parameter, set_base, stored,
@@ -231,16 +234,41 @@ fn state_chain(count: usize) -> CadIr {
     ir
 }
 
+/// The design findings of `ir` under `policy`.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    ctx.finish_session().unwrap();
+    report
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Design)
+        .collect()
+}
+
 #[test]
 fn a_state_chain_past_the_reader_ceiling_is_refused() {
-    let ceiling = ResourceLimits::default().max_state_chain_depth;
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_state_chain_depth = 8;
+    let ceiling = policy.limits.max_state_chain_depth;
     let depth = usize::try_from(ceiling).unwrap();
     let ir = state_chain(depth + 1);
-    assert_finding(&ir, &format!("past the ceiling of {ceiling}"));
-    assert!(serde_json::from_str::<CadIr>(&serde_json::to_string(&ir).unwrap()).is_err());
+    let findings = findings_under(&ir, &policy);
+    let past = format!("past the ceiling of {ceiling}");
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.severity == Severity::Error && finding.message.contains(&past)),
+        "no design error containing {past:?} in {findings:#?}"
+    );
+    let text = serde_json::to_string(&ir).unwrap();
+    assert!(read::from_str::<CadIr>(&text, &policy.limits).is_err());
     let ir = state_chain(depth);
-    assert_no_design_finding(&ir);
-    assert!(serde_json::from_str::<CadIr>(&serde_json::to_string(&ir).unwrap()).is_ok());
+    let findings = findings_under(&ir, &policy);
+    assert!(findings.is_empty(), "{findings:#?}");
+    let text = serde_json::to_string(&ir).unwrap();
+    assert!(read::from_str::<CadIr>(&text, &policy.limits).is_ok());
 }
 
 #[test]
@@ -337,3 +365,5 @@ fn a_stored_feature_names_bodies_of_the_state_after_it() {
     };
     assert_finding(&ir, "which is no body of the state after it");
 }
+
+mod unproduced;

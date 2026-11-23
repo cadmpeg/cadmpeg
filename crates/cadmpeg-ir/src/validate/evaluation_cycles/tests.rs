@@ -29,7 +29,7 @@ fn validation_reports_a_malformed_curve_surface_reference_cycle() {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
     assert!(!admit::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         admit::DRAFT_CORE_CHECKS,
         Vec::new()
@@ -62,7 +62,7 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     let (mut ir, curve, surface) = cyclic_model();
     // Repeated carrier rows still share the last graph entry and one active state.
     ir.geometry.curves.push(ir.geometry.curves[0].clone());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let findings = cycle_findings(&ctx, &ir).unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].check, Check::ReferentialIntegrity);

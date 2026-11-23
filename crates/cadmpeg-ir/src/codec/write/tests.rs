@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
@@ -349,24 +349,37 @@ fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::lo
         .clone()
 }
 
+fn design_sheet(key: &str) -> crate::design::spreadsheet::Spreadsheet {
+    crate::design::spreadsheet::Spreadsheet::new(
+        crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}")).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()
+}
+
+fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
+    crate::spreadsheets::Spreadsheet::new(
+        crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+        crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()
+}
+
 /// While a document holds a v10 design record, an omitted design-home arena
 /// restates what the v10 path writes and is charged nothing.
 #[test]
 fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
-    let sheet = |key: &str| {
-        crate::design::spreadsheet::Spreadsheet::new(
-            crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}"))
-                .unwrap(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            None,
-        )
-        .unwrap()
-    };
     let mut ir = CadIr::empty();
-    ir.design.spreadsheets.push(sheet("v11"));
+    ir.design.spreadsheets.push(design_sheet("v11"));
     let omitted = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted));
     let losses = coverage_losses(&ir, omitted);
     assert_eq!(losses.len(), 1, "{losses:?}");
@@ -375,21 +388,42 @@ fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
         "{losses:?}"
     );
 
-    ir.model.spreadsheets.push(
-        crate::spreadsheets::Spreadsheet::new(
-            crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
-            crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            None,
-        )
-        .unwrap(),
-    );
+    ir.model.spreadsheets.push(v10_sheet());
     let losses = coverage_losses(&ir, omitted);
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
+}
+
+/// No v10 record restates an evaluation, so an omitted `design.evaluations`
+/// arena is charged while the document holds v10 design records.
+#[test]
+fn an_omitted_evaluation_arena_is_charged_beside_v10_design_records() {
+    use crate::design::evaluation::{Evaluation, EvaluationStatus};
+
+    let mut ir = CadIr::empty();
+    ir.model.spreadsheets.push(v10_sheet());
+    ir.design.spreadsheets.push(design_sheet("v11"));
+    ir.design.evaluations.push(Evaluation {
+        id: crate::design::ids::EvaluationId::mint("test:design:evaluation#1").unwrap(),
+        scope: crate::ids::ProductDefinitionId::mint("test:model:definition#1").unwrap(),
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+        ),
+        status: EvaluationStatus::Stale,
+        content: None,
+        native_ref: None,
+    });
+    let losses = coverage_losses(
+        &ir,
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted)),
+    );
+    assert_eq!(losses.len(), 2, "{losses:?}");
+    for (loss, arena) in losses.iter().zip(["spreadsheets", "design.evaluations"]) {
+        assert_eq!(loss.code.namespace(), "export");
+        assert_eq!(loss.code.local_code(), "arena.omitted");
+        assert!(loss.message.contains(&format!("`{arena}`")), "{losses:?}");
+    }
 }
 
 /// An omitted sketch arena of the design home is charged as an omitted
@@ -505,6 +539,47 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
         "{}",
         losses[0].message
     );
+}
+
+#[test]
+fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
+    assert!(super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps",
+        Vec::<String>::new()
+    )
+    .is_none());
+    let loss = super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps these records as stored",
+        ["test:attribute#b", "test:attribute#a", "test:attribute#b"],
+    )
+    .unwrap();
+    assert_eq!(loss.code.namespace(), "export");
+    assert_eq!(loss.code.local_code(), "edit.dropped");
+    assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(
+        loss.code.taxonomy(),
+        crate::report::loss::LossTaxonomy::AttributesNotTransferred
+    );
+    assert_eq!(
+        loss.message,
+        "the TEST write keeps these records as stored (2): test:attribute#a, test:attribute#b"
+    );
+}
+
+#[test]
+fn the_unwritable_and_residual_codes_are_listed_warnings() {
+    let note = super::value_unwritable("x", "cuts texts", ["b", "a", "b"]).unwrap();
+    assert_eq!(note.code.local_code(), "value.unwritable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert_eq!(note.message, "the x write cuts texts (2): a, b");
+    let note = super::record_residual_unavailable("x", "states no tokens", ["f"]).unwrap();
+    assert_eq!(note.code.local_code(), "record.residual-unavailable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(super::value_unwritable("x", "r", Vec::<String>::new()).is_none());
 }
 
 #[test]

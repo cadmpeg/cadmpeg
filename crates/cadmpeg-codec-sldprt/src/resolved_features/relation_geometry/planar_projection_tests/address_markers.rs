@@ -5,9 +5,11 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DesignParameter, DistinctMembers, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-    ParameterId, ParameterValue, SketchFeatureBinding,
+    FeatureDefinition, FeatureOperation, ParameterId, SketchFeatureBinding,
 };
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
