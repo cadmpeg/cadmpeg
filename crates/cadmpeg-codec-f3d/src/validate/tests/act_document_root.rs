@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Which ACT component link names the document root.
 
-use super::super::act_link_is_document_root;
+use super::super::parameter_scopes::act_link_is_document_root;
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::identity::ReferenceRun;
 

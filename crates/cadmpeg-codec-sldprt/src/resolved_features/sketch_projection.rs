@@ -65,7 +65,7 @@ pub(crate) fn sketches(
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
-            if stream.header.description.starts_with(": TRANSMIT FILE")
+            if is_kernel_transmit_header(&stream.header.description)
                 && !brep.stats.synthetic_body_grouping
                 && brep
                     .bodies
@@ -105,6 +105,35 @@ pub(crate) fn sketches(
         entities,
         constraints,
     })
+}
+
+/// Whether a nested stream's Parasolid description is the kernel transmit
+/// header, which names no sketch.
+fn is_kernel_transmit_header(description: &str) -> bool {
+    description.starts_with(": TRANSMIT FILE")
+}
+
+/// The id of the sketch that planar face `face_ordinal` of nested stream
+/// `stream_ordinal` in the section at `block_offset` gives.
+fn profile_stream_sketch_id(
+    block_offset: usize,
+    stream_ordinal: usize,
+    face_ordinal: usize,
+) -> Option<SketchId> {
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
+    ))
+    .ok()
+}
+
+/// Whether `id` is the id of a sketch that a planar face of a nested profile
+/// stream gives.
+pub(crate) fn is_profile_stream_sketch(id: &SketchId) -> bool {
+    id.as_str()
+        .strip_prefix("sldprt:model:sketch#")
+        .is_some_and(|key| {
+            key.split(':').count() == 3 && key.split(':').all(|part| part.parse::<usize>().is_ok())
+        })
 }
 
 /// Where one decoded B-rep stream sits in its section and how its sketch is named.
@@ -191,9 +220,8 @@ fn project_brep(
         let origin = plane_surface.origin().get();
         let normal = plane_surface.frame().axis().as_raw();
         let u_axis = plane_surface.frame().reference().as_raw();
-        let Ok(sketch_id) = SketchId::mint(format!(
-            "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
-        )) else {
+        let Some(sketch_id) = profile_stream_sketch_id(block_offset, stream_ordinal, face_ordinal)
+        else {
             continue;
         };
         let Ok(placement) =
@@ -382,7 +410,8 @@ fn project_brep(
             annotations,
             constraints,
         )?;
-        let name = (!sketch_name.is_empty()).then(|| sketch_name.to_owned());
+        let name = (!sketch_name.is_empty() && !is_kernel_transmit_header(sketch_name))
+            .then(|| sketch_name.to_owned());
         let configuration = configuration.map(str::to_owned);
         let native_ref = native_ref.to_owned();
         sketches.push(Sketch {
@@ -554,7 +583,7 @@ mod projected_brep_output_tests {
             }],
             points: vec![Point::new(
                 point_id,
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                     .expect("finite position"),
                 None,
             )],
@@ -671,3 +700,24 @@ mod projected_brep_output_tests {
 
 #[cfg(test)]
 mod sketch_projection_tests;
+
+#[cfg(test)]
+mod stream_sketch_id_tests {
+    use super::{is_profile_stream_sketch, profile_stream_sketch_id};
+    use cadmpeg_ir::sketches::SketchId;
+
+    #[test]
+    fn a_stream_face_id_is_a_profile_stream_sketch_and_reader_ids_are_not() {
+        assert!(is_profile_stream_sketch(
+            &profile_stream_sketch_id(184_117, 0, 3).unwrap()
+        ));
+        for other in [
+            "sldprt:model:sketch#markers:184117:31",
+            "sldprt:model:sketch#compact:184117:31",
+            "sldprt:model:sketch#184117:0",
+            "sldprt:model:sketch#184117:0:0:1",
+        ] {
+            assert!(!is_profile_stream_sketch(&SketchId::mint(other).unwrap()));
+        }
+    }
+}

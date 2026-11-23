@@ -10,12 +10,18 @@ use crate::failure::Measure;
 /// What a measurement computes for each face and edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Work {
-    /// Every quantity of a row.
+    /// Every quantity of a face or edge row.
     Row,
+    /// Quantities needed to assemble body rows: area, box, full flux,
+    /// orientation and witnesses, without face-only carrier or extent rows.
+    Body,
     /// What orientation findings read: boundaries, regions and orientation
     /// readings, edge lengths, and, for a face that needs fluxes, its area
     /// readings and fluxes.
     Orientation,
+    /// What body boxes read: edge boxes and lengths, boundaries, regions,
+    /// orientation readings and witnesses.
+    Box,
 }
 
 /// What one item's evaluator calls run under.

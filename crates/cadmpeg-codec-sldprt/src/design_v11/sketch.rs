@@ -7,15 +7,27 @@
 //! that plane precedes the sketch and the stored frame lies in it, else the
 //! `Unread` input of §5.9, with the stored frame as its value. A point record
 //! that several curves name is one point entity with a role for each, so a
-//! coincidence of two of its ends is that entity's. The decoder reads the
-//! construction flag where it sets it, so an entity it does not mark states
-//! no flag. A dimension binds the parameter that holds its value, and states
-//! that parameter's quantity; a reference dimension makes the tree parameter
-//! it binds `Driven`, and one whose parameter no tree node lists binds a
-//! `Driven` parameter minted for it. A sketch with a dimension that binds no
-//! parameter, or with an entity that has no planar curve, stays
-//! `Unresolved`; its dimensions still state the quantities of the parameters
-//! they bind.
+//! coincidence of two of its ends is that entity's. An entity is
+//! construction where the decoder marks it construction or reads it from a
+//! curve record of state `0`, which no profile uses, except in a sketch
+//! where another curve closes a loop only with the curves of state `0`;
+//! another entity states no flag. A circle the decoder built from a
+//! dimension record (open item DI-83) is left out where it repeats a stored
+//! circle or arc of its sketch, or where no cylindrical face of the solid
+//! lies on it and its center lies on a stored curve of its radius; the
+//! dimensions that named it then name that curve. Only radial dimensions
+//! move to a curve the center lies on, where the center is a point of that
+//! curve; a native dimension also moves to a curve the circle repeats, which
+//! has its center. Where another relation names it, it is construction. A
+//! built circle no relation names is left out, and any other is
+//! construction unless a cylindrical face of the solid lies on it. A
+//! dimension binds the parameter that holds its value, and states that
+//! parameter's quantity; a reference
+//! dimension makes the tree parameter it binds `Driven`, and one whose
+//! parameter no tree node lists binds a `Driven` parameter minted for it. A
+//! sketch with a dimension that binds no parameter, or with an entity that
+//! has no planar curve, stays `Unresolved`; its dimensions still state the
+//! quantities of the parameters they bind.
 
 use std::collections::{HashMap, HashSet};
 
@@ -50,10 +62,17 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
 
 use super::parameters::Entries;
+use super::profile_check;
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
+use crate::resolved_features::RELATION_INSTANCE_ID_PREFIX;
 
 /// Distance within which a stored point lies on a plane or at a curve's end,
 /// in millimetres per millimetre of the larger coordinate.
 const EPS_SKETCH_INCIDENCE: f64 = 1.0e-9;
+
+/// How far from one the cosine between a cylinder's axis and a sketch normal
+/// may be for the axis to lie along the normal.
+const EPS_AXIS_ALONG_NORMAL: f64 = 1.0e-8;
 
 /// The sketch records of the part, and what their dimensions state of the
 /// parameters they bind.
@@ -73,6 +92,127 @@ pub(super) struct Sketches {
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     /// The sketch features left `Unresolved`, with the reason.
     pub(super) unprojected: Vec<(FeatureId, &'static str)>,
+    /// The entities stated construction because their curve record has
+    /// state `0`, whose construction the decoder does not mark.
+    pub(super) outside_profile: Vec<SketchEntityId>,
+    /// The circles built from a dimension record that the design leaves
+    /// out, or states construction although the decoder does not mark them.
+    pub(super) dimension_circles: Vec<DimensionCircle>,
+}
+
+/// A circle built from a dimension record that the design does not keep as
+/// decoded: what its sketch and the solid say of it, and what the design
+/// does with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DimensionCircle {
+    entity: SketchEntityId,
+    reading: Reading,
+    outcome: Outcome,
+}
+
+/// What the sketch and the solid say of a built circle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Reading {
+    /// It has the center and radius of this stored circle or arc.
+    Repeats(Candidate),
+    /// Its center lies on this stored circle or arc, which has its radius,
+    /// and no cylindrical face of the solid is found on it.
+    OnCurve(Candidate),
+    /// It has the center and radius of this earlier built circle.
+    RepeatsBuilt(SketchEntityId),
+    /// No stored curve of its sketch has its radius, and no cylindrical face
+    /// of the solid lies on it.
+    NoCurveOfRadius,
+    /// A stored curve of its radius lies elsewhere in its sketch, and no
+    /// cylindrical face of the solid lies on it.
+    Unwitnessed,
+    /// Its sketch has no resolved frame to compare with the solid.
+    Unplaced,
+}
+
+/// The stored curve a built circle is read on: the first of `among` stored
+/// curves on one carrier, in record order. The file does not say which of
+/// several the dimension measured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Candidate {
+    curve: SketchEntityId,
+    among: usize,
+}
+
+/// What the design does with a built circle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Outcome {
+    /// Left out; these dimensions, which named it, name the stored curve.
+    Redirected(Vec<String>),
+    /// Left out; no relation of the sketch names it.
+    Unnamed,
+    /// Stated construction although it is read on a stored curve: these
+    /// relations name it and do not move to that curve.
+    Kept(Vec<String>),
+    /// Stated construction.
+    Construction,
+}
+
+impl Outcome {
+    fn left_out(&self) -> bool {
+        matches!(self, Self::Redirected(_) | Self::Unnamed)
+    }
+}
+
+impl DimensionCircle {
+    /// The circle, the reading and the outcome, for a loss note.
+    pub(super) fn text(&self) -> String {
+        let first = |among: usize| match among {
+            1 => String::new(),
+            _ => format!(", the first of {among} such curves on one carrier"),
+        };
+        let reading = match &self.reading {
+            Reading::Repeats(Candidate { curve, among }) => {
+                format!("it repeats {}{}", curve.as_str(), first(*among))
+            }
+            Reading::OnCurve(Candidate { curve, among }) => format!(
+                "its center lies on {}, of its radius{}",
+                curve.as_str(),
+                first(*among)
+            ),
+            Reading::RepeatsBuilt(circle) => format!("it repeats {}", circle.as_str()),
+            Reading::NoCurveOfRadius if self.outcome == Outcome::Unnamed => {
+                "no stored curve of its sketch has its radius and no face of the solid lies \
+                 on it"
+                    .to_owned()
+            }
+            Reading::NoCurveOfRadius => "no stored curve of its sketch has its radius and no \
+                                         face of the solid lies on it, so the profile lacks the \
+                                         circle its dimension measures"
+                .to_owned(),
+            Reading::Unwitnessed => "no face of the solid lies on it".to_owned(),
+            Reading::Unplaced => {
+                "its sketch has no resolved frame to compare with the solid".to_owned()
+            }
+        };
+        let outcome = match &self.outcome {
+            Outcome::Redirected(dimensions) => match dimensions.as_slice() {
+                [dimension] => format!("left out; the dimension {dimension} names that curve"),
+                _ => format!(
+                    "left out; the dimensions {} name that curve",
+                    dimensions.join(", ")
+                ),
+            },
+            Outcome::Unnamed => "left out; no relation names it".to_owned(),
+            Outcome::Kept(relations) => match relations.as_slice() {
+                [relation] => format!(
+                    "construction; the relation {relation} names it and does not move to that \
+                     curve"
+                ),
+                _ => format!(
+                    "construction; the relations {} name it and do not move to that curve",
+                    relations.join(", ")
+                ),
+            },
+            Outcome::Construction => "construction".to_owned(),
+        };
+        format!("{} ({reading}; {outcome})", self.entity.as_str())
+    }
 }
 
 /// What the projection reads besides the v10 sketch records.
@@ -83,6 +223,10 @@ pub(super) struct Context<'a> {
     /// The datum feature of the built-in plane each sketch feature's profile
     /// names, with that plane's principal entity.
     pub(super) supports: &'a HashMap<FeatureId, (FeatureId, PrincipalEntity)>,
+    /// The entities read from a curve record of state `0`.
+    pub(super) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The surfaces of the current geometry.
+    pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
 }
 
 /// Type each `Unresolved` sketch feature of `features` whose sketch the
@@ -144,17 +288,37 @@ fn sketch(
     let roles = Roles::new(&entities);
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
-    for entity in &entities {
-        let Some(form) = curve(&entity.geometry) else {
+    let mut outside_profile = Vec::new();
+    let forms = entities
+        .iter()
+        .map(|entity| curve(&entity.geometry))
+        .collect::<Vec<_>>();
+    let mut readings = Vec::with_capacity(entities.len());
+    for index in 0..entities.len() {
+        let reading = reading(index, &entities, &readings, record, context.surfaces);
+        readings.push(reading);
+    }
+    let needed = needed_state_zero(&entities, &forms, &readings, context.outside_profile);
+    for ((entity, form), reading) in entities
+        .iter()
+        .zip(forms.iter().cloned())
+        .zip(readings.iter())
+    {
+        let Some(form) = form else {
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
         };
+        let outside =
+            context.outside_profile.contains(entity.id()) && !needed.contains(entity.id());
+        if outside && !entity.construction {
+            outside_profile.push(entity.id().clone());
+        }
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: entity.construction.then_some(true),
+            construction: (entity.construction || outside || reading.is_some()).then_some(true),
             centerline: None,
             native: None,
             native_options: NativeOptions::new(),
@@ -211,6 +375,12 @@ fn sketch(
     if let Some(reason) = failure {
         return Err(reason);
     }
+    let dimension_circles = settle(&entities, readings, &mut constraints);
+    sketch_entities.retain(|kept| {
+        dimension_circles
+            .iter()
+            .all(|(_, circle)| !circle.outcome.left_out() || circle.entity != kept.id)
+    });
     out.records.push(Sketch {
         id: record.id.clone(),
         owner: feature.id.clone(),
@@ -225,6 +395,13 @@ fn sketch(
         native_ref: record.native_ref.clone(),
     });
     out.entities.extend(sketch_entities);
+    out.outside_profile.extend(outside_profile);
+    out.dimension_circles.extend(
+        dimension_circles
+            .into_iter()
+            .filter(|(construction, circle)| !construction || circle.outcome.left_out())
+            .map(|(_, circle)| circle),
+    );
     out.measured.extend(
         constraints
             .iter()
@@ -420,6 +597,313 @@ impl Roles {
     }
 }
 
+/// What the sketch and the solid say of `entities[index]` where it is a
+/// circle built from a dimension record that the design does not keep as
+/// decoded; `None` for another entity and for a built circle a cylindrical
+/// face of the solid witnesses. A stored circle or arc the circle repeats
+/// comes first, then an earlier built circle it repeats, of those `earlier`
+/// does not read on a stored curve, then the faces of the solid, then a
+/// stored circle or arc its center lies on; the stored candidates count
+/// where they share one carrier.
+fn reading(
+    index: usize,
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    earlier: &[Option<Reading>],
+    record: &cadmpeg_ir::sketches::Sketch,
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) -> Option<Reading> {
+    let circle = dimension_circle(entities.get(index)?)?;
+    let (center, radius) = circle;
+    let stored = entities
+        .iter()
+        .filter(|candidate| !built(candidate))
+        .filter_map(|candidate| Some((*candidate, carrier(&candidate.geometry)?)))
+        .collect::<Vec<_>>();
+    let repeated = stored
+        .iter()
+        .filter(|(_, at)| same_carrier(*at, circle))
+        .copied()
+        .collect::<Vec<_>>();
+    if let Some(candidate) = one_carrier(&repeated) {
+        return Some(Reading::Repeats(candidate));
+    }
+    let repeats_built = entities[..index]
+        .iter()
+        .zip(earlier)
+        .find(|(candidate, reading)| {
+            !matches!(reading, Some(Reading::Repeats(_) | Reading::OnCurve(_)))
+                && dimension_circle(candidate).is_some_and(|at| same_carrier(at, circle))
+        });
+    if let Some((circle, _)) = repeats_built {
+        return Some(Reading::RepeatsBuilt(circle.id().clone()));
+    }
+    let placement = record.resolved_placement();
+    if let Some((origin, normal, u_axis)) = placement {
+        let v_axis = [
+            normal.y * u_axis.z - normal.z * u_axis.y,
+            normal.z * u_axis.x - normal.x * u_axis.z,
+            normal.x * u_axis.y - normal.y * u_axis.x,
+        ];
+        let at = [
+            origin.x + center[0] * u_axis.x + center[1] * v_axis[0],
+            origin.y + center[0] * u_axis.y + center[1] * v_axis[1],
+            origin.z + center[0] * u_axis.z + center[1] * v_axis[2],
+        ];
+        if surfaces
+            .iter()
+            .any(|surface| on_cylinder(surface, [normal.x, normal.y, normal.z], at, radius))
+        {
+            return None;
+        }
+    }
+    let of_radius = stored
+        .iter()
+        .filter(|(_, (_, size))| (size - radius).abs() <= LINEAR_RESOLUTION_MM)
+        .copied()
+        .collect::<Vec<_>>();
+    let through = of_radius
+        .iter()
+        .filter(|(candidate, _)| passes_through(&candidate.geometry, center))
+        .copied()
+        .collect::<Vec<_>>();
+    if let Some(candidate) = one_carrier(&through) {
+        return Some(Reading::OnCurve(candidate));
+    }
+    Some(if placement.is_none() {
+        Reading::Unplaced
+    } else if of_radius.is_empty() {
+        Reading::NoCurveOfRadius
+    } else {
+        Reading::Unwitnessed
+    })
+}
+
+/// The first curve of `candidates`, each with its carrier, and how many
+/// there are, where all lie on one carrier; `None` where there are none or
+/// their carriers differ.
+fn one_carrier(
+    candidates: &[(&cadmpeg_ir::sketches::SketchEntity, ([f64; 2], f64))],
+) -> Option<Candidate> {
+    let (first, at) = candidates.first()?;
+    candidates
+        .iter()
+        .all(|(_, other)| same_carrier(*other, *at))
+        .then(|| Candidate {
+            curve: first.id().clone(),
+            among: candidates.len(),
+        })
+}
+
+/// Whether two circles or arcs, each as its center and radius, lie on one
+/// carrier.
+fn same_carrier((a, a_radius): ([f64; 2], f64), (b, b_radius): ([f64; 2], f64)) -> bool {
+    near(a, b) && (a_radius - b_radius).abs() <= LINEAR_RESOLUTION_MM
+}
+
+/// Whether two points of a sketch are one within the linear resolution.
+fn near(a: [f64; 2], b: [f64; 2]) -> bool {
+    (a[0] - b[0]).hypot(a[1] - b[1]) <= LINEAR_RESOLUTION_MM
+}
+
+/// Whether `point` lies on the circle or arc `geometry`.
+fn passes_through(geometry: &cadmpeg_ir::sketches::SketchGeometry, point: [f64; 2]) -> bool {
+    use cadmpeg_ir::math::portable::Portable;
+    let Some((center, radius)) = carrier(geometry) else {
+        return false;
+    };
+    let offset = [point[0] - center[0], point[1] - center[1]];
+    if (offset[0].hypot(offset[1]) - radius).abs() > LINEAR_RESOLUTION_MM {
+        return false;
+    }
+    let Geometry::Arc {
+        start_angle,
+        end_angle,
+        ..
+    } = geometry.definition()
+    else {
+        return true;
+    };
+    let at_end = curve_ends(geometry).is_some_and(|ends| ends.iter().any(|end| near(*end, point)));
+    let tau = std::f64::consts::TAU;
+    let turn = (offset[1].portable_atan2(offset[0]) - start_angle.get()).rem_euclid(tau);
+    at_end || turn <= (end_angle.get() - start_angle.get()).rem_euclid(tau)
+}
+
+/// The built circles of `entities` with a reading, each with whether the
+/// decoder marks it construction and what the design does with it: the
+/// dimensions that name a circle read on a stored curve name that curve
+/// instead, where every relation that names the circle `moves` there.
+fn settle(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    readings: Vec<Option<Reading>>,
+    constraints: &mut [SketchConstraint<Planar>],
+) -> Vec<(bool, DimensionCircle)> {
+    let mut circles = Vec::new();
+    for (entity, reading) in entities.iter().zip(readings) {
+        let Some(reading) = reading else {
+            continue;
+        };
+        let id = entity.id();
+        let naming = (0..constraints.len())
+            .filter(|at| names(&constraints[*at].relation, id))
+            .collect::<Vec<_>>();
+        let listed = |at: &[usize]| {
+            at.iter()
+                .map(|at| constraints[*at].id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let outcome = match &reading {
+            _ if naming.is_empty() => Outcome::Unnamed,
+            Reading::Repeats(Candidate { curve, .. })
+            | Reading::OnCurve(Candidate { curve, .. }) => {
+                let kept = naming
+                    .iter()
+                    .copied()
+                    .filter(|at| !moves(&reading, &constraints[*at].relation, id))
+                    .collect::<Vec<_>>();
+                if kept.is_empty() {
+                    let redirected = listed(&naming);
+                    for at in &naming {
+                        redirect(&mut constraints[*at].relation, id, curve);
+                    }
+                    Outcome::Redirected(redirected)
+                } else {
+                    Outcome::Kept(listed(&kept))
+                }
+            }
+            _ => Outcome::Construction,
+        };
+        circles.push((
+            entity.construction,
+            DimensionCircle {
+                entity: id.clone(),
+                reading,
+                outcome,
+            },
+        ));
+    }
+    circles
+}
+
+/// Whether `relation` names `entity` anywhere among its operands; `true`
+/// where the relation does not serialize, so no circle a relation may name
+/// is left out.
+fn names(relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
+    fn mentions(value: &serde_json::Value, id: &str) -> bool {
+        match value {
+            serde_json::Value::String(text) => text == id,
+            serde_json::Value::Array(items) => items.iter().any(|item| mentions(item, id)),
+            serde_json::Value::Object(fields) => fields.values().any(|item| mentions(item, id)),
+            _ => false,
+        }
+    }
+    match serde_json::to_value(relation) {
+        Ok(value) => mentions(&value, entity.as_str()),
+        Err(_) => true,
+    }
+}
+
+/// Whether `relation`, which names the built circle `entity`, moves to the
+/// stored curve `reading` gives: a radial dimension of the circle moves to
+/// either curve; a native relation with a value moves only to a curve the
+/// circle repeats. Such a relation measures from the circle's center, which
+/// a curve the center lies on does not share.
+fn moves(reading: &Reading, relation: &SketchRelation<Planar>, entity: &SketchEntityId) -> bool {
+    match relation {
+        SketchRelation::Radial { of, .. } => of == entity,
+        SketchRelation::Native {
+            operands, values, ..
+        } => {
+            matches!(reading, Reading::Repeats(_))
+                && !values.is_empty()
+                && operands.contains(&Operand::Entity(entity.clone()))
+        }
+        _ => false,
+    }
+}
+
+/// Make the dimension `relation`, which `moves` from `from`, name `to`.
+fn redirect(relation: &mut SketchRelation<Planar>, from: &SketchEntityId, to: &SketchEntityId) {
+    match relation {
+        SketchRelation::Radial { of, .. } => *of = to.clone(),
+        SketchRelation::Native { operands, .. } => {
+            let mut renamed = Vec::with_capacity(operands.len());
+            for operand in operands.drain(..) {
+                let operand = match operand {
+                    Operand::Entity(id) if &id == from => Operand::Entity(to.clone()),
+                    other => other,
+                };
+                if !renamed.contains(&operand) {
+                    renamed.push(operand);
+                }
+            }
+            *operands = renamed;
+        }
+        _ => {}
+    }
+}
+
+/// Whether `surface` is a cylinder of `radius` whose axis lies along
+/// `normal` through `at`.
+fn on_cylinder(
+    surface: &cadmpeg_ir::geometry::Surface,
+    normal: [f64; 3],
+    at: [f64; 3],
+    radius: f64,
+) -> bool {
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder)) =
+        surface.geometry.solved()
+    else {
+        return false;
+    };
+    let axis = cylinder.frame().axis().as_raw();
+    let alignment = axis.x * normal[0] + axis.y * normal[1] + axis.z * normal[2];
+    if !((alignment.abs() - 1.0).abs() <= EPS_AXIS_ALONG_NORMAL
+        && (cylinder.radius().get() - radius).abs() <= LINEAR_RESOLUTION_MM)
+    {
+        return false;
+    }
+    let origin = cylinder.origin().get();
+    let offset = [at[0] - origin.x, at[1] - origin.y, at[2] - origin.z];
+    let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
+    let off_axis = [
+        offset[0] - along * axis.x,
+        offset[1] - along * axis.y,
+        offset[2] - along * axis.z,
+    ];
+    off_axis[0].hypot(off_axis[1]).hypot(off_axis[2]) <= LINEAR_RESOLUTION_MM
+}
+
+/// Whether the decoder built `entity` from a relation record: its geometry
+/// carrier is the relation instance.
+fn built(entity: &cadmpeg_ir::sketches::SketchEntity) -> bool {
+    entity
+        .geometry_ref
+        .as_deref()
+        .is_some_and(|carrier| carrier.starts_with(RELATION_INSTANCE_ID_PREFIX))
+}
+
+/// The center and radius of a circle the decoder built from a dimension
+/// record.
+fn dimension_circle(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<([f64; 2], f64)> {
+    match entity.geometry.definition() {
+        Geometry::Circle { center, radius } if built(entity) => {
+            Some(([center.u, center.v], radius.get()))
+        }
+        _ => None,
+    }
+}
+
+/// The center and radius of a circle or an arc.
+fn carrier(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<([f64; 2], f64)> {
+    match geometry.definition() {
+        Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
+            Some(([center.u, center.v], radius.get()))
+        }
+        _ => None,
+    }
+}
+
 /// The start and end of a line or an arc.
 fn curve_ends(geometry: &cadmpeg_ir::sketches::SketchGeometry) -> Option<[[f64; 2]; 2]> {
     use cadmpeg_ir::math::portable::Portable;
@@ -447,6 +931,38 @@ fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     (a[0] - b[0]).abs() <= EPS_SKETCH_INCIDENCE * scale
         && (a[1] - b[1]).abs() <= EPS_SKETCH_INCIDENCE * scale
+}
+
+/// The curves of `entities` read from a curve record of state `0`, with
+/// their construction bit clear, where the sketch's other non-construction
+/// curves close only through them (`profile_check::needed`). A built circle
+/// the design leaves out or states construction (`reading`) is none of the
+/// other curves.
+fn needed_state_zero<'a>(
+    entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
+    forms: &'a [Option<PlanarCurve>],
+    readings: &[Option<Reading>],
+    outside_profile: &HashSet<SketchEntityId>,
+) -> HashSet<&'a SketchEntityId> {
+    let mut live = HashMap::new();
+    let mut state_zero = HashMap::new();
+    for ((entity, form), reading) in entities.iter().zip(forms).zip(readings) {
+        let Some(form) = form
+            .as_ref()
+            .filter(|form| !matches!(form, PlanarCurve::Point(_)))
+        else {
+            continue;
+        };
+        if entity.construction || reading.is_some() {
+            continue;
+        }
+        if outside_profile.contains(entity.id()) {
+            state_zero.insert(entity.id(), form);
+        } else {
+            live.insert(entity.id(), form);
+        }
+    }
+    profile_check::needed(&live, &state_zero)
 }
 
 /// The v11 curve of a decoded sketch entity, or `None` for a geometry the
@@ -576,10 +1092,11 @@ impl Relations<'_> {
             return None;
         }
         let value = match (quantity, source.value.as_ref()?) {
-            (Quantity::LENGTH, cadmpeg_ir::features::ParameterValue::Length(length)) => {
-                FiniteReal::new(length.get())?
-            }
-            (Quantity::ANGLE, cadmpeg_ir::features::ParameterValue::Angle(angle)) => {
+            (
+                Quantity::LENGTH,
+                cadmpeg_ir::features::parameters::ParameterValue::Length(length),
+            ) => FiniteReal::new(length.get())?,
+            (Quantity::ANGLE, cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)) => {
                 FiniteReal::new(angle.get())?
             }
             _ => return None,

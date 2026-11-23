@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityUse, SketchGeometryDefinition};
 

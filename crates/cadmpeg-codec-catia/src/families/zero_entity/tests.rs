@@ -206,9 +206,9 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         Some(&curve.id)
     );
     assert_eq!(construction.cache_fit_tolerance(), None);
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::SurfaceCurve {
         family:
-            cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+            cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Parametric {
                 context,
                 tail: None,
             },
@@ -535,21 +535,23 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_model_construction = native.clone();
     invalid_model_construction.zero_entity_support_runs[0].supports[0].model_curve_construction =
-        Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                [0.0, 1.0],
-                cadmpeg_ir::geometry::HelixFrame {
-                    center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                    pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                    axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                },
-                1.0,
-                None,
-            )
-            .unwrap(),
-        ));
+        Some(
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
+                    [0.0, 1.0],
+                    cadmpeg_ir::geometry::helix::HelixFrame {
+                        center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        major: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                        minor: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                        pitch: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                        axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    },
+                    1.0,
+                    None,
+                )
+                .unwrap(),
+            ),
+        );
     let mut invalid_model_construction_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_construction
         .store(&mut invalid_model_construction_namespace)
@@ -576,8 +578,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     // A support model endpoint holds an admitted point, so a non-finite
     // coordinate is refused before a native record can hold it.
     assert!(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::NAN, 6.0, 3.0))
-            .is_none()
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            f64::NAN,
+            6.0,
+            3.0
+        ))
+        .is_none()
     );
 
     let mut invalid = native;

@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind,
@@ -52,7 +52,7 @@ fn placed_point_product() -> CadIr {
     });
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         point,
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite position"),
         None,
     ));

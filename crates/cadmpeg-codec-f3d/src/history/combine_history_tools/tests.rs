@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanKind;
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
 use cadmpeg_ir::features::{
-    BodySelection, BooleanKind, CombineOperands, DistinctMembers, Feature, FeatureDefinition,
-    FeatureEvaluation, FeatureId, FeatureOperation,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, FeatureOperation,
 };
 
 use super::bind;
@@ -87,6 +89,8 @@ fn combine_scope(tools: &[(u32, u32)]) -> DesignParameterScope {
                 first: rows.next().unwrap(),
                 additional: rows.collect(),
             },
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope
@@ -134,7 +138,7 @@ fn history_only_tools_become_generated_bodies_of_their_creating_features() {
         feature("combine", 3, &scope_id(400)),
     ];
     let bindings = [pair(150, true), pair(250, true)];
-    let losses = bind(&mut features, &scopes, &bindings);
+    let (losses, _) = bind(&mut features, &scopes, &bindings);
     assert!(losses.is_empty(), "{losses:?}");
     let BodySelection::Generated { bodies, native } = tools_of(&features[2]) else {
         panic!("generated tools");
@@ -189,7 +193,7 @@ fn a_tool_that_is_not_proven_leaves_every_tool_native_and_reports_the_reason() {
         }),
     ];
     for (bindings, mut features) in cases {
-        let losses = bind(&mut features, &scopes(), &bindings);
+        let (losses, _) = bind(&mut features, &scopes(), &bindings);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -217,7 +221,7 @@ fn a_derived_base_creator_stays_native_and_the_proven_tool_keeps_its_generator()
         feature("instance", 2, &scope_id(380)),
         feature("combine", 4, &scope_id(400)),
     ];
-    let losses = bind(&mut features, &scopes, &[pair(150, true), pair(360, true)]);
+    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(360, true)]);
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(
         losses[0].code.local_code(),
@@ -255,7 +259,7 @@ fn every_proven_tool_records_its_generator() {
         feature("second", 2, &scope_id(200)),
         feature("combine", 3, &scope_id(400)),
     ];
-    let losses = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
     assert!(losses.is_empty(), "{losses:?}");
     let properties = features[2]
         .source_properties
@@ -287,7 +291,7 @@ fn a_combine_whose_tools_name_no_history_only_pair_is_left_alone() {
         feature("first", 1, &scope_id(100)),
         feature("combine", 3, &scope_id(400)),
     ];
-    let losses = bind(&mut features, &scopes, &[pair(150, false)]);
+    let (losses, _) = bind(&mut features, &scopes, &[pair(150, false)]);
     assert!(losses.is_empty());
     assert!(matches!(
         tools_of(&features[1]),
@@ -321,7 +325,7 @@ fn a_captured_base_feature_generates_the_second_combine_tool() {
                 },
             },
         ));
-    let losses = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
     assert!(losses.is_empty(), "{losses:?}");
     let BodySelection::Generated { bodies: tools, .. } = tools_of(&features[2]) else {
         panic!("generated tools")
@@ -336,4 +340,67 @@ fn a_captured_base_feature_generates_the_second_combine_tool() {
             .map(|(_, value)| value.as_str()),
         Some(features[1].id.as_str())
     );
+}
+
+fn result_state(
+    generator: &Feature,
+    bodies: &[&str],
+) -> cadmpeg_ir::features::evaluation::FeatureResultTopology {
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
+        bodies
+            .iter()
+            .map(|body| cadmpeg_core::text::NonBlankString::new((*body).to_owned()).unwrap())
+            .collect(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+        crate::ids::history_result_state_id(&generator.id, 4),
+        generator.id.clone(),
+        members,
+        None,
+    )
+}
+
+fn bound_two_tool_combine() -> (Vec<Feature>, Vec<super::ReplacedTools>) {
+    let scopes = vec![
+        scope(DesignFeatureKind::Extrude, 100),
+        scope(DesignFeatureKind::Extrude, 200),
+        combine_scope(&[(150, 100), (250, 200)]),
+    ];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("second", 2, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let (losses, replaced) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    assert!(losses.is_empty(), "{losses:?}");
+    (features, replaced)
+}
+
+#[test]
+fn a_tool_of_a_one_body_result_state_takes_the_listed_identity() {
+    let (mut features, replaced) = bound_two_tool_combine();
+    let results = [result_state(&features[0], &["2"])];
+    let losses = super::align_with_result_states(&mut features, &results, replaced);
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Generated { bodies, .. } = tools_of(&features[2]) else {
+        panic!("generated tools");
+    };
+    assert_eq!(bodies[0].local_id.as_str(), "2");
+    assert_eq!(bodies[1].local_id.as_str(), pair(250, true).id());
+}
+
+#[test]
+fn a_tool_absent_from_a_several_body_result_state_restores_the_native_tools() {
+    let (mut features, replaced) = bound_two_tool_combine();
+    let results = [result_state(&features[0], &["2", "3"])];
+    let losses = super::align_with_result_states(&mut features, &results, replaced);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(!matches!(
+        tools_of(&features[2]),
+        BodySelection::Generated { .. }
+    ));
 }

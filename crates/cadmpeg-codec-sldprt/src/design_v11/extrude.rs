@@ -3,7 +3,8 @@
 //!
 //! An extrude whose profile is a whole sketch the design states, named by the
 //! sketch or by its feature, and whose limits are blind distances or
-//! through-all, is typed: the profile is a `Sketch` pick, a blind limit binds
+//! through-all, is typed: the profile is a `Sketch` pick, checked against the
+//! profile loops the decoder resolved (`profile_check`), a blind limit binds
 //! the dimension that holds its distance, and a merge into a part that holds
 //! no body yet is a new body (§6). An extrude whose start, limits, draft, or
 //! profile the decoder reads only in part stays `Unresolved`, and so does one
@@ -16,20 +17,22 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::sketch::{Planar, SketchEntity};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure,
 };
 use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
-use cadmpeg_ir::features::{
-    self as v10, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, LinearTermination,
-    ParameterId, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features as v10;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
 use super::parameters::Entries;
+use super::profile_check::{self, Difference, Unchecked};
 use super::sketch::{pick, selection};
 
 /// The extrudes typed, and the quantity of each parameter a limit binds.
@@ -41,6 +44,23 @@ pub(super) struct Extrudes {
     /// The typed extrudes whose blind depth is the record's only dimension,
     /// named neither `Depth` nor `D1`, with that dimension.
     pub(super) assumed: Vec<(FeatureId, ParameterId)>,
+    /// The typed extrudes whose sketch's closed regions differ from the
+    /// profile loops the decoder resolved, with their name and how they
+    /// differ.
+    pub(super) differs: Vec<(FeatureId, Option<String>, Vec<Difference>)>,
+    /// The typed extrudes whose sketch's closed regions the check did not
+    /// compare with the stored profile, with their name and why.
+    pub(super) unchecked: Vec<(FeatureId, Option<String>, Unchecked)>,
+}
+
+/// What a typed extrude adds to the notes.
+#[derive(Default)]
+struct Notes {
+    /// The dimension its blind depth binds as its record's only one.
+    assumed: Option<ParameterId>,
+    /// How its sketch's closed regions differ from the stored profile, or
+    /// why the check did not compare them.
+    profile: Option<Result<Vec<Difference>, Unchecked>>,
 }
 
 /// What the projection reads besides the feature.
@@ -50,6 +70,8 @@ pub(super) struct Context<'a> {
     pub(super) entries: &'a Entries<'a>,
     /// The sketches the design states.
     pub(super) sketches: &'a HashSet<SketchId>,
+    /// The entities of those sketches.
+    pub(super) entities: &'a [SketchEntity<Planar>],
 }
 
 /// Type each `Unresolved` extrude of `features`, in member order.
@@ -82,7 +104,7 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
         match family {
             Some(OperationFamily::Extrude) => {
                 let mut bound = Vec::new();
-                let mut assumed = None;
+                let mut notes = Notes::default();
                 let typed = extrude(
                     feature,
                     context,
@@ -90,14 +112,25 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
                     &preceding,
                     body_before,
                     &mut bound,
-                    &mut assumed,
+                    &mut notes,
                 );
                 out.bound.extend(bound);
                 match typed {
                     Ok(extrude) => {
                         feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
-                        out.assumed
-                            .extend(assumed.map(|parameter| (feature.id.clone(), parameter)));
+                        out.assumed.extend(
+                            notes
+                                .assumed
+                                .map(|parameter| (feature.id.clone(), parameter)),
+                        );
+                        let named = (feature.id.clone(), feature.name.clone());
+                        match notes.profile {
+                            Some(Ok(differs)) if !differs.is_empty() => {
+                                out.differs.push((named.0, named.1, differs));
+                            }
+                            Some(Err(why)) => out.unchecked.push((named.0, named.1, why)),
+                            _ => {}
+                        }
                     }
                     Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
                 }
@@ -126,7 +159,7 @@ fn extrude(
     preceding: &HashSet<SketchId>,
     body_before: bool,
     bound: &mut Bound,
-    assumed: &mut Option<ParameterId>,
+    notes: &mut Notes,
 ) -> Result<Extrude, &'static str> {
     let source = context
         .model
@@ -165,19 +198,27 @@ fn extrude(
         _ => return Err("the extrude's profile is no whole sketch"),
     };
     let direction = match direction {
-        v10::ExtrudeDirection::ProfileNormal {} => {
+        cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {} => {
             ExtrudeDirection::ProfileNormal { reversed: None }
+        }
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {} => {
+            ExtrudeDirection::ProfileNormal {
+                reversed: Some(Dimension::Literal(true)),
+            }
         }
         _ => return Err("the extrude's direction is not the profile normal"),
     };
-    if !matches!(start, v10::ExtrudeStart::ProfilePlane {}) {
+    if !matches!(
+        start,
+        cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
+    ) {
         return Err("the extrude starts off the profile plane");
     }
     let depths = Depths::new(feature, context);
     let span = span(extent, &depths, bound)?;
     if let ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } = extent {
         if matches!(side.termination, LinearTermination::Blind { .. }) && depths.first.is_none() {
-            assumed.clone_from(&depths.sole);
+            notes.assumed.clone_from(&depths.sole);
         }
     }
     let sketch = sketch
@@ -187,13 +228,18 @@ fn extrude(
         return Err("the extrude's sketch follows it in the timeline");
     }
     let boolean = match op {
-        v10::BooleanOp::Join if !body_before => Some(Boolean::NewBody),
-        v10::BooleanOp::Join => Some(apply(BooleanOp::Join)),
-        v10::BooleanOp::Cut => Some(apply(BooleanOp::Cut)),
-        v10::BooleanOp::Intersect => Some(apply(BooleanOp::Intersect)),
-        v10::BooleanOp::NewBody => Some(Boolean::NewBody),
-        v10::BooleanOp::Unresolved => None,
+        cadmpeg_ir::features::operation_settings::BooleanOp::Join if !body_before => {
+            Some(Boolean::NewBody)
+        }
+        cadmpeg_ir::features::operation_settings::BooleanOp::Join => Some(apply(BooleanOp::Join)),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => Some(apply(BooleanOp::Cut)),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Intersect => {
+            Some(apply(BooleanOp::Intersect))
+        }
+        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody => Some(Boolean::NewBody),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved => None,
     };
+    notes.profile = Some(differences(sketch, context));
     Ok(Extrude {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
         loops: None,
@@ -217,6 +263,18 @@ fn extrude(
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
     })
+}
+
+/// How the closed regions of `sketch` differ from the profile loops the
+/// decoder resolved for it.
+fn differences(sketch: &SketchId, context: &Context<'_>) -> Result<Vec<Difference>, Unchecked> {
+    let loops = context
+        .model
+        .sketches
+        .iter()
+        .find(|record| &record.id == sketch)
+        .map_or(&[][..], |record| &record.profiles[..]);
+    profile_check::check(loops, &profile_check::curves(sketch, context.entities)?)
 }
 
 fn apply(op: BooleanOp) -> Boolean {

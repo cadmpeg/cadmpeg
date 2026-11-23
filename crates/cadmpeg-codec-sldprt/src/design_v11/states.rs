@@ -6,10 +6,12 @@
 //! the current geometry (§5.5). Every other configuration whose partition the
 //! decoder reads has its state at the end of the tree as an evaluation of its
 //! own, based on `Empty`: its partition is a kernel index space the current
-//! geometry does not hold. A configuration whose partition is not stored and
-//! that the source flags as needing a rebuild (`swConfigurationNeedsUpdate`)
-//! has an evaluation with no content and status `Stale`; a stored partition so
-//! flagged is a stale state.
+//! geometry does not hold, so its records leave the current geometry. A
+//! configuration whose partition is not stored and that the source flags as
+//! needing a rebuild (`swConfigurationNeedsUpdate`) has an evaluation with no
+//! content and status `Stale`; a stored partition so flagged is a stale state.
+//! A configuration whose partition is not stored charges a loss that names
+//! it.
 //!
 //! The states between features are deferred to unit `SW2b`, which builds on
 //! the Parasolid reader's delta replay (unit PS-R, #1634). The replay is
@@ -25,7 +27,7 @@
 //! then a state between two features has no evaluation, which §5.4 reads as
 //! not read.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -60,23 +62,36 @@ pub(super) struct Scope<'a> {
     pub(super) current: &'a [BodyId],
 }
 
-/// The evaluation of each configuration that is not active and whose state
-/// the source stores or flags, and the number of records they hold. A
-/// configuration whose stored bodies share ids with the current bodies has
-/// no evaluation, because its records cannot be told from the current
-/// state's, and charges a note to `losses`; only a decode ceiling fails the
-/// projection.
+/// The states of the configurations that are not active.
+pub(super) struct States {
+    /// The evaluation of each configuration whose state the source stores
+    /// or flags.
+    pub(super) evaluations: Vec<Evaluation>,
+    /// The number of records the evaluations hold.
+    pub(super) records: usize,
+    /// The geometry records that only those states hold, by id, with the
+    /// configuration whose state holds each: no current body reaches them,
+    /// so they are no part of the current geometry (§5.5).
+    pub(super) retired: BTreeMap<String, ConfigurationId>,
+}
+
+/// The states of each configuration that is not active. A configuration
+/// whose stored bodies share ids with the current bodies has no evaluation,
+/// because its records cannot be told from the current state's, and charges
+/// a note to `losses`; so does a configuration whose partition is not
+/// stored. Only a decode ceiling fails the projection.
 pub(super) fn configuration_states(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scope: &Scope<'_>,
     names: &Names<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<(Vec<Evaluation>, usize), CodecError> {
+) -> Result<States, CodecError> {
     let current = scope.current.iter().collect::<HashSet<_>>();
     let (at, depended) = end_of_tree(scope);
     let mut evaluations = Vec::new();
     let mut records = 0;
+    let mut held = BTreeMap::new();
     let mut index = None;
     for configuration in scope.configurations {
         if Some(&configuration.id) == scope.active {
@@ -99,6 +114,10 @@ pub(super) fn configuration_states(
                 let topology = reach.state(ctx, bodies)?;
                 let table = names.entries(&topology, bodies, |feature| depended.contains(feature));
                 records += topology_len(&topology) + table.len();
+                topology_ids(&topology, |id| {
+                    held.entry(id.to_owned())
+                        .or_insert_with(|| configuration.id.clone());
+                });
                 Some(StateContent {
                     base: StateBase::Empty,
                     delta: StateDelta {
@@ -125,8 +144,15 @@ pub(super) fn configuration_states(
                 )));
                 continue;
             }
-            None if stale => None,
-            None => continue,
+            None => {
+                if native.is_some() {
+                    losses.push(not_stored(configuration, stale));
+                }
+                if !stale {
+                    continue;
+                }
+                None
+            }
         };
         evaluations.push(Evaluation {
             id: evaluation_id(&configuration.id),
@@ -142,7 +168,37 @@ pub(super) fn configuration_states(
             native_ref: None,
         });
     }
-    Ok((evaluations, records))
+    let retired = match &index {
+        Some(reach) if !held.is_empty() => {
+            let mut kept = BTreeSet::new();
+            topology_ids(&reach.state(ctx, scope.current)?, |id| {
+                kept.insert(id.to_owned());
+            });
+            held.retain(|id, _| !kept.contains(id));
+            held
+        }
+        _ => BTreeMap::new(),
+    };
+    Ok(States {
+        evaluations,
+        records,
+        retired,
+    })
+}
+
+/// The loss of a configuration that is not active and whose partition the
+/// file does not store; `stale` where the file flags it as needing a
+/// rebuild.
+fn not_stored(configuration: &DesignConfiguration, stale: bool) -> LossNote {
+    let flag = if stale {
+        " and flags it as needing a rebuild, so its state is stale"
+    } else {
+        ", so its state is not stated"
+    };
+    SldprtLossCode::ConfigStateNotStored.note(format!(
+        "configuration {} ({:?}): the file stores no partition of it{flag}.",
+        configuration.id, configuration.name
+    ))
 }
 
 /// The state at the end of the tree, spelled after its last member that is
@@ -305,6 +361,18 @@ macro_rules! topology_arenas {
 
         fn topology_len(topology: &Topology) -> usize {
             0 $(+ topology.$field.len())*
+        }
+
+        /// Calls `visit` with the id of every record of `topology`.
+        fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
+            $(for record in &topology.$field {
+                visit(record.identity());
+            })*
+        }
+
+        /// Removes from `geometry` every record whose id `ids` holds.
+        pub(crate) fn remove_records<V>(geometry: &mut Topology, ids: &BTreeMap<String, V>) {
+            $(geometry.$field.retain(|record| !ids.contains_key(record.identity()));)*
         }
     };
 }

@@ -228,7 +228,9 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
 
 /// The neutral configurations that the native configuration documents of `ir`
 /// project against its native and neutral records.
-pub(crate) fn project(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+pub(crate) fn project(
+    ir: &cadmpeg_ir::CadIr,
+) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let native = crate::test_support::native_test::f3d_native(ir);
     crate::design::configurations::project_configurations(
         &native.design_configurations,

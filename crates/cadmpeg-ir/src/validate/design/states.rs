@@ -6,7 +6,7 @@
 //! bodies, the records they reach, and those records' name entries. Lookups
 //! walk down an evaluation's chain of bases, so no state is materialized.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
 use crate::design::names::NameEntry;
@@ -19,7 +19,7 @@ use super::records::PositionKey;
 use super::resolved::{records, Arena};
 
 /// The nameable entities of one `Topology`, by id.
-fn entities(topology: &Topology) -> BTreeMap<&str, Arena> {
+fn entities(topology: &Topology) -> HashMap<&str, Arena> {
     records(topology)
         .into_iter()
         .filter(|(arena, ..)| arena.is_entity())
@@ -30,29 +30,29 @@ fn entities(topology: &Topology) -> BTreeMap<&str, Arena> {
 /// One evaluation's own records and removals.
 struct Layer<'a> {
     evaluation: &'a Evaluation,
-    entities: BTreeMap<&'a str, Arena>,
-    removed: BTreeSet<&'a str>,
+    entities: HashMap<&'a str, Arena>,
+    removed: HashSet<&'a str>,
 }
 
 /// The extent of one current state: the records its bodies reach.
 pub(super) struct Extent<'a> {
     pub(super) scope: &'a str,
     pub(super) state: &'a CurrentState,
-    pub(super) records: BTreeSet<&'a str>,
+    pub(super) records: HashSet<&'a str>,
 }
 
 /// The resolved states of a document's evaluations and current states.
 pub(super) struct States<'a> {
     ir: &'a CadIr,
-    geometry: BTreeMap<&'a str, Arena>,
-    layers: BTreeMap<&'a str, Layer<'a>>,
+    geometry: HashMap<&'a str, Arena>,
+    layers: HashMap<&'a str, Layer<'a>>,
     pub(super) extents: Vec<Extent<'a>>,
 }
 
 /// A stored evaluation's chain of deltas, from its own down.
 pub(super) struct Chain<'s, 'a> {
     /// Each delta's records and the records it removes from its base.
-    pub(super) layers: Vec<(&'a Topology, &'s BTreeSet<&'a str>)>,
+    pub(super) layers: Vec<(&'a Topology, &'s HashSet<&'a str>)>,
     /// The current state's extent the chain ends on, where it ends on one.
     pub(super) bottom: Option<&'s Extent<'a>>,
 }
@@ -65,7 +65,7 @@ enum Bottom<'a> {
 
 impl<'a> States<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
-        let mut layers = BTreeMap::new();
+        let mut layers = HashMap::new();
         for evaluation in &ir.design.evaluations {
             let Some(content) = &evaluation.content else {
                 continue;
@@ -83,21 +83,25 @@ impl<'a> States<'a> {
                         .collect(),
                 });
         }
-        let reach = Reach::new(&ir.geometry);
-        let extents = ir
+        let has_extents = ir
             .design
             .scopes
             .iter()
-            .flat_map(|scope| {
-                let reach = &reach;
-                scope.current.iter().map(move |state| Extent {
-                    scope: scope.definition.as_str(),
-                    state,
-                    records: reach
-                        .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
-                })
-            })
-            .collect();
+            .any(|scope| !scope.current.is_empty());
+        let mut extents: Vec<Extent<'a>> = Vec::new();
+        if has_extents {
+            let reach = Reach::new(&ir.geometry);
+            for scope in &ir.design.scopes {
+                for state in &scope.current {
+                    extents.push(Extent {
+                        scope: scope.definition.as_str(),
+                        state,
+                        records: reach
+                            .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
+                    });
+                }
+            }
+        }
         Self {
             ir,
             geometry: entities(&ir.geometry),
@@ -267,12 +271,12 @@ impl<'a> States<'a> {
 /// The child records of each record of one `Topology`, through the parent
 /// pointers and the edges, vertices, and carriers they use.
 struct Reach<'a> {
-    children: BTreeMap<&'a str, Vec<&'a str>>,
+    children: HashMap<&'a str, Vec<&'a str>>,
 }
 
 impl<'a> Reach<'a> {
     fn new(topology: &'a Topology) -> Self {
-        let mut children: BTreeMap<&'a str, Vec<&'a str>> = BTreeMap::new();
+        let mut children: HashMap<&'a str, Vec<&'a str>> = HashMap::new();
         let mut add =
             |parent: &'a str, child: &'a str| children.entry(parent).or_default().push(child);
         for region in &topology.regions {
@@ -310,8 +314,8 @@ impl<'a> Reach<'a> {
         Self { children }
     }
 
-    fn reached_from(&self, bodies: impl Iterator<Item = &'a str>) -> BTreeSet<&'a str> {
-        let mut found = BTreeSet::new();
+    fn reached_from(&self, bodies: impl Iterator<Item = &'a str>) -> HashSet<&'a str> {
+        let mut found = HashSet::new();
         let mut stack: Vec<&'a str> = bodies.collect();
         while let Some(record) = stack.pop() {
             if found.insert(record) {

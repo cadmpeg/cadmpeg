@@ -35,7 +35,7 @@ fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
 #[test]
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 13, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 13, 0, false);
     assert!(report.transfer.geometry_transferred());
     assert!(
         report
@@ -56,7 +56,7 @@ fn sketch_only_design_is_not_a_geometry_loss() {
 #[test]
 fn presentation_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 1);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 1, false);
     assert!(report.transfer.geometry_transferred());
     assert!(
         report
@@ -76,7 +76,7 @@ fn presentation_only_design_is_not_a_geometry_loss() {
 #[test]
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 1, 13, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 1, 13, 0, false);
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -87,7 +87,7 @@ fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
 #[test]
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 0, false);
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -97,7 +97,7 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 #[test]
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 1, 0, 0, 13, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 1, 0, 0, 13, 0, false);
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -106,7 +106,7 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
 #[test]
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
-    crate::decode::apply_bodyless_design_classification(&mut report, 0, 2, 0, 13, 0);
+    crate::decode::apply_bodyless_design_classification(&mut report, 0, 2, 0, 13, 0, false);
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
@@ -125,6 +125,7 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
     for model_body_maps_empty in [true, false] {
         let path = super::super::FinalizePath::Bodyless(super::super::DeferredBodylessInputs {
             model_body_maps_empty,
+            model_body_maps_explicitly_empty: model_body_maps_empty,
             has_appearance: false,
             mesh_projection: super::super::MeshProjection {
                 count: 0,
@@ -216,6 +217,7 @@ fn mesh_only_carriers() -> crate::decode::DesignCarriers {
         brep_entries: 0,
         brep_streams: 0,
         selected_brep_streams: 0,
+        model_body_maps_explicitly_empty: false,
         text_brep_streams: 0,
         declared_bodies: 0,
         sketch_entities: 0,
@@ -398,4 +400,176 @@ fn a_decoded_mesh_only_design_transfers_its_geometry() {
     assert!(report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 1);
     assert!(has_code(&report, F3dLossCode::MeshVertexPrecisionReduced));
+}
+
+/// Carriers of a part whose modern model-body maps are explicitly empty and
+/// whose snapshot BREP stream holds no model body.
+fn empty_design_carriers() -> crate::decode::DesignCarriers {
+    crate::decode::DesignCarriers {
+        paramesh_entries: 0,
+        brep_entries: 1,
+        brep_streams: 1,
+        model_body_maps_explicitly_empty: true,
+        ..mesh_only_carriers()
+    }
+}
+
+#[test]
+fn explicitly_empty_model_maps_without_carriers_make_an_empty_design() {
+    let report = classify(&empty_design_carriers(), false);
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(!has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::TopologyNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::BodylessDesignCarrier));
+}
+
+#[test]
+fn a_sketch_under_empty_model_maps_keeps_the_bodyless_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            sketch_entities: 4,
+            ..empty_design_carriers()
+        },
+        false,
+    );
+    assert!(has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+#[test]
+fn an_unselected_model_without_explicit_empty_maps_keeps_its_geometry_losses() {
+    for carriers in [
+        crate::decode::DesignCarriers {
+            model_body_maps_explicitly_empty: false,
+            ..empty_design_carriers()
+        },
+        crate::decode::DesignCarriers {
+            selected_brep_streams: 1,
+            ..empty_design_carriers()
+        },
+        crate::decode::DesignCarriers {
+            declared_bodies: 1,
+            ..empty_design_carriers()
+        },
+    ] {
+        let report = classify(&carriers, false);
+        assert!(!report.transfer.geometry_transferred());
+        assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+        assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    }
+}
+
+#[test]
+fn an_assembly_with_empty_model_maps_is_not_an_empty_design() {
+    let report = classify(&empty_design_carriers(), true);
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+#[test]
+fn empty_model_maps_beside_an_undecoded_mesh_container_keep_the_geometry_losses() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            brep_streams: 1,
+            model_body_maps_explicitly_empty: true,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+/// A bodyless design reports the body history tails collected for it: a
+/// feature output body that no decoded history holds gets the unread loss.
+#[test]
+fn a_bodyless_design_reports_its_body_history_tails() {
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:brep/panel.smbh/brep:entity#1").unwrap();
+    let feature = cadmpeg_ir::features::FeatureId::mint("test:model:feature#1").unwrap();
+    let mut design = crate::decode::design_intent::DesignNative::default();
+    design.history_body_consumers.tails.unread = vec![(body.clone(), feature.clone())];
+    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        let scan =
+            crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+        let mut native = crate::native::F3dNative::default();
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut losses = Vec::new();
+        crate::decode::store_bodyless_design(ctx, &scan, design, &mut native, &mut ir, &mut losses)
+            .unwrap();
+        let loss = losses
+            .iter()
+            .find(|loss| loss.code == F3dLossCode::FeatureBodyHistoryUnread.kind())
+            .expect("unread body history loss");
+        assert!(loss.message.contains(&body.to_string()));
+        assert!(loss.message.contains(&feature.to_string()));
+    });
+}
+
+/// The bodyless finalization arm appends the body history tails collected for
+/// the design: the retained interval becomes an unprojected body history
+/// feature with its incomplete-history loss.
+#[test]
+fn bodyless_finalization_retains_the_body_history_tails() {
+    use crate::decode::{
+        DecodeSessionState, DeferredBodylessInputs, DesignState, F3dDecodeSession, FinalizePath,
+        ModelBrepOutcome, SessionPath,
+    };
+    let (tails, body) = crate::history::body_history_tail::tests::one_tail();
+    let mut design = crate::decode::design_intent::DesignNative::default();
+    design.history_body_consumers.tails = tails;
+    let bytes = crate::test_support::assembly_test::f3d_without_brep("assembly", "root.f3d", &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        let scan =
+            crate::container::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
+        let (mut session, path) = F3dDecodeSession::from_metadata(
+            ctx,
+            &scan,
+            DecodeSessionState {
+                admitted_entities: 0,
+                report_scope: crate::report::ReportScope::Standalone,
+                model_selection_losses: Vec::new(),
+            },
+            &ModelBrepOutcome::NoPhysicalModel,
+        )
+        .unwrap();
+        let prereqs = session.decode_product_prereqs(&path).unwrap();
+        let SessionPath::Bodyless {
+            mesh_projection,
+            model_body_maps_empty,
+            model_body_maps_explicitly_empty,
+        } = path
+        else {
+            panic!("a metadata session is bodyless");
+        };
+        let decoded = session
+            .finalize(
+                FinalizePath::Bodyless(DeferredBodylessInputs {
+                    model_body_maps_empty,
+                    model_body_maps_explicitly_empty,
+                    has_appearance: false,
+                    mesh_projection,
+                }),
+                prereqs,
+                DesignState::Projected(Box::new(design)),
+            )
+            .unwrap();
+        let feature = decoded
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Unprojected body history"))
+            .expect("unprojected body history feature");
+        assert_eq!(feature.evaluation.outputs(), std::slice::from_ref(&body));
+        let loss = decoded
+            .body
+            .losses
+            .iter()
+            .find(|loss| loss.code == F3dLossCode::FeatureBodyHistoryIncomplete.kind())
+            .expect("incomplete body history loss");
+        assert!(loss.message.contains(&body.to_string()));
+    });
 }

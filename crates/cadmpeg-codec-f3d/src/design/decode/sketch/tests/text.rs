@@ -7,6 +7,51 @@ use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
+#[test]
+fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
+    use crate::design::test_support::{design_type, primary_record};
+
+    let mut unreadable = sketch_text_record(
+        &[("textex_tag", 800)],
+        [None, None],
+        Some((f64::MAX, 0.0, 0.0)),
+    );
+    unreadable[4..7].copy_from_slice(b"256");
+    unreadable[7..15].copy_from_slice(&41u64.to_le_bytes());
+    let mut sibling =
+        sketch_text_record(&[("textex_tag", 801)], [None, None], Some((1.0, 2.0, 0.0)));
+    sibling[4..7].copy_from_slice(b"256");
+    sibling[7..15].copy_from_slice(&42u64.to_le_bytes());
+    let sibling_start = unreadable.len();
+    unreadable.extend_from_slice(&sibling);
+    let meta = crate::metastream::MetaStream {
+        types: vec![design_type(
+            "E0618268-3A06-450E-9E94-7CF4C2E66802",
+            None,
+            4,
+            "Geometry",
+            vec![41, 42],
+        )],
+        records: vec![primary_record(41, 0), primary_record(42, sibling_start)],
+        secondary_records: Vec::new(),
+    };
+    let mut losses = Vec::new();
+    let texts =
+        decode_sketch_texts_from_stream(&unreadable, &meta, "Design/BulkStream.dat", &mut losses)
+            .unwrap();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].record_index, 42);
+    assert_eq!(
+        texts[0].placement().unwrap().anchor.get(),
+        Point2::new(10.0, 20.0)
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchTextUndecoded.kind()
+    );
+}
+
 use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
 use crate::design::decode::sketch::decode_sketch_texts_from_stream;
@@ -210,7 +255,8 @@ fn sketch_text_stream_decodes_its_text_records() {
         crate::design::decode::sketch::decode_sketch_texts_from_stream(
             &bytes,
             &meta,
-            "Design/BulkStream.dat"
+            "Design/BulkStream.dat",
+            &mut Vec::new(),
         )
         .unwrap()
         .len(),
@@ -500,8 +546,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-        .expect("indexed sketch texts");
+    let texts =
+        decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut Vec::new())
+            .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
     assert_eq!(texts[0].text, "live text");
@@ -509,27 +556,28 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut mismatched_primary = bytes.clone();
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
-    assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_primary,
-            &meta,
-            "Design/BulkStream.dat",
-            &mut Vec::new()
-        ),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    assert!(decode_sketch_points_from_stream(
+        &mismatched_primary,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .is_empty());
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
-    assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_secondary,
-            &meta,
-            "Design/BulkStream.dat",
-            &mut Vec::new()
-        ),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    let points = decode_sketch_points_from_stream(
+        &mismatched_secondary,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
+    assert_eq!(points[0].owner_reference, None);
 }
 
 #[test]

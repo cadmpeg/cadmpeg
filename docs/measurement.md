@@ -8,8 +8,9 @@ rustdoc.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit or interpretation by measuring
-geometry. Only the `cadmpeg` command line package depends on
-`cadmpeg-measure` outside `[dev-dependencies]`.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` command line package
+and `cadmpeg-registry` depend on `cadmpeg-measure`. The source policy also
+admits `cadmpeg-codec-f3d`, for the body boxes its writer writes.
 
 ## Value object
 
@@ -54,7 +55,8 @@ angles in radians. Directions and ratios have unit `1`.
 | `boundary_quadrature` | Adaptive Gauss–Kronrod quadrature along boundary pieces. |
 | `boundary_extremum` | Extremum search along boundary pieces only. |
 | `critical_points` | Boundary extremes and the carrier's interior critical points in the region. |
-| `control_hull` | A NURBS Bézier control-net bound. |
+| `control_hull` | A NURBS control-net bound. |
+| `surface_subdivision` | A trimmed NURBS bound refined by Bézier subdivision. |
 | `divergence_quadrature` | Volume, centroid, closure and mass properties from face fluxes. |
 | `sum` | The sum of member values; errors add. |
 
@@ -489,10 +491,26 @@ model axes; on a ring torus, the points where a model coordinate is
 stationary, four per axis. A candidate at a sphere pole is a member when the
 region indicator beyond the boundary toward that pole is 1. The box of the
 complement reading joins the candidates that are not members.
-On a NURBS carrier the box is the box of the placed control net,
-`conservative` with the method `control_hull`; a weight that is not
-positive makes it `bbox.nonpositive-weights`. `bbox.boundary` is the box of
-the boundary pieces alone.
+On a positive-weight NURBS carrier, homogeneous Bézier extraction gives
+one patch per nonempty knot rectangle. A bounded reading clips these
+patches to the boundary parameter ranges, expanded by their numeric error.
+Subdivision refines the patches over the trim region. The trim region uses the loop polylines and region factors
+from region classification. A patch outside the region is removed when
+its parameter rectangle meets no trim segment. Surface points inside the
+region and boundary extrema give the inner box. Refinement stops when
+every remaining patch hull lies within the inner box plus the larger of
+the boundary model tolerance and `1e-8` times the carrier hull diagonal.
+The result is `tight`, with method `surface_subdivision` and that distance
+as its numeric error. The two declared-orientation readings have separate
+boxes.
+
+Refinement visits at most 65,536 patches and charges a local slice of at
+most 1,048,576 work units and one sixteenth of the remaining face allowance.
+A failed refinement, an evaluated offset carrier, or a trimmed periodic
+chart retains the placed control-net box as `conservative`, with method
+`control_hull`. A weight that is not positive makes the box
+`bbox.nonpositive-weights`. `bbox.boundary` of a conservative box is the
+box of the boundary pieces.
 
 A body box is the union of its face boxes, or of its edge boxes for a body
 with no faces. A document box is the union of its body boxes. A union is
@@ -882,9 +900,14 @@ revision.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit, or interpretation by measuring
-geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
-`[dev-dependencies]`; the source-policy rule `measurement_dependency`
-enforces this.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` CLI crate and
+`cadmpeg-registry` depend on `cadmpeg-measure`. The source-policy rule
+`measurement_dependency` admits a production dependency in those two crates
+and in `cadmpeg-codec-f3d`, whose writer may write the boxes `body_boxes`
+measures, and fails it elsewhere. The source-policy rule `measurement_use`
+fails the name `cadmpeg_measure` in production code of a codec crate outside
+`crates/cadmpeg-codec-f3d/src/writer/`. It checks direct use only: it does
+not follow a re-export, a wrapper or an included file out of the writer.
 
 A writer test compares the measures of a document and of its written and
 decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer

@@ -17,10 +17,11 @@ use crate::records::{
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
     SketchRelationKind,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+use cadmpeg_ir::features::parameters::{
+    DesignParameter, ParameterPmi, ParameterValue, PmiDimensionSubtype,
 };
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
@@ -107,12 +108,12 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
                     SketchId::mint("synthetic:test:id#sketch").unwrap(),
@@ -229,7 +230,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }));
     assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
 }
@@ -423,15 +424,15 @@ fn native_dimension_subtypes_are_reported() {
         ordinal: 0,
         name: Some("Feature".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -447,7 +448,7 @@ fn native_dimension_subtypes_are_reported() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: Some(ParameterPmi {
             subtype: PmiDimensionSubtype::Native("Ordinate".into()),

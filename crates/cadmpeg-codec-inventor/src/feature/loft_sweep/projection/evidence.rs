@@ -2,17 +2,16 @@
 //! Exact generator joins and complete result-face construction checks.
 
 use crate::feature::profile::selection::PathCurve;
-use cadmpeg_ir::{
-    attributes::{AttributeTarget, AttributeValue},
-    document::Topology,
-    geometry::{
-        CurveGeometry, LoftMemberForm, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
-    },
-    math::Point3,
-    topology::{BodyKind, Face},
-    CadIr,
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+use cadmpeg_ir::document::Topology;
+use cadmpeg_ir::geometry::lofts::LoftMemberForm;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::{BodyKind, Face};
+use cadmpeg_ir::CadIr;
 use std::collections::{HashMap, HashSet};
 
 const EPS_RESULT_POINT_MM: f64 = 1.0e-5;

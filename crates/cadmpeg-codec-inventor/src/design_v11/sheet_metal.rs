@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::ids::SheetMetalRuleId;
 use cadmpeg_ir::design::ops::sheet_metal::{BendAllowance, BendSpec, SheetMetalRule};
-use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length, PositiveLength};
 use cadmpeg_ir::CadIr;

@@ -26,14 +26,15 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
+pub mod capacity;
 mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
 pub use loss::{
-    evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
+    edit_dropped, evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
     parameter_flattened, parameter_renamed, record_invalid, record_residual_unavailable,
-    value_unwritable,
+    rule_invalid, value_unwritable,
 };
 mod scene;
 pub mod subset_lowering;

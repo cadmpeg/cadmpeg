@@ -11,17 +11,24 @@ mod configuration_parameters;
 mod design_containment;
 mod design_parameters;
 mod design_v11;
+mod document_identity;
 mod emboss_operands;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
+mod fusion_circular_patterns;
+mod fusion_combine_middle_lists;
+mod fusion_combine_patterns;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
 mod fusion_reverse_normal;
+mod fusion_surface_loft;
 mod fusion_surface_revolve;
+mod fusion_tessellate;
+mod fusion_timeline_state;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -34,6 +41,7 @@ mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
 mod reference_rows;
+mod scan;
 mod scene;
 mod sketch_regions;
 mod split_face_binding;
@@ -238,7 +246,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let mut edited = decoded.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             2.5, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -629,7 +637,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,

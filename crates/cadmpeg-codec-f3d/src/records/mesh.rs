@@ -7,7 +7,7 @@ use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
@@ -1116,13 +1116,6 @@ pub(crate) struct DesignMeshFaceGroups {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DesignMeshHistoryStream {
-    pub(crate) name: String,
-    pub(crate) encoding: NativeBytes<[u8; 2]>,
-    pub(crate) decoded_length: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignMeshSplitStream {
     pub(crate) name: String,
     pub(crate) descriptor: NativeBytes<Vec<u8>>,
@@ -1141,7 +1134,6 @@ pub(crate) struct DesignMeshBody {
     pub(crate) scope_body_ordinal: Option<u32>,
     pub(crate) words: DesignMeshBodyWords,
     pub(crate) split_streams: Vec<DesignMeshSplitStream>,
-    pub(crate) history_streams: Vec<DesignMeshHistoryStream>,
     pub(crate) face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     pub(crate) placement: DesignMeshPlacement,
@@ -1186,8 +1178,6 @@ struct DesignMeshBodyWire {
     body_words_offset: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     split_streams: Vec<DesignMeshSplitStream>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    history_streams: Vec<DesignMeshHistoryStream>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1381,7 +1371,6 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
                 + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
             body_words: value.words,
             split_streams: value.split_streams,
-            history_streams: value.history_streams,
             face_group_metadata: value.face_group_metadata,
             body_record: value.placement.record,
             body_name: value.placement.body_name,
@@ -1575,7 +1564,6 @@ impl DesignMeshBody {
             scope_body_ordinal: value.scope_body_ordinal,
             words: value.body_words,
             split_streams: value.split_streams,
-            history_streams: value.history_streams,
             face_group_metadata: value.face_group_metadata,
             placement,
             entry,
@@ -1900,6 +1888,8 @@ pub(crate) struct DesignMeshCollection {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
     body_count: u32,
+    /// Bodies the collection has received, when more than it lists.
+    received_count: Option<u32>,
     flagged: bool,
     pub(crate) flagged_data: Option<DesignMeshFlaggedCollection>,
 }
@@ -1979,9 +1969,24 @@ impl DesignMeshCollection {
             record,
             base_class_tag: base_record.class_tag,
             body_count,
+            received_count: None,
             flagged,
             flagged_data,
         })
+    }
+    /// Record the collection-prefix count of the bodies the collection has
+    /// received. A count equal to the listed bodies records nothing.
+    pub(crate) fn with_received_count(mut self, count: u32) -> Result<Self, String> {
+        if self.flagged || count < self.body_count {
+            return Err(
+                "a received count is at least the listed bodies of a plain collection".into(),
+            );
+        }
+        self.received_count = (count > self.body_count).then_some(count);
+        Ok(self)
+    }
+    pub(crate) fn received_count(&self) -> Option<u32> {
+        self.received_count
     }
     fn prefix_len(&self) -> u64 {
         if self.flagged {
@@ -2295,6 +2300,12 @@ struct DesignMeshFeatureWire {
         deserialize_with = "deserialize_collection_flagged_data"
     )]
     collection_flagged_data: Option<DesignMeshFlaggedCollection>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_collection_received_count"
+    )]
+    collection_received_count: Option<u32>,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
     body_count_offsets: [u64; 2],
@@ -2336,6 +2347,11 @@ struct DesignMeshFeatureWire {
     operation_bodies: Vec<DesignMeshOperationBody>,
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_collection_received_count,
+    u32,
+    "collection_received_count"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_collection_flagged_data,
     DesignMeshFlaggedCollection,
@@ -2392,6 +2408,10 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?,
             wire.collection_flagged_data,
         )?;
+        let collection = match wire.collection_received_count {
+            Some(count) => collection.with_received_count(count)?,
+            None => collection,
+        };
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
             return Err(
                 "texture_table_reference_offset must locate the collection texture-table reference"
@@ -2495,6 +2515,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_record: value.collection.record().clone(),
             collection_base_record: value.collection.base_record(),
             collection_flagged_data: value.collection.flagged_data.clone(),
+            collection_received_count: value.collection.received_count(),
             texture_table_record,
             body_count_offsets,
             texture_table_reference_offset: value.collection.texture_table_reference_offset(),

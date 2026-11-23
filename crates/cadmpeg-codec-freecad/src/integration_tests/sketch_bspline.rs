@@ -3,16 +3,17 @@
 use std::{io::Cursor, path::Path};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary};
-use cadmpeg_ir::{
-    features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, FeatureDefinition,
-        FeatureOperation, FeatureTreeNodeRole, LinearTermination, PlanarProfileRef, ProfileRef,
-    },
-    sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition},
-    Codec, DecodeOptions,
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, LinearTermination,
 };
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
+use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary};
+use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::measured;
 
 use crate::{
@@ -165,7 +166,7 @@ fn recipe_sketch_bspline_knots_and_points() {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
                 direction,
                 extent: ExtrudeExtent::OneSided { side },
-                op: BooleanOp::Join,
+                op: BooleanOp::NewBody,
                 length_along_profile_normal: Some(true),
                 allow_multi_profile_faces: Some(true),
                 ..
@@ -247,113 +248,122 @@ fn recipe_sketch_bspline_knots_and_points() {
     }
 }
 
-#[test]
-fn recipe_sketch_bspline_body_measures() {
+macro_rules! recipe_sketch_bspline_body_measures {
+    ($($name:ident: $version:literal),+ $(,)?) => {
+        $(#[test] fn $name() { check_recipe_sketch_bspline_body_measures($version); })+
+    };
+}
+
+recipe_sketch_bspline_body_measures! {
+    recipe_sketch_bspline_body_measures_021: "0.21.2",
+    recipe_sketch_bspline_body_measures_10: "1.0.2",
+    recipe_sketch_bspline_body_measures_11: "1.1.4",
+}
+
+fn check_recipe_sketch_bspline_body_measures(version: &str) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/freecad_fcstd/fixtures");
-    for version in ["0.21.2", "1.0.2", "1.1.4"] {
-        for (variant, periodic, volume, height) in [
-            ("a", true, 5000.0 / 3.0, 5.0),
-            ("b", true, 2000.0, 6.0),
-            ("c", false, 4750.0 / 3.0, 5.0),
-        ] {
-            let label = format!("recipe_{version}_N04{variant}");
-            let bytes = std::fs::read(root.join(format!("{label}.FCStd"))).unwrap();
-            let decoded = FcstdCodec
-                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-                .unwrap();
-            let model = &decoded.ir().model;
-            let report = measured(&label, decoded.ir()).unwrap();
-            let pad = model
-                .features
-                .iter()
-                .find(|feature| feature.name.as_deref() == Some("Pad"))
-                .unwrap();
-            assert_recipe_pad_topology(decoded.ir(), pad, periodic, height, &label);
-            let [result] = pad.evaluation.outputs().as_slice() else {
-                panic!("{label}: expected one pad body")
-            };
-            let pad_body = report
-                .bodies()
-                .iter()
-                .find(|body| body.body() == result.as_str())
-                .unwrap();
-            assert!(
-                pad_body
-                    .volume()
+    for (variant, periodic, volume, height) in [
+        ("a", true, 5000.0 / 3.0, 5.0),
+        ("b", true, 2000.0, 6.0),
+        ("c", false, 4750.0 / 3.0, 5.0),
+    ] {
+        let label = format!("recipe_{version}_N04{variant}");
+        let bytes = std::fs::read(root.join(format!("{label}.FCStd"))).unwrap();
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let model = &decoded.ir().model;
+        let report = measured(&label, decoded.ir()).unwrap();
+        let pad = model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Pad"))
+            .unwrap();
+        assert_recipe_pad_topology(decoded.ir(), pad, periodic, height, &label);
+        let [result] = pad.evaluation.outputs().as_slice() else {
+            panic!("{label}: expected one pad body")
+        };
+        let pad_body = report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == result.as_str())
+            .unwrap();
+        assert!(
+            pad_body
+                .volume()
+                .as_ref()
+                .and_then(|value| value.measured())
+                .is_some(),
+            "{label}: pad volume"
+        );
+        let profile_area = if periodic { 1000.0 / 3.0 } else { 950.0 / 3.0 };
+        let root_two = 2.0_f64.sqrt();
+        let perimeter = if periodic {
+            40.0 + 20.0 * root_two * 1.0_f64.asinh()
+        } else {
+            46.0 + 5.0 * root_two * 1.0_f64.asinh()
+                + 16.0 * 5.0_f64.sqrt() * (0.5_f64.asinh() + 2.0_f64.asinh()) / 5.0
+        };
+        let area = pad_body.area().as_ref().unwrap().measured().unwrap();
+        let expected_area = 2.0 * profile_area + perimeter * height;
+        assert!(
+            (area.value().value.get() - expected_area).abs() < AREA_TOLERANCE,
+            "{label}: area {} expected {expected_area}",
+            area.value().value.get()
+        );
+        assert!(
+            (area.value().value.get() - expected_area).abs()
+                <= area.numeric_error().get() + area.model_uncertainty().get(),
+            "{label}: area {} expected {expected_area}; error {} uncertainty {}",
+            area.value().value.get(),
+            area.numeric_error().get(),
+            area.model_uncertainty().get()
+        );
+        let bodies: Vec<_> = report
+            .bodies()
+            .iter()
+            .filter(|body| {
+                body.volume()
                     .as_ref()
                     .and_then(|value| value.measured())
-                    .is_some(),
-                "{label}: pad volume"
-            );
-            let profile_area = if periodic { 1000.0 / 3.0 } else { 950.0 / 3.0 };
-            let root_two = 2.0_f64.sqrt();
-            let perimeter = if periodic {
-                40.0 + 20.0 * root_two * 1.0_f64.asinh()
-            } else {
-                46.0 + 5.0 * root_two * 1.0_f64.asinh()
-                    + 16.0 * 5.0_f64.sqrt() * (0.5_f64.asinh() + 2.0_f64.asinh()) / 5.0
-            };
-            let area = pad_body.area().as_ref().unwrap().measured().unwrap();
-            let expected_area = 2.0 * profile_area + perimeter * height;
+                    .is_some()
+            })
+            .collect();
+        assert!(!bodies.is_empty(), "{label}: measured body");
+        for body in bodies {
+            let reading = body.volume().as_ref().unwrap().measured().unwrap();
+            let actual = reading.value().value.get();
             assert!(
-                (area.value().value.get() - expected_area).abs() < AREA_TOLERANCE,
-                "{label}: area {} expected {expected_area}",
-                area.value().value.get()
+                (actual - volume).abs() < VOLUME_TOLERANCE,
+                "{label}: volume {actual}"
             );
             assert!(
-                (area.value().value.get() - expected_area).abs()
-                    <= area.numeric_error().get() + area.model_uncertainty().get(),
-                "{label}: area {} expected {expected_area}; error {} uncertainty {}",
-                area.value().value.get(),
-                area.numeric_error().get(),
-                area.model_uncertainty().get()
+                (actual - volume).abs()
+                    <= reading.numeric_error().get() + reading.model_uncertainty().get(),
+                "{label}: volume {actual} expected {volume}; error {} uncertainty {}",
+                reading.numeric_error().get(),
+                reading.model_uncertainty().get()
             );
-            let bodies: Vec<_> = report
-                .bodies()
-                .iter()
-                .filter(|body| {
-                    body.volume()
-                        .as_ref()
-                        .and_then(|value| value.measured())
-                        .is_some()
-                })
-                .collect();
-            assert!(!bodies.is_empty(), "{label}: measured body");
-            for body in bodies {
-                let reading = body.volume().as_ref().unwrap().measured().unwrap();
-                let actual = reading.value().value.get();
+            if !periodic {
+                assert!((actual - 1583.33).abs() < VOLUME_TOLERANCE);
+            }
+            let bbox = body.bbox().measured().unwrap().value();
+            for (actual, expected) in bbox
+                .min
+                .coordinates()
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .into_iter()
+                .chain(
+                    bbox.max
+                        .coordinates()
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                )
+                .zip([-10.0, -10.0, 0.0, 10.0, 10.0, height])
+            {
                 assert!(
-                    (actual - volume).abs() < VOLUME_TOLERANCE,
-                    "{label}: volume {actual}"
+                    (actual - expected).abs() < BOX_TOLERANCE,
+                    "{label}: bbox {actual}"
                 );
-                assert!(
-                    (actual - volume).abs()
-                        <= reading.numeric_error().get() + reading.model_uncertainty().get(),
-                    "{label}: volume {actual} expected {volume}; error {} uncertainty {}",
-                    reading.numeric_error().get(),
-                    reading.model_uncertainty().get()
-                );
-                if !periodic {
-                    assert!((actual - 1583.33).abs() < VOLUME_TOLERANCE);
-                }
-                let bbox = body.bbox().measured().unwrap().value();
-                for (actual, expected) in bbox
-                    .min
-                    .coordinates()
-                    .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    .into_iter()
-                    .chain(
-                        bbox.max
-                            .coordinates()
-                            .map(cadmpeg_ir::scalar::FiniteReal::get),
-                    )
-                    .zip([-10.0, -10.0, 0.0, 10.0, 10.0, height])
-                {
-                    assert!(
-                        (actual - expected).abs() < BOX_TOLERANCE,
-                        "{label}: bbox {actual}"
-                    );
-                }
             }
         }
     }

@@ -13,7 +13,8 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{
@@ -169,22 +170,99 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         if name == "body_history" {
             assert_legacy_history_preconditions(&bytes);
-            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| {
-                match outcome {
-                SemanticOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
-                    "legacy history must refuse exactly the unresolved active-configuration contract"
-                ),
-                SemanticOutcome::Written { .. } => panic!("legacy history lacks a supported active configuration"),
-            }
+            // The source's lone configuration is active and owns partition 0.
+            // The writer writes it active without assuming one, and generates
+            // the envelope that states it; the history is the source's.
+            let history = |ir: &cadmpeg_ir::CadIr| {
+                (
+                    ir.model
+                        .features
+                        .iter()
+                        .map(|feature| {
+                            (
+                                feature.ordinal,
+                                feature.name.clone(),
+                                feature.source_tag.clone(),
+                                feature.suppressed,
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                    ir.model
+                        .parameters
+                        .iter()
+                        .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+                        .collect::<Vec<_>>(),
+                    ir.geometry.faces.len(),
+                )
+            };
+            let source = decode_container(&bytes).expect("legacy history decodes");
+            let fixture = bytes.as_slice();
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    assert!(
+                        !report
+                            .losses
+                            .iter()
+                            .any(|loss| loss.code.local_code()
+                                == "writer.active-configuration-assumed"),
+                        "{:#?}",
+                        report.losses
+                    );
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    let [configuration] = written.ir().model.configurations.as_slice() else {
+                        panic!("fixture `{name}`: one configuration");
+                    };
+                    assert_eq!(configuration.name.as_deref(), Some("Default"));
+                    assert!(configuration.active);
+                    assert_eq!(configuration.source_index, Some(0));
+                    assert_eq!(history(written.ir()), history(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                }
+            });
+            continue;
+        }
+        if name == "document_envelope" {
+            // The faceless part keeps its `SWObjects` member, and with it
+            // every metadata record.
+            let values = |ir: &cadmpeg_ir::CadIr| {
+                ir.model
+                    .attributes
+                    .iter()
+                    .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let source = decode_container(&bytes).expect("the envelope decodes");
+            assert!(source
+                .ir()
+                .model
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "configuration_manager"));
+            let fixture = bytes.as_slice();
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written_count += 1;
+                    assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
+                    let written = decode_container(bytes).expect("the written part decodes");
+                    assert_eq!(values(written.ir()), values(source.ir()));
+                }
+                SemanticOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                }
             });
             continue;
         }
         let source = decode_container(&bytes);
         let expected = neutral_text(&bytes, &source);
+        let fixture = bytes.as_slice();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
+                assert_members_carried_or_named(&name, fixture, bytes, &report.losses);
                 assert!(
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
@@ -215,6 +293,51 @@ fn fixtures_survive_the_semantic_write_path() {
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the semantic writer"
     );
+}
+
+/// Asserts that each member of the `source` image is a member of the
+/// `written` image or that a loss names its record. A stream the source
+/// stores several times counts each member.
+fn assert_members_carried_or_named(
+    name: &str,
+    source: &[u8],
+    written: &[u8],
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) {
+    let mut written_members = BTreeMap::<String, usize>::new();
+    for section in crate::test_support::container::scan(written).sections() {
+        *written_members
+            .entry(section.source_stream().as_str().to_owned())
+            .or_default() += 1;
+    }
+    let source_scan = crate::test_support::container::scan(source);
+    let mut source_members = BTreeMap::<&str, Vec<String>>::new();
+    for section in source_scan.sections() {
+        source_members
+            .entry(section.source_stream().as_str())
+            .or_default()
+            .push(section.native_id().as_str().to_owned());
+    }
+    for (stream, ids) in source_members {
+        let named = ids
+            .iter()
+            .filter(|id| losses.iter().any(|loss| names_record(&loss.message, id)))
+            .count();
+        let carried = written_members.get(stream).copied().unwrap_or_default();
+        assert!(
+            carried + named >= ids.len(),
+            "fixture `{name}`: the source holds {} member(s) `{stream}`; the output holds {carried} \
+             and the losses name {named}: {losses:#?}",
+            ids.len()
+        );
+    }
+}
+
+/// Whether `message` names record `id` as a whole token.
+fn names_record(message: &str, id: &str) -> bool {
+    message.match_indices(id).any(|(at, _)| {
+        !message[at + id.len()..].starts_with(|character: char| character.is_ascii_digit())
+    })
 }
 
 /// Written fixtures whose measures the semantic write lane compares, the
@@ -284,9 +407,10 @@ fn visit_blind_extrude_lengths(
     count
 }
 
-/// A blind-depth edit without a regenerated B-rep is refused.
+/// A blind-depth edit is written as edited over the stored B-rep, which the
+/// export names as the state before the edit.
 #[test]
-fn edited_blind_depth_without_regenerated_brep_is_refused() {
+fn edited_blind_depth_is_written_over_the_stored_brep_and_named() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
@@ -308,7 +432,11 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                 }) != 0
             },
             |outcome| match outcome {
-                MutationOutcome::Written { edited, bytes, .. } => {
+                MutationOutcome::Written {
+                    edited,
+                    bytes,
+                    report,
+                } => {
                     let written = SldprtCodec
                         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
                         .unwrap_or_else(|error| {
@@ -336,15 +464,20 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     assert_eq!(
                         arena_sizes(written.ir()),
                         arena_sizes(edited),
-                        "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
-                         written; entities were lost or invented"
+                        "fixture `{name}`: the written B-rep is not the stored one; entities were lost \
+                         or invented"
                     );
-                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
+                    assert!(
+                        report.losses.iter().any(|loss| loss.code
+                            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()),
+                        "fixture `{name}`: the stored B-rep shows the depth before the edit, and no \
+                         loss says so: {:?}",
+                        report.losses
+                    );
                 }
-                MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-                    "fixture `{name}`: {error}"
-                ),
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: a blind-depth edit was refused: {error}")
+                }
             },
         );
         if ran {
@@ -466,17 +599,12 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .expect("historical history fixture retains its source");
-    assert!(!result.ir().model.configurations.is_empty());
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .configurations
-            .iter()
-            .filter(|c| c.active)
-            .count(),
-        0
-    );
+    let [configuration] = result.ir().model.configurations.as_slice() else {
+        panic!("the lone Keywords configuration");
+    };
+    assert!(configuration.active);
+    assert_eq!(configuration.source_index, Some(0));
+    assert!(configuration.bodies.is_none());
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();

@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind body-recipe operands to preceding history bodies.
 
-use super::body_index::CompleteBodyIndex;
-use super::{
-    active_brep_face_matches_source, bodies_touching, effective_scope_previous_history_state_id,
-    face_changes_across_state_chain, historical_brep_source, history_state_index,
-    history_state_indexes, projection_was_finalized, selection, stable_ref,
-    unique_history_state_pair, visit_state_groups_oldest_first, BindingHistories,
+use super::binding_histories::{
+    history_state_indexes, visit_state_groups_oldest_first, BindingHistories,
 };
+use super::body_closures::{bodies_touching, stable_ref};
+use super::body_index::CompleteBodyIndex;
+use super::face_boundaries::face_changes_across_state_chain;
+use super::face_resolution::{active_brep_face_matches_source, historical_brep_source};
+use super::history_states::{
+    effective_scope_previous_history_state_id, history_state_index, unique_history_state_pair,
+};
+use super::{projection_was_finalized, selection};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 use std::collections::{BTreeSet, HashMap};
 
@@ -95,6 +99,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 bodies_touching(topology, &face_slots.iter().collect::<Vec<_>>())
             }
             .map(Vec::into_iter);
+            let closures_read = body_slots.is_some();
             let mut complete_bodies = None;
             for position in bound {
                 let Some(operand) = operands.get_mut(position) else {
@@ -106,15 +111,21 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
-                // When every face clause reaches a body of this state, the
-                // body whose last persistent design link is the recipe's
-                // design pair is the selected body.
-                let clauses_reach_state = !operand.references().is_empty()
-                    && operand
-                        .references()
+                // When every face clause reaches a body of this state, or every
+                // clause has candidate faces and all of them are outside it, the
+                // body whose last persistent design link is the recipe's design
+                // pair is the selected body.
+                let references = operand.references();
+                let design_link_applies = closures_read
+                    && !references.is_empty()
+                    && (references
                         .iter()
-                        .all(|reference| !reference.preceding_body_slots.is_empty());
-                if let Some(body) = clauses_reach_state
+                        .all(|reference| !reference.preceding_body_slots.is_empty())
+                        || references.iter().all(|reference| {
+                            !reference.candidate_faces.is_empty()
+                                && reference.preceding_candidate_faces.is_empty()
+                        }));
+                if let Some(body) = design_link_applies
                     .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))
                     .flatten()
                 {

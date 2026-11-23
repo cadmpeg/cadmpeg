@@ -1173,7 +1173,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         result
@@ -1184,7 +1184,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         constraint(6).definition.kind(),

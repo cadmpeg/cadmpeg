@@ -213,7 +213,7 @@ pub(crate) fn read(
     ) else {
         return Ok(Reading::Unread(Unread::NoFeatureStreams));
     };
-    let count = crate::archive::resolved_features_count(resolved);
+    let count = crate::archive::resolved_count(resolved);
     let map = match count {
         Some(count) => crate::archive::class_index_map(config, count, ctx)?,
         None => None,

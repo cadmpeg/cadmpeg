@@ -373,11 +373,12 @@ impl Fixture {
                         parameter_owners: &native.design_parameter_owners,
                         component_occurrences: &[],
                         recipes: &[],
+                        sheet_metal_settings: &[],
                     },
                 )?
                 .scopes;
             native.design_construction_operand_groups =
-                crate::design::decode::operands::decode_construction_operand_groups(
+                crate::design::decode::operands::construction_groups::decode_construction_operand_groups(
                     scan,
                     &mut native.design_parameter_scopes,
                     &native.design_record_headers,

@@ -204,6 +204,39 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     (bytes, metadata)
 }
 
+#[test]
+fn unreadable_visibility_keeps_its_sibling_visibility() {
+    use crate::design::test_support::primary_record;
+    use crate::records::identity::ReferenceRun;
+    use crate::test_support::{lp_ascii, lp_utf16};
+
+    let (mut bytes, mut metadata) = visibility_stream();
+    *bytes.last_mut().unwrap() = 1;
+    let sibling_start = bytes.len();
+    lp_ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&202u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 5]);
+    bytes.push(0);
+    lp_utf16(&mut bytes, "0_202");
+    let mut sibling = member(2, 1);
+    sibling[4..7].copy_from_slice(b"257");
+    sibling[7..15].copy_from_slice(&202u64.to_le_bytes());
+    bytes.extend_from_slice(&sibling);
+    metadata.records.push(primary_record(202, sibling_start));
+    metadata.types[0].entities = ReferenceRun::unlocated(vec![ENTITY_SUFFIX, 202]);
+    let (rows, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].0, 202);
+    assert!(rows[0].1.visible);
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::F3dLossCode::SketchContainerUndecoded.kind())
+            .count(),
+        1
+    );
+}
+
 fn collection_stream(
     named_collection: u64,
     collections: &[(u64, &[u64])],
@@ -441,6 +474,21 @@ fn folder_sketch_uses_parent_collection() {
 }
 
 #[test]
+fn unread_folder_charges_one_loss_for_its_sketches() {
+    // The folder flag must be 0 or 1, so this folder frame is unread. The
+    // sketch and the parent collection both name it.
+    let (mut bytes, mut metadata) = collection_stream(500, &[(300, &[500])]);
+    append_folder(&mut bytes, &mut metadata, "Folder Name", 2, 8);
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].1.ordinal_collection, None);
+    assert_eq!(
+        losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
+        [&crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
+    );
+}
+
+#[test]
 fn collection_run_allows_uninterpreted_frame_tail() {
     let (mut bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     bytes.extend_from_slice(&[0; 3]);
@@ -478,7 +526,11 @@ fn sketch_visibility_requires_plain_nonzero_local_collection_reference() {
     assert!(decode_sketch_visibility_member(&typed, 0, ENTITY_SUFFIX).is_none());
     let (mut bytes, metadata) = visibility_stream();
     bytes.truncate(bytes.len() - 10);
-    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+    let (rows, losses) = decode_with_losses(&bytes, &metadata);
+    assert!(rows.is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::SketchContainerUndecoded.kind()));
 }
 
 #[test]
@@ -486,15 +538,34 @@ fn collection_counted_run_requires_complete_plain_local_references() {
     let (valid, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     let reference_at = valid.len() - 11;
     for end in reference_at..valid.len() {
-        assert!(decode_sketch_visibilities_in_stream(&valid[..end], &metadata).is_err());
+        let (rows, losses) = decode_with_losses(&valid[..end], &metadata);
+        assert_eq!(rows.len(), 1);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind()));
     }
     let mut null_target = valid.clone();
     null_target[reference_at + 1..reference_at + 9].fill(0);
-    assert!(decode_sketch_visibilities_in_stream(&null_target, &metadata).is_err());
+    let (rows, losses) = decode_with_losses(&null_target, &metadata);
+    assert_eq!(rows.len(), 1);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
+    );
     let mut cross_segment = valid;
     cross_segment[reference_at + 10] = 1;
     cross_segment.extend_from_slice(&1u32.to_le_bytes());
-    assert!(decode_sketch_visibilities_in_stream(&cross_segment, &metadata).is_err());
+    let (rows, losses) = decode_with_losses(&cross_segment, &metadata);
+    assert_eq!(rows.len(), 1);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
+    );
 }
 
 #[test]

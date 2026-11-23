@@ -6,7 +6,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FiniteVector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::BTreeMap;
 
@@ -356,11 +356,12 @@ mod tests {
     };
 
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::geometry::FiniteVector3;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::{
-        features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3},
-        scalar::{FiniteReal, Length},
-    };
+    use cadmpeg_ir::scalar::{FiniteReal, Length};
     use std::collections::BTreeMap;
 
     fn enrich_history_move_face_translations_test(

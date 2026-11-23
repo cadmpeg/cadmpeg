@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support contexts of historical face selections in the preceding state.
 
-use super::{face_boundary_contexts_for_slots, stable_ref, TopologyQueryCache};
+use super::body_closures::stable_ref;
+use super::face_boundaries::face_boundary_contexts_for_slots;
+use crate::history::topology_cache::TopologyQueryCache;
 use crate::history_records::{AsmHistoricalTopology, AsmHistory};
 use std::collections::HashSet;
 

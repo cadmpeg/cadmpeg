@@ -1,0 +1,993 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Deterministic IGES stress inputs for byte-freeze and timing sweeps.
+//!
+//! Writes six multi-megabyte files, each leaning on one decode hot path:
+//! dense Type 102 composite chains, Type 128/142/144 trimmed surfaces,
+//! counted lists filled to their declared boundaries, deep trailing pointer
+//! groups, long Type 212/213 text runs, and a soup of unowned free curves.
+//! Every value comes from fixed literals and a constant-seed LCG — no clock,
+//! no environment, no float formatting — so each run reproduces the same
+//! bytes, and the tests in this file pin every file's length and SHA-256.
+//! After any deliberate change to the emitted bytes, regenerate and repin
+//! those digests from a fresh run.
+//!
+//! ```text
+//! cargo run -p cadmpeg-codec-iges --example iges_stress -- OUTPUT_DIRECTORY
+//! cargo run -p cadmpeg-codec-iges --example iges_stress -- --fast OUTPUT_DIRECTORY
+//! ```
+
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use cadmpeg_ir::hash::sha256_hex;
+
+const CARD_DATA_COLUMNS: usize = 72;
+const PARAMETER_COLUMNS: usize = 64;
+const DIRECTORY_FIELD_COLUMNS: usize = 8;
+const SEQUENCE_COLUMNS: usize = 7;
+
+const GLOBAL: &str =
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,\
+     15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+
+const RIGHT_ANGLE: &str = "1.5707963267948966";
+
+const INDEPENDENT: &str = "00000000";
+const PHYSICALLY_DEPENDENT: &str = "00010000";
+const PARAMETRIC_DEPENDENT: &str = "00010500";
+
+struct Item {
+    entity_type: u32,
+    form: i64,
+    label: &'static str,
+    status: &'static str,
+    parameters: String,
+}
+
+fn item(
+    entity_type: u32,
+    form: i64,
+    label: &'static str,
+    status: &'static str,
+    parameters: String,
+) -> Item {
+    Item {
+        entity_type,
+        form,
+        label,
+        status,
+        parameters,
+    }
+}
+
+struct Record(String);
+
+impl Record {
+    fn new(entity_type: u32) -> Self {
+        Self(entity_type.to_string())
+    }
+
+    fn integer(&mut self, value: i64) {
+        self.0.push(',');
+        self.0.push_str(&value.to_string());
+    }
+
+    fn integers(&mut self, values: &[i64]) {
+        for value in values {
+            self.integer(*value);
+        }
+    }
+
+    /// One unsigned parameter, such as a Directory sequence.
+    fn unsigned(&mut self, value: u64) {
+        self.0.push(',');
+        self.0.push_str(&value.to_string());
+    }
+
+    /// One counted length, which is a decimal parameter already.
+    fn count(&mut self, value: usize) {
+        self.unsigned(cadmpeg_core::decode::u64_from_index(value));
+    }
+
+    fn real(&mut self, thousandths: i64) -> Result<(), &'static str> {
+        let magnitude = thousandths.unsigned_abs();
+        self.0.push(',');
+        if thousandths < 0 {
+            self.0.push('-');
+        }
+        self.0.push_str(&(magnitude / 1000).to_string());
+        self.0.push('.');
+        // A thousandths remainder is three digits wide, so the fixed field is
+        // written digit by digit rather than padded by a formatter.
+        let thousandths = magnitude % 1000;
+        for place in [100, 10, 1] {
+            let digit =
+                u8::try_from(thousandths / place % 10).map_err(|_| "decimal digit exceeds u8")?;
+            self.0.push(char::from(b'0' + digit));
+        }
+        Ok(())
+    }
+
+    fn reals(&mut self, values: &[i64]) -> Result<(), &'static str> {
+        for value in values {
+            self.real(*value)?;
+        }
+        Ok(())
+    }
+
+    fn verbatim(&mut self, value: &str) {
+        self.0.push(',');
+        self.0.push_str(value);
+    }
+
+    fn hollerith(&mut self, value: &str) {
+        self.0.push(',');
+        self.0.push_str(&value.len().to_string());
+        self.0.push('H');
+        self.0.push_str(value);
+    }
+
+    fn finish(self) -> String {
+        let mut text = self.0;
+        text.push(';');
+        text
+    }
+}
+
+struct Lcg(u64);
+
+impl Lcg {
+    const fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+
+    fn next(&mut self) -> Result<u64, &'static str> {
+        let next = u128::from(self.0)
+            .checked_mul(6_364_136_223_846_793_005)
+            .and_then(|value| value.checked_add(1_442_695_040_888_963_407))
+            .ok_or("random state arithmetic overflow")?;
+        self.0 = u64::try_from(next % (u128::from(u64::MAX) + 1))
+            .map_err(|_| "random state exceeds u64")?;
+        Ok(self.0 >> 16)
+    }
+
+    fn below(&mut self, bound: u64) -> Result<u64, &'static str> {
+        self.next()?
+            .checked_rem(bound)
+            .ok_or("random bound is zero")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scale {
+    Full,
+    Fast,
+}
+
+impl Scale {
+    const fn pick(self, full: usize, fast: usize) -> usize {
+        match self {
+            Self::Full => full,
+            Self::Fast => fast,
+        }
+    }
+}
+
+fn right_aligned(field: &mut [u8], value: u64) -> Result<(), &'static str> {
+    field.fill(b' ');
+    let mut index = field.len();
+    let mut rest = value;
+    loop {
+        assert!(index > 0, "value does not fit the fixed field width");
+        index -= 1;
+        let digit = u8::try_from(rest % 10).map_err(|_| "decimal digit exceeds u8")?;
+        field[index] = b'0' + digit;
+        rest /= 10;
+        if rest == 0 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) -> Result<(), &'static str> {
+    assert!(
+        data.len() <= CARD_DATA_COLUMNS,
+        "card data exceeds the seventy-two data columns"
+    );
+    out.extend_from_slice(data);
+    out.extend(std::iter::repeat_with(|| b' ').take(CARD_DATA_COLUMNS - data.len()));
+    out.push(section);
+    let mut field = [b' '; SEQUENCE_COLUMNS];
+    right_aligned(&mut field, sequence)?;
+    out.extend_from_slice(&field);
+    out.push(b'\n');
+    Ok(())
+}
+
+fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) -> Result<(), &'static str> {
+    let mut data = [b' '; CARD_DATA_COLUMNS];
+    for (index, field) in fields.iter().enumerate() {
+        assert!(
+            field.len() <= DIRECTORY_FIELD_COLUMNS,
+            "directory field exceeds eight columns"
+        );
+        let end = index * DIRECTORY_FIELD_COLUMNS + DIRECTORY_FIELD_COLUMNS;
+        data[end - field.len()..end].copy_from_slice(field.as_bytes());
+    }
+    card(out, &data, b'D', sequence)
+}
+
+fn parameter_card(
+    out: &mut Vec<u8>,
+    data: &[u8],
+    owner: u64,
+    sequence: u64,
+) -> Result<(), &'static str> {
+    assert!(
+        data.len() <= PARAMETER_COLUMNS,
+        "parameter fragment exceeds the sixty-four data columns"
+    );
+    let mut payload = [b' '; CARD_DATA_COLUMNS];
+    payload[..data.len()].copy_from_slice(data);
+    right_aligned(&mut payload[PARAMETER_COLUMNS..], owner)?;
+    card(out, &payload, b'P', sequence)
+}
+
+/// The Directory sequence of the entity at `index`: odd and one-based.
+///
+/// A `usize` position converts to `u64` with no loss on every supported
+/// target, so the sequence needs no range check. `right_aligned` refuses a
+/// sequence that does not fit its fixed card field.
+fn directory_sequence(index: usize) -> u64 {
+    cadmpeg_core::decode::u64_from_index(index * 2 + 1)
+}
+
+fn assemble(start_text: &str, entities: &[Item]) -> Result<Vec<u8>, &'static str> {
+    let mut bytes = Vec::new();
+    card(&mut bytes, start_text.as_bytes(), b'S', 1)?;
+    let mut global_cards: u64 = 0;
+    for chunk in GLOBAL.as_bytes().chunks(CARD_DATA_COLUMNS) {
+        global_cards += 1;
+        card(&mut bytes, chunk, b'G', global_cards)?;
+    }
+    let mut parameter_start: u64 = 1;
+    for (index, entry) in entities.iter().enumerate() {
+        assert!(
+            !entry.parameters.is_empty(),
+            "every entity owns at least one parameter card"
+        );
+        let sequence = directory_sequence(index);
+        let line_count = cadmpeg_core::decode::u64_from_index(
+            entry.parameters.len().div_ceil(PARAMETER_COLUMNS),
+        );
+        let entity_type = entry.entity_type.to_string();
+        let form = entry.form.to_string();
+        let start_field = parameter_start.to_string();
+        let count_field = line_count.to_string();
+        directory_card(
+            &mut bytes,
+            [
+                &entity_type,
+                &start_field,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                entry.status,
+            ],
+            sequence,
+        )?;
+        directory_card(
+            &mut bytes,
+            [
+                &entity_type,
+                "0",
+                "0",
+                &count_field,
+                &form,
+                "",
+                "",
+                entry.label,
+                "0",
+            ],
+            sequence + 1,
+        )?;
+        parameter_start += line_count;
+    }
+    let mut parameter_sequence: u64 = 1;
+    for (index, entry) in entities.iter().enumerate() {
+        let owner = directory_sequence(index);
+        for chunk in entry.parameters.as_bytes().chunks(PARAMETER_COLUMNS) {
+            parameter_card(&mut bytes, chunk, owner, parameter_sequence)?;
+            parameter_sequence += 1;
+        }
+    }
+    let terminate = format!(
+        "S0000001G{global_cards:07}D{:07}P{:07}",
+        entities.len() * 2,
+        parameter_sequence - 1
+    );
+    card(&mut bytes, terminate.as_bytes(), b'T', 1)?;
+    Ok(bytes)
+}
+
+fn chain_vertex(index: usize) -> Result<[i64; 3], &'static str> {
+    let step = i64::try_from(index).map_err(|_| "chain vertex index exceeds i64")?;
+    Ok([step * 125, (step * step) % 977 * 37, 0])
+}
+
+fn chain_segment(index: usize) -> Result<Item, &'static str> {
+    let start = chain_vertex(index)?;
+    let end = chain_vertex(index + 1)?;
+    Ok(if index.is_multiple_of(2) {
+        let mut record = Record::new(110);
+        record.reals(&start)?;
+        record.reals(&end)?;
+        item(110, 0, "CHAINLIN", PHYSICALLY_DEPENDENT, record.finish())
+    } else {
+        let mut record = Record::new(126);
+        record.integers(&[1, 1, 1, 0, 1, 0]);
+        record.integers(&[0, 0, 1, 1]);
+        record.integers(&[1, 1]);
+        record.reals(&start)?;
+        record.reals(&end)?;
+        record.integers(&[0, 1]);
+        record.integers(&[0, 0, 1]);
+        item(126, 0, "CHAINNUR", PHYSICALLY_DEPENDENT, record.finish())
+    })
+}
+
+fn composite_chains(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let pool = scale.pick(12_000, 400);
+    let children = scale.pick(240, 24);
+    let overlapping = scale.pick(1_000, 40);
+    let nests = scale.pick(200, 10);
+    let nest_size = 8;
+    let tiles = pool / children;
+    assert!(tiles > nest_size, "the chain holds at least one nested run");
+    let mut entities = Vec::new();
+    for index in 0..pool {
+        entities.push(chain_segment(index)?);
+    }
+    let tile_base = entities.len();
+    for tile in 0..tiles {
+        let mut record = Record::new(102);
+        record.count(children);
+        for child in 0..children {
+            record.unsigned(directory_sequence(tile * children + child));
+        }
+        entities.push(item(
+            102,
+            0,
+            "TILECURV",
+            PHYSICALLY_DEPENDENT,
+            record.finish(),
+        ));
+    }
+    for index in 0..overlapping {
+        let first = (index * 7) % (pool - children);
+        let mut record = Record::new(102);
+        record.count(children);
+        for child in 0..children {
+            record.unsigned(directory_sequence(first + child));
+        }
+        entities.push(item(102, 0, "OVERCURV", INDEPENDENT, record.finish()));
+    }
+    for index in 0..nests {
+        let first = (index * 3) % (tiles - nest_size);
+        let mut record = Record::new(102);
+        record.count(nest_size);
+        for child in 0..nest_size {
+            record.unsigned(directory_sequence(tile_base + first + child));
+        }
+        entities.push(item(102, 0, "NESTCURV", INDEPENDENT, record.finish()));
+    }
+    assemble("cadmpeg IGES stress: dense Type 102 chains", &entities)
+}
+
+fn unit_square(scale: i64, offset: i64) -> [[i64; 2]; 5] {
+    [
+        [offset, offset],
+        [offset + scale, offset],
+        [offset + scale, offset + scale],
+        [offset, offset + scale],
+        [offset, offset],
+    ]
+}
+
+fn closed_polyline(common: i64, corners: [[i64; 2]; 5]) -> Result<String, &'static str> {
+    let mut record = Record::new(106);
+    record.integers(&[1, 5]);
+    record.real(common)?;
+    for corner in corners {
+        record.reals(&corner)?;
+    }
+    Ok(record.finish())
+}
+
+fn bilinear_patch(height: i64) -> Result<String, &'static str> {
+    let mut record = Record::new(128);
+    record.integers(&[1, 1, 1, 1, 0, 0, 1, 0, 0]);
+    record.integers(&[0, 0, 1, 1]);
+    record.integers(&[0, 0, 1, 1]);
+    record.integers(&[1, 1, 1, 1]);
+    for corner in [[0, 0], [1000, 0], [0, 1000], [1000, 1000]] {
+        record.reals(&[corner[0], corner[1], height])?;
+    }
+    record.integers(&[0, 1, 0, 1]);
+    Ok(record.finish())
+}
+
+fn trimmed_surfaces(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let blocks = scale.pick(1_400, 30);
+    let inner_loops = 3;
+    let mut entities = Vec::new();
+    for block in 0..blocks {
+        let base = entities.len();
+        let height = (i64::try_from(block).map_err(|_| "stress index exceeds i64")? % 200) * 5;
+        entities.push(item(
+            128,
+            0,
+            "PATCH",
+            PHYSICALLY_DEPENDENT,
+            bilinear_patch(height)?,
+        ));
+        let mut boundaries = Vec::new();
+        for loop_index in 0..=inner_loops {
+            let corners = if loop_index == 0 {
+                unit_square(1000, 0)
+            } else {
+                unit_square(
+                    150,
+                    100 + 250
+                        * (i64::try_from(loop_index).map_err(|_| "stress index exceeds i64")? - 1),
+                )
+            };
+            let model = entities.len();
+            entities.push(item(
+                106,
+                63,
+                "LOOPMODL",
+                PHYSICALLY_DEPENDENT,
+                closed_polyline(height, corners)?,
+            ));
+            let pcurve = entities.len();
+            entities.push(item(
+                106,
+                63,
+                "LOOPPCUR",
+                PARAMETRIC_DEPENDENT,
+                closed_polyline(0, corners)?,
+            ));
+            let mut record = Record::new(142);
+            record.integer(0);
+            record.unsigned(directory_sequence(base));
+            record.unsigned(directory_sequence(pcurve));
+            record.unsigned(directory_sequence(model));
+            record.integer(1);
+            boundaries.push(entities.len());
+            entities.push(item(
+                142,
+                0,
+                "ONSURF",
+                PHYSICALLY_DEPENDENT,
+                record.finish(),
+            ));
+        }
+        let mut record = Record::new(144);
+        record.unsigned(directory_sequence(base));
+        record.integer(1);
+        record.count(inner_loops);
+        record.unsigned(directory_sequence(boundaries[0]));
+        for boundary in &boundaries[1..] {
+            record.unsigned(directory_sequence(*boundary));
+        }
+        entities.push(item(144, 0, "TRIMMED", INDEPENDENT, record.finish()));
+    }
+    assemble(
+        "cadmpeg IGES stress: Type 128/142/144 trimmed surfaces",
+        &entities,
+    )
+}
+
+fn counted_lists(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let points = scale.pick(2_000, 100);
+    let group_members = scale.pick(1_500, 60);
+    let groups = scale.pick(150, 6);
+    let levels = scale.pick(1_200, 50);
+    let level_properties = scale.pick(150, 6);
+    let triples = scale.pick(800, 40);
+    let copious_records = scale.pick(120, 8);
+    let positions = scale.pick(1_000, 40);
+    let arrays = scale.pick(150, 6);
+    let mut seed = Lcg::new(0x1963_0503_1120_0001);
+    let mut entities = Vec::new();
+    for index in 0..points {
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
+        let mut record = Record::new(116);
+        record.reals(&[step * 7, step * 13 % 4001, step * 3 % 907])?;
+        record.integer(0);
+        entities.push(item(116, 0, "SITE", INDEPENDENT, record.finish()));
+    }
+    for index in 0..groups {
+        let mut record = Record::new(402);
+        record.count(group_members);
+        for member in 0..group_members {
+            let target = (index * 13 + member) % points;
+            record.unsigned(directory_sequence(target));
+        }
+        entities.push(item(402, 7, "GROUP", INDEPENDENT, record.finish()));
+    }
+    for index in 0..level_properties {
+        let mut record = Record::new(406);
+        record.count(levels);
+        let base = i64::try_from(index * levels).map_err(|_| "stress index exceeds i64")?;
+        for level in 0..levels {
+            record.integer(base + i64::try_from(level).map_err(|_| "stress index exceeds i64")?);
+        }
+        entities.push(item(406, 1, "LEVELS", INDEPENDENT, record.finish()));
+    }
+    for index in 0..copious_records {
+        let mut record = Record::new(106);
+        record.integer(2);
+        record.count(triples);
+        let defaulted_tail = index % 2 == 1;
+        for tuple in 0..triples {
+            let step =
+                i64::try_from(index * triples + tuple).map_err(|_| "stress index exceeds i64")?;
+            record.real(step % 9973 * 3)?;
+            record.real(step % 8971 * 5)?;
+            if !defaulted_tail || tuple + 1 < triples {
+                record.real(step % 7963 * 7)?;
+            }
+        }
+        entities.push(item(106, 2, "TUPLES", INDEPENDENT, record.finish()));
+    }
+    for index in 0..arrays {
+        let base = cadmpeg_core::decode::index_from_u64(
+            seed.below(cadmpeg_core::decode::u64_from_index(points))?,
+        )
+        .ok_or("random point index exceeds usize")?;
+        let mut record = Record::new(412);
+        record.unsigned(directory_sequence(base));
+        record.real(1_000)?;
+        record.reals(&[0, 0, 0])?;
+        record.integers(&[8, 8]);
+        record.reals(&[2_000, 2_000])?;
+        record.real(0)?;
+        record.count(positions);
+        record.integer(0);
+        for position in 0..positions {
+            record.count((index + position) % 64 + 1);
+        }
+        entities.push(item(412, 0, "ARRAY", INDEPENDENT, record.finish()));
+    }
+    assemble(
+        "cadmpeg IGES stress: counted lists at their boundaries",
+        &entities,
+    )
+}
+
+fn trailing_groups(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let points = scale.pick(240, 24);
+    let associations = scale.pick(64, 8);
+    let properties = scale.pick(64, 8);
+    let carriers = scale.pick(1_500, 40);
+    let association_depth = scale.pick(180, 12);
+    let property_depth = scale.pick(180, 12);
+    let mut entities = Vec::new();
+    for index in 0..points {
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
+        let mut record = Record::new(116);
+        record.reals(&[step * 11, step * 17 % 3001, step * 5 % 1009])?;
+        record.integer(0);
+        entities.push(item(116, 0, "ANCHOR", INDEPENDENT, record.finish()));
+    }
+    let association_base = entities.len();
+    for index in 0..associations {
+        let mut record = Record::new(402);
+        record.integer(3);
+        for member in 0..3usize {
+            record.unsigned(directory_sequence((index * 3 + member) % points));
+        }
+        entities.push(item(402, 7, "ASSOC", INDEPENDENT, record.finish()));
+    }
+    let property_base = entities.len();
+    for index in 0..properties {
+        let mut record = Record::new(406);
+        record.integer(3);
+        let base = i64::try_from(index * 3).map_err(|_| "stress index exceeds i64")?;
+        record.integers(&[base, base + 1, base + 2]);
+        entities.push(item(406, 1, "PROPERTY", INDEPENDENT, record.finish()));
+    }
+    let append_groups = |record: &mut Record, index: usize| {
+        record.count(association_depth);
+        for slot in 0..association_depth {
+            let target = association_base + (index * 5 + slot) % associations;
+            record.unsigned(directory_sequence(target));
+        }
+        record.count(property_depth);
+        for slot in 0..property_depth {
+            let target = property_base + (index * 3 + slot) % properties;
+            record.unsigned(directory_sequence(target));
+        }
+    };
+    for index in 0..carriers {
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
+        match index % 3 {
+            0 => {
+                let mut record = Record::new(110);
+                record.reals(&[step * 9, step * 3 % 5003, 0])?;
+                record.reals(&[step * 9 + 1_000, step * 3 % 5003, 0])?;
+                append_groups(&mut record, index);
+                entities.push(item(110, 0, "CARRYLIN", INDEPENDENT, record.finish()));
+            }
+            1 => {
+                let mut record = Record::new(116);
+                record.reals(&[step * 4, step * 6 % 4003, step * 2 % 2003])?;
+                record.integer(0);
+                append_groups(&mut record, index);
+                entities.push(item(116, 0, "CARRYPNT", INDEPENDENT, record.finish()));
+            }
+            _ => {
+                let mut record = Record::new(123);
+                record.reals(&[0, 0, 1_000])?;
+                append_groups(&mut record, index);
+                entities.push(item(
+                    123,
+                    0,
+                    "CARRYDIR",
+                    PHYSICALLY_DEPENDENT,
+                    record.finish(),
+                ));
+            }
+        }
+    }
+    assemble(
+        "cadmpeg IGES stress: deep trailing pointer groups",
+        &entities,
+    )
+}
+
+fn text_run(seed: &mut Lcg, length: usize) -> Result<String, &'static str> {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:+*/#";
+    let mut text = String::new();
+    for _ in 0..length {
+        let pick = cadmpeg_core::decode::index_from_u64(
+            seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len()))?,
+        )
+        .ok_or("random character index exceeds usize")?;
+        text.push(char::from(ALPHABET[pick]));
+    }
+    Ok(text)
+}
+
+fn annotation_runs(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let general_notes = scale.pick(400, 12);
+    let general_strings = scale.pick(60, 8);
+    let new_notes = scale.pick(200, 8);
+    let new_strings = scale.pick(30, 5);
+    let mut seed = Lcg::new(0x0212_0213_0000_002d);
+    let mut entities = Vec::new();
+    for index in 0..general_notes {
+        let mut record = Record::new(212);
+        record.count(general_strings);
+        for string in 0..general_strings {
+            let length = 40 + (index + string) % 41;
+            let text = text_run(&mut seed, length)?;
+            record.count(text.len());
+            record.reals(&[3_000, 2_000])?;
+            record.integer(1);
+            record.verbatim(RIGHT_ANGLE);
+            record.real(0)?;
+            record.integers(&[0, 0]);
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 97) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 89) * 250,
+                0,
+            ])?;
+            record.hollerith(&text);
+        }
+        entities.push(item(212, 0, "NOTE", INDEPENDENT, record.finish()));
+    }
+    for index in 0..new_notes {
+        let mut record = Record::new(213);
+        record.reals(&[40_000, 20_000])?;
+        record.integer(2);
+        record.reals(&[0, 20_000, 0, 0, 0, 18_000, 0, -5_000])?;
+        record.count(new_strings);
+        for string in 0..new_strings {
+            let length = 32 + (index + string) % 49;
+            let style = text_run(&mut seed, 4)?;
+            let text = text_run(&mut seed, length)?;
+            record.integer(0);
+            record.reals(&[2_000, 3_000, -500])?;
+            record.real(0)?;
+            record.integer(18);
+            record.real(0)?;
+            record.hollerith(&style);
+            record.count(text.len());
+            record.reals(&[12_000, 3_000])?;
+            record.integer(1);
+            record.verbatim(RIGHT_ANGLE);
+            record.real(0)?;
+            record.integers(&[0, 0]);
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 83) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 79) * 250,
+                0,
+            ])?;
+            record.hollerith(&text);
+        }
+        entities.push(item(213, 0, "NEWNOTE", INDEPENDENT, record.finish()));
+    }
+    assemble(
+        "cadmpeg IGES stress: long Type 212 and 213 text runs",
+        &entities,
+    )
+}
+
+fn free_curve_soup(scale: Scale) -> Result<Vec<u8>, &'static str> {
+    let curves = scale.pick(20_000, 400);
+    let path_points = scale.pick(24, 6);
+    let mut entities = Vec::new();
+    for index in 0..curves {
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
+        let plane = step % 61 * 250;
+        match index % 5 {
+            0 => {
+                let mut record = Record::new(110);
+                record.reals(&[step * 3 % 7001, step * 5 % 6007, plane])?;
+                record.reals(&[step * 3 % 7001 + 1_500, step * 5 % 6007 + 750, plane])?;
+                entities.push(item(110, 0, "FREELINE", INDEPENDENT, record.finish()));
+            }
+            1 => {
+                let radius = 500 + step % 47 * 125;
+                let centre = [step * 7 % 8009, step * 11 % 8011];
+                let mut record = Record::new(100);
+                record.real(plane)?;
+                record.reals(&centre)?;
+                record.reals(&[centre[0] + radius, centre[1]])?;
+                record.reals(&[centre[0], centre[1] + radius])?;
+                entities.push(item(100, 0, "FREEARC", INDEPENDENT, record.finish()));
+            }
+            2 => {
+                let mut record = Record::new(126);
+                record.integers(&[1, 1, 1, 0, 1, 0]);
+                record.integers(&[0, 0, 1, 1]);
+                record.integers(&[1, 1]);
+                record.reals(&[step * 13 % 5003, step * 17 % 5009, plane])?;
+                record.reals(&[step * 13 % 5003 + 2_000, step * 17 % 5009 + 1_000, plane])?;
+                record.integers(&[0, 1]);
+                record.integers(&[0, 0, 1]);
+                entities.push(item(126, 0, "FREENURB", INDEPENDENT, record.finish()));
+            }
+            3 => {
+                let mut record = Record::new(106);
+                record.integer(2);
+                record.count(path_points);
+                for point in 0..path_points {
+                    let along = i64::try_from(point).map_err(|_| "stress index exceeds i64")?;
+                    record.reals(&[
+                        step * 2 % 4001 + along * 300,
+                        step * 6 % 4003 + along * along * 25,
+                        plane,
+                    ])?;
+                }
+                entities.push(item(106, 12, "FREEPATH", INDEPENDENT, record.finish()));
+            }
+            _ => {
+                let mut record = Record::new(116);
+                record.reals(&[step * 19 % 9001, step * 23 % 9007, plane])?;
+                record.integer(0);
+                entities.push(item(116, 0, "FREEPNT", INDEPENDENT, record.finish()));
+            }
+        }
+    }
+    assemble("cadmpeg IGES stress: free-curve soup", &entities)
+}
+
+fn generate(scale: Scale) -> Result<Vec<(&'static str, Vec<u8>)>, &'static str> {
+    Ok(vec![
+        ("stress-composite-chains.igs", composite_chains(scale)?),
+        ("stress-trimmed-surfaces.igs", trimmed_surfaces(scale)?),
+        ("stress-counted-lists.igs", counted_lists(scale)?),
+        ("stress-trailing-groups.igs", trailing_groups(scale)?),
+        ("stress-annotation-runs.igs", annotation_runs(scale)?),
+        ("stress-free-curve-soup.igs", free_curve_soup(scale)?),
+    ])
+}
+
+fn usage() -> ExitCode {
+    eprintln!("usage: iges_stress [--fast] OUTPUT_DIRECTORY");
+    ExitCode::from(2)
+}
+
+fn main() -> ExitCode {
+    let mut directory: Option<PathBuf> = None;
+    let mut scale = Scale::Full;
+    for argument in env::args_os().skip(1) {
+        if argument == "--fast" {
+            scale = Scale::Fast;
+        } else if argument.to_string_lossy().starts_with('-') || directory.is_some() {
+            return usage();
+        } else {
+            directory = Some(PathBuf::from(argument));
+        }
+    }
+    let Some(directory) = directory else {
+        return usage();
+    };
+    if let Err(error) = fs::create_dir_all(&directory) {
+        eprintln!("create {}: {error}", directory.display());
+        return ExitCode::from(2);
+    }
+    let generated = match generate(scale) {
+        Ok(generated) => generated,
+        Err(error) => {
+            eprintln!("generate IGES stress input: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    for (name, bytes) in generated {
+        let path = directory.join(name);
+        if let Err(error) = fs::write(&path, &bytes) {
+            eprintln!("write {}: {error}", path.display());
+            return ExitCode::from(2);
+        }
+        println!("{name} {} {}", bytes.len(), sha256_hex(&bytes));
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn chain_vertex_refuses_index_above_i64_range() {
+        assert_eq!(
+            super::chain_vertex(usize::MAX),
+            Err("chain vertex index exceeds i64")
+        );
+    }
+    use super::{generate, Scale, CARD_DATA_COLUMNS, SEQUENCE_COLUMNS};
+    use cadmpeg_ir::hash::sha256_hex;
+
+    const CARD_LINE_BYTES: usize = CARD_DATA_COLUMNS + 1 + SEQUENCE_COLUMNS + 1;
+
+    const FULL_DIGESTS: [(&str, usize, &str); 6] = [
+        (
+            "stress-composite-chains.igs",
+            5_330_610,
+            "787b28febef22358ac6bacb44b140741ada4700664b40b2bcb48f0ceb0fc2a9c",
+        ),
+        (
+            "stress-trimmed-surfaces.igs",
+            5_783_724,
+            "04f7dc5690ce076ebf0a4ff4a26fa5189d67dfb7461dfdad0c6ebc0b3d36cb3a",
+        ),
+        (
+            "stress-counted-lists.igs",
+            6_417_306,
+            "b825511a6b72329a523dc257cb6ff3255af3dae42d59e9e028c66eff305bbc04",
+        ),
+        (
+            "stress-trailing-groups.igs",
+            3_167_748,
+            "79df7f99dacda278a0c1c129f1435d036f63dcba0d0c8afc70e34e84e3080afb",
+        ),
+        (
+            "stress-annotation-runs.igs",
+            5_337_819,
+            "3dddb78059bc61b9be521b1d87a1f48ef7100b5c39eae66104f3ba6870c69553",
+        ),
+        (
+            "stress-free-curve-soup.igs",
+            7_286_355,
+            "68b9bb8eeb7e7b9f5798905c7a06dede9779ac7e4d6a207de841ac29155156be",
+        ),
+    ];
+
+    const FAST_DIGESTS: [(&str, usize, &str); 6] = [
+        (
+            "stress-composite-chains.igs",
+            134_298,
+            "10712a5f40f54528554fee0796139ddd7e1a2c01ce5f060f610e10e1f1eb8d7a",
+        ),
+        (
+            "stress-trimmed-surfaces.igs",
+            124_254,
+            "d273b56eed232a441736c5093cc00d6aa730f353c190a3a4f968b4e458fc46f6",
+        ),
+        (
+            "stress-counted-lists.igs",
+            41_715,
+            "350f9446b94a4ce1bc04198d11556a08449d36bf1a051a6af16970eb729899bc",
+        ),
+        (
+            "stress-trailing-groups.igs",
+            23_004,
+            "d72828ca71deaec62c2653d65a6b661e714f67d2274ae255ca91d43925521dd0",
+        ),
+        (
+            "stress-annotation-runs.igs",
+            27_054,
+            "eb86ca3acf860230ee8acfcded747026c05340a58be8f79c275f69092e730cb8",
+        ),
+        (
+            "stress-free-curve-soup.igs",
+            110_484,
+            "d154fd237ae50f1ccb11ce67b96dd596b4cc0b4a95142308596882cd42b9fe0c",
+        ),
+    ];
+
+    fn framing_holds(bytes: &[u8]) {
+        assert_eq!(bytes.len() % CARD_LINE_BYTES, 0);
+        let mut markers = Vec::new();
+        let mut counts = [0u32; 5];
+        for card in bytes.chunks(CARD_LINE_BYTES) {
+            assert_eq!(card[CARD_LINE_BYTES - 1], b'\n');
+            let marker = card[CARD_DATA_COLUMNS];
+            let section = match marker {
+                b'S' => 0,
+                b'G' => 1,
+                b'D' => 2,
+                b'P' => 3,
+                b'T' => 4,
+                _ => panic!("unknown section marker"),
+            };
+            if markers.last() != Some(&section) {
+                assert!(markers.last().is_none_or(|last| *last < section));
+                markers.push(section);
+            }
+            counts[section] += 1;
+            let sequence: u32 = std::str::from_utf8(&card[CARD_DATA_COLUMNS + 1..])
+                .expect("sequence field is ASCII")
+                .trim()
+                .parse()
+                .expect("sequence field is a decimal integer");
+            assert_eq!(sequence, counts[section]);
+        }
+        assert_eq!(markers, [0, 1, 2, 3, 4]);
+        assert_eq!(counts[0], 1);
+        assert_eq!(counts[4], 1);
+        assert_eq!(counts[2] % 2, 0);
+        let terminate = &bytes[bytes.len() - CARD_LINE_BYTES..];
+        assert_eq!(
+            std::str::from_utf8(&terminate[..32]).expect("terminate card is ASCII"),
+            format!(
+                "S0000001G{:07}D{:07}P{:07}",
+                counts[1], counts[2], counts[3]
+            )
+        );
+    }
+
+    fn scale_matches_pins(scale: Scale, pins: [(&str, usize, &str); 6]) {
+        let generated = generate(scale).expect("stress fixture counts fit i64");
+        assert_eq!(generated.len(), pins.len());
+        for ((name, bytes), (expected_name, expected_length, expected_digest)) in
+            generated.into_iter().zip(pins)
+        {
+            assert_eq!(name, expected_name);
+            framing_holds(&bytes);
+            assert_eq!(bytes.len(), expected_length, "{name}");
+            assert_eq!(sha256_hex(&bytes), expected_digest, "{name}");
+        }
+    }
+
+    #[test]
+    fn full_scale_output_matches_pinned_digests() {
+        scale_matches_pins(Scale::Full, FULL_DIGESTS);
+    }
+
+    #[test]
+    fn fast_scale_output_matches_pinned_digests() {
+        scale_matches_pins(Scale::Fast, FAST_DIGESTS);
+    }
+}

@@ -5,16 +5,16 @@
 use crate::decode::append_design_losses;
 use crate::decode::assign_configuration_bodies;
 use crate::decode::mark_active_configuration;
-use cadmpeg_ir::ids::BodyId;
-use cadmpeg_ir::CadIr;
-use cadmpeg_ir::{
-    features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DesignParameter, Feature,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, ParameterId,
-        ParameterValue,
-    },
-    scalar::Length,
+use cadmpeg_ir::features::parameters::{
+    ConfigurationFeatureState, DesignConfiguration, DesignParameter, ParameterValue,
 };
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+};
+use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
 #[test]
@@ -466,6 +466,75 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     }));
 }
 
+fn unnamed_configurations_with_active_block(count: u32) -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+            "Contents/Config-3-Partition".into(),
+        )]),
+    ));
+    for ordinal in 0..count {
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:id#configuration:{ordinal}"))
+                .expect("identity grammar"),
+            ordinal,
+            active: false,
+            source_index: None,
+            name: Some(format!("Configuration {ordinal}")),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some(format!("native:{ordinal}")),
+        });
+    }
+    ir
+}
+
+#[test]
+fn a_lone_configuration_without_an_index_owns_the_active_partition() {
+    let mut ir = unnamed_configurations_with_active_block(1);
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+    mark_active_configuration(&mut ir);
+
+    let [configuration] = ir.model.configurations.as_slice() else {
+        panic!("one configuration: {:#?}", ir.model.configurations);
+    };
+    assert_eq!(configuration.source_index, Some(3));
+    assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
+    assert!(configuration.active);
+    assert!(configuration.native_ref.is_some());
+}
+
+#[test]
+fn several_configurations_without_an_index_leave_the_active_partition_inferred() {
+    let mut ir = unnamed_configurations_with_active_block(2);
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+    mark_active_configuration(&mut ir);
+
+    assert_eq!(ir.model.configurations.len(), 3);
+    assert!(ir.model.configurations[..2]
+        .iter()
+        .all(|configuration| configuration.source_index.is_none()
+            && configuration.bodies.is_none()
+            && !configuration.active));
+    let inferred = &ir.model.configurations[2];
+    assert!(inferred.native_ref.is_none());
+    assert_eq!(inferred.source_index, Some(3));
+    assert_eq!(inferred.bodies.as_deref(), Some([body].as_slice()));
+    assert!(inferred.active);
+}
+
 #[test]
 fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
     let mut ir = CadIr::empty();
@@ -532,7 +601,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
             name: Some(id.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+            bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -569,7 +638,7 @@ fn incomplete_configuration_names_are_reported() {
             name: Some(name.to_string()),
             material: None,
             properties: BTreeMap::new(),
-            bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+            bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
             parameter_values: BTreeMap::new(),
             parameter_overrides: BTreeMap::new(),
             feature_states: BTreeMap::new(),
@@ -611,7 +680,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -649,31 +718,30 @@ fn incoherent_configuration_bodies_are_reported() {
         feature_states: BTreeMap::new(),
         native_ref: Some(format!("native:{id}")),
     };
-    ir.model.configurations = vec![
-        configuration(
-            "synthetic:test:id#duplicate",
-            0,
-            Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                    "test:model:entity#another-missing-body",
-                )
-                .unwrap()])
-                .unwrap(),
+    ir.model.configurations =
+        vec![
+            configuration(
+                "synthetic:test:id#duplicate",
+                0,
+                Some(
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#another-missing-body").unwrap(),
+                    ])
+                    .unwrap(),
+                ),
             ),
-        ),
-        configuration(
-            "synthetic:test:id#missing",
-            1,
-            Some(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
-                    "test:model:entity#missing-body",
-                )
-                .expect("identity grammar")])
-                .unwrap(),
+            configuration(
+                "synthetic:test:id#missing",
+                1,
+                Some(
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        BodyId::mint("test:model:entity#missing-body").expect("identity grammar"),
+                    ])
+                    .unwrap(),
+                ),
             ),
-        ),
-        configuration("synthetic:test:id#unresolved", 2, None),
-    ];
+            configuration("synthetic:test:id#unresolved", 2, None),
+        ];
     let mut report = super::empty_report(true);
 
     append_design_losses(
@@ -702,7 +770,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         expression: "12mm".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -715,7 +783,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::from([(
             parameter,
             ParameterValue::Length(Length::new(12.0).unwrap()),
@@ -746,7 +814,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
     let feature = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
         role: FeatureTreeNodeRole::History,
-        children: cadmpeg_ir::features::TreeChildren::default(),
+        children: cadmpeg_ir::features::tree::TreeChildren::default(),
     });
     ir.model.features.push(Feature {
         product_definition: None,
@@ -754,12 +822,14 @@ fn configuration_suppression_and_override_references_are_coherent() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition.clone()),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition.clone(),
+        ),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -770,7 +840,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         name: Some("Default".to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::from([(
             ParameterId::mint("synthetic:test:id#missing").expect("identity grammar"),
@@ -779,8 +849,8 @@ fn configuration_suppression_and_override_references_are_coherent() {
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {
-                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                evaluation: cadmpeg_ir::features::parameters::ConfigurationEvaluation::Suppressed {},
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 definition,
             },
         )]),

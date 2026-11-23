@@ -271,7 +271,7 @@ fn spatial_sketch_records_hold_their_admitted_frames_and_scalars() {
         reversed: false,
     }];
     let unit = |x, y, z| UnitVector3::new(Vector3::new(x, y, z)).unwrap();
-    let origin = crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
+    let origin = crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
     assert!(SpatialSketchProfile::from_parts(
         origin,
         unit(0.0, 0.0, 1.0),

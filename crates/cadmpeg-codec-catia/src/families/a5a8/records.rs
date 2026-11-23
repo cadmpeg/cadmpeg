@@ -10,12 +10,11 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::{index_from_u32, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::blends::{RollingBallJetDerivative, RollingBallJetSite};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
@@ -201,7 +200,19 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
+struct SurfaceTail {
+    parameters: [f64; 8],
+    descriptors: Option<[(u32, Option<u32>); 2]>,
+    continuation: Vec<f64>,
+    flags: [u8; 3],
+    fixed_suffix: bool,
+}
+
 fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
+    surface_tail(data, at, end, owned).map(|_| end)
+}
+
+fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<SurfaceTail> {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let tail = data.get(at..end)?;
@@ -220,14 +231,16 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
+        _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
+    let flags: [u8; 3] = tail
+        .get(layout::FLAGS + extra..layout::CONTINUATION + extra)?
+        .try_into()
+        .ok()?;
     if controls[0] != 1
         || !(controls[2] == 1 || owned && tail_len == 142 && controls[2] == 0)
-        || !matches!(
-            tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-            [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
-        )
+        || !matches!(flags, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
     {
         return None;
     }
@@ -245,18 +258,35 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     }
     let continuation_start = layout::CONTINUATION + extra;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = tail.get(continuation_start..continuation_end)?;
+    let bytes = tail.get(continuation_start..continuation_end)?;
+    let mut continuation = Vec::new();
     for index in 0..continuation_bytes / 8 {
-        let value = f64_le(continuation, index * 8)?;
-        if tail_len == 133 && value.get() != 0.0 {
+        let value = f64_le(bytes, index * 8)?.get();
+        if tail_len == 133 && value != 0.0 {
             return None;
         }
+        continuation.push(value);
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (
-        tail_len,
-        &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-    ) {
+    let fixed_suffix = fixed_surface_suffix(tail_len, flags, suffix, owned);
+    let descriptors = if owned {
+        Some(owned_surface_suffix(suffix)?)
+    } else {
+        None
+    };
+    (fixed_suffix || owned && tail_len >= layout::LEN && descriptors.is_some()).then_some(
+        SurfaceTail {
+            parameters,
+            descriptors,
+            continuation,
+            flags,
+            fixed_suffix,
+        },
+    )
+}
+
+fn fixed_surface_suffix(length: usize, flags: [u8; 3], suffix: &[u8], owned: bool) -> bool {
+    match (length, flags) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             matches!(
@@ -280,8 +310,24 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
                 && suffix[5..] == [0x07, 0x07]
         }
         _ => false,
-    };
-    valid_suffix.then_some(end)
+    }
+}
+
+fn owned_surface_suffix(bytes: &[u8]) -> Option<[(u32, Option<u32>); 2]> {
+    let mut at = 0;
+    let mut descriptors = [(0, None); 2];
+    for descriptor in &mut descriptors {
+        let control = compact_int(bytes, &mut at)?;
+        let present = View::over_retained(bytes.get(at..)?).u8()?;
+        at += 1;
+        let extra = match present {
+            0x00 => None,
+            0x01 => Some(compact_int(bytes, &mut at)?),
+            _ => return None,
+        };
+        *descriptor = (control, extra);
+    }
+    (bytes.get(at..) == Some([0x07, 0x07].as_slice())).then_some(descriptors)
 }
 
 fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
@@ -492,6 +538,7 @@ pub(in crate::families) struct A5FreeformCurve {
     /// Knot-aligned jet samples.
     pub(in crate::families) sites: Vec<A5FreeformJet>,
     pub(in crate::families) chart_v_end: f64,
+    pub(in crate::families) extended_v_end: Option<f64>,
 }
 
 impl A5FreeformCurve {
@@ -505,17 +552,19 @@ impl A5FreeformCurve {
         let stations = self
             .sites
             .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: Self::DEGREE + 1,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            })
+            .map(
+                |sample| cadmpeg_ir::geometry::blends::RollingBallJetStation {
+                    knot: sample.knot,
+                    multiplicity: Self::DEGREE + 1,
+                    site: rolling_ball_jet_site(
+                        &sample.site,
+                        sample.first_derivatives,
+                        sample.second_derivatives,
+                    ),
+                },
+            )
             .collect();
-        cadmpeg_ir::geometry::RollingBallJetStations::from_parts(Self::DEGREE, stations)
+        cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(Self::DEGREE, stations)
             .ok()
             .map(ProceduralSurfaceDefinition::RollingBallJet)
     }
@@ -977,22 +1026,23 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     }
     let mut stations = Vec::new();
 
-    stations.extend(
-        jet.sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
-                knot: sample.knot,
-                multiplicity: sample.multiplicity,
-                site: rolling_ball_jet_site(
-                    &sample.site,
-                    sample.first_derivatives,
-                    sample.second_derivatives,
-                ),
-            }),
-    );
-    cadmpeg_ir::geometry::RollingBallJetStations::from_parts(A8FreeformCurve::DEGREE, stations)
-        .ok()
-        .map(ProceduralSurfaceDefinition::RollingBallJet)
+    stations.extend(jet.sites.iter().map(|sample| {
+        cadmpeg_ir::geometry::blends::RollingBallJetStation {
+            knot: sample.knot,
+            multiplicity: sample.multiplicity,
+            site: rolling_ball_jet_site(
+                &sample.site,
+                sample.first_derivatives,
+                sample.second_derivatives,
+            ),
+        }
+    }));
+    cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+        A8FreeformCurve::DEGREE,
+        stations,
+    )
+    .ok()
+    .map(ProceduralSurfaceDefinition::RollingBallJet)
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -1149,7 +1199,15 @@ pub(in crate::families) fn a5_owned_rolling_curves<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = A5FreeformCurve> + 'a {
-    a5_rolling_curves(data, records, true)
+    a5_rolling_curves(data, records, true).filter(|jet| jet.extended_v_end.is_none())
+}
+
+pub(in crate::families) fn a5_extended_rolling_curve(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+) -> Option<A5FreeformCurve> {
+    a5_rolling_curves(data, std::slice::from_ref(record), true)
+        .find(|jet| jet.extended_v_end.is_some())
 }
 
 fn a5_rolling_curves<'a>(
@@ -1180,7 +1238,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
     } = frame;
     data.get(frame.payload..frame.end)?;
 
-    let (count, knot_start, block_start, block_bytes, chart_v_end) = (|| {
+    let (count, knot_start, block_start, block_bytes, (chart_v_end, extended_v_end)) = (|| {
         if data.get(pos) == Some(&0xa5) {
             let header_byte = u8::try_from(header_token).ok()?;
             a5_int(header_byte)?;
@@ -1250,6 +1308,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
         header_token,
         sites,
         chart_v_end,
+        extended_v_end,
     })
 }
 
@@ -1261,7 +1320,7 @@ fn a5_rolling_ball_tail(
     count: usize,
     knot_range: [f64; 2],
     owned: bool,
-) -> Option<f64> {
+) -> Option<(f64, Option<f64>)> {
     use crate::layout::{
         rolling_ball_tail_prefix as prefix, rolling_ball_tail_unmapped_suffix as suffix,
     };
@@ -1269,6 +1328,8 @@ fn a5_rolling_ball_tail(
     let no_map_length = prefix::LEN + suffix::LEN;
     let repeated_length = no_map_length + 8;
     let extended_length = repeated_length + 2;
+    let mapped_length = repeated_length.checked_add(count.checked_mul(24)?)?;
+    let mapped_sheet = owned && data.len() == mapped_length.checked_add(2)?;
     let sheet_limits = owned && data.len() == extended_length;
     let current = read_f64_array::<5>(data, prefix::PARAMETERS)?.map(FiniteReal::get);
     let maximal_v = read_f64_array::<2>(data, prefix::MAXIMAL_V)?.map(FiniteReal::get);
@@ -1276,13 +1337,14 @@ fn a5_rolling_ball_tail(
         || current[0] >= current[1]
         || current[2] >= current[3]
         || current[4] <= 0.0
-        || (!sheet_limits && current[3].to_bits() != current[4].to_bits())
+        || (!sheet_limits && !mapped_sheet && current[3].to_bits() != current[4].to_bits())
         || maximal_v[0] > current[2]
         || maximal_v[1] < current[3]
     {
         return None;
     }
     let mut trimmed_u = [false; 2];
+    let mut extended_v_end = None;
     let mut at = match data.len() {
         length
             if length == no_map_length
@@ -1291,8 +1353,9 @@ fn a5_rolling_ball_tail(
         {
             let branch = data.get(prefix::LEN + suffix::BRANCH..prefix::LEN + suffix::MAXIMAL_U)?;
             if length == extended_length {
+                let doubled_span = sheet_limits && branch.starts_with(&[0x01, 0x00]);
                 if branch.len() != suffix::BRANCH_VALUE.len()
-                    || branch[0..2] != suffix::BRANCH_VALUE[0..2]
+                    || (!doubled_span && branch[0..2] != suffix::BRANCH_VALUE[0..2])
                     || branch[2] > 1
                     || branch[3] > 1
                     || branch[4..6] != suffix::BRANCH_VALUE[4..6]
@@ -1300,13 +1363,19 @@ fn a5_rolling_ball_tail(
                 {
                     return None;
                 }
+                if doubled_span {
+                    if current[2] != 0.0 || current[3] != 2.0 * current[4] {
+                        return None;
+                    }
+                    extended_v_end = Some(current[3]);
+                }
                 trimmed_u = [sheet_limits && branch[2] == 1, branch[3] == 1];
             } else if branch != suffix::BRANCH_VALUE {
                 return None;
             }
             prefix::LEN + suffix::MAXIMAL_U
         }
-        length if length == repeated_length.checked_add(count.checked_mul(24)?)? => {
+        length if length == mapped_length || mapped_sheet => {
             if data.get(prefix::LEN..prefix::LEN + 2) != Some(&[0x01, 0x01]) {
                 return None;
             }
@@ -1335,9 +1404,15 @@ fn a5_rolling_ball_tail(
     let mut v_end = current[4];
     if data.len() != no_map_length {
         let terminal_v = f64_le(data, at)?.get();
-        if sheet_limits {
+        if mapped_sheet {
+            if current[2] != 0.0 || terminal_v != current[3] {
+                return None;
+            }
             v_end = terminal_v;
-            if terminal_v <= 0.0 {
+            extended_v_end = Some(current[3]);
+        } else if sheet_limits {
+            v_end = terminal_v;
+            if terminal_v <= 0.0 || (extended_v_end.is_some() && terminal_v != current[4]) {
                 return None;
             }
         } else if terminal_v.to_bits() != current[4].to_bits() {
@@ -1345,10 +1420,13 @@ fn a5_rolling_ball_tail(
         }
         at += 8;
     }
-    if data.len() == extended_length {
+    if mapped_sheet && data.get(at..) != Some(&[0, 0][..]) {
+        return None;
+    }
+    if data.len() == extended_length || mapped_sheet {
         at += 2;
     }
-    (at == data.len()).then_some(v_end)
+    (at == data.len()).then_some((v_end, extended_v_end))
 }
 
 fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {
@@ -1735,7 +1813,7 @@ fn a5_surface(
     let Some(u_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, u_degree, u_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1749,7 +1827,7 @@ fn a5_surface(
     let Some(v_distinct_count) = a5_distinct_count(data, &mut at, owned) else {
         return Ok(None);
     };
-    let Some(next) = a5_array_marker(data, at, owned) else {
+    let Some(next) = a5_array_marker(data, at, owned, v_degree, v_distinct_count) else {
         return Ok(None);
     };
     at = next;
@@ -1805,7 +1883,19 @@ fn a5_surface(
         }
         _ => return Ok(None),
     };
-    if parse_surface_tail(data, at, end, owned).is_none() {
+    let Some(tail) = surface_tail(data, at, end, owned) else {
+        return Ok(None);
+    };
+    let parameters = tail.parameters;
+    let full_limits = [
+        u_distinct[0],
+        u_distinct[u_distinct.len() - 1],
+        v_distinct[0],
+        v_distinct[v_distinct.len() - 1],
+    ];
+    if !tail.fixed_suffix
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
         return Ok(None);
     }
     let control_points = grid_rows(control_points, v_count)?;
@@ -1822,6 +1912,24 @@ fn a5_surface(
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
     );
+    if geometry.is_some()
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
+        refusal.push_surface_parameters_not_transferred(pos, parameters);
+    }
+    let extrapolation = tail.descriptors.filter(|descriptors| {
+        *descriptors != [(0, None); 2]
+            || tail.flags != [1, 1, 1]
+            || tail.continuation.iter().any(|value| *value != 0.0)
+    });
+    if let (true, Some(descriptors)) = (geometry.is_some(), extrapolation) {
+        refusal.push_surface_extrapolation_not_transferred(
+            pos,
+            descriptors,
+            tail.flags,
+            &tail.continuation,
+        );
+    }
     if geometry.is_some() && inferred_weights {
         refusal.push_surface_weights_inferred(pos);
     }
@@ -2150,9 +2258,16 @@ fn a5_distinct_count(bytes: &[u8], at: &mut usize, owned: bool) -> Option<usize>
     Some(count)
 }
 
-fn a5_array_marker(bytes: &[u8], at: usize, owned: bool) -> Option<usize> {
+fn a5_array_marker(
+    bytes: &[u8],
+    at: usize,
+    owned: bool,
+    degree: u32,
+    distinct_count: usize,
+) -> Option<usize> {
     match bytes.get(at..at + 2) {
         Some([0x0c, ..]) => Some(at + 1),
+        Some([0x0e, ..]) if owned && degree == 1 && distinct_count == 2 => Some(at + 1),
         Some([0x08, 0x05 | 0x09 | 0x0d | 0x11 | 0x15]) => Some(at + 2),
         Some([0x08, 0x19]) if owned => Some(at + 2),
         _ => None,

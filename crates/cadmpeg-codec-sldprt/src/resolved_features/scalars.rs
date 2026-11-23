@@ -1,9 +1,13 @@
 //! Named scalar records, operands and feature object names.
 
+use super::parameter_classes::count_trailer;
 use super::relation_records::{
     compact_scalar_layout, legacy_scalar_layout, scalar_role, shifted_value_only_scalar_trailer,
 };
-use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
+use super::{
+    is_class_token, CLASS_MARKER, COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER,
+    VALUE_ONLY_SCALAR_HEADER,
+};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
@@ -13,7 +17,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 
+use crate::layout::feature_input_class_reference_trailer as class_reference;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
+use crate::layout::feature_input_padded_scalar_cell as padded;
 use crate::records::ObjectId;
 
 pub(crate) fn named_scalars(
@@ -92,7 +98,52 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
         return Some(shifted_value_offset);
     }
     (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
-        .then_some(value_only_offset)
+        .then(|| value_only_value_offset(payload, value_only_offset))
+}
+
+/// The value offset of a value-only scalar whose 14-byte header ends at
+/// `header_end` (`docs/formats/sldprt.md` §2): the 18-byte header's end
+/// where the four bytes after the 14-byte header are zero and open no
+/// count trailer, a finite f64 follows them, and the trailer after the f64
+/// opens with three zero bytes and the scalar object identifier or with a
+/// zero byte and a class reference; else the header's end. The shifted
+/// record's role trailer has its own reader.
+pub(super) fn value_only_value_offset(payload: &[u8], header_end: usize) -> usize {
+    let at = |field: usize| header_end.checked_add(field);
+    let (Some(padding), Some(value), Some(trailer)) = (
+        at(padded::PADDING),
+        at(padded::VALUE),
+        at(padded::TRAILER_ZERO_PREFIX),
+    ) else {
+        return header_end;
+    };
+    let padded = payload.get(padding..value) == Some(&[0; 4])
+        && !count_trailer(payload, value)
+        && View::f64_le_at(payload, value).is_some_and(f64::is_finite)
+        && ((count_trailer(payload, trailer)
+            && !shifted_value_only_scalar_trailer(payload, trailer))
+            || class_reference_trailer(payload, trailer));
+    if padded {
+        value
+    } else {
+        header_end
+    }
+}
+
+/// Whether a trailer that opens with a zero byte and a class token or class
+/// declaration begins at `at` (`docs/formats/sldprt.md` §2).
+fn class_reference_trailer(payload: &[u8], at: usize) -> bool {
+    let (Some(zero), Some(reference)) = (
+        at.checked_add(class_reference::ZERO),
+        at.checked_add(class_reference::CLASS_REFERENCE),
+    ) else {
+        return false;
+    };
+    payload.get(zero) == Some(&0)
+        && (View::u16_le_at(payload, reference).is_some_and(is_class_token)
+            || payload
+                .get(reference..)
+                .is_some_and(|rest| rest.starts_with(CLASS_MARKER)))
 }
 
 pub(crate) fn scalar_indices_match(

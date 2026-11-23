@@ -2,7 +2,7 @@
 //! ID-free comparison of measured documents: copies, renamed and moved
 //! copies, coincident bodies, signature bodies and occurrence placement.
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -325,7 +325,7 @@ fn a_nested_override_places_its_instance() {
 /// The bilinear NURBS patch `(x, y) = (2u, v)` on `[0, 1]²` at `z = 0`,
 /// bounded by its four domain edges: a 2 × 1 rectangle whose box is the
 /// conservative control hull.
-fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
+pub(super) fn nurbs_rectangle(transform: Option<Transform>) -> CadIr {
     let mut builder = Builder::new();
     let surface = builder.nurbs(
         (1, vec![0.0, 0.0, 1.0, 1.0]),
@@ -368,16 +368,16 @@ fn a_nurbs_body_turned_about_its_centroid_disagrees_by_its_box() {
     assert_eq!(result.verdict(), Verdict::Disagree);
     let report = measure(&plain, &Selection::default());
     let bbox = report.bodies()[0].bbox().measured().expect("body box");
-    assert_eq!(bbox.value().kind, BoxKind::Conservative);
-    assert!(bbox.value().boundary.is_some());
+    assert_eq!(bbox.value().kind, BoxKind::Tight);
+    assert!(bbox.value().boundary.is_none());
     assert_eq!(result.unmatched_a().len(), 1);
     assert_eq!(result.unmatched_b().len(), 1);
     let row = result
         .document()
         .iter()
-        .find(|row| row.quantity() == "bbox")
+        .find(|row| row.quantity() == "bbox.min.x")
         .expect("document box row");
-    assert_eq!(row.rule(), Rule::Containment);
+    assert_eq!(row.rule(), Rule::Equal);
     assert_eq!(row.agrees(), Some(false));
     let violation = row.difference().expect("violation");
     assert!((violation - 0.5).abs() <= 1.0e-9, "{violation}");

@@ -12,8 +12,9 @@
 //! it. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
-//! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim is
-//! written as that prim. Appearances become materials with a
+//! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim of a
+//! body with no name or the placement's name is written as that prim; a body
+//! of another name keeps its name on its own prim under the placement. Appearances become materials with a
 //! `UsdPreviewSurface` shader and a `MaterialX` surface shader in a `Looks`
 //! scope under the one root prim, or at the layer root. The scene options
 //! can leave out the `BrepArray` prims and the `MaterialX` shaders.
@@ -26,6 +27,7 @@ mod records;
 mod shading;
 mod text;
 mod texture;
+mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -215,6 +217,8 @@ struct Unwritten {
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
     untrimmed_breps: Vec<String>,
+    /// Bodies whose `BrepArray` prim leaves out poles that have no trim curve.
+    pole_breps: Vec<String>,
     curves: usize,
     channels: usize,
     reduced_appearances: BTreeSet<String>,
@@ -331,6 +335,8 @@ struct Writer<'ir> {
     materials: BTreeMap<String, String>,
     /// Appearance ids bound to each tessellation or body id.
     bindings: BTreeMap<String, String>,
+    /// Faces whose bound material a written prim carries.
+    face_bindings: BTreeSet<String>,
     /// Definitions placed more than once, with their prototype prim names.
     shared: BTreeMap<ProductDefinitionId, String>,
     /// Bodies some definition owns.
@@ -464,6 +470,7 @@ impl<'ir> Writer<'ir> {
             unwritten: Unwritten::default(),
             materials: BTreeMap::new(),
             bindings,
+            face_bindings: BTreeSet::new(),
             shared,
             owned,
             stack: Vec::new(),
@@ -670,6 +677,14 @@ impl<'ir> Writer<'ir> {
         self.binding_path(&group_key(tessellation, group))
     }
 
+    /// The material path bound to `face`, which the caller writes.
+    fn face_binding_path(&mut self, face: &cadmpeg_ir::ids::FaceId) -> Option<String> {
+        let key = face.to_string();
+        let path = self.binding_path(&key)?;
+        self.face_bindings.insert(key);
+        Some(path)
+    }
+
     fn binding_path(&self, key: &str) -> Option<String> {
         self.bindings
             .get(key)
@@ -780,9 +795,11 @@ impl<'ir> Writer<'ir> {
             .unwrap_or_default();
         if root.is_none() && children.is_empty() && !shared {
             if let [body] = bodies.as_slice() {
-                self.body(body, names, &placement, Some(&name));
-                self.stack.pop();
-                return;
+                if named_as(body, occurrence.name.as_deref().unwrap_or("Occurrence")) {
+                    self.body(body, names, &placement, Some(&name));
+                    self.stack.pop();
+                    return;
+                }
             }
         }
         if let Some(kind) = self.model_kind(occurrence) {
@@ -829,7 +846,8 @@ impl<'ir> Writer<'ir> {
     }
 
     /// Whether `occurrence` has no child occurrences and places a definition
-    /// of one unshared body: it is written as that body's prim.
+    /// of one unshared body that its name names: it is written as that
+    /// body's prim.
     fn is_leaf(&self, occurrence: &Occurrence) -> bool {
         self.children(occurrence).is_empty()
             && !self.shared.contains_key(&occurrence.prototype)
@@ -841,7 +859,18 @@ impl<'ir> Writer<'ir> {
                 .find(|candidate| candidate.id == occurrence.prototype)
                 .is_some_and(|definition| {
                     !matches!(definition.storage, Storage::External(_))
-                        && definition.bodies.len() == 1
+                        && match definition.bodies.as_slice() {
+                            [body] => self
+                                .index
+                                .bodies(body.as_str(), cadmpeg_ir::index::StandardIndex)
+                                .is_some_and(|body| {
+                                    named_as(
+                                        body,
+                                        occurrence.name.as_deref().unwrap_or("Occurrence"),
+                                    )
+                                }),
+                            _ => false,
+                        }
                 })
     }
 
@@ -1002,7 +1031,11 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
+                    Some(nurbs)
+                        if face.loops.is_empty()
+                            || self.whole_domain(face, nurbs)
+                            || (!exact && self.trim_loops(face).is_some()) =>
+                    {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -1420,7 +1453,7 @@ impl<'ir> Writer<'ir> {
         // group bound itself keeps its own material.
         let mut face_materials: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (face, triangles) in faces {
-            if let Some(path) = self.binding_path(&face.to_string()) {
+            if let Some(path) = self.face_binding_path(face) {
                 face_materials
                     .entry(path)
                     .or_default()
@@ -1522,7 +1555,7 @@ impl<'ir> Writer<'ir> {
         placement: &Placement<'_>,
     ) {
         let binding = self
-            .binding_path(&face.id.to_string())
+            .face_binding_path(&face.id)
             .or_else(|| self.binding_path(&body.id.to_string()));
         self.geometry_head("NurbsPatch", name, placement, binding.as_deref());
         let grid = nurbs.control_grid();
@@ -1565,6 +1598,11 @@ impl<'ir> Writer<'ir> {
         let reversed = nurbs.normal_reversed() != (face.sense == Sense::Reversed);
         if reversed {
             self.out.line("uniform token orientation = \"leftHanded\"");
+        }
+        if !face.loops.is_empty() && !self.whole_domain(face, nurbs) {
+            if let Some(loops) = self.trim_loops(face) {
+                self.trim_attributes(&loops);
+            }
         }
         self.color_primvars(Some(body));
         self.out.close();
@@ -1786,11 +1824,7 @@ impl<'ir> Writer<'ir> {
             // A body named other than its prototype keeps its name on its
             // own prim inside the prototype prim.
             if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
-                if body
-                    .name
-                    .as_deref()
-                    .is_none_or(|own| text::identifier(own) == name)
-                {
+                if named_as(body, &name) {
                     self.body(body, &mut names, &Placement::default(), Some(&name));
                     continue;
                 }
@@ -1883,6 +1917,14 @@ impl<'ir> Writer<'ir> {
                 unwritten.untrimmed_breps.join(", ")
             )));
         }
+        if !unwritten.pole_breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepPoleNotWritten.note(format!(
+                "the BrepArray prims of {} bodies leave out the poles of their edge loops \
+                 that have no trim curve: {}",
+                unwritten.pole_breps.len(),
+                unwritten.pole_breps.join(", ")
+            )));
+        }
         if unwritten.curves > 0 {
             losses.push(UsdLossCode::ExportCurveNotWritten.note(format!(
                 "{} wire edges have no line or NURBS curve and were not written",
@@ -1936,13 +1978,16 @@ impl<'ir> Writer<'ir> {
         let unbound = model
             .appearance_bindings
             .iter()
-            .filter(|binding| {
-                !matches!(
-                    binding.target.entity,
-                    AppearanceTarget::Tessellation(_)
-                        | AppearanceTarget::Body(_)
-                        | AppearanceTarget::TriangleGroup { .. }
-                )
+            .filter(|binding| match &binding.target.entity {
+                AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Body(_)
+                | AppearanceTarget::TriangleGroup { .. } => false,
+                AppearanceTarget::Face(face) => {
+                    let key = face.to_string();
+                    !self.face_bindings.contains(&key)
+                        || self.bindings.get(&key) != Some(&binding.appearance.to_string())
+                }
+                _ => true,
             })
             .count();
         if unbound > 0 {
@@ -2080,6 +2125,14 @@ fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f3
 mod tests;
 
 /// The arena position of each region, shell, face, and edge of `ir`.
+/// Whether the prim named after `name` can carry `body` under its own
+/// name: the body has no name, or the same prim name.
+fn named_as(body: &Body, name: &str) -> bool {
+    body.name
+        .as_deref()
+        .is_none_or(|own| text::identifier(own) == text::identifier(name))
+}
+
 /// The up axis of the model: that of a USD source, or Z.
 fn source_up_axis(ir: &CadIr) -> &'static str {
     let axis = ir

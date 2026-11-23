@@ -5,10 +5,10 @@ use super::group;
 use crate::ids::neutral_sketch_id;
 use crate::records::sketch_placement::DesignSketchPlacement;
 use crate::records::topology::extrude_selection::DesignOperandRole;
-use cadmpeg_ir::features::{
-    BooleanOp, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    LoftGuidance, LoftSection, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance};
 use cadmpeg_ir::sketches::{Sketch, SketchPlacement};
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -138,7 +138,7 @@ fn binding_with_regions(
     }];
     let placements = [placement];
     let profile_curves = crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::decode::operands::decode_profile_curve_selections(
+        crate::design::decode::operands::sketch_profiles::decode_profile_curve_selections(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             std::slice::from_ref(&profile_group),
@@ -166,7 +166,7 @@ fn binding_with_regions(
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -192,8 +192,8 @@ fn binding_with_regions(
     revolve.id = FeatureId::mint("test:model:feature#revolve").unwrap();
     revolve.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Revolve {
-            construction: cadmpeg_ir::features::RevolveConstruction::Unresolved(
-                cadmpeg_ir::features::PartialRevolveConstruction::Axis {
+            construction: cadmpeg_ir::features::revolve::RevolveConstruction::Unresolved(
+                cadmpeg_ir::features::revolve::PartialRevolveConstruction::Axis {
                     profile: PlanarProfileRef::Native(profile_group.id.clone()),
                     extent: None,
                     solid: None,
@@ -316,7 +316,7 @@ fn a_role_0x5_loft_section_of_planar_sketch_curves_binds_as_sketch_entities() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
@@ -401,7 +401,9 @@ fn loft_planar_region_selection_preserves_inner_disc() {
         &LoftSection::Profile(ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch,
-                vec![cadmpeg_ir::features::SketchProfileRegion::loops(1, vec![]).unwrap(),]
+                vec![
+                    cadmpeg_ir::features::profiles::SketchProfileRegion::loops(1, vec![]).unwrap(),
+                ]
             )
             .unwrap(),
         ))
@@ -441,7 +443,9 @@ fn loft_single_outer_loop_selects_the_outer_profile() {
         &LoftSection::Profile(ProfileRef::Planar(
             PlanarProfileRef::sketch_regions(
                 sketch,
-                vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![]).unwrap()],
+                vec![
+                    cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, vec![]).unwrap()
+                ],
             )
             .unwrap(),
         )),
@@ -509,7 +513,7 @@ fn revolve_typed_profile_selects_inner_disc() {
         revolve_profile(&revolve),
         &PlanarProfileRef::sketch_regions(
             sketch,
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(1, vec![]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(1, vec![]).unwrap()],
         )
         .unwrap()
     );
@@ -530,7 +534,7 @@ fn revolve_typed_profile_preserves_outer_and_hole() {
         revolve_profile(&revolve),
         &PlanarProfileRef::sketch_regions(
             sketch,
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, vec![1]).unwrap()],
         )
         .unwrap()
     );
@@ -575,7 +579,7 @@ fn revolve_counted_members_select_the_inner_atomic_region() {
         panic!("selected atomic region");
     };
     assert_eq!(selected, &sketch);
-    let [cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+    let [cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
         outer_boundary,
         hole_boundaries,
     }] = regions.as_slice()
@@ -602,7 +606,7 @@ fn revolve_curve_loop_selection_retains_compact_tail_flags() {
         revolve_profile(&revolve),
         &PlanarProfileRef::sketch_regions(
             sketch,
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(1, vec![]).unwrap()],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(1, vec![]).unwrap()],
         )
         .unwrap()
     );

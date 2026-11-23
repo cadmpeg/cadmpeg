@@ -58,6 +58,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
+            reduction.fallback(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -82,9 +83,14 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             let attributes = attributes::AttributeIndex::new(target, native);
             encode_brep(target, native, &attributes).is_ok()
         }
-        Stage::Design | Stage::NeutralDesign | Stage::Archive => {
-            attempt(target, false, false, &mut std::io::Cursor::new(Vec::new())).is_ok()
-        }
+        Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
+            target,
+            false,
+            false,
+            &design::Fallback::default(),
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .is_ok(),
     }
 }
 
@@ -100,13 +106,15 @@ fn encode_brep(
 }
 
 /// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is; a
-/// failure names the stage that failed. Returns the arena coverage and the
-/// losses of the design scope's records.
+/// records are written, and `write_neutral` whether its design scope is;
+/// `fallback` names the parts of the design scope's form dropped after a
+/// failure. A failure names the stage that failed. Returns the arena coverage
+/// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
+    fallback: &design::Fallback,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -114,7 +122,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target)
+        design::plan(target, fallback).map_err(Failure::neutral_design)?
     } else {
         None
     };
@@ -139,7 +147,13 @@ fn attempt<W: Write + Seek>(
     if write_design {
         validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
     }
+    // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
+    let attributes = if stamped {
+        attributes.with_body_keys(target, |ordinal| ordinal)
+    } else {
+        attributes
+    };
     if has_native {
         validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
@@ -182,6 +196,46 @@ fn attempt<W: Write + Seek>(
     let mut design_registry =
         GeneratedDesignRegistry::new(target, design_bindings, &attributes, selection)
             .map_err(design_failure)?;
+    let unstated_visibility = cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these bodies as visible: the source did not record their visibility",
+        std::mem::take(&mut design_registry.guessed_visible),
+    );
+    if let Some(mut design) = if stamped { neutral.take() } else { None } {
+        let snapshot = snapshot_stream(target, &native).map_err(Failure::neutral_design)?;
+        let members = design
+            .archive(target, &smbh, &snapshot)
+            .map_err(Failure::neutral_design)?;
+        write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
+            .map_err(Failure::archive)?;
+        let mut coverage = coverage(
+            false,
+            ArenaDisposition::Reported,
+            true,
+            ArenaDisposition::Reported,
+        );
+        // The written `Sketch` items carry the design's sketches; the plan
+        // charges each sketch, entity and relation it does not write.
+        if design.writes_sketches() {
+            coverage.design.sketches = ArenaDisposition::Reported;
+            coverage.design.sketch_entities = ArenaDisposition::Reported;
+            coverage.design.sketch_constraints = ArenaDisposition::Reported;
+        }
+        let mut losses = roster_losses(target, &native);
+        losses.extend(design.into_losses());
+        losses.extend(unstated_visibility);
+        losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "F3D",
+            "writes these bodies as visible: the written Design records hold no body visibility",
+            target
+                .geometry
+                .bodies
+                .iter()
+                .filter(|body| body.visible == Some(false))
+                .map(|body| body.id.to_string()),
+        ));
+        return Ok((coverage, losses));
+    }
     let mut neutral_records = None;
     let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
         (Some(neutral), _) => {
@@ -239,7 +293,7 @@ fn attempt<W: Write + Seek>(
         .map_err(Failure::design)?;
     write_archive(
         staged,
-        &ArchiveEntries {
+        &ArchiveEntries::Generated {
             smbh: &smbh,
             configurations: &configurations,
             design_bulk: design_bulk
@@ -254,13 +308,14 @@ fn attempt<W: Write + Seek>(
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
             let mut losses = plan.into_losses();
-            losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-                "F3D",
-                "writes these bodies as visible: the source did not record their visibility",
-                design_registry.guessed_visible,
-            ));
+            losses.extend(unstated_visibility);
             return Ok((
-                coverage(write_design, ArenaDisposition::Reported, false),
+                coverage(
+                    write_design,
+                    ArenaDisposition::Reported,
+                    false,
+                    ArenaDisposition::Written,
+                ),
                 losses,
             ));
         }
@@ -269,20 +324,90 @@ fn attempt<W: Write + Seek>(
     };
     let written = neutral.is_some();
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
-    losses.extend(cadmpeg_ir::codec::write::value_unwritable(
-        "F3D",
-        "writes these bodies as visible: the source did not record their visibility",
-        design_registry.guessed_visible,
-    ));
-    Ok((coverage(write_design, parameters, written), losses))
+    losses.extend(unstated_visibility);
+    Ok((
+        coverage(write_design, parameters, written, ArenaDisposition::Written),
+        losses,
+    ))
 }
 
-struct ArchiveEntries<'a> {
-    smbh: &'a [u8],
-    configurations: &'a [(&'a String, Vec<u8>)],
-    design_bulk: Option<&'a [u8]>,
-    meta_stream: Option<&'a [u8]>,
-    proteins: &'a [Vec<u8>],
+/// The snapshot stream of a Base Feature design: the B-rep stream of
+/// `target` whose bodies carry no name and the ASM body key `-1`.
+fn snapshot_stream(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+) -> Result<Vec<u8>, CodecError> {
+    let mut unnamed = native.clone();
+    unnamed.persistent_design_links.retain(|link| {
+        !matches!(
+            link.target,
+            cadmpeg_ir::attributes::AttributeTarget::Body(_)
+        )
+    });
+    let attributes =
+        attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
+    design::history::snapshot(&encode_brep(target, &unnamed, &attributes)?)
+}
+
+/// The losses of the roster path's archive: the appearances, whose Protein
+/// package is the design's own, and the native Design records, whose
+/// indices the roster holds (f3d.md §3.1, "Records of a Base Feature
+/// design").
+fn roster_losses(target: &CadIr, native: &crate::native::F3dNative) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    losses.extend(reduce::named_loss(
+        crate::loss::F3dLossCode::WriterAppearanceOmitted,
+        "appearance",
+        "the written design stores the one Protein package its asset manager names",
+        target
+            .model
+            .appearances
+            .iter()
+            .map(|appearance| appearance.id.to_string()),
+    ));
+    let kinds = [
+        ("construction recipes", native.construction_recipes.len()),
+        ("persistent references", native.persistent_references.len()),
+        ("lost-edge references", native.lost_edge_references.len()),
+        ("sketch points", native.sketch_points.len()),
+        (
+            "sketch curve identities",
+            native.sketch_curve_identities.len(),
+        ),
+        ("sketch relations", native.sketch_relations.len()),
+        ("sketch texts", native.sketch_texts.len()),
+        ("design body members", native.design_body_members.len()),
+        ("design entity headers", native.design_entity_headers.len()),
+        ("design record headers", native.design_record_headers.len()),
+        (
+            "design material assignments",
+            native.design_material_assignments.len(),
+        ),
+    ];
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "F3D",
+        "writes its own Design records, whose record indices these native records would reuse",
+        kinds
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(kind, count)| format!("{count} {kind}")),
+    ));
+    losses
+}
+
+/// The members of a written archive.
+enum ArchiveEntries<'a> {
+    /// The generic form: the history stream, the configurations, one Design
+    /// segment and one Protein package per appearance.
+    Generated {
+        smbh: &'a [u8],
+        configurations: &'a [(&'a String, Vec<u8>)],
+        design_bulk: Option<&'a [u8]>,
+        meta_stream: Option<&'a [u8]>,
+        proteins: &'a [Vec<u8>],
+    },
+    /// A Base Feature design: the members of the design folder.
+    BaseFeature { members: &'a [(String, Vec<u8>)] },
 }
 
 fn write_archive<W: Write + Seek>(
@@ -291,12 +416,16 @@ fn write_archive<W: Write + Seek>(
 ) -> Result<(), CodecError> {
     let mut archive = zip::ZipWriter::new(staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    // A name ending in `/` is a directory entry.
     let mut entry = |name: String, bytes: &[u8]| -> Result<(), CodecError> {
-        archive
-            .start_file(name.as_str(), options)
-            .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D entry {name}: {error}"))
-            })?;
+        let created = if name.ends_with('/') {
+            archive.add_directory(name.as_str(), options)
+        } else {
+            archive.start_file(name.as_str(), options)
+        };
+        created.map_err(|error| {
+            CodecError::malformed(format_args!("cannot create F3D entry {name}: {error}"))
+        })?;
         archive.write_all(bytes)?;
         Ok(())
     };
@@ -306,30 +435,47 @@ fn write_archive<W: Write + Seek>(
         format!("{DESIGN_FOLDER}/Manifest.dat"),
         &manifest::generated_design_asset()?,
     )?;
-    entry(
-        format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
-        entries.smbh,
-    )?;
-    for (name, payload) in entries.configurations {
-        entry((*name).clone(), payload)?;
-    }
-    if let Some(bulk_stream) = entries.design_bulk {
-        entry(
-            format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"),
-            bulk_stream,
-        )?;
-    }
-    if let Some(meta_stream) = entries.meta_stream {
-        entry(
-            format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"),
+    match entries {
+        ArchiveEntries::Generated {
+            smbh,
+            configurations,
+            design_bulk,
             meta_stream,
-        )?;
-    }
-    for (ordinal, protein) in entries.proteins.iter().enumerate() {
-        entry(
-            format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),
-            protein,
-        )?;
+            proteins,
+        } => {
+            entry(
+                format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
+                smbh,
+            )?;
+            for (name, payload) in *configurations {
+                entry((*name).clone(), payload)?;
+            }
+            if let Some(bulk_stream) = design_bulk {
+                entry(
+                    format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"),
+                    bulk_stream,
+                )?;
+            }
+            if let Some(meta_stream) = meta_stream {
+                entry(
+                    format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"),
+                    meta_stream,
+                )?;
+            }
+            for (ordinal, protein) in proteins.iter().enumerate() {
+                entry(
+                    format!(
+                        "{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"
+                    ),
+                    protein,
+                )?;
+            }
+        }
+        ArchiveEntries::BaseFeature { members } => {
+            for (name, payload) in *members {
+                entry(format!("{DESIGN_FOLDER}/{name}"), payload)?;
+            }
+        }
     }
     archive.finish().map_err(|error| {
         CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
@@ -347,7 +493,12 @@ fn write_archive<W: Write + Seek>(
 /// (`neutral`), its scopes, containers, features and parameters are
 /// `Reported`: the design module charges a loss for each record it does not
 /// write. Sketches and the remaining design arenas are not represented.
-fn coverage(write_design: bool, parameters: ArenaDisposition, neutral: bool) -> ArenaDispositions {
+fn coverage(
+    write_design: bool,
+    parameters: ArenaDisposition,
+    neutral: bool,
+    appearances: ArenaDisposition,
+) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
@@ -388,7 +539,7 @@ fn coverage(write_design: bool, parameters: ArenaDisposition, neutral: bool) -> 
         tessellations: Dropped,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Written,
+        appearances,
         appearance_bindings: Omitted,
         attributes: Omitted,
         pmi: Omitted,

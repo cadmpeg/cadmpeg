@@ -25,7 +25,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
             >(serde_json::to_value(scope).unwrap())
             .unwrap();
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-            assert!(super::super::valid_work_plane_construction(
+            assert!(super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &scope,
                 "f3d:Design/BulkStream.dat"
@@ -35,7 +35,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
                 .work_plane_frame_mut()
                 .unwrap()
                 .work_plane_transform_offset += 1;
-            assert!(!super::super::valid_work_plane_construction(
+            assert!(!super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &bad_offset,
                 "f3d:Design/BulkStream.dat"
@@ -45,7 +45,7 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
             let mut rows = frame.work_plane_transform.rows();
             rows[1][3] += 7.0;
             frame.work_plane_transform = rows.try_into().unwrap();
-            assert!(!super::super::valid_work_plane_construction(
+            assert!(!super::super::work_geometry::valid_work_plane_construction(
                 &ctx,
                 &bad_matrix,
                 "f3d:Design/BulkStream.dat"
@@ -75,7 +75,7 @@ fn work_plane_validator_refuses_a_frame_whose_typed_placement_does_not_bind() {
             ..Default::default()
         };
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-        assert!(!super::super::valid_work_plane_construction(
+        assert!(!super::super::work_geometry::valid_work_plane_construction(
             &ctx,
             &scope,
             "f3d:Design/BulkStream.dat"
@@ -112,7 +112,7 @@ fn work_plane_validator_rejects_modern_controls_that_do_not_bind_the_retained_fr
                     ..Default::default()
                 };
                 let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
-                assert!(!super::super::valid_work_plane_construction(
+                assert!(!super::super::work_geometry::valid_work_plane_construction(
                     &ctx,
                     &scope,
                     "f3d:Design/BulkStream.dat"

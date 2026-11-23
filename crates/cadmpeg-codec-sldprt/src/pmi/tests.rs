@@ -8,13 +8,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::SldprtCodec;
 
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue, PmiDimensionSubtype,
-    },
-    scalar::Length,
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue, PmiDimensionSubtype};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
+use cadmpeg_ir::scalar::Length;
 
 use super::{
     dimension_subtype, exact_count, neutral_parameter_is_count, patch_payload, patch_slots,
@@ -120,12 +116,12 @@ fn named_feature(id: &str, name: &str) -> Feature {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
@@ -161,12 +157,12 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::Linear {
@@ -201,7 +197,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("keywords-dimension".into()),
@@ -650,14 +646,14 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
     let semantic = parameter.pmi.as_ref().expect("PMI semantics");
     assert_eq!(
         semantic.subtype,
-        cadmpeg_ir::features::PmiDimensionSubtype::Linear
+        cadmpeg_ir::features::parameters::PmiDimensionSubtype::Linear
     );
     assert_eq!(semantic.native_ref, dimension.id);
     crate::test_support::plan_fixture_write_with_native_envelope(
@@ -676,7 +672,7 @@ fn decode_extracts_pmi_semantic_dimension() {
             .find(|parameter| parameter.name == "D1")
             .expect("editable PMI-backed parameter");
         parameter.expression = "50mm".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
         let semantic = parameter.pmi.as_mut().expect("editable PMI semantics");
@@ -688,7 +684,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -886,13 +882,13 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
         let mut ir = decoded.ir_mut();
         let parameter = &mut ir.model.parameters[0];
         parameter.expression = "50mm".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -939,10 +935,8 @@ fn semantically_distinct_pmi_records_remain_unbound() {
 
 #[test]
 fn ordinate_pmi_dimensions_round_trip_typed_values() {
-    use cadmpeg_ir::{
-        features::{ParameterValue, PmiDimensionSubtype},
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -984,7 +978,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1006,10 +1000,10 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
 
 #[test]
 fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-        LinearTermination, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1103,7 +1097,7 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
         expression: "12mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(12.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("other-dimension".into()),
@@ -1348,7 +1342,7 @@ fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
 }
 
 #[test]
-fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_solid() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x0021_0042,
@@ -1394,18 +1388,24 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
         let mut ir = decoded.ir_mut();
         let parameter = &mut ir.model.parameters[0];
         parameter.expression = "50mm".into();
-        parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        parameter.value = Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &SldprtCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    let parameter = decoded.ir().model.parameters[0].id.as_str();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss.message.contains(parameter)),
+        "{:#?}",
+        report.losses
     );
 }
