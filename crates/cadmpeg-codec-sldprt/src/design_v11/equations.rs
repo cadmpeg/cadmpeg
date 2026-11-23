@@ -556,11 +556,11 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
 }
 
 /// Restates the expression of each parameter of `bare`, whose dimension text
-/// is one reference to a parameter of another kind, as the tree the
-/// unit-blind rule of §5.13 gives the text, where that tree types and the
-/// document's caches agree with its evaluation (Rule H1). Each other
-/// parameter keeps its text as one `Text` token; the returned notes name it
-/// by reason.
+/// is one reference to a parameter whose kind differs or is not read, as the
+/// tree the unit-blind rule of §5.13 gives the text, where that tree types
+/// and is one reference, which translates exactly, or the document's caches
+/// agree with its evaluation (Rule H1). Each other parameter keeps its text
+/// as one `Text` token; the returned notes name it by reason.
 pub(super) fn bare_references(
     parameters: &mut [DesignParameter],
     bare: &[ParameterId],
@@ -632,6 +632,11 @@ fn bare_tree(
             == Some(tree)
     })
     .ok_or(Kept::Untranslated)?;
+    // One reference translates exactly and is stated whatever the caches
+    // hold, as an equation-manager line that is one reference is.
+    if matches!(&tree, Node::Reference(_)) {
+        return Ok(tree);
+    }
     let read = text
         .trim()
         .strip_prefix('"')

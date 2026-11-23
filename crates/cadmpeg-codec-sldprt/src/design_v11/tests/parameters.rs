@@ -946,6 +946,7 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
         br#"<Keywords Name="Bracket">
             <Feature Name="Equations" Type="EquationDriven" id="16">
                 <Dimension Name="wall">5</Dimension>
+                <Dimension Name="count">"D6@Pattern"</Dimension>
             </Feature>
             <Extrusion Name="Boss" Type="BossExtrude" id="7">
                 <Dimension Name="D1" Value="5mm">"wall"</Dimension>
@@ -955,6 +956,7 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
                 <Dimension Name="D5">"wall"</Dimension>
             </Extrusion>
             <Feature Name="Pattern" Type="LPattern" id="12">
+                <Dimension Name="D6">4</Dimension>
                 <Dimension Name="D7">2.5</Dimension>
                 <Dimension Name="D8">"D7@Pattern"</Dimension>
             </Feature>
@@ -965,8 +967,12 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
             ("Boss", "D3", V10::Angle(Angle::new(0.1).unwrap()), None),
             ("Boss", "D4", V10::Angle(Angle::new(0.1).unwrap()), None),
             ("Boss", "D5", V10::Length(Length::new(5.0).unwrap()), None),
+            ("Pattern", "D6", V10::Integer(4), Some("scalar-count")),
         ],
-        &[],
+        &[(
+            "scalar-count",
+            crate::records::ArchiveParameterClass::Integer,
+        )],
         Some(UnitSymbol::Mm),
     );
     let named = |name: &str| {
@@ -1007,6 +1013,14 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
     }
     assert_eq!(named("D5").kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(named("D5").definition, text("\"wall\""));
+    // A global set to a count is one reference, stated with no value to test
+    // it against, as an equation-manager line that is one reference is.
+    assert_eq!(named("count").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(named("D6").kind, ValueKind::Integer);
+    assert_eq!(
+        named("count").definition,
+        neutral_definition("$0", &[&named("D6").id])
+    );
     // Two dimensions of the one unread kind, one set to the other.
     assert!(
         matches!(&named("D7").kind, ValueKind::Native(_)),
