@@ -1078,3 +1078,4 @@ fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
 }
 
 mod display_rounded;
+mod named_scalars;

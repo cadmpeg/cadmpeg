@@ -57,6 +57,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
@@ -81,6 +82,9 @@ const EPS_DISPLAY_READING: f64 = 1.0e-12;
 /// Relative tolerance within which a stored value is a number a display
 /// shows, beyond the display's own rounding.
 const EPS_STORED_DISPLAY: f64 = 1.0e-9;
+
+/// Relative tolerance within which two stored angles or reals are one value.
+const EPS_STORED_SAME: f64 = 1.0e-9;
 
 /// Millimetres in a metre: a length scalar stores metres.
 const MM_PER_M: f64 = 1000.0;
@@ -219,8 +223,9 @@ impl<'a> Decoded<'a> {
     /// in a part whose length unit `unit` is not read, where it drives the
     /// model, a reading that holds on the stored results of typed
     /// dimensions. A driving scalar outranks the others. The scalars that
-    /// count state one parameter, whose class is the kind and whose stored
-    /// value the value; otherwise the reason the dimension has no value.
+    /// count state one parameter (see [`same_parameter`]), whose class is the
+    /// kind and the first one's stored value the value; otherwise the reason
+    /// the dimension has no value.
     fn named_dimension(
         &self,
         feature: &str,
@@ -250,7 +255,10 @@ impl<'a> Decoded<'a> {
         let Some(first) = counted.first() else {
             return Err(reason);
         };
-        if counted.iter().any(|scalar| scalar.stated != first.stated) {
+        if counted
+            .iter()
+            .any(|scalar| !same_parameter(scalar.stated, first.stated))
+        {
             return Err(Unvalued::Disagrees);
         }
         first.stated.and_then(typed).ok_or(Unvalued::Disagrees)
@@ -386,6 +394,21 @@ fn agrees(
         StatedParameter::Scaler(real) => (real, display),
     };
     Some(display.shows(shown))
+}
+
+/// Whether `a` and `b` state one parameter: one class, and lengths no
+/// farther apart than the linear resolution, angles and reals within
+/// [`EPS_STORED_SAME`] of their magnitude, or equal counts.
+fn same_parameter(a: Option<StatedParameter>, b: Option<StatedParameter>) -> bool {
+    let relative = |x: f64, y: f64| (x - y).abs() <= EPS_STORED_SAME * x.abs().max(y.abs());
+    match (a, b) {
+        (Some(StatedParameter::Length(x)), Some(StatedParameter::Length(y))) => {
+            (x - y).abs() * MM_PER_M <= LINEAR_RESOLUTION_MM
+        }
+        (Some(StatedParameter::Angle(x)), Some(StatedParameter::Angle(y)))
+        | (Some(StatedParameter::Scaler(x)), Some(StatedParameter::Scaler(y))) => relative(x, y),
+        _ => a == b,
+    }
 }
 
 /// The kind and canonical value of the parameter `stated`.
