@@ -15600,11 +15600,11 @@ size = 4
 note = "Four bytes."
 
 [[record.field]]
-name = "plane_reference"
+name = "word_4"
 offset = 4
 type = "u32"
 source = "spec"
-anchor = "whose u32 at +4 is the sketch's plane-reference identifier"
+anchor = "a little-endian u32 at +4"
 
 [[record.gap]]
 offset = 8

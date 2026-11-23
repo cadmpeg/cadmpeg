@@ -4303,7 +4303,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 4 | 4 | `plane_reference` | `u32` | little | spec | whose u32 at +4 is the sketch's plane-reference identifier |
+| 4 | 4 | `word_4` | `u32` | little | spec | a little-endian u32 at +4 |
 | 20 | 4 | `first_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
 | 24 | 4 | `second_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
 | 28 | 4 | `third_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
