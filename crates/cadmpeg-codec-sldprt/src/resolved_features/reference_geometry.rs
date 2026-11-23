@@ -607,7 +607,10 @@ fn display_shows(text: &str, distance: Length, unit: Option<UnitSymbol>) -> bool
     let places = text
         .split_once('.')
         .map_or(0, |(_, fraction)| fraction.len());
-    let half_step = 0.5 / 10_f64.powi(i32::try_from(places).unwrap_or(i32::MAX));
+    let Ok(places) = i32::try_from(places) else {
+        return false;
+    };
+    let half_step = 0.5 / 10_f64.powi(places);
     let units = match unit {
         Some(unit) => vec![unit],
         None => DISPLAY_LENGTH_UNITS.to_vec(),
