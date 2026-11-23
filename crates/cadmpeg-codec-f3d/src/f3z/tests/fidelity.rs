@@ -8,6 +8,46 @@ use crate::test_support::zip_test::f3d_with_smbh;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
+fn malformed_design() -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::malformed("injected design-intent failure")
+}
+
+/// The archive image is marked with what it keeps undecoded: at container
+/// depth every class a member's parts can hold, at full depth what the root
+/// member's own image left undecoded.
+#[test]
+fn the_archive_image_carries_what_its_members_leave_undecoded() {
+    use cadmpeg_core::decode::{ArenaClass, DecodeDepth};
+    let root = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh(),
+    );
+    let archive = f3z_archive("root.f3d", &[("root.f3d", &root)]);
+    let image_marks = |depth| {
+        let decoded = cadmpeg_ir::Codec::decode(
+            &crate::F3dCodec,
+            &mut Cursor::new(archive.clone()),
+            &DecodeOptions {
+                depth,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+        decoded
+            .source_fidelity()
+            .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+            .expect("the unmerged archive retains its image")
+            .untyped()
+            .clone()
+    };
+    assert_eq!(
+        image_marks(DecodeDepth::Container),
+        [ArenaClass::Model, ArenaClass::Design].into()
+    );
+    assert!(image_marks(DecodeDepth::Full).is_empty());
+    crate::decode::design_intent::inject_failure(malformed_design);
+    assert_eq!(image_marks(DecodeDepth::Full), [ArenaClass::Design].into());
+}
+
 #[test]
 fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
     let component = f3d_with_smbh(&synthetic_mixed_smbh());

@@ -6023,11 +6023,10 @@ fn trailing_offset(id: &str) -> u64 {
 }
 
 fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
-    Ok(scan
-        .entries
-        .iter()
-        .any(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-        || source_has_history_records(scan)?)
+    Ok(scan.entries.iter().any(|entry| {
+        scan.is_design_stream(entry, ContainerRole::Bulkstream)
+            || scan.is_design_asset_entry(entry, ContainerRole::DesignConfig)
+    }) || source_has_history_records(scan)?)
 }
 
 /// A bare EOF delta-state identifier is an empty partition boundary, not a

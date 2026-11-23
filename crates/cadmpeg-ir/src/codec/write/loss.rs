@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable loss vocabulary charged by the sealed export wrapper.
 //!
-//! These codes belong to no codec: the wrapper charges them from a backend's
-//! declared arena coverage, so every encoder reports them under one namespace.
+//! These codes belong to no codec: the wrapper charges some from a backend's
+//! declared arena coverage, and a writer charges the others through the
+//! helpers below where it meets the code's condition, so every encoder reports
+//! them under one namespace with the spelling and severity of §3.2.
 
 use crate::report::{
     loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 use crate::schema::EntityKind;
+use crate::source_fidelity::{class_list, SourceFidelity};
+
+use super::WritePath;
 
 const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 
@@ -45,6 +50,15 @@ pub(crate) enum ExportLossCode {
     /// The output's own validation finds an Error that names no record of a
     /// model arena (§3.4, Refusals).
     RuleInvalid,
+    /// A replayed or patched file holds the bytes of an `untyped` retained
+    /// record (§3.4, Paths).
+    SourceCarried,
+    /// A patched file holds the bytes of an `untyped` retained record beside
+    /// the edits it wrote (§3.4, Paths).
+    SourceUnchecked,
+    /// A patched file has no digest, so the writer cannot tell which records
+    /// are edited (§3.4, Paths item 4).
+    EditUnverified,
 }
 
 impl ExportLossCode {
@@ -62,6 +76,9 @@ impl ExportLossCode {
             Self::RecordResidualUnavailable => "record.residual-unavailable",
             Self::ValueUnwritable => "value.unwritable",
             Self::RecordInvalid(_) | Self::RuleInvalid => "record.invalid",
+            Self::SourceCarried => "source.carried",
+            Self::SourceUnchecked => "source.unchecked",
+            Self::EditUnverified => "edit.unverified",
         }
     }
 
@@ -74,8 +91,10 @@ impl ExportLossCode {
             | Self::EvaluationStale
             | Self::ParameterFlattened
             | Self::RecordResidualUnavailable
-            | Self::ValueUnwritable => Severity::Warning,
-            Self::ParameterRenamed => Severity::Info,
+            | Self::ValueUnwritable
+            | Self::SourceUnchecked
+            | Self::EditUnverified => Severity::Warning,
+            Self::ParameterRenamed | Self::SourceCarried => Severity::Info,
             Self::EditDropped(_) | Self::RecordInvalid(_) | Self::RuleInvalid => Severity::Error,
         }
     }
@@ -85,6 +104,7 @@ impl ExportLossCode {
         let kind = match self {
             Self::ArenaOmitted(kind) | Self::EditDropped(kind) | Self::RecordInvalid(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
+            Self::SourceCarried | Self::SourceUnchecked => return LossTaxonomy::RecordNotTyped,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::EvaluationMissing
             | Self::EvaluationStale
@@ -92,7 +112,8 @@ impl ExportLossCode {
             | Self::ParameterRenamed
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable
-            | Self::RuleInvalid => return LossTaxonomy::ParametricRecordOmitted,
+            | Self::RuleInvalid
+            | Self::EditUnverified => return LossTaxonomy::ParametricRecordOmitted,
         };
         match kind {
             EntityKind::Body
@@ -339,3 +360,49 @@ pub fn record_invalid(kind: EntityKind, message: impl Into<String>) -> LossNote 
 pub fn rule_invalid(message: impl Into<String>) -> LossNote {
     ExportLossCode::RuleInvalid.note(message)
 }
+
+/// `export:edit.unverified`: the writer patched a file of which it holds no
+/// digest, so it cannot tell which records are edited. The message names the
+/// file (§3.4, Paths item 4).
+#[must_use]
+pub fn edit_unverified(message: impl Into<String>) -> LossNote {
+    ExportLossCode::EditUnverified.note(message)
+}
+
+/// The losses of a file that `path` wrote from the retained records of
+/// `fidelity`: `export:source.carried` for a replay or a patch that holds the
+/// bytes of an `untyped` record, and `export:source.unchecked` beside it for a
+/// patch. Each note names the records and the classes they can hold (§3.4,
+/// Paths).
+#[must_use]
+pub fn carried_source_losses(fidelity: Option<&SourceFidelity>, path: &WritePath) -> Vec<LossNote> {
+    let patched = match path {
+        WritePath::Synthesized { .. } => return Vec::new(),
+        WritePath::VerbatimReplay => false,
+        WritePath::Patched { .. } => true,
+    };
+    let records: Vec<String> = fidelity
+        .into_iter()
+        .flat_map(SourceFidelity::retained_records)
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, record)| format!("{id} ({})", class_list(record.untyped())))
+        .collect();
+    if records.is_empty() {
+        return Vec::new();
+    }
+    let records = records.join("; ");
+    let mut losses = vec![ExportLossCode::SourceCarried.note(format!(
+        "the file holds the bytes of untyped retained records, content the document does not \
+         state: {records}"
+    ))];
+    if patched {
+        losses.push(ExportLossCode::SourceUnchecked.note(format!(
+            "the patched file holds the bytes of untyped retained records beside the edits it \
+             wrote, unchecked against them: {records}"
+        )));
+    }
+    losses
+}
+
+#[cfg(test)]
+mod tests;
