@@ -1700,6 +1700,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
                 trailing_fields: Vec::new(),
             },
         )],
+        crate::history::bind::FeatureOutputSources::default(),
     )
     .unwrap();
 
@@ -1805,7 +1806,14 @@ fn configuration_frame_alias_binds_without_body_membership() {
     );
 
     let lane = feature_input_lane("lane", Some("3"));
-    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[]).unwrap();
+    bind_configuration_topology_selections(
+        &mut ir,
+        &[],
+        &[lane],
+        &[],
+        crate::history::bind::FeatureOutputSources::default(),
+    )
+    .unwrap();
 
     assert!(matches!(
         &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
@@ -1817,3 +1825,4 @@ fn configuration_frame_alias_binds_without_body_membership() {
 }
 
 mod holes;
+mod outputs;

@@ -7,6 +7,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -23,9 +24,12 @@ pub(super) struct Encoded<T> {
 /// Run `encode` on `ir`, and on each failure leave out the bodies the failure
 /// names. A failure that names no body's record first leaves out the geometry
 /// no body owns, then every body. A resource or I/O failure, and a failure
-/// with nothing left to leave out, is returned.
+/// with nothing left to leave out, is returned. `state` names the
+/// configuration whose stored state `ir` is, which the note names; `None` is
+/// the current geometry, whose reduction to no face is also noted.
 pub(super) fn encode_without_unwritable_bodies<T>(
     ir: &CadIr,
+    state: Option<&ConfigurationId>,
     encode: impl Fn(&CadIr) -> Result<T, CodecError>,
 ) -> Result<Encoded<T>, CodecError> {
     let mut reduced: Option<CadIr> = None;
@@ -36,14 +40,17 @@ pub(super) fn encode_without_unwritable_bodies<T>(
             Ok(partitions) => {
                 let mut losses = Vec::new();
                 if !entries.is_empty() {
+                    let of = state.map_or_else(String::new, |configuration| {
+                        format!(" of the state configuration {configuration} stores")
+                    });
                     losses.push(SldprtLossCode::WriterBodiesOmitted.note(format!(
-                        "{} body or bodies, or geometry no body owns, cannot be encoded as SLDPRT \
-                         B-rep records and are not written: {}",
+                        "{} body or bodies{of}, or geometry no body owns, cannot be encoded as \
+                         SLDPRT B-rep records and are not written: {}",
                         entries.len(),
                         entries.join("; ")
                     )));
                 }
-                if reduced.is_some() {
+                if reduced.is_some() && state.is_none() {
                     losses.extend(super::reduce::empty_output(current));
                 }
                 return Ok(Encoded {
