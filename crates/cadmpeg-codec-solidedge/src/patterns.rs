@@ -29,6 +29,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::units::UnitVector3;
 
+use crate::construction;
 use crate::extents::{model_point, named, real_at, slot, MM_PER_M, PART_CLASS};
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::{arc_2d, line_2d, mirror_group, pattern_group, reference_plane};
@@ -190,7 +191,7 @@ fn run_direction(
     .ok_or_else(|| "a pattern line has no direction".to_owned())?;
     Ok(Construction::<kinds::Direction> {
         resolved: Some(resolved),
-        ..Construction::default()
+        ..construction::empty()
     })
 }
 
@@ -331,7 +332,7 @@ fn read_pattern(
             let layout = PatternLayout::Circular {
                 axis: Construction::<kinds::Axis> {
                     resolved: Some(axis),
-                    ..Construction::default()
+                    ..construction::empty()
                 },
                 angular: run(instances, Dimension::Literal(step)),
                 radial: None,
@@ -382,7 +383,7 @@ fn mirror_plane(object: &Object<'_>) -> Result<Construction<kinds::Plane>, Strin
             x_axis: UnitVector3::normalized(normal.cross(basis))
                 .ok_or_else(|| "the mirror plane frame is degenerate".to_owned())?,
         }),
-        ..Construction::default()
+        ..construction::empty()
     })
 }
 
