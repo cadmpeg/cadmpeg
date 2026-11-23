@@ -19,7 +19,7 @@ impl<'a> ActiveBodies<'a> {
     pub(super) fn new(bodies: &'a [Body], primary_brep: Option<&'a str>) -> Self {
         let mut by_slot = HashMap::<i64, Vec<&BodyId>>::new();
         for body in bodies {
-            if let Some(slot) = super::stable_ref(body.id.as_str()) {
+            if let Some(slot) = super::body_closures::stable_ref(body.id.as_str()) {
                 by_slot.entry(slot).or_default().push(&body.id);
             }
         }
@@ -43,7 +43,7 @@ impl<'a> ActiveBodies<'a> {
         } else if id.starts_with("f3d:brep:") {
             self.unqualified_source == Some(source)
         } else {
-            super::entity_in_brep_source(id, source)
+            super::face_resolution::entity_in_brep_source(id, source)
         }
     }
 

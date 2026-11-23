@@ -27,7 +27,7 @@ pub(super) fn validate_edge_operands<'a>(
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
-    let scope_histories = history::bind_scope_histories(
+    let scope_histories = history::scope_histories::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -35,13 +35,14 @@ pub(super) fn validate_edge_operands<'a>(
         &native.asm_histories,
         &mut Vec::new(),
     );
-    let expected_face_boundaries = history::bind_edge_operand_history_candidates(
-        &mut expected_edge_operands,
-        &native.design_parameter_scopes,
-        &native.construction_recipes,
-        history::BindingHistories::Shared(&native.asm_histories),
-        &scope_histories,
-    )?;
+    let expected_face_boundaries =
+        history::edge_operand_history::bind_edge_operand_history_candidates(
+            &mut expected_edge_operands,
+            &native.design_parameter_scopes,
+            &native.construction_recipes,
+            history::binding_histories::BindingHistories::Shared(&native.asm_histories),
+            &scope_histories,
+        )?;
     validate_face_boundaries(
         ctx,
         findings,
@@ -222,7 +223,7 @@ pub(super) fn validate_face_boundaries<'a>(
             let slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
                 faces
                     .iter()
-                    .filter_map(|face| history::stable_ref(face.as_str()))
+                    .filter_map(|face| history::body_closures::stable_ref(face.as_str()))
                     .collect::<Vec<_>>()
             };
             check(
@@ -304,7 +305,7 @@ pub(super) fn validate_edge_treatment_vertex_operands<'a>(
             );
         }
     }
-    let scope_histories = history::bind_scope_histories(
+    let scope_histories = history::scope_histories::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -312,7 +313,7 @@ pub(super) fn validate_edge_treatment_vertex_operands<'a>(
         &native.asm_histories,
         &mut Vec::new(),
     );
-    history::bind_edge_treatment_vertex_history(
+    history::vertex_recipes::bind_edge_treatment_vertex_history(
         &mut expected,
         &native.design_parameter_scopes,
         &native.asm_histories,
