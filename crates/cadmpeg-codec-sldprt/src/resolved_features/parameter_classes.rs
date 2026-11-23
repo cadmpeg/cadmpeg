@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::View;
 
 use super::{is_class_token, COMPACT_SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use crate::archive::resolved_count;
+use crate::archive::{compound_opening, resolved_count};
 use crate::layout::feature_input_scalar_class_prefix as prefix;
 use crate::records::{
     ArchiveParameterClass, FeatureInputClass, FeatureInputLane, FeatureInputScalar,
@@ -56,6 +56,68 @@ impl StatedParameter {
     }
 }
 
+/// What a scalar's own record states of its parameter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Statement {
+    /// The parameter, in the class its record states.
+    Parameter(StatedParameter),
+    /// The parameter, in the class a compound-file lane's own declarations
+    /// alone give its class token. The stream does not state the index at
+    /// which `Config-N` ends (§2.2), so reading the token as the lane's own is
+    /// an assumption (open item EV-05).
+    Assumed(StatedParameter),
+    /// A class token whose class the decoder's sources name differently
+    /// (see [`token_classes`]), so the record states no class it reads.
+    Contested,
+}
+
+impl Statement {
+    /// The parameter the record states, in a class read or assumed.
+    pub(crate) fn parameter(self) -> Option<StatedParameter> {
+        match self {
+            Self::Parameter(parameter) | Self::Assumed(parameter) => Some(parameter),
+            Self::Contested => None,
+        }
+    }
+}
+
+/// The classes of the `Config-N` map a `ResolvedFeatures` lane that states
+/// a map count continues (`docs/formats/sldprt.md` §2.2), read where a walk
+/// of `Config-N` reconciles with that count. The lane's own declarations
+/// take the indices from the count on, and a token below it names the class
+/// `Config-N` holds at that index. The map holds the class at each index
+/// below the count at which the walk places one: its parameter class, or
+/// `None` for a class that is no parameter class.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConfigurationMap(BTreeMap<u16, Option<ArchiveParameterClass>>);
+
+impl ConfigurationMap {
+    /// The classes below the count `end` of `classes`, the map of a walk of
+    /// `Config-N` that reconciles with `end`.
+    pub(crate) fn reconciled(end: u32, classes: &BTreeMap<u32, String>) -> Self {
+        Self(
+            classes
+                .range(..end)
+                .filter_map(|(&index, name)| {
+                    Some((
+                        u16::try_from(index).ok()?,
+                        ArchiveParameterClass::from_class_name(name),
+                    ))
+                })
+                .collect(),
+        )
+    }
+}
+
+/// The class a class token names, from the sources that name it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TokenClass {
+    Parameter(ArchiveParameterClass),
+    /// A class only a compound-file lane's own declarations give the token.
+    Assumed(ArchiveParameterClass),
+    Contested,
+}
+
 /// What a scalar's parameter-class slot holds.
 #[derive(Debug, Clone, Copy)]
 enum Slot<'a> {
@@ -63,11 +125,18 @@ enum Slot<'a> {
     Token(u16),
 }
 
-/// The parameter each scalar of `lane` states, by scalar id. A scalar whose
-/// slot holds a class token states the class the lane's declarations give
-/// that token (see [`token_classes`]); a scalar whose class is not a
-/// parameter class, or whose token no declaration answers, states none.
-pub(crate) fn stated_parameters(lane: &FeatureInputLane) -> HashMap<&str, StatedParameter> {
+/// What each scalar of `lane` states of its parameter, by scalar id. A
+/// scalar whose slot holds a class token states the class its sources give
+/// that token (see [`token_classes`]): `configuration`, the classes of the
+/// `Config-N` map the lane continues; the lane's declarations; and the
+/// relation class declared beside the token. It is contested where they
+/// name different classes, and assumed where only the declarations of a
+/// compound-file lane name it. A scalar whose class is not a parameter
+/// class, or whose token no source names, states nothing.
+pub(crate) fn stated_parameters<'l>(
+    lane: &'l FeatureInputLane,
+    configuration: Option<&ConfigurationMap>,
+) -> HashMap<&'l str, Statement> {
     let payload = lane.native_payload.as_slice();
     let name_offsets = lane
         .names
@@ -96,17 +165,89 @@ pub(crate) fn stated_parameters(lane: &FeatureInputLane) -> HashMap<&str, Stated
             Some((scalar, name, slot(payload, &declarations, name)?))
         })
         .collect::<Vec<_>>();
-    let tokens = token_classes(payload, &lane.classes, &slots);
+    let related = slots
+        .iter()
+        .filter_map(|&(_, name, slot)| match slot {
+            Slot::Token(index) => Some((
+                index,
+                relation_parameter_class(payload, &declarations, name)?,
+            )),
+            Slot::Declared(_) => None,
+        })
+        .collect::<Vec<_>>();
+    let tokens = token_classes(
+        configuration,
+        resolved_count(payload),
+        compound_opening(payload),
+        &lane.classes,
+        &slots,
+        &related,
+    );
     slots
         .into_iter()
         .filter_map(|(scalar, _, slot)| {
-            let class = match slot {
-                Slot::Declared(name) => ArchiveParameterClass::from_class_name(name)?,
-                Slot::Token(index) => *tokens.get(&index)?,
+            let (class, assumed) = match slot {
+                Slot::Declared(name) => (ArchiveParameterClass::from_class_name(name)?, false),
+                Slot::Token(index) => match *tokens.get(&index)? {
+                    TokenClass::Parameter(class) => (class, false),
+                    TokenClass::Assumed(class) => (class, true),
+                    TokenClass::Contested => {
+                        return Some((scalar.id.as_str(), Statement::Contested))
+                    }
+                },
             };
-            Some((scalar.id.as_str(), stated(payload, scalar, class)?))
+            let stated = stated(payload, scalar, class)?;
+            Some((
+                scalar.id.as_str(),
+                if assumed {
+                    Statement::Assumed(stated)
+                } else {
+                    Statement::Parameter(stated)
+                },
+            ))
         })
         .collect()
+}
+
+/// The parameter class of the relation class declared in place before the
+/// parameter-class token of the name record at `name` (§2): its declaration
+/// ends where the token form's relation token ends, at prefix +2, and the
+/// zero u32 follows it. `None` where no relation class of a stated kind is
+/// declared there.
+fn relation_parameter_class(
+    payload: &[u8],
+    declarations: &HashMap<u64, &str>,
+    name: u64,
+) -> Option<ArchiveParameterClass> {
+    let start = usize::try_from(name).ok()?.checked_sub(prefix::LEN)?;
+    let relation_end = start.checked_add(prefix::ZERO)?;
+    let zero = payload.get(relation_end..start.checked_add(prefix::PARAMETER_CLASS_TOKEN)?)?;
+    if zero.iter().any(|&byte| byte != 0) {
+        return None;
+    }
+    relation_kind(declarations.get(&u64::try_from(relation_end).ok()?)?)
+}
+
+/// The parameter class of a sketch dimension whose relation class is `name`
+/// (§2).
+fn relation_kind(name: &str) -> Option<ArchiveParameterClass> {
+    Some(match name {
+        "sgPntPntDist"
+        | "sgLLDist"
+        | "sgPntLineDist"
+        | "sgPntPntHorDist"
+        | "sgPntPntVertDist"
+        | "sgPntLineHorDist"
+        | "sgPntLineVertDist"
+        | "sgOffsetDim"
+        | "sgSkOffsetDim"
+        | "sgPoint3DPlaneDist"
+        | "sg3DPlane3DPlaneDist"
+        | "sgCircleDim" => ArchiveParameterClass::Length,
+        "sgAnglDim" | "sgValG3Dim" => ArchiveParameterClass::Angle,
+        "sgCircularPattCntDim" | "sgLinearPattCntDim" => ArchiveParameterClass::Integer,
+        _ => return None,
+    })
 }
 
 /// The parameter-class slot before the name record at `name`: a declaration
@@ -167,19 +308,88 @@ fn count_trailer(payload: &[u8], at: usize) -> bool {
         && View::u32_le_at(payload, id_at).is_some_and(|id| id != 0 && id < COUNT_OBJECT_ID_BOUND)
 }
 
-/// The parameter class each class-token index of the lane's parameter slots
-/// names. A token names the class declared at that index of the stream's
-/// class map; declarations take ascending indices in stream order, and a token
-/// follows its class's declaration. The tokens of driving and display scalars,
-/// ascending, are given the lane's parameter-class declarations, in stream
-/// order, such that both orders agree and each token is first used after its
-/// declaration. A token to which every such assignment gives one class has
-/// that class; a token the assignments disagree on, or that no assignment
-/// exists for, is not named. A token below the stream's opening map count
-/// (see [`resolved_count`]) names a class of the `Config-N` map, which the
-/// lane does not hold.
+/// The class each class-token index of the lane's parameter slots names,
+/// from three sources, none of which outranks another:
+///
+/// - for a token below the stream's opening map count `stated`, a class
+///   `Config-N` holds, the class the reconciled walk of `Config-N` places at
+///   that index, where `configuration` holds one (see [`ConfigurationMap`]);
+/// - for the lane's other tokens, its declarations (see
+///   [`declared_token_classes`]);
+/// - for any token, the relation class declared beside it, `related`.
+///
+/// A token that every source naming it gives one parameter class has that
+/// class. A token at which the walk places a class that is no parameter
+/// class, and that no other source names, names none. A token the sources
+/// give different classes is contested. A `compound` lane, a compound-file
+/// lane, continues the `Config-N` map without stating its count, so every
+/// token joins the order rule over its declarations as the lane's own; a
+/// token only that rule names has its class by that assumption.
 fn token_classes(
-    payload: &[u8],
+    configuration: Option<&ConfigurationMap>,
+    stated: Option<u32>,
+    compound: bool,
+    classes: &[FeatureInputClass],
+    slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
+    related: &[(u16, ArchiveParameterClass)],
+) -> HashMap<u16, TokenClass> {
+    let held = |index: u16| stated.is_some_and(|count| u32::from(index) < count);
+    let own = slots
+        .iter()
+        .copied()
+        .filter(|&(_, _, slot)| matches!(slot, Slot::Token(index) if !held(index)))
+        .collect::<Vec<_>>();
+    let used = slots
+        .iter()
+        .filter_map(|&(_, _, slot)| match slot {
+            Slot::Token(index) => Some(index),
+            Slot::Declared(_) => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let walked = configuration
+        .into_iter()
+        .flat_map(|configuration| &configuration.0)
+        .filter(|&(&index, _)| used.contains(&index))
+        .map(|(&index, &class)| (index, class, false));
+    let ordered = declared_token_classes(classes, &own)
+        .into_iter()
+        .map(|(index, class)| (index, Some(class), compound));
+    let related = related
+        .iter()
+        .map(|&(index, class)| (index, Some(class), false));
+    let mut claims = HashMap::<u16, Vec<(Option<ArchiveParameterClass>, bool)>>::new();
+    for (index, claim, assumed) in walked.chain(ordered).chain(related) {
+        claims.entry(index).or_default().push((claim, assumed));
+    }
+    claims
+        .into_iter()
+        .filter_map(|(index, claims)| {
+            let (&(first, _), rest) = claims.split_first()?;
+            if rest.iter().any(|&(claim, _)| claim != first) {
+                return Some((index, TokenClass::Contested));
+            }
+            let class = first?;
+            Some((
+                index,
+                if claims.iter().all(|&(_, assumed)| assumed) {
+                    TokenClass::Assumed(class)
+                } else {
+                    TokenClass::Parameter(class)
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The parameter class the lane's declarations give each class-token index
+/// of `slots`. Declarations take ascending indices in stream order, and a
+/// token follows its class's declaration. The tokens of driving and display
+/// scalars, ascending, are given the lane's parameter-class declarations, in
+/// stream order, such that both orders agree and each token is first used
+/// after its declaration. A token to which every such assignment gives one
+/// class has that class; a token the assignments disagree on, or that no
+/// assignment exists for, is not named.
+fn declared_token_classes(
     classes: &[FeatureInputClass],
     slots: &[(&FeatureInputScalar, u64, Slot<'_>)],
 ) -> HashMap<u16, ArchiveParameterClass> {
@@ -204,10 +414,7 @@ fn token_classes(
         .into_iter()
         .filter_map(|index| Some((index, *first_use.get(&index)?)))
         .collect::<Vec<_>>();
-    if tokens.is_empty()
-        || resolved_count(payload)
-            .is_some_and(|count| tokens.iter().any(|&(index, _)| u32::from(index) < count))
-    {
+    if tokens.is_empty() {
         return HashMap::new();
     }
     let mut declared = classes

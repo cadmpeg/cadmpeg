@@ -193,10 +193,12 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
-    /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
     FeatureExtrudeReversalContradicted,
-    /// Extrusion travels against its profile normal on its end-spec reversal
-    /// flag alone: the solid neither holds nor contradicts that travel.
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
@@ -364,6 +366,9 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in a lane outside the active configuration.
+    WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -408,6 +413,14 @@ pub(crate) enum SldprtLossCode {
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
+    /// Dimensions whose kind is the parameter class a compound-file lane's
+    /// own declarations alone give their scalar's class token, which assumes
+    /// the token is the lane's own.
+    DesignParameterClassAssumed,
+    /// Dimensions whose scalars' parameter classes the decoder's class
+    /// sources name differently, and whose length the equation manager's
+    /// stored value gives where their display shows it.
+    DesignParameterClassesDisagree,
     /// Equation-manager lines that the decoder does not read into the
     /// expression of the parameter they assign.
     DesignEquationUnread,
@@ -564,6 +577,7 @@ impl SldprtLossCode {
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
         Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -580,6 +594,8 @@ impl SldprtLossCode {
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
+        Self::DesignParameterClassAssumed,
+        Self::DesignParameterClassesDisagree,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
     ];
@@ -736,6 +752,9 @@ impl SldprtLossCode {
                 "writer.configuration-snapshot-edit-unwritten"
             }
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -772,6 +791,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
+            Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
         }
@@ -786,6 +807,7 @@ impl SldprtLossCode {
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterDrivenDimensionsOmitted => Severity::Warning,
@@ -933,6 +955,8 @@ impl SldprtLossCode {
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationUnread
             | Self::DesignEquationSource => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
@@ -951,7 +975,9 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterSolidStaleAfterEdit | Self::WriterExtrudeReversalUnwritten => {
+            Self::WriterSolidStaleAfterEdit
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
@@ -1000,6 +1026,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
@@ -1430,6 +1458,7 @@ mod tests {
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
                 "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
@@ -1446,6 +1475,8 @@ mod tests {
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
+                "design.parameter-class-assumed",
+                "design.parameter-classes-disagree",
                 "design.equation-unread",
                 "design.equation-source",
             ]

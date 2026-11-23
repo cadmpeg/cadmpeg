@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve the complete ASM transition interval of a feature scope.
 
-use super::{
+use super::history_states::{
     header_previous_state_id, history_state_pair, transition_or_header_previous_state_id,
-    AsmHistory,
 };
 use crate::history_records::AsmHistoricalEntityDelta;
+use crate::history_records::AsmHistory;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub(super) struct OutputChain {

@@ -16,6 +16,7 @@ use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 
 mod circular_axis_frame;
+mod linked_spacing;
 
 fn tested_circular_pattern_construction_with_owners(
     bytes: &[u8],

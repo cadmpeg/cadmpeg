@@ -24,7 +24,7 @@ pub(super) fn historical_edge_samples(
         let Some(curve) = edge.curve().and_then(|curve| curves.get(curve.as_str())) else {
             continue;
         };
-        let Some(edge_ref) = super::stable_ref(edge.id.as_str()) else {
+        let Some(edge_ref) = super::body_closures::stable_ref(edge.id.as_str()) else {
             continue;
         };
         let Some(geometry) = curve.geometry.solved() else {
