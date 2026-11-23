@@ -2778,6 +2778,36 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_line_reference_record_tail`
+
+Spec §2 · layout: byte offsets · size: 57 B
+
+Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `scalar` | `f64` | little | spec | one positive scalar at tail offset `+0` |
+| 8 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at tail offset `+8` |
+| 32 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at tail offset `+32` |
+| 56 | 1 | `zero` | `bytes[1]` | little | spec | one zero byte at tail offset `+56` · value `[0]` |
+
+## `revolution_line_reference_nested_end`
+
+Spec §2 · layout: byte offsets · size: 6 B
+
+Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `zero` | `bytes[5]` | little | spec | five zero bytes at end offset `+0` · value `[0, 0, 0, 0, 0]` |
+| 5 | 1 | `selector` | `u8` | little | spec | a nonzero selector byte at end offset `+5` |
+
 ## `cosmetic_thread_component_edge_wrapper_prefix`
 
 Spec §2 · layout: byte offsets · size: 17 B
@@ -4328,6 +4358,51 @@ Unstated regions:
 
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
+
+## `sketch_dimension_parameter_trailer`
+
+Spec §Sketch objects · layout: byte offsets · size: 32 B
+
+The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `object_id` | `u32` | little | spec | the parameter's object identifier as a little-endian u32 at trailer +0 |
+| 20 | 4 | `measure` | `u32` | little | spec | the relation code of the dimension's measure as a little-endian u32 at trailer +20 |
+| 24 | 2 | `operand_count` | `u16` | little | spec | the operand count as a little-endian u16 at trailer +24 |
+| 26 | 4 | `word` | `u32` | little | spec | a little-endian u32 at trailer +26 |
+
+Unstated regions:
+
+- `4..20` (16 B): Sixteen bytes.
+- `30..32` (2 B): Two bytes.
+
+## `sketch_external_handle_block_54`
+
+Spec §Sketch objects · layout: byte offsets · size: 54 B
+
+The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 4 | `word_4` | `u32` | little | spec | a little-endian u32 at +4 |
+| 20 | 4 | `first_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 24 | 4 | `second_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 28 | 4 | `third_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 36 | 4 | `version` | `u32` | little | spec | a version number at +36 |
+| 40 | 14 | `trailing_zeros` | `bytes[14]` | little | spec | which end with fourteen zero bytes after the version · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..4` (4 B): Four bytes.
+- `8..20` (12 B): Twelve bytes.
+- `32..36` (4 B): Four bytes.
 
 ## Not tabulated
 

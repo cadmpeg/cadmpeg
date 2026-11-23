@@ -2476,6 +2476,46 @@ pub(crate) mod temporary_axis_declared_boundary_prefix {
     pub(crate) const NAME_LENGTH: usize = 5;
 }
 
+/// Byte offsets for the `revolution_line_reference_record_tail` record.
+///
+/// Spec §2. Record length 57 B.
+///
+/// ```text
+/// Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+/// ```
+pub(crate) mod revolution_line_reference_record_tail {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 57;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const SCALAR: usize = 0;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 8;
+    /// Offset of `direction` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const DIRECTION: usize = 32;
+    /// Offset of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO: usize = 56;
+    /// Stated value of `zero` (`bytes[1]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `revolution_line_reference_nested_end` record.
+///
+/// Spec §2. Record length 6 B.
+///
+/// ```text
+/// Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+/// ```
+pub(crate) mod revolution_line_reference_nested_end {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Stated value of `zero` (`bytes[5]`). Spec §2.
+    pub(crate) const ZERO_VALUE: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `selector` (`u8`). Spec §2.
+    pub(crate) const SELECTOR: usize = 5;
+}
+
 /// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
 ///
 /// Spec §2. Record length 17 B.
