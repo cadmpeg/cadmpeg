@@ -322,6 +322,10 @@ pub(crate) fn project(
         let node = *nodes
             .get(&surface)
             .ok_or_else(|| malformed("unresolved surface"))?;
+        if node.kind() == kind::SWEPT_SURF && swept_surface(&nodes, &mut ir, stream, surface, node)?
+        {
+            continue;
+        }
         let geometry = geometry::surface(&nodes, node).unwrap_or_else(|| {
             losses.push(SolidEdgeLossCode::SurfaceUnsupported.note(format!(
                 "surface node type {} has an unsupported carrier",
@@ -566,6 +570,91 @@ pub(crate) fn project(
         ir.tolerances.linear = linear;
     }
     Ok(ir)
+}
+
+/// A `SWEPT_SURF` as the linear sweep of its section curve. The stored sweep
+/// is a unit direction and a length scale in metres, or a null scale for unit
+/// parameter speed; the section curve joins
+/// the model when no edge has introduced it yet. A section that has no curve
+/// carrier or a degenerate sweep vector leaves the surface unsolved.
+fn swept_surface(
+    nodes: &Nodes<'_>,
+    ir: &mut CadIr,
+    stream: u32,
+    index: u32,
+    node: Node<'_>,
+) -> Result<bool, CodecError> {
+    let (Some(section), Some(direction), Some(scale)) = (
+        ptr(node, "section"),
+        node.vector("sweep"),
+        node.real("scale"),
+    ) else {
+        return Ok(false);
+    };
+    // A null scale leaves the sweep parameter equal to the distance along the
+    // unit direction, in the document length unit.
+    let length = if node.is_null("scale") == Some(true) {
+        1.0
+    } else {
+        scale * MM_PER_METRE
+    };
+    let curve = curve_id(stream, section);
+    if !ir.geometry.curves.iter().any(|value| value.id == curve) {
+        let Some(geometry) = nodes
+            .get(&section)
+            .and_then(|section| geometry::curve(nodes, *section))
+        else {
+            return Ok(false);
+        };
+        ir.geometry.curves.push(Curve {
+            id: curve.clone(),
+            geometry,
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        });
+    }
+    let Ok(definition) =
+        cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
+            curve,
+            cadmpeg_ir::math::Vector3::new(
+                direction[0] * length,
+                direction[1] * length,
+                direction[2] * length,
+            ),
+        )
+    else {
+        return Ok(false);
+    };
+    let owner = surface_id(stream, index);
+    let construction = cadmpeg_ir::ids::ProceduralSurfaceId::compose(
+        &cadmpeg_ir::identity_namespace!("solidedge", "brep", "surface-construction"),
+        (u64::from(stream) << 32) | u64::from(index),
+    );
+    let carrier = Surface {
+        id: owner.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+        native_ref: None,
+    };
+    ir.geometry.surfaces.push(carrier);
+    cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
+        .add_surface(
+            &mut ir.geometry,
+            &owner,
+            cadmpeg_ir::geometry::ProceduralSurface::new(
+                construction,
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(
+                    definition,
+                ),
+                None,
+            ),
+        )?
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    Ok(true)
 }
 
 /// The vertex that bounds a vertexless ring edge. Parasolid states a closed

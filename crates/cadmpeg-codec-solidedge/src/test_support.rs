@@ -392,6 +392,16 @@ pub(crate) fn cube_partition() -> Vec<u8> {
 /// A planar disc face of radius 5 mm bounded by one ring edge on a circle, with
 /// no vertex: the single fin is its own successor and predecessor.
 pub(crate) fn disc_partition() -> Vec<u8> {
+    ring_face_partition(None)
+}
+
+/// The ring face of `disc_partition` on a `SWEPT_SURF` whose section is the
+/// ring's circle, swept along +Z with the stated scale.
+pub(crate) fn swept_ring_partition(scale: f64) -> Vec<u8> {
+    ring_face_partition(Some(scale))
+}
+
+fn ring_face_partition(swept: Option<f64>) -> Vec<u8> {
     let sphere = sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
         .unwrap()
@@ -419,13 +429,23 @@ pub(crate) fn disc_partition() -> Vec<u8> {
     pointers(&mut bytes, &[1, 1, 6, 3, 5]);
     bytes.push(b'+');
     pointers(&mut bytes, &[1; 5]);
-    node(&mut bytes, 50, 5);
-    integer(&mut bytes, 0);
-    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
-    bytes.push(b'+');
-    vector(&mut bytes, [0.0, 0.0, 0.0]);
-    vector(&mut bytes, [0.0, 0.0, 1.0]);
-    vector(&mut bytes, [1.0, 0.0, 0.0]);
+    if let Some(scale) = swept {
+        node(&mut bytes, 67, 5);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        pointer(&mut bytes, 9);
+        vector(&mut bytes, [0.0, 0.0, 1.0]);
+        real(&mut bytes, scale);
+    } else {
+        node(&mut bytes, 50, 5);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+        bytes.push(b'+');
+        vector(&mut bytes, [0.0, 0.0, 0.0]);
+        vector(&mut bytes, [0.0, 0.0, 1.0]);
+        vector(&mut bytes, [1.0, 0.0, 0.0]);
+    }
     node(&mut bytes, 15, 6);
     integer(&mut bytes, 0);
     pointers(&mut bytes, &[1, 7, 4, 1]);
