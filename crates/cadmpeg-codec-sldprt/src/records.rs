@@ -158,6 +158,18 @@ pub(crate) struct Configuration {
     pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
+impl Configuration {
+    /// The configuration's index `N`, which names its `Config-N` streams: the
+    /// stored `SourceIndex`, else the decimal Keywords `id` (`sldprt.md` §2).
+    pub(crate) fn partition_index(&self) -> Option<u32> {
+        self.source_index.or_else(|| {
+            self.properties
+                .get("id")
+                .and_then(|value| value.parse().ok())
+        })
+    }
+}
+
 fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
@@ -409,6 +421,32 @@ pub(crate) enum HistoryContent {
     Feature(String),
     /// Non-whitespace root text content.
     Text(String),
+    /// A root child element that is neither a configuration nor a feature: an
+    /// `Application` element with its `Keyword` children.
+    Element(HistoryElement),
+}
+
+/// One XML element of a Keywords root and its subtree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HistoryElement {
+    /// Element name.
+    pub(crate) tag: String,
+    /// Source attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attributes: BTreeMap<NonBlankString, String>,
+    /// Child elements and non-whitespace text, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) content: Vec<HistoryElementContent>,
+}
+
+/// One ordered item inside a [`HistoryElement`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum HistoryElementContent {
+    /// Child element.
+    Element(HistoryElement),
+    /// Non-whitespace text content.
+    Text(String),
 }
 
 /// The full parametric construction-history timeline for a part.
@@ -580,14 +618,8 @@ impl FeatureInputLaneWire {
             .into_iter()
             .map(FeatureInputRelationInstanceWire::admit)
             .collect::<Result<Vec<_>, _>>()?;
-        let entities = self
-            .sketch_entities
-            .into_iter()
-            .map(|entity| {
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let entities = sketch_entities_from_wire(self.sketch_entities, &self.native_payload)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -610,11 +642,8 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
-        let sketch_entities = wire
-            .sketch_entities
-            .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
-            .collect::<Result<Vec<_>, _>>()?;
+        let sketch_entities =
+            sketch_entities_from_wire(wire.sketch_entities, &wire.native_payload)?;
         let relation_instances = wire
             .relation_instances
             .into_iter()
@@ -665,7 +694,7 @@ pub(crate) struct FeatureInputBodySelection {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mode"
     )]
-    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
@@ -1379,6 +1408,9 @@ pub(crate) struct SketchInputEntity {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
+    /// Curve form and relation code discarded by list-curve admission (DI-77).
+    #[serde(skip)]
+    pub(crate) listed_curve_relation_drop: Option<(&'static str, u32)>,
     /// Little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
@@ -1441,6 +1473,31 @@ pub(crate) struct SketchInputEntityWire {
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
+}
+
+fn sketch_entities_from_wire(
+    wire: Vec<SketchInputEntityWire>,
+    payload: &[u8],
+) -> Result<Vec<SketchInputEntity>, String> {
+    let Some(parent) = wire.first().map(|entity| entity.parent.as_str()) else {
+        return Ok(Vec::new());
+    };
+    let drops = crate::resolved_features::markers::admit_sketch_input_entities(payload, parent)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|entity| {
+            entity
+                .listed_curve_relation_drop
+                .map(|drop| (entity.offset(), drop))
+        })
+        .collect::<HashMap<_, _>>();
+    wire.into_iter()
+        .map(|entity| {
+            let mut entity = SketchInputEntity::try_from_wire(entity, payload)?;
+            entity.listed_curve_relation_drop = drops.get(&entity.offset()).copied();
+            Ok(entity)
+        })
+        .collect()
 }
 
 /// A selector paired with a nonempty collection of resolved marker links.
@@ -1636,6 +1693,7 @@ impl SketchInputEntity {
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
             local_id: crate::resolved_features::markers::marker_local_id(payload, position),
             kind,
+            listed_curve_relation_drop: None,
             state_value: None,
             coordinates_m: None,
             links: None,
@@ -1677,7 +1735,7 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = cadmpeg_test_support::service_decode_context()
+        let mut payload = cadmpeg_core::decode::test_support::service_decode_context()
             .alloc_filled(
                 position.checked_add(39).unwrap(),
                 0,
@@ -2854,7 +2912,7 @@ cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
 cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
 cadmpeg_core::named_optional_field!(
     deserialize_mode,
-    cadmpeg_ir::features::BodyRetentionMode,
+    cadmpeg_ir::features::operation_settings::BodyRetentionMode,
     "mode"
 );
 cadmpeg_core::named_optional_field!(

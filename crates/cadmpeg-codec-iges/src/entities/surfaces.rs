@@ -17,17 +17,18 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, positive_controls, HomogeneousBezierSpan,
 };
+use cadmpeg_ir::geometry::nurbs::{
+    KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
+    SurfaceParameterAxis, WeightedPole3,
+};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{
-        KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
-        SurfaceParameterAxis, WeightedPole3,
-    },
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1884,9 +1885,11 @@ pub(super) fn project(
                 native_ref: None,
             });
             let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
-                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                    "Extrusion.parameter_interval is not finite",
-                ))
+                CodecError::malformed(
+                    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                        "Extrusion.parameter_interval is not finite",
+                    ),
+                )
             })?;
             let bounds = RecordBounds::try_new([
                 Some(carrier_interval[0]),
@@ -1895,9 +1898,11 @@ pub(super) fn project(
                 None,
             ])
             .map_err(|_| {
-                CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                    "record bounds must be finite",
-                ))
+                CodecError::malformed(
+                    cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                        "record bounds must be finite",
+                    ),
+                )
             })?;
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -2097,9 +2102,11 @@ pub(super) fn project(
             native_ref: None,
         });
         let parameter_interval = FiniteVector::new(source_interval).ok_or_else(|| {
-            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                "Extrusion.parameter_interval is not finite",
-            ))
+            CodecError::malformed(
+                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "Extrusion.parameter_interval is not finite",
+                ),
+            )
         })?;
         let bounds = RecordBounds::try_new([
             Some(carrier_interval[0]),
@@ -2108,9 +2115,11 @@ pub(super) fn project(
             None,
         ])
         .map_err(|_| {
-            CodecError::malformed(cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                "record bounds must be finite",
-            ))
+            CodecError::malformed(
+                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
+                    "record bounds must be finite",
+                ),
+            )
         })?;
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
@@ -2350,7 +2359,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     Ok(ProceduralSurface::new(
@@ -2364,7 +2373,7 @@ pub(super) fn project(
                                 None,
                             ])
                             .map_err(|_| {
-                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                                cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                                     "record bounds must be finite",
                                 )
                             })?,
@@ -2553,7 +2562,7 @@ pub(super) fn project(
                     None,
                     Some(source_interval),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .and_then(|admitted_payload| {
                     RecordBounds::try_new([
@@ -2563,7 +2572,7 @@ pub(super) fn project(
                         None,
                     ])
                     .map_err(|_| {
-                        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                        cadmpeg_ir::geometry::legacy_cache::ProceduralGeometryError::Payload(
                             "record bounds must be finite",
                         )
                     })

@@ -47,7 +47,7 @@ fn values_return_to_scene_units_by_their_dimension() {
             },
         ),
     ]);
-    let (schema, written, unwritten) = lines(&settings);
+    let (schema, written, unwritten) = lines(&settings, super::super::MILLIMETRES_PER_METRE);
     assert_eq!(schema, "prepend apiSchemas = [\"PhysxJointAPI\"]");
     assert_eq!(unwritten, 0);
     assert!(
@@ -72,7 +72,7 @@ fn a_value_with_no_attribute_or_unit_is_not_written() {
             },
         ),
     ]);
-    let (_, written, unwritten) = lines(&settings);
+    let (_, written, unwritten) = lines(&settings, super::super::MILLIMETRES_PER_METRE);
     assert!(written.is_empty());
     assert_eq!(unwritten, 2);
 }

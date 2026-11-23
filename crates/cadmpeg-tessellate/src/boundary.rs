@@ -120,7 +120,7 @@ impl Sampler<'_, '_> {
                 model_curve_point_by_id(admission, self.index, curve, t)
             }),
         )
-        .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)
     }
 
@@ -774,7 +774,7 @@ fn pcurve_trace(
     };
     let range = use_.parameter_range.map_or(
         [*first, *last],
-        cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
     );
     let span = last - first;
     let mut out = Vec::new();

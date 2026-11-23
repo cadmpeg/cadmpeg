@@ -321,7 +321,24 @@
       "spatial_sketch_entities": [],
       "spatial_sketch_constraints": [],
       "spreadsheets": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "id": "f3d:model:product-definition#root",
+          "bom_properties": {},
+          "storage": {
+            "kind": "file",
+            "document": {}
+          },
+          "bodies": [
+            "f3d:brep:entity#1"
+          ],
+          "tessellations": [],
+          "occurrences": [],
+          "instance_bodies": [],
+          "representations": [],
+          "sketches": []
+        }
+      ],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -1670,6 +1687,18 @@
         },
         "severity": "warning",
         "message": "1 sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "feature.base-flange-side-assumed",
+            "kind": "feature_history_retained"
+          }
+        },
+        "severity": "warning",
+        "message": "Base flange f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3088 assumes the Forward material side; its operation frame stores no readable side (DR-67)."
       },
       {
         "code": {

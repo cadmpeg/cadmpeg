@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::BodyKind;
@@ -113,7 +114,7 @@ fn cube() -> cadmpeg_ir::document::Topology {
 }
 
 fn extract_cube(geometry: &cadmpeg_ir::document::Topology) -> Extract {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let body = geometry.bodies[0].id.as_str().to_owned();
     extract(&ctx, geometry, &body).expect("extraction runs")
 }
@@ -222,7 +223,7 @@ fn a_carrier_of_unknown_shape_is_absent() {
 #[test]
 fn a_body_that_the_state_lacks_is_absent() {
     let geometry = cube();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(matches!(
         extract(&ctx, &geometry, "inventor:brep:entity#missing").expect("extraction runs"),
         Extract::Absent
@@ -235,7 +236,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     let Extract::Nest(topology) = extract_cube(&geometry) else {
         panic!("a closed cube must extract");
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let want = Want {
         record: 0,
         ordinal: 2,

@@ -41,7 +41,7 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
             0.5,
             0.5
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
@@ -109,8 +109,9 @@ fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
                 == Some("iges:model:surface#D9")
         })
         .expect("Type 122 neutral carrier");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected an extrusion definition");
     };
@@ -161,8 +162,9 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("hyperbola tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload_0,
+        ) = procedural.definition()
         else {
             panic!("expected an exact extrusion definition");
         };
@@ -270,8 +272,9 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("placed tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload_0,
+        ) = procedural.definition()
         else {
             panic!("expected an exact placed extrusion definition");
         };
@@ -379,8 +382,9 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                     == Some(&surface.id)
             })
             .expect("placed NURBS tabulated construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload_0) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload_0,
+        ) = procedural.definition()
         else {
             panic!("expected an exact placed NURBS extrusion definition");
         };
@@ -410,7 +414,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 directrix_geometry,
                 0.5
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
@@ -420,7 +424,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
                 0.5,
                 0.5
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(

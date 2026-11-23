@@ -11,11 +11,11 @@ use crate::records::topology::construction::{
     DesignConstructionOperandRole,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
-    PathRef,
-};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -66,7 +66,7 @@ fn pattern_feature(pattern: PatternKind) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,

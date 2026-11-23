@@ -147,6 +147,7 @@ impl Records {
             self.brep.loops.push(LoopRecord {
                 oriented_edges: oriented,
                 vertex: None,
+                poles: Vec::new(),
             });
             indices.push(self.brep.loops.len() - 1);
         }

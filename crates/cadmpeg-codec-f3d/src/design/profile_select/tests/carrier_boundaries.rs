@@ -9,7 +9,7 @@ const EPS_TRANSITION_PROFILE: f64 = 1.0e-6;
 
 #[test]
 fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries() {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut profiles = Vec::new();

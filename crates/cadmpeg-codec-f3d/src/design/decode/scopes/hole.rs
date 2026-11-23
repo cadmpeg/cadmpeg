@@ -7,7 +7,7 @@ use super::point_direction::{
 };
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
-use crate::design::decode::operands::parse_entity_selection_frame;
+use crate::design::decode::operands::entity_selections::parse_entity_selection_frame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;

@@ -1,6 +1,6 @@
 # Rhino 3DM format
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/rhino.md`](../layouts/rhino.md), generated from `docs/layouts/rhino.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/rhino.md`](../layouts/rhino.md), generated from `docs/layouts/rhino.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Archive bands
 

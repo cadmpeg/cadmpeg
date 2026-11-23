@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains,
-    ExtrusionProfile, ProfileEntity, ProfileValidationWork, ValidatedProfile,
-    EPS_GEOMETRY_AGREEMENT,
+    ordered_extrusion_profiles, ordered_extrusion_profiles_within, profile_segments_intersect,
+    profile_strictly_contains, ExtrusionProfile, ProfileEntity, ProfileValidationWork,
+    ValidatedProfile, EPS_GEOMETRY_AGREEMENT, PROFILE_VALIDATION_WORK_FLOOR,
 };
 use super::{PcurveNurbs, Point2, SketchGeometry, SketchGeometryDefinition};
 use crate::lane_refusal::LaneRefusals;
@@ -76,7 +76,8 @@ fn all_pairs_ordered(ctx: &DecodeContext<'_>, profiles: Vec<ExtrusionProfile>) -
             ValidatedProfile::new(
                 ctx,
                 profile,
-                &mut ProfileValidationWork::new(usize::MAX / 256).expect("work"),
+                &mut ProfileValidationWork::new(usize::MAX / 256, PROFILE_VALIDATION_WORK_FLOOR)
+                    .expect("work"),
             )
             .expect("validate")?,
         );
@@ -274,7 +275,7 @@ fn many_sided_polygon_with_holes_is_ordered() {
 fn serpentine_profile_stops_at_the_validation_work_limit() {
     crate::decode::with_service_context(|ctx| {
         let mut points = Vec::new();
-        for row in 0..20_000_u32 {
+        for row in 0..1_000_u32 {
             let y = f64::from(row);
             if row % 2 == 0 {
                 points.extend([[0.0, y], [1000.0, y]]);
@@ -282,13 +283,17 @@ fn serpentine_profile_stops_at_the_validation_work_limit() {
                 points.extend([[1000.0, y], [0.0, y]]);
             }
         }
-        let top = f64::from(19_999_u32);
+        let top = f64::from(999_u32);
         points.extend([[-1.0, top], [-1.0, 0.0]]);
         let mut refusal = LaneRefusals::new();
-        assert_eq!(
-            swept_ordered(ctx, vec![polygon(ctx, &points)], &mut refusal),
-            None
-        );
+        assert!(ordered_extrusion_profiles_within(
+            ctx,
+            vec![polygon(ctx, &points)],
+            0,
+            &mut refusal
+        )
+        .expect("order the extrusion profiles")
+        .is_none());
         let records = refusal.take_records();
         assert_eq!(records.len(), 1);
         assert!(

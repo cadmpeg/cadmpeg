@@ -45,8 +45,8 @@ fn design_parameter(key: &str, kind: ValueKind) -> DesignParameter {
     }
 }
 
-fn model_parameter(key: &str) -> crate::features::DesignParameter {
-    crate::features::DesignParameter {
+fn model_parameter(key: &str) -> crate::features::parameters::DesignParameter {
+    crate::features::parameters::DesignParameter {
         product_definition: None,
         id: parameter_id(key),
         owner: None,
@@ -55,7 +55,7 @@ fn model_parameter(key: &str) -> crate::features::DesignParameter {
         expression: "1mm".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,

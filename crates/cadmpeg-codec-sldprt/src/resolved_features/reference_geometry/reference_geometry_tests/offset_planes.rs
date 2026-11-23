@@ -173,8 +173,11 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
     );
 }
 
-#[test]
-fn offset_plane_frame_translates_its_reference_frame() {
+/// The sketch-plane frame of an offset plane 3 mm above the Top plane that
+/// stores `stored` as its own `Normal` and `UAxis`.
+fn top_offset_plane_frame(
+    stored: Option<(&str, &str)>,
+) -> Option<crate::resolved_features::curves::SketchPlaneFrame> {
     use cadmpeg_ir::features::Feature as NeutralFeature;
 
     let native = |id: &str, source: &str| Feature {
@@ -200,17 +203,35 @@ fn offset_plane_frame_translates_its_reference_frame() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         ),
         native_ref: Some(native_ref.into()),
     };
+    let mut offset = neutral(
+        "synthetic:test:id#offset",
+        "offset-native",
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(cadmpeg_ir::features::datums::DatumPlaneReference::Feature {
+                feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
+            }),
+            distance: Length::new(3.0).unwrap(),
+        }),
+    );
+    if let Some((normal, u_axis)) = stored {
+        offset
+            .source_properties
+            .insert(cadmpeg_core::nonblank_literal!("Normal"), normal.into());
+        offset
+            .source_properties
+            .insert(cadmpeg_core::nonblank_literal!("UAxis"), u_axis.into());
+    }
     let features = vec![
         neutral(
             "synthetic:test:id#plane",
@@ -219,16 +240,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
                 plane: PrincipalPlane::Top,
             }),
         ),
-        neutral(
-            "synthetic:test:id#offset",
-            "offset-native",
-            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
-                    feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
-                }),
-                distance: Length::new(3.0).unwrap(),
-            }),
-        ),
+        offset,
     ];
     let history = crate::records::FeatureHistory {
         id: "history".into(),
@@ -239,13 +251,51 @@ fn offset_plane_frame_translates_its_reference_frame() {
         features: vec![native("plane-native", "3"), native("offset-native", "549")],
     };
 
+    sketch_plane_frames(&features, &[history])
+        .get(&549)
+        .copied()
+}
+
+fn top_offset_frame_with_u_axis(
+    u_axis: cadmpeg_ir::math::Vector3,
+) -> crate::resolved_features::curves::SketchPlaneFrame {
+    crate::resolved_features::curves::SketchPlaneFrame {
+        origin: Point3::new(0.0, 3.0, 0.0),
+        normal: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        u_axis,
+        u_axis_source: SketchPlaneUAxisSource::Native,
+        principal: None,
+    }
+}
+
+#[test]
+fn offset_plane_frame_translates_its_reference_frame() {
     assert_eq!(
-        sketch_plane_frames(&features, &[history]).get(&549),
-        Some(&crate::resolved_features::curves::SketchPlaneFrame {
-            origin: Point3::new(0.0, 0.0, 3.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            u_axis_source: SketchPlaneUAxisSource::Native,
-        })
+        top_offset_plane_frame(None),
+        Some(top_offset_frame_with_u_axis(
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        ))
     );
+}
+
+#[test]
+fn offset_plane_frame_takes_its_own_stored_u_axis() {
+    assert_eq!(
+        top_offset_plane_frame(Some(("0,1,0", "0,0,1"))),
+        Some(top_offset_frame_with_u_axis(
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        ))
+    );
+}
+
+#[test]
+fn offset_plane_frame_keeps_the_source_u_axis_for_an_opposite_or_tilted_stored_frame() {
+    for stored in [("0,-1,0", "0,0,1"), ("0,1,0", "0,0.5,1")] {
+        assert_eq!(
+            top_offset_plane_frame(Some(stored)),
+            Some(top_offset_frame_with_u_axis(
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+            ))
+        );
+    }
 }

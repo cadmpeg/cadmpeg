@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::geometry::SurfaceGeometry;
@@ -58,7 +58,7 @@ fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -85,7 +85,8 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
             pcurve: crate::ids::PcurveId::mint("test:model:pcurve#second").expect("valid identity"),
             isoparametric: Some(false),
             parameter_range: Some(
-                crate::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+                crate::geometry::procedural_curves::DirectedParameterRange::new([0.0, 1.0])
+                    .unwrap(),
             ),
         },
     ];
@@ -103,16 +104,19 @@ fn support_side_rejects_orphan_legacy_parameter_range() {
         "pcurve": null,
         "pcurve_parameter_range": [0.0, 1.0],
     });
-    assert!(serde_json::from_value::<crate::geometry::IntcurveSupportSide>(wire).is_err());
+    assert!(
+        serde_json::from_value::<crate::geometry::intersection_curves::IntcurveSupportSide>(wire)
+            .is_err()
+    );
 }
 
 #[test]
 fn the_g2_full_support_is_one_nested_key_or_absent() {
-    let shape = crate::geometry::G2BlendFirstShape::Full {
-        support: Some(crate::geometry::G2BlendFullSupport {
+    let shape = crate::geometry::blends::G2BlendFirstShape::Full {
+        support: Some(crate::geometry::blends::G2BlendFullSupport {
             surface: crate::ids::SurfaceId::mint("test:model:surface#support")
                 .expect("valid identity"),
-            tolerance: crate::geometry::FitTolerance::try_new(0.02).unwrap(),
+            tolerance: crate::geometry::legacy_cache::FitTolerance::try_new(0.02).unwrap(),
         }),
     };
     let value = serde_json::to_value(&shape).unwrap();
@@ -127,17 +131,18 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
         })
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::G2BlendFirstShape>(value.clone()).unwrap(),
+        serde_json::from_value::<crate::geometry::blends::G2BlendFirstShape>(value.clone())
+            .unwrap(),
         shape
     );
 
-    let absent = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(
+    let absent = serde_json::from_value::<crate::geometry::blends::G2BlendFirstShape>(
         serde_json::json!({"kind": "full"}),
     )
     .unwrap();
     assert_eq!(
         absent,
-        crate::geometry::G2BlendFirstShape::Full { support: None }
+        crate::geometry::blends::G2BlendFirstShape::Full { support: None }
     );
 
     let mut half = value.clone();
@@ -145,14 +150,14 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
         .as_object_mut()
         .expect("a support object")
         .remove("tolerance");
-    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(half)
+    let error = serde_json::from_value::<crate::geometry::blends::G2BlendFirstShape>(half)
         .unwrap_err()
         .to_string();
     assert!(error.contains("tolerance"), "{error}");
 
     let mut bogus = value;
     bogus["support"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(bogus)
+    let error = serde_json::from_value::<crate::geometry::blends::G2BlendFirstShape>(bogus)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -160,12 +165,12 @@ fn the_g2_full_support_is_one_nested_key_or_absent() {
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct RevisionCompoundLoftDirectionWireTest {
-    direction: crate::geometry::CompoundLoftDirection,
+    direction: crate::geometry::lofts::CompoundLoftDirection,
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct VariableBlendShapeWireTest {
-    radii: crate::geometry::VariableBlendRadii,
+    radii: crate::geometry::variable_blends::VariableBlendRadii,
     u_range: [f64; 2],
     #[serde(
         default,
@@ -175,11 +180,13 @@ struct VariableBlendShapeWireTest {
     v_lower: Option<f64>,
 }
 
-fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendValue {
-    crate::geometry::VariableBlendValue {
+fn variable_blend_value(
+    discriminator: i64,
+) -> crate::geometry::variable_blends::VariableBlendValue {
+    crate::geometry::variable_blends::VariableBlendValue {
         modern_flag: false,
         calibrated: 0,
-        payload: crate::geometry::VariableBlendValuePayload::TwoEnds {
+        payload: crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
             discriminator,
             parameters: [0.0, 1.0],
             radii: [1.0, 2.0],
@@ -190,7 +197,7 @@ fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendVal
 #[test]
 fn the_variable_blend_radii_are_one_nested_tagged_object() {
     let value = VariableBlendShapeWireTest {
-        radii: crate::geometry::VariableBlendRadii::Two {
+        radii: crate::geometry::variable_blends::VariableBlendRadii::Two {
             first: variable_blend_value(0),
             second: variable_blend_value(1),
         },
@@ -214,7 +221,7 @@ fn the_variable_blend_radii_are_one_nested_tagged_object() {
 #[test]
 fn a_single_variable_blend_radius_has_no_second_law_key() {
     let single = VariableBlendShapeWireTest {
-        radii: crate::geometry::VariableBlendRadii::Single {
+        radii: crate::geometry::variable_blends::VariableBlendRadii::Single {
             value: variable_blend_value(0),
         },
         u_range: [-1.0, 2.0],
@@ -247,7 +254,7 @@ fn a_single_variable_blend_radius_has_no_second_law_key() {
 
 #[test]
 fn an_absent_blend_tangent_is_spelled_null_and_no_magic_value() {
-    use crate::geometry::VariableBlendInterpolationPoint;
+    use crate::geometry::variable_blends::VariableBlendInterpolationPoint;
     use crate::math::{Point3, Vector3};
 
     let point = VariableBlendInterpolationPoint {
@@ -265,21 +272,21 @@ fn an_absent_blend_tangent_is_spelled_null_and_no_magic_value() {
     );
 }
 
-fn empty_loft_subdata() -> crate::geometry::LoftSubdata {
-    crate::geometry::LoftSubdata::type_211([1, 0], [0.0, 1.0])
+fn empty_loft_subdata() -> crate::geometry::lofts::LoftSubdata {
+    crate::geometry::lofts::LoftSubdata::type_211([1, 0], [0.0, 1.0])
 }
 
 #[test]
 fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
-    let table = crate::geometry::LoftSubdata::table(
+    let table = crate::geometry::lofts::LoftSubdata::table(
         7,
         vec![
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [0.0, 1.0],
                 columns: vec![[2.0, 3.0]],
                 extra: None,
             },
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [4.0, 5.0],
                 columns: vec![[6.0, 7.0]],
                 extra: Some([8.0, 9.0]),
@@ -291,15 +298,15 @@ fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
     assert_eq!(table.row_count(), 2);
     assert_eq!(table.column_count(), 1);
 
-    assert!(crate::geometry::LoftSubdata::table(
+    assert!(crate::geometry::lofts::LoftSubdata::table(
         9,
         vec![
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [0.0, 1.0],
                 columns: Vec::new(),
                 extra: None,
             },
-            crate::geometry::LoftSubdataRow {
+            crate::geometry::lofts::LoftSubdataRow {
                 parameters: [2.0, 3.0],
                 columns: vec![[4.0, 5.0]],
                 extra: None,
@@ -311,11 +318,11 @@ fn loft_subdata_derives_counts_and_refuses_a_ragged_table() {
 
 #[test]
 fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
-    let table = crate::geometry::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
+    let table = crate::geometry::lofts::LoftSubdata::type_211([4, 0], [2.0, 3.0]);
     assert_eq!(table.row_count(), 4);
     assert_eq!(table.column_count(), 0);
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftSubdata>(
+        serde_json::from_value::<crate::geometry::lofts::LoftSubdata>(
             serde_json::to_value(&table).unwrap()
         )
         .unwrap(),
@@ -325,12 +332,12 @@ fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
 
 #[test]
 fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
-    let support = crate::geometry::LoftProfileMember {
-        profile: crate::geometry::LoftPathCurve {
+    let support = crate::geometry::lofts::LoftProfileMember {
+        profile: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([Some(0.0), Some(1.0)]),
         },
-        form: crate::geometry::LoftMemberForm::Support {
+        form: crate::geometry::lofts::LoftMemberForm::Support {
             type_code: 3,
             surface: Some(
                 crate::ids::SurfaceId::mint("test:model:surface#loft").expect("valid identity"),
@@ -351,16 +358,16 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
     assert_eq!(wire["form"]["first_flag"], true);
     assert!(wire["form"].get("secondary_pcurve").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftProfileMember>(wire.clone()).unwrap(),
+        serde_json::from_value::<crate::geometry::lofts::LoftProfileMember>(wire.clone()).unwrap(),
         support
     );
 
-    let pair = crate::geometry::LoftProfileMember {
-        profile: crate::geometry::LoftPathCurve {
+    let pair = crate::geometry::lofts::LoftProfileMember {
+        profile: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([None, None]),
         },
-        form: crate::geometry::LoftMemberForm::PcurvePair {
+        form: crate::geometry::lofts::LoftMemberForm::PcurvePair {
             pcurve: None,
             secondary_pcurve: None,
             asm_extension: None,
@@ -373,12 +380,13 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
     assert!(pair_wire["form"].get("type_code").is_none());
     assert!(pair_wire["form"].get("support_bounds").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire.clone()).unwrap(),
+        serde_json::from_value::<crate::geometry::lofts::LoftProfileMember>(pair_wire.clone())
+            .unwrap(),
         pair
     );
 
     pair_wire["form"]["surface"] = serde_json::json!("test:model:surface#conflict");
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire)
+    let error = serde_json::from_value::<crate::geometry::lofts::LoftProfileMember>(pair_wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("surface"), "{error}");
@@ -389,7 +397,7 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
         "origin": {"u": 0.0, "v": 0.0},
         "direction": {"u": 1.0, "v": 0.0},
     });
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(support_wire)
+    let error = serde_json::from_value::<crate::geometry::lofts::LoftProfileMember>(support_wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("secondary_pcurve"), "{error}");
@@ -399,7 +407,7 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
         .as_object_mut()
         .unwrap()
         .remove("first_flag");
-    let error = serde_json::from_value::<crate::geometry::LoftProfileMember>(without_flag)
+    let error = serde_json::from_value::<crate::geometry::lofts::LoftProfileMember>(without_flag)
         .unwrap_err()
         .to_string();
     assert!(error.contains("first_flag"), "{error}");
@@ -407,8 +415,8 @@ fn a_loft_member_form_states_its_kind_and_carries_only_its_own_keys() {
 
 #[test]
 fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
-    let expression = crate::geometry::LawExpression::Edge {
-        curve: crate::geometry::LoftPathCurve {
+    let expression = crate::geometry::laws::LawExpression::Edge {
+        curve: crate::geometry::lofts::LoftPathCurve {
             id: crate::ids::CurveId::mint("test:model:curve#law").expect("valid identity"),
             endpoints: Some([None, Some(2.0)]),
         },
@@ -419,24 +427,24 @@ fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
     assert_eq!(wire["curve"], "test:model:curve#law");
     assert_eq!(wire["endpoints"], serde_json::json!([null, 2.0]));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawExpression>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::laws::LawExpression>(wire).unwrap(),
         expression
     );
 }
 
 #[test]
 fn a_law_formula_names_its_variant_with_a_tag() {
-    let null = crate::geometry::LawFormula::Null {};
+    let null = crate::geometry::laws::LawFormula::Null {};
     let null_wire = serde_json::to_value(&null).unwrap();
     assert_eq!(null_wire, serde_json::json!({ "kind": "null" }));
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawFormula>(null_wire).unwrap(),
+        serde_json::from_value::<crate::geometry::laws::LawFormula>(null_wire).unwrap(),
         null
     );
 
-    let named = crate::geometry::LawFormula::Named {
+    let named = crate::geometry::laws::LawFormula::Named {
         name: cadmpeg_core::nonblank_literal!("distance-law"),
-        variables: vec![crate::geometry::LawExpression::Double { value: 2.0 }],
+        variables: vec![crate::geometry::laws::LawExpression::Double { value: 2.0 }],
     };
     let named_wire = serde_json::to_value(&named).unwrap();
     assert_eq!(
@@ -448,11 +456,11 @@ fn a_law_formula_names_its_variant_with_a_tag() {
         })
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawFormula>(named_wire).unwrap(),
+        serde_json::from_value::<crate::geometry::laws::LawFormula>(named_wire).unwrap(),
         named
     );
 
-    let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    let error = serde_json::from_value::<crate::geometry::laws::LawFormula>(serde_json::json!({
         "kind": "null",
         "variables": []
     }))
@@ -464,7 +472,7 @@ fn a_law_formula_names_its_variant_with_a_tag() {
     // the native null token is an ordinary named law; the IR has no opinion
     // about the text, and the decoder maps the native token to Null before the
     // IR sees it.
-    let named = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
+    let named = serde_json::from_value::<crate::geometry::laws::LawFormula>(serde_json::json!({
         "kind": "named",
         "name": "a_named_law",
         "variables": []
@@ -476,26 +484,35 @@ fn a_law_formula_names_its_variant_with_a_tag() {
 #[test]
 fn a_law_formula_name_refuses_a_blank_string() {
     for blank in ["", " ", "\t"] {
-        let error = serde_json::from_value::<crate::geometry::LawFormula>(serde_json::json!({
-            "kind": "named",
-            "name": blank,
-            "variables": []
-        }))
-        .unwrap_err()
-        .to_string();
+        let error =
+            serde_json::from_value::<crate::geometry::laws::LawFormula>(serde_json::json!({
+                "kind": "named",
+                "name": blank,
+                "variables": []
+            }))
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("blank"), "{error}");
     }
 }
 
-fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
-    crate::geometry::ProceduralCurveDefinition::Spring(
+fn ranged_spring_definition() -> crate::geometry::procedural_curves::ProceduralCurveDefinition {
+    crate::geometry::procedural_curves::ProceduralCurveDefinition::Spring(
         crate::geometry::curve_payloads::SpringCurvePayload::try_new(
-            crate::geometry::SpringLayout::ContextFirst {
+            crate::geometry::surface_curves::SpringLayout::ContextFirst {
                 supports: [
-                    crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
-                    crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
+                    crate::geometry::surface_curves::SpringSupport::Ranges([
+                        [0.0, 1.0],
+                        [2.0, 3.0],
+                    ]),
+                    crate::geometry::surface_curves::SpringSupport::Ranges([
+                        [4.0, 5.0],
+                        [6.0, 7.0],
+                    ]),
                 ],
-                first_pcurve: Box::new(crate::geometry::SpringPcurve::Range([8.0, 9.0])),
+                first_pcurve: Box::new(crate::geometry::surface_curves::SpringPcurve::Range([
+                    8.0, 9.0,
+                ])),
                 second_pcurve: None,
                 parameter_range: [-1.0, 2.0],
                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],
@@ -526,7 +543,10 @@ fn the_spring_layout_is_one_nested_tagged_object() {
     );
     assert!(wire["layout"].get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(
+            wire
+        )
+        .unwrap(),
         definition
     );
 }
@@ -535,54 +555,62 @@ fn the_spring_layout_is_one_nested_tagged_object() {
 fn a_spring_support_side_states_one_carrier_and_no_other_key() {
     let mut split = serde_json::to_value(ranged_spring_definition()).unwrap();
     split["layout"]["supports"][0]["kind"] = serde_json::json!("surface");
-    let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(split).unwrap_err();
+    let error = serde_json::from_value::<
+        crate::geometry::procedural_curves::ProceduralCurveDefinition,
+    >(split)
+    .unwrap_err();
     assert!(error.to_string().contains("string"), "{error}");
 
     let mut cache_keys = serde_json::to_value(ranged_spring_definition()).unwrap();
     cache_keys["layout"]["form"] = serde_json::json!({});
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(cache_keys)
-        .unwrap_err();
+    let error = serde_json::from_value::<
+        crate::geometry::procedural_curves::ProceduralCurveDefinition,
+    >(cache_keys)
+    .unwrap_err();
     assert!(error.to_string().contains("form"), "{error}");
 
     let mut bogus = serde_json::to_value(ranged_spring_definition()).unwrap();
     bogus["layout"]["zz_bogus"] = serde_json::json!(1);
-    let error =
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(bogus).unwrap_err();
+    let error = serde_json::from_value::<
+        crate::geometry::procedural_curves::ProceduralCurveDefinition,
+    >(bogus)
+    .unwrap_err();
     assert!(error.to_string().contains("zz_bogus"), "{error}");
 }
 
 #[test]
 fn projection_role_keeps_the_native_string_wire_shape() {
-    let tail = crate::geometry::ProjectionTail::Ranged {
+    let tail = crate::geometry::surface_curves::ProjectionTail::Ranged {
         flag: true,
         parameter_range: [-1.0, 2.0],
-        role: crate::geometry::ProjectionRole::Surf2,
+        role: crate::geometry::surface_curves::ProjectionRole::Surf2,
     };
     let wire = serde_json::to_value(&tail).unwrap();
     assert_eq!(wire["role"], "surf2");
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::surface_curves::ProjectionTail>(wire).unwrap(),
         tail
     );
-    let error = serde_json::from_value::<crate::geometry::ProjectionTail>(serde_json::json!({
-        "kind": "ranged",
-        "flag": true,
-        "parameter_range": [-1.0, 2.0],
-        "role": "other"
-    }))
+    let error = serde_json::from_value::<crate::geometry::surface_curves::ProjectionTail>(
+        serde_json::json!({
+            "kind": "ranged",
+            "flag": true,
+            "parameter_range": [-1.0, 2.0],
+            "role": "other"
+        }),
+    )
     .unwrap_err();
     assert!(error.to_string().contains("projection role field"));
 }
 
 #[test]
 fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
-    let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset(
+    let definition = crate::geometry::procedural_curves::ProceduralCurveDefinition::VectorOffset(
         crate::geometry::curve_payloads::VectorOffsetCurveConstruction::try_new(
             crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
             [-1.0, 2.0],
             crate::math::Vector3::new(3.0, 4.0, 5.0),
-            crate::geometry::VectorOffsetRoles {
+            crate::geometry::procedural_curves::VectorOffsetRoles {
                 source: 7,
                 offset: 9,
             },
@@ -595,22 +623,29 @@ fn vector_offset_roles_are_two_named_keys_of_one_nested_object() {
     assert!(wire.get("labels").is_none());
     assert!(wire.get("codes").is_none());
     assert_eq!(
-        serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        serde_json::from_value::<crate::geometry::procedural_curves::ProceduralCurveDefinition>(
+            wire.clone()
+        )
+        .unwrap(),
         definition
     );
 
     let mut labelled = wire.clone();
     labelled["roles"]["labels"] = serde_json::json!(["source", "offset"]);
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(labelled)
-        .unwrap_err()
-        .to_string();
+    let error = serde_json::from_value::<
+        crate::geometry::procedural_curves::ProceduralCurveDefinition,
+    >(labelled)
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("labels"), "{error}");
 
     let mut stray = wire;
     stray["roles"]["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(stray)
-        .unwrap_err()
-        .to_string();
+    let error = serde_json::from_value::<
+        crate::geometry::procedural_curves::ProceduralCurveDefinition,
+    >(stray)
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
 
@@ -745,12 +780,9 @@ mod variable_blend_value;
 
 #[test]
 fn support_context_admission_preserves_mapping_and_numeric_invariants() {
-    use {
-        super::{
-            DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, SupportPcurve,
-        },
-        crate::geometry::pcurve::{LinePcurve, PcurveGeometry},
-    };
+    use super::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use super::procedural_curves::{DirectedParameterRange, SupportPcurve};
+    use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
     let sides = [
         IntcurveSupportSide {
             surface: None,
@@ -788,7 +820,11 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 1.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, original);
@@ -801,7 +837,11 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
 
             discontinuities[1].push(f64::INFINITY);
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, original);
@@ -817,13 +857,18 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
         let mut range = previous.parameter_range().endpoints();
         let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
-            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let sides: &mut [crate::geometry::intersection_curves::IntcurveSupportSide; 2] =
+                &mut sides;
             let range: &mut [f64; 2] = &mut range;
 
             sides[0].pcurve.as_mut().unwrap().parameter_range = None;
             *range = [1.0, 1.0];
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .unwrap();
     let unchanged = context.clone();
@@ -832,12 +877,17 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
         let range = previous.parameter_range().endpoints();
         let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
-            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let sides: &mut [crate::geometry::intersection_curves::IntcurveSupportSide; 2] =
+                &mut sides;
 
             sides[0].pcurve.as_mut().unwrap().parameter_range =
                 Some(DirectedParameterRange::new([5.0, 2.0]).unwrap());
         };
-        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        crate::geometry::intersection_curves::IntcurveSupportContext::try_new(
+            sides,
+            range,
+            discontinuities,
+        )
     })
     .is_err());
     assert_eq!(context, unchanged);
@@ -914,15 +964,18 @@ fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
     for (name, wire) in cases {
         let error = match name {
             "G2BlendFirstShape" => {
-                serde_json::from_value::<crate::geometry::G2BlendFirstShape>(wire).unwrap_err()
+                serde_json::from_value::<crate::geometry::blends::G2BlendFirstShape>(wire)
+                    .unwrap_err()
             }
-            "DeformableSurfaceData" => {
-                serde_json::from_value::<crate::geometry::DeformableSurfaceData>(wire).unwrap_err()
-            }
+            "DeformableSurfaceData" => serde_json::from_value::<
+                crate::geometry::deformable_surfaces::DeformableSurfaceData,
+            >(wire)
+            .unwrap_err(),
             "LawSurfaceTail" => {
-                serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap_err()
+                serde_json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap_err()
             }
-            _ => serde_json::from_value::<crate::geometry::ProjectionTail>(wire).unwrap_err(),
+            _ => serde_json::from_value::<crate::geometry::surface_curves::ProjectionTail>(wire)
+                .unwrap_err(),
         }
         .to_string();
         assert!(error.contains("zz_bogus"), "{name}: {error}");
@@ -931,8 +984,8 @@ fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
 
 #[test]
 fn a_law_surface_full_tail_states_its_solved_cache_contract() {
-    let tail = crate::geometry::LawSurfaceTail::Full {
-        cache: crate::geometry::LegacyCache::try_new(0.25).expect("fit tolerance"),
+    let tail = crate::geometry::laws::LawSurfaceTail::Full {
+        cache: crate::geometry::legacy_cache::LegacyCache::try_new(0.25).expect("fit tolerance"),
     };
     let wire = serde_json::to_value(tail.clone()).unwrap();
     assert_eq!(
@@ -940,7 +993,7 @@ fn a_law_surface_full_tail_states_its_solved_cache_contract() {
         serde_json::json!({"kind": "full", "cache": {"fit_tolerance": 0.25}})
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap(),
         tail
     );
 }
@@ -949,39 +1002,39 @@ fn a_law_surface_full_tail_states_its_solved_cache_contract() {
 fn every_payload_free_law_surface_tail_refuses_an_unknown_key() {
     for kind in ["full", "historical", "optimal"] {
         let wire = serde_json::json!({"kind": kind, "zz_bogus": 1});
-        let error = serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire)
+        let error = serde_json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{kind}: {error}");
     }
     for tail in [
-        crate::geometry::LawSurfaceTail::Historical {},
-        crate::geometry::LawSurfaceTail::Optimal {},
+        crate::geometry::laws::LawSurfaceTail::Historical {},
+        crate::geometry::laws::LawSurfaceTail::Optimal {},
     ] {
         let wire = serde_json::to_value(tail.clone()).unwrap();
         assert_eq!(
-            serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
+            serde_json::from_value::<crate::geometry::laws::LawSurfaceTail>(wire).unwrap(),
             tail
         );
     }
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Historical {}).unwrap(),
+        serde_json::to_value(crate::geometry::laws::LawSurfaceTail::<f64>::Historical {}).unwrap(),
         serde_json::json!({"kind": "historical"})
     );
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Optimal {}).unwrap(),
+        serde_json::to_value(crate::geometry::laws::LawSurfaceTail::<f64>::Optimal {}).unwrap(),
         serde_json::json!({"kind": "optimal"})
     );
 }
 
 #[test]
 fn the_skin_inner_count_lives_only_on_the_compact_layout_that_owns_it() {
-    use crate::geometry::{SkinSurfaceLayout, SkinSurfaceProfile};
+    use crate::geometry::skin_surfaces::{SkinSurfaceLayout, SkinSurfaceProfile};
 
     let compact = SkinSurfaceLayout::Compact {
         inner_count: 3,
         curve: "test:model:curve#0".try_into().expect("valid identity"),
-        subdata: crate::geometry::LoftSubdata::type_211([1, 1], [0.0, 1.0]),
+        subdata: crate::geometry::lofts::LoftSubdata::type_211([1, 1], [0.0, 1.0]),
         first_tail: 1,
         secondary_curve: "test:model:curve#1".try_into().expect("valid identity"),
         second_tail: 2,
@@ -1029,13 +1082,13 @@ fn the_shared_math_carriers_reject_an_unknown_key_by_name() {
 
 #[test]
 fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
-    let null = crate::geometry::LawExpression::Null {};
+    let null = crate::geometry::laws::LawExpression::Null {};
     assert_eq!(
         serde_json::to_value(&null).unwrap(),
         serde_json::json!({"kind": "null"})
     );
     assert_eq!(
-        serde_json::from_value::<crate::geometry::LawExpression>(
+        serde_json::from_value::<crate::geometry::laws::LawExpression>(
             serde_json::json!({"kind": "null"})
         )
         .unwrap(),
@@ -1045,7 +1098,7 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
         serde_json::json!({"kind": "null", "zz_bogus": 1}),
         serde_json::json!({"kind": "text", "value": "x", "zz_bogus": 1}),
     ] {
-        let error = serde_json::from_value::<crate::geometry::LawExpression>(wire)
+        let error = serde_json::from_value::<crate::geometry::laws::LawExpression>(wire)
             .unwrap_err()
             .to_string();
         assert!(error.contains("zz_bogus"), "{error}");
@@ -1057,7 +1110,7 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
         "variables": [],
         "zz_bogus": 1,
     });
-    let error = serde_json::from_value::<crate::geometry::LawFormula>(formula)
+    let error = serde_json::from_value::<crate::geometry::laws::LawFormula>(formula)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -1065,7 +1118,7 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
 
 #[test]
 fn the_ir_scalar_mints_name_no_native_sentinel() {
-    use crate::geometry::{LoftSubdata, LoftSubdataRow};
+    use crate::geometry::lofts::{LoftSubdata, LoftSubdataRow};
     use crate::scalar::PositiveI64;
 
     // A radius selector is positive. The native `-1` absence spelling fails

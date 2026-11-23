@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::operands::{
+use crate::design::decode::operands::extrude_selections::{
     decode_extrude_selection_groups, decode_extrude_selection_members,
 };
 use crate::records::decal::DesignRecordHeader;

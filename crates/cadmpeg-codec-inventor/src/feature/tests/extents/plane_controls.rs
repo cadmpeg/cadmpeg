@@ -94,7 +94,7 @@ fn face_surface_validator_checks_every_control() {
 
 #[test]
 fn plane_target_sources_distinguish_face_work_plane_and_work_point() {
-    use cadmpeg_ir::features::PlaneTargetSource;
+    use cadmpeg_ir::features::extents::PlaneTargetSource;
     for (slots, extra, expected) in [
         (
             vec![(13, 20), (18, 21)],
@@ -166,7 +166,7 @@ fn plane_target_sources_distinguish_face_work_plane_and_work_point() {
 
 #[test]
 fn from_to_plane_sources_have_independent_polarity() {
-    use cadmpeg_ir::features::{ExtrudeStart, PlaneTargetSource};
+    use cadmpeg_ir::features::extents::{ExtrudeStart, PlaneTargetSource};
     for (slots, expected) in [
         (
             vec![(8, 41), (13, 20), (18, 21)],

@@ -293,11 +293,56 @@ struct WritePlan<'a> {
     point_groups: Vec<PointGroup>,
 }
 
+/// Each arena position, grouped by the key of its entity.
+fn positions_by<'a, T>(
+    arena: &'a [T],
+    key: impl Fn(&'a T) -> &'a str,
+) -> std::collections::HashMap<&'a str, Vec<usize>> {
+    let mut index = std::collections::HashMap::<&str, Vec<usize>>::new();
+    for (position, entity) in arena.iter().enumerate() {
+        index.entry(key(entity)).or_default().push(position);
+    }
+    index
+}
+
+/// The entities of `arena` whose key is in `keys`, in arena order.
+fn members<'a, 'k, T>(
+    arena: &'a [T],
+    index: &std::collections::HashMap<&str, Vec<usize>>,
+    keys: impl IntoIterator<Item = &'k str>,
+) -> Vec<&'a T> {
+    let mut positions = keys
+        .into_iter()
+        .filter_map(|key| index.get(key))
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    positions.sort_unstable();
+    positions.dedup();
+    positions
+        .into_iter()
+        .map(|position| &arena[position])
+        .collect()
+}
+
 fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
     use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeSet;
 
     let geometry = &ir.geometry;
+    let regions_by_body = positions_by(&geometry.regions, |region| region.body.as_str());
+    let regions_by_id = positions_by(&geometry.regions, |region| region.id.as_str());
+    let shells_by_id = positions_by(&geometry.shells, |shell| shell.id.as_str());
+    let faces_by_shell = positions_by(&geometry.faces, |face| face.shell.as_str());
+    let faces_by_id = positions_by(&geometry.faces, |face| face.id.as_str());
+    let loops_by_id = positions_by(&geometry.loops, |loop_| loop_.id.as_str());
+    let coedges_by_id = positions_by(&geometry.coedges, |coedge| coedge.id.as_str());
+    let edges_by_id = positions_by(&geometry.edges, |edge| edge.id.as_str());
+    let vertices_by_id = positions_by(&geometry.vertices, |vertex| vertex.id.as_str());
+    let points_by_id = positions_by(&geometry.points, |point| point.id.as_str());
+    let surfaces_by_id = positions_by(&geometry.surfaces, |surface| surface.id.as_str());
+    let curves_by_id = positions_by(&geometry.curves, |curve| curve.id.as_str());
+    let pcurves_by_id = positions_by(&geometry.pcurves, |pcurve| pcurve.id.as_str());
     let mut scopes = Vec::new();
     let mut all_regions = BTreeSet::new();
     let mut all_shells = BTreeSet::new();
@@ -316,48 +361,56 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
         .iter()
         .filter(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
     {
-        let regions = geometry
-            .body_regions(&body.id)
+        let body_regions = members(&geometry.regions, &regions_by_body, [body.id.as_str()]);
+        let regions = body_regions
+            .iter()
             .map(|region| region.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let shells = geometry
-            .body_regions(&body.id)
+        let shells = body_regions
+            .iter()
             .flat_map(|region| region.shells.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let faces = geometry
-            .faces
+        let faces = members(
+            &geometry.faces,
+            &faces_by_shell,
+            shells.iter().map(String::as_str),
+        )
+        .into_iter()
+        .map(|face| face.id.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+        let body_faces = members(
+            &geometry.faces,
+            &faces_by_id,
+            faces.iter().map(String::as_str),
+        );
+        let surfaces = body_faces
             .iter()
-            .filter(|face| shells.contains(face.shell.as_str()))
-            .map(|face| face.id.as_str().to_owned())
-            .collect::<BTreeSet<_>>();
-        let surfaces = geometry
-            .faces
-            .iter()
-            .filter(|face| faces.contains(face.id.as_str()))
             .map(|face| face.surface.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let loops = geometry
-            .faces
+        let loops = body_faces
             .iter()
-            .filter(|face| faces.contains(face.id.as_str()))
             .flat_map(|face| face.loops.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let coedges = geometry
-            .loops
+        let body_loops = members(
+            &geometry.loops,
+            &loops_by_id,
+            loops.iter().map(String::as_str),
+        );
+        let coedges = body_loops
             .iter()
-            .filter(|loop_| loops.contains(loop_.id.as_str()))
             .flat_map(|loop_| loop_.coedges().iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let edges = geometry
-            .coedges
+        let body_coedges = members(
+            &geometry.coedges,
+            &coedges_by_id,
+            coedges.iter().map(String::as_str),
+        );
+        let edges = body_coedges
             .iter()
-            .filter(|coedge| coedges.contains(coedge.id.as_str()))
             .map(|coedge| coedge.edge.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-        let pcurves = geometry
-            .coedges
+        let pcurves = body_coedges
             .iter()
-            .filter(|coedge| coedges.contains(coedge.id.as_str()))
             .filter_map(|coedge| {
                 coedge
                     .pcurves
@@ -366,22 +419,26 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
                     .map(|id| id.as_str().to_owned())
             })
             .collect::<BTreeSet<_>>();
-        let vertices = geometry
-            .edges
+        let body_edges = members(
+            &geometry.edges,
+            &edges_by_id,
+            edges.iter().map(String::as_str),
+        );
+        let vertices = body_edges
             .iter()
-            .filter(|edge| edges.contains(edge.id.as_str()))
             .flat_map(|edge| edge.vertices().map(|vertex| vertex.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let curves = geometry
-            .edges
+        let curves = body_edges
             .iter()
-            .filter(|edge| edges.contains(edge.id.as_str()))
             .filter_map(|edge| edge.curve().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
-        let points = geometry
-            .vertices
+        let body_vertices = members(
+            &geometry.vertices,
+            &vertices_by_id,
+            vertices.iter().map(String::as_str),
+        );
+        let points = body_vertices
             .iter()
-            .filter(|vertex| vertices.contains(vertex.id.as_str()))
             .map(|vertex| vertex.point.as_str().to_owned())
             .collect::<BTreeSet<_>>();
 
@@ -408,72 +465,59 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
         let mut scoped = CadIr::empty();
         scoped.tolerances = ir.tolerances;
         scoped.geometry.bodies.push(body.clone());
-        scoped.geometry.regions = geometry
-            .regions
-            .iter()
-            .filter(|entity| regions.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.shells = geometry
-            .shells
-            .iter()
-            .filter(|entity| shells.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.faces = geometry
-            .faces
-            .iter()
-            .filter(|entity| faces.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.loops = geometry
-            .loops
-            .iter()
-            .filter(|entity| loops.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.coedges = geometry
-            .coedges
-            .iter()
-            .filter(|entity| coedges.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.edges = geometry
-            .edges
-            .iter()
-            .filter(|entity| edges.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.vertices = geometry
-            .vertices
-            .iter()
-            .filter(|entity| vertices.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.points = geometry
-            .points
-            .iter()
-            .filter(|entity| points.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.surfaces = geometry
-            .surfaces
-            .iter()
-            .filter(|entity| surfaces.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.curves = geometry
-            .curves
-            .iter()
-            .filter(|entity| curves.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
-        scoped.geometry.pcurves = geometry
-            .pcurves
-            .iter()
-            .filter(|entity| pcurves.contains(entity.id.as_str()))
-            .cloned()
-            .collect();
+        scoped.geometry.regions = members(
+            &geometry.regions,
+            &regions_by_id,
+            regions.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        scoped.geometry.shells = members(
+            &geometry.shells,
+            &shells_by_id,
+            shells.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        scoped.geometry.faces = body_faces.into_iter().cloned().collect();
+        scoped.geometry.loops = body_loops.into_iter().cloned().collect();
+        scoped.geometry.coedges = body_coedges.into_iter().cloned().collect();
+        scoped.geometry.edges = body_edges.into_iter().cloned().collect();
+        scoped.geometry.vertices = body_vertices.into_iter().cloned().collect();
+        scoped.geometry.points = members(
+            &geometry.points,
+            &points_by_id,
+            points.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        scoped.geometry.surfaces = members(
+            &geometry.surfaces,
+            &surfaces_by_id,
+            surfaces.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        scoped.geometry.curves = members(
+            &geometry.curves,
+            &curves_by_id,
+            curves.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        scoped.geometry.pcurves = members(
+            &geometry.pcurves,
+            &pcurves_by_id,
+            pcurves.iter().map(String::as_str),
+        )
+        .into_iter()
+        .cloned()
+        .collect();
         scopes.push(BrepScope {
             ir: scoped,
             points,
@@ -1195,7 +1239,7 @@ fn generated_projected_brep_c2_curve(
                     let mut point = point.get();
                     let uv = plane_uv(point, origin, u_axis, v_axis);
                     point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(point).ok_or_else(|| {
                         cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
                             "control_points contains a non-finite point".into(),
                         )
@@ -1403,7 +1447,7 @@ fn validate_nurbs_trim(
         .max(
             pcurve
                 .fit_tolerance()
-                .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+                .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         );
     for span in breaks.windows(2) {
         for step in 0..=16 {

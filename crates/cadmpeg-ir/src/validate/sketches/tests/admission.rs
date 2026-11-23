@@ -85,22 +85,25 @@ fn index_fixture(kind: usize) -> crate::CadIr {
                     })
                     .unwrap(),
                 )),
-            3 => ir.model.parameters.push(crate::features::DesignParameter {
-                product_definition: None,
-                id: format!("test:model:parameter#{key}").try_into().unwrap(),
-                owner: None,
-                ordinal: 0,
-                name: key.into(),
-                expression: "1 mm".into(),
-                display: None,
-                value: Some(crate::features::ParameterValue::Length(
-                    crate::scalar::Length::new(1.0).unwrap(),
-                )),
-                dependencies: crate::features::DistinctMembers::default(),
-                properties: std::collections::BTreeMap::default(),
-                pmi: None,
-                native_ref: None,
-            }),
+            3 => ir
+                .model
+                .parameters
+                .push(crate::features::parameters::DesignParameter {
+                    product_definition: None,
+                    id: format!("test:model:parameter#{key}").try_into().unwrap(),
+                    owner: None,
+                    ordinal: 0,
+                    name: key.into(),
+                    expression: "1 mm".into(),
+                    display: None,
+                    value: Some(crate::features::parameters::ParameterValue::Length(
+                        crate::scalar::Length::new(1.0).unwrap(),
+                    )),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
+                    properties: std::collections::BTreeMap::default(),
+                    pmi: None,
+                    native_ref: None,
+                }),
             _ => panic!("index fixture kind"),
         }
     }
@@ -143,7 +146,7 @@ fn projected_sketch_copy_keeps_missing_member_semantics_and_finding_order() {
                 native_ref: None,
             });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = vec![];
     super::super::check_sketches(&ctx, &ir, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);
@@ -165,7 +168,8 @@ fn projected_sketch_copy_keeps_missing_member_semantics_and_finding_order() {
 
 #[test]
 fn sketch_index_helpers_keep_last_duplicate_values() {
-    use crate::features::{ParameterId, ParameterValue};
+    use crate::features::parameters::ParameterValue;
+    use crate::features::ParameterId;
     use crate::index::identities::BorrowedIdentities;
     use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
     let id: crate::sketches::SketchEntityId = "test:model:entity#same".try_into().unwrap();

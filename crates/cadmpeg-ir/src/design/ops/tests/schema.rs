@@ -2,7 +2,7 @@
 //! The schema feature generates a schema for every sketch, datum, and shared
 //! operation type.
 
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, SchemaGenerator};
 
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::shared::{Locus, RunSides, Spacing, UpToFill};
@@ -18,12 +18,12 @@ use crate::design::ops::sketch::{
 use crate::scalar::{Angle, Length};
 use crate::units::UnitVector2;
 
-fn generates<T: JsonSchema>() {
-    let schema = serde_json::to_value(schema_for!(T)).unwrap();
-    assert!(schema.is_object(), "{}", T::schema_name());
+fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+    let schema = T::json_schema(generator);
+    assert!(schema.as_object().is_some(), "{}", T::schema_name());
 }
 
-fn generates_in<S>()
+fn generates_in<S>(generator: &mut SchemaGenerator)
 where
     S: SketchSpace + JsonSchema,
     S::Sketch: JsonSchema,
@@ -32,66 +32,68 @@ where
     S::Direction: JsonSchema,
     S::Curve: JsonSchema,
 {
-    generates::<SketchEntity<S>>();
-    generates::<EntityDefinition<S>>();
-    generates::<EntityForm<S>>();
-    generates::<EntityRole<S>>();
-    generates::<InterpolatedSpline<S>>();
-    generates::<SplineHandle<S>>();
-    generates::<SketchText<S>>();
-    generates::<TextLayout<S>>();
-    generates::<SketchConstraint<S>>();
-    generates::<Operand<S>>();
-    generates::<SketchRelation<S>>();
-    generates::<Contact<S>>();
-    generates::<DistanceAxis<S>>();
-    generates::<AngleOperands<S>>();
-    generates::<SketchOffset<S>>();
-    generates::<SketchPolygon<S>>();
-    generates::<SketchSlot<S>>();
-    generates::<SketchPattern<S>>();
-    generates::<SketchPatternLayout<S>>();
-    generates::<SketchPatternAxis<S>>();
-    generates::<SketchPatternDirection<S>>();
-    generates::<SketchPatternInstance<S>>();
+    generates::<SketchEntity<S>>(generator);
+    generates::<EntityDefinition<S>>(generator);
+    generates::<EntityForm<S>>(generator);
+    generates::<EntityRole<S>>(generator);
+    generates::<InterpolatedSpline<S>>(generator);
+    generates::<SplineHandle<S>>(generator);
+    generates::<SketchText<S>>(generator);
+    generates::<TextLayout<S>>(generator);
+    generates::<SketchConstraint<S>>(generator);
+    generates::<Operand<S>>(generator);
+    generates::<SketchRelation<S>>(generator);
+    generates::<Contact<S>>(generator);
+    generates::<DistanceAxis<S>>(generator);
+    generates::<AngleOperands<S>>(generator);
+    generates::<SketchOffset<S>>(generator);
+    generates::<SketchPolygon<S>>(generator);
+    generates::<SketchSlot<S>>(generator);
+    generates::<SketchPattern<S>>(generator);
+    generates::<SketchPatternLayout<S>>(generator);
+    generates::<SketchPatternAxis<S>>(generator);
+    generates::<SketchPatternDirection<S>>(generator);
+    generates::<SketchPatternInstance<S>>(generator);
 }
 
 #[test]
 fn every_sketch_type_has_a_schema() {
-    generates::<Sketch>();
-    generates::<SketchPlane>();
-    generates::<SpatialSketch>();
-    generates::<SketchSolve>();
-    generates::<SolveState>();
-    generates::<Planar>();
-    generates::<Spatial>();
-    generates::<DefiningRole>();
-    generates::<PlanarCurve>();
-    generates::<SpatialCurve>();
-    generates::<UnitVector2>();
-    generates::<Derivation>();
-    generates::<DerivationMode>();
-    generates::<TextContent>();
-    generates::<TextAlign>();
-    generates::<TextHorizontalBox>();
-    generates::<TextVerticalBox>();
-    generates::<BlockInstance>();
-    generates::<AngleSector>();
-    generates::<RadialMeasure>();
-    generates::<SlotKind>();
-    generates_in::<Planar>();
-    generates_in::<Spatial>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Sketch>(&mut generator);
+    generates::<SketchPlane>(&mut generator);
+    generates::<SpatialSketch>(&mut generator);
+    generates::<SketchSolve>(&mut generator);
+    generates::<SolveState>(&mut generator);
+    generates::<Planar>(&mut generator);
+    generates::<Spatial>(&mut generator);
+    generates::<DefiningRole>(&mut generator);
+    generates::<PlanarCurve>(&mut generator);
+    generates::<SpatialCurve>(&mut generator);
+    generates::<UnitVector2>(&mut generator);
+    generates::<Derivation>(&mut generator);
+    generates::<DerivationMode>(&mut generator);
+    generates::<TextContent>(&mut generator);
+    generates::<TextAlign>(&mut generator);
+    generates::<TextHorizontalBox>(&mut generator);
+    generates::<TextVerticalBox>(&mut generator);
+    generates::<BlockInstance>(&mut generator);
+    generates::<AngleSector>(&mut generator);
+    generates::<RadialMeasure>(&mut generator);
+    generates::<SlotKind>(&mut generator);
+    generates_in::<Planar>(&mut generator);
+    generates_in::<Spatial>(&mut generator);
 }
 
 #[test]
 fn every_datum_and_shared_type_has_a_schema() {
-    generates::<Datum>();
-    generates::<DatumElement>();
-    generates::<RunSides<Length>>();
-    generates::<RunSides<Angle>>();
-    generates::<Spacing<Length>>();
-    generates::<Spacing<Angle>>();
-    generates::<UpToFill<Length>>();
-    generates::<UpToFill<Angle>>();
-    generates::<Locus>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Datum>(&mut generator);
+    generates::<DatumElement>(&mut generator);
+    generates::<RunSides<Length>>(&mut generator);
+    generates::<RunSides<Angle>>(&mut generator);
+    generates::<Spacing<Length>>(&mut generator);
+    generates::<Spacing<Angle>>(&mut generator);
+    generates::<UpToFill<Length>>(&mut generator);
+    generates::<UpToFill<Angle>>(&mut generator);
+    generates::<Locus>(&mut generator);
 }

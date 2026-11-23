@@ -30,7 +30,7 @@ fn loft_findings(section_records: Vec<u32>) -> usize {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_path_feature_operand_roles(&ctx, &mut findings);
+        super::super::path_features::validate_path_feature_operand_roles(&ctx, &mut findings);
         findings.len()
     })
 }

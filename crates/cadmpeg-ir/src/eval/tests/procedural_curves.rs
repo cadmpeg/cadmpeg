@@ -3,10 +3,10 @@
 use crate::eval::model_curve_differential_by_id;
 use crate::eval::model_curve_parameter_near_point_with_tolerance;
 use crate::eval::model_curve_point_by_id;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
 use crate::geometry::ProceduralCurve;
-use crate::geometry::ProceduralCurveDefinition;
 use crate::geometry::SolvedCurveGeometry;
 use crate::ids::CurveId;
 use crate::math::Point3;
@@ -64,7 +64,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 &subset,
                 1.0
             )
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
             Ok(expected)
         );
         let differential = model_curve_differential_by_id(
@@ -85,7 +85,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         );
         assert_eq!(
             model_curve_parameter_near_point_with_tolerance(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &index,
                 &subset,
                 expected,
@@ -153,7 +153,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
             &subset,
             f64::MAX
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
 }
@@ -161,7 +161,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
 #[test]
 fn model_differential_refusal_stops_later_derivatives() {
     use crate::eval::EvaluationFailure;
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     for tangent_refuses in [false, true] {
         let mut policy = DecodePolicy::service();

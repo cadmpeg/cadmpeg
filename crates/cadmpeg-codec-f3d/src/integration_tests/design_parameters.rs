@@ -67,6 +67,115 @@ fn compact_null_owner_parameter_reports_its_owner_and_trailer_flag() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
 }
 
+/// A discriminated parameter frame that sets the header flag decodes through
+/// the full decode and reports the uninterpreted header flag.
+#[test]
+fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
+    const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+    let mut frame = crate::design::test_support::parameter_record(
+        None,
+        "2.50 mm",
+        "Thickness",
+        Some("mm"),
+        "d1",
+        0.25,
+    );
+    frame[21] = 1;
+    frame[22..26].copy_from_slice(&6u32.to_le_bytes());
+    let expression_end = 36 + 4 + 2 * "2.50 mm".len();
+    frame.splice(expression_end..expression_end + 9, [0; 10]);
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            TAIL_TYPE_GUID,
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[19],
+        )],
+        &[],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in [("BulkStream.dat", frame), ("MetaStream.dat", metadata)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    let decoded = decode(zip.finish().unwrap().into_inner());
+    let native = f3d_native(decoded.ir());
+    let [parameter] = native.design_parameters.as_slice() else {
+        panic!("expected the one Thickness parameter");
+    };
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(parameter.owner_record_index(), None);
+    let losses = &decoded.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::ParameterHeaderFlagUninterpreted.kind()
+    }));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+}
+
+/// A discriminated parameter frame whose ten-byte trailer sets the second
+/// flag byte decodes through the full decode as driven and reports the
+/// driven-flag reading.
+#[test]
+fn ten_byte_trailer_driven_flag_reports_its_reading() {
+    const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+    let mut frame = crate::design::test_support::parameter_record(
+        Some(0x5d),
+        "1",
+        "Linear Dimension-2",
+        None,
+        "d4",
+        1.0,
+    );
+    let expression_end = 46 + 4 + 2;
+    frame.splice(
+        expression_end..expression_end + 9,
+        [0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    );
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            TAIL_TYPE_GUID,
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[19],
+        )],
+        &[],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in [("BulkStream.dat", frame), ("MetaStream.dat", metadata)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    let decoded = decode(zip.finish().unwrap().into_inner());
+    let native = f3d_native(decoded.ir());
+    let [parameter] = native.design_parameters.as_slice() else {
+        panic!("expected the one driven parameter");
+    };
+    assert_eq!(parameter.driving(), Some(false));
+    let reported = |code: crate::loss::F3dLossCode| {
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind())
+    };
+    assert!(reported(
+        crate::loss::F3dLossCode::ParameterDrivenFlagAssumed
+    ));
+    assert!(!reported(
+        crate::loss::F3dLossCode::ParameterTrailerFlagUninterpreted
+    ));
+}
+
 #[test]
 fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
     for source_kind in [
@@ -76,7 +185,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
         "Basiselement",
     ] {
         use crate::layout::base_feature_wide_zero_body as prefix;
-        use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+        use cadmpeg_ir::features::selections::BodySelection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_base_feature_bulkstream();
         let start = usize::try_from(records.last().unwrap().1).unwrap();
@@ -141,7 +251,8 @@ fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
 
 #[test]
 fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedComponents};
+    use cadmpeg_ir::features::selections::InsertedComponents;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for source_kind in ["DerivedInstance", "LocalizedScope!"] {
         let (mut bulk, records) =
             crate::test_support::streams_test::generated_design_copy_paste_bodies_bulkstream();
@@ -219,4 +330,99 @@ fn derived_instance_with_unresolved_sources_keeps_a_neutral_component_selection(
         }) if native.as_str() == scope.id)
         );
     }
+}
+
+/// A commented document parameter keeps its comment through a source-less
+/// write in the comment discriminated form, a decode, a second write and a
+/// second decode.
+#[test]
+fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    const COMMENT: &str = "bolt spacing Ø";
+    fn write(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        crate::F3dCodec
+            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("source-less document parameter encode");
+        bytes
+    }
+    fn comment(ir: &cadmpeg_ir::document::CadIr) -> Option<String> {
+        let native = f3d_native(ir);
+        let [parameter] = native.design_parameters.as_slice() else {
+            panic!("expected the one document parameter");
+        };
+        assert_eq!(parameter.name(), "Spacing");
+        parameter.comment().map(str::to_owned)
+    }
+
+    let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let parameter = crate::records::parameters::DesignParameter::try_from(
+        crate::records::parameters::DesignParameterDraft {
+            id: "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#0".into(),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("305".to_owned())
+                .unwrap(),
+            record_index: 700,
+            source_ordinal: 0,
+            source: crate::records::parameters::DesignParameterSource::User {
+                source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
+                family_discriminator: Some(crate::records::identity::Located {
+                    value: crate::records::parameters::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                }),
+            },
+            expression: "12 mm".into(),
+            expression_offset: 36,
+            source_kind_offset: 70,
+            unit: Some(crate::records::identity::RecordedValue {
+                value: "mm".into(),
+                offset: 110,
+            }),
+            name: "Spacing".into(),
+            name_offset: 120,
+            evaluated_value: 1.2,
+            evaluated_value_offset: 150,
+        },
+    )
+    .unwrap()
+    .with_comment(Some(crate::records::identity::RecordedValue {
+        value: COMMENT.into(),
+        offset: 30,
+    }))
+    .unwrap();
+    crate::test_support::native_test::f3d_native_mut(&mut source)
+        .design_parameters
+        .push(parameter);
+    let crate::design::feature_project::ProjectedParameterDesign { parameters, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &f3d_native(&source).design_parameters,
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    source.model.parameters = parameters;
+
+    let decoded = decode(write(&source));
+    assert_eq!(comment(decoded.ir()).as_deref(), Some(COMMENT));
+    let (mut rewritten, _, _) = decoded.into_parts();
+    rewritten.source = None;
+    rewritten
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .unwrap();
+    let round_trip = decode(write(&rewritten));
+    assert_eq!(comment(round_trip.ir()).as_deref(), Some(COMMENT));
 }

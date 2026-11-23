@@ -23,10 +23,10 @@ use crate::history::write::parameters::{
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
-use cadmpeg_ir::features::DesignParameter;
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::ParameterId;
-use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ fn repeated_aliases_from_one_parameter_remain_unambiguous() {
         )]),
     );
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -83,7 +83,7 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
         (cadmpeg_core::nonblank_literal!("D1"), "1 +".into()),
     ]);
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -112,7 +112,7 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
         parameters_with_unevaluable_expressions(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &parameters,
             &HashMap::new(),
             &HashSet::new(),
@@ -137,7 +137,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -151,7 +151,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -219,7 +219,7 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         ),
     ]);
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -261,7 +261,7 @@ fn subtraction_projects_both_parameter_dependencies() {
         (cadmpeg_core::nonblank_literal!("C"), "A-B".into()),
     ]);
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -291,7 +291,7 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("Width"), "5mm".into());
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -347,7 +347,7 @@ fn equation_driven_parameters_are_global() {
     );
 
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -382,7 +382,7 @@ fn ordinary_feature_parameters_do_not_leak_globally() {
     );
 
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,
@@ -415,7 +415,7 @@ fn local_parameter_precedes_same_named_global() {
     ]);
 
     let parameters = project_parameters(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[FeatureHistory {
             id: "history".into(),
             part_name: None,

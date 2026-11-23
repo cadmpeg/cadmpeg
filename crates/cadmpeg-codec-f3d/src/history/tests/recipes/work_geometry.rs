@@ -10,7 +10,7 @@ fn three_point_recipe_vertices_must_define_the_solved_plane() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    assert!(crate::history::three_point_plane_matches(
+    assert!(crate::history::vertex_recipes::three_point_plane_matches(
         Some(transform),
         [
             Point3::new(0.0, 0.0, 0.0),
@@ -18,7 +18,7 @@ fn three_point_recipe_vertices_must_define_the_solved_plane() {
             Point3::new(0.0, 10.0, 0.0),
         ],
     ));
-    assert!(!crate::history::three_point_plane_matches(
+    assert!(!crate::history::vertex_recipes::three_point_plane_matches(
         Some(transform),
         [
             Point3::new(0.0, 0.0, 0.0),
@@ -26,7 +26,7 @@ fn three_point_recipe_vertices_must_define_the_solved_plane() {
             Point3::new(20.0, 0.0, 0.0),
         ],
     ));
-    assert!(!crate::history::three_point_plane_matches(
+    assert!(!crate::history::vertex_recipes::three_point_plane_matches(
         Some(transform),
         [
             Point3::new(0.0, 0.0, 0.0),
@@ -249,7 +249,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     .unwrap();
     let mut scopes = vec![extrude, work_point];
 
-    crate::history::bind_vertex_recipe_history(
+    crate::history::vertex_recipes::bind_vertex_recipe_history(
         &mut scopes,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -289,7 +289,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     recipe.recipe_references[0]
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
-    crate::history::bind_vertex_recipe_history(
+    crate::history::vertex_recipes::bind_vertex_recipe_history(
         &mut ambiguous,
         std::slice::from_ref(&timeline),
         std::slice::from_ref(&history),
@@ -338,7 +338,7 @@ fn feature_input_topology_projects_historical_vertices() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumPoint,
             }),
@@ -375,7 +375,7 @@ fn feature_input_topology_projects_historical_vertices() {
         )],
     );
 
-    let projected = crate::history::project_feature_input_topologies(
+    let projected = crate::history::input_topologies::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_mut(&mut history),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::math::Point3;
 use crate::scalar::FiniteReal;
@@ -65,7 +65,7 @@ fn polyline_construction_preserves_diagnostic_order() {
             .to_string(),
         "parameters must be finite and strictly monotonic"
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         PolylineCurve::from_checked_samples(checked(Some([0., 0., 0.])), -1.)
             .expect_err("negative deflection")

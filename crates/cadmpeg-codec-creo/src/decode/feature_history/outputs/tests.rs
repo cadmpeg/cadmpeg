@@ -2,13 +2,12 @@
 
 use super::{
     bodies_containing_edges, evaluated_sweep_body_kind, evaluated_sweep_output_bodies,
-    feature_output_bodies,
+    FeatureOutputIndex,
 };
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureOperation, GeneratedFaceRef,
-};
+use cadmpeg_ir::features::selections::{FaceSelection, GeneratedFaceRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Face, Loop as IrLoop, Region, Sense, Shell};
 use std::collections::BTreeMap;
@@ -141,8 +140,10 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
     });
 
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("compute the feature output bodies"),
+        crate::decode::with_service_context(
+            |ctx| FeatureOutputIndex::new(&scan, &ir).output_bodies(ctx, 10)
+        )
+        .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar")]
     );
 }
@@ -167,12 +168,12 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::thicken(
                 FaceSelection::generated(
                     vec![GeneratedFaceRef::new(
@@ -192,8 +193,10 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     });
 
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("compute the feature output bodies"),
+        crate::decode::with_service_context(
+            |ctx| FeatureOutputIndex::new(&scan, &ir).output_bodies(ctx, 10)
+        )
+        .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
 
@@ -277,12 +280,12 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::thicken(
                 FaceSelection::generated(
                     vec![GeneratedFaceRef::new(
@@ -302,8 +305,10 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     });
 
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(ctx, &scan, &ir, 10))
-            .expect("compute the feature output bodies"),
+        crate::decode::with_service_context(
+            |ctx| FeatureOutputIndex::new(&scan, &ir).output_bodies(ctx, 10)
+        )
+        .expect("compute the feature output bodies"),
         vec![
             BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
             BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
@@ -316,12 +321,9 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
     ));
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(
-            ctx,
-            &scan,
-            &duplicate_shell,
-            10
-        ))
+        crate::decode::with_service_context(
+            |ctx| FeatureOutputIndex::new(&scan, &duplicate_shell).output_bodies(ctx, 10)
+        )
         .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
@@ -334,12 +336,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         native_ref: None,
     });
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(
-            ctx,
+        crate::decode::with_service_context(|ctx| FeatureOutputIndex::new(
             &scan,
-            &duplicate_region,
-            10
-        ))
+            &duplicate_region
+        )
+        .output_bodies(ctx, 10))
         .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar")]
     );
@@ -348,12 +349,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     let feature = duplicate_feature.model.features[0].clone();
     duplicate_feature.model.features.push(feature);
     assert_eq!(
-        crate::decode::with_service_context(|ctx| feature_output_bodies(
-            ctx,
+        crate::decode::with_service_context(|ctx| FeatureOutputIndex::new(
             &scan,
-            &duplicate_feature,
-            10
-        ))
+            &duplicate_feature
+        )
+        .output_bodies(ctx, 10))
         .expect("compute the feature output bodies"),
         vec![BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar")]
     );

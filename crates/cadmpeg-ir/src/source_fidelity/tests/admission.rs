@@ -58,7 +58,7 @@ fn attachment_refuses_an_identity_already_owned_by_another_native_namespace() {
         .expect("test context");
     let mut ir = CadIr::empty();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "other",
         &[crate::NativeUnknownRecord {
             id: id("occupied"),
@@ -93,7 +93,7 @@ fn charged_native_unknown_attachment_preserves_product_and_retained_wire() {
     let mut prior = CadIr::empty();
     prior
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "synthetic",
             &[crate::NativeUnknownRecord {
                 id: id("prior"),
@@ -129,7 +129,7 @@ fn charged_unknown_limit_error(
 ) -> cadmpeg_core::CodecError {
     let mut ir = CadIr::empty();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[crate::NativeUnknownRecord {
             id: id("prior"),

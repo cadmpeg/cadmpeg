@@ -4,7 +4,10 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
+use crate::design::decode::operands::entity_selections::entity_selection_matches_curve;
+use crate::design::decode::operands::sketch_profiles::{
+    composable_sketch_profiles, parse_sketch_profile,
+};
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
     point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
@@ -40,6 +43,7 @@ mod group_union;
 mod region_members;
 mod spatial_regions;
 mod stored_loop_cap;
+mod text_picks;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
@@ -91,7 +95,7 @@ fn histories_for_scope<'a>(
     histories: &'a [crate::history_records::AsmHistory],
 ) -> &'a [crate::history_records::AsmHistory] {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+        crate::history::history_states::bound_scope_history(scope_id, scope_histories, histories)
             .map_or(&[], std::slice::from_ref)
     } else {
         histories
@@ -155,7 +159,8 @@ pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let SketchCurveSelectionResolution {
         scopes,
         groups,
@@ -345,7 +350,9 @@ pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -382,9 +389,9 @@ pub(crate) fn bind_path_pattern_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{
-        patterns::PatternTransform, FeatureDefinition, FeatureOperation, PathRef,
-    };
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -439,7 +446,8 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
@@ -470,22 +478,22 @@ pub(crate) fn bind_surface_trim_sketch_selections(
     }
 }
 
-pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::ExtrudeExtent) -> bool {
-    let check_side = |side: &cadmpeg_ir::features::ExtrudeSide| {
+pub(crate) fn has_to_termination(extent: &cadmpeg_ir::features::extents::ExtrudeExtent) -> bool {
+    let check_side = |side: &cadmpeg_ir::features::extents::ExtrudeSide| {
         matches!(
             side.termination,
-            cadmpeg_ir::features::LinearTermination::ToFace { .. }
-                | cadmpeg_ir::features::LinearTermination::ToPlane { .. }
-                | cadmpeg_ir::features::LinearTermination::ToShape { .. }
-                | cadmpeg_ir::features::LinearTermination::ThroughNext { .. }
+            cadmpeg_ir::features::extents::LinearTermination::ToFace { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ToPlane { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ToShape { .. }
+                | cadmpeg_ir::features::extents::LinearTermination::ThroughNext { .. }
         )
     };
     match extent {
-        cadmpeg_ir::features::ExtrudeExtent::OneSided { side } => check_side(side),
-        cadmpeg_ir::features::ExtrudeExtent::TwoSided { first, second } => {
+        cadmpeg_ir::features::extents::ExtrudeExtent::OneSided { side } => check_side(side),
+        cadmpeg_ir::features::extents::ExtrudeExtent::TwoSided { first, second } => {
             check_side(first) || check_side(second)
         }
-        cadmpeg_ir::features::ExtrudeExtent::Symmetric { side } => check_side(side),
+        cadmpeg_ir::features::extents::ExtrudeExtent::Symmetric { side } => check_side(side),
     }
 }
 
@@ -498,7 +506,8 @@ pub(crate) fn bind_extrude_profile_selections(
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     for feature in features {
@@ -507,6 +516,9 @@ pub(crate) fn bind_extrude_profile_selections(
         let mut historical_face_sketch_info: Option<(String, String)> = None;
         let mut historical_face_offset_info: Option<f64> = None;
         let mut curved_face_note: Option<cadmpeg_ir::report::loss::LossNote> = None;
+        // A same-sketch profile group whose bind-time loss was deferred stays
+        // unresolved unless its regions compose below.
+        let mut unresolved_profile_group = false;
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
                 'feature_edit: {
@@ -516,6 +528,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
                         break 'feature_edit;
                     };
+                    unresolved_profile_group = scope
+                        .extrude_native_profiles()
+                        .is_some_and(composable_sketch_profiles);
                     let scoped_histories = histories_for_scope(
                         &scope.id,
                         resolution.scope_histories,
@@ -523,7 +538,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     );
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
-                        crate::history::effective_scope_previous_history_state_id(
+                        crate::history::history_states::effective_scope_previous_history_state_id(
                             scope,
                             scoped_histories,
                         );
@@ -549,7 +564,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     else {
                         break 'feature_edit;
                     };
-                    let cut = matches!(op, cadmpeg_ir::features::BooleanOp::Cut);
+                    let cut = matches!(op, cadmpeg_ir::features::operation_settings::BooleanOp::Cut);
                     let is_to_termination = has_to_termination(extent);
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
                         let mut entity_groups = curve_resolution.groups.iter().filter(|group| {
@@ -561,11 +576,39 @@ pub(crate) fn bind_extrude_profile_selections(
                             (Some(group), None) => Some(group),
                             _ => None,
                         };
-                        if let Some(group) = typed_group {
-                            if let Some(selection) = resolve_entity_selection_profile(
-                                group,
-                                &curve_resolution.path_resolution(),
-                            ) {
+                        let live = typed_group.and_then(|group| {
+                            live_profile_members(group, curve_resolution.profile_curves)
+                        });
+                        for record_index in live.iter().flat_map(|live| &live.lost_members) {
+                            losses.push(
+                                crate::loss::F3dLossCode::FeatureProfileMemberReferenceLost.note(format!(
+                                    "Feature {} profile member record {record_index}: its status record references a lost profile-reference record, and the member contributes a region only when the complete group resolves.",
+                                    feature.id
+                                )),
+                            );
+                        }
+                        let full_resolution = curve_resolution.path_resolution();
+                        let live_resolution = live
+                            .as_ref()
+                            .filter(|live| !live.group.members().is_empty())
+                            .map(|live| {
+                                let mut resolution = curve_resolution.path_resolution();
+                                resolution.profile_curves = &live.profile_curves;
+                                (&live.group, resolution)
+                            });
+                        let candidates: Vec<_> = typed_group
+                            .map(|group| (group, &full_resolution))
+                            .into_iter()
+                            .chain(
+                                live_resolution
+                                    .as_ref()
+                                    .map(|(group, resolution)| (*group, resolution)),
+                            )
+                            .collect();
+                        for &(group, path_resolution) in &candidates {
+                            if let Some(selection) =
+                                resolve_entity_selection_profile(group, path_resolution)
+                            {
                                 *profile = selection;
                                 if is_to_termination {
                                     if let (
@@ -603,7 +646,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             }
                             if let Some(selection) = resolve_profile_curve_arrangement_regions(
                                 group,
-                                &curve_resolution.path_resolution(),
+                                path_resolution,
                                 scoped_resolution,
                             )? {
                                 *profile = selection;
@@ -619,26 +662,47 @@ pub(crate) fn bind_extrude_profile_selections(
                             &mut curved_face_note,
                         )? {
                             *profile = ProfileRef::Planar(selection);
-                        } else if let (Some(group), Some(states)) = (
-                            typed_group,
-                            scope
-                                .history_state_id()
-                                .zip(effective_previous_history_state_id),
-                        ) {
-                            if let Some(selection) = stored_loop_cap::resolve(
-                                group,
-                                &curve_resolution.path_resolution(),
-                                scoped_resolution,
-                                states,
-                                cap_regions::compact::Sweep {
-                                    operation: op,
-                                    start,
-                                    direction,
-                                    extent,
-                                },
-                            )? {
-                                *profile = ProfileRef::Planar(selection);
-                                break 'feature_edit;
+                        } else if let Some(states) = scope
+                            .history_state_id()
+                            .zip(effective_previous_history_state_id)
+                        {
+                            for &(group, path_resolution) in &candidates {
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep {
+                                        operation: op,
+                                        start,
+                                        direction,
+                                        extent,
+                                    },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "{}: stored profile entries use their participating intervals on the certified cap boundary",
+                                            feature.id,
+                                        )));
+                                    }
+                                    break 'feature_edit;
+                                }
+                                if let Some((selection, selection_losses)) = stored_loop_cap::resolve_stale(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selection);
+                                    for code in selection_losses {
+                                        losses.push(code.note(format!(
+                                            "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
+                                        )));
+                                    }
+                                    break 'feature_edit;
+                                }
                             }
                         }
                     }
@@ -749,6 +813,11 @@ pub(crate) fn bind_extrude_profile_selections(
                     };
                     let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id)
                     else {
+                        if unresolved_profile_group {
+                            *profile =
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
+                            break 'feature_edit;
+                        }
                         let spatial_id_parts = sketch_id.as_str().split_once("f3d:model:sketch#");
                         if let Some(spatial_sketch) =
                             resolution.spatial_sketches.iter().find(|candidate| {
@@ -816,6 +885,17 @@ pub(crate) fn bind_extrude_profile_selections(
                         *profile = ProfileRef::Planar(PlanarProfileRef::Native(id.to_owned()));
                         break 'feature_edit;
                     };
+                    if let Some((selected, note)) = text_picks::text_glyph_selection(
+                        feature.id.as_str(),
+                        sketch,
+                        &matching_groups,
+                        members,
+                        scoped_resolution,
+                    )? {
+                        *profile = ProfileRef::Planar(selected);
+                        losses.push(note);
+                        break 'feature_edit;
+                    }
                     if let (Some(state_id), Some(prev_state_id)) = (
                         scope.history_state_id(),
                         effective_previous_history_state_id,
@@ -830,6 +910,25 @@ pub(crate) fn bind_extrude_profile_selections(
                                 prev_state_id,
                             );
                         }
+                    }
+                    if unresolved_profile_group {
+                        let sketch_key = sketch_id.clone();
+                        if let Some(merged) = compose_same_sketch_profile_group(
+                            scope,
+                            sketch,
+                            &sketch_key,
+                            curve_resolution.curve_identities,
+                            curve_resolution.sketch_entities,
+                            scoped_resolution,
+                        )? {
+                            *profile = merged;
+                            scoped_resolution.profile_work.note_composed_profile_group();
+                            unresolved_profile_group = false;
+                        } else {
+                            *profile =
+                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()));
+                        }
+                        break 'feature_edit;
                     }
                     let explicit_profiles = scope
                         .extrude_profile()
@@ -937,13 +1036,13 @@ pub(crate) fn bind_extrude_profile_selections(
                                         cand_sketch == sketch_id
                                             && cand_slice.len() == exp.len()
                                             && cand_slice.iter().all(|reg| match reg {
-                                                cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                cadmpeg_ir::features::profiles::SketchProfileRegion::Loops {
                                                     loops,
                                                 } => {
                                                     loops.holes().is_empty()
                                                         && exp.contains(&loops.outer())
                                                 }
-                                                cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+                                                cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed {
                                                     ..
                                                 } => false,
                                             })
@@ -951,7 +1050,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                                 cand_slice.iter().any(|reg| {
                                                     matches!(
                                                         reg,
-                                                        cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                        cadmpeg_ir::features::profiles::SketchProfileRegion::Loops {
                                                             loops,
                                                         } if loops.holes().is_empty()
                                                             && loops.outer() == *profile_idx
@@ -1172,7 +1271,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.histories,
                             );
                             let effective_previous_history_state_id =
-                                crate::history::effective_scope_previous_history_state_id(
+                                crate::history::history_states::effective_scope_previous_history_state_id(
                                     scope,
                                     scoped_histories,
                                 );
@@ -1205,6 +1304,9 @@ pub(crate) fn bind_extrude_profile_selections(
                 }
             }
         }
+        if unresolved_profile_group {
+            resolution.profile_work.note_unresolved_profile_group();
+        }
         if let Some(dist) = to_distance_info {
             feature
                 .source_properties
@@ -1236,12 +1338,13 @@ fn sorted(
 /// which is what the whole Sketch means. A trimmed region counts as a profile
 /// when it has no hole and bounds the same curves.
 fn selects_whole_sketch(
-    selection: &cadmpeg_ir::features::PlanarProfileRef,
+    selection: &cadmpeg_ir::features::profiles::PlanarProfileRef,
     sketch: &cadmpeg_ir::sketches::Sketch,
 ) -> bool {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
-    let cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. } = selection else {
+    let cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. } = selection
+    else {
         return false;
     };
     let mut taken = Vec::new();
@@ -1337,9 +1440,8 @@ pub(crate) fn unprofiled_curve_losses(
     features: &[cadmpeg_ir::features::Feature],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef, SketchProfileRegion,
-    };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut selected = HashSet::new();
     for feature in features {
@@ -1390,11 +1492,78 @@ pub(crate) fn unprofiled_curve_losses(
         .collect()
 }
 
+/// A typed profile group with the members whose status record references a
+/// lost profile-reference record removed.
+struct LiveProfileMembers {
+    /// The group with the remaining members in stored order.
+    group: DesignConstructionOperandGroup,
+    /// Every profile selection, with the group's lost members removed and the
+    /// remaining members' ordinals renumbered.
+    profile_curves: Vec<crate::records::topology::entity_selection::DesignProfileCurveSelection>,
+    /// Record indices of the removed members, in stored order.
+    lost_members: Vec<u32>,
+}
+
+/// The live members of `group`. `None` when no member's status record
+/// references a lost profile-reference record.
+fn live_profile_members(
+    group: &DesignConstructionOperandGroup,
+    profile_curves: &[crate::records::topology::entity_selection::DesignProfileCurveSelection],
+) -> Option<LiveProfileMembers> {
+    let stream = native_stream(&group.id)?;
+    let in_group =
+        |selection: &crate::records::topology::entity_selection::DesignProfileCurveSelection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+        };
+    let mut live = Vec::new();
+    let mut lost_members = Vec::new();
+    let mut ordinals = HashMap::new();
+    for (ordinal, member) in group.members().iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let lost = profile_curves.iter().any(|selection| {
+            in_group(selection)
+                && selection.group_member_ordinal == ordinal
+                && selection.record_index == member.value
+                && selection.reference_lost()
+        });
+        if lost {
+            lost_members.push(member.value);
+        } else {
+            ordinals.insert(ordinal, u32::try_from(live.len()).ok()?);
+            live.push(*member);
+        }
+    }
+    if lost_members.is_empty() {
+        return None;
+    }
+    let mut live_group = group.clone();
+    live_group.try_set_members(live).ok()?;
+    let profile_curves = profile_curves
+        .iter()
+        .filter_map(|selection| {
+            if !in_group(selection) {
+                return Some(selection.clone());
+            }
+            let ordinal = *ordinals.get(&selection.group_member_ordinal)?;
+            let mut selection = selection.clone();
+            selection.group_member_ordinal = ordinal;
+            Some(selection)
+        })
+        .collect();
+    Some(LiveProfileMembers {
+        group: live_group,
+        profile_curves,
+        lost_members,
+    })
+}
+
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PathRef, PlanarProfileRef, ProfileRef};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
 
     if group.role() != DesignOperandRole::PROFILE {
         return None;
@@ -1491,8 +1660,8 @@ fn historical_face_profile_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     scoped_histories: &[crate::history_records::AsmHistory],
     curved_face_note: &mut Option<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
-    use cadmpeg_ir::features::PlanarProfileRef;
+) -> Result<Option<cadmpeg_ir::features::profiles::PlanarProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     let Some(previous_state_id) = previous_state_id else {
         return Ok(None);
@@ -1756,17 +1925,67 @@ fn historical_profile_face_candidates(
     Ok(faces)
 }
 
+/// Merge the region selections of one same-sketch extrude profile group.
+/// `Ok(None)` means the group stays a native profile.
+fn compose_same_sketch_profile_group(
+    scope: &DesignParameterScope,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+    scoped_resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
+
+    let assumed_before = scoped_resolution.profile_work.assumed_flags();
+    let inferred_before = scoped_resolution.profile_work.inferred_counts();
+    let outcome = (|| -> Result<Option<ProfileRef>, CodecError> {
+        let Some(stream) = native_stream(&scope.id) else {
+            return Ok(None);
+        };
+        let Some(profiles) = scope.extrude_native_profiles() else {
+            return Ok(None);
+        };
+        let mut resolved = Vec::new();
+        for operand in profiles {
+            let Some(selected) = region_members::resolve(
+                stream,
+                operand,
+                sketch,
+                curve_identities,
+                sketch_entities,
+                scoped_resolution,
+                true,
+            )?
+            else {
+                return Ok(None);
+            };
+            resolved.push(ProfileRef::Planar(selected));
+        }
+        Ok(merge_resolved_profile_selections(sketch_id, &resolved))
+    })();
+    if !matches!(outcome, Ok(Some(_))) {
+        scoped_resolution
+            .profile_work
+            .set_assumed_flags(assumed_before);
+        scoped_resolution
+            .profile_work
+            .set_inferred_counts(inferred_before);
+    }
+    outcome
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::design) enum ResolvedProfileSelection {
     Loops(Vec<u32>),
-    Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
+    Regions(Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>),
 }
 
 fn merge_resolved_profile_selections(
     sketch: &cadmpeg_ir::sketches::SketchId,
-    selections: &[cadmpeg_ir::features::ProfileRef],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    selections: &[cadmpeg_ir::features::profiles::ProfileRef],
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let mut profiles = Vec::new();
     let mut regions = Vec::new();
@@ -1806,9 +2025,9 @@ fn merge_resolved_profile_selections(
 }
 
 fn copy_bound_profile(
-    profile: &cadmpeg_ir::features::ProfileRef,
-) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
-    use cadmpeg_ir::features::ProfileRef;
+    profile: &cadmpeg_ir::features::profiles::ProfileRef,
+) -> Result<cadmpeg_ir::features::profiles::ProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::ProfileRef;
 
     match profile {
         ProfileRef::Planar(planar) => Ok(ProfileRef::Planar(copy_bound_planar_profile(planar)?)),
@@ -1819,9 +2038,9 @@ fn copy_bound_profile(
 }
 
 fn copy_bound_planar_profile(
-    profile: &cadmpeg_ir::features::PlanarProfileRef,
-) -> Result<cadmpeg_ir::features::PlanarProfileRef, CodecError> {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    profile: &cadmpeg_ir::features::profiles::PlanarProfileRef,
+) -> Result<cadmpeg_ir::features::profiles::PlanarProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     match profile {
         PlanarProfileRef::Sketch(_)
@@ -1837,9 +2056,9 @@ fn copy_bound_planar_profile(
 }
 
 fn copy_bound_path(
-    path: &cadmpeg_ir::features::PathRef,
-) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
-    use cadmpeg_ir::features::PathRef;
+    path: &cadmpeg_ir::features::profiles::PathRef,
+) -> Result<cadmpeg_ir::features::profiles::PathRef, CodecError> {
+    use cadmpeg_ir::features::profiles::PathRef;
 
     match path {
         PathRef::SketchCurves { .. } | PathRef::SpatialSketchCurves { .. } => Ok(path.clone()),
@@ -1865,8 +2084,8 @@ pub(super) fn resolved_extrude_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: ScopedExtrudeProfileResolution<'_>,
     transition: ExtrudeTransition,
-) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+) -> Result<cadmpeg_ir::features::profiles::ProfileRef, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let ExtrudeTransition {
         history_state_id,
@@ -2109,9 +2328,10 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     .find_map(|t| t.surface_planes.iter().find(|sp| sp.surface == s))
             })
     });
+    let prev_face_points = FacePointsIndex::new(prev_topology);
     let mut face_verts = Vec::new();
     for &fid in &face_ids {
-        for pt in historical_face_all_points(fid, prev_topology) {
+        for pt in prev_face_points.all_points(fid) {
             if !face_verts.contains(&pt) {
                 face_verts.push(pt);
             }
@@ -2119,26 +2339,75 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     }
 
     // Collect edges of selected faces and adjacent faces in prev_topology
+    let mut loops_by_face: HashMap<i64, Vec<&[i64]>> =
+        HashMap::with_capacity(prev_topology.face_loops.len());
+    let mut faces_by_loop: HashMap<i64, Vec<i64>> =
+        HashMap::with_capacity(prev_topology.face_loops.len());
+    for fl in &prev_topology.face_loops {
+        loops_by_face
+            .entry(fl.owner_ref)
+            .or_default()
+            .push(fl.member_refs.as_slice());
+        for &loop_id in &fl.member_refs {
+            faces_by_loop.entry(loop_id).or_default().push(fl.owner_ref);
+        }
+    }
+    let mut coedges_by_loop: HashMap<i64, Vec<&[i64]>> =
+        HashMap::with_capacity(prev_topology.loop_coedges.len());
+    let mut loops_by_coedge: HashMap<i64, Vec<i64>> =
+        HashMap::with_capacity(prev_topology.coedge_topology.len());
+    for lc in &prev_topology.loop_coedges {
+        coedges_by_loop
+            .entry(lc.owner_ref)
+            .or_default()
+            .push(lc.member_refs.as_slice());
+        for &coedge_id in &lc.member_refs {
+            loops_by_coedge
+                .entry(coedge_id)
+                .or_default()
+                .push(lc.owner_ref);
+        }
+    }
+    let mut coedge_by_id: HashMap<i64, i64> =
+        HashMap::with_capacity(prev_topology.coedge_topology.len());
+    for ce in &prev_topology.coedge_topology {
+        coedge_by_id.entry(ce.coedge).or_insert(ce.edge);
+    }
+    let mut edge_curve_by_edge: HashMap<i64, Option<i64>> =
+        HashMap::with_capacity(prev_topology.edge_curves.len());
+    for ec in &prev_topology.edge_curves {
+        edge_curve_by_edge.entry(ec.entity).or_insert(ec.carrier);
+    }
+    let mut curve_axis_by_curve: HashMap<i64, (Point3, cadmpeg_ir::math::Vector3)> =
+        HashMap::with_capacity(prev_topology.curve_axes.len());
+    for ca in &prev_topology.curve_axes {
+        curve_axis_by_curve
+            .entry(ca.curve)
+            .or_insert((ca.origin, ca.direction));
+    }
+
     let mut face_edges = HashSet::new();
+    let mut circle_axes = Vec::new();
     for &fid in &face_ids {
-        for fl in prev_topology
-            .face_loops
-            .iter()
-            .filter(|fl| fl.owner_ref == fid)
-        {
-            for &loop_id in &fl.member_refs {
-                for lc in prev_topology
-                    .loop_coedges
-                    .iter()
-                    .filter(|lc| lc.owner_ref == loop_id)
-                {
-                    for &coedge_id in &lc.member_refs {
-                        if let Some(ce) = prev_topology
-                            .coedge_topology
-                            .iter()
-                            .find(|c| c.coedge == coedge_id)
-                        {
-                            face_edges.insert(ce.edge);
+        for loop_members in loops_by_face.get(&fid).into_iter().flatten() {
+            for &loop_id in *loop_members {
+                for coedge_members in coedges_by_loop.get(&loop_id).into_iter().flatten() {
+                    for &coedge_id in *coedge_members {
+                        if let Some(&edge_id) = coedge_by_id.get(&coedge_id) {
+                            face_edges.insert(edge_id);
+                        }
+                    }
+                    if coedge_members.len() == 1 {
+                        let coedge_id = coedge_members[0];
+                        if let Some(&edge_id) = coedge_by_id.get(&coedge_id) {
+                            if let Some(Some(curve_id)) = edge_curve_by_edge.get(&edge_id).copied()
+                            {
+                                if let Some(&axis) = curve_axis_by_curve.get(&curve_id) {
+                                    if !circle_axes.contains(&axis) {
+                                        circle_axes.push(axis);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2148,60 +2417,10 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     let mut adjacent_faces = Vec::new();
     for ce in &prev_topology.coedge_topology {
         if face_edges.contains(&ce.edge) {
-            for lc in prev_topology
-                .loop_coedges
-                .iter()
-                .filter(|lc| lc.member_refs.contains(&ce.coedge))
-            {
-                for fl in prev_topology
-                    .face_loops
-                    .iter()
-                    .filter(|fl| fl.member_refs.contains(&lc.owner_ref))
-                {
-                    if !face_ids.contains(&fl.owner_ref) && !adjacent_faces.contains(&fl.owner_ref)
-                    {
-                        adjacent_faces.push(fl.owner_ref);
-                    }
-                }
-            }
-        }
-    }
-    let mut circle_axes = Vec::new();
-    for &fid in &face_ids {
-        for fl in prev_topology
-            .face_loops
-            .iter()
-            .filter(|fl| fl.owner_ref == fid)
-        {
-            for &loop_id in &fl.member_refs {
-                for lc in prev_topology
-                    .loop_coedges
-                    .iter()
-                    .filter(|lc| lc.owner_ref == loop_id)
-                {
-                    if lc.member_refs.len() == 1 {
-                        let coedge_id = lc.member_refs[0];
-                        if let Some(ce) = prev_topology
-                            .coedge_topology
-                            .iter()
-                            .find(|c| c.coedge == coedge_id)
-                        {
-                            if let Some(ec) = prev_topology
-                                .edge_curves
-                                .iter()
-                                .find(|ec| ec.entity == ce.edge)
-                            {
-                                if let Some(ca) = prev_topology
-                                    .curve_axes
-                                    .iter()
-                                    .find(|ca| Some(ca.curve) == ec.carrier)
-                                {
-                                    if !circle_axes.contains(&(ca.origin, ca.direction)) {
-                                        circle_axes.push((ca.origin, ca.direction));
-                                    }
-                                }
-                            }
-                        }
+            for &loop_id in loops_by_coedge.get(&ce.coedge).into_iter().flatten() {
+                for &owner_face in faces_by_loop.get(&loop_id).into_iter().flatten() {
+                    if !face_ids.contains(&owner_face) && !adjacent_faces.contains(&owner_face) {
+                        adjacent_faces.push(owner_face);
                     }
                 }
             }
@@ -2267,9 +2486,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     };
                     let on_circle_center = prof.iter().any(|use_| {
                         resolution
-                            .entities
-                            .iter()
-                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .profile_work
+                            .find_entity(resolution.entities, &use_.entity)
+                            .filter(|e| e.sketch == candidate_sketch.id)
                             .is_some_and(|e| match e.geometry.definition() {
                                 cadmpeg_ir::sketches::SketchGeometryDefinition::Circle {
                                     center,
@@ -2300,9 +2519,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     };
                     let on_prof = prof.iter().any(|use_| {
                         resolution
-                            .entities
-                            .iter()
-                            .find(|e| e.sketch == candidate_sketch.id && e.id() == &use_.entity)
+                            .profile_work
+                            .find_entity(resolution.entities, &use_.entity)
+                            .filter(|e| e.sketch == candidate_sketch.id)
                             .is_some_and(|e| {
                                 let is_circle_or_arc = matches!(
                                     e.geometry.definition(),
@@ -2604,12 +2823,19 @@ pub(in crate::design) fn transition_profile_selection(
         .iter()
         .map(|(step_state, step_prev_id)| {
             let before_step = resolution.profile_work.inferred_counts();
-            let sel = transition_profile_selection_step(
+            let sel = resolution.profile_work.reusing_arrangement(
                 sketch,
-                resolution,
-                history,
-                step_state,
-                *step_prev_id,
+                resolution.entities,
+                resolution.linear_tolerance,
+                || {
+                    transition_profile_selection_step(
+                        sketch,
+                        resolution,
+                        history,
+                        step_state,
+                        *step_prev_id,
+                    )
+                },
             )?;
             let after_step = resolution.profile_work.inferred_counts();
             let step_delta = (after_step.0 - before_step.0, after_step.1 - before_step.1);
@@ -2741,12 +2967,14 @@ fn transition_profile_selection_step(
             }
         }
     }
+    let face_points_index = FacePointsIndex::new(topology);
     let placement_opt = sketch.resolved_placement();
     let face_has_off_plane_point = |face: i64| -> bool {
         let Some((sk_origin, sk_normal, _)) = placement_opt else {
             return true;
         };
-        historical_face_all_points(face, topology)
+        face_points_index
+            .all_points(face)
             .into_iter()
             .any(|pt| pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs() > tolerance)
     };
@@ -2759,9 +2987,29 @@ fn transition_profile_selection_step(
             .all(|(face, cyl_sel)| {
                 cyl_sel.is_some()
                     || (has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face))
-                    || historical_face_points(*face, topology).is_none_or(|pts| pts.len() <= 2)
+                    || face_points_index
+                        .points(*face)
+                        .is_none_or(|pts| pts.len() <= 2)
             });
     if only_circular_faces {
+        let rings = BodyCircleRings {
+            sketch,
+            entities,
+            topology,
+            previous: prev_topology_opt,
+            inserted_faces,
+            cyl_loops: &cyl_loops,
+            tolerance,
+            angular_tolerance: resolution.angular_tolerance,
+        };
+        if let Some(regions) = rings_from_body_to_sketch_circle(rings) {
+            resolution.profile_work.record_body_circle_rings_assumed();
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
+        if let Some(regions) = rings_from_sketch_circle_in_to_body(rings) {
+            resolution.profile_work.record_body_circle_rings_assumed();
+            return Ok(Some(ResolvedProfileSelection::Regions(regions)));
+        }
         return Ok(Some(ResolvedProfileSelection::Loops(cyl_loops)));
     }
     let mut inserted_selections = Vec::new();
@@ -2770,7 +3018,7 @@ fn transition_profile_selection_step(
         if has_prior_faces && any_off_plane_face && !face_has_off_plane_point(*face) {
             continue;
         }
-        let points = historical_face_points(*face, topology);
+        let points = face_points_index.points(*face);
         let selection = match points.as_deref() {
             Some(points) => selection_containing_points(
                 sketch,
@@ -2808,9 +3056,10 @@ fn transition_profile_selection_step(
                     .and_then(|idx| sketch.profiles.get(idx))
                     .is_some_and(|p| p.len() > 1)
             {
-                if let Ok(region) =
-                    cadmpeg_ir::features::SketchProfileRegion::loops(loops[0], cyl_loops.clone())
-                {
+                if let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::loops(
+                    loops[0],
+                    cyl_loops.clone(),
+                ) {
                     return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
                 }
             }
@@ -2831,7 +3080,7 @@ fn transition_profile_selection_step(
                         .and_then(|idx| sketch.profiles.get(idx))
                         .is_some_and(|p| p.len() > 1)
                 {
-                    if let Ok(region) = cadmpeg_ir::features::SketchProfileRegion::loops(
+                    if let Ok(region) = cadmpeg_ir::features::profiles::SketchProfileRegion::loops(
                         loops[0],
                         cyl_loops.clone(),
                     ) {
@@ -2851,7 +3100,7 @@ fn transition_profile_selection_step(
     if let Some((sk_origin, sk_normal, _)) = sketch.resolved_placement() {
         let mut inserted_plane_pts = Vec::new();
         for face in inserted_faces {
-            for pt in historical_face_all_points(*face, topology) {
+            for pt in face_points_index.all_points(*face) {
                 let d = pt.vector_from(*sk_origin).dot(*sk_normal.as_raw()).abs();
                 if d <= tolerance * 10.0 {
                     if let Some(p2) = project_to_sketch(sketch, pt) {
@@ -2868,9 +3117,8 @@ fn transition_profile_selection_step(
                 };
                 let is_matched_circle = prof.len() == 1
                     && prof.iter().all(|use_| {
-                        entities
-                            .iter()
-                            .find(|e| e.id() == &use_.entity)
+                        profile_work
+                            .find_entity(entities, &use_.entity)
                             .is_some_and(|e| {
                                 matches!(
                                     e.geometry.definition(),
@@ -2909,10 +3157,11 @@ fn transition_profile_selection_step(
         deleted,
         previous_topology
     ));
+    let prev_points_index = FacePointsIndex::new(previous_topology);
     let mut selections = Vec::new();
     let mut combined_deleted_points = Vec::new();
     for face in faces {
-        let pts = historical_face_points(face, previous_topology);
+        let pts = prev_points_index.points(face);
         if let Some(ref points) = pts {
             for &p in points {
                 if !combined_deleted_points.contains(&p) {
@@ -3052,6 +3301,449 @@ fn points_share_sketch_offset(
     points
         .iter()
         .all(|point| (offset(point) - first).abs() <= tolerance)
+}
+
+/// Profile indices of the concentric circles strictly outside `inner` and at
+/// most `outer`, nearest first. `None` when that is not at least two circles
+/// with one on `outer`: a single ring is the cylinder match the caller
+/// already has.
+///
+/// `circles` are `(profile index, radius)` of one center. A circle on the
+/// body radius is not strictly outside it, so it stays out of the result.
+pub(super) fn circle_indices_outside_body(
+    circles: &[(u32, f64)],
+    inner: f64,
+    outer: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer + tolerance)
+        .collect();
+    if chosen.len() < 2
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+/// Profile indices of the concentric circles that cover an inward shoulder
+/// from the new circle `inner` out to the body cylinder `body`, nearest first.
+///
+/// The shoulder ends on the body, which is not a sketch circle. Every full
+/// sketch circle strictly outside `inner`, through the first circle strictly
+/// outside `body`, is material. That circle is included only when its radius
+/// is at most `wall`, the next solid cylinder outside the body: past that
+/// wall the ring would add material beyond the solid. `None` when no sketch
+/// circle lies outside the body, or that circle passes `wall`.
+pub(super) fn circle_indices_inward_shoulder(
+    circles: &[(u32, f64)],
+    inner: f64,
+    body: f64,
+    wall: f64,
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    if body <= inner + tolerance || wall <= body + tolerance {
+        return None;
+    }
+    let mut outside: Option<(u32, f64)> = None;
+    for &(index, radius) in circles {
+        if radius > body + tolerance && outside.is_none_or(|(_, have)| radius < have) {
+            outside = Some((index, radius));
+        }
+    }
+    let (_, outer_radius) = outside?;
+    if outer_radius > wall + tolerance {
+        return None;
+    }
+    let mut chosen: Vec<(u32, f64)> = circles
+        .iter()
+        .copied()
+        .filter(|(_, radius)| *radius > inner + tolerance && *radius <= outer_radius + tolerance)
+        .collect();
+    if chosen.is_empty()
+        || !chosen
+            .iter()
+            .any(|(_, radius)| (radius - outer_radius).abs() <= tolerance)
+    {
+        return None;
+    }
+    chosen.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.0.cmp(&right.0)));
+    Some(chosen.into_iter().map(|(index, _)| index).collect())
+}
+
+pub(super) struct ConcentricCircle<'a> {
+    pub(super) index: u32,
+    pub(super) center: Point2,
+    pub(super) radius: f64,
+    pub(super) use_: &'a cadmpeg_ir::sketches::SketchEntityUse,
+}
+
+/// Sketch circles and the body cylinder a cap can fill with one region per circle.
+#[derive(Clone, Copy)]
+struct BodyCircleRings<'a> {
+    sketch: &'a cadmpeg_ir::sketches::Sketch,
+    entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    topology: &'a crate::history_records::AsmHistoricalTopology,
+    previous: Option<&'a crate::history_records::AsmHistoricalTopology>,
+    inserted_faces: &'a [i64],
+    cyl_loops: &'a [u32],
+    tolerance: f64,
+    angular_tolerance: f64,
+}
+
+/// Rings that fill a new cap from an existing body cylinder out to one new
+/// sketch circle.
+///
+/// The cap's inner edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside that radius, through the new outer circle,
+/// is material. Each is emitted as its own curve ring. Nesting those circles
+/// as one loop with holes would keep only the outermost ring and leave the
+/// body short of the cap.
+fn rings_from_body_to_sketch_circle(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (outer - circle.radius).abs() > tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, outer, outer_profile) = agreed?;
+    let outer_circle = circles
+        .iter()
+        .find(|circle| circle.index == outer_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - outer_circle.center.u).hypot(circle.center.v - outer_circle.center.v)
+            <= tolerance
+    };
+    let body = previous.surface_cylinders.iter().any(|cylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        (cylinder.radius - inner).abs() <= tolerance && align.abs() >= angular_tolerance.cos()
+    });
+    if !body {
+        return None;
+    }
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_outside_body(&concentric, inner, outer, tolerance)?;
+    let innermost_hole = circles
+        .iter()
+        .find(|circle| same_center(circle) && (circle.radius - inner).abs() <= tolerance);
+    concentric_ring_regions(&circles, &indices, innermost_hole)
+}
+
+/// Rings that fill a new cap from one new sketch circle out to an existing
+/// body cylinder.
+///
+/// The cap's outer edge is the body, so it is not a sketch curve. Every full
+/// sketch circle strictly outside the new circle, through the first circle
+/// strictly outside the body, is material. That outer circle stays in the
+/// selection only when its radius is at most the next solid cylinder: the
+/// ring past the body is already solid. Each circle is its own region.
+/// Nesting them as one loop with holes would keep only the outermost ring.
+fn rings_from_sketch_circle_in_to_body(
+    rings: BodyCircleRings<'_>,
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let BodyCircleRings {
+        sketch,
+        entities,
+        topology,
+        previous,
+        inserted_faces,
+        cyl_loops,
+        tolerance,
+        angular_tolerance,
+    } = rings;
+    let previous = previous?;
+    let (_, sketch_normal, _) = sketch.resolved_placement()?;
+    let normal = *sketch_normal.as_raw();
+    let mut circles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let [use_] = profile.as_slice() else {
+            continue;
+        };
+        let Some(entity) = entities.iter().find(|entity| {
+            entity.sketch == sketch.id && entity.id() == &use_.entity && !entity.construction
+        }) else {
+            continue;
+        };
+        let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            continue;
+        };
+        circles.push(ConcentricCircle {
+            index,
+            center: *center,
+            radius: radius.get(),
+            use_,
+        });
+    }
+    let mut agreed: Option<(f64, f64, u32)> = None;
+    for face in inserted_faces {
+        let mut carriers = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == *face);
+        let carrier = carriers.next()?.carrier;
+        if carriers.next().is_some() {
+            return None;
+        }
+        let mut planes = topology
+            .surface_planes
+            .iter()
+            .filter(|plane| plane.surface == carrier);
+        let Some(plane) = planes.next() else {
+            continue;
+        };
+        if planes.next().is_some() {
+            return None;
+        }
+        let align =
+            plane.normal.x * normal.x + plane.normal.y * normal.y + plane.normal.z * normal.z;
+        if align.abs() < angular_tolerance.cos() {
+            continue;
+        }
+        let mut projected = Vec::new();
+        for point in historical_face_all_points(*face, topology) {
+            projected.push(project_to_sketch(sketch, point)?);
+        }
+        if projected.is_empty() {
+            return None;
+        }
+        let mut found = None;
+        for circle in circles
+            .iter()
+            .filter(|circle| cyl_loops.contains(&circle.index))
+        {
+            let mut radii = Vec::new();
+            for point in &projected {
+                let radius = (point.u - circle.center.u).hypot(point.v - circle.center.v);
+                if !radii
+                    .iter()
+                    .any(|have: &f64| (have - radius).abs() <= tolerance)
+                {
+                    radii.push(radius);
+                }
+            }
+            if radii.len() != 2 {
+                continue;
+            }
+            radii.sort_by(f64::total_cmp);
+            let (inner, outer) = (radii[0], radii[1]);
+            if (inner - circle.radius).abs() > tolerance || outer <= inner + tolerance {
+                continue;
+            }
+            if found.replace((inner, outer, circle.index)).is_some() {
+                return None;
+            }
+        }
+        let found = found?;
+        if let Some((inner, outer, profile)) = agreed {
+            if (inner - found.0).abs() > tolerance
+                || (outer - found.1).abs() > tolerance
+                || profile != found.2
+            {
+                return None;
+            }
+        } else {
+            agreed = Some(found);
+        }
+    }
+    let (inner, body, inner_profile) = agreed?;
+    let inner_circle = circles
+        .iter()
+        .find(|circle| circle.index == inner_profile)?;
+    let same_center = |circle: &ConcentricCircle<'_>| {
+        (circle.center.u - inner_circle.center.u).hypot(circle.center.v - inner_circle.center.v)
+            <= tolerance
+    };
+    let centered = |cylinder: &crate::history_records::AsmHistoricalCylinder| {
+        let align =
+            cylinder.axis.x * normal.x + cylinder.axis.y * normal.y + cylinder.axis.z * normal.z;
+        align.abs() >= angular_tolerance.cos()
+            && cylinder.radius.is_finite()
+            && project_to_sketch(sketch, cylinder.origin).is_some_and(|point| {
+                (point.u - inner_circle.center.u).hypot(point.v - inner_circle.center.v)
+                    <= tolerance
+            })
+    };
+    if !previous
+        .surface_cylinders
+        .iter()
+        .any(|cylinder| centered(cylinder) && (cylinder.radius - body).abs() <= tolerance)
+    {
+        return None;
+    }
+    let mut wall = None;
+    for cylinder in &previous.surface_cylinders {
+        if !centered(cylinder) || cylinder.radius <= body + tolerance {
+            continue;
+        }
+        wall = Some(match wall {
+            Some(have) if have < cylinder.radius => have,
+            _ => cylinder.radius,
+        });
+    }
+    let wall = wall?;
+    let concentric: Vec<(u32, f64)> = circles
+        .iter()
+        .filter(|circle| same_center(circle))
+        .map(|circle| (circle.index, circle.radius))
+        .collect();
+    let indices = circle_indices_inward_shoulder(&concentric, inner, body, wall, tolerance)?;
+    concentric_ring_regions(&circles, &indices, Some(inner_circle))
+}
+
+/// Emit disjoint atomic ring regions for concentric sketch circles ordered by
+/// increasing radius. Each circle is the outer boundary of the annulus between
+/// it and the next smaller selected circle, or `innermost_hole` for the first.
+pub(super) fn concentric_ring_regions(
+    circles: &[ConcentricCircle<'_>],
+    indices: &[u32],
+    innermost_hole: Option<&ConcentricCircle<'_>>,
+) -> Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>> {
+    use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+
+    let circle_use = |circle: &ConcentricCircle<'_>, reversed: bool| {
+        Some(SketchProfileBoundaryUse {
+            entity: circle.use_.entity.clone(),
+            parameter_range: DirectedParameterRange::new([0.0, std::f64::consts::TAU]).ok()?,
+            reversed,
+        })
+    };
+    let mut regions = Vec::with_capacity(indices.len());
+    let mut previous = innermost_hole;
+    for &index in indices {
+        let circle = circles.iter().find(|circle| circle.index == index)?;
+        let outer = vec![circle_use(circle, circle.use_.reversed)?];
+        let holes = match previous {
+            Some(hole) => vec![vec![circle_use(hole, !hole.use_.reversed)?]],
+            None => Vec::new(),
+        };
+        regions.push(SketchProfileRegion::trimmed(outer, holes).ok()?);
+        previous = Some(circle);
+    }
+    Some(regions)
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -3434,7 +4126,7 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     profile_work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let first_selection = selections.iter().flatten().next();
     if let Some(first) = first_selection {
@@ -3605,6 +4297,114 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     profile_work.record_region_hole_profile_inferred();
     let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
+}
+
+struct FacePointsIndex<'a> {
+    face_loops: HashMap<i64, &'a [i64]>,
+    loop_coedges: HashMap<i64, &'a [i64]>,
+    coedge_edge: HashMap<i64, i64>,
+    edge_vertices: HashMap<i64, (i64, i64)>,
+    vertex_point: HashMap<i64, i64>,
+    point_position: HashMap<i64, Point3>,
+}
+
+impl<'a> FacePointsIndex<'a> {
+    fn new(topology: &'a crate::history_records::AsmHistoricalTopology) -> Self {
+        let mut face_loops = HashMap::with_capacity(topology.face_loops.len());
+        for rel in &topology.face_loops {
+            face_loops
+                .entry(rel.owner_ref)
+                .or_insert(rel.member_refs.as_slice());
+        }
+        let mut loop_coedges = HashMap::with_capacity(topology.loop_coedges.len());
+        for rel in &topology.loop_coedges {
+            loop_coedges
+                .entry(rel.owner_ref)
+                .or_insert(rel.member_refs.as_slice());
+        }
+        let mut coedge_edge = HashMap::with_capacity(topology.coedge_topology.len());
+        for row in &topology.coedge_topology {
+            coedge_edge.entry(row.coedge).or_insert(row.edge);
+        }
+        let mut edge_vertices = HashMap::with_capacity(topology.edge_vertices.len());
+        for row in &topology.edge_vertices {
+            edge_vertices
+                .entry(row.edge)
+                .or_insert((row.start_vertex, row.end_vertex));
+        }
+        let mut vertex_point = HashMap::with_capacity(topology.vertex_points.len());
+        for binding in &topology.vertex_points {
+            vertex_point
+                .entry(binding.entity)
+                .or_insert(binding.carrier);
+        }
+        let mut point_position = HashMap::with_capacity(topology.point_positions.len());
+        for row in &topology.point_positions {
+            point_position.entry(row.point).or_insert(row.position);
+        }
+        Self {
+            face_loops,
+            loop_coedges,
+            coedge_edge,
+            edge_vertices,
+            vertex_point,
+            point_position,
+        }
+    }
+
+    fn all_points(&self, face: i64) -> Vec<Point3> {
+        let Some(&loops) = self.face_loops.get(&face) else {
+            return Vec::new();
+        };
+        let mut positions = Vec::new();
+        for loop_ref in loops {
+            let Some(&coedges) = self.loop_coedges.get(loop_ref) else {
+                continue;
+            };
+            for coedge_ref in coedges {
+                let Some(&edge_ref) = self.coedge_edge.get(coedge_ref) else {
+                    continue;
+                };
+                let Some(&(start_vertex, end_vertex)) = self.edge_vertices.get(&edge_ref) else {
+                    continue;
+                };
+                for vertex_ref in [start_vertex, end_vertex] {
+                    let Some(&point_ref) = self.vertex_point.get(&vertex_ref) else {
+                        continue;
+                    };
+                    let Some(&position) = self.point_position.get(&point_ref) else {
+                        continue;
+                    };
+                    if !positions.contains(&position) {
+                        positions.push(position);
+                    }
+                }
+            }
+        }
+        positions
+    }
+
+    fn points(&self, face: i64) -> Option<Vec<Point3>> {
+        let &loops = self.face_loops.get(&face)?;
+        let mut positions = Vec::new();
+        let mut closed_edges_only = true;
+        for loop_ref in loops {
+            let &coedges = self.loop_coedges.get(loop_ref)?;
+            for coedge_ref in coedges {
+                let &edge_ref = self.coedge_edge.get(coedge_ref)?;
+                let &(start_vertex, end_vertex) = self.edge_vertices.get(&edge_ref)?;
+                closed_edges_only &= start_vertex == end_vertex;
+                for vertex_ref in [start_vertex, end_vertex] {
+                    let &point_ref = self.vertex_point.get(&vertex_ref)?;
+                    let &position = self.point_position.get(&point_ref)?;
+                    if !positions.contains(&position) {
+                        positions.push(position);
+                    }
+                }
+            }
+        }
+        (positions.len() >= 3 || (closed_edges_only && !positions.is_empty())).then_some(positions)
+    }
 }
 
 fn historical_face_all_points(
@@ -3927,7 +4727,7 @@ fn region_with_boundary_selection_members(
     sketch: &cadmpeg_ir::sketches::Sketch,
     selections: &[Option<ResolvedProfileSelection>],
 ) -> Option<ResolvedProfileSelection> {
-    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
     let mut regions = selections.iter().filter_map(|selection| match selection {
         Some(ResolvedProfileSelection::Regions(regions)) => Some(regions.as_slice()),
@@ -4120,8 +4920,7 @@ pub(in crate::design) fn selection_containing_points(
         for point in &projected {
             let mut on_boundary = false;
             for use_ in profile {
-                let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity)
-                else {
+                let Some(entity) = profile_work.find_entity(entities, &use_.entity) else {
                     continue;
                 };
                 if point_on_sketch_entity(*point, entity, tolerance) {
@@ -4137,9 +4936,8 @@ pub(in crate::design) fn selection_containing_points(
         if matches && points.len() >= 2 && unique_projected.len() == 1 {
             let p0 = unique_projected[0];
             let on_curve = profile.iter().any(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         matches!(
                             entity.geometry.definition(),
@@ -4156,9 +4954,8 @@ pub(in crate::design) fn selection_containing_points(
             let p0 = unique_projected[0];
             let p1 = unique_projected[1];
             let on_single_entity = profile.iter().any(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         let on_both = point_on_sketch_entity(p0, entity, tolerance)
                             && point_on_sketch_entity(p1, entity, tolerance);
@@ -4181,9 +4978,8 @@ pub(in crate::design) fn selection_containing_points(
             }
         } else if matches && unique_projected.len() >= 3 && profile.len() >= 2 {
             let all_lines_covered = profile.iter().all(|use_| {
-                entities
-                    .iter()
-                    .find(|entity| entity.id() == &use_.entity)
+                profile_work
+                    .find_entity(entities, &use_.entity)
                     .is_some_and(|entity| {
                         if matches!(
                             entity.geometry.definition(),
@@ -4220,9 +5016,8 @@ pub(in crate::design) fn selection_containing_points(
                     .is_some_and(|prof| {
                         prof.len() == 1
                             && prof.iter().all(|use_| {
-                                entities
-                                    .iter()
-                                    .find(|e| e.id() == &use_.entity)
+                                profile_work
+                                    .find_entity(entities, &use_.entity)
                                     .is_some_and(|e| {
                                         matches!(
                                             e.geometry.definition(),
@@ -4311,10 +5106,11 @@ impl<'a> SketchProfileResolution<'a> {
 fn resolve_profile_curve_regions(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
     let stream = native_stream(&group.id)?;
-    let (sketch, curves) = profile_curve_selection_candidates(group, stream, resolution, false)?;
+    let (sketch, curves) =
+        profile_curve_selection_candidates(group, stream, resolution, false, false)?;
     let source = resolution
         .sketches
         .iter()
@@ -4387,7 +5183,7 @@ fn compact_profile_loops(
     scope: &DesignParameterScope,
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: &SketchCurveSelectionResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
     if sketch.profiles.is_empty() {
         return None;
     }
@@ -4408,8 +5204,8 @@ fn compact_profile_loops(
 fn compact_profile_loop_selection(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+) -> Option<cadmpeg_ir::features::profiles::ProfileRef> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
 
     let mut selections = resolution
         .profile_curves
@@ -4456,7 +5252,7 @@ fn resolve_profile_curve_arrangement_regions(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
     resolve_profile_curve_arrangement_regions_with_policy(group, resolution, scoped, true)
 }
 
@@ -4465,8 +5261,8 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
-) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
@@ -4509,6 +5305,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let mut island_absence = false;
     let mut flags_read = false;
     let mut coincident = false;
+    let mut crossing_runs = false;
     let mut unions = Vec::new();
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
@@ -4576,6 +5373,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                     coincident |= selected.coincident
                                         && (allow_assumptions || !selected.identity_unique);
                                     island_absence |= selected.island_absence;
+                                    crossing_runs |= selected.crossing_runs_assumed();
                                     if !regions.contains(region) {
                                         regions.push(region.clone());
                                     }
@@ -4659,13 +5457,18 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     // A later member can repeat a group whose first region was removed as
     // the union of its further regions; the further regions still cover it.
     regions.retain(|region| !unions.contains(region));
-    if !allow_assumptions && (assumed || island_absence || flags_read || coincident) {
+    if !allow_assumptions
+        && (assumed || island_absence || flags_read || coincident || crossing_runs)
+    {
         return Ok(None);
     }
     let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
         .map(ProfileRef::Planar);
     if profile.is_some() {
+        if crossing_runs {
+            scoped.profile_work.note_crossing_runs_assumed();
+        }
         if assumed {
             scoped.profile_work.note_crossing_loop_assumed();
         }
@@ -4713,7 +5516,7 @@ fn resolve_profile_curve_path(
     group: &DesignConstructionOperandGroup,
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     if resolution
         .profile_curves
         .iter()
@@ -4736,7 +5539,7 @@ fn resolve_profile_curve_path(
     if curves.iter().any(|curve| !seen.insert(curve)) {
         return None;
     }
-    cadmpeg_ir::features::PathRef::sketch_curves(sketch, curves).ok()
+    cadmpeg_ir::features::profiles::PathRef::sketch_curves(sketch, curves).ok()
 }
 
 /// The Sketch placements that a typed profile selection names through the
@@ -4804,6 +5607,7 @@ fn profile_curve_selection_candidates(
     stream: &str,
     resolution: &EntitySelectionPathResolution<'_>,
     allow_compact_fragments: bool,
+    allow_missing: bool,
 ) -> Option<(
     cadmpeg_ir::sketches::SketchId,
     Vec<Vec<cadmpeg_ir::sketches::SketchEntityId>>,
@@ -4912,7 +5716,7 @@ fn profile_curve_selection_candidates(
                     }
                 })
                 .collect();
-            if ids.is_empty() {
+            if ids.is_empty() && !allow_missing {
                 return None;
             }
             candidates.push(ids);
@@ -4944,8 +5748,13 @@ fn profile_curve_selection_curves(
     cadmpeg_ir::sketches::SketchId,
     Vec<cadmpeg_ir::sketches::SketchEntityId>,
 )> {
-    let (sketch, entries) =
-        profile_curve_selection_candidates(group, stream, resolution, allow_compact_fragments)?;
+    let (sketch, entries) = profile_curve_selection_candidates(
+        group,
+        stream,
+        resolution,
+        allow_compact_fragments,
+        false,
+    )?;
     let curves = entries
         .into_iter()
         .map(|mut ids| (ids.len() == 1).then(|| ids.remove(0)))
@@ -4961,8 +5770,8 @@ fn profile_curve_selection_curves(
 fn resolve_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
-    use cadmpeg_ir::features::PathRef;
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
+    use cadmpeg_ir::features::profiles::PathRef;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     macro_rules! available {
@@ -5133,7 +5942,7 @@ fn resolve_entity_selection_path(
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &SketchProfileResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     if !matches!(
         group.role(),
         DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
@@ -5296,15 +6105,15 @@ fn explicit_region_matching_loop_index(
 
 fn explicit_region_agrees_with_candidate_region(
     exp_members: &[&cadmpeg_ir::sketches::SketchEntityId],
-    cand_region: &cadmpeg_ir::features::SketchProfileRegion,
+    cand_region: &cadmpeg_ir::features::profiles::SketchProfileRegion,
     sketch: &cadmpeg_ir::sketches::Sketch,
 ) -> bool {
     match cand_region {
-        cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
+        cadmpeg_ir::features::profiles::SketchProfileRegion::Loops { loops } => {
             loops.holes().is_empty()
                 && explicit_region_matching_loop_index(exp_members, sketch) == Some(loops.outer())
         }
-        cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. } => false,
+        cadmpeg_ir::features::profiles::SketchProfileRegion::Trimmed { .. } => false,
     }
 }
 
@@ -5314,9 +6123,9 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     sketch: &cadmpeg_ir::sketches::Sketch,
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
-    candidate: &cadmpeg_ir::features::PlanarProfileRef,
+    candidate: &cadmpeg_ir::features::profiles::PlanarProfileRef,
 ) -> bool {
-    use cadmpeg_ir::features::PlanarProfileRef;
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
 
     let Some(selection) = operand.planar_region_selection() else {
         return false;
@@ -5582,8 +6391,8 @@ fn native_revolve_profile(
     group: &DesignConstructionOperandGroup,
     profile: Option<&DesignSketchProfileOperand>,
     resolution: &SketchProfileResolution<'_>,
-) -> cadmpeg_ir::features::PlanarProfileRef {
-    use cadmpeg_ir::features::PlanarProfileRef;
+) -> cadmpeg_ir::features::profiles::PlanarProfileRef {
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
     let native = || PlanarProfileRef::Native(group.id.clone());
     let curve_selection = resolution.profile_curves.iter().find(|selection| {
         native_stream(&selection.id) == native_stream(&group.id)
@@ -5629,7 +6438,7 @@ fn resolved_revolve_axis_reference(
     native: &str,
     groups: &[DesignConstructionOperandGroup],
     resolution: &SketchProfileResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+) -> Option<cadmpeg_ir::features::profiles::PathRef> {
     let mut matching = groups.iter().filter(|group| {
         group.role() == DesignOperandRole::ROLE_0X21
             && (group.id == native
@@ -5658,9 +6467,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
-    };
+    use cadmpeg_ir::features::profiles::{LoftSection, PathRef, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let scoped = ScopedExtrudeProfileResolution {
         entities: resolution.sketch_entities,

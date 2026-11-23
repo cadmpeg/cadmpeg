@@ -36,7 +36,8 @@ fn source_records() -> Vec<crate::UnknownRecord> {
 fn sourced_point(id: &str) -> crate::topology::Point {
     let mut point = crate::topology::Point::new(
         id.try_into().unwrap(),
-        crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
         None,
     );
     point.source_object = Some(crate::provenance::SourceObjectAssociation {
@@ -54,7 +55,7 @@ fn sourced_point(id: &str) -> crate::topology::Point {
 
 #[test]
 fn shared_references_and_rejected_identities_keep_combined_admission_guarantees() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let annotations = Annotations::default();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let point_id = "test:model:point#earlier";
@@ -152,7 +153,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
 
 #[test]
 fn source_link_mutation_is_checked_after_reusing_admitted_state() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let annotations = Annotations::default();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     session.replace_unknowns(source_records()).unwrap();
@@ -192,7 +193,7 @@ fn source_link_mutation_is_checked_after_reusing_admitted_state() {
 
 #[test]
 fn native_annotation_field_paths_use_complete_source_records() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let annotations = Annotations::default();
     let source = "test:source:unknown#annotated";
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
@@ -233,7 +234,7 @@ fn native_annotation_field_paths_use_complete_source_records() {
 
 #[test]
 fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     session
         .append_model_mut()
@@ -278,7 +279,7 @@ fn instance_admission_does_not_certify_annotations_for_the_draft_route() {
 
 #[test]
 fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut builder = crate::AnnotationBuilder::new();
     let missing = "test:model:asset#missing";
     builder.exactness(missing, crate::Exactness::Derived);
@@ -305,7 +306,7 @@ fn sparse_deletion_replaces_invalid_base_annotations_in_combined_admission() {
 
 #[test]
 fn accounted_commit_does_not_hide_annotation_errors_from_the_next_candidate() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     session

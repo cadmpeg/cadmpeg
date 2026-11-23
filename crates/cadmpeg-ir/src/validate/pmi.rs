@@ -26,6 +26,9 @@ fn error(findings: &mut Vec<Finding>, annotation: &str, message: std::fmt::Argum
 }
 
 pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.model.pmi.is_empty() {
+        return;
+    }
     let bound_parameters = BoundParameters::new(ir);
     let definitions = BorrowedIdentities::build(|add| {
         for annotation in &ir.model.pmi {

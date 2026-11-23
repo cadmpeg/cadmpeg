@@ -17,6 +17,7 @@ use crate::records::feature::assembly_features::{
 };
 
 use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
+use crate::layout::local_component_occurrence_attributed_source_matrix as attributed_source;
 use crate::layout::local_component_occurrence_empty_attributes_prefix as empty_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
 use crate::layout::local_component_occurrence_leading_flag_body as leading_body;
@@ -742,13 +743,23 @@ fn parse_attributed_component_occurrence_frame(
     let path_discriminator = View::u32_le_at(frame, discriminator_at)?;
     let after_ordinal = ordinal_at.checked_add(4)?;
     let guid_marker = frame
-        .get(after_ordinal)
+        .get(after_ordinal + attributed_source::SOURCE_FLAG)
         .copied()
-        .filter(|marker| *marker == 1);
+        .filter(|marker| *marker <= 1);
     if ordinal_prefix_bytes == 1 && guid_marker.is_some() {
         return None;
     }
-    let component_guid_at = after_ordinal + usize::from(guid_marker.is_some());
+    let source_transform = if guid_marker == Some(attributed_source::SOURCE_FLAG_VALUE) {
+        Some(super::scopes::shared_frames::rigid_transform_at(
+            frame,
+            after_ordinal + attributed_source::SOURCE_MATRIX,
+        )?)
+    } else {
+        None
+    };
+    let component_guid_at = after_ordinal
+        + usize::from(guid_marker.is_some())
+        + source_transform.as_ref().map_or(0, |_| MATRIX_BYTES);
     let (component_guid, after_component) = lp_utf16_bounded(frame, component_guid_at, 36..=36)?;
     let occurrence_key_at = after_component;
     let (occurrence_key, after_key) = lp_utf16_bounded(frame, occurrence_key_at, 1..=36)?;
@@ -829,6 +840,7 @@ fn parse_attributed_component_occurrence_frame(
             property_names,
             persistent_key,
             guid_marker,
+            source_transform,
             ordinal_prefix,
             path_discriminator,
             key_record_index,

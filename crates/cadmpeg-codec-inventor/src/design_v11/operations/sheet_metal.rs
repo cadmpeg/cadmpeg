@@ -10,9 +10,9 @@ use cadmpeg_ir::design::ops::sheet_metal::{
     BendSet, BendSpec, NormalSide, RadiusSide, SheetMetal, SheetMetalKind,
 };
 use cadmpeg_ir::design::options::{Thickness, WallSide};
-use cadmpeg_ir::features::{
-    self as old, FeatureOperation as LegacyOperation, SheetMetalThicknessSide,
-};
+use cadmpeg_ir::features as old;
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::units::UnitVector3;
@@ -79,11 +79,11 @@ fn contour(
         .profile
         .as_ref()
         .ok_or("the contour profile is absent")?;
-    let (old::PlanarProfileRef::Sketch(sketch)
-    | old::PlanarProfileRef::SketchProfiles { sketch, .. }
-    | old::PlanarProfileRef::SketchRegions { sketch, .. }
-    | old::PlanarProfileRef::SketchEntities { sketch, .. }
-    | old::PlanarProfileRef::SketchSelection { sketch, .. }) = profile
+    let (cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch)
+    | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchProfiles { sketch, .. }
+    | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { sketch, .. }
+    | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchEntities { sketch, .. }
+    | cadmpeg_ir::features::profiles::PlanarProfileRef::SketchSelection { sketch, .. }) = profile
     else {
         return Err("the contour profile has no oriented sketch plane");
     };
@@ -104,10 +104,10 @@ fn contour(
     } else {
         return Err("the contour direction differs from both senses of its sketch normal");
     };
-    let Some(old::ExtrudeExtent::OneSided {
+    let Some(cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
         side:
-            old::ExtrudeSide {
-                termination: old::LinearTermination::Blind { length },
+            cadmpeg_ir::features::extents::ExtrudeSide {
+                termination: cadmpeg_ir::features::extents::LinearTermination::Blind { length },
                 draft: None,
             },
     }) = &value.extent

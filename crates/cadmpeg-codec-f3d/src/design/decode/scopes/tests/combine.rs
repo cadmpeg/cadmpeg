@@ -6,7 +6,7 @@ use crate::design::decode::scopes::combine::{
 use crate::design::decode::scopes::parameter_scope::{
     parse_parameter_scope, parse_parameter_scope_with_type_guid,
 };
-use crate::design::feature_project::project_combine;
+use crate::design::feature_project::body_ops::project_combine;
 use crate::loss::F3dLossCode;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{
@@ -233,7 +233,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         operation,
         DesignCombineOperation {
             form: DesignCombineForm::Standard,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
@@ -253,6 +253,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         }
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
@@ -265,10 +267,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
                 operands: cadmpeg_ir::features::CombineOperands::new(
-                    cadmpeg_ir::features::BodySelection::Native(
+                    cadmpeg_ir::features::selections::BodySelection::Native(
                         "Design1/BulkStream.dat:design-record#96".into(),
                     ),
-                    cadmpeg_ir::features::BodySelection::NativeSet(
+                    cadmpeg_ir::features::selections::BodySelection::NativeSet(
                         vec![
                             "Design1/BulkStream.dat:design-record#92".into(),
                             "Design1/BulkStream.dat:design-record#94".into(),
@@ -279,10 +281,11 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 )
                 .unwrap(),
 
-                op: cadmpeg_ir::features::BooleanKind::Join,
+                op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                 keep_tools: true,
 
-                destination: cadmpeg_ir::features::CombineDestination::default(),
+                destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(
+                ),
             }
         ))
     );
@@ -319,7 +322,10 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     )
     .unwrap()
     .expect("compact Combine construction");
-    assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        compact.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert_eq!(compact.operation_offset, 21);
     assert!(!compact.keep_tools);
     assert_eq!(compact.form, DesignCombineForm::Compact);
@@ -469,7 +475,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             .unwrap()
             .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
     assert_eq!(operation.operation_offset, 31);
     assert!(operation.keep_tools);
     assert_eq!(operation.keep_tools_offset, 30);
@@ -603,6 +612,8 @@ struct OperandListFixture {
     node_trailing_bytes: usize,
     property_block: bool,
     middle_lists: [Vec<u32>; 2],
+    /// Browser-node records that the Combine scope creates.
+    created_nodes: Vec<u32>,
     companions: Vec<u32>,
     companion_type: &'static str,
     companion_guid: &'static str,
@@ -613,7 +624,22 @@ struct OperandListFixture {
     new_component: u8,
     omit_consumed: bool,
     optional_reference: bool,
+    /// Operation entries after the first, each a reference or null.
+    further_operation_entries: Vec<Option<u32>>,
+    /// The number of bytes of the first operation-identity value that the
+    /// reference table follows, for a truncated frame.
+    truncated_identity: Option<usize>,
+    tool_bodies: FixtureToolBodies,
     reference_form: FixtureReferenceForm,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum FixtureToolBodies {
+    /// Each tool selection names its own browser node.
+    #[default]
+    Distinct,
+    /// The last tool selection names the browser node of the first tool.
+    LastRepeatsFirst,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -641,6 +667,7 @@ impl OperandListFixture {
             node_trailing_bytes: 0,
             property_block: false,
             middle_lists: [Vec::new(), Vec::new()],
+            created_nodes: Vec::new(),
             companions: Vec::new(),
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             companion_guid: "00000000-0000-0000-0000-000000000000",
@@ -650,6 +677,9 @@ impl OperandListFixture {
             new_component: 0,
             omit_consumed: false,
             optional_reference: true,
+            further_operation_entries: Vec::new(),
+            truncated_identity: None,
+            tool_bodies: FixtureToolBodies::default(),
             reference_form: FixtureReferenceForm::default(),
         }
     }
@@ -704,9 +734,11 @@ impl OperandListFixture {
             self.tools.iter().map(|(operation, _)| *operation).collect();
         let consumed = self.consumed.clone().unwrap_or_else(|| {
             if self.keep_tools == 0 && self.companions.is_empty() {
+                let mut seen = std::collections::HashSet::new();
                 self.tools
                     .iter()
-                    .map(|(_, selection)| selection + 100)
+                    .map(|(_, selection)| self.body_node(*selection))
+                    .filter(|node| seen.insert(*node))
                     .collect()
             } else {
                 Vec::new()
@@ -725,13 +757,23 @@ impl OperandListFixture {
         marked_list(&mut bytes, &self.companions);
         bytes.push(self.keep_tools);
         bytes.push(self.new_component);
-        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(1 + self.further_operation_entries.len()).unwrap()).to_le_bytes(),
+        );
         if self.optional_reference {
             marked(&mut bytes, 377);
         } else {
             bytes.push(0);
         }
+        let identity_at = bytes.len();
         bytes.extend_from_slice(&306u64.to_le_bytes());
+        for entry in &self.further_operation_entries {
+            match entry {
+                Some(record) => marked(&mut bytes, *record),
+                None => bytes.push(0),
+            }
+            bytes.extend_from_slice(&305u64.to_le_bytes());
+        }
         marked_list(
             &mut bytes,
             self.listed_tools.as_deref().unwrap_or(&tool_operations),
@@ -751,6 +793,9 @@ impl OperandListFixture {
             bytes.extend_from_slice(&[unit, 0]);
         }
         bytes.resize(bytes.len() + self.guid_tail_zeros, 0);
+        if let Some(kept) = self.truncated_identity {
+            bytes.truncate(identity_at + kept);
+        }
         let table = self.table();
         bytes.extend_from_slice(&(u32::try_from(table.len() * 2).unwrap()).to_le_bytes());
         for (operation, selection) in &table {
@@ -808,10 +853,13 @@ impl OperandListFixture {
             bytes.extend_from_slice(&2u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
             marked_list(&mut bytes, &[selection + 50]);
-            let node = selection + 100;
+            let node = self.body_node(*selection);
             marked_list(&mut bytes, &vec![node; self.node_entries]);
             bytes.extend_from_slice(&9u32.to_le_bytes());
             indexed_header(&mut bytes, *b"258", *selection);
+            if node != selection + 100 {
+                continue;
+            }
             indexed_header(&mut bytes, *b"304", node);
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, "20000000-0000-0000-0000-000000000001");
@@ -841,7 +889,36 @@ impl OperandListFixture {
             }
             indexed_header(&mut bytes, *b"258", companion);
         }
+        for node in &self.created_nodes {
+            indexed_header(&mut bytes, *b"304", *node);
+            bytes.extend_from_slice(&[0; 10]);
+            lp_utf16(&mut bytes, "20000000-0000-0000-0000-000000000002");
+            bytes.push(0);
+            bytes.push(self.node_flag);
+            marked(&mut bytes, node + 50);
+            marked(&mut bytes, 90);
+            indexed_header(&mut bytes, *b"258", *node);
+        }
         bytes
+    }
+
+    /// The browser-node record that the body selection `selection` names.
+    fn body_node(&self, selection: u32) -> u32 {
+        match (&self.tools[..], self.tool_bodies) {
+            ([(_, first), .., (_, last)], FixtureToolBodies::LastRepeatsFirst)
+                if selection == *last =>
+            {
+                first + 100
+            }
+            _ => selection + 100,
+        }
+    }
+
+    /// Name `nodes` in the second middle list as bodies the Combine creates.
+    fn creating(mut self, nodes: Vec<u32>) -> Self {
+        self.created_nodes.clone_from(&nodes);
+        self.middle_lists[1] = nodes;
+        self
     }
 
     fn decode(&self) -> Option<DesignCombineOperation> {
@@ -886,7 +963,7 @@ fn decode_combine_frame_with(
 
 #[test]
 fn operand_list_prologue_reads_zero_based_operation_and_keep_tools() {
-    use cadmpeg_ir::features::BooleanKind;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
     for (code, expected) in [
         (0, BooleanKind::Join),
         (1, BooleanKind::Cut),
@@ -967,7 +1044,7 @@ fn operand_list_prologue_rejects_nonzero_fixed_fields() {
         (11, 1),
         (19, 1),
         (30, 1),
-        (31, 2),
+        (31, 0),
         (35, 0),
         (44, 1),
         (45, 1),
@@ -989,6 +1066,99 @@ fn operand_list_prologue_admits_any_operation_identity_value() {
         decode_combine_frame(&bytes).map(|operation| operation.form),
         Some(DesignCombineForm::OperandLists)
     );
+}
+
+/// Decode an operand-list frame and return the loss codes, after checking
+/// that its tool list is read after the last operation entry.
+fn operation_entry_codes(bytes: &[u8]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    let (operation, losses) = decode_combine_frame_with(bytes, &HashMap::new());
+    let operation = operation.expect("operand-list Combine");
+    assert_eq!(operation.form, DesignCombineForm::OperandLists);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
+    assert_eq!(operation.target_record_index, 96);
+    assert_eq!(operation.tools.iter().count(), 2);
+    losses.into_iter().map(|loss| loss.code).collect()
+}
+
+#[test]
+fn operand_list_prologue_reads_a_null_first_two_entry_form() {
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    assert_eq!(operation_entry_codes(&fixture.bytes()), []);
+}
+
+#[test]
+fn operand_list_prologue_reports_an_operation_entry_form_outside_the_stated_forms() {
+    let assumed = [F3dLossCode::FeatureCombineOperationEntriesAssumed.kind()];
+    for (first_present, further) in [
+        (true, vec![None]),
+        (true, vec![Some(378)]),
+        (false, vec![None, Some(378)]),
+    ] {
+        let mut fixture = OperandListFixture::new(1, 0).two_tools();
+        fixture.optional_reference = first_present;
+        fixture.further_operation_entries = further;
+        assert_eq!(operation_entry_codes(&fixture.bytes()), assumed);
+    }
+
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    let mut bytes = fixture.bytes();
+    let first_identity = 36;
+    let identity = u64::from_le_bytes(
+        bytes[first_identity..first_identity + 8]
+            .try_into()
+            .unwrap(),
+    );
+    bytes[first_identity..first_identity + 8].copy_from_slice(&(identity + 1).to_le_bytes());
+    assert_eq!(operation_entry_codes(&bytes), assumed);
+}
+
+#[test]
+fn a_truncated_operation_identity_reads_the_standard_prologue_with_a_loss() {
+    for first_present in [true, false] {
+        let mut fixture = OperandListFixture::new(1, 0);
+        fixture.property_block = true;
+        fixture.optional_reference = first_present;
+        fixture.truncated_identity = Some(4);
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(
+            operation.map(|operation| operation.form),
+            Some(DesignCombineForm::Standard),
+            "first reference present: {first_present}"
+        );
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombinePrologueAssumed.kind()],
+            "first reference present: {first_present}"
+        );
+    }
+}
+
+#[test]
+fn repeated_tool_body_is_consumed_once() {
+    let mut fixture = OperandListFixture::new(1, 0).two_tools();
+    fixture.optional_reference = false;
+    fixture.further_operation_entries = vec![Some(378)];
+    fixture.tool_bodies = FixtureToolBodies::LastRepeatsFirst;
+    let operation = fixture.decode().expect("operand-list Combine");
+    assert_eq!(operation.consumed_body_nodes, [192]);
+    assert_eq!(
+        operation
+            .tools
+            .iter()
+            .map(|tool| tool.body_node.map(|node| node.record_index))
+            .collect::<Vec<_>>(),
+        [Some(192), Some(192)]
+    );
+
+    fixture.consumed = Some(vec![192, 192]);
+    assert_eq!(fixture.decode(), None);
 }
 
 #[test]
@@ -1020,7 +1190,10 @@ fn operand_list_keeps_its_operation_when_a_browser_node_is_not_exact() {
     trailing_bytes.node_trailing_bytes = 1;
     for fixture in [invalid_flag, two_entries, no_entry, trailing_bytes] {
         let operation = fixture.decode().expect("operand-list Combine");
-        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+        assert_eq!(
+            operation.operation,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+        );
         assert_eq!(operation.target_body_node, None);
         assert_eq!(operation.tools.first.body_node, None);
     }
@@ -1033,7 +1206,7 @@ fn byte_twenty_of_the_operand_list_prologue_is_the_property_block_presence() {
     let operation = empty_block.decode().expect("operand-list Combine");
     assert_eq!(
         operation.operation,
-        cadmpeg_ir::features::BooleanKind::Intersect
+        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
     );
     assert_eq!(operation.operation_offset, 25);
     assert_eq!(operation.keep_tools_offset, 33);
@@ -1066,7 +1239,10 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
             .decode()
             .expect("Combine with companions");
         assert_eq!(operation.form, DesignCombineForm::OperandLists);
-        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+        assert_eq!(
+            operation.operation,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Join
+        );
         assert_eq!(operation.operation_offset, operation_offset);
         assert!(!operation.keep_tools);
         assert_eq!(operation.keep_tools_offset, keep_tools_offset);
@@ -1177,17 +1353,88 @@ fn a_companion_that_does_not_select_every_tool_keeps_the_combine_with_a_loss() {
 }
 
 #[test]
-fn operand_list_middle_lists_are_empty() {
+fn operand_list_first_middle_list_is_empty_and_the_second_names_created_bodies() {
     for omit_consumed in [false, true] {
-        for list in 0..2 {
-            let mut fixture = OperandListFixture::new(0, 0);
-            fixture.companions = vec![500];
-            fixture.omit_consumed = omit_consumed;
-            assert!(fixture.decode().is_some(), "{omit_consumed}");
-            fixture.middle_lists[list] = vec![91];
-            assert_eq!(fixture.decode(), None, "{omit_consumed} {list}");
-        }
+        let mut fixture = OperandListFixture::new(0, 0);
+        fixture.companions = vec![500];
+        fixture.omit_consumed = omit_consumed;
+        assert!(fixture.decode().is_some(), "{omit_consumed}");
+        fixture.middle_lists[0] = vec![91];
+        assert_eq!(fixture.decode(), None, "{omit_consumed}");
     }
+    let created = OperandListFixture::new(0, 0).creating(vec![600]);
+    assert_eq!(
+        created
+            .decode()
+            .map(|operation| (operation.created_body_nodes, operation.consumed_body_nodes)),
+        Some((vec![600], vec![192]))
+    );
+    let mut tool_node = OperandListFixture::new(0, 0);
+    tool_node.middle_lists[1] = vec![192];
+    assert_eq!(tool_node.decode(), None);
+    let repeated = OperandListFixture::new(0, 0).creating(vec![600, 600]);
+    assert_eq!(repeated.decode(), None);
+    let mut two_lists = OperandListFixture::new(0, 0).creating(vec![600]);
+    two_lists.companions = vec![500];
+    two_lists.omit_consumed = true;
+    assert_eq!(two_lists.decode(), None);
+}
+
+#[test]
+fn an_intersect_names_its_extra_result_bodies_and_its_consumed_tool() {
+    let fixture = OperandListFixture::new(2, 0).creating(vec![600, 601]);
+    let (operation, losses) = fixture.decode_with_losses();
+    let operation = operation.expect("operand-list Intersect");
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
+    );
+    assert!(!operation.keep_tools);
+    assert_eq!(operation.created_body_nodes, [600, 601]);
+    assert_eq!(operation.consumed_body_nodes, [192]);
+    assert!(losses.is_empty(), "{losses:?}");
+
+    let mut kept = OperandListFixture::new(2, 1).creating(vec![600]);
+    kept.consumed = Some(Vec::new());
+    let operation = kept
+        .decode()
+        .expect("operand-list Intersect with kept tools");
+    assert!(operation.keep_tools);
+    assert_eq!(operation.created_body_nodes, [600]);
+    assert!(operation.consumed_body_nodes.is_empty());
+}
+
+#[test]
+fn a_companion_removes_the_tools_that_the_consumed_body_list_omits() {
+    let mut fixture = OperandListFixture::new(0, 0).two_tools();
+    fixture.companions = vec![500];
+    fixture.consumed = Some(vec![194]);
+    fixture.companion_selections = Some(vec![92]);
+    let (operation, losses) = fixture.decode_with_losses();
+    let operation = operation.expect("Combine with a companion");
+    assert!(!operation.keep_tools);
+    assert_eq!(operation.consumed_body_nodes, [194]);
+    assert!(losses.is_empty(), "{losses:?}");
+
+    fixture.companion_selections = Some(vec![94]);
+    let (operation, losses) = fixture.decode_with_losses();
+    assert!(operation.is_some());
+    assert!(
+        matches!(
+            &losses[..],
+            [loss] if loss.code == F3dLossCode::FeatureCombineToolConsumptionAssumed.kind()
+                && loss.message.contains("confirms tool selections 92")
+        ),
+        "{losses:?}"
+    );
+
+    let mut out_of_order = OperandListFixture::new(0, 0).two_tools();
+    out_of_order.consumed = Some(vec![194, 192]);
+    assert_eq!(out_of_order.decode(), None);
+    let mut other_node = OperandListFixture::new(0, 0).two_tools();
+    other_node.companions = vec![500];
+    other_node.consumed = Some(vec![196]);
+    assert_eq!(other_node.decode(), None);
 }
 
 #[test]
@@ -1197,14 +1444,14 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
     let mut fixture = OperandListFixture::new(1, 0);
     fixture.property_block = true;
     let (operation, losses) = fixture.decode_with_losses();
-    let operation = operation.expect("standard reading");
-    assert_eq!(operation.form, DesignCombineForm::Standard);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
-    assert!(operation.keep_tools);
+    let operation = operation.expect("operand-list reading");
+    assert_eq!(operation.form, DesignCombineForm::OperandLists);
     assert_eq!(
-        codes(losses),
-        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
     );
+    assert!(!operation.keep_tools);
+    assert!(losses.is_empty(), "{losses:?}");
 
     let mut intersect = OperandListFixture::new(2, 0);
     intersect.property_block = true;
@@ -1225,7 +1472,10 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
     let (operation, losses) = fixture.decode_with_losses();
     let operation = operation.expect("standard reading");
     assert_eq!(operation.form, DesignCombineForm::Standard);
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert!(operation.keep_tools);
     assert_eq!(
         codes(losses),
@@ -1290,28 +1540,46 @@ fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contrad
 }
 
 #[test]
-fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
+fn a_combine_that_places_its_result_in_a_new_component_names_its_created_bodies() {
     let codes =
         |losses: Vec<LossNote>| losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>();
-    let mut kept_tools = OperandListFixture::new(1, 1);
+    let mut kept_tools = OperandListFixture::new(1, 1).creating(vec![600]);
     kept_tools.property_block = true;
     kept_tools.new_component = 1;
-    kept_tools.middle_lists[1] = vec![194];
     let (operation, losses) = kept_tools.decode_with_losses();
+    let operation = operation.expect("operand-list reading");
+    assert_eq!(operation.form, DesignCombineForm::OperandLists);
     assert_eq!(
-        operation.map(|operation| operation.form),
-        Some(DesignCombineForm::Standard)
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+    );
+    assert!(operation.keep_tools);
+    assert_eq!(
+        operation.destination,
+        crate::records::feature::combine::DesignCombineDestination::NewComponent {
+            browser_node_record_index: Some(600),
+        }
     );
     assert_eq!(
         codes(losses),
-        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
+        [F3dLossCode::FeatureCombineComponentDestinationAssumed.kind()]
     );
 
-    let mut companion = OperandListFixture::new(0, 0).two_tools();
+    let mut target_node = OperandListFixture::new(1, 1);
+    target_node.property_block = true;
+    target_node.new_component = 1;
+    target_node.middle_lists[1] = vec![194];
+    assert_eq!(
+        target_node.decode().map(|operation| operation.form),
+        Some(DesignCombineForm::Standard)
+    );
+
+    let mut companion = OperandListFixture::new(0, 0)
+        .two_tools()
+        .creating(vec![600, 601]);
     companion.property_block = true;
     companion.companions = vec![500];
     companion.new_component = 1;
-    companion.middle_lists[1] = vec![196];
     let mut two_lists = OperandListFixture::new(0, 0).two_tools();
     two_lists.property_block = true;
     two_lists.companions = vec![500];
@@ -1322,15 +1590,19 @@ fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
         let operation = operation.expect("readable component request");
         assert_eq!(
             operation.operation,
-            cadmpeg_ir::features::BooleanKind::Join,
+            cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             "{name}"
         );
         assert_eq!(
             operation.destination,
             crate::records::feature::combine::DesignCombineDestination::NewComponent {
-                browser_node_record_index: if name == "companion" { Some(196) } else { None },
+                browser_node_record_index: if name == "companion" { Some(600) } else { None },
             }
         );
+        if name == "companion" {
+            assert_eq!(operation.created_body_nodes, [600, 601]);
+            assert!(operation.consumed_body_nodes.is_empty());
+        }
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#90",
             crate::records::feature::scope::DesignFeatureKind::Combine,
@@ -1345,7 +1617,8 @@ fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
             project_combine(&scope, "f3d:Design/BulkStream.dat"),
             Some(cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Combine {
-                    destination: cadmpeg_ir::features::CombineDestination::NewComponent,
+                    destination:
+                        cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent,
                     keep_tools: false,
                     ..
                 }
@@ -1361,7 +1634,7 @@ fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
 
 #[test]
 fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
-    use cadmpeg_ir::features::BooleanKind;
+    use cadmpeg_ir::features::operation_settings::BooleanKind;
 
     for (code, expected) in [
         (0, BooleanKind::Join),
@@ -1377,6 +1650,11 @@ fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
             assert_eq!(operation.form, DesignCombineForm::OperandLists);
             assert_eq!(operation.operation, expected);
             assert_eq!(operation.keep_tools, keep);
+            assert!(operation.created_body_nodes.is_empty());
+            assert_eq!(
+                operation.consumed_body_nodes,
+                if keep { vec![] } else { vec![192, 194] }
+            );
             assert_eq!(operation.target_record_index, 96);
             assert_eq!(
                 operation.target_body_node,
@@ -1423,10 +1701,9 @@ fn combine_two_middle_lists_preserve_consumed_tools_in_source_order() {
 
 #[test]
 fn named_combine_tail_keeps_component_reference_separate_from_destination_node() {
-    let mut fixture = OperandListFixture::new(0, 1);
+    let mut fixture = OperandListFixture::new(0, 1).creating(vec![700]);
     fixture.property_block = true;
     fixture.new_component = 1;
-    fixture.middle_lists[1] = vec![194];
     let mut bytes = fixture.bytes();
     let parse = |bytes: &[u8]| {
         parse_parameter_scope_with_type_guid(
@@ -1479,11 +1756,14 @@ fn named_combine_tail_keeps_component_reference_separate_from_destination_node()
     let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
         .unwrap()
         .unwrap();
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert_eq!(
         operation.destination,
         crate::records::feature::combine::DesignCombineDestination::NewComponent {
-            browser_node_record_index: Some(194)
+            browser_node_record_index: Some(700)
         }
     );
     assert!(operation.keep_tools);
@@ -1496,7 +1776,8 @@ fn named_combine_tail_keeps_component_reference_separate_from_destination_node()
         project_combine(&scope, "f3d:Design/BulkStream.dat"),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
-                destination: cadmpeg_ir::features::CombineDestination::NewComponent,
+                destination:
+                    cadmpeg_ir::features::operation_settings::CombineDestination::NewComponent,
                 keep_tools: true,
                 ..
             }
@@ -1532,7 +1813,7 @@ fn combine_operand_lists_accept_null_and_typed_local_references() {
                 assert_eq!(operation.form, DesignCombineForm::OperandLists);
                 assert_eq!(
                     operation.operation,
-                    cadmpeg_ir::features::BooleanKind::Intersect
+                    cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
                 );
                 assert!(!operation.keep_tools);
                 assert_eq!(operation.operation_offset, 21);
