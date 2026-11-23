@@ -3279,7 +3279,7 @@ Offsets from the end of the name object's string. A Unicode CString follows at +
 
 Spec §2.3 · layout: byte offsets · size: 8 B
 
-Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Contents/Header2.
+Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Header2.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
