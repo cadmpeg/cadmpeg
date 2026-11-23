@@ -194,10 +194,12 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
-    /// Extrusion keeps the travel its solid shows against its end-spec reversal flag.
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
     FeatureExtrudeReversalContradicted,
-    /// Extrusion travels against its profile normal on its end-spec reversal
-    /// flag alone: the solid neither holds nor contradicts that travel.
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
@@ -359,6 +361,9 @@ pub(crate) enum SldprtLossCode {
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in a lane outside the active configuration.
+    WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -557,6 +562,7 @@ impl SldprtLossCode {
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
         Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -727,6 +733,9 @@ impl SldprtLossCode {
                 "writer.configuration-snapshot-edit-unwritten"
             }
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -777,6 +786,7 @@ impl SldprtLossCode {
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterDrivenDimensionsOmitted => Severity::Warning,
@@ -940,7 +950,9 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterSolidStaleAfterEdit | Self::WriterExtrudeReversalUnwritten => {
+            Self::WriterSolidStaleAfterEdit
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
@@ -1415,6 +1427,7 @@ mod tests {
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
                 "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
