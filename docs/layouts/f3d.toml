@@ -18368,7 +18368,7 @@ name = "epoch"
 offset = 71
 type = "u32"
 source = "spec"
-anchor = "The evaluation epochs of the group are the epochs of the item tail"
+anchor = "Both evaluation epochs of the group equal the first evaluation epoch of the item tail"
 
 [[record.field]]
 name = "duration"
@@ -18382,7 +18382,7 @@ name = "second_epoch"
 offset = 83
 type = "u32"
 source = "spec"
-anchor = "The evaluation epochs of the group are the epochs of the item tail"
+anchor = "Both evaluation epochs of the group equal the first evaluation epoch of the item tail"
 
 [[record.field]]
 name = "companion"
@@ -18570,7 +18570,7 @@ name = "epoch"
 offset = 245
 type = "u32"
 source = "spec"
-anchor = "The evaluation epochs are the epochs of the item tail"
+anchor = "Both evaluation epochs of the member equal the first evaluation epoch of the item tail"
 
 [[record.field]]
 name = "duration"

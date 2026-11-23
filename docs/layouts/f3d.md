@@ -5688,9 +5688,9 @@ Offsets are relative to the group's primary indexed header. The paired indexed h
 | 42 | 11 | `identity_wrapper` | `bytes[11]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
 | 53 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000000800000000` at offset 53 · value `34359738368` |
 | 61 | 10 | `zero_run_10_after_role` | `bytes[10]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 71 | 4 | `epoch` | `u32` | little | spec | The evaluation epochs of the group are the epochs of the item tail |
+| 71 | 4 | `epoch` | `u32` | little | spec | Both evaluation epochs of the group equal the first evaluation epoch of the item tail |
 | 75 | 8 | `duration` | `f64` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
-| 83 | 4 | `second_epoch` | `u32` | little | spec | The evaluation epochs of the group are the epochs of the item tail |
+| 83 | 4 | `second_epoch` | `u32` | little | spec | Both evaluation epochs of the group equal the first evaluation epoch of the item tail |
 | 87 | 11 | `companion` | `bytes[11]` | little | spec | record `G + 2` is its 33-byte item-tail companion |
 | 98 | 3 | `flags` | `bytes[3]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[1, 0, 0]` |
 | 101 | 11 | `timestamp_table` | `bytes[11]` | little | spec | Record `G + 1` is the record-timestamp table of the group |
@@ -5723,7 +5723,7 @@ Offsets are relative to the member's primary indexed header. The paired indexed 
 | 220 | 11 | `browser_node` | `bytes[11]` | little | spec | the second-run count `g` and `g` references to browser-node members |
 | 231 | 4 | `trailing_word` | `u32` | little | spec | the trailing word `8`, ten zero bytes · value `8` |
 | 235 | 10 | `zero_run_10_after_trailing_word` | `bytes[10]` | little | spec | the trailing word `8`, ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 245 | 4 | `epoch` | `u32` | little | spec | The evaluation epochs are the epochs of the item tail |
+| 245 | 4 | `epoch` | `u32` | little | spec | Both evaluation epochs of the member equal the first evaluation epoch of the item tail |
 | 249 | 8 | `duration` | `f64` | little | spec | the f64 evaluation duration, the second evaluation epoch |
 | 257 | 4 | `second_epoch` | `u32` | little | spec | the f64 evaluation duration, the second evaluation epoch |
 | 261 | 11 | `companion` | `bytes[11]` | little | spec | a reference to its item-tail companion `M + 2` |
