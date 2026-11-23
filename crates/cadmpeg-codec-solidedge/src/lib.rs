@@ -15,6 +15,7 @@ mod dressup;
 mod edge;
 mod extents;
 mod features;
+mod helix;
 mod layout;
 mod loss;
 mod patterns;
