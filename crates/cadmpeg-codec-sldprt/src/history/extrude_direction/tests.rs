@@ -144,6 +144,7 @@ fn opposite_caps_contradict_reversed_travel() {
                     Vec::new()
                 },
                 assumed: Vec::new(),
+                ..Retained::default()
             }
         );
         assert_eq!(
@@ -505,6 +506,7 @@ fn end_caps_confirm_a_two_direction_reversal() {
                 changed: confirmed,
                 reversals: Vec::new(),
                 assumed: Vec::new(),
+                ..Retained::default()
             },
             "{first} {second}"
         );
