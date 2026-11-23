@@ -444,8 +444,9 @@ fn first_framed_after_native(
     };
     group.feature_ref == feature
         && scalar.role == FeatureInputScalarRole::Native
-        && scalars
-            .get(declared.saturating_add(1)..index)
+        && declared
+            .checked_add(1)
+            .and_then(|start| scalars.get(start..index))
             .is_some_and(|between| {
                 between
                     .iter()

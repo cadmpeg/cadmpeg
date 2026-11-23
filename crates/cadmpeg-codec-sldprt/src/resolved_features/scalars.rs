@@ -133,10 +133,13 @@ pub(super) fn value_only_value_offset(payload: &[u8], header_end: usize) -> usiz
 /// Whether a trailer that opens with a zero byte and a class token or class
 /// declaration begins at `at` (`docs/formats/sldprt.md` §2).
 fn class_reference_trailer(payload: &[u8], at: usize) -> bool {
-    let Some(reference) = at.checked_add(class_reference::CLASS_REFERENCE) else {
+    let (Some(zero), Some(reference)) = (
+        at.checked_add(class_reference::ZERO),
+        at.checked_add(class_reference::CLASS_REFERENCE),
+    ) else {
         return false;
     };
-    payload.get(at.saturating_add(class_reference::ZERO)) == Some(&0)
+    payload.get(zero) == Some(&0)
         && (View::u16_le_at(payload, reference).is_some_and(is_class_token)
             || payload
                 .get(reference..)
