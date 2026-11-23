@@ -177,12 +177,13 @@ impl DimensionCircle {
             ),
             Reading::RepeatsBuilt(circle) => format!("it repeats {}", circle.as_str()),
             Reading::NoCurveOfRadius if self.outcome == Outcome::Unnamed => {
-                "no curve of its sketch has its radius and no face of the solid lies on it"
+                "no stored curve of its sketch has its radius and no face of the solid lies \
+                 on it"
                     .to_owned()
             }
-            Reading::NoCurveOfRadius => "no curve of its sketch has its radius and no face of \
-                                         the solid lies on it, so the profile lacks the circle \
-                                         its dimension measures"
+            Reading::NoCurveOfRadius => "no stored curve of its sketch has its radius and no \
+                                         face of the solid lies on it, so the profile lacks the \
+                                         circle its dimension measures"
                 .to_owned(),
             Reading::Unwitnessed => "no face of the solid lies on it".to_owned(),
             Reading::Unplaced => {

@@ -289,13 +289,13 @@ fn a_dimension_circle_no_face_lies_on_is_construction_and_its_unnamed_twin_is_le
     for expected in [
         entry(
             "built",
-            "no curve of its sketch has its radius and no face of the solid lies on it, so the \
-             profile lacks the circle its dimension measures; construction",
+            "no stored curve of its sketch has its radius and no face of the solid lies on it, \
+             so the profile lacks the circle its dimension measures; construction",
         ),
         entry(
             "twin",
-            "no curve of its sketch has its radius and no face of the solid lies on it; left \
-             out; no relation names it",
+            "no stored curve of its sketch has its radius and no face of the solid lies on it; \
+             left out; no relation names it",
         ),
     ] {
         assert!(message.contains(&expected), "{message}");
