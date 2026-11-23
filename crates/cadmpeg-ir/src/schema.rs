@@ -588,7 +588,7 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation, sheet, curves, template_geometry, x_direction, scale_from, projection, perspective, hidden_line, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation, sheet, curves, template_geometry, x_direction, scale_from, projection, perspective, edge_classes, hidden_line, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,

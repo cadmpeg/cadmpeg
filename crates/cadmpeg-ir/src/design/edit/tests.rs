@@ -594,6 +594,34 @@ fn set_dimension_refuses_a_driven_parameter() {
     ));
 }
 
+/// §5.12: an `Unset` parameter has no value, a parameter that reads it has
+/// none, and `set_dimension` gives it a literal.
+#[test]
+fn set_dimension_gives_an_unset_parameter_a_literal() {
+    let mut document = timeline();
+    document.design.parameters[0].definition = ParameterDefinition::Unset;
+    document.design.parameters[0].value = None;
+    document.design.parameters[1].value = None;
+    document
+        .set_dimension(
+            &parameter_id(1),
+            Literal::Number {
+                value: real(5.0),
+                unit: mm(),
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        document.design.parameters[0].definition,
+        ParameterDefinition::Expression(_)
+    ));
+    assert_eq!(cache(&document, 1), Some(ParameterValue::Number(real(5.0))));
+    assert_eq!(
+        cache(&document, 2),
+        Some(ParameterValue::Number(real(10.0)))
+    );
+}
+
 fn errors_only(findings: &[crate::report::check::Finding]) -> bool {
     !findings.is_empty()
         && findings
