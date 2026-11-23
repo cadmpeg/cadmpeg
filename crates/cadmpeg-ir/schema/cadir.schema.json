@@ -2465,32 +2465,6 @@
       "description": "Stable identity of one document asset.",
       "$ref": "#/$defs/Identity"
     },
-    "AttributeExpression": {
-      "description": "An expression that a source states on a property.",
-      "type": "object",
-      "properties": {
-        "comment": {
-          "description": "The source's comment on the expression.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expression": {
-          "description": "The expression.",
-          "$ref": "#/$defs/Expression"
-        },
-        "path": {
-          "description": "The source's path of the property the expression drives.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "expression"
-      ]
-    },
     "AttributeId": {
       "description": "Identifies a linked [`crate::attributes::SourceAttribute`] record.",
       "$ref": "#/$defs/Identity"
@@ -3213,7 +3187,7 @@
           ]
         },
         {
-          "description": "The design parameter that a property linked to a dimension or a\nmeasure is.",
+          "description": "The design parameter that a property is where the source states its\nvalue by an expression.",
           "type": "object",
           "properties": {
             "kind": {
@@ -3265,24 +3239,6 @@
               "items": {
                 "$ref": "#/$defs/AttributeMapEntry"
               }
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ]
-        },
-        {
-          "description": "An expression the source states on the property that no parameter\nholds.",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "expression"
-            },
-            "value": {
-              "$ref": "#/$defs/AttributeExpression"
             }
           },
           "additionalProperties": false,
