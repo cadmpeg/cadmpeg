@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Labeled (renamed) parameter-scope tails in the plain 78- and 77-byte forms
-//! and the typed form, and the suppressed and rolled-back flags of each form.
+//! and the typed form, and the state bytes and lane flags of each form.
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -15,6 +15,7 @@ struct PlainTail {
     long_form: bool,
     references: [u32; 3],
     epochs: (u32, u32),
+    state: [u8; 3],
     flags: (u8, u8),
     previous: u32,
 }
@@ -26,6 +27,7 @@ impl Default for PlainTail {
             long_form: true,
             references: [334, 333, 332],
             epochs: (252, 252),
+            state: [0; 3],
             flags: (0, 0),
             previous: 9,
         }
@@ -50,7 +52,8 @@ fn plain_labeled_frame(tail: &PlainTail) -> (Vec<u8>, usize) {
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
     lp_utf16(&mut bytes, tail.label);
-    bytes.extend_from_slice(&[0; 7]);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&tail.state);
     push_reference_u64(&mut bytes, u64::from(tail.references[0]));
     bytes.push(0);
     bytes.extend_from_slice(&tail.previous.to_le_bytes());
@@ -204,39 +207,56 @@ fn labeled_scope_admits_its_shifted_preceding_state_offset_or_none() {
     assert_eq!(absent.previous_history_state_id_offset(), None);
 }
 
+/// The tail flags of state bytes `state` at `state_at` and lane flags
+/// `flags` at `flags_at`.
 fn tail_flags(
-    suppressed: bool,
-    rolled_back: bool,
-    offset: usize,
+    state: [u8; 3],
+    flags: [u8; 2],
+    state_at: usize,
+    flags_at: usize,
 ) -> crate::records::feature::scope::DesignScopeTailFlags {
     crate::records::feature::scope::DesignScopeTailFlags {
-        suppressed,
-        rolled_back,
-        suppressed_offset: u64_from_index(offset),
+        suppression: [state[0] == 1, state[1] == 1],
+        unevaluated: state[2] == 1,
+        state_offset: u64_from_index(state_at),
+        no_result: flags[0] == 1,
+        rolled_back: flags[1] == 1,
+        no_result_offset: u64_from_index(flags_at),
         envelope_offset: None,
     }
 }
 
 #[test]
-fn plain_tails_read_their_suppressed_and_rolled_back_flags() {
+fn plain_tails_read_their_state_bytes_and_lane_flags() {
     for label in [LABEL, ""] {
         for long_form in [true, false] {
-            for (suppressed, rolled_back) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            for (state, no_result, rolled_back) in [
+                ([0, 0, 0], 0, 0),
+                ([0, 0, 0], 1, 0),
+                ([0, 0, 0], 0, 1),
+                ([0, 0, 0], 1, 1),
+                ([1, 0, 0], 1, 0),
+                ([0, 1, 0], 1, 1),
+                ([0, 0, 1], 1, 0),
+            ] {
                 let tail = PlainTail {
                     label,
                     long_form,
-                    flags: (suppressed, rolled_back),
+                    state,
+                    flags: (no_result, rolled_back),
                     ..PlainTail::default()
                 };
                 let (bytes, kind_end) = plain_labeled_frame(&tail);
                 let scope = parse_plain(&bytes).unwrap_or_else(|| {
-                    panic!("plain scope: label {label:?}, long form {long_form}, flags {suppressed} {rolled_back}")
+                    panic!("plain scope: label {label:?}, long form {long_form}, state {state:?}, flags {no_result} {rolled_back}")
                 });
+                let state_at = kind_end + 16 + 2 * label.len();
                 let at = kind_end + 62 + usize::from(long_form) + 2 * label.len();
-                assert_eq!(bytes[at..at + 2], [suppressed, rolled_back]);
+                assert_eq!(bytes[state_at..state_at + 3], state);
+                assert_eq!(bytes[at..at + 2], [no_result, rolled_back]);
                 assert_eq!(
                     scope.tail_flags,
-                    Some(tail_flags(suppressed == 1, rolled_back == 1, at)),
+                    Some(tail_flags(state, [no_result, rolled_back], state_at, at)),
                     "label {label:?}, long form {long_form}"
                 );
                 let wire = serde_json::to_value(&scope).unwrap();
@@ -253,14 +273,31 @@ fn plain_tails_read_their_suppressed_and_rolled_back_flags() {
 }
 
 #[test]
-fn plain_tail_state_bytes_are_zero_unless_the_feature_is_suppressed() {
-    for (suppressed, admitted) in [(0, false), (1, true)] {
+fn plain_tail_state_bytes_are_zero_unless_the_no_result_flag_is_set() {
+    for (no_result, admitted) in [(0, false), (1, true)] {
         let (mut bytes, kind_end) = plain_labeled_frame(&PlainTail {
-            flags: (suppressed, 0),
+            flags: (no_result, 0),
             ..PlainTail::default()
         });
         bytes[kind_end + 17 + 2 * LABEL.len()] = 1;
-        assert_eq!(parse_plain(&bytes).is_some(), admitted, "s0 {suppressed}");
+        assert_eq!(parse_plain(&bytes).is_some(), admitted, "s0 {no_result}");
+    }
+}
+
+/// A state byte above `1` beside a set no-result flag leaves the tail state
+/// unread; the scope still decodes.
+#[test]
+fn a_plain_tail_state_byte_above_one_leaves_the_tail_state_unread() {
+    for byte in 0..3 {
+        let mut state = [0; 3];
+        state[byte] = 2;
+        let (bytes, _) = plain_labeled_frame(&PlainTail {
+            state,
+            flags: (1, 0),
+            ..PlainTail::default()
+        });
+        let scope = parse_plain(&bytes).expect("plain scope");
+        assert_eq!(scope.tail_flags, None, "state {state:?}");
     }
 }
 
@@ -282,16 +319,28 @@ fn typed_flagged_frame(labeled: bool, flags: [u8; 2], state: [u8; 3]) -> (Vec<u8
 }
 
 #[test]
-fn typed_tails_read_their_suppressed_and_rolled_back_flags() {
+fn typed_tails_read_their_state_bytes_and_lane_flags() {
     for labeled in [false, true] {
-        for flags in [[1, 0], [0, 1], [1, 1]] {
-            let (bytes, kind_end) = typed_flagged_frame(labeled, flags, [0; 3]);
+        for (flags, state) in [
+            ([1, 0], [0; 3]),
+            ([0, 1], [0; 3]),
+            ([1, 1], [0; 3]),
+            ([1, 0], [1, 0, 0]),
+            ([1, 1], [0, 1, 0]),
+            ([1, 0], [0, 0, 1]),
+        ] {
+            let (bytes, kind_end) = typed_flagged_frame(labeled, flags, state);
             let scope = parse(&bytes).expect("flagged typed scope");
-            let at = kind_end + 141 + if labeled { 2 * LABEL.len() } else { 0 };
+            let shift = if labeled { 2 * LABEL.len() } else { 0 };
             assert_eq!(
                 scope.tail_flags,
-                Some(tail_flags(flags[0] == 1, flags[1] == 1, at)),
-                "labeled {labeled}, flags {flags:?}"
+                Some(tail_flags(
+                    state,
+                    flags,
+                    kind_end + 16 + shift,
+                    kind_end + 141 + shift
+                )),
+                "labeled {labeled}, flags {flags:?}, state {state:?}"
             );
             assert_eq!(scope.previous_history_state_id(), Some(41));
         }
@@ -299,7 +348,7 @@ fn typed_tails_read_their_suppressed_and_rolled_back_flags() {
 }
 
 #[test]
-fn typed_tail_state_bytes_are_zero_unless_the_feature_is_suppressed() {
+fn typed_tail_state_bytes_are_zero_unless_the_no_result_flag_is_set() {
     for labeled in [false, true] {
         let shift = if labeled { 2 * LABEL.len() } else { 0 };
         assert!(parse(&typed_flagged_frame(labeled, [0, 0], [0, 1, 0]).0).is_none());
@@ -308,13 +357,18 @@ fn typed_tail_state_bytes_are_zero_unless_the_feature_is_suppressed() {
         let (bytes, kind_end) = typed_flagged_frame(labeled, [1, 0], [0, 1, 0]);
         assert_eq!(
             parse(&bytes).and_then(|scope| scope.tail_flags),
-            Some(tail_flags(true, false, kind_end + 141 + shift))
+            Some(tail_flags(
+                [0, 1, 0],
+                [1, 0],
+                kind_end + 16 + shift,
+                kind_end + 141 + shift
+            ))
         );
     }
 }
 
 #[test]
-fn scope_wire_refuses_tail_flags_outside_the_tail() {
+fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_flag() {
     let (bytes, _) = plain_labeled_frame(&PlainTail {
         flags: (1, 1),
         ..PlainTail::default()
@@ -328,13 +382,33 @@ fn scope_wire_refuses_tail_flags_outside_the_tail() {
         u64::MAX,
     ] {
         let mut moved = wire.clone();
-        moved["tail_flags"]["suppressed_offset"] = offset.into();
+        moved["tail_flags"]["no_result_offset"] = offset.into();
         assert!(
             serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
                 .is_err(),
             "offset {offset}"
         );
     }
+    let flags = scope.tail_flags.expect("flags");
+    for offset in [
+        scope.feature_ordinal_offset() - 1,
+        flags.no_result_offset - 2,
+    ] {
+        let mut moved = wire.clone();
+        moved["tail_flags"]["state_offset"] = offset.into();
+        assert!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                .is_err(),
+            "state offset {offset}"
+        );
+    }
+    let mut current = wire;
+    current["tail_flags"]["no_result"] = false.into();
+    current["tail_flags"]["suppression"] = serde_json::json!([false, true]);
+    assert!(
+        serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(current)
+            .is_err()
+    );
 }
 
 /// A scope reads flags that an earlier envelope of its record stores when they
@@ -359,10 +433,10 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
     .unwrap()
     .expect("later envelope");
     let flags = earlier.tail_flags.expect("earlier flags");
-    let carried = |envelope_offset: u64, suppressed_offset: u64| {
+    let carried = |envelope_offset: u64, no_result_offset: u64| {
         let mut wire = serde_json::to_value(&later).unwrap();
         wire["tail_flags"] = serde_json::to_value(DesignScopeTailFlags {
-            suppressed_offset,
+            no_result_offset,
             envelope_offset: Some(envelope_offset),
             ..flags
         })
@@ -370,7 +444,7 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
         serde_json::from_value::<DesignParameterScope>(wire)
     };
     assert_eq!(
-        carried(earlier.byte_offset(), flags.suppressed_offset)
+        carried(earlier.byte_offset(), flags.no_result_offset)
             .expect("flags of the earlier envelope")
             .tail_flags,
         Some(DesignScopeTailFlags {
@@ -379,10 +453,10 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
         })
     );
     assert!(carried(earlier.byte_offset(), later.byte_offset() - 2).is_ok());
-    let own = later.tail_flags.expect("later flags").suppressed_offset;
-    for (envelope_offset, suppressed_offset) in [
-        (later.byte_offset(), flags.suppressed_offset),
-        (flags.suppressed_offset, flags.suppressed_offset),
+    let own = later.tail_flags.expect("later flags").no_result_offset;
+    for (envelope_offset, no_result_offset) in [
+        (later.byte_offset(), flags.no_result_offset),
+        (flags.no_result_offset, flags.no_result_offset),
         (earlier.byte_offset(), later.byte_offset() - 1),
         (earlier.byte_offset(), own),
         (earlier.byte_offset(), later.paired_byte_offset() - 1),
@@ -390,8 +464,8 @@ fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
         (earlier.byte_offset(), u64::MAX),
     ] {
         assert!(
-            carried(envelope_offset, suppressed_offset).is_err(),
-            "envelope {envelope_offset}, flags {suppressed_offset}"
+            carried(envelope_offset, no_result_offset).is_err(),
+            "envelope {envelope_offset}, flags {no_result_offset}"
         );
     }
 }
@@ -447,10 +521,10 @@ fn carried_flags_of_an_earlier_envelope_reload() {
             }),
             "unread {unread:?}"
         );
-        let at = usize::try_from(flags.suppressed_offset).unwrap();
+        let at = usize::try_from(flags.no_result_offset).unwrap();
         assert_eq!(
             &bytes[at..at + 2],
-            &[u8::from(flags.suppressed), u8::from(flags.rolled_back)]
+            &[u8::from(flags.no_result), u8::from(flags.rolled_back)]
         );
         let reloaded =
             serde_json::from_value::<DesignParameterScope>(serde_json::to_value(kept).unwrap())
