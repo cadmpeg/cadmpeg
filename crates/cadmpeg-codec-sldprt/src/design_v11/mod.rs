@@ -126,11 +126,13 @@ pub(crate) fn project(
         &typed::Scope {
             definition: &definition,
             outside_profile,
+            surfaces: &ir.geometry.surfaces,
         },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_circles);
     losses.extend(typed.profile_differs);
     losses.extend(typed.sketch_empty);
     losses.extend(typed.profile_unchecked);
