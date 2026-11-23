@@ -210,7 +210,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `catia.md` §7.3 gives both operators as not evaluating the right operand in those cases. The decoder checks a stored formula result under that reading, so a formula whose left operand decides the result and whose right operand fails at the stored inputs keeps its text and its stored value. CADIR v11 §5.13 translates CATIA's `and` and `or` as themselves until the order is settled. Under that translation, the neutral expression of such a formula fails at the stored inputs, and the parameter keeps the stored value as its cache.
 
-**Need.** A stored formula whose `and` or `or` has a left operand that decides the result and a right operand that fails at the stored inputs, for example a division by an input whose stored value is zero, with the stored value of the result. A stored result equal to the decided value confirms the reading of `catia.md` §7.3.
+**Need.** A saved part whose formula has an `and` or `or` with a left operand that decides the result and a right operand that fails at the saved inputs, for example a division by an input whose saved value is zero: compare the formula's stored result with the decided value. A stored result equal to the decided value confirms the reading of `catia.md` §7.3.
 
 ## 3. Standard nested `V5_CFV2`
 

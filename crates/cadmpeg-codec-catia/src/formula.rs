@@ -2534,8 +2534,7 @@ impl FormulaExpressionParser<'_, '_> {
     }
 
     // CATIA skips the right operand of `and` and `or` once the left decides
-    // the result (catia.md §7.3, DI-33); §5.13's neutral `and` and `or` keep
-    // the stored value where that operand fails.
+    // the result (catia.md §7.3, DI-33).
     fn disjunction(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         let mut value = self.conjunction(depth)?;
         loop {
