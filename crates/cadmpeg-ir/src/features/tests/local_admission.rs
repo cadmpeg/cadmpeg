@@ -174,7 +174,7 @@ fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
 }
 
 #[test]
-fn feature_wire_rejects_duplicate_outputs_in_standalone_and_model_routes() {
+fn feature_wire_rejects_duplicate_outputs() {
     let body = body_id("output");
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
@@ -187,21 +187,6 @@ fn feature_wire_rejects_duplicate_outputs_in_standalone_and_model_routes() {
         "outputs": [body.as_str(), body.as_str()]
     });
     let error = serde_json::from_value::<Feature>(wire)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("distinct"), "{error}");
-
-    let mut model = serde_json::to_value(crate::document::Model::default()).unwrap();
-    model["features"] = serde_json::json!([{
-        "id": feature_id("wire").as_str(),
-        "ordinal": 0,
-        "suppressed": null,
-        "definition": serde_json::to_value(FeatureDefinition::Operation(
-            FeatureOperation::BaseFeature { bodies: BodySelection::Unresolved }
-        )).unwrap(),
-        "outputs": [body.as_str(), body.as_str()]
-    }]);
-    let error = serde_json::from_value::<crate::document::Model>(model)
         .unwrap_err()
         .to_string();
     assert!(error.contains("distinct"), "{error}");

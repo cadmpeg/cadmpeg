@@ -62,6 +62,23 @@ impl ArenaCoverage {
         }
     }
 
+    /// Whether the payload writes records of an arena the CADIR wire omits
+    /// ([`crate::document::ArenaName::WIRE_OMITTED`]): a write that takes
+    /// content from them, which a document read from CADIR JSON does not hold.
+    pub(super) fn reads_wire_omitted(&self) -> bool {
+        macro_rules! any_carried {
+            ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+                |dispositions: &ArenaDispositions| false $(|| dispositions.$field.carries())*
+            };
+        }
+        match self {
+            Self::Complete => false,
+            Self::Declared(dispositions) => {
+                (crate::document::wire_omitted_arenas!(any_carried))(dispositions)
+            }
+        }
+    }
+
     /// One loss per non-empty arena this coverage omits.
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         match self {
@@ -239,3 +256,28 @@ macro_rules! declare_arena_dispositions {
 }
 
 crate::document::every_arena_registry!(declare_arena_dispositions);
+
+/// What a CADIR write does with each arena: it writes every arena but those
+/// the wire omits ([`crate::document::ArenaName::WIRE_OMITTED`]), which the
+/// wrapper names in an `arena.omitted` loss.
+pub(super) fn cadir_dispositions() -> ArenaDispositions {
+    macro_rules! written {
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            ArenaDispositions {
+                $($field: ArenaDisposition::Written,)*
+                design: DesignArenaDispositions::uniform(ArenaDisposition::Written),
+                process: ProcessArenaDispositions::uniform(ArenaDisposition::Written),
+            }
+        };
+    }
+    macro_rules! omit {
+        ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+            |dispositions: &mut ArenaDispositions| {
+                $(dispositions.$field = ArenaDisposition::Omitted;)*
+            }
+        };
+    }
+    let mut dispositions = crate::document::arena_registry!(written);
+    (crate::document::wire_omitted_arenas!(omit))(&mut dispositions);
+    dispositions
+}

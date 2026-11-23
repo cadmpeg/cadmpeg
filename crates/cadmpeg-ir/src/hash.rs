@@ -122,7 +122,11 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// Covers the document in canonical arena order with two normalizations: the
 /// recorded `document_local_sha256` attribute is dropped, and the `format`
 /// unknown arena is reduced to identities and links with `source_image_id`
-/// excluded. Retained source bytes never reach the digest. `source` states
+/// excluded. The arenas the CADIR wire omits count only where they differ
+/// from the baseline the decode wrapper recorded
+/// ([`omitted_arenas_local_sha256`]), so a document read back from CADIR
+/// JSON digests as it did at decode until its wire form changes. Retained
+/// source bytes never reach the digest. `source` states
 /// the metadata to include, including metadata not assigned to `ir` yet.
 /// Normalization, ordering, serialization and hashing use `ctx`.
 ///
@@ -156,6 +160,7 @@ pub fn document_local_sha256_without_carried(
     carried: &[&str],
 ) -> Result<String, CodecError> {
     let unknowns = reduced_unknowns(ctx, ir, format, source_image_id)?;
+    let omitted_arenas = edited_omitted_arenas(ctx, ir)?;
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
@@ -168,6 +173,7 @@ pub fn document_local_sha256_without_carried(
             design: ir.design.sorted(),
             process: ir.process.sorted(),
             native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
+            omitted_arenas,
         })
     })()?;
     match canonical_json_sha256(ctx, &document) {
@@ -180,6 +186,38 @@ pub fn document_local_sha256_without_carried(
             }
         }
     }
+}
+
+/// Returns the machine-local digest of the arenas the CADIR wire omits
+/// ([`crate::document::ArenaName::WIRE_OMITTED`]) and the feature-parent
+/// relations of their features, as `ir` holds them in memory.
+///
+/// [`document_local_sha256`] covers the wire form of a document. The decode
+/// wrapper records this digest beside it, so an edit of these arenas in
+/// memory still changes [`document_local_sha256`]. Same bitwise,
+/// machine-local properties as [`document_local_sha256`].
+pub fn omitted_arenas_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    canonical_json_sha256(ctx, &ir.model.sorted_omitted()).map_err(|error| {
+        ctx.resource_refusal()
+            .map_or_else(|| error.into(), Into::into)
+    })
+}
+
+/// The digest of the arenas the wire omits, where they differ from the
+/// baseline the decode wrapper recorded. A document read from CADIR JSON
+/// holds no baseline, so its digest is that of its wire form.
+fn edited_omitted_arenas(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<String>, CodecError> {
+    let Some(baseline) = ir.model.omitted_arenas_baseline() else {
+        return Ok(None);
+    };
+    let digest = omitted_arenas_local_sha256(ctx, ir)?;
+    Ok((baseline != digest).then_some(digest))
 }
 
 fn reduced_unknowns(
@@ -223,6 +261,8 @@ struct NormalizedDocument<'a, 'input> {
     design: SortedDesign<'a>,
     process: SortedProcess<'a>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, DigestNativeArena<'a, 'input>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    omitted_arenas: Option<String>,
 }
 
 /// Serializes one native arena in `NormalizedDocument.native.<format>.<arena>`.
@@ -642,6 +682,42 @@ mod tests {
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
 
+    /// The document digest counts the arenas the wire omits where they differ
+    /// from the baseline the decode wrapper recorded, so an edit of them in
+    /// memory is seen, and a document read back from CADIR JSON digests as its
+    /// stamp.
+    #[test]
+    fn omitted_arenas_count_in_memory_and_not_after_a_cadir_read() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let digest = |ir: &CadIr| {
+            document_local_sha256(&ctx, ir, None, "test", "test:file:source#0").unwrap()
+        };
+        let mut decoded = crate::examples::unit_cube_with_history_body().unwrap();
+        decoded.finalize();
+        assert!(!decoded.model.history_bodies.is_empty());
+        let baseline = super::omitted_arenas_local_sha256(&ctx, &decoded).unwrap();
+        decoded.model.record_omitted_arenas_baseline(baseline);
+        let stamp = digest(&decoded);
+
+        let read = CadIr::from_json(&decoded.to_canonical_json().unwrap()).unwrap();
+        assert!(decoded.model.omitted_arenas_held());
+        assert!(!read.model.omitted_arenas_held());
+        assert!(read.model.history_bodies.is_empty());
+        assert_eq!(digest(&read), stamp);
+
+        let mut edited = decoded.clone();
+        edited.model.history_bodies.clear();
+        assert_ne!(digest(&edited), stamp);
+
+        let mut unrecorded = edited.clone();
+        unrecorded.model.omitted = crate::document::OmittedArenas::default();
+        assert_eq!(digest(&unrecorded), stamp);
+        ctx.finish_session().unwrap();
+    }
+
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
         let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
@@ -973,7 +1049,7 @@ mod tests {
                 &ir
             )
             .unwrap(),
-            "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
+            "010be63272d49ca6d7cd8efd051e25a9c70dc96891e497140fe0a8e83002ce2e"
         );
         assert_eq!(
             document_local_sha256(
@@ -984,7 +1060,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "b05cf37e11d812511ae3830a8f0d138eb69e7d0fbf87b00534f39a79a30722de"
+            "06d03ae1af4c5675976ddf2ae73c2b789071c225a5e52405d4347c4026d3b219"
         );
     }
 
@@ -1071,7 +1147,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "93ec763bbb89f3a4269601f6ba4102cd6c0bb47cc670fa2fbec1999ebee25888"
+            "85c289406639a42ce038ec504207462a80f5fb5a645a4ef5c78d126e1282f0ff"
         );
         assert_eq!(
             document_local_sha256(

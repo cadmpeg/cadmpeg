@@ -399,7 +399,7 @@ pub(crate) fn dump(
             CommandReportBody::Ok {
                 decode_report: loaded.decode_report(),
                 check_report: None,
-                export: None,
+                export: Some(&emission.report),
             },
         )?;
         Ok(())

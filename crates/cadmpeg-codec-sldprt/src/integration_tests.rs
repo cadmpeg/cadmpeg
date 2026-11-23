@@ -403,6 +403,42 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     assert_eq!(classify(written), "sldprt:sw-version-12000-plus");
 }
 
+/// A document read back from CADIR JSON holds no feature history. Unedited,
+/// it replays its retained part; edited, the semantic writer refuses it
+/// rather than read the empty history arenas as every feature removed.
+#[test]
+fn a_cadir_read_part_replays_unedited_and_refuses_an_edit() {
+    let source = versioned_part();
+    let result = decode(source.clone());
+    assert!(!result.ir().model.features.is_empty());
+    let mut read = cadmpeg_ir::CadIr::from_json(&result.ir().to_canonical_json().unwrap()).unwrap();
+    assert!(read.model.features.is_empty());
+    assert!(!read.model.omitted_arenas_held());
+
+    let unedited = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect("an unedited read replays");
+    assert!(matches!(
+        unedited.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    let mut written = Vec::new();
+    unedited.write_to(&mut written).unwrap();
+    assert_eq!(written, source);
+
+    read.geometry.bodies[0].name = Some("edited".into());
+    let error = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .expect_err("an edit of a document read from CADIR is refused");
+    assert!(error.to_string().contains("read from CADIR"), "{error}");
+}
+
 /// A source dialect outside the one-row catalog refuses under `Inherit` once
 /// there is nothing to preserve. There is no fall-through to the catalog row: a
 /// same-format conversion never silently changes what the part is, and the

@@ -16,6 +16,13 @@ pub(super) fn check_typed_references(
     index: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let not_read = (!ir.model.omitted_arenas_held()).then(|| {
+        crate::document::ArenaName::WIRE_OMITTED
+            .iter()
+            .map(|arena| arena.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    });
     macro_rules! check_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.$home.$field {
@@ -27,7 +34,10 @@ pub(super) fn check_typed_references(
                         if finding.entity.as_deref() != Some(owner) { continue; }
                         if finding.message.contains(target) { return Ok(()); }
                     }
-                    record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}"));
+                    match &not_read {
+                        None => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}")),
+                        Some(omitted) => record_finding(findings, Check::ReferentialIntegrity, Severity::Warning, Some(owner), format_args!("unresolved typed reference {target}; the document was read from CADIR, which does not carry the arenas {omitted}, and one of them may hold it")),
+                    }
                     Ok(())
                 });
                 match walk {

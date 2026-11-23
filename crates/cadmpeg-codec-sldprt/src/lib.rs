@@ -281,6 +281,16 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        if !ir.model.omitted_arenas_held()
+            && (!records.is_empty() || ir.native.namespace("sldprt").is_some())
+        {
+            return Err(CodecError::NotImplemented(
+                "the document was read from CADIR, which does not carry the feature, sketch, \
+                 parameter, and configuration arenas the SLDPRT writer applies native history \
+                 edits from; write it from the decoded source file"
+                    .into(),
+            ));
+        }
         // An edit the full decoder does not read back from the written part,
         // or that changes what no edit touches, is written again with its
         // feature's stored record.

@@ -58,7 +58,6 @@ fn definition() -> Value {
             "features": [],
             "default": true
         }],
-        "sketches": [],
         "units": {"length": "mm", "angle": "deg"},
         "general_tolerance": {
             "linear": {"kind": "iso2768", "value": "medium"},
@@ -84,8 +83,7 @@ fn a_definition_reads_back_with_every_field_stated() {
         "tessellations": [],
         "occurrences": [],
         "instance_bodies": [],
-        "representations": [],
-        "sketches": []
+        "representations": []
     });
     let read: ProductDefinition = reads_back(&minimal);
     assert_eq!(read.kind, None);
@@ -113,7 +111,6 @@ fn an_unstated_definition_field_has_one_spelling() {
         "occurrences",
         "instance_bodies",
         "representations",
-        "sketches",
         "bom_properties",
     ] {
         let mut wire = definition();

@@ -230,6 +230,7 @@ impl DecodeResult {
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.keep_first_of_repeated_ids();
+        result.record_omitted_arenas_baseline(ctx)?;
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -332,6 +333,27 @@ impl DecodeResult {
             report: DecodeReport::from_body(classification, body),
             source_fidelity,
         })
+    }
+
+    /// Records the digest of the arenas the CADIR wire omits as the
+    /// document returns, where the decoder stamped a
+    /// [`crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE`] for its writer to
+    /// compare.
+    fn record_omitted_arenas_baseline(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        let stamped = self.ir.source.as_ref().is_some_and(|source| {
+            source
+                .attributes
+                .contains_key(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
+        });
+        if !stamped {
+            return Ok(());
+        }
+        let digest = crate::hash::omitted_arenas_local_sha256(ctx, &self.ir)?;
+        self.ir.model.record_omitted_arenas_baseline(digest);
+        Ok(())
     }
 
     /// Keeps one copy of each id a decoder emitted more than once in one

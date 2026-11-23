@@ -739,33 +739,38 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
 #[test]
 fn carried_errors_follow_native_format_and_complete_coverage() {
     let mut ir = CadIr::empty();
-    let id = "f3d:test:asm-history#0";
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![crate::NativeRecord::new(
-            crate::ids::Identity::new(id).expect("valid native identity"),
-            serde_json::Map::default(),
-        )
-        .expect("valid native record")],
-    );
+    let f3d_id = "f3d:test:asm-history#0";
+    let nx_id = "nx:test:record#0";
+    for (namespace, arena, id) in [("f3d", "asm_histories", f3d_id), ("nx", "records", nx_id)] {
+        ir.native.namespace_mut(namespace).arenas_mut().insert(
+            arena.into(),
+            vec![crate::NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid native identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native record")],
+        );
+    }
     ir.finalize();
-    let report = validation_report(vec![finding(
-        Some(id),
-        "invalid native record",
-        Severity::Error,
-    )]);
+    let report = validation_report(vec![
+        finding(Some(f3d_id), "invalid native record", Severity::Error),
+        finding(Some(nx_id), "invalid native record", Severity::Error),
+    ]);
     let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
-    let cadir = CoverageEncoder(declared)
+    let f3d = F3dCoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(cadir.carried_errors(&ir, &report).is_empty());
-    let f3d = F3dCoverageEncoder(declared)
+    assert_eq!(f3d.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    let cadir = CoverageEncoder(declared)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     let complete = CoverageEncoder(ArenaCoverage::Complete)
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    for plan in [f3d, complete] {
-        assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
+    for plan in [cadir, complete] {
+        assert_eq!(
+            plan.carried_errors(&ir, &report),
+            report.findings.iter().collect::<Vec<_>>()
+        );
     }
 }

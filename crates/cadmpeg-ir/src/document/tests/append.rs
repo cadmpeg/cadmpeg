@@ -63,8 +63,7 @@ fn staged_document() -> CadIr {
             .unwrap()],
         );
     }
-    // Exercise the complete-document admission route before the append route.
-    CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap()
+    ir
 }
 
 #[test]
@@ -117,10 +116,6 @@ fn accepted_append_preserves_all_staged_records_and_parent_relations() {
     assert_eq!(ir.geometry, staged.geometry);
     assert_eq!(ir.model, staged.model);
     assert_eq!(ir.native, staged.native);
-    assert_eq!(
-        CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap(),
-        ir
-    );
 }
 
 #[test]

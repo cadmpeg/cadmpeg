@@ -215,7 +215,7 @@ impl<const N: usize> NonzeroVector<N> {
 }
 
 macro_rules! vector_wire {
-    ($name:ident, $error:literal) => {
+    ($name:ident, $schema_name:literal, $error:literal) => {
         impl<const N: usize> Serialize for $name<N>
         where
             [f64; N]: Serialize,
@@ -239,7 +239,7 @@ macro_rules! vector_wire {
             [f64; N]: JsonSchema,
         {
             fn schema_name() -> std::borrow::Cow<'static, str> {
-                format!("{}{}", stringify!($name), N).into()
+                format!("{}{}", $schema_name, N).into()
             }
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
                 <[f64; N]>::json_schema(generator)
@@ -248,9 +248,15 @@ macro_rules! vector_wire {
     };
 }
 
-vector_wire!(FiniteVector, "coordinates must be finite");
+// `FiniteVector3` names the finite displacement of `features::geometry`.
+vector_wire!(
+    FiniteVector,
+    "FiniteCoordinates",
+    "coordinates must be finite"
+);
 vector_wire!(
     NonzeroVector,
+    "NonzeroVector",
     "coordinates must be finite with squared norm greater than epsilon"
 );
 
