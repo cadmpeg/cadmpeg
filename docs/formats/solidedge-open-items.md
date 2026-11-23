@@ -111,3 +111,36 @@
 **Known.** The `Double Value Object` slots at offsets 212, 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The side is `2` in every stored flange. The relief type is `51`, `52` or `53`. The `u16` at object offset 18 of a flange object is `149` where the object has a relation and `157` where it has none. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
 
 **Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
+
+### DR-1059. Hem forms, length offset and side
+
+**Question.** Which sheet dimension offsets the straight length of a hem from the entered hem length, which slots hold the dimensions of the double, teardrop and rolled forms, and which field states the side a hem folds to?
+
+**Known.** The single hem (form code 208) stores its inner bend radius at offset 208 and its straight length at offset 236 of §10.4. The entered length exceeds the straight length by the inner radius and a further offset. The form codes 209, 210 and 212 store a value at each of offsets 208 and 236 that no field of the single hem explains. Reversing the side of a hem changes the stored edge selection and no other slot.
+
+**Need.** Single hems on sheets of at least two other thicknesses, each other form saved with two different gaps and lengths, and the same hem folded to each side on one edge with the edge selections compared against the stored geometry.
+
+### DR-1056. Base contour flange extent direction and fields
+
+**Question.** Which of the slots at offsets 124 and 180 of §10.5 states the side of the extent, what do the remaining slots of the feature state, and where is the thickness side stored?
+
+**Known.** The extent kind at offset 152 is 13. The slots at offsets 124 and 180 both hold 1. The slots from offset 292 on hold relief and corner codes, among them 57, 44, 76, 5, 79 and 80.
+
+**Need.** Base contour flanges with the side reversed, the symmetric extent, each corner relief option, and the thickness side reversed.
+
+### DR-1057. Unfold and refold operands
+
+**Question.** Which `CLSID_JMTopologyProxy` of an unfold selects the stationary face and which selects the bends, and how does a proxy of a face or a bend store its selected entity?
+
+**Known.** An unfold stores two face proxies of 1232 and 1410 bytes. A refold stores one proxy of 1232 bytes when it follows the unfold of the same bend, and one of 2046 bytes after a cut made in the flat state.
+
+**Need.** Unfolds and refolds of several bends with the stationary face moved, and a topology proxy parser that reads a face selection.
+
+### DR-1058. Close corner slots
+
+**Question.** What do the closure type at offset 124, the slots at offsets 272, 300, 336, 364 and 392, and the relief form codes other than 106, 107 and 222 of §10.7 state?
+
+**Known.** The slot at offset 124 holds 103, and the slot at offset 392 holds pi / 4 in every stored close corner. The corner gap, the relief form and the relief size change with the entered values.
+
+**Need.** Close corners with each closure type, with each relief form and with a corner between flanges of an angle other than a right angle.
+
