@@ -1132,6 +1132,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 
 **Need.** A writer of a design with further items must fill these tables, presentation records, attributes, and identities. Designs whose timeline holds several `Extrude` items or other features, compared record by record with these lists, would settle it.
 
+### DR-1049. Records after the profile group of a written sketch-driven Extrude
+
+**Question.** Does Fusion read a sketch-driven `Extrude` whose profile group `G` is followed by its identity wrapper, its item-tail companion, and its record-timestamp table, in that order?
+
+**Known.** `f3d.md` §3.1 "**Profile group.**" gives the profile group of a sketch-driven `Extrude`: a construction-operand group of type `2CA5A1CD-C99B-4C9B-91AF-57989148E841`, type version `1`, that references its 24-byte identity wrapper (type `2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B`), its item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`), and its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`). In a stream with serializer magic `1234`, the construction-operand groups of `Extrude` scopes and of `Revolve` scopes store the record-timestamp table as record `G + 1` and the item-tail companion as record `G + 2`. The identity wrapper is neither of these two records. `f3d.md` §3.1 "**Revolve groups.**" states this order for the groups of a `Revolve`. The decoder's construction-operand group reader closes a group only when the group's reference to its record-timestamp table names record `G + 1`; it reads the ordinary form when the reference to the item-tail companion names record `G + 2`.
+
+**Conflict.** The writer allocates the profile group of a sketch-driven `Extrude` as `G`, its identity wrapper as `G + 1`, its item-tail companion as `G + 2`, and its record-timestamp table as `G + 3`. The decoder leaves the group of a written `Extrude` unclosed. The written `Extrude` decodes without the group, because its projection does not read the group. The writer allocates the groups of a `Revolve` in the stored order.
+
+**Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences

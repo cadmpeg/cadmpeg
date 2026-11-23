@@ -8,21 +8,23 @@
 
 use cadmpeg_core::CodecError;
 
-use super::super::base_feature::{DURATION, EPOCH};
+use super::super::base_feature::{Dependency, COMPONENT_EDGE, DURATION, EDGE, EPOCH, SKETCH_EDGE};
 use super::super::extrude::ExtrudePlan;
 use super::super::frames::DesignRecords;
 use super::super::sketch::CurveGeometry;
 use super::super::types;
 use super::owned::Owned;
 use super::swept::{
-    GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
+    allocator, GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
     FIRST_SELECTION_IDENTITY, PROFILE_ROLE,
 };
 use super::{Context, PARAMETER_DISCRIMINATOR};
 use crate::writer::generate::presentation::TypeRow;
 
 /// The feature-family name of the scope.
-const FAMILY: &str = "Extrude";
+pub(super) const FAMILY: &str = "Extrude";
+/// The counter the timeline context keeps for the family.
+pub(super) const COUNTER: &str = "DcExtrudeFeatureMetaType";
 /// The GUID the scope frame stores before its scope-reference count.
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 /// The result operation `new body`.
@@ -65,29 +67,22 @@ impl ExtrudeRecords {
         mut next: u32,
         rows: &mut Vec<(u32, TypeRow)>,
     ) -> Result<(Self, u32), CodecError> {
-        let mut take = |row: TypeRow| {
-            let index = next;
-            next = next.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented("Extrude record index overflow".into())
-            })?;
-            rows.push((index, row));
-            Ok::<_, CodecError>(index)
-        };
-        let scope = ScopeRecords::allocate(&mut take, types::EXTRUDE_SCOPE)?;
-        let group = GroupRecords::allocate(&mut take)?;
-        let start = StartRecords::allocate(&mut take, types::START_RECORD)?;
-        let selection = SelectionRecords::allocate(&mut take)?;
-        let mut owned = || {
-            Ok::<_, CodecError>([
-                take(types::PARAMETER_OWNER)?,
-                take(types::PARAMETER)?,
-                take(types::RECORD_TIMESTAMPS)?,
-            ])
-        };
-        let along = owned()?;
-        let taper = owned()?;
-        let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
-        Ok((
+        let records = {
+            let mut take = allocator(&mut next, rows);
+            let scope = ScopeRecords::allocate(&mut take, types::EXTRUDE_SCOPE)?;
+            let group = GroupRecords::allocate(&mut take)?;
+            let start = StartRecords::allocate(&mut take, types::START_RECORD)?;
+            let selection = SelectionRecords::allocate(&mut take)?;
+            let mut owned = || {
+                Ok::<_, CodecError>([
+                    take(types::PARAMETER_OWNER)?,
+                    take(types::PARAMETER)?,
+                    take(types::RECORD_TIMESTAMPS)?,
+                ])
+            };
+            let along = owned()?;
+            let taper = owned()?;
+            let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
             Self {
                 scope,
                 group,
@@ -96,9 +91,72 @@ impl ExtrudeRecords {
                 along,
                 taper,
                 results,
-            },
-            next,
-        ))
+            }
+        };
+        Ok((records, next))
+    }
+}
+
+impl ExtrudeRecords {
+    /// The members the owner collection lists for the `Extrude`.
+    pub(super) fn owners(&self) -> Vec<u32> {
+        vec![
+            self.group.record,
+            self.selection.record,
+            self.along[0],
+            self.taper[0],
+            self.start.record,
+            self.scope.record,
+        ]
+    }
+
+    /// The members the `B65B5682` record lists for the `Extrude`.
+    pub(super) fn context_members(&self) -> Vec<u32> {
+        vec![
+            self.selection.record,
+            self.group.record,
+            self.along[0],
+            self.taper[0],
+            self.start.record,
+            self.scope.record,
+        ]
+    }
+
+    /// The two parameter records.
+    pub(super) fn parameters(&self) -> Vec<u32> {
+        vec![self.along[1], self.taper[1]]
+    }
+
+    /// The dependency-table inputs in f3d-open-items.md DR-891's order, and
+    /// the dependents, of the `Extrude` whose profile lies on the `Sketch`
+    /// scope `profile`.
+    pub(super) fn dependencies(
+        &self,
+        component: u32,
+        profile: u32,
+    ) -> (Vec<Dependency>, Vec<Dependency>) {
+        let [along, taper] = [self.along[0], self.taper[0]];
+        let (scope, group, selection, start) = (
+            self.scope.record,
+            self.group.record,
+            self.selection.record,
+            self.start.record,
+        );
+        let inputs = vec![
+            (scope, vec![(component, COMPONENT_EDGE), (start, EDGE)]),
+            (group, vec![(selection, EDGE)]),
+            (selection, vec![(profile, SKETCH_EDGE)]),
+            (start, vec![(group, EDGE), (along, EDGE), (taper, EDGE)]),
+        ];
+        let dependents = vec![
+            (profile, vec![(selection, SKETCH_EDGE)]),
+            (group, vec![(start, EDGE)]),
+            (start, vec![(scope, EDGE)]),
+            (selection, vec![(group, EDGE)]),
+            (along, vec![(start, EDGE)]),
+            (taper, vec![(start, EDGE)]),
+        ];
+        (inputs, dependents)
     }
 }
 
@@ -106,21 +164,14 @@ impl ExtrudeRecords {
 pub(super) fn write(
     ctx: &Context<'_>,
     plan: &ExtrudePlan<'_>,
+    records: &ExtrudeRecords,
     out: &mut DesignRecords,
 ) -> Result<(), CodecError> {
-    let Some(records) = &ctx.roster.extrude else {
-        return Ok(());
-    };
-    #[cfg(test)]
-    if let Some(error) = super::super::requested_extrude_failure() {
-        return Err(error);
-    }
     let swept = Swept::new(ctx, FAMILY, &records.scope, plan.sketch, plan.preceding)?;
     scope(ctx, &swept, records, out)?;
     swept.group(out, &records.group, records.selection.record, PROFILE_ROLE)?;
     swept.start(
         out,
-        types::START_RECORD,
         &records.start,
         &[records.group.record, records.along[0], records.taper[0]],
     )?;
@@ -155,7 +206,7 @@ fn scope(
     records: &ExtrudeRecords,
     out: &mut DesignRecords,
 ) -> Result<(), CodecError> {
-    let class = ctx.class(types::EXTRUDE_SCOPE.guid)?;
+    let class = ctx.class_of(records.scope.record)?;
     let [_, _, normal] = swept
         .sketch
         .origin_plane()
@@ -206,7 +257,7 @@ fn scope(
     ] {
         out.reference(reference);
     }
-    swept.tail(out, FAMILY, records.start.record)
+    swept.tail(out, records.start.record)
 }
 
 /// The values the writer chooses where f3d.md and f3d-open-items.md leave
@@ -214,6 +265,7 @@ fn scope(
 /// changes.
 pub(super) fn losses(
     ctx: &Context<'_>,
+    plan: &ExtrudePlan<'_>,
     records: &ExtrudeRecords,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let [_, along, _] = records.along;
@@ -245,32 +297,30 @@ pub(super) fn losses(
         "record 187 (body-presentation owner: the ten bytes before its name)".to_owned(),
         "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
     ];
-    if let Some(plan) = ctx.extrude {
-        if plan.profile.iter().filter(|hole| !hole.exterior).count() > 1 {
-            entries.push(format!(
+    if plan.profile.iter().filter(|hole| !hole.exterior).count() > 1 {
+        entries.push(format!(
                 "record {} and the side tokens of its hole loops (the holes stored in the order of their curves' primary identities, a hole of several curves by its smallest, their side tokens in stored order, f3d-open-items.md DR-883)",
                 records.selection.regions
             ));
-        }
-        let arcs = plan.profile.iter().any(|profile_loop| {
-            profile_loop.entries.iter().any(|entry| {
-                ctx.sketches
-                    .get(plan.sketch)
-                    .and_then(|sketch| sketch.curves.get(entry.curve))
-                    .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
-            })
-        });
-        if arcs {
-            entries.push(format!(
+    }
+    let arcs = plan.profile.iter().any(|profile_loop| {
+        profile_loop.entries.iter().any(|entry| {
+            ctx.sketches
+                .get(plan.sketch)
+                .and_then(|sketch| sketch.curves.get(entry.curve))
+                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
+        })
+    });
+    if arcs {
+        entries.push(format!(
                 "record {} and the side tokens of each loop that holds an arc (the walk of a loop of lines, with C the loop curve of the largest record index, gives the entry order and the curve of the loop's lowest token, f3d-open-items.md DR-883)",
                 records.selection.regions
             ));
-        }
-        if plan.reversed && (arcs || plan.profile.len() > 1) {
-            entries.push(
+    }
+    if plan.reversed && (arcs || plan.profile.len() > 1) {
+        entries.push(
                 "the side tokens of the Extrude's hole loops and loops with arcs under its negative AlongDistance (each loop's tokens run against its ring from its first token, as f3d.md gives for one loop of lines, f3d-open-items.md DR-883)".to_owned(),
             );
-        }
     }
     let single = ctx.sketches.len() == 1;
     if !single {

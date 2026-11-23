@@ -904,6 +904,7 @@ fn planned<'a>(
         mirrored: false,
         points,
         curves,
+        entities: std::collections::HashMap::new(),
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
@@ -978,6 +979,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
             },
             construction: false,
         }],
+        entities: std::collections::HashMap::new(),
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
@@ -988,13 +990,13 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
 
 #[test]
 fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
-    super::super::FAIL_NEXT_EXTRUDE.with(|fail| fail.set(true));
+    super::super::FAIL_NEXT_ITEM.with(|fail| fail.set(true));
     let (report, decoded) = write(&sketch_and_extrude(blind(), false));
     assert_eq!(kinds(&decoded), ["sketch", "base"], "{:#?}", report.losses);
     let missing = loss(&report, EVALUATION_MISSING).join("\n");
     assert!(
         missing.contains(&format!(
-            "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the Extrude records)"
+            "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the item records)"
         )),
         "{missing}"
     );

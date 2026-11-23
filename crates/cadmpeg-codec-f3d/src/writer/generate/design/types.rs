@@ -302,7 +302,9 @@ pub(super) const SKETCH_PLACEMENT: TypeRow = row(
     14,
     "Fusion",
 );
-pub(super) const PLACEMENT_PATH: TypeRow = row(
+/// A direct persistent selection: a sketch placement path and the axis
+/// selection of a `Revolve`.
+pub(super) const DIRECT_SELECTION: TypeRow = row(
     "5A1BF548-241F-46FD-9FB5-E4B05126EB9D",
     "6144EA59-3ACA-4172-9F14-A6531E94D69B",
     1,
@@ -320,7 +322,9 @@ pub(super) const PLACEMENT_TRANSFORM: TypeRow = row(
     0,
     "EntityTracking",
 );
-pub(super) const TRANSFORM_TARGET: TypeRow = row(
+/// A carrier link: a placement transform target and the links of a
+/// `Revolve`'s axis tracking carrier.
+pub(super) const CARRIER_LINK: TypeRow = row(
     "CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C",
     "5C069ACB-169F-4555-9792-815B4671DDA0",
     2,
@@ -361,7 +365,7 @@ pub(super) const SKETCH_ANCESTORS: [TypeRow; 9] = [
         9,
         "Geometry",
     ),
-    PROFILE_GROUP,
+    OPERAND_GROUP,
     row(
         "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
         "E8BDB9D4-2E39-405C-B05E-E2206AD3F125",
@@ -401,8 +405,8 @@ pub(super) const SKETCH_ANCESTORS: [TypeRow; 9] = [
 ];
 
 /// A construction-operand group: the base type of a sketch placement and
-/// the profile group of an `Extrude`.
-pub(super) const PROFILE_GROUP: TypeRow = row(
+/// the profile and axis groups of a swept item.
+pub(super) const OPERAND_GROUP: TypeRow = row(
     "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
     "F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F",
     1,
@@ -578,4 +582,57 @@ pub(super) const EXTRUDE_ANCESTORS: [TypeRow; 3] = [
         "Fusion",
     ),
     OWNER_BASE,
+];
+
+const AXIS_POINT_IDENTITY_GUID: &str = "D95DBAC0-238B-4429-A0AD-4AE5BEE79ADF";
+const CARRIER_BASE_GUID: &str = "518AD6D6-763A-472C-9F19-9CFF03E8DC45";
+
+/// The `Revolve` scope (f3d.md §3.1, "Records of a sketch-driven Revolve").
+pub(super) const REVOLVE_SCOPE: TypeRow = row(
+    "E3849A15-2FC6-42A0-AF3A-2F1D7273B406",
+    SCOPE_BASE_GUID,
+    2,
+    "Fusion",
+);
+/// The start record of a `Revolve`.
+pub(super) const REVOLVE_START: TypeRow = row(
+    "63D2920D-7EC2-49C4-9F08-315197F9E657",
+    SETTINGS_BASE_GUID,
+    0,
+    "Fusion",
+);
+/// The axis curve identity of a `Revolve`.
+pub(super) const AXIS_CURVE_IDENTITY: TypeRow = row(
+    "E2CEFD18-D755-4E09-8E7F-953A2F6D43F8",
+    AXIS_POINT_IDENTITY_GUID,
+    0,
+    "EntityTracking",
+);
+/// An axis point identity of a `Revolve`'s axis tracking carrier.
+pub(super) const AXIS_POINT_IDENTITY: TypeRow = row(
+    AXIS_POINT_IDENTITY_GUID,
+    ENTITY_TRACKING_GUID,
+    0,
+    "EntityTracking",
+);
+/// The axis tracking carrier of a `Revolve`.
+pub(super) const AXIS_CARRIER: TypeRow = row(
+    "50AEE8B4-9456-4DD7-847D-6F6C909BBB9D",
+    CARRIER_BASE_GUID,
+    0,
+    "EntityTracking",
+);
+
+/// The base types of the `Revolve` records that the other ancestor lists
+/// leave out, each listed with an empty entity-ID run.
+pub(super) const REVOLVE_ANCESTORS: [TypeRow; 4] = [
+    EXTRUDE_ANCESTORS[0],
+    EXTRUDE_ANCESTORS[1],
+    EXTRUDE_ANCESTORS[2],
+    row(
+        CARRIER_BASE_GUID,
+        "872045B4-F653-4691-9752-ABC7684834BF",
+        2,
+        "EntityTracking",
+    ),
 ];
