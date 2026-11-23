@@ -13,7 +13,8 @@ use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
 use super::write_generate::{
-    append_generated_object_name, append_generated_sketch_markers, generated_locus_is_point,
+    append_generated_object_name, append_generated_sketch_markers, dimension_parameter,
+    generated_locus_is_point, is_driven_dimension,
 };
 use super::{SKETCH_MARKER, SKETCH_POINT_TOLERANCE, SPATIAL_VERTEX_PREFIX};
 use crate::records::{FeatureInputLane, SketchRelationKind};
@@ -26,7 +27,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A generated object or parameter name: 1 to 128 UTF-16 code units behind
 /// a u8 count.
@@ -55,14 +56,7 @@ pub(crate) fn prepare_sketches_for_write(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_sketch_local_sha256"));
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_sketch_sha256"));
+    let (baseline_neutral, baseline_native) = sketch_baselines(ir);
     let baseline_constraints = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -74,12 +68,7 @@ pub(crate) fn prepare_sketches_for_write(
         .map(|native| lane_hash(&hash_ctx, &native.feature_input_lanes))
         .transpose()?;
     if baseline_neutral.is_none() && baseline_native.is_none() {
-        if ir.model.sketches.is_empty()
-            && ir.model.sketch_entities.is_empty()
-            && ir.model.sketch_constraints.is_empty()
-            && ir.model.spatial_sketches.is_empty()
-            && ir.model.spatial_sketch_entities.is_empty()
-        {
+        if !holds_sketches(ir) {
             return Ok(());
         }
         validate_source_less_constraints(ir)?;
@@ -115,6 +104,74 @@ pub(crate) fn prepare_sketches_for_write(
     })?;
     patch_spatial_sketches(ir, retained)?;
     patch_line_profiles(ir, retained)
+}
+
+/// The source's neutral and native sketch digests, where the decoder stated
+/// them.
+fn sketch_baselines(ir: &cadmpeg_ir::CadIr) -> (Option<&String>, Option<&String>) {
+    let attribute = |key: &str| {
+        ir.source
+            .as_ref()
+            .and_then(|source| source.attributes.get(key))
+    };
+    (
+        attribute("sldprt_neutral_sketch_local_sha256"),
+        attribute("sldprt_native_sketch_sha256"),
+    )
+}
+
+fn holds_sketches(ir: &cadmpeg_ir::CadIr) -> bool {
+    !(ir.model.sketches.is_empty()
+        && ir.model.sketch_entities.is_empty()
+        && ir.model.sketch_constraints.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && ir.model.spatial_sketch_entities.is_empty())
+}
+
+/// The parameters of driven (reference) dimensions that a write generating
+/// the sketch lanes leaves out of their features' records: it writes a
+/// dimension only as a driving scalar and a parameter only as an editable
+/// dimension of its feature, so a driven parameter would read back as an
+/// editable one. A parameter is driven where the design states it `Driven`
+/// (D11) or a dimension that states it is driven binds it.
+pub(crate) fn omitted_driven_parameters(
+    ir: &cadmpeg_ir::CadIr,
+) -> HashSet<&cadmpeg_ir::features::ParameterId> {
+    if sketch_baselines(ir) != (None, None) {
+        return HashSet::new();
+    }
+    ir.design
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                parameter.definition,
+                cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+            )
+        })
+        .map(|parameter| &parameter.id)
+        .chain(
+            ir.model
+                .sketch_constraints
+                .iter()
+                .filter(|constraint| constraint.driving == Some(false))
+                .filter_map(|constraint| dimension_parameter(constraint.definition.kind())),
+        )
+        .collect()
+}
+
+/// The driven (reference) dimensions a write omits: a write that generates
+/// the sketch lanes writes each dimension as a driving scalar, so it writes
+/// no driven one.
+pub(crate) fn omitted_driven_dimensions(ir: &cadmpeg_ir::CadIr) -> usize {
+    if sketch_baselines(ir) != (None, None) || !holds_sketches(ir) {
+        return 0;
+    }
+    ir.model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| is_driven_dimension(ir, constraint))
+        .count()
 }
 
 /// Each marker id's first offset in every lane holding it, in lane order.
@@ -414,6 +471,11 @@ fn validate_source_less_constraints(
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for constraint in &ir.model.sketch_constraints {
+        // The generated sketch omits a driven dimension, so its value and
+        // parameter decide nothing written.
+        if is_driven_dimension(ir, constraint) {
+            continue;
+        }
         let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
         else {
             validate_generated_marker_constraint(ir, constraint)?;
@@ -2044,6 +2106,127 @@ mod source_less_lane_tests {
             Some((vec![6], 0x8386))
         );
         assert_eq!(marker_local_links(&payload, 710), Some(([2, 4], 0)));
+    }
+
+    /// A driven (reference) dimension is never written as a driving scalar:
+    /// the generated sketch omits it and the export charges it, whether the
+    /// constraint states it or the design states its parameter `Driven` (D11).
+    #[test]
+    fn a_generated_sketch_omits_a_driven_dimension() {
+        let sketch = generated_sketch();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        add_sketch_owner(&mut ir, &sketch);
+        let point = |id: &str, u: f64| {
+            generated_entity(
+                id,
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: Point2::new(u, 0.0),
+                })
+                .unwrap(),
+            )
+        };
+        ir.model.sketch_entities = vec![
+            point("synthetic:test:id#first", -1.0),
+            point("synthetic:test:id#second", 1.0),
+        ];
+        let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width").unwrap();
+        ir.model
+            .parameters
+            .push(cadmpeg_ir::features::parameters::DesignParameter {
+                product_definition: None,
+                id: parameter.clone(),
+                owner: None,
+                ordinal: 0,
+                name: "D1".to_owned(),
+                expression: "2 mm".to_owned(),
+                display: None,
+                value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+                )),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId::mint("synthetic:test:id#width-dimension").unwrap(),
+            sketch: sketch.id.clone(),
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::DistanceLoci {
+                    first: SketchLocus::Entity(
+                        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+                    ),
+                    second: SketchLocus::Entity(
+                        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+                    ),
+                    parameter: parameter.clone(),
+                },
+            )
+            .unwrap(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+        let writes_scalar = |ir: &cadmpeg_ir::CadIr| {
+            let mut payload = Vec::new();
+            append_generated_sketch_markers(ir, &sketch, &mut payload, &mut Vec::new())
+                .expect("required invariant");
+            payload
+                .windows(b"sgPntPntDist".len())
+                .any(|window| window == b"sgPntPntDist")
+        };
+        assert!(writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 0);
+        assert!(super::omitted_driven_parameters(&ir).is_empty());
+
+        ir.model.sketch_constraints[0].driving = Some(false);
+        assert!(!writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&parameter])
+        );
+
+        ir.model.sketch_constraints[0].driving = None;
+        ir.design
+            .parameters
+            .push(cadmpeg_ir::design::parameter::DesignParameter {
+                id: parameter,
+                scope: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:id#part")
+                    .unwrap(),
+                owner: None,
+                name: Some(cadmpeg_core::nonblank_literal!("D1")),
+                kind: cadmpeg_ir::design::units::ValueKind::Quantity(
+                    cadmpeg_ir::design::units::Quantity::LENGTH,
+                ),
+                unit: None,
+                definition: cadmpeg_ir::design::parameter::ParameterDefinition::Driven,
+                value: None,
+                display: None,
+                tolerance: None,
+                decimals: None,
+                comment: None,
+                native_options: BTreeMap::new(),
+                source_settings: BTreeMap::new(),
+                native_ref: None,
+            });
+        assert!(!writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+
+        // A `Driven` parameter that no dimension binds stays out of its
+        // feature's record too.
+        ir.model.sketch_constraints.clear();
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&ir.design.parameters[0].id])
+        );
     }
 
     #[test]

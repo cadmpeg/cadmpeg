@@ -378,9 +378,9 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
     );
 }
 
-#[test]
-fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() {
-    use cadmpeg_ir::math::{Point2, Vector3};
+/// The unit cube with a sketch `Disc` of one 5 mm circle about `center`.
+fn cube_with_one_circle(center: cadmpeg_ir::math::Point2) -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let radius = cadmpeg_ir::scalar::Length::new(5.0).expect("length");
@@ -388,12 +388,35 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
         &mut ir,
         "Disc",
         Vector3::new(0.0, 0.0, 1.0),
-        vec![vec![SketchGeometryDefinition::Circle {
-            center: Point2::new(0.0, 0.0),
-            radius,
-        }]],
+        vec![vec![SketchGeometryDefinition::Circle { center, radius }]],
     );
-    let bytes = write(&ir);
+    ir
+}
+
+/// The end of the first Unicode `CString` holding `text` at or after `from`.
+fn cstring_end(bytes: &[u8], text: &str, from: usize) -> usize {
+    let mut encoded = vec![0xff, 0xfe, 0xff, u8::try_from(text.len()).expect("short")];
+    encoded.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    from + bytes[from..]
+        .windows(encoded.len())
+        .position(|window| window == encoded.as_slice())
+        .unwrap_or_else(|| panic!("{text} is written"))
+        + encoded.len()
+}
+
+#[test]
+fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    let ir = cube_with_one_circle(Point2::new(0.0, 0.0));
+    let (bytes, losses) = write_with_losses(&ir);
+    // The centre's coincidence with the origin point is written, and named.
+    let added = loss(&losses, "writer.native-sketch-origin-relation-added");
+    assert!(
+        added.message.starts_with("1 native sketch(es)") && added.message.ends_with(": Disc"),
+        "{}",
+        added.message
+    );
     let (walk, resolved) = walk(&bytes);
     let classes = classes(&walk);
     for class in [
@@ -425,7 +448,74 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
     let on = centre + 142;
     assert_eq!(u32_at(on + 17), 0);
     assert_eq!(resolved[on + 23..on + 27], [5, 0, 1, 0]);
-    assert_eq!([f64_at(on + 66), f64_at(on + 74)], [0.005, 0.0]);
+    // The projection's record: its head's +35 pointer is the `sgExtEnt_c`;
+    // after the chain, which ends with the origin point's name, the head
+    // ends (u16 `4`, nine zero bytes, f64 `1`, eight zero bytes) and the
+    // record writes (0, 0) and u16 `6`.
+    let u16_at = |at: usize| u16::from_le_bytes(resolved[at..at + 2].try_into().expect("two"));
+    let ext = walk
+        .trace
+        .iter()
+        .rfind(|object| &*object.class == "sgExtEnt_c")
+        .expect("the projection is written");
+    let projection = ext.at - 35;
+    assert_eq!(u32_at(projection + 17), 1, "projection kind");
+    assert_eq!(resolved[projection + 23..projection + 27], [4, 0, 2, 0]);
+    let chain_end = cstring_end(&resolved, "Point1@Origin", ext.at);
+    assert_eq!(u16_at(chain_end), 4);
+    assert_eq!(f64_at(chain_end + 11), 1.0);
+    assert_eq!([f64_at(chain_end + 29), f64_at(chain_end + 37)], [0.0, 0.0]);
+    assert_eq!(u16_at(chain_end + 45), 6, "projection word");
+    // Its unit component holds u32 `10001` at +15, and the feature number
+    // after the component is the origin sketch's object identifier, which
+    // stands eight bytes after the origin sketch's name.
+    let unit = walk
+        .trace
+        .iter()
+        .filter(|object| object.at > ext.at)
+        .find(|object| &*object.class == "moUnitComponent_c")
+        .expect("the unit component is written")
+        .body;
+    assert_eq!(u32_at(unit + 15), 10_001);
+    let origin_id = u32_at(cstring_end(&resolved, "Origin", 0) + 8);
+    assert_eq!(
+        u32_at(unit + 79),
+        origin_id,
+        "the projection names the origin"
+    );
+    // The curve record follows the end of the projection's record (60 bytes
+    // after its word) and the curve list's 16-byte head; it writes kind `1`
+    // and locus `04 00 02 00`.
+    let curve = chain_end + 45 + 2 + 58 + 16;
+    assert_eq!(u32_at(curve + 17), 1, "curve kind");
+    assert_eq!(resolved[curve + 23..curve + 27], [4, 0, 2, 0]);
+    // After the 112-byte curve record, the 22-byte list trailer and the
+    // three empty dimension groups, the relation groups: the first two are
+    // empty, and the third holds the coincidence (type `9`) of the
+    // projection's point (slot `2`) and the centre's (slot `0`).
+    let groups = curve + 112 + 22 + 6;
+    assert_eq!(
+        [u16_at(groups), u16_at(groups + 2), u16_at(groups + 4)],
+        [0, 0, 1]
+    );
+    let relation = groups + 6;
+    assert_eq!(u32_at(relation + 28), 9, "coincident");
+    let slots = walk
+        .trace
+        .iter()
+        .filter(|object| object.at >= relation + 42 && &*object.class == "sgPointHandle")
+        .take(2)
+        .map(|handle| u16_at(handle.body))
+        .collect::<Vec<_>>();
+    assert_eq!(slots, [2, 0]);
+    // The circle's point lies at 17 degrees from the centre, as native
+    // sketches hold it.
+    let (sin, cos) = 17.0_f64.to_radians().sin_cos();
+    let at = [f64_at(on + 66), f64_at(on + 74)];
+    assert!(
+        (at[0] - 0.005 * cos).abs() < 1.0e-15 && (at[1] - 0.005 * sin).abs() < 1.0e-15,
+        "{at:?}"
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the part decodes");
@@ -451,6 +541,23 @@ fn a_circle_about_the_origin_is_written_as_native_one_circle_sketches_hold_it() 
             if centre.u.abs() < 1.0e-9 && centre.v.abs() < 1.0e-9 && (radius - 5.0).abs() < 1.0e-9),
         "{circles:?}"
     );
+}
+
+/// A circle away from the origin is written without the origin point's
+/// projection and without the coincidence, so no note names an added
+/// relation.
+#[test]
+fn a_circle_away_from_the_origin_adds_no_relation() {
+    let ir = cube_with_one_circle(cadmpeg_ir::math::Point2::new(20.0, 0.0));
+    let (bytes, losses) = write_with_losses(&ir);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code.local_code() != "writer.native-sketch-origin-relation-added"),
+        "{losses:#?}"
+    );
+    let (walk, _) = walk(&bytes);
+    assert!(!classes(&walk).contains(&"sgExtEnt_c"));
 }
 
 /// `cube_with_sketches` with the rectangle's first line horizontal, its second
@@ -607,7 +714,9 @@ fn native_sketch_relations_and_dimensions_decode_back() {
 }
 
 /// A driven (reference) dimension is no native sketch dimension, which is
-/// driving: the sketch leaves it out and names it.
+/// driving: the sketch leaves out the dimension and its parameter, the
+/// export charges both once, and the written part reads back with no
+/// editable parameter in its place.
 #[test]
 fn a_native_sketch_leaves_out_a_driven_dimension() {
     let mut ir = cube_with_constrained_sketches();
@@ -625,17 +734,48 @@ fn a_native_sketch_leaves_out_a_driven_dimension() {
         .collect::<Vec<_>>();
     assert!(names.contains(&"Turn"), "{names:?}");
     assert!(!names.contains(&"Bore"), "{names:?}");
-    let driven = loss(&losses, "writer.driven-dimensions-omitted");
-    assert_eq!(
-        driven.code,
-        crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
-    );
+    let driven = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+        })
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(driven.len(), 2, "{driven:?}");
+    for prefix in [
+        "1 driven (reference) sketch dimension record(s)",
+        "1 driven (reference) dimension parameter record(s)",
+    ] {
+        assert!(
+            driven.iter().any(|message| message.starts_with(prefix)),
+            "{prefix}: {driven:?}"
+        );
+    }
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the part decodes");
+    let decoded = decoded.ir();
+    let names = decoded
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name.contains("Turn")), "{names:?}");
+    assert!(!names.iter().any(|name| name.contains("Bore")), "{names:?}");
     assert!(
-        driven
-            .message
-            .ends_with("1 driven (reference) sketch dimension(s): synthetic:test:constraint#bore"),
-        "{}",
-        driven.message
+        !decoded.design.parameters.iter().any(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str().contains("Bore"))
+                && !matches!(
+                    parameter.definition,
+                    cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+                )
+        }),
+        "{:?}",
+        decoded.design.parameters
     );
 }
 

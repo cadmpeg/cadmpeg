@@ -11,10 +11,12 @@ mod default_properties;
 mod edge_direction;
 mod envelope;
 mod history_drop;
+pub(crate) mod keywords_text;
 mod materials;
 mod metadata_owners;
 pub(crate) mod native;
 mod ownership;
+mod read_back;
 mod reduce;
 pub(crate) mod target;
 
@@ -41,7 +43,6 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 use crate::container::MARKER;
-use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -193,11 +194,15 @@ pub(crate) fn write_semantic_with_records(
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
     let mut displayed_values = history_drop::DisplayedValues::default();
+    let mut renamed = history_drop::Renamed::default();
+    let mut source_definitions = None;
     if reducible {
+        source_definitions = Some(read_back::SourceDefinitions::of(&normalized));
         history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
         let (displayed, notes) = history_drop::equations_as_displayed_values(&mut normalized);
         displayed_values = displayed;
         losses.extend(notes);
+        renamed = history_drop::foreign_records_as_keywords(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
@@ -210,9 +215,10 @@ pub(crate) fn write_semantic_with_records(
             retained_records,
             &mut attempt_cut,
         ) {
-            Ok(renames) => {
+            Ok(prepared) => {
                 cut.extend(attempt_cut);
-                break renames;
+                losses.extend(prepared.losses);
+                break prepared.renames;
             }
             Err(error) => {
                 let Some((parameters, source_native)) = snapshot else {
@@ -226,8 +232,15 @@ pub(crate) fn write_semantic_with_records(
     };
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
+    losses.extend(renamed.note(&normalized));
+    if let Some(native) = native.as_mut() {
+        losses.extend(keywords_text::readable_keywords(&normalized, native));
+    }
+    if let Some(source_definitions) = &source_definitions {
+        losses.extend(source_definitions.notes(&normalized, native.as_ref()));
+    }
+    let validation = validate_with_model_snapshot(&mut normalized)?;
     let ir = &normalized;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
         losses.extend(
@@ -279,7 +292,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials::materials_payload(ir);
+    let materials = materials::materials_payload(ir)?;
     let owners = metadata_owners::metadata_owners(
         ir,
         retained_records,
@@ -320,6 +333,17 @@ pub(crate) fn write_semantic_with_records(
                 length_scale,
                 &mut unwritten,
             );
+        }
+        if !materials.omitted.is_empty() {
+            // A source that does not decode leaves the note saying the write
+            // cannot tell; it does not refuse the write.
+            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+                .ok()
+                .flatten();
+            losses.extend(materials::retained_materials_omitted(
+                ir,
+                baseline.map(|baseline| &baseline.ir),
+            ));
         }
         for attribute in metadata_attributes(ir) {
             if attribute.name != "source_linear_unit_code"
@@ -404,6 +428,8 @@ pub(crate) fn write_semantic_with_records(
     } else {
         Vec::new()
     };
+    let mut history_members = Vec::new();
+    let mut stored_sections = HashMap::<String, usize>::new();
     for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
@@ -413,26 +439,40 @@ pub(crate) fn write_semantic_with_records(
             || format!("Contents/Keywords-{index}"),
             |provenance| provenance.stream().to_owned(),
         );
-        members.push(
-            &mut sections,
-            &mut unwritten,
-            section.clone(),
-            retained_history_payload(history, &section, &retained_histories)?,
-        );
+        let source_blocks = retained_blocks(retained_records, annotations, &section);
+        match crate::history::write::keywords::history_member(
+            history,
+            &section,
+            &retained_histories,
+            &source_blocks,
+            &mut losses,
+        )? {
+            Some(payload) => history_members.push((section, history.id.as_str(), payload)),
+            None => {
+                let stored = source_blocks.iter().flatten().count();
+                if stored != 0 {
+                    stored_sections.insert(section, stored);
+                }
+            }
+        }
+    }
+    for (section, history, payload) in history_members {
+        if let Some(stored) = stored_sections.get(&section) {
+            losses.push(
+                crate::loss::SldprtLossCode::WriterHistoryRegenerationRefused.note(format!(
+                    "Keywords member {section}: another history of the member is not \
+                     regenerated, so the {stored} retained source block(s) of the member are \
+                     written as stored in place of every member generated for it; history \
+                     {history} is in the file only as those blocks hold it, so its edits are not \
+                     written"
+                )),
+            );
+            continue;
+        }
+        members.push(&mut sections, &mut unwritten, section, payload);
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = match &lane.configuration {
-            Some(configuration)
-                if crate::resolved_features::assembly::is_supplemental_config_lane(lane) =>
-            {
-                format!("Contents/Config-{configuration}")
-            }
-            Some(configuration) => format!("Contents/Config-{configuration}-ResolvedFeatures"),
-            None => annotations.provenance.get(&lane.id).map_or_else(
-                || "Contents/ResolvedFeatures".into(),
-                |provenance| provenance.stream().to_owned(),
-            ),
-        };
+        let section = lane_section(lane, annotations);
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
@@ -618,14 +658,13 @@ fn native_skeleton(
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
         .max();
-    let (features, unwritten_extrusion, driven, lane_reason) =
+    let (features, unwritten_extrusion, lane_reason) =
         match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
             native::from_ir::Features::Native {
                 features,
                 unwritten_extrusion,
-                driven,
-            } => (features, unwritten_extrusion, driven, None),
-            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Vec::new(), Some(reason)),
+            } => (features, unwritten_extrusion, None),
+            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Some(reason)),
         };
     // The body a native extrusion makes is not also written as a stored body.
     let extruded = features
@@ -703,23 +742,22 @@ fn native_skeleton(
             unwritten_extrusion,
         )
     });
-    let mut losses = native_skeleton_losses(
+    let origin_relations = features
+        .iter()
+        .filter_map(|feature| match feature {
+            native::Feature::Sketch(sketch) if native::sketch::one_circle_about_origin(sketch) => {
+                Some(sketch.name.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    Ok(native_skeleton_losses(
         summarized,
         lane_reason.filter(|_| lane_merged),
         !features.is_empty(),
+        &origin_relations,
         extruded.then_some(left_out),
-    );
-    if !driven.is_empty() {
-        losses.push(
-            crate::loss::SldprtLossCode::WriterDrivenDimensionsOmitted.note(format!(
-                "the native sketches write each dimension as a driving one, so they leave out \
-                 {} driven (reference) sketch dimension(s): {}",
-                driven.len(),
-                driven.join(", ")
-            )),
-        );
-    }
-    Ok(losses)
+    ))
 }
 
 /// Whether the native tree writes `feature`: its history record's source id
@@ -756,12 +794,14 @@ fn native_part_name(name: &str) -> String {
 /// The losses of a written native skeleton. `summarized` holds the history
 /// summary streams and the features written only in them, when the write
 /// holds one. `features` states that the tree writes native sketches;
-/// `extruded` holds, when it writes a native extrusion, the source features
-/// the write leaves out.
+/// `origin_relations` names those it writes with the centre's coincidence
+/// with the origin point; `extruded` holds, when it writes a native
+/// extrusion, the source features the write leaves out.
 fn native_skeleton_losses(
     summarized: Option<(String, Vec<String>, Option<String>)>,
     lane_follows: Option<String>,
     features: bool,
+    origin_relations: &[String],
     extruded: Option<&[native::from_ir::SourceFeature]>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::SldprtLossCode;
@@ -819,6 +859,18 @@ fn native_skeleton_losses(
              byte 0, the body and one or more edge references; the body stays because cadmpeg \
              reads a written sketch's geometry and placement from it",
         ));
+    }
+    if !origin_relations.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterNativeSketchOriginRelationAdded.note(format!(
+                "{} native sketch(es) hold one circle whose centre lies at the origin; each is \
+                 written as native sketches of one circle about the origin are, with the origin \
+                 point's projection and a coincidence (relation type 9) of the projection and \
+                 the circle's centre, a relation the document does not state: {}",
+                origin_relations.len(),
+                origin_relations.join(", ")
+            )),
+        );
     }
     let Some(left_out) = extruded else {
         return losses;
@@ -1032,6 +1084,45 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         }
     }
     configurations
+}
+
+/// Validate `ir` as its written part decodes when the model suppresses a
+/// feature: the decoder restates the synthesized active snapshot from the
+/// model, and validation requires the active configuration to state each
+/// suppression. The snapshot is cleared again for the write.
+fn validate_with_model_snapshot(
+    ir: &mut CadIr,
+) -> Result<cadmpeg_ir::report::check::ValidationReport, CodecError> {
+    let synthesized = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+    });
+    let Some(index) = synthesized
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .position(|configuration| configuration.id.as_str() == id)
+        })
+        .filter(|_| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.suppressed == Some(true))
+        })
+    else {
+        return cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    };
+    let snapshot = crate::decode::model_snapshot(&ir.model);
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values.clear();
+    configuration.feature_states.clear();
+    validation
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -1513,6 +1604,26 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
+/// The bytes of each retained source block of `section`, `None` for a block
+/// the source fidelity holds no bytes of.
+fn retained_blocks<'a>(
+    records: &[SourceRecord<'a>],
+    annotations: &Annotations,
+    section: &str,
+) -> Vec<Option<&'a [u8]>> {
+    records
+        .iter()
+        .filter(|record| {
+            record.id.as_str().starts_with("sldprt:file:block#")
+                && annotations
+                    .provenance
+                    .get(record.id.as_str())
+                    .is_some_and(|provenance| provenance.stream() == section)
+        })
+        .map(|record| record.data)
+        .collect()
+}
+
 /// The retained blocks the output holds as stored, and the retained blocks it
 /// omits.
 fn opaque_blocks(
@@ -1683,11 +1794,12 @@ fn patch_retained_swobjects_metadata(
         }
         let provenance = annotations.provenance.get(attribute.id.as_str());
         if let Some(reason) = unwritable(attribute) {
-            let held = if provenance.is_some() {
-                Held::Source
-            } else {
-                Held::Nothing
-            };
+            // The retained bytes stay only where the output holds the member.
+            let held = provenance.map_or(Held::Nothing, |provenance| {
+                owners
+                    .unpatched(provenance.stream())
+                    .map_or(Held::Source, |(_, held)| held)
+            });
             unwritten.record(attribute.id.as_str(), reason, held);
             continue;
         }
@@ -2036,14 +2148,15 @@ pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
 ];
 
 /// Synchronize the native history, sketches, parameters and configuration
-/// states with the document, and return the feature-input renames to write.
+/// states with the document, and return the feature-input renames to write
+/// and the losses of the prepared features.
 fn prepare_history(
     normalized: &mut CadIr,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     cut: &mut Vec<String>,
-) -> Result<Vec<crate::history::write::features::FeatureInputRename>, CodecError> {
+) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -2053,8 +2166,8 @@ fn prepare_history(
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut feature_input_renames = crate::history::write::prepare_features_for_write(ir, native)?;
-    fit_feature_input_renames(&mut feature_input_renames, cut);
+    let mut prepared = crate::history::write::prepare_features_for_write(ir, native)?;
+    fit_feature_input_renames(&mut prepared.renames, cut);
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, cut)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
@@ -2075,7 +2188,7 @@ fn prepare_history(
                 .transpose()
         },
     )?;
-    Ok(feature_input_renames)
+    Ok(prepared)
 }
 
 /// Cut each rename to [`FEATURE_INPUT_OBJECT_NAME`]. A rename whose cut is
@@ -2101,6 +2214,36 @@ fn fit_feature_input_renames(
             None => false,
         }
     });
+}
+
+/// The member a feature-input lane is written to. A lane with provenance goes
+/// to the stream it was decoded from, with the configuration index the write
+/// gave the lane. A lane with no provenance (a write with no decode sidecar)
+/// goes to the member its family names: a config-objects lane is the whole
+/// `Contents/Config-N` member, any other lane of a configuration is its
+/// `Config-N-ResolvedFeatures` member. The family name also serves a lane
+/// whose source stream names no configuration but whose document gives it one.
+fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotations) -> String {
+    let family_section = |configuration: &str| {
+        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
+            format!("Contents/Config-{configuration}")
+        } else {
+            format!("Contents/Config-{configuration}-ResolvedFeatures")
+        }
+    };
+    let source = annotations
+        .provenance
+        .get(&lane.id)
+        .map(cadmpeg_ir::Provenance::stream);
+    match (source, lane.configuration.as_deref()) {
+        (Some(stream), None) => stream.to_owned(),
+        (Some(stream), Some(configuration)) => {
+            crate::resolved_features::names::renumbered_section(stream, configuration)
+                .unwrap_or_else(|| family_section(configuration))
+        }
+        (None, Some(configuration)) => family_section(configuration),
+        (None, None) => "Contents/ResolvedFeatures".into(),
+    }
 }
 
 /// The bytes written for one feature-input lane.
@@ -2558,8 +2701,7 @@ impl MetadataRecord {
                 }
                 let units = fitted.text.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2)
-                    .expect("UNIT_NAME.width fits the u8 byte count (writer::tests::capacity)");
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| Unwritten::TooWide)?;
                 Self::SourceLinearUnitName {
                     units,
                     byte_len,
@@ -2801,7 +2943,7 @@ fn retained_display_sections(
 fn retained_history_sections(
     baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<(crate::records::FeatureHistory, String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<crate::history::write::keywords::RetainedHistory>, CodecError> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
     // indices from the active partition after parsing the Keywords XML.
@@ -2832,109 +2974,9 @@ fn retained_history_sections(
         .collect()
 }
 
-fn retained_history_payload(
-    history: &crate::records::FeatureHistory,
-    section: &str,
-    retained: &[(crate::records::FeatureHistory, String, Vec<u8>)],
-) -> Result<Vec<u8>, CodecError> {
-    let mut originals = retained
-        .iter()
-        .filter(|(original, name, _)| original.id == history.id && name == section);
-    let original = originals.next();
-    if originals.next().is_some() {
-        return Err(CodecError::NotImplemented(
-            "ambiguous retained SLDPRT history".into(),
-        ));
-    }
-    if let Some((original, _, payload)) = original {
-        if original == history {
-            return Ok(payload.clone());
-        }
-    }
-    history_payload(history)
-}
-
-fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
-    let mut out = String::from("<Keywords");
-    if let Some(name) = &history.part_name {
-        xml_attribute(&mut out, "Name", name);
-    }
-    for (name, value) in &history.properties {
-        xml_attribute(&mut out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
-        out.push_str("<Configuration");
-        xml_attribute(out, "Name", &configuration.name);
-        if let Some(source_index) = configuration.source_index {
-            xml_attribute(out, "SourceIndex", &source_index.to_string());
-        }
-        if let Some(material) = &configuration.material {
-            xml_attribute(out, "Material", material);
-        }
-        for (name, value) in &configuration.properties {
-            xml_attribute(out, name.as_str(), value);
-        }
-        out.push_str("/>");
-    };
-    let mut roots = history
-        .features
-        .iter()
-        .filter(|feature| feature.tree_parent.is_none())
-        .collect::<Vec<_>>();
-    roots.sort_by_key(|feature| feature.ordinal);
-    let mut emitted_configurations = HashSet::new();
-    let mut emitted_features = HashSet::new();
-    for item in &history.content {
-        match item {
-            crate::records::HistoryContent::Configuration(id) => {
-                if let Some(configuration) = history
-                    .configurations
-                    .iter()
-                    .find(|configuration| configuration.id == *id)
-                {
-                    write_configuration(&mut out, configuration);
-                    emitted_configurations.insert(configuration.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Feature(id) => {
-                if let Some(feature) = roots.iter().find(|feature| feature.id == *id) {
-                    write_feature_xml(&mut out, feature, &history.features);
-                    emitted_features.insert(feature.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
-            crate::records::HistoryContent::Element(element) => {
-                write_history_element(&mut out, element)?;
-            }
-        }
-    }
-    for configuration in &history.configurations {
-        if emitted_configurations.insert(configuration.id.as_str()) {
-            write_configuration(&mut out, configuration);
-        }
-    }
-    for feature in roots {
-        if emitted_features.insert(feature.id.as_str()) {
-            write_feature_xml(&mut out, feature, &history.features);
-        }
-    }
-    out.push_str("</Keywords>");
-    Ok(out.into_bytes())
-}
-
 pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
-    {
-        return Err(CodecError::Malformed(
-            "invalid feature XML element name".into(),
-        ));
-    }
     let mut by_id = HashMap::new();
     for feature in features {
         if let Some(id) = feature.source_id {
@@ -2981,153 +3023,6 @@ pub(crate) fn validate_feature_graph(
         }
     }
     Ok(())
-}
-
-fn write_feature_xml(
-    out: &mut String,
-    feature: &crate::records::Feature,
-    features: &[crate::records::Feature],
-) {
-    out.push('<');
-    out.push_str(&feature.xml_tag);
-    if let Some(id) = feature.source_id {
-        xml_attribute(out, "id", &String::from(id));
-    }
-    xml_attribute(out, "Name", &feature.name);
-    xml_attribute(out, "Type", &feature.kind);
-    if feature.suppressed {
-        xml_attribute(out, "Suppressed", "true");
-    }
-    for (name, value) in &feature.properties {
-        xml_attribute(out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_dimension = |out: &mut String, name: &str, value: &str| {
-        out.push_str("<Dimension");
-        xml_attribute(out, "Name", name);
-        if let Some(properties) = feature.dimension_properties.get(name) {
-            for (property, value) in properties {
-                xml_attribute(out, property.as_str(), value);
-            }
-        }
-        out.push('>');
-        xml_text(out, value);
-        out.push_str("</Dimension>");
-    };
-    let mut children = features
-        .iter()
-        .filter(|child| {
-            child.tree_parent_record_id() == Some(feature.id.as_str())
-                || (child.tree_parent_record_id().is_none()
-                    && child.parent_source_id() == feature.source_id
-                    && feature.source_id.is_some())
-        })
-        .collect::<Vec<_>>();
-    children.sort_by_key(|child| child.ordinal);
-    let mut emitted_dimensions = HashSet::new();
-    let mut emitted_children = HashSet::new();
-    if feature.content.is_empty() {
-        for (name, value) in &feature.parameters {
-            write_dimension(out, name.as_str(), value);
-            emitted_dimensions.insert(name.as_str());
-        }
-        if let Some(text) = &feature.text {
-            xml_text(out, text);
-        }
-    } else {
-        for item in &feature.content {
-            match item {
-                crate::records::FeatureContent::Dimension(name) => {
-                    if let Some(value) = feature.parameters.get(name.as_str()) {
-                        write_dimension(out, name, value);
-                        emitted_dimensions.insert(name.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Feature(id) => {
-                    if let Some(child) = children.iter().find(|child| child.id == *id) {
-                        write_feature_xml(out, child, features);
-                        emitted_children.insert(child.id.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Text(text) => xml_text(out, text),
-            }
-        }
-    }
-    for (name, value) in &feature.parameters {
-        if emitted_dimensions.insert(name.as_str()) {
-            write_dimension(out, name.as_str(), value);
-        }
-    }
-    for child in children {
-        if !emitted_children.insert(child.id.as_str()) {
-            continue;
-        }
-        write_feature_xml(out, child, features);
-    }
-    out.push_str("</");
-    out.push_str(&feature.xml_tag);
-    out.push('>');
-}
-
-fn write_history_element(
-    out: &mut String,
-    element: &crate::records::HistoryElement,
-) -> Result<(), CodecError> {
-    if !valid_xml_name(&element.tag) {
-        return Err(CodecError::Malformed(
-            "invalid history XML element name".into(),
-        ));
-    }
-    out.push('<');
-    out.push_str(&element.tag);
-    for (name, value) in &element.attributes {
-        xml_attribute(out, name.as_str(), value);
-    }
-    if element.content.is_empty() {
-        out.push_str("/>");
-        return Ok(());
-    }
-    out.push('>');
-    for item in &element.content {
-        match item {
-            crate::records::HistoryElementContent::Element(child) => {
-                write_history_element(out, child)?;
-            }
-            crate::records::HistoryElementContent::Text(text) => xml_text(out, text),
-        }
-    }
-    out.push_str("</");
-    out.push_str(&element.tag);
-    out.push('>');
-    Ok(())
-}
-
-fn xml_attribute(out: &mut String, name: &str, value: &str) {
-    out.push(' ');
-    out.push_str(name);
-    out.push_str("=\"");
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '"' => out.push_str("&quot;"),
-            '\r' => out.push_str("&#13;"),
-            '\n' => out.push_str("&#10;"),
-            _ => out.push(character),
-        }
-    }
-    out.push('"');
-}
-
-fn xml_text(out: &mut String, value: &str) {
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            _ => out.push(character),
-        }
-    }
 }
 
 /// The display-list member, and the meshes whose auxiliary channels it does
@@ -3413,6 +3308,19 @@ pub(crate) fn brep_body(
     length_scale: f64,
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
+    brep_body_from(ir, length_scale, schema_32001, FIRST_NODE_INDEX)
+}
+
+/// The first node index of a stream (`parasolid.md` §1).
+const FIRST_NODE_INDEX: u32 = 2;
+
+/// The partition body with its attributes allocated from `first`.
+pub(crate) fn brep_body_from(
+    ir: &CadIr,
+    length_scale: f64,
+    schema_32001: bool,
+    first: u32,
+) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
         .geometry
         .bodies
@@ -3424,7 +3332,7 @@ pub(crate) fn brep_body(
             body.kind, body.id
         )));
     }
-    let mut next = 2u16;
+    let mut next = first;
     let derived_sphere_seam_curves = ir
         .geometry
         .curves
@@ -3541,7 +3449,7 @@ pub(crate) fn brep_body(
             surfaces[&surface.id],
             surface_marker(solved),
             &values,
-        );
+        )?;
     }
     for curve in &ir.geometry.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
@@ -3554,10 +3462,18 @@ pub(crate) fn brep_body(
             ))
         })?;
         if let SolvedCurveGeometry::Nurbs(nurbs) = solved {
+            // A curve whose edges are all stored reversed runs along them.
+            let nurbs = if reversed_edges.curves.contains(&curve.id) {
+                let mut reversed = nurbs.clone();
+                reversed.reverse_parameterization();
+                std::borrow::Cow::Owned(reversed)
+            } else {
+                std::borrow::Cow::Borrowed(nurbs)
+            };
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
-                nurbs,
+                &nurbs,
                 &mut next,
                 length_scale,
                 curve.id.as_str(),
@@ -3576,7 +3492,7 @@ pub(crate) fn brep_body(
                 CURVE_ALONG_EDGES_MARKER
             },
             &values,
-        );
+        )?;
     }
     let face_owners = ir
         .geometry
@@ -3600,7 +3516,7 @@ pub(crate) fn brep_body(
     };
     for point in &ir.geometry.points {
         tag(&mut out, 0x1d);
-        be16(&mut out, points[&point.id]);
+        pointer(&mut out, points[&point.id])?;
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
         for value in [
@@ -3613,10 +3529,10 @@ pub(crate) fn brep_body(
     }
     for vertex in &ir.geometry.vertices {
         tag(&mut out, 0x12);
-        be16(&mut out, vertices[&vertex.id]);
+        pointer(&mut out, vertices[&vertex.id])?;
         be32(&mut out, 0);
         for value in [0, 0, 0, 0, points[&vertex.point]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
@@ -3630,7 +3546,7 @@ pub(crate) fn brep_body(
         } else {
             out.extend_from_slice(&MAGIC);
         }
-        be16(&mut out, vertex_owners[&vertex.id]);
+        pointer(&mut out, vertex_owners[&vertex.id])?;
     }
     let mut canonical_fins = HashMap::new();
     for coedge in &ir.geometry.coedges {
@@ -3655,9 +3571,9 @@ pub(crate) fn brep_body(
             )));
         }
         tag(&mut out, 0x10);
-        be16(&mut out, edges[&edge.id]);
+        pointer(&mut out, edges[&edge.id])?;
         be32(&mut out, 0);
-        be16(&mut out, 0);
+        pointer(&mut out, 0)?;
         out.extend_from_slice(&MAGIC);
         // The canonical forward FIN, stated so that an edge with several
         // forward FINs still names one (§4).
@@ -3673,9 +3589,9 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
-        be16(&mut out, *owner);
+        pointer(&mut out, *owner)?;
     }
     let mut edges_by_id = HashMap::new();
     for edge in &ir.geometry.edges {
@@ -3691,7 +3607,7 @@ pub(crate) fn brep_body(
     }
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
-        be16(&mut out, coedges[&coedge.id]);
+        pointer(&mut out, coedges[&coedge.id])?;
         let edge = edges_by_id.get(&coedge.edge).copied().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "coedge references missing edge: {}",
@@ -3726,7 +3642,7 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(
             if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
@@ -3747,9 +3663,9 @@ pub(crate) fn brep_body(
             ))
         })?;
         tag(&mut out, 0x11);
-        be16(&mut out, *fin);
+        pointer(&mut out, *fin)?;
         for value in [0, loops[&lp.id], *fin, *fin, vertex, 0, 0, 0, 0] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(0x3f);
     }
@@ -3779,24 +3695,24 @@ pub(crate) fn brep_body(
             }
         };
         tag(&mut out, 0x0f);
-        be16(&mut out, loops[&lp.id]);
+        pointer(&mut out, loops[&lp.id])?;
         be32(&mut out, 0);
         for value in [0, first_fin, faces[&lp.face], next_loop] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
     }
     for face in &ir.geometry.faces {
         tag(&mut out, 0x0e);
-        be16(&mut out, faces[&face.id]);
+        pointer(&mut out, faces[&face.id])?;
         be32(&mut out, 0);
-        be16(&mut out, face_owners[&face.id]);
+        pointer(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
         let first =
             face.loops.iter().next().ok_or_else(|| {
                 CodecError::malformed(format_args!("face has no loop: {}", face.id))
             })?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(if face.sense == Sense::Forward {
             0x2b
@@ -3822,7 +3738,7 @@ pub(crate) fn brep_body(
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
     colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (face, color) in colored_faces {
-        entity53(&mut out, color_attrs[&face], color);
+        entity53(&mut out, color_attrs[&face], color)?;
     }
     Ok(out)
 }
@@ -3831,19 +3747,19 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    face_color_definition: Option<(u16, u16)>,
+    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    face_color_definition: Option<(u32, u32)>,
     schema_32001: bool,
 }
 
 fn write_body_hierarchy(
     ir: &CadIr,
     identities: &HierarchyIdentities<'_>,
-    next: &mut u16,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let HierarchyIdentities {
@@ -3978,10 +3894,10 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    next: &mut u16,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let region_attrs = ir
@@ -4028,17 +3944,17 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [5_u32, 6, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         bef64(out, 1000.0);
         bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
         for value in [1_u32, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(1);
-        typed_ref(out, 2_u32)?;
+        pointer(out, 2_u32)?;
         out.push(match body.kind {
             BodyKind::Solid => 1,
             BodyKind::Wire => 2,
@@ -4047,10 +3963,10 @@ fn write_typed_body_hierarchy(
         });
         out.push(1);
         for value in [first_shell, 1, 1, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         for value in [first_region, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
     }
 
@@ -4080,7 +3996,7 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         let next_shell = region
             .shells
             .iter()
@@ -4097,7 +4013,7 @@ fn write_typed_body_hierarchy(
             region_attrs[&region.id],
             1,
         ] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
     }
 
@@ -4136,9 +4052,9 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [1, body, next_region, previous_region, shell_head] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(b'S');
     }
@@ -4160,11 +4076,11 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
-        typed_ref(out, 1_u32)?;
+        )?;
+        pointer(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(match face.sense {
             Sense::Forward => 0x2b,
@@ -4174,21 +4090,22 @@ fn write_typed_body_hierarchy(
     Ok(())
 }
 
-fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u32, node_id: u32) -> Result<(), CodecError> {
     tag(out, kind);
-    out.push(0xff);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, node_id);
+    Ok(())
 }
 
-/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
-fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
-        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+/// Emit one node index or node pointer in its shortest XMT form
+/// (`parasolid.md` §1): one word through `0x7fff`, two words past it.
+fn pointer(out: &mut Vec<u8>, value: u32) -> Result<(), CodecError> {
+    cadmpeg_parasolid::pointer::write(out, value).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT pointer exceeds the XT pointer range".into())
     })
 }
 
-fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
+fn fixed_refs(values: &[u32], message: &str) -> Result<[u32; 6], CodecError> {
     if values.len() > 6 {
         return Err(CodecError::NotImplemented(message.into()));
     }
@@ -4240,19 +4157,20 @@ pub(super) fn face_colors_and_unwritten_bindings(
     (colors, unwritten)
 }
 
-fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
+fn entity53(out: &mut Vec<u8>, attr: u32, color: Color) -> Result<(), CodecError> {
     tag(out, 0x53);
     be32(out, 3);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in [color.r(), color.g(), color.b()] {
         bef64(out, value);
     }
+    Ok(())
 }
 
 fn attribute_definition(
     out: &mut Vec<u8>,
-    key_node: u16,
-    definition_node: u16,
+    key_node: u32,
+    definition_node: u32,
 ) -> Result<(), CodecError> {
     const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
@@ -4262,16 +4180,16 @@ fn attribute_definition(
             CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
         })?,
     );
-    be16(out, key_node);
+    pointer(out, key_node)?;
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 1);
-    be16(out, definition_node);
-    be16(out, 1);
-    be16(out, key_node);
+    pointer(out, definition_node)?;
+    pointer(out, 1)?;
+    pointer(out, key_node)?;
     be32(out, 8001);
     out.extend([0; 8]);
-    be16(out, 1);
+    pointer(out, 1)?;
     let mut legal_owners = [0; 14];
     legal_owners[4] = 1;
     out.extend(legal_owners);
@@ -4281,10 +4199,10 @@ fn attribute_definition(
 
 fn write_face_list(
     out: &mut Vec<u8>,
-    owners: &[u16],
-    next: &mut u16,
-    disc: u16,
-) -> Result<u16, CodecError> {
+    owners: &[u32],
+    next: &mut u32,
+    disc: u32,
+) -> Result<u32, CodecError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
     // The list always states a head node: an empty owner run writes the one
     // node that names no face. The head is a value, so the answer is not an
@@ -4294,7 +4212,7 @@ fn write_face_list(
         .chain((1..chunks.len()).map(|_| take_attr(next)))
         .collect::<Result<Vec<_>, CodecError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
-        let mut refs = [0u16; 6];
+        let mut refs = [0u32; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
@@ -4307,9 +4225,9 @@ fn write_face_list(
 fn entity51(
     out: &mut Vec<u8>,
     flags: u8,
-    attr: u16,
-    disc: u16,
-    refs: &[u16; 6],
+    attr: u32,
+    disc: u32,
+    refs: &[u32; 6],
 ) -> Result<(), CodecError> {
     if !(1..=0x20).contains(&flags) {
         return Err(CodecError::NotImplemented(
@@ -4318,14 +4236,14 @@ fn entity51(
     }
     tag(out, 0x51);
     be32(out, u32::from(flags));
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 1);
-    be16(out, disc);
+    pointer(out, disc)?;
     for reference in refs {
-        be16(out, *reference);
+        pointer(out, *reference)?;
     }
     for _ in 1..flags {
-        be16(out, 1);
+        pointer(out, 1)?;
     }
     Ok(())
 }
@@ -4481,9 +4399,9 @@ pub(super) fn surface_values(
 
 fn write_nurbs_curve(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsCurve,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4510,11 +4428,14 @@ fn write_nurbs_curve(
     })?;
     let rational = nurbs.weights().is_some();
     tag(out, 0x86);
-    be16(out, wrapper);
-    be16(out, descriptor);
-    out.extend_from_slice(&[0; 8]);
+    pointer(out, wrapper)?;
+    be32(out, 0);
+    out.extend_from_slice(&[0; 10]);
+    out.push(b'+');
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x88);
-    be16(out, descriptor);
+    pointer(out, descriptor)?;
     be16(out, degree);
     be32(out, control_count);
     be16(out, if rational { 4 } else { 3 });
@@ -4522,7 +4443,7 @@ fn write_nurbs_curve(
     out.push(0);
     out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
@@ -4544,9 +4465,9 @@ fn write_nurbs_curve(
 
 fn write_nurbs_surface(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsSurface,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4596,14 +4517,14 @@ fn write_nurbs_surface(
     let u_knots = take_attr(next)?;
     let v_knots = take_attr(next)?;
     tag(out, 0x7c);
-    be16(out, wrapper);
+    pointer(out, wrapper)?;
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
     out.push(if nurbs.normal_reversed() { b'-' } else { b'+' });
-    be16(out, descriptor);
-    be16(out, 0);
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x7e);
-    be16(out, descriptor);
+    pointer(out, descriptor)?;
     out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
@@ -4617,7 +4538,7 @@ fn write_nurbs_surface(
     out.push(0x0c);
     be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     u16_array(
@@ -4649,17 +4570,25 @@ fn write_nurbs_surface(
     Ok(())
 }
 
-fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
-    let attr = *next;
-    // Bare records receive each attr and reference as a one-word cell.
-    if attr > 0x7fff {
+/// Whether the XMT cell of `value` begins with the byte `ff`: the two-word
+/// form whose remainder magnitude is at most 256 (`parasolid.md` §1).
+fn cell_begins_ff(value: u32) -> bool {
+    value > 0x7fff && (value - 1) % 32_767 < 256
+}
+
+fn take_attr(next: &mut u32) -> Result<u32, CodecError> {
+    let mut attr = *next;
+    // After a type tag such a cell also reads from the byte after its `ff`
+    // (§4), so the writer leaves those indices unused.
+    if cell_begins_ff(attr) {
+        attr += 256 - (attr - 1) % 32_767;
+    }
+    if attr > cadmpeg_parasolid::pointer::MAX_VALUE {
         return Err(CodecError::NotImplemented(
-            "SLDPRT attribute space exhausted".into(),
+            "SLDPRT attribute space exhausted: the XT pointer range ends at 1073709056".into(),
         ));
     }
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
+    *next = attr + 1;
     Ok(attr)
 }
 
@@ -4765,7 +4694,7 @@ fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, C
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4777,7 +4706,7 @@ fn f64_array(
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         bef64(out, value);
     }
@@ -4786,7 +4715,7 @@ fn f64_array(
 
 fn u16_array(
     out: &mut Vec<u8>,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = u16>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4798,7 +4727,7 @@ fn u16_array(
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         be16(out, value);
     }
@@ -4984,15 +4913,22 @@ const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 /// its parameter.
 const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
-fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
+fn compact(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u32,
+    marker: u8,
+    values: &[f64],
+) -> Result<(), CodecError> {
     tag(out, kind);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
     out.push(marker);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
     parasolid_stream_named(body, schema, "partition body")
@@ -5020,7 +4956,7 @@ pub(crate) fn parasolid_stream_named(
     out.extend_from_slice(body);
     Ok(out)
 }
-fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;
@@ -5066,7 +5002,7 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{
-        pmi_local_sha256, take_attr, typed_ref, unique_knots, write_nurbs_surface,
+        pmi_local_sha256, pointer, take_attr, unique_knots, write_nurbs_surface,
         PMI_LOCAL_DIGEST_ATTRIBUTE,
     };
     use cadmpeg_core::CodecError;
@@ -5237,21 +5173,36 @@ mod nurbs_write_tests {
             (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
-            typed_ref(&mut bytes, value).expect("reference is representable");
+            pointer(&mut bytes, value).expect("reference is representable");
             assert_eq!(bytes, expected, "encoded reference {value:#x}");
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
+            pointer(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
                 if message.contains("XT pointer range")
         ));
     }
 
     #[test]
-    fn attribute_space_ends_at_the_one_word_cell_range() {
+    fn attribute_space_ends_at_the_xt_pointer_range() {
         let mut next = 0x7fff;
         assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
+        // 0x8000 through 33 023 have cells that begin `ff`.
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 33_024);
+        let mut next = 65_534;
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_534);
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_791);
+        for value in 0x8000..0x2_0000 {
+            let mut cell = Vec::new();
+            pointer(&mut cell, value).expect("representable");
+            assert_eq!(super::cell_begins_ff(value), cell[0] == 0xff, "{value}");
+        }
+        let mut next = cadmpeg_parasolid::pointer::MAX_VALUE;
+        assert_eq!(
+            take_attr(&mut next).expect("largest attr"),
+            cadmpeg_parasolid::pointer::MAX_VALUE
+        );
         assert!(matches!(
             take_attr(&mut next),
             Err(CodecError::NotImplemented(message)) if message.contains("attribute space")

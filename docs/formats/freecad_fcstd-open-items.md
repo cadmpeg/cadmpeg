@@ -98,7 +98,7 @@ together with the tree FreeCAD shows after it opens that document.
 **Known.** Type 0 uses `Angle` as the symmetric total angle when `Midplane=true`.
 Type 4 with `Midplane=false` uses independent `Angle` and `Angle2` magnitudes on opposite sides.
 
-**Need.** Saved public files with each nonzero Type and `Midplane=true`, together with stored
+**Need.** Saved files with each nonzero Type and `Midplane=true`, together with stored
 shape end faces that identify the active sides.
 
 **Conflict.** None.
@@ -114,7 +114,7 @@ about the reversed axis?
 **Known.** `freecad_fcstd.md` §10 "Part `Revolution` uses `Symmetric` and `Solid`" states the turn sense
 of a PartDesign `Revolution` with `Reversed` `false`, and states that `Reversed` reverses the resolved axis.
 
-**Need.** Saved public files of each form with a partial angle, together with stored shape end faces
+**Need.** Saved files of each form with a partial angle, together with stored shape end faces
 that identify the side of the travel.
 
 **Conflict.** None.

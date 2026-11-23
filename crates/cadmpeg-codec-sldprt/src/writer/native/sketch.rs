@@ -50,7 +50,7 @@ const GEOMETRY_LOCUS: [u16; 2] = [5, 1];
 /// origin in a native sketch of one circle about the origin: `04 00 02 00`.
 const CENTRE_LOCUS: [u16; 2] = [4, 2];
 
-/// The u32 at +11 of the `moUnitComponent_c` of a native sketch's
+/// The u32 at +15 of the `moUnitComponent_c` of a top-level native sketch's
 /// projection of the origin point (EV-16).
 const PROJECTION_COMPONENT_WORD: u32 = 10_001;
 
@@ -409,10 +409,11 @@ fn point_record(archive: &mut Archive, sketch: &Sketch, index: usize, point: &Po
 }
 
 /// Whether `sketch` is one circle about the origin: its records are the
-/// centre, at the origin, and the circle's point. The 5 native sketches of
-/// one circle hold the centre there and the origin point's projection, and
-/// the writer writes them in that form ([`one_circle_records`]).
-fn one_circle_about_origin(sketch: &Sketch) -> bool {
+/// centre, at the origin, and the circle's point. Native sketches of one
+/// circle hold the centre there, the origin point's projection and the
+/// centre's coincidence with it, and the writer writes them in that form
+/// ([`one_circle_records`], [`relation_groups`]).
+pub(in crate::writer) fn one_circle_about_origin(sketch: &Sketch) -> bool {
     matches!(
         sketch.curves.as_slice(),
         [Curve::Circle { on: 1, centre: 0 }]
@@ -444,7 +445,7 @@ struct CircleRecord {
 }
 
 /// The identifier before the records and the three point records of a
-/// sketch of one circle about the origin, as the 5 native ones hold them
+/// sketch of one circle about the origin, as native ones hold them
 /// (sldprt.md §2.3): identifier `2`; the centre (kind `1`, locus `04 00 02
 /// 00`, one curve use, no handle, next identifier `1`); the circle's point
 /// (kind `0`, locus `05 00 01 00`, u16 `2`, two curve uses and the circle's
@@ -511,7 +512,7 @@ fn one_circle_records(archive: &mut Archive, sketch: &Sketch, reference: u32) {
 
 /// The origin point's projection into a sketch: an `sgExtEnt_c` naming a
 /// `moSketchExtRef_w` naming a `moCompSketchEntHandle_c`, whose component
-/// is a `moUnitComponent_c` with [`PROJECTION_COMPONENT_WORD`] at +11, whose
+/// is a `moUnitComponent_c` with [`PROJECTION_COMPONENT_WORD`] at +15, whose
 /// feature is the origin sketch with its time stamp and whose handle is the
 /// origin sketch's point; then u32 `1`, u16 `0`, a null component, the
 /// 54-byte block (u32 `0`, the sketch's plane-reference identifier,

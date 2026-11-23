@@ -267,16 +267,29 @@ pub(crate) fn class_declarations(
 }
 
 pub(super) fn configuration(section: &str) -> Option<String> {
+    configuration_span(section).map(|span| section[span].to_owned())
+}
+
+/// `section` with the configuration index it names replaced by
+/// `configuration`; `None` when it names none.
+pub(crate) fn renumbered_section(section: &str, configuration: &str) -> Option<String> {
+    let span = configuration_span(section)?;
+    Some(format!(
+        "{}{configuration}{}",
+        &section[..span.start],
+        &section[span.end..]
+    ))
+}
+
+/// The byte range of the configuration index in a `Config-N` section name.
+fn configuration_span(section: &str) -> Option<std::ops::Range<usize>> {
     let start = section.find("Config-")? + "Config-".len();
     let tail = &section[start..];
     let end = tail
         .find("-ResolvedFeatures")
         .or_else(|| tail.find('/'))
         .unwrap_or(tail.len());
-    if tail[..end].is_empty() {
-        return None;
-    }
-    Some(tail[..end].to_owned())
+    (end > 0).then_some(start..start + end)
 }
 
 #[cfg(test)]

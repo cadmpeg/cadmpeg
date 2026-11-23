@@ -413,6 +413,38 @@ fn unsupported_manager_fields_keep_a_retained_member() {
     assert_eq!(sections, before);
 }
 
+/// An attribute no record can hold, stored in a member the write does not
+/// hold, is named as not written, not as kept in its retained bytes.
+#[test]
+fn a_null_value_in_an_unavailable_owner_is_named_as_not_written() {
+    let (decoded, _) = shared_member();
+    let mut ir = decoded.ir().clone();
+    ir.model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.name == "bounding_envelope")
+        .unwrap()
+        .values[0] = None;
+    let owners = MetadataOwners {
+        unavailable: std::collections::BTreeSet::from([MEMBER.to_owned()]),
+        ..MetadataOwners::default()
+    };
+    let mut unwritten = UnwrittenAttributes::default();
+    crate::writer::patch_retained_swobjects_metadata(
+        &ir,
+        &decoded.source_fidelity().annotations,
+        &owners,
+        &mut [],
+        0.001,
+        &mut unwritten,
+    );
+    crate::test_support::UnwrittenLosses::of(&unwritten.notes()).assert_charged(
+        crate::writer::Held::Nothing,
+        "state a null value",
+        &bounding_envelope_id(&ir),
+    );
+}
+
 #[test]
 fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
     let (decoded, _) = shared_member();
@@ -681,7 +713,8 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert_eq!(blocks[0].payload, history);
     let mut changed = native.feature_histories[0].clone();
     changed.features[0].name = "EditedTree".into();
-    let regenerated = crate::writer::retained_history_payload(
+    let mut losses = Vec::new();
+    let regenerated = crate::history::write::keywords::history_member(
         &changed,
         "Contents/Keywords",
         &[(
@@ -689,8 +722,12 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
             "Contents/Keywords".into(),
             history.to_vec(),
         )],
+        &[],
+        &mut losses,
     )
+    .unwrap()
     .unwrap();
+    assert!(losses.is_empty());
     assert_ne!(regenerated, history);
     assert!(String::from_utf8(regenerated)
         .unwrap()

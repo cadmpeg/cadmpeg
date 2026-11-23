@@ -5,7 +5,7 @@ use crate::records::{Feature, FeatureContent};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::features::generated_feature_record_id;
 use crate::history::hash::{native_parameter_hash, parameter_hash};
@@ -14,11 +14,50 @@ use crate::history::literals::{
     parse_parameter_literal,
 };
 use crate::history::parameters::{
-    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters,
+    equivalent_parameter_values, expression_identifier_tokens, global_parameter_owners,
+    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
+
+/// `parameters` without those of `omitted`. A parameter whose expression
+/// reads one of them is written with its value in place of the expression,
+/// since the record the expression names is left out; one with no value a
+/// record entry can hold is refused.
+fn without_omitted_driven(
+    parameters: Vec<DesignParameter>,
+    omitted: &HashSet<&ParameterId>,
+) -> Result<Vec<DesignParameter>, CodecError> {
+    parameters
+        .into_iter()
+        .filter(|parameter| !omitted.contains(&parameter.id))
+        .map(|mut parameter| {
+            if parameter
+                .dependencies
+                .iter()
+                .any(|dependency| omitted.contains(dependency))
+            {
+                let literal = parameter
+                    .value
+                    .as_ref()
+                    .map(format_parameter_value)
+                    .filter(|text| parse_parameter_literal(text).is_some())
+                    .ok_or_else(|| {
+                        CodecError::NotImplemented(format!(
+                            "SLDPRT parameter {} reads an omitted driven dimension parameter and \
+                             has no value to write in place of its expression",
+                            parameter.id.as_str()
+                        ))
+                    })?;
+                parameter.display = dimension_display(&literal);
+                parameter.expression = literal;
+                parameter.dependencies =
+                    cadmpeg_ir::features::selections::DistinctMembers::default();
+            }
+            Ok(parameter)
+        })
+        .collect()
+}
 
 pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
@@ -154,6 +193,11 @@ fn sync_neutral_parameters(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
     }
+    // A record entry is an editable dimension, so the parameter of a driven
+    // dimension whose reference relation the write does not write stays out
+    // of its feature's record; the export charges it.
+    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
+    let parameters = without_omitted_driven(parameters, &omitted)?;
     let features = ir
         .model
         .features
@@ -181,7 +225,12 @@ fn sync_neutral_parameters(
             )));
         }
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
-            .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
+            .is_some_and(|literal| {
+                !parameter
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| equivalent_parameter_values(value, &literal))
+            })
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
@@ -496,5 +545,76 @@ pub(super) fn restore_equivalent_parameter_expressions(
         if desired_value == evaluated_value {
             desired.clone_from(expression);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::without_omitted_driven;
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
+    use std::collections::HashSet;
+
+    fn parameter(
+        key: &str,
+        expression: &str,
+        value: Option<f64>,
+        reads: &[&ParameterId],
+    ) -> DesignParameter {
+        DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint(format!("synthetic:test:parameter#{key}")).expect("id"),
+            owner: None,
+            ordinal: 0,
+            name: key.into(),
+            expression: expression.into(),
+            display: None,
+            value: value.map(|millimetres| {
+                ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(millimetres).expect("length"),
+                )
+            }),
+            dependencies: reads.iter().map(|&id| id.clone()).collect(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        }
+    }
+
+    /// The driven parameter is left out; a parameter that reads it is
+    /// written with its value and reads nothing; another keeps its
+    /// expression; one with no value is refused.
+    #[test]
+    fn a_parameter_reading_an_omitted_driven_one_is_written_with_its_value() {
+        let driven = parameter("D2", "6mm", Some(6.0), &[]);
+        let width = parameter("D1", "4mm", Some(4.0), &[]);
+        let twice = parameter("D3", "\"D2@Driven\" * 2", Some(12.0), &[&driven.id]);
+        let wide = parameter("D4", "\"D1@Driven\" + 1mm", Some(5.0), &[&width.id]);
+        let omitted = HashSet::from([&driven.id]);
+        let written = without_omitted_driven(
+            vec![driven.clone(), width.clone(), twice, wide.clone()],
+            &omitted,
+        )
+        .expect("every dependent has a value");
+        let by_name = |name: &str| {
+            written
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .unwrap_or_else(|| panic!("{name} in {written:?}"))
+        };
+        assert!(written.iter().all(|parameter| parameter.name != "D2"));
+        assert_eq!(by_name("D3").expression, "12mm");
+        assert!(by_name("D3").dependencies.is_empty());
+        assert_eq!(by_name("D4").expression, wide.expression);
+        assert_eq!(by_name("D4").dependencies, wide.dependencies);
+        assert_eq!(*by_name("D1"), width);
+
+        let valueless = parameter("D5", "\"D2@Driven\" * 3", None, &[&driven.id]);
+        let refused = without_omitted_driven(vec![driven.clone(), valueless], &omitted)
+            .expect_err("a dependent with no value is refused");
+        assert!(
+            refused.to_string().contains("synthetic:test:parameter#D5"),
+            "{refused}"
+        );
     }
 }

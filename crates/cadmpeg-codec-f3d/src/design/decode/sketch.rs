@@ -340,90 +340,103 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
-        if frame.design_type.module != DESIGN_MODULE_SKETCH
-            || !frame
-                .design_type
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has incompatible registration metadata",
-                frame.entity_id
-            )));
-        }
-        let Some(NamedEntityHeader {
-            entity_id,
-            end: header_end,
-            ..
-        }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
-            Some(header) => Some(header),
-            None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
-        })
-        else {
-            losses.push(F3dLossCode::SketchContainerHeaderUnrecognized.note(format!(
+        let result = (|| {
+            if frame.design_type.module != DESIGN_MODULE_SKETCH
+                || !frame
+                    .design_type
+                    .base_type_guid
+                    .value()
+                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                    .is_some_and(|base| {
+                        base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
+                    })
+            {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {} has incompatible registration metadata",
+                    frame.entity_id
+                )));
+            }
+            let Some(NamedEntityHeader {
+                entity_id,
+                end: header_end,
+                ..
+            }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
+                Some(header) => Some(header),
+                None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
+            })
+            else {
+                losses.push(F3dLossCode::SketchContainerHeaderUnrecognized.note(format!(
                 "sketch container {} has an entity header of no recognised form; its visibility and name stay unread",
                 frame.entity_id
             )));
-            continue;
-        };
-        let entity_suffix = entity_id.suffix();
-        if entity_suffix != frame.entity_id {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} disagrees with its entity header {entity_suffix}",
-                frame.entity_id
-            )));
-        }
-        let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end) else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has no typed Geometry member"
-            )));
-        };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
-            )));
-        };
-        let member_type = class_tag
-            .parse::<usize>()
-            .ok()
-            .and_then(|tag| tag.checked_sub(256))
-            .and_then(|ordinal| metadata.types.get(ordinal));
-        if after_tag != member_at + 7
-            || !member_type.is_some_and(|member_type| {
-                member_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
-                    && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
-                    && member_type.module == "Geometry"
-                    && member_type
-                        .base_type_guid
-                        .value()
-                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                        })
-            })
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an incompatible Geometry member"
-            )));
-        }
-        let Some(visibility) =
-            decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid visibility member"
-            )));
-        };
+                return Ok(None);
+            };
+            let entity_suffix = entity_id.suffix();
+            if entity_suffix != frame.entity_id {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {} disagrees with its entity header {entity_suffix}",
+                    frame.entity_id
+                )));
+            }
+            let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end)
+            else {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity_suffix} has no typed Geometry member"
+                )));
+            };
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
+            else {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
+                )));
+            };
+            let member_type = class_tag
+                .parse::<usize>()
+                .ok()
+                .and_then(|tag| tag.checked_sub(256))
+                .and_then(|ordinal| metadata.types.get(ordinal));
+            if after_tag != member_at + 7
+                || !member_type.is_some_and(|member_type| {
+                    member_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
+                        && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
+                        && member_type.module == "Geometry"
+                        && member_type
+                            .base_type_guid
+                            .value()
+                            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                            .is_some_and(|base| {
+                                base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                            })
+                })
+            {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity_suffix} has an incompatible Geometry member"
+                )));
+            }
+            let Some(visibility) =
+                decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
+            else {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity_suffix} has an invalid visibility member"
+                )));
+            };
 
-        let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
+            let display_name = decode_sketch_member_display_name(&bytes[..frame.end], member_at);
 
-        out.push((entity_suffix, visibility, display_name));
+            Ok(Some((entity_suffix, visibility, display_name)))
+        })();
+        if let Some(Some(row)) = super::record::recover(
+            result,
+            losses,
+            F3dLossCode::SketchContainerUndecoded,
+            format_args!("Sketch container record {}", frame.entity_id),
+        )? {
+            out.push(row);
+        }
     }
     if out.is_empty() {
         return Ok(out);
@@ -454,10 +467,11 @@ fn decode_sketch_visibilities_in_stream(
         })
         .flatten();
         let Some(members) = members else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch ordinal collection {} has an invalid member run",
+            losses.push(F3dLossCode::SketchOrdinalCollectionUndecoded.note(format!(
+                "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread.",
                 frame.entity_id
             )));
+            continue;
         };
         collections.insert(frame.entity_id, members);
     }
@@ -481,10 +495,11 @@ fn decode_sketch_visibilities_in_stream(
         .then(|| parse_sketch_folder(&bytes[frame.start..frame.end]))
         .flatten();
         let Some(folder) = folder else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch folder {} has an invalid frame",
+            losses.push(F3dLossCode::SketchFolderUndecoded.note(format!(
+                "F3D sketch folder {} remains in the source archive because its member sequence is unread.",
                 frame.entity_id
             )));
+            continue;
         };
         losses.push(F3dLossCode::SketchFolderUnprojected.note(format!(
             "Sketch folder {} (number {}, {} members) grouping is dropped; its sketches remain in the parent collection.",
@@ -1945,6 +1960,7 @@ fn decode_headers_for_indices_from_stream(
 pub(crate) fn decode_sketch_relations(
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
     // A record carries no class identity of its own: its class tag selects an
@@ -1974,9 +1990,20 @@ pub(crate) fn decode_sketch_relations(
                 ) {
                     continue;
                 }
-                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
-                    CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
-                })?;
+                let Some(record_index) = super::record::recover(
+                    u32::try_from(frame.entity_id).map_err(|_| {
+                        CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
+                    }),
+                    losses,
+                    F3dLossCode::SketchRelationUndecoded,
+                    format_args!(
+                        "Sketch relation record {} in {}",
+                        frame.entity_id, entry.name
+                    ),
+                )?
+                else {
+                    continue;
+                };
                 let record = DesignRecordHeader {
                     id: design_record_id(
                         &entry.name,
@@ -1988,13 +2015,14 @@ pub(crate) fn decode_sketch_relations(
                     byte_offset: u64_from_index(frame.start),
                 };
                 framed_offsets.insert(record.byte_offset);
-                decode_sketch_relation_record(
+                decode_sketch_relation_with_losses(
                     &mut out,
                     &entry.name,
                     &record,
                     &bytes[frame.start..frame.end],
                     design_type.type_guid.as_str(),
                     design_type.version,
+                    losses,
                 )?;
             }
         }
@@ -2015,17 +2043,47 @@ pub(crate) fn decode_sketch_relations(
             let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
                 continue;
             };
-            decode_sketch_relation_record(
+            decode_sketch_relation_with_losses(
                 &mut out,
                 &entry.name,
                 record,
                 payload,
                 design_type.type_guid.as_str(),
                 design_type.version,
+                losses,
             )?;
         }
     }
     Ok(out)
+}
+
+fn decode_sketch_relation_with_losses(
+    out: &mut Vec<SketchRelation>,
+    stream: &str,
+    record: &DesignRecordHeader,
+    payload: &[u8],
+    type_guid: &str,
+    version: u32,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let previous = out.len();
+    let result = decode_sketch_relation_record(out, stream, record, payload, type_guid, version)
+        .and_then(|()| {
+            if out.len() == previous && SketchRelationClass::of(type_guid, version).is_some() {
+                Err(CodecError::malformed(
+                    "F3D sketch relation has an unread member sequence",
+                ))
+            } else {
+                Ok(())
+            }
+        });
+    super::record::recover(
+        result,
+        losses,
+        F3dLossCode::SketchRelationUndecoded,
+        format_args!("Sketch relation record {} in {stream}", record.record_index),
+    )
+    .map(|_| ())
 }
 
 pub(crate) fn decode_sketch_relation_record(
@@ -2294,7 +2352,7 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
-    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
+    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames, losses)?;
     let mut unlisted = Vec::new();
     let mut out = Vec::new();
     for frame in &frames {
@@ -2329,8 +2387,11 @@ fn decode_sketch_points_from_stream(
             let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
             let backlink = decoded
                 .owner_reference
-                .map(|target| SketchBacklink::resolve(&groups, record_index, target));
-            if backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
+                .and_then(|target| SketchBacklink::resolve(&groups, record_index, target));
+            if !decoded
+                .owner_reference
+                .is_some_and(|target| groups.unread.contains(&u64::from(target)))
+                && backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
                 && !point_target_has_guid(
                     &types_by_entity,
                     decoded.trailing_reference(),
@@ -2382,17 +2443,19 @@ fn decode_sketch_points_from_stream(
             .map_err(CodecError::Malformed)?;
             Ok((point, backlink.is_some_and(|backlink| backlink.unlisted)))
         })();
-        match result {
-            Ok((point, is_unlisted)) => {
-                if is_unlisted {
-                    unlisted.push(point.record_index);
-                }
-                out.push(point);
-            }
-            Err(error) => losses.push(F3dLossCode::SketchPointUndecoded.note(format!(
-                "Sketch point record {} version {} in {stream} was dropped: {error}",
+        if let Some((point, is_unlisted)) = super::record::recover(
+            result,
+            losses,
+            F3dLossCode::SketchPointUndecoded,
+            format_args!(
+                "Sketch point record {} version {} in {stream}",
                 frame.entity_id, frame.design_type.version
-            ))),
+            ),
+        )? {
+            if is_unlisted {
+                unlisted.push(point.record_index);
+            }
+            out.push(point);
         }
     }
     push_unlisted_group_member_loss(losses, stream, "point", &unlisted);
@@ -2529,6 +2592,7 @@ fn decode_sketch_texts_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
     for frame in design_primary_frames(bytes, meta)? {
@@ -2541,17 +2605,35 @@ fn decode_sketch_texts_from_stream(
         }) {
             continue;
         }
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
+        let Some(record_index) = super::record::recover(
+            u32::try_from(frame.entity_id)
+                .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into())),
+            losses,
+            F3dLossCode::SketchTextUndecoded,
+            format_args!("Sketch text record {} in {stream}", frame.entity_id),
+        )?
+        else {
+            continue;
+        };
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
-        if let Some(text) = decode_sketch_text_record(
-            payload,
-            stream,
-            class_tag,
-            frame.design_type.version,
-            record_index,
-            frame.start,
+        if let Some(text) = super::record::recover(
+            decode_sketch_text_record(
+                payload,
+                stream,
+                class_tag,
+                frame.design_type.version,
+                record_index,
+                frame.start,
+            )
+            .and_then(|text| {
+                text.ok_or_else(|| {
+                    CodecError::malformed("F3D sketch text has an unread member sequence")
+                })
+            }),
+            losses,
+            F3dLossCode::SketchTextUndecoded,
+            format_args!("Sketch text record {record_index} in {stream}"),
         )? {
             out.push(text);
         }
@@ -2561,8 +2643,13 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(
+    scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_texts_from_stream(bytes, meta, stream, losses)
+    })
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -3826,19 +3913,54 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<ParsedSketchGeometryGro
     })
 }
 
+struct SketchGeometryGroups {
+    records: HashMap<u32, SketchGeometryGroup>,
+    unread: HashSet<u64>,
+}
+
 fn collect_sketch_geometry_groups(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
     frames: &[super::meta::DesignPrimaryFrame<'_>],
-) -> Result<HashMap<u32, SketchGeometryGroup>, CodecError> {
-    let mut groups = HashMap::new();
+    losses: &mut Vec<LossNote>,
+) -> Result<SketchGeometryGroups, CodecError> {
+    let previous_losses = losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::SketchGeometryGroupUndecoded.kind())
+        .map(|loss| loss.message.clone())
+        .collect::<HashSet<_>>();
+    let first_loss = losses.len();
+    let readable_entities = frames
+        .iter()
+        .map(|frame| frame.entity_id)
+        .collect::<HashSet<_>>();
+    let mut groups = SketchGeometryGroups {
+        records: HashMap::new(),
+        unread: meta
+            .records
+            .iter()
+            .map(|record| record.entity_id)
+            .filter(|entity| !readable_entities.contains(entity))
+            .collect(),
+    };
     for frame in frames
         .iter()
         .filter(|frame| is_sketch_geometry_group_type(frame.design_type))
     {
-        let index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::malformed("F3D sketch geometry group index exceeds u32"))?;
+        let Some(index) = super::record::recover(
+            u32::try_from(frame.entity_id)
+                .map_err(|_| CodecError::malformed("F3D sketch geometry group index exceeds u32")),
+            losses,
+            F3dLossCode::SketchGeometryGroupUndecoded,
+            format_args!(
+                "Sketch geometry group record {} in {stream}",
+                frame.entity_id
+            ),
+        )?
+        else {
+            continue;
+        };
         let Some(payload) = bytes.get(frame.start..frame.end) else {
             continue;
         };
@@ -3868,8 +3990,18 @@ fn collect_sketch_geometry_groups(
             crate::design::text::malformed_design(format_args!(
                 "F3D sketch geometry group {index} has an invalid member sequence"
             ))
-        })?;
-        groups.insert(
+        });
+        let Some(parsed) = super::record::recover(
+            parsed,
+            losses,
+            F3dLossCode::SketchGeometryGroupUndecoded,
+            format_args!("Sketch geometry group record {index} in {stream}"),
+        )?
+        else {
+            groups.unread.insert(u64::from(index));
+            continue;
+        };
+        groups.records.insert(
             index,
             SketchGeometryGroup {
                 id: design_record_id(
@@ -3885,6 +4017,12 @@ fn collect_sketch_geometry_groups(
             },
         );
     }
+    let new_losses = losses.split_off(first_loss);
+    losses.extend(
+        new_losses
+            .into_iter()
+            .filter(|loss| !previous_losses.contains(&loss.message)),
+    );
     Ok(groups)
 }
 
@@ -3908,7 +4046,8 @@ fn decode_sketch_geometry_groups_from_stream(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchGeometryGroup>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
-    let mut groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?
+    let mut groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames, losses)?
+        .records
         .into_values()
         .collect::<Vec<_>>();
     if groups.is_empty() {
@@ -3954,8 +4093,11 @@ struct SketchBacklink {
 }
 
 impl SketchBacklink {
-    fn resolve(groups: &HashMap<u32, SketchGeometryGroup>, record: u32, target: u32) -> Self {
-        match groups.get(&target) {
+    fn resolve(groups: &SketchGeometryGroups, record: u32, target: u32) -> Option<Self> {
+        if groups.unread.contains(&u64::from(target)) {
+            return None;
+        }
+        Some(match groups.records.get(&target) {
             Some(group) => Self {
                 owner: group.sketch_reference,
                 geometry_group: Some(target),
@@ -3966,7 +4108,7 @@ impl SketchBacklink {
                 geometry_group: None,
                 unlisted: false,
             },
-        }
+        })
     }
 }
 
@@ -4063,7 +4205,7 @@ fn decode_sketch_curve_identities_from_stream(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
-    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
+    let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames, losses)?;
     let mut unlisted = Vec::new();
     let mut short_tails = 0usize;
     let mut out = Vec::new();
@@ -4077,26 +4219,43 @@ fn decode_sketch_curve_identities_from_stream(
         let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
             continue;
         };
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
+        let Some(record_index) = super::record::recover(
+            u32::try_from(frame.entity_id).map_err(|_| {
+                CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into())
+            }),
+            losses,
+            F3dLossCode::SketchCurveUndecoded,
+            format_args!("Sketch curve record {} in {stream}", frame.entity_id),
+        )?
+        else {
+            continue;
+        };
         let curve_class = SketchCurveClass::of(
             frame.design_type.type_guid.as_str(),
             frame.design_type.version,
             &frame.design_type.module,
         );
+        let mut geometry_offset = geometry_shift + 133;
         let parsed_geometry = if let Some(curve_class) = curve_class {
-            decode_sketch_curve_geometry(
-                payload,
-                geometry_shift,
-                record_index,
-                curve_class,
-                frame.start,
+            super::record::recover(
+                decode_sketch_curve_geometry(
+                    payload,
+                    geometry_shift,
+                    record_index,
+                    curve_class,
+                    frame.start,
+                    &mut geometry_offset,
+                ),
+                losses,
+                F3dLossCode::SketchCurveUndecoded,
+                format_args!("Sketch curve record {record_index} in {stream}"),
             )?
+            .flatten()
         } else {
             None
         };
         let (geometry, geometry_offset, planar_z_noise) =
-            parsed_geometry.map_or((None, geometry_shift + 133, None), |parsed| {
+            parsed_geometry.map_or((None, geometry_offset, None), |parsed| {
                 (
                     Some(parsed.geometry),
                     parsed.geometry_offset,
@@ -4113,7 +4272,7 @@ fn decode_sketch_curve_identities_from_stream(
         }
         let tail_marker = planar_tail.map(|tail| tail.marker);
         let backlink = trailing_sketch_owner_reference(payload)
-            .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+            .and_then(|target| SketchBacklink::resolve(&groups, record_index, target));
         if backlink.is_some_and(|backlink| backlink.unlisted) {
             unlisted.push(record_index);
         }
@@ -4303,6 +4462,7 @@ fn parse_sketch_surface(
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
     scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -4323,7 +4483,13 @@ pub(crate) fn decode_sketch_surfaces(
                 continue;
             };
             let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
+            let Some(surface) = super::record::recover(
+                parse_sketch_surface(payload, record_at),
+                losses,
+                F3dLossCode::SketchSurfaceUndecoded,
+                format_args!("Sketch surface record {record_index} in {}", entry.name),
+            )?
+            .flatten() else {
                 continue;
             };
 
@@ -4351,6 +4517,7 @@ pub(crate) fn bind_sketch_graph(
     curves: &mut [SketchCurveIdentity],
     surfaces: &mut [SketchSurface],
     relations: &mut [SketchRelation],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let mut sketch_owners = HashMap::new();
     for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
@@ -4371,14 +4538,14 @@ pub(crate) fn bind_sketch_graph(
                 relation.record_index
             ))
         })?;
-        let owner = sketch_owners
-            .get(&(scope, relation.owner_reference))
-            .ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "Fusion sketch relation {} in {scope} has no owning Design entity {}",
-                    relation.record_index, relation.owner_reference,
-                ))
-            })?;
+        let Some(owner) = sketch_owners.get(&(scope, relation.owner_reference)) else {
+            relation.owner_entity_id = None;
+            losses.push(F3dLossCode::SketchRelationOwnerUnresolved.note(format!(
+                "Sketch relation {} in {scope} retains unresolved owner {}",
+                relation.record_index, relation.owner_reference,
+            )));
+            continue;
+        };
 
         relation.owner_entity_id = Some(
             cadmpeg_core::text::NonBlankString::new((*owner).to_owned()).ok_or_else(|| {
@@ -4415,6 +4582,7 @@ pub(crate) fn bind_sketch_graph(
         }
     }
     let mut owners = std::collections::HashMap::new();
+    let mut conflicts = HashSet::new();
     let direct_owners = points
         .iter()
         .map(|point| (&point.id, point.record_index, point.owner_reference))
@@ -4456,9 +4624,7 @@ pub(crate) fn bind_sketch_graph(
                 .insert((scope, record_index), owner_reference)
                 .is_some_and(|owner| owner != owner_reference)
             {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
-                )));
+                conflicts.insert((scope, record_index));
             }
         }
     }
@@ -4481,11 +4647,17 @@ pub(crate) fn bind_sketch_graph(
                 .insert((scope, *record_index), suffix)
                 .is_some_and(|owner| owner != suffix)
             {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
-                )));
+                conflicts.insert((scope, *record_index));
             }
         }
+    }
+    let mut conflicts = conflicts.into_iter().collect::<Vec<_>>();
+    conflicts.sort_unstable();
+    for (scope, record_index) in conflicts {
+        owners.remove(&(scope, record_index));
+        losses.push(F3dLossCode::SketchOwnerConflict.note(format!(
+            "Sketch record {record_index} in {scope} retains its geometry with an unresolved owner because multiple sketches claim it"
+        )));
     }
     for point in points.iter_mut() {
         point.owner_reference = native_stream(&point.id)
@@ -4667,7 +4839,9 @@ fn decode_sketch_curve_geometry(
     record_index: u32,
     class: SketchCurveClass,
     record_at: usize,
+    geometry_offset: &mut usize,
 ) -> Result<Option<DecodedSketchCurveGeometry>, CodecError> {
+    *geometry_offset = geometry_shift + 133;
     let Some(geometry_payload) = payload.get(geometry_shift..) else {
         return Ok(None);
     };
@@ -4680,6 +4854,7 @@ fn decode_sketch_curve_geometry(
                 }
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
+                *geometry_offset = geometry_shift + 11 + 133;
                 let decoded = decode_line_family(referenced, record_at)?;
                 if decoded
                     .as_ref()
@@ -4696,6 +4871,7 @@ fn decode_sketch_curve_geometry(
             if let Some(geometry) = decode_circular_arc(geometry_payload, record_at)? {
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
+                *geometry_offset = geometry_shift + 11 + 133;
                 decode_circular_arc(referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
             } else {
                 None
@@ -4709,14 +4885,17 @@ fn decode_sketch_curve_geometry(
             };
             geometry.map(|(geometry, _)| (geometry, 133))
         }
-        SketchCurveClass::TextFrameLine => {
-            decode_text_frame_line(payload, geometry_shift, record_index, record_at)?.and_then(
-                |(geometry, end)| {
-                    end.checked_sub(geometry_shift + 12 * 8)
-                        .map(|offset| (geometry, offset))
-                },
-            )
-        }
+        SketchCurveClass::TextFrameLine => decode_text_frame_line(
+            payload,
+            geometry_shift,
+            record_index,
+            record_at,
+            geometry_offset,
+        )?
+        .and_then(|(geometry, end)| {
+            end.checked_sub(geometry_shift + 12 * 8)
+                .map(|offset| (geometry, offset))
+        }),
     };
     Ok(
         decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
@@ -4802,6 +4981,7 @@ fn decode_text_frame_line(
     geometry_shift: usize,
     record_index: u32,
     record_at: usize,
+    geometry_offset: &mut usize,
 ) -> Result<Option<(SketchCurveGeometry, usize)>, CodecError> {
     let values_at = (|| {
         let mut cursor = geometry_shift.checked_add(133)?;
@@ -4833,6 +5013,7 @@ fn decode_text_frame_line(
     let Some(end) = values_at.checked_add(12 * 8) else {
         return Ok(None);
     };
+    *geometry_offset = values_at;
     Ok(decode_line_values(payload, values_at, record_at)?.map(|geometry| (geometry, end)))
 }
 

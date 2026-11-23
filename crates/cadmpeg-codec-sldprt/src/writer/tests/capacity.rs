@@ -111,7 +111,7 @@ fn a_material_without_colour_and_a_second_body_material_are_named() {
         "Brass",
         Some(steel()),
     ));
-    let payload = materials_payload(&ir);
+    let payload = materials_payload(&ir).unwrap();
     assert!(payload.cut.is_empty());
     let messages = payload
         .omitted

@@ -920,7 +920,12 @@ fn parse_mesh_collection_record(
         ) == Some(&[0; 9]))
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
-        (first_count == if flagged { 0 } else { body_records.len() }).then_some(())?;
+        (if flagged {
+            first_count == 0
+        } else {
+            first_count >= body_records.len()
+        })
+        .then_some(())?;
         let mut flagged_entries = Vec::new();
         let owner_at = if flagged
             && !body_records.is_empty()
@@ -960,22 +965,30 @@ fn parse_mesh_collection_record(
         if body_records.is_empty() {
             return Some(None);
         }
+        let collection = DesignMeshCollection::new(
+            identity,
+            base_record,
+            u32::try_from(body_records.len()).ok()?,
+            if flagged {
+                Some(DesignMeshFlaggedCollection {
+                    word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
+                    word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
+                    entries: flagged_entries,
+                })
+            } else {
+                None
+            },
+        )
+        .ok()?;
+        let collection = if flagged {
+            collection
+        } else {
+            collection
+                .with_received_count(u32::try_from(first_count).ok()?)
+                .ok()?
+        };
         Some(Some(MeshCollectionRecord {
-            collection: DesignMeshCollection::new(
-                identity,
-                base_record,
-                u32::try_from(body_records.len()).ok()?,
-                if flagged {
-                    Some(DesignMeshFlaggedCollection {
-                        word: View::u32_le_at(record, flagged_collection::FLAGGED_WORD)?,
-                        word_offset: source_offset(frame.start, flagged_collection::FLAGGED_WORD)?,
-                        entries: flagged_entries,
-                    })
-                } else {
-                    None
-                },
-            )
-            .ok()?,
+            collection,
             texture_table_record_index,
             body_records,
             owner_record_index,
@@ -1649,13 +1662,13 @@ fn mesh_operation_relation(
         )?;
         let group_record = &context.bytes[group_frame.start..group_frame.end];
         let group_identity = record_identity(group_record, group_frame, "mesh-operation-group")?;
-        let header = crate::design::decode::operands::RecordFrame {
+        let header = crate::design::decode::operands::construction_groups::RecordFrame {
             record_index: reference.value,
             class_tag: group_identity.class_tag().clone(),
             byte_offset: group_identity.byte_offset(),
         };
-        let crate::design::decode::operands::ConstructionOperandGroupParse::Complete(group) =
-            crate::design::decode::operands::parse_construction_operand_group(
+        let crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse::Complete(group) =
+            crate::design::decode::operands::construction_groups::parse_construction_operand_group(
                 context.bytes,
                 &scope,
                 u32::try_from(ordinal)

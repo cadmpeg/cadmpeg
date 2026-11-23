@@ -157,7 +157,7 @@ fn side_one_single_face_boundary_resolves_without_incidence_candidates() {
         -1, -1, 2, 0, -1, 1, -1, 1, -1, 2, 1, -1, 0, -1, 0, 1, 0, 2, 1, 1, 1, 1, 1, 1, -1,
     ];
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::edge_recipe_structure(ctx, &program)
+        crate::design::decode::operands::recipe_structure::edge_recipe_structure(ctx, &program)
     })
     .unwrap()
     .unwrap();

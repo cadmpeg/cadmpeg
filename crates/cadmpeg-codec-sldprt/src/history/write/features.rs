@@ -13,13 +13,26 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::{neutral_feature_id, referenced_sources};
 
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, solidworks_source_tag};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::history::extrude_direction::cleared_reversal;
+use crate::loss::SldprtLossCode;
 use crate::records::FeatureSource;
+use crate::resolved_features::terminations::EndSpecAnchor;
+
+/// What preparing the native history for a write produced.
+#[derive(Debug, Default)]
+pub(crate) struct PreparedFeatures {
+    /// The serialized object names to rewrite.
+    pub(crate) renames: Vec<FeatureInputRename>,
+    /// The feature edits the written records hold only in part, or that the
+    /// stored solid does not show.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
 
 /// A write-side request to rewrite one serialized object name.
 ///
@@ -158,7 +171,7 @@ pub(in crate::history) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<PreparedFeatures, CodecError> {
     let features = &ir.model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -166,7 +179,7 @@ pub(in crate::history) fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(Vec::new());
+        return Ok(PreparedFeatures::default());
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -199,6 +212,20 @@ pub(in crate::history) fn sync_neutral_features(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
+    // The end specs whose reversal flag an edit clears, read from the stored
+    // records as the decoder read them. A scan the context refuses finds no
+    // flag, and the write names each reversal it could not clear.
+    let reversed_end_specs = if features.iter().any(cleared_reversal) {
+        crate::resolved_features::terminations::reversed_end_specs(
+            &ctx,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        )
+        .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+    let mut cleared = Vec::new();
     enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
     let resolved_parameter_names = resolved_histories
         .iter()
@@ -371,6 +398,12 @@ pub(in crate::history) fn sync_neutral_features(
             resolved_parameter_names: &resolved_parameter_names,
         }
         .encode()?;
+        if cleared_reversal(feature) {
+            let stated = existing
+                .as_deref()
+                .is_some_and(|record| record.properties.contains_key("Reverse"));
+            cleared.push((feature, stated));
+        }
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
                 record,
@@ -378,6 +411,8 @@ pub(in crate::history) fn sync_neutral_features(
                 &evaluated_parameters,
                 &mut parameters,
             );
+        } else {
+            state_unreferenced_dependencies(feature, &structural_parent_sources, &mut properties);
         }
         if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
@@ -460,6 +495,11 @@ pub(in crate::history) fn sync_neutral_features(
             });
         }
     }
+    let losses = clear_reversals(
+        &cleared,
+        &reversed_end_specs,
+        &mut native.feature_input_lanes,
+    );
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     let changed_parameters = native
         .feature_histories
@@ -516,7 +556,45 @@ pub(in crate::history) fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(renames)
+    Ok(PreparedFeatures { renames, losses })
+}
+
+/// Writes `0` to the end-spec reversal word of each extrusion whose decoded
+/// reversal an edit cleared, each paired with whether its record states the
+/// flag as a Keywords attribute, which the encoder already dropped. Names
+/// each extrusion whose flag the write could not clear.
+fn clear_reversals(
+    cleared: &[(&cadmpeg_ir::features::Feature, bool)],
+    reversed_end_specs: &HashMap<String, Vec<EndSpecAnchor>>,
+    lanes: &mut [crate::records::FeatureInputLane],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::layout::extrusion_end_spec_header::REVERSAL;
+    let mut losses = Vec::new();
+    for (feature, stated) in cleared {
+        let anchors = feature
+            .native_ref
+            .as_deref()
+            .and_then(|record| reversed_end_specs.get(record))
+            .map_or(&[][..], Vec::as_slice);
+        let mut unwritten = anchors.is_empty() && !stated;
+        for anchor in anchors {
+            let at = anchor.offset + REVERSAL;
+            match lanes
+                .get_mut(anchor.lane)
+                .and_then(|lane| lane.native_payload.get_mut(at..at + 4))
+            {
+                Some(word) => word.copy_from_slice(&0_u32.to_le_bytes()),
+                None => unwritten = true,
+            }
+        }
+        let extrusion = crate::history::extrude_direction::label(feature);
+        if unwritten {
+            losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal."
+            )));
+        }
+    }
+    losses
 }
 
 fn synchronize_neutral_feature_content(
@@ -575,6 +653,36 @@ fn synchronize_neutral_feature_content(
         record.content = content;
     }
     Ok(())
+}
+
+/// Name in `Dependencies` each dependency of a generated record that none of
+/// its feature-reference properties names, so the record projects with every
+/// dependency its feature states. A dependency with no source id stays
+/// unnamed.
+fn state_unreferenced_dependencies(
+    feature: &cadmpeg_ir::features::Feature,
+    sources: &HashMap<FeatureId, Option<FeatureSource>>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let referenced = referenced_sources(properties)
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    let unreferenced = feature
+        .dependencies
+        .iter()
+        .filter_map(|dependency| sources.get(dependency).copied().flatten())
+        .map(String::from)
+        .filter(|source| !referenced.contains(source))
+        .collect::<Vec<_>>();
+    if unreferenced.is_empty() {
+        return;
+    }
+    let key = cadmpeg_core::nonblank_literal!("Dependencies");
+    let value = match properties.get(key.as_str()) {
+        Some(stated) => format!("{stated},{}", unreferenced.join(",")),
+        None => unreferenced.join(","),
+    };
+    properties.insert(key, value);
 }
 
 pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
@@ -800,6 +908,46 @@ mod tests {
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
         );
+    }
+
+    #[test]
+    fn a_solidworks_source_tag_xml_cannot_hold_keeps_the_record_tag_and_is_named() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        for (tag, written, named) in [
+            ("Pattern Geometry", "Feature", true),
+            ("PartDesign::Pad", "Feature", true),
+            ("Schlüssel", "Schlüssel", false),
+        ] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].source_tag = Some(tag.into());
+            let mut native = Some(sldprt_native(decoded.ir()));
+            sync_neutral_features(&ir, &ir.model.parameters, &ir.geometry.bodies, &mut native)
+                .expect("the history is written");
+            let mut native = native.expect("native history");
+            let notes = crate::writer::keywords_text::readable_keywords(&ir, &mut native);
+            assert_eq!(
+                native.feature_histories[0].features[0].xml_tag, written,
+                "{tag}"
+            );
+            let names = notes
+                .iter()
+                .filter(|note| {
+                    note.code == crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.kind()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), usize::from(named), "{tag}: {notes:?}");
+            assert!(
+                names
+                    .iter()
+                    .all(|note| note.message.contains(&format!("{tag:?} as <Feature>"))),
+                "{names:?}"
+            );
+        }
     }
 
     #[test]

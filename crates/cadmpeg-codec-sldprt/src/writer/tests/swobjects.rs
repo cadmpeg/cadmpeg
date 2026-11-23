@@ -97,6 +97,94 @@ fn semantic_writer_keeps_retained_materials_and_drops_their_edit() {
     assert_eq!(members(&written), members(&source));
 }
 
+/// A material record the write skips is named when it keeps the retained
+/// `SWObjects` materials; a record the retained materials hold is not.
+#[test]
+fn a_material_skipped_beside_retained_swobjects_is_named() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let steel = decoded.ir().model.appearances[0].id.as_str().to_owned();
+    let plain = "synthetic:test:appearance#plain";
+    decoded
+        .ir_mut()
+        .model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId::mint(plain).unwrap(),
+            name: Some("Plain".into()),
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("moVisualProperties_c".into()),
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+            native_ref: None,
+        });
+
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterMaterialsOmitted.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        omitted,
+        [format!(
+            "1 appearance or body record(s) state no base colour, so the SLDPRT write writes no \
+             material for them, and the retained SWObjects materials it keeps hold none: {plain}"
+        )
+        .as_str()],
+        "{:?}",
+        report.losses
+    );
+    let members = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    assert_eq!(members(&written), members(&source));
+
+    // Clearing the colour of the retained material is an edit the retained
+    // records drop, named once as dropped and not as omitted.
+    decoded.ir_mut().model.appearances[0].base_color = None;
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut Vec::new())
+        .unwrap();
+    let names = |loss: &&cadmpeg_ir::report::loss::LossNote| loss.message.contains(&steel);
+    assert!(
+        report
+            .losses
+            .iter()
+            .filter(names)
+            .all(|loss| loss.code.local_code() == "edit.dropped"),
+        "{:?}",
+        report.losses
+    );
+    assert!(report.losses.iter().any(|loss| names(&loss)));
+}
+
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -151,7 +239,12 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .iter()
         .find(|block| block.section.name() == Some("Contents/Keywords-0"))
         .unwrap();
-    assert_eq!(keywords.payload, b"<Keywords></Keywords>");
+    // A member with no source member is written after the lead byte and
+    // declaration most stored members carry.
+    assert_eq!(
+        keywords.payload,
+        b"\x86<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<Keywords></Keywords>"
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

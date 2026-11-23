@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::convert::truncate_f64_to_u8;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::document::CadIr;
@@ -162,41 +163,87 @@ pub(super) struct MaterialsPayload {
     pub(super) omitted: Vec<LossNote>,
 }
 
-pub(super) fn materials_payload(ir: &CadIr) -> MaterialsPayload {
+pub(super) fn materials_payload(ir: &CadIr) -> Result<MaterialsPayload, CodecError> {
     let materials = swobjects_materials(ir);
     let mut bytes = Vec::new();
     let mut cut = Vec::new();
     for material in &materials.records {
         let name = MATERIAL_NAME.fit(material.name);
         cut.extend(name.unwritable_entry(material.source));
-        bytes.extend(material_payload(name.text, material.color));
+        bytes.extend(material_payload(name.text, material.color)?);
     }
+    let omitted = omitted_notes(
+        &materials.skipped,
+        "the SLDPRT semantic exporter wrote no SWObjects material for them",
+    );
+    Ok(MaterialsPayload {
+        bytes,
+        cut,
+        omitted,
+    })
+}
+
+/// One `WriterMaterialsOmitted` note per skip reason of `skipped`, saying
+/// what follows for the write.
+fn omitted_notes(skipped: &[(&str, MaterialSkip)], outcome: &str) -> Vec<LossNote> {
     let mut grouped = BTreeMap::<MaterialSkip, NamedCount>::new();
-    for (source, reason) in &materials.skipped {
+    for (source, reason) in skipped {
         grouped.entry(*reason).or_default().push(source);
     }
-    let omitted = grouped
+    grouped
         .into_iter()
         .map(|(reason, named)| {
             SldprtLossCode::WriterMaterialsOmitted.note(format!(
-                "{} appearance or body record(s) {}, so the SLDPRT semantic exporter wrote no \
-                 SWObjects material for them: {named}",
+                "{} appearance or body record(s) {}, so {outcome}: {named}",
                 named.count(),
                 reason.stated()
             ))
         })
-        .collect();
-    MaterialsPayload {
-        bytes,
-        cut,
-        omitted,
-    }
+        .collect()
+}
+
+/// The `WriterMaterialsOmitted` notes of a write that keeps the retained
+/// `SWObjects` materials. An appearance or body that gives no material record
+/// is named unless the `baseline` decode skips it for the same reason or holds
+/// a material record from it: the retained records keep what the source
+/// stated, and [`retained_materials_kept`] names a changed record. Without a
+/// baseline every one is named, and the note says the write cannot tell.
+pub(super) fn retained_materials_omitted(ir: &CadIr, baseline: Option<&CadIr>) -> Vec<LossNote> {
+    let current = swobjects_materials(ir);
+    let Some(baseline) = baseline else {
+        return omitted_notes(
+            &current.skipped,
+            "the SLDPRT write writes no material for them; it keeps the retained SWObjects \
+             materials and, with no source decode, cannot tell whether they hold one",
+        );
+    };
+    let original = swobjects_materials(baseline);
+    let skipped = current
+        .skipped
+        .into_iter()
+        .filter(|(source, reason)| {
+            !original
+                .skipped
+                .iter()
+                .any(|(known, known_reason)| known == source && known_reason == reason)
+                && !original
+                    .records
+                    .iter()
+                    .any(|record| record.source == *source)
+        })
+        .collect::<Vec<_>>();
+    omitted_notes(
+        &skipped,
+        "the SLDPRT write writes no material for them, and the retained SWObjects materials it \
+         keeps hold none",
+    )
 }
 
 /// One `moVisualProperties_c` record. `name` fits [`MATERIAL_NAME`].
-fn material_payload(name: &str, color: Color) -> Vec<u8> {
-    let length = u8::try_from(name.encode_utf16().count())
-        .expect("MATERIAL_NAME.width fits the u8 count (writer::tests::capacity)");
+fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
+    let length = u8::try_from(name.encode_utf16().count()).map_err(|_| {
+        CodecError::Malformed("SLDPRT material name exceeds 255 UTF-16 code units".into())
+    })?;
     let mut out = b"moVisualProperties_c".to_vec();
     let component = |value: f64| {
         let component = truncate_f64_to_u8((value * 255.0).round());
@@ -216,7 +263,7 @@ fn material_payload(name: &str, color: Color) -> Vec<u8> {
     for unit in name.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
     }
-    out
+    Ok(out)
 }
 
 /// `export:edit.dropped` for a write that keeps the retained `SWObjects`

@@ -35,6 +35,8 @@ pub(super) struct Memberships {
     shell_wire_edges: HashSet<i64>,
     shell_free_vertices: HashSet<i64>,
     face_loops: HashSet<i64>,
+    face_envelopes: HashSet<i64>,
+    edge_envelopes: HashSet<i64>,
     loop_coedges: HashSet<i64>,
     coedge_topology: HashSet<i64>,
     edge_vertices: HashSet<i64>,
@@ -187,6 +189,8 @@ impl Memberships {
         apply_rows(&mut self.shell_wire_edges, &rows.shell_wire_edges)?;
         apply_rows(&mut self.shell_free_vertices, &rows.shell_free_vertices)?;
         apply_rows(&mut self.face_loops, &rows.face_loops)?;
+        apply_rows(&mut self.face_envelopes, &rows.face_envelopes)?;
+        apply_rows(&mut self.edge_envelopes, &rows.edge_envelopes)?;
         apply_rows(&mut self.loop_coedges, &rows.loop_coedges)?;
         apply_rows(&mut self.coedge_topology, &rows.coedge_topology)?;
         apply_rows(&mut self.edge_vertices, &rows.edge_vertices)?;

@@ -133,10 +133,6 @@ pub(super) fn resolved_features(
         Some(id) => id,
         None => archive.count32(usize::MAX, "object identifier"),
     };
-    assert!(
-        plane_reference > ORIGIN_PLANE_REFERENCE,
-        "a user sketch's plane reference exceeds the origin sketch's"
-    );
     // The map index of each sketch written, by its object identifier.
     let mut profiles = Vec::new();
     for feature in facts.features {
@@ -494,9 +490,9 @@ fn origin_point(archive: &mut Archive) {
 }
 
 /// The identifier in the origin sketch's plane-reference trailer: `101`, the
-/// value 10 of the 17 native origin sketches of `swVersion` 14000 hold (the
-/// others hold `102` to `107`), and one native part holds it beside body
-/// `101` and a user sketch's `102`, as a one-body part the tree writes does.
+/// lowest value native origin sketches of `swVersion` 14000 hold, which a
+/// native part holds beside body `101` and a user sketch's `102`, as a
+/// one-body part the tree writes does.
 /// Every user sketch's identifier exceeds it (sldprt.md §2.3, EV-16).
 pub(super) const ORIGIN_PLANE_REFERENCE: u32 = super::config::FIRST_BODY_ID;
 

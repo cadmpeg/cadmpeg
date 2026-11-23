@@ -197,7 +197,7 @@ fn a_node_without_a_parsed_structure_names_no_lane() {
     let mut operand = operand(&[&[20], &[30], &[40]]);
     assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(2));
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[
                 0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 1, -1, 0,
@@ -230,7 +230,7 @@ fn a_one_clause_node_names_its_lanes() {
     // Lanes 0 and 1 touch the top 10; lane 2 names the bottom 40.
     let structure = |fields: &[i32]| {
         crate::test_support::with_decode_context(|ctx| {
-            crate::design::decode::operands::face_recipe_structure(ctx, fields)
+            crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, fields)
                 .unwrap()
                 .unwrap()
         })
@@ -260,7 +260,7 @@ fn a_parsed_node_with_an_ordinal_outside_the_operands_names_no_lane() {
     let mut operand = operand(&[&[20], &[40]]);
     assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(1));
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(
             ctx,
             &[2, -1, 2, -1, 1, -1, 2, 0, -1, 1, -1, 0, 0, -1],
         )
