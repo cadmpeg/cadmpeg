@@ -951,7 +951,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A new-body `Extrude`, a `Fillet` of one of its edges, and then a cut `Extrude` of the body: the dependency entries of the cut scope and of its whole-body member, and the local identities of the selection identities of both `Extrude` items, compared with the same design without the `Fillet`.
 
-### DR-1049. Record-timestamp tables of the body-operand group and the whole-body member
+### DR-1050. Record-timestamp tables of the body-operand group and the whole-body member
 
 **Question.** Which records do record `G + 1` of the body-operand group and record `M + 1` of a whole-body member list, which record does each name as its owner, and in which form does record `M + 1` store them?
 
@@ -959,7 +959,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body, saved, then a second join `Extrude` of the same body added and saved: the entries and the owner entry of records `G + 1` and `M + 1` of each join compared with the records of the scopes that the clauses of its whole-body member name.
 
-### DR-1050. Context GUID of the whole-body member
+### DR-1051. Context GUID of the whole-body member
 
 **Question.** Which GUID does the whole-body member of a join or cut store as its context GUID?
 
@@ -967,7 +967,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body in the root component, and the same three features in a child component: the context GUID of the join's whole-body member compared with the GUIDs of the component aggregate and with the context GUID of the join's persistent selection identities.
 
-### DR-1051. GUID and tokens of the body entry of a join
+### DR-1052. GUID and tokens of the body entry of a join
 
 **Question.** Which GUID does the body entry of a join store, and which side keys of the join's tracked-results table do its tokens list?
 
