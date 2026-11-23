@@ -205,6 +205,59 @@ pub(crate) fn sphere_partition() -> Vec<u8> {
     bytes
 }
 
+/// One solid body holding two solid regions and the void region, each solid
+/// region owning one shell with one face on the shared sphere surface.
+pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
+    let sphere = sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
+        .unwrap()
+        .unwrap();
+    let header_len = records.nodes().next().unwrap().range().start;
+    let mut bytes = sphere[..header_len].to_vec();
+    node(&mut bytes, 12, 2);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1; 6]);
+    real(&mut bytes, 1.0e-8);
+    real(&mut bytes, 1.0e-8);
+    pointers(&mut bytes, &[1; 3]);
+    bytes.push(0);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1, 0]);
+    pointer(&mut bytes, 3);
+    pointers(&mut bytes, &[1, 1, 1, 8, 1, 1]);
+    for (shell, face, region) in [(3u16, 4u16, 8u16), (6, 7, 9)] {
+        node(&mut bytes, 13, shell);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, face, 1, 1, region, 1]);
+        node(&mut bytes, 14, face);
+        integer(&mut bytes, 0);
+        pointer(&mut bytes, 1);
+        real(&mut bytes, 0.0);
+        pointers(&mut bytes, &[1, 1, 1, shell, 5]);
+        bytes.push(b'+');
+        pointers(&mut bytes, &[1; 5]);
+    }
+    node(&mut bytes, 53, 5);
+    integer(&mut bytes, 0);
+    pointers(&mut bytes, &[1, 2, 1, 1, 1]);
+    bytes.push(b'+');
+    for value in [0.0, 0.0, 0.0, 0.007, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0] {
+        real(&mut bytes, value);
+    }
+    for (region, next, previous, shell, kind) in [
+        (8u16, 9u16, 1u16, 3u16, b'S'),
+        (9, 10, 8, 6, b'S'),
+        (10, 1, 9, 1, b'V'),
+    ] {
+        node(&mut bytes, 19, region);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, next, previous, shell]);
+        bytes.push(kind);
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
 fn node(bytes: &mut Vec<u8>, kind: u16, index: u16) {
     bytes.extend_from_slice(&kind.to_be_bytes());
     pointer(bytes, index);

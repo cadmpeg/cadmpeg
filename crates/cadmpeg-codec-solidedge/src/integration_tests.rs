@@ -181,6 +181,25 @@ fn primary_partition_projects_an_exact_sphere_in_millimetres() {
 }
 
 #[test]
+fn one_body_with_two_solid_regions_stays_one_body() {
+    let bytes = test_support::with_partitions(&[test_support::two_solid_regions_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    for region in &ir.geometry.regions {
+        assert_eq!(region.body, ir.geometry.bodies[0].id);
+        assert_eq!(region.shells.len(), 1);
+    }
+    assert_ne!(ir.geometry.regions[0].id, ir.geometry.regions[1].id);
+    assert_geometry_valid(ir);
+}
+
+#[test]
 fn unreadable_partition_preserves_another_partition() {
     let bytes =
         test_support::with_partitions(&[b"broken".to_vec(), test_support::sphere_partition()]);
