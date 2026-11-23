@@ -160,6 +160,7 @@ pub(crate) fn enrich_history_semantic(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(
         ctx, histories, lanes,
@@ -186,7 +187,10 @@ pub(crate) fn enrich_history_semantic(
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes)?;
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
-        ctx, histories, lanes,
+        ctx,
+        histories,
+        lanes,
+        length_unit,
     )?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
@@ -300,6 +304,7 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
@@ -309,6 +314,7 @@ pub(crate) fn project_configuration_design_states(
             histories,
             lanes,
             pmi_dimensions,
+            length_unit,
         },
         form_padding,
         work_limit,
@@ -321,6 +327,8 @@ struct ConfigurationSources<'a> {
     histories: &'a [FeatureHistory],
     lanes: &'a [crate::records::FeatureInputLane],
     pmi_dimensions: &'a [crate::records::PmiDimension],
+    /// The length unit the part states, in which a bare display reads.
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 }
 
 fn project_configuration_design_states_within(
@@ -334,6 +342,7 @@ fn project_configuration_design_states_within(
         histories,
         lanes,
         pmi_dimensions,
+        length_unit,
     } = sources;
     let mut resolved_base_features = copy_configuration_features(&ir.model.features);
     crate::resolved_features::operations::bind_extrusion_operations(
@@ -400,6 +409,7 @@ fn project_configuration_design_states_within(
             scoped_lanes,
             pmi_dimensions,
             HistoryEnrichment::Write,
+            length_unit,
         )?;
         let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(

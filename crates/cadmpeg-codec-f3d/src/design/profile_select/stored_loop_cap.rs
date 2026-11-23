@@ -261,6 +261,18 @@ pub(super) fn certified_regions_bounded_by(
     )? {
         return Ok(None);
     }
+    Ok(stored_entry_losses(regions, curves, scoped)?.map(|losses| (candidate, losses)))
+}
+
+/// The losses the stored entries `curves` charge against the certified
+/// `regions`. Each entry needs a piece that bounds a region, shares a
+/// boundary interval with a region, or enters the interior of a region
+/// without dividing it. `None` when an entry has none of these.
+fn stored_entry_losses(
+    regions: &[SketchProfileRegion],
+    curves: &[Vec<SketchEntityId>],
+    scoped: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<Vec<F3dLossCode>>, CodecError> {
     let mut coincident_boundary = false;
     let mut partial_entry = false;
     for pieces in curves {
@@ -269,35 +281,51 @@ pub(super) fn certified_regions_bounded_by(
         if pieces.iter().any(|curve| bounds_region(regions, curve)) {
             continue;
         }
-        let overlaps = pieces.iter().any(|curve| {
-            scoped
-                .entities
-                .iter()
-                .find(|entity| entity.id() == curve)
-                .is_some_and(|entity| {
-                    regions.iter().any(|region| match region {
-                        SketchProfileRegion::Trimmed {
-                            outer_boundary,
-                            hole_boundaries,
-                        } => outer_boundary
-                            .iter()
-                            .chain(hole_boundaries.iter().flatten())
-                            .any(|use_| {
-                                crate::design::geometry::curve_overlaps_boundary_use(
-                                    entity,
-                                    use_,
-                                    scoped.entities,
-                                    scoped.linear_tolerance,
-                                )
-                            }),
-                        SketchProfileRegion::Loops { .. } => false,
-                    })
-                })
+        let entities = pieces
+            .iter()
+            .filter_map(|curve| scoped.entities.iter().find(|entity| entity.id() == curve))
+            .collect::<Vec<_>>();
+        let overlaps = entities.iter().any(|entity| {
+            regions.iter().any(|region| match region {
+                SketchProfileRegion::Trimmed {
+                    outer_boundary,
+                    hole_boundaries,
+                } => outer_boundary
+                    .iter()
+                    .chain(hole_boundaries.iter().flatten())
+                    .any(|use_| {
+                        crate::design::geometry::curve_overlaps_boundary_use(
+                            entity,
+                            use_,
+                            scoped.entities,
+                            scoped.linear_tolerance,
+                        )
+                    }),
+                SketchProfileRegion::Loops { .. } => false,
+            })
         });
-        if !overlaps {
+        if overlaps {
+            coincident_boundary = true;
+            continue;
+        }
+        // A piece inside the selected material that bounds no selected
+        // region does not divide it: the stored loop traverses it as a slit.
+        let mut enters = false;
+        for entity in &entities {
+            if cap_regions::overlap::curve_enters_region_interior(
+                entity,
+                regions,
+                scoped.entities,
+                scoped.linear_tolerance,
+                scoped.ctx,
+            )? {
+                enters = true;
+                break;
+            }
+        }
+        if !enters {
             return Ok(None);
         }
-        coincident_boundary = true;
     }
     let mut losses = Vec::new();
     if partial_entry {
@@ -306,7 +334,7 @@ pub(super) fn certified_regions_bounded_by(
     if coincident_boundary {
         losses.push(F3dLossCode::FeatureProfileCoincidentBoundaryAssumed);
     }
-    Ok(Some((candidate, losses)))
+    Ok(Some(losses))
 }
 
 /// Whether `curve` has a use in the exterior or a hole ring of a region.

@@ -13,7 +13,6 @@ use cadmpeg_core::CodecError;
 
 use crate::design::feature::FeatureOperation;
 use crate::design::names::NameKind;
-use crate::design::names::TopoName;
 use crate::design::ops::datum::DatumElement;
 use crate::design::refs::{EntityRef, Evaluated, Member, Position};
 use crate::design::selection::{
@@ -26,7 +25,8 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
 use super::index::{DesignIndex, StateAt};
-use super::names::{derived_kinds, nested};
+use super::matching::Matchers;
+use super::names::derived_kinds;
 use super::records::{DesignRecords, MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
@@ -35,22 +35,15 @@ use super::{native_text, record_finding, Held, Holder};
 /// Where a pick sits: its holder, its selection's anchor, and the definition
 /// it resolves in without a context.
 #[derive(Clone, Copy)]
-struct Site<'a> {
-    holder: Holder<'a>,
-    anchor: &'a Anchor,
-    owner: Option<&'a ProductDefinitionId>,
+pub(super) struct Site<'a> {
+    pub(super) holder: Holder<'a>,
+    pub(super) anchor: &'a Anchor,
+    pub(super) owner: Option<&'a ProductDefinitionId>,
 }
 
-/// Checks every selection of the design, and every publication's target.
-pub(super) fn check<'a>(
-    ctx: &DecodeContext<'_>,
-    index: &DesignIndex<'a>,
-    states: &'a States<'a>,
-    held: &'a [Held<'a>],
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let moved = moved_occurrences(index.records.ir);
-    for record in held {
+impl<'a> Site<'a> {
+    /// The site of a selection that `record` holds, anchored at `anchor`.
+    pub(super) fn of(index: &DesignIndex<'a>, record: &Held<'a>, anchor: &'a Anchor) -> Self {
         let owner = match record.holder {
             Holder::Definition(_) | Holder::Owned { .. } => record
                 .holder
@@ -58,16 +51,30 @@ pub(super) fn check<'a>(
                 .and_then(|feature| index.owner_definition(feature)),
             Holder::Record { scope, .. } => scope,
         };
+        Self {
+            holder: record.holder,
+            anchor,
+            owner,
+        }
+    }
+}
+
+/// Checks every selection of the design, and every publication's target.
+pub(super) fn check<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    held: &'a [Held<'a>],
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let moved = moved_occurrences(index.records.ir);
+    for record in held {
         for selection in &record.selections {
-            let site = Site {
-                holder: record.holder,
-                anchor: selection.at,
-                owner,
-            };
+            let site = Site::of(index, record, selection.at);
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(ctx, index, states, site, pick, &moved, findings)?;
+                check_pick(ctx, index, matchers, site, pick, &moved, findings)?;
             }
         }
     }
@@ -83,7 +90,7 @@ pub(super) fn check<'a>(
         check_pick(
             ctx,
             index,
-            states,
+            matchers,
             site,
             &publication.target,
             &moved,
@@ -198,7 +205,7 @@ fn position_resolves(index: &DesignIndex<'_>, position: &Position) -> bool {
 /// The definition a pick resolves in: its context's, else the owner's.
 /// `None` where a path runs through an occurrence the document does not
 /// hold.
-fn resolving_definition<'a>(
+pub(super) fn resolving_definition<'a>(
     index: &DesignIndex<'a>,
     owner: Option<&'a ProductDefinitionId>,
     pick: &'a Picked,
@@ -308,12 +315,13 @@ fn picks_curve(pick: &Picked) -> bool {
 fn check_pick<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
-    states: &'a States<'a>,
+    matchers: &Matchers<'a>,
     site: Site<'a>,
     pick: &'a Picked,
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
         super::error(
@@ -394,14 +402,14 @@ fn check_pick<'a>(
     }
     if pick.context.is_none() {
         for state in anchored_states(index, states, site) {
-            check_in_state(states, &state, pick, at, findings);
+            check_in_state(states, matchers, &state, pick, at, findings);
         }
     }
     Ok(())
 }
 
 /// A stored state a pick resolves in.
-enum Stored<'a> {
+pub(super) enum Stored<'a> {
     /// The extents of current states.
     Extents(Vec<&'a Extent<'a>>),
     /// A stored evaluation, by id.
@@ -413,7 +421,7 @@ enum Stored<'a> {
 /// state there, else each stored evaluation of it, the end of an ordered
 /// container being the position at its rollback. None where the anchor
 /// names no stored state, or is `Native`.
-fn anchored_states<'a>(
+pub(super) fn anchored_states<'a>(
     index: &DesignIndex<'a>,
     states: &'a States<'a>,
     site: Site<'a>,
@@ -470,6 +478,7 @@ fn anchored_states<'a>(
 /// matching rule of §5.7, and its `resolved` entries are records of it.
 fn check_in_state<'a>(
     states: &States<'a>,
+    matchers: &Matchers<'a>,
     state: &Stored<'a>,
     pick: &Picked,
     at: &str,
@@ -499,16 +508,10 @@ fn check_in_state<'a>(
     let PickTarget::Entity(name) = &pick.target else {
         return;
     };
-    if matches!(name, TopoName::Bounded { .. } | TopoName::Meeting { .. }) || carries_index(name) {
+    let Some(matcher) = matchers.get(state) else {
         return;
-    }
-    let matched = match state {
-        Stored::Extents(extents) => states.extents_contain_name(extents, name),
-        Stored::Evaluation(evaluation) => states
-            .evaluation_contains_name(evaluation, name)
-            .unwrap_or(true),
     };
-    if !matched {
+    if !matcher.matches_any(name) {
         record_finding(
             findings,
             Check::Design,
@@ -517,20 +520,6 @@ fn check_in_state<'a>(
             format_args!("an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
         );
     }
-}
-
-/// Whether a name or a name nested in it states an `index`, which narrows a
-/// match only where an entry states one too.
-fn carries_index(name: &TopoName) -> bool {
-    nested(name).into_iter().any(|name| {
-        matches!(
-            name,
-            TopoName::Generated { index: Some(_), .. }
-                | TopoName::Blend { index: Some(_), .. }
-                | TopoName::Bounded { index: Some(_), .. }
-                | TopoName::Meeting { index: Some(_), .. }
-        )
-    })
 }
 
 fn target_kind(target: &PickTarget) -> &'static str {

@@ -3560,6 +3560,7 @@ mod relation_geometry_tests {
                 role: FeatureInputScalarRole::Driving,
                 operands,
                 archive_class: None,
+                archive_object_id: None,
             };
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
@@ -3822,6 +3823,7 @@ mod relation_geometry_tests {
                 role: FeatureInputScalarRole::Driving,
                 operands: relation.operands.clone(),
                 archive_class: None,
+                archive_object_id: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: vec![relation],
@@ -4121,6 +4123,7 @@ mod relation_geometry_tests {
             role: FeatureInputScalarRole::Driving,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         };
         let operand = |entity_index| FeatureInputOperand {
             offset: 700 + u64::from(entity_index),

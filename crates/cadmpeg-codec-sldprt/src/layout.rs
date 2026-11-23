@@ -2349,6 +2349,24 @@ pub(crate) mod constructed_reference_plane_fixed_frame {
     pub(crate) const V_AXIS: usize = 73;
 }
 
+/// Byte offsets for the `reference_plane_data_head` record.
+///
+/// Spec §2. Record length 49 B.
+///
+/// ```text
+/// Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`.
+/// ```
+pub(crate) mod reference_plane_data_head {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `point` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const POINT: usize = 0;
+    /// Offset of `normal` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const NORMAL: usize = 24;
+    /// Offset of `flag` (`u8`). Spec §2.
+    pub(crate) const FLAG: usize = 48;
+}
+
 /// Byte offsets for the `constructed_reference_plane_matrix_frame` record.
 ///
 /// Spec §2. Record length 121 B.
@@ -2994,6 +3012,8 @@ pub(crate) mod identity_reference_header {
 /// Offsets from the end of the name object's string. A Unicode CString follows at +16.
 /// ```
 pub(crate) mod named_object_header {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 16;
     /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
     pub(crate) const OBJECT_ID: usize = 8;
 }

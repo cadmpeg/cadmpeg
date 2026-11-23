@@ -22,7 +22,9 @@ use cadmpeg_asm::history::{
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::u64_from_index;
-use std::collections::{BTreeMap, HashMap, HashSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) mod binding_histories;
 pub(crate) mod body_closures;
@@ -80,6 +82,7 @@ mod loop_index;
 mod move_face;
 mod output_blob;
 mod output_chain;
+mod output_measure;
 mod output_properties;
 mod pattern_bodies;
 pub(crate) mod pipe_section;
@@ -209,6 +212,7 @@ pub(crate) fn decode(
     let framing = HistoryFraming::scan(bytes, stream);
     let _chamfer_orientation = chamfer_supports::HistoryScope::enter(&framing.history_id);
     let mut states = Vec::new();
+    let mut preframed_records = Vec::new();
     for (ordinal, &offset) in framing.delta_offsets.iter().enumerate() {
         let header = match read_delta_state_header(bytes, offset, width) {
             DeltaStateHeaderRead::Framed(header) => header,
@@ -231,9 +235,9 @@ pub(crate) fn decode(
             bytes,
             body_end,
             framing.delta_offsets.get(ordinal + 1).copied(),
-            stream,
-            &state_record_id,
+            (stream, &state_record_id),
             width,
+            &mut preframed_records,
         )?;
         states.push(delta_state_from_header(
             header,
@@ -246,23 +250,35 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(&mut states);
     let binding_budget_exceeded = admit_history_binding(ctx, &states, remaining_retained_bytes)?
         == HistoryBindingAdmission::Skipped;
-    if binding_budget_exceeded {
+    let cached_archive = if binding_budget_exceeded {
+        drop(preframed_records);
         for state in &mut states {
             state.bulletin_boards = Vec::new();
             state.records = Vec::new();
         }
+        None
     } else {
-        bind_complete_record_tables(ctx, &mut states, bytes, width, binding_work)?;
-    }
+        let mut preframed = HashMap::with_capacity(preframed_records.len());
+        for record in preframed_records {
+            preframed.insert(record.offset, record);
+        }
+        bind_complete_record_tables(
+            ctx,
+            &mut states,
+            bytes,
+            width,
+            binding_work,
+            Some(&mut preframed),
+        )?
+    };
     if states.is_empty() {
         return Ok(None);
     }
-    Ok(Some(framing.into_history(
-        bytes,
-        width,
-        binding_budget_exceeded,
-        states,
-    )))
+    let history = framing.into_history(bytes, width, binding_budget_exceeded, states);
+    if let Some(archive) = cached_archive {
+        history.cache_record_archive(archive);
+    }
+    Ok(Some(history))
 }
 
 /// Decode the header-only index of one ASM history stream.
@@ -500,7 +516,7 @@ pub(crate) fn admit_history_binding(
         return Ok(HistoryBindingAdmission::Admitted);
     };
     let mut changed_slots = Some(0_u64);
-    if !walk_entity_versions(states, active_count, &archived_ids, |ordinal, versions| {
+    if !walk_entity_versions_hashed(states, active_count, &archived_ids, |ordinal, versions| {
         let state = &states[ordinal];
         if state.next_ref.is_none() {
             changed_slots =
@@ -526,6 +542,7 @@ pub(crate) fn admit_history_binding(
     Ok(HistoryBindingAdmission::Admitted)
 }
 
+#[cfg(test)]
 pub(crate) fn walk_entity_versions(
     states: &[AsmDeltaState],
     active_count: i64,
@@ -540,14 +557,30 @@ pub(crate) fn walk_entity_versions(
     )
 }
 
+fn walk_entity_versions_hashed(
+    states: &[AsmDeltaState],
+    active_count: i64,
+    archived_ids: &[i64],
+    visit: impl FnMut(usize, &binding::FastMap<i64, i64>),
+) -> bool {
+    cadmpeg_asm::history::walk_entity_versions_hashed::<binding::FastBuildHasher>(
+        &delta_state_views(states),
+        active_count,
+        archived_ids,
+        visit,
+    )
+}
+
 fn bind_complete_record_tables(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
     work: &cadmpeg_core::decode::WorkBudget,
-) -> Result<(), cadmpeg_core::CodecError> {
-    binding::bind(ctx, states, bytes, width, work).map(|_| ())
+    preframed: Option<&mut HashMap<usize, cadmpeg_asm::sab::Record>>,
+) -> Result<Option<crate::history_records::CachedRecordArchive>, cadmpeg_core::CodecError> {
+    binding::bind_with_cache_and_preframed(ctx, states, bytes, width, work, preframed)
+        .map(|(_, cache)| cache)
 }
 
 pub(crate) fn decode_record_archive(
@@ -556,8 +589,23 @@ pub(crate) fn decode_record_archive(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
-    let Some(frames) =
-        cadmpeg_asm::history::decode_record_archive(ctx, &delta_state_views(states), bytes, width)?
+    decode_record_archive_with_preframed(ctx, states, bytes, width, None)
+}
+
+pub(crate) fn decode_record_archive_with_preframed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &[AsmDeltaState],
+    bytes: &[u8],
+    width: RefWidth,
+    preframed: Option<&mut HashMap<usize, cadmpeg_asm::sab::Record>>,
+) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
+    let Some(frames) = cadmpeg_asm::history::decode_record_archive_with_preframed(
+        ctx,
+        &delta_state_views(states),
+        bytes,
+        width,
+        preframed,
+    )?
     else {
         return Ok(None);
     };
@@ -605,6 +653,9 @@ pub(crate) fn projection_was_finalized(histories: &[AsmHistory]) -> bool {
         })
 }
 
+/// Maximum delta-state count for which `AsmHistory` keeps materialized state
+/// topologies cached across sequential oldest-first history passes.
+pub(crate) const KEEP_MATERIALIZED_MAX_STATES: usize = 256;
 #[cfg(test)]
 pub(crate) fn materialize_record_table(
     versions: &BTreeMap<i64, i64>,
@@ -677,14 +728,14 @@ fn decode_history_records(
     bytes: &[u8],
     state_end: usize,
     next_delta: Option<usize>,
-    stream: &str,
-    state_id: &str,
+    (stream, state_id): (&str, &str),
     width: RefWidth,
+    preframed_records: &mut Vec<cadmpeg_asm::sab::Record>,
 ) -> Result<Vec<AsmHistoryRecord>, cadmpeg_core::CodecError> {
     match frame_state_records(ctx, bytes, state_end, next_delta, width)? {
         StateRecords::Empty => Ok(Vec::new()),
         StateRecords::Framed(records) => {
-            let mut decoded = Vec::new();
+            let mut decoded = Vec::with_capacity(records.len());
             for record in records {
                 let mut entity_references = Vec::new();
 
@@ -709,14 +760,25 @@ fn decode_history_records(
                     format_args!("{:010}", record.offset),
                 );
                 let parent = state_id.to_owned();
+                let record_offset = record.offset;
+                let record_index = record.index;
+                let keep_preframed =
+                    record.name != "End-of-ASM-data" && source.last() == Some(&0x11);
+                let name = if keep_preframed {
+                    let cloned = record.name.clone();
+                    preframed_records.push(record);
+                    cloned
+                } else {
+                    record.name
+                };
                 decoded.push(AsmHistoryRecord {
                     id,
                     parent,
                     revision_id: None,
-                    byte_offset: u64_from_index(record.offset),
+                    byte_offset: u64_from_index(record_offset),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                        index: u64_from_index(record.index),
-                        name: record.name,
+                        index: u64_from_index(record_index),
+                        name,
                         entity_references,
                     },
                     raw_bytes: raw_bytes.into(),

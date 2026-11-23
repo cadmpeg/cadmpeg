@@ -373,6 +373,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         &native.feature_input_lanes,
         &[],
         None,
+        None,
     )
     .unwrap();
     assert_eq!(unprojected, 0);

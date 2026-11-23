@@ -101,6 +101,7 @@ fn parameter_scalar_binding_fixture() -> (
             role: FeatureInputScalarRole::Native,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         }],
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),

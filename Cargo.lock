@@ -526,6 +526,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-derive",
  "libm",
+ "memchr",
  "proc-macro2",
  "proptest",
  "schemars",

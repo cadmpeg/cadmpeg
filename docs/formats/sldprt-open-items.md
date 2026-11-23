@@ -692,7 +692,7 @@ resolve a seed feature?
 
 **Question.** Is the 22-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 00 00 00 00 00 00` a named-scalar header whose value begins at its end, and which roles do its trailers assign?
 
-**Known.** `sldprt.md` §2: a part writes all of its named scalars with one header width, and the primary and legacy layouts use a 22-byte header whose bytes 16 through 18 are `ff fe ff`. This other 22-byte header is the 14-byte value-only header and eight zero bytes. An f64 follows it, and a trailer of three zero bytes and the scalar object identifier follows the f64. A little-endian i32 can follow it instead, with such a trailer after the i32; the stored i32 values are positive counts. The decoder reads the value at the end of the 14-byte value-only header, so these scalars state 0.
+**Known.** `sldprt.md` §2: a part writes all of its named scalars with one header width, and the primary and legacy layouts use a 22-byte header whose bytes 16 through 18 are `ff fe ff`. This other 22-byte header is the 14-byte value-only header and eight zero bytes. An f64 follows it, and a trailer of three zero bytes and the scalar object identifier follows the f64. A little-endian i32 can follow it instead, with such a trailer after the i32; the stored i32 values are positive counts. The decoder reads the value at the end of the 14-byte value-only header, so these scalars state 0. Behind this header, the `D1` parameter object of an offset reference plane stores the plane's distance in metres at the header's end, as its display shows; behind the same header and trailer form, sketch-dimension scalars store values at the header's end that their displays do not show in every case. The decoder takes such an offset plane's distance from its display and names it under `feature.offset-plane-distance-displayed`.
 
 **Need.** Scalars of this header compared with the Keywords displays of the dimensions their names give: the value at the header's end equal to the displayed number in the part's unit settles the value offset, and the trailer bytes compared with the compact and primary trailers settle the role.
 
@@ -1174,6 +1174,56 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
 
+### EV-33. The four identifiers below an extrusion
+
+**Question.** Which objects hold the four identifiers between an extrusion's depth parameter and the extrusion?
+
+**Known.** `sldprt.md` §2.3 gives the identifier order of a sketch and its extrusion: the sketch, its dimension parameters, the extrusion's depth parameter, four identifiers and the extrusion. No `KeyWords` record, named-object header or parameter trailer that the decoder reads holds the four identifiers. The extrusion's objects after its end specification include its dimension display objects, a body chooser and a `moFromEndSpec_c` (EV-17).
+
+**Need.** The class of each object that holds one of the four identifiers, and the field that holds it, so that a writer that creates an extrusion numbers its objects as native parts do and a feature added to a part takes none of the four.
+
+**Conflict.** The writer numbers a generated part's user features first, from `23`, and their dimension parameters after them, the extrusion's depth parameter last. It writes the extrusion one above its sketch and nothing at the four identifiers. A feature added to a part takes an identifier past the largest that the decoder reads in the part, so it takes none of the four.
+
+### EV-34. The light set of the default tree
+
+**Question.** Which `moDirectionLight_c` objects and which `moEqnFolder_c` identifier does a part hold when its `moEnvFolder_c` holds fewer than three directional lights?
+
+**Known.** `sldprt.md` §2.3 gives the two identifier sets of the default nodes: directional lights `13`, `14` and `15` with the `moEqnFolder_c` `16`, or those lights and a fourth `16` with the `moEqnFolder_c` `61`. Parts of other versions that hold exactly two directional lights, at `13` and `14`, hold the `moEqnFolder_c` at an identifier other than `16`, some at `15`. Parts that hold the `moAmbientLight_c` at `12` and the `moEqnFolder_c` at `16` with `15` empty hold their directional lights at other identifiers.
+
+**Need.** The light set and `moEqnFolder_c` identifier a writer gives a generated part, so that its default tree is one native parts hold.
+
+**Conflict.** The writer writes two directional lights, `13` and `14`, and the `moEqnFolder_c` at `16`, and leaves `15` empty. No native part holds that combination. The first identifier set with a third directional light at `15` is a combination native parts hold.
+
+### EV-35. The next object identifier after an edit
+
+**Question.** What does a save that adds or deletes a node write to the creation log and to the next object identifier of `Contents/Config-N-ModelHeader` and `Header2`?
+
+**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger. A parameter object's trailer can hold an identifier at or above the next object identifier (EV-36).
+
+**Need.** Two saves of one part, before and after a feature is added, and two before and after a feature is deleted, with their creation logs and next object identifiers compared: the `moLogs_c` record and stamps of the added or deleted feature, the time stamps, and the change of the next object identifier.
+
+**Conflict.** The writer of an edited part keeps the source part's `ModelHeader` and `Header2` streams, so an added feature has no `moLogs_c` record and the next object identifier does not change. The writer gives an added feature an identifier past every identifier the decoder reads in the part's `KeyWords` records, named-object headers and parameter objects, and it does not read the next object identifier. The decoder reads the identifier of a parameter object with a tolerance or an integer value only from the object walk of the stream, and the walk reads no identifier from a feature-dimension parameter that writes its `moDimTolerance_c`. The writer counts no identifier from a parameter the walk gives none for: when that parameter holds the part's largest identifier, the added feature takes the same identifier. A part the writer generates holds no `ModelHeader` or `Header2` stream.
+
+### EV-36. Parameter identifiers that other records hold
+
+**Question.** What does the object identifier in a parameter object's trailer name when a `KeyWords` record or another parameter object of the part holds the same identifier?
+
+**Known.** `sldprt.md` §2.3 gives the parameter trailer: a zero byte, the tolerance pointer and the u32 object identifier. Parameter objects can hold identifiers that `KeyWords` records also hold, among them the `moDirectionLight_c` identifiers `13` to `16`, and one identifier can be held by many parameter objects of one part. The parameter objects that hold these identifiers form a block whose first identifier is `13` or `14` and whose last is between `37` and `53`. Several parameter objects of the block can hold one identifier, and the values the block's parameter objects hold differ between parts. An identifier of the block can be at or above the part's next object identifier (EV-35).
+
+**Need.** A part that holds such a block and a save of the same part without the feature or library object that brings the block, with their parameter objects, `KeyWords` records and next object identifiers compared.
+
+**Conflict.** The writer counts every parameter identifier the decoder reads among the part's identifiers when it numbers an added feature, so the block can raise the added feature's identifier above the next object identifier.
+
+### EV-37. The layout of the first identifiers by version
+
+**Question.** What decides which of the two layouts of the first identifiers (`sldprt.md` §2.3) a part of a version other than 14000 holds?
+
+**Known.** In the first layout `1` is the `moDetailCabinet_c`, `2`, `3` and `4` the Front, Top and Right planes and `5` the origin. In the second `2` is the `moEnvFolder_c`, `3`, `4` and `5` the planes and `6` the origin; its origin projection names feature `6` and a `moCompRefPlane_c` names the Front plane by feature `3` with plane word `3`. Parts of `swVersion` 14000 hold the first layout. Parts of other versions from 8000 to 16000 hold either layout.
+
+**Need.** Two parts of one version from 8000 to 16000 that hold different layouts, with their creation logs (EV-35) compared: the version and stamps of each part's first `moLogs_c` records.
+
+**Conflict.** The writer writes `swVersion` 14000 and the first layout.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1310,13 +1360,13 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** Sketches of either kind whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component reading, the local reading from the frame origin and the local reading from the foot of the model origin, together with the plane reference of each sketch (DI-73).
 
-### DI-81. The side of an offset reference plane that stores no frame of its own, and the u-axis of a frame stored against the source normal
+### DI-81. The u-axis of an offset-plane frame stored against the source normal
 
-**Question.** Where does an offset reference-plane object that stores no frame of the offset plane record on which side of its source plane the plane lies? Which u-axis does a stored frame of the offset plane give where its normal points against the source plane's normal?
+**Question.** Which u-axis does a stored frame of an offset reference plane give where its normal points against the source plane's normal?
 
-**Known.** `D1` is a magnitude, and a frame of the offset plane at `D1` from the source plane states the side (`sldprt.md` §2). Every dual-frame object stores such a frame, along the source normal or against it, or in the source plane where `D1` is zero. An object with a single frame stores the offset plane's frame, along or against the source normal, or the source plane's frame. An object can also store no frame, a single frame whose normal is perpendicular to the normal of the source plane its object identifies, or a frame parallel to the source plane at neither zero nor `D1` from it. The decoder takes the u-axis of a stored frame of the offset plane only where the frame's normal points the way of the source plane's normal and the u-axis lies in the plane; otherwise the offset plane keeps the source plane's u-axis.
+**Known.** The stored `D1` distance, a frame of the offset plane at that distance from the source plane, and the point at the head of the plane-data object place the offset plane and state its side (`sldprt.md` §2). A stored frame of the offset plane has its normal along the source normal or against it; the u-axis of a frame along the source normal is the offset plane's u-axis. An object can also store a single frame whose normal is perpendicular to the normal of the source plane its object identifies, or a frame or plane-data point parallel to the source plane at neither zero nor the stored distance from it. The decoder takes the u-axis of a stored frame only where the frame's normal points the way of the source plane's normal and the u-axis lies in the plane; otherwise the offset plane keeps the source plane's u-axis. It names the planes whose frame or plane-data point is not the placed plane under `feature.offset-plane-frame-conflict`.
 
-**Need.** A field that separates the dual-frame objects whose frame lies against the source normal from those along it, read in the objects without a frame of the offset plane and checked against the B-rep vertices of the features sketched on those planes. For the perpendicular frames, the source identifier of the object compared with the planes of the part.
+**Need.** Offset planes whose stored frame's normal points against the source normal, each with a sketch whose profile is not symmetric about the plane's origin, and the B-rep vertices of the features sketched on them compared with the sketch placed under each u-axis. For the perpendicular frames, the source identifier of the object compared with the planes of the part.
 
 ### DI-82. The u-axis of an angled reference plane whose offset planes store another
 

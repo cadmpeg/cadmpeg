@@ -1113,6 +1113,7 @@ cadmpeg_core::named_optional_field!(
     ArchiveParameterClass,
     "archive_class"
 );
+cadmpeg_core::named_optional_field!(deserialize_archive_object_id, u32, "archive_object_id");
 
 /// One named scalar serialized in native SI units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1151,6 +1152,15 @@ pub(crate) struct FeatureInputScalar {
         deserialize_with = "deserialize_archive_class"
     )]
     pub(crate) archive_class: Option<ArchiveParameterClass>,
+    /// Object identifier of the parameter object whose value this scalar is,
+    /// as the exact archive walk read it after the trailer's zero byte and
+    /// tolerance pointer (§2.3); `None` where the walk read no identifier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_archive_object_id"
+    )]
+    pub(crate) archive_object_id: Option<u32>,
 }
 
 /// The class of a named parameter object in the native archive.

@@ -259,4 +259,5 @@ fn a_reversed_coincident_boundary_curve_uses_the_certified_interval() {
     assert_eq!(regions.len(), 2);
 }
 
+mod slits;
 mod stale;

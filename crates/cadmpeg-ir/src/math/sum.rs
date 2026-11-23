@@ -912,6 +912,98 @@ fn normal_ratio_products<const N: usize>(
 }
 
 #[inline]
+fn two_sum(x: f64, y: f64) -> (f64, f64) {
+    let sum = x + y;
+    let b_virtual = sum - x;
+    let err = (x - (sum - b_virtual)) + (y - b_virtual);
+    (sum, err)
+}
+
+/// Exact error-free dot product via FMA `two_prod` and Shewchuk expansion for
+/// up to three normal-range products when plain binary64 cancels. Returns
+/// `None` on subnormal/overflow risk or tie-breaking boundaries.
+#[inline]
+fn exact_small_dot<const N: usize>(
+    coefficients: [f64; N],
+    components: [f64; N],
+    products: [f64; N],
+) -> Option<FiniteReal> {
+    const SAFE_LOW: f64 = 1.0e-288;
+    const SAFE_HIGH: f64 = 1.0e288;
+    if N > 3 {
+        return None;
+    }
+    let mut exp = [0.0_f64; 6];
+    let mut len = 0_usize;
+    let mut push = |term: f64| -> bool {
+        if term == 0.0 {
+            return true;
+        }
+        if !term.is_normal() || term.abs() > SAFE_HIGH {
+            return false;
+        }
+        let mut q = term;
+        let mut write = 0_usize;
+        for idx in 0..len {
+            let (s, e) = two_sum(q, exp[idx]);
+            if !s.is_finite() || (e != 0.0 && !e.is_normal()) {
+                return false;
+            }
+            q = s;
+            if e != 0.0 {
+                exp[write] = e;
+                write += 1;
+            }
+        }
+        if q != 0.0 {
+            if !q.is_normal() {
+                return false;
+            }
+            exp[write] = q;
+            write += 1;
+        }
+        len = write;
+        true
+    };
+    for index in 0..N {
+        let a = coefficients[index];
+        let b = components[index];
+        if a == 0.0 || b == 0.0 {
+            continue;
+        }
+        let p = products[index];
+        let abs_p = p.abs();
+        if !(SAFE_LOW..=SAFE_HIGH).contains(&abs_p) {
+            return None;
+        }
+        let e = a.mul_add(b, -p);
+        if !push(p) || !push(e) {
+            return None;
+        }
+    }
+    if len == 0 {
+        return Some(FiniteReal::ZERO);
+    }
+    let hi = exp[len - 1];
+    if !hi.is_normal() {
+        return None;
+    }
+    if len == 1 {
+        return FiniteReal::new(hi);
+    }
+    let mut tail_abs = 0.0_f64;
+    for &term in &exp[..len - 1] {
+        tail_abs += term.abs();
+    }
+    // Strictly below a quarter ULP of `hi`, so rounding cannot cross a midpoint.
+    if tail_abs < hi.abs() * (f64::EPSILON * 0.25) {
+        FiniteReal::new(hi)
+    } else {
+        None
+    }
+}
+
+#[inline]
 pub(crate) fn fast_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
@@ -937,8 +1029,8 @@ pub(crate) fn fast_dot<const N: usize>(
     if scale == 0.0 {
         return Some(FiniteReal::ZERO);
     }
-    if sum.abs() / scale < f64::EPSILON {
-        return None;
+    if sum.abs() < scale * f64::EPSILON {
+        return exact_small_dot(coefficients, components, products);
     }
     FiniteReal::new(sum)
 }

@@ -5496,6 +5496,7 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
     } = input;
+    let length_unit = crate::design_v11::length_unit(scan);
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
@@ -5505,6 +5506,7 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
+        length_unit,
     )?);
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
@@ -5544,6 +5546,7 @@ fn project_design_history(
         lanes,
         pmi_dimensions,
         form_padding,
+        length_unit,
     )?;
     if unprojected > 0 {
         losses.push(

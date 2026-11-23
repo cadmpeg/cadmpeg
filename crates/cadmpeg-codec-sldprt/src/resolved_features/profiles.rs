@@ -4786,6 +4786,7 @@ mod detached_legacy_sketch_tests {
                     role: crate::records::FeatureInputScalarRole::Driving,
                     operands: Vec::new(),
                     archive_class: None,
+                    archive_object_id: None,
                 })
                 .collect::<Vec<_>>();
             let relation_instances = (0..xorshift(&mut state, 8))
