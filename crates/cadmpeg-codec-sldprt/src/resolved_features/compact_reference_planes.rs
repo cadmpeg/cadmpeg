@@ -349,8 +349,9 @@ fn compact_principal_reference_plane_record(
     {
         return None;
     }
-    // The selector names the plane; the source is the plane's feature number,
-    // which differs between parts.
+    // The selector names the plane. The nonzero u32 at +0 is the plane's
+    // feature number, which differs between parts, or the time stamp of the
+    // padded form (`sldprt.md` §2).
     let plane = if selector == 2 {
         cadmpeg_ir::features::PrincipalPlane::Top
     } else {
