@@ -277,7 +277,11 @@ fn bind_one(
     let histories =
         super::histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
     let Some((history, state, previous_state)) =
-        crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+        crate::history::history_states::unique_history_state_pair(
+            histories,
+            state_id,
+            previous_state_id,
+        )
     else {
         return Ok(Vec::new());
     };

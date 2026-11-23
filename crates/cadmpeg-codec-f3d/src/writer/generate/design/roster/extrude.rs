@@ -8,14 +8,18 @@
 use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
+use super::super::extrude::profile::ProfileLoop;
 use super::super::extrude::ExtrudePlan;
 use super::super::frames::DesignRecords;
 use super::super::history::{HEAD_STATE, ROOT_STATE};
 use super::super::sketch::{CurveGeometry, PlannedSketch};
 use super::super::types;
-use super::owned::{Owned, DISCRIMINATOR};
-use super::sketches::{curve_identity, item_companion, SketchRecords, COMPONENT, OWNER_COLLECTION};
-use super::{count, Context};
+use super::owned::Owned;
+use super::sketches::{
+    curve_identity, item_companion, SketchRecords, COMPONENT, CURVE_SECONDARY_IDENTITY,
+    OWNER_COLLECTION,
+};
+use super::{count, Context, PARAMETER_DISCRIMINATOR};
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 
@@ -37,9 +41,12 @@ const DISTANCE_EXTENT: u32 = 1;
 const PROFILE_ROLE: u64 = 0x0000_0041_0000_0000;
 /// The kind word of a profile-loop entry that names a sketch curve.
 const CURVE_ENTRY: u32 = 3;
-/// The sense word of a curve-record entry whose first end is the start of
-/// the stored line.
+/// The sense word of the curve-record entry of an exterior loop entry.
 const FORWARD_SENSE: u32 = 1;
+/// The sense word of the curve-record entry of a hole loop entry (f3d.md
+/// §3.1, "Tracked results of a profile with circular holes" and the curve
+/// record of a side face).
+const HOLE_SENSE: u32 = u32::MAX;
 /// The source kinds of the two owned parameters.
 const ALONG_DISTANCE: &str = "AlongDistance";
 const TAPER_ANGLE: &str = "TaperAngle";
@@ -72,7 +79,7 @@ pub(in crate::writer::generate::design) struct ExtrudeRecords {
     pub(in crate::writer::generate::design) along: [u32; 3],
     /// The `TaperAngle` owner, its parameter and its companion.
     pub(in crate::writer::generate::design) taper: [u32; 3],
-    /// The side-face entry and curve record of each ring entry.
+    /// The side-face entry and curve record of each loop entry.
     sides: Vec<[u32; 2]>,
     body_entry: u32,
 }
@@ -121,8 +128,7 @@ impl ExtrudeRecords {
         let along = owned()?;
         let taper = owned()?;
         let sides = plan
-            .ring
-            .iter()
+            .entries()
             .map(|_| Ok([take(types::SIDE_ENTRY)?, take(types::CURVE_IDENTITIES)?]))
             .collect::<Result<Vec<_>, CodecError>>()?;
         let body_entry = take(types::BODY_ENTRY)?;
@@ -523,12 +529,15 @@ impl Item<'_> {
             .zeros(10)
             .reference(records.selection)
             .u32(1)
-            .u32(1)
-            .u32(count(self.plan.ring.len())?);
-        for entry in &self.plan.ring {
-            self.curve_entry(out, entry.curve, entry.traversal_flag())?;
+            .u32(count(self.plan.profile.len())?);
+        for profile_loop in &self.plan.profile {
+            out.u32(count(profile_loop.entries.len())?);
+            for entry in &profile_loop.entries {
+                self.curve_entry(out, entry.curve, entry.traversal_flag())?;
+            }
+            out.byte(u8::from(profile_loop.exterior));
         }
-        out.byte(1).u32(0);
+        out.u32(0);
         out.header(&classes.object, regions).zeros(8);
         self.identity(
             out,
@@ -546,7 +555,7 @@ impl Item<'_> {
     ) -> Result<(), CodecError> {
         out.u32(CURVE_ENTRY)
             .u64(self.curve_identity(curve)?)
-            .u64(0)
+            .u64(CURVE_SECONDARY_IDENTITY)
             .u32(word)
             .u32(1)
             .u32(1)
@@ -559,11 +568,10 @@ impl Item<'_> {
     }
 
     /// The tracked-results table, a side-face entry and curve record per
-    /// ring entry, and the body entry.
+    /// loop entry, and the body entry.
     fn tracked(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (records, classes) = (self.records, &self.classes);
-        let ring = &self.plan.ring;
-        let sides = count(ring.len())?;
+        let sides = count(records.sides.len())?;
         out.record(&classes.tracked, records.tracked)
             .zeros(10)
             .u32(sides + 1);
@@ -576,8 +584,7 @@ impl Item<'_> {
             .u64(body_key + 1)
             .header(&classes.object, records.tracked)
             .zeros(9);
-        for (position, (loop_entry, [entry, curve])) in ring.iter().zip(&records.sides).enumerate()
-        {
+        for ((profile_loop, position), [entry, curve]) in self.plan.entries().zip(&records.sides) {
             out.record(&classes.side, *entry)
                 .zeros(9)
                 .byte(1)
@@ -589,8 +596,13 @@ impl Item<'_> {
                 .u32(1)
                 .u32(0)
                 .u32(1);
-            self.curve_entry(out, loop_entry.curve, FORWARD_SENSE)?;
-            for neighbours in self.neighbours(position)? {
+            let sense = if profile_loop.exterior {
+                FORWARD_SENSE
+            } else {
+                HOLE_SENSE
+            };
+            self.curve_entry(out, profile_loop.entries[position].curve, sense)?;
+            for neighbours in self.neighbours(profile_loop, position)? {
                 out.u32(count(neighbours.len())?);
                 for identity in neighbours {
                     out.u64(identity);
@@ -626,25 +638,29 @@ impl Item<'_> {
         Ok(())
     }
 
-    /// The curve identities that meet the side curve of ring entry
-    /// `position` at the start and at the end of its stored line; a circle
-    /// meets none.
-    fn neighbours(&self, position: usize) -> Result<[Vec<u64>; 2], CodecError> {
-        let ring = &self.plan.ring;
+    /// The curve identities that meet the side curve of entry `position` of
+    /// `profile_loop` at its first and at its second end: for an exterior
+    /// entry the first end is the curve's start point, for a hole entry the
+    /// point where the ring starts its run of the curve. A circle meets
+    /// none.
+    fn neighbours(
+        &self,
+        profile_loop: &ProfileLoop,
+        position: usize,
+    ) -> Result<[Vec<u64>; 2], CodecError> {
+        let ring = &profile_loop.entries;
         let entry = ring[position];
         let curve =
             self.sketch.curves.get(entry.curve).ok_or_else(|| {
                 CodecError::malformed(format_args!("sketch curve {}", entry.curve))
             })?;
-        if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
+        if matches!(curve.geometry, CurveGeometry::Circle { .. }) {
             return Ok([Vec::new(), Vec::new()]);
         }
         let before = ring[(position + ring.len() - 1) % ring.len()].curve;
         let after = ring[(position + 1) % ring.len()].curve;
         let (before, after) = (self.curve_identity(before)?, self.curve_identity(after)?);
-        // The ring reaches a line's stored start from the entry before it,
-        // unless it runs the line from its end.
-        Ok(if entry.reversed {
+        Ok(if profile_loop.exterior && entry.reversed {
             [vec![after], vec![before]]
         } else {
             [vec![before], vec![after]]
@@ -667,7 +683,8 @@ pub(super) fn losses(
             records.scope
         ),
         format!(
-            "records {along} and {taper} (Extrude parameters: family discriminator {DISCRIMINATOR}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)"
+            "records {along} and {taper} (Extrude parameters: family discriminator {}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)",
+            PARAMETER_DISCRIMINATOR.code()
         ),
         format!(
             "records {} and {} (persistent selection identities: local identities {FIRST_SELECTION_IDENTITY} and {})",
@@ -683,11 +700,37 @@ pub(super) fn losses(
             "record {} (region identity record: the class of its paired header)",
             records.selection + 3
         ),
-        "sketch_attrib_def attributes of the Extrude's faces (sense 0)".to_owned(),
         "generic_tag_attrib_def body group of the Extrude's body (Design reference 1)".to_owned(),
         "record 187 (body-presentation owner: the ten bytes before its name)".to_owned(),
         "records 193, 215, 219 to 222 (the second Body owner and the parameter-side records of the import roster, kept where f3d-open-items.md DR-916 states the presentation owner as the result body's only presentation record)".to_owned(),
     ];
+    if let Some(plan) = ctx.extrude {
+        if plan.profile.iter().filter(|hole| !hole.exterior).count() > 1 {
+            entries.push(format!(
+                "record {} and the side tokens of its hole loops (the holes stored in the order of their curves' primary identities, a hole of several curves by its smallest, their side tokens in stored order, f3d-open-items.md DR-883)",
+                records.selection + 3
+            ));
+        }
+        let arcs = plan.profile.iter().any(|profile_loop| {
+            profile_loop.entries.iter().any(|entry| {
+                ctx.sketches
+                    .get(plan.sketch)
+                    .and_then(|sketch| sketch.curves.get(entry.curve))
+                    .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Arc { .. }))
+            })
+        });
+        if arcs {
+            entries.push(format!(
+                "record {} and the side tokens of each loop that holds an arc (the walk of a loop of lines, with C the loop curve of the largest record index, gives the entry order and the curve of the loop's lowest token, f3d-open-items.md DR-883)",
+                records.selection + 3
+            ));
+        }
+        if plan.reversed && (arcs || plan.profile.len() > 1) {
+            entries.push(
+                "the side tokens of the Extrude's hole loops and loops with arcs under its negative AlongDistance (each loop's tokens run against its ring from its first token, as f3d.md gives for one loop of lines, f3d-open-items.md DR-883)".to_owned(),
+            );
+        }
+    }
     let single = ctx.sketches.len() == 1;
     if !single {
         entries.push(

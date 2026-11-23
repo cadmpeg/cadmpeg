@@ -138,6 +138,13 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
+    /// A sketch keeps the retained Front fallback frame although its profile
+    /// holds principal component records, because `sldprt.md` §3.3 does not
+    /// place the profile: its Front declaration is the feature-input lane's
+    /// default, another declaration or a custom component record lies beside
+    /// the records, or the records name more than one plane. The note states
+    /// which.
+    SketchPlaneAssumed,
     /// A sketch marker that the marker layouts skip and only its `sgSketch`
     /// record admits gives no entity, because that record gives none in the
     /// sketch.
@@ -187,6 +194,13 @@ pub(crate) enum SldprtLossCode {
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
     FeatureExtrudeDirectionUnresolved,
+    /// Extrusion keeps the travel its solid shows against the reversal flag its
+    /// record states.
+    FeatureExtrudeReversalContradicted,
+    /// Extrusion travels against its profile normal on the reversal flag its
+    /// record states alone: no solid that the decoder tests holds or contradicts that
+    /// travel.
+    FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
@@ -344,6 +358,12 @@ pub(crate) enum SldprtLossCode {
     /// synthesized from the model is not written; the written configuration
     /// states the model's state.
     WriterConfigurationSnapshotEditUnwritten,
+    /// An edit cleared a decoded extrusion reversal whose end-spec flag the
+    /// writer found no place to clear.
+    WriterExtrudeReversalUnwritten,
+    /// An edit cleared a decoded extrusion reversal, and the writer cleared
+    /// the flag in a lane outside the active configuration.
+    WriterExtrudeReversalConfigurationCleared,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -388,6 +408,14 @@ pub(crate) enum SldprtLossCode {
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
+    /// Dimensions whose kind is the parameter class a compound-file lane's
+    /// own declarations alone give their scalar's class token, which assumes
+    /// the token is the lane's own.
+    DesignParameterClassAssumed,
+    /// Dimensions whose scalars' parameter classes the decoder's class
+    /// sources name differently, and whose length the equation manager's
+    /// stored value gives where their display shows it.
+    DesignParameterClassesDisagree,
     /// Equation-manager lines that the decoder does not read into the
     /// expression of the parameter they assign.
     DesignEquationUnread,
@@ -451,6 +479,7 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
+        Self::SketchPlaneAssumed,
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
@@ -472,6 +501,8 @@ impl SldprtLossCode {
         Self::FeatureSweepMergeAssumed,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
+        Self::FeatureExtrudeReversalContradicted,
+        Self::FeatureExtrudeReversalAssumed,
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
@@ -538,6 +569,8 @@ impl SldprtLossCode {
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
+        Self::WriterExtrudeReversalUnwritten,
+        Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -554,6 +587,8 @@ impl SldprtLossCode {
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
+        Self::DesignParameterClassAssumed,
+        Self::DesignParameterClassesDisagree,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
     ];
@@ -612,6 +647,7 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
+            Self::SketchPlaneAssumed => "sketch.plane-assumed",
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
@@ -630,6 +666,8 @@ impl SldprtLossCode {
             Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
+            Self::FeatureExtrudeReversalContradicted => "feature.extrude-reversal-contradicted",
+            Self::FeatureExtrudeReversalAssumed => "feature.extrude-reversal-assumed",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
@@ -704,6 +742,10 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => {
                 "writer.configuration-snapshot-edit-unwritten"
             }
+            Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
+            Self::WriterExtrudeReversalConfigurationCleared => {
+                "writer.extrude-reversal-configuration-cleared"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
@@ -740,6 +782,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
+            Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
         }
@@ -753,6 +797,8 @@ impl SldprtLossCode {
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalUnwritten => Severity::Warning,
+            Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterDrivenDimensionsOmitted => Severity::Warning,
@@ -807,6 +853,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
@@ -827,6 +874,8 @@ impl SldprtLossCode {
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
+            | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
@@ -895,6 +944,8 @@ impl SldprtLossCode {
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationUnread
             | Self::DesignEquationSource => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
@@ -913,7 +964,11 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterSolidStaleAfterEdit => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterSolidStaleAfterEdit
+            | Self::WriterExtrudeReversalUnwritten
+            | Self::WriterExtrudeReversalConfigurationCleared => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -960,6 +1015,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
@@ -1049,6 +1106,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
@@ -1070,6 +1128,8 @@ impl SldprtLossCode {
             | Self::FeatureSweepMergeAssumed
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
+            | Self::FeatureExtrudeReversalContradicted
+            | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
@@ -1292,6 +1352,7 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
+                "sketch.plane-assumed",
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
@@ -1313,6 +1374,8 @@ mod tests {
                 "feature.sweep-merge-assumed",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
+                "feature.extrude-reversal-contradicted",
+                "feature.extrude-reversal-assumed",
                 "feature.extrude-start-unresolved",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
@@ -1379,6 +1442,8 @@ mod tests {
                 "writer.native-envelope-auxiliary-omitted",
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
+                "writer.extrude-reversal-unwritten",
+                "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
@@ -1395,6 +1460,8 @@ mod tests {
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
+                "design.parameter-class-assumed",
+                "design.parameter-classes-disagree",
                 "design.equation-unread",
                 "design.equation-source",
             ]

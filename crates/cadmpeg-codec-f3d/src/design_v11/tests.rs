@@ -135,7 +135,10 @@ fn an_unresolved_coordinate_frame_keeps_the_next_timeline_item() {
             &features,
             &[timeline(STREAM, 0, &[10, 20])],
             &[],
-            &super::timeline::TailFlags::new(),
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -218,7 +221,10 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             &features,
             &timelines,
             &types,
-            &super::timeline::TailFlags::new(),
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -296,7 +302,10 @@ fn a_stream_whose_timelines_list_no_item_states_no_container() {
             &[],
             &[timeline(STREAM, 0, &[])],
             &[],
-            &super::timeline::TailFlags::new(),
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -314,7 +323,10 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             &[],
             &[timeline(STREAM, 0, &[7])],
             &[],
-            &super::timeline::TailFlags::new(),
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &super::timeline::TailFlags::new(),
+            },
             &BTreeSet::new(),
             &mut Vec::new(),
         )
@@ -359,7 +371,10 @@ fn rollback_of(
             &[],
             &[timeline(STREAM, 0, items)],
             &[],
-            &flags,
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &flags,
+            },
             &BTreeSet::new(),
             &mut losses,
         )
@@ -459,7 +474,10 @@ fn an_unprojected_item_takes_its_suppression_from_its_scope_tail() {
             &[],
             &[timeline(STREAM, 0, &[7, 8])],
             &[],
-            &flags,
+            &super::timeline::ScopeInputs {
+                records: &[],
+                tail_flags: &flags,
+            },
             &BTreeSet::new(),
             &mut Vec::new(),
         )
@@ -618,7 +636,10 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
                 &[feature],
                 &timelines,
                 &[],
-                &super::timeline::TailFlags::new(),
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &super::timeline::TailFlags::new(),
+                },
                 &current,
                 &mut Vec::new(),
             )

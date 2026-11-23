@@ -9,6 +9,8 @@ use serde_json::json;
 
 use crate::F3dCodec;
 
+const EPS_HOLE_POSITION_MM: f64 = 1.0e-8;
+
 /// The decoded IR of a corpus file as JSON, after checking that the neutral
 /// model validates.
 fn decoded(bytes: &[u8]) -> serde_json::Value {
@@ -395,6 +397,92 @@ fn a_negative_symmetric_extent_reverses_the_direction_and_its_extra_instance() {
     assert_eq!(pattern["spacing"], 10.0);
     assert_eq!(pattern["count"], 4);
     assert_eq!(pattern["symmetric"], true);
+}
+
+#[test]
+fn a_rectangular_feature_pattern_keeps_its_direction_in_the_v11_record() {
+    let ir = decoded(include_bytes!(
+        "../../../../corpus/f3d/optimized_extent_pattern.f3d"
+    ));
+    let features = ir["design"]["features"].as_array().expect("v11 features");
+    let feature = features
+        .iter()
+        .find(|feature| feature["name"] == "R-Pattern 1")
+        .expect("rectangular pattern");
+    let operation = &feature["definition"]["operation"];
+    assert_eq!(operation["kind"], "pattern");
+    let layout = &operation["value"]["layout"];
+    assert_eq!(layout["kind"], "linear");
+    let run = &layout["value"]["first"];
+    assert_eq!(
+        run["direction"]["resolved"],
+        json!({"x": 1.0, "y": 0.0, "z": 0.0})
+    );
+    assert_eq!(run["run"]["spacing"]["kind"], "span");
+    assert_eq!(
+        run["run"]["spacing"]["value"]["count"],
+        json!({"kind": "literal", "value": 3})
+    );
+    assert_eq!(
+        run["run"]["spacing"]["value"]["span"],
+        json!({"kind": "literal", "value": 20.0})
+    );
+    let mut centers = ir["geometry"]["surfaces"]
+        .as_array()
+        .expect("final surfaces")
+        .iter()
+        .filter_map(|surface| {
+            let geometry = &surface["geometry"]["value"];
+            (geometry["kind"] == "cylinder").then(|| {
+                let origin = &geometry["origin"];
+                [origin["x"].as_f64().unwrap(), origin["y"].as_f64().unwrap()]
+            })
+        })
+        .collect::<Vec<_>>();
+    centers.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    assert_eq!(centers.len(), 3);
+    for (center, expected_x) in centers.iter().zip([10.0, 20.0, 30.0]) {
+        assert!((center[0] - expected_x).abs() < EPS_HOLE_POSITION_MM);
+        assert!((center[1] - 20.0).abs() < EPS_HOLE_POSITION_MM);
+    }
+}
+
+#[test]
+fn an_unproved_body_seed_keeps_its_native_record_and_final_geometry() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../../corpus/f3d/symmetric_pattern_body.f3d"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the body pattern");
+    assert_eq!(result.ir().geometry.bodies.len(), 5);
+    let feature = result
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("R-Pattern 1"))
+        .expect("body pattern feature");
+    let cadmpeg_ir::design::feature::FeatureOperation::Pattern(pattern) =
+        &feature.definition.operation
+    else {
+        panic!("typed body pattern");
+    };
+    let cadmpeg_ir::design::ops::body::PatternSeeds::Bodies { bodies, join } = &pattern.seeds
+    else {
+        panic!("body seeds");
+    };
+    assert_eq!(*join, None);
+    let cadmpeg_ir::design::selection::Picks::Named(picks) = &bodies.picks else {
+        panic!("native body seed");
+    };
+    assert!(picks.as_slice()[0].native.is_some());
+    assert!(feature.native_ref.is_some());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureRectangularPatternDesignNative.kind()
+    }));
 }
 
 #[test]

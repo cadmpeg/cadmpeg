@@ -2,7 +2,9 @@
 //! Treatment candidate behavior over historical topology.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{treatment_edge_candidates, treatment_radius_candidates};
+use crate::history::treatment_candidates::{
+    treatment_edge_candidates, treatment_radius_candidates,
+};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalRelation,
     AsmHistoricalSurfaceRadius, AsmHistoricalTopology,

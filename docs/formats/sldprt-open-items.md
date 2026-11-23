@@ -445,15 +445,15 @@ Each omitted owner-qualified construction circle can have its own current or ext
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
-### DI-16. Extrusion travel sense relative to the profile frame
+### DI-16. Travel sense of cuts and two-direction extrusions
 
-**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
+**Question.** Which native fields set the travel sense of a cut and of a two-direction extrusion relative to the profile frame?
 
-**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
+**Known.** The end-spec reversal flag at anchor +12 sets the first direction of a one-direction extrusion that adds material (`sldprt.md` §2). The flag does not predict the side of a cut. Of the one-sided cuts whose whole solid lies on one side of the sketch plane, the solid lies along the decoded normal for 62% of flag-`1` cuts and for 58% of flag-`0` cuts. Two-direction blind extrusions store flag `1` in 123 of 140 (38 of 54 joins, 85 of 86 cuts), and one-sided joins store it in 225 of 1,249. Of the two-direction joins with unequal depths, the first depth lies against the normal in 2 of 2 whose solid spans exactly the two depths. The Boolean word at anchor +8 and the nested face senses have no known meaning for the travel sense. A nested planar profile has a surface normal and a face sense.
 
-**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
+**Need.** A cut or a two-direction extrusion of the wrong sense writes a different shape. Final-cap witnesses of cuts and of two-direction extrusions with unequal depths must establish the field that sets each sense and its composition with the profile frame (SF-03).
 
-**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
+**Conflict.** For cuts, the reversal flag, the Boolean word at anchor +8 and the nested face senses each occur with both travel senses in final-cap witnesses.
 
 **Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
 
@@ -900,11 +900,11 @@ resolve a seed feature?
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
 ### EV-05. Leading word of a compound-file `ResolvedFeatures` stream
 
-**Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold, and does that stream continue the class map of `Contents/Config-N`?
+**Question.** What does the u16 that opens `Contents/Config-N-ResolvedFeatures` in a compound-file part hold?
 
-**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration.
+**Known.** `sldprt.md` §2.2: in a block-container part the stream opens with the u32 map count at which `Config-N` ended; in a compound-file part it opens with a u16 and then a class declaration. The compound-file stream continues the `Config-N` map: its first declaration takes the index at which `Config-N` ends. The decoder reads no `Config-N` map for a compound-file lane. It reads every class token of the lane as the lane's own, typed by the lane's parameter-class declarations under the order rule of `sldprt.md` §2 and by a relation class declared in place beside the token. A dimension whose kind comes from the lane's declarations alone charges `design.parameter-class-assumed`.
 
-**Need.** Without the map count, a reader cannot check its `Config-N` class map against the stream, and cannot resolve a `ResolvedFeatures` tag that names a `Config-N` class.
+**Need.** The compound-file stream does not state the index at which `Config-N` ends, so a reader cannot tell a lane's own class token from a token that names a `Config-N` class, and cannot check a walk of `Config-N` against the stream. Reading every token as the lane's own is an assumption: a lane that writes a `Config-N` class token after one of its own parameter-class declarations gives that token the lane's class. The index at which the stream's map begins, from a field that states it or from a reference in the stream to an object the stream itself declares, settles it.
 
 ### EV-06. Named-object header and feature-object block fields
 
@@ -1150,27 +1150,25 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
 
-### SF-01. Remaining Top reference forms and profile coordinates
+### SF-01. Remaining principal component reference forms and profile coordinates
 
-**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references with principal component records, mixed Top and Right component records, enclosing-context component records, lane component references, block definitions, and nested profile streams?
 
-**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
+**Known.** `sldprt.md` §3.3 defines local Top and Right component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. A profile with a Front reference and principal component records that §3.3 does not place takes the retained Front fallback N=-Y and U=-Z, and the decoder charges `sketch.plane-assumed`. A profile with Right component records can have curves that lie on edges of the final solid only under the mirrored Right mapping, or under none of the principal mappings. Nested profile streams carry their own coordinate records.
 
-**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls. For Right component records, a mirrored-polarity control separates the §3.3 Right mapping from its mirror, and the comparison separates finite edge support from intersections with carrier extensions.
 
-**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
+**Conflict.** The local Top component's N=+Y and the declared Top fallback's N=+Z select different normal axes. The Right component's N=+X and the retained fallback's N=-Y select different normal axes.
 
-### SF-02. Right component ownership and profile coordinates
+### SF-03. Sign of the decoded sketch normal off the principal planes
 
-**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
+**Question.** Which fields set the sign of a sketch normal, on a datum plane, on a plane off the model origin, and on an axis-aligned plane through the origin?
 
-**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
+**Known.** The end-spec reversal flag gives the travel of a one-direction extrusion that adds material relative to the decoded sketch normal (`sldprt.md` §2). Of the one-sided joins whose solid spans exactly their depth, the solid agrees with that rule in 428 of 433 where the sketch plane contains the model origin, and in 13 of 20 where it does not. Of the 12 joins that disagree, 3 have a datum plane on the sketch plane that faces opposite the decoded normal, 7 have a sketch plane off the origin, and 2 have neither. Where the stored flag is `1`, the solid lies against the decoded normal in 89 of 135 one-sided joins; where it is `0`, the solid lies along it in 493 of 532. Of the 45 flag-`1` one-sided joins whose whole solid lies along the decoded normal, 24 have a sketch plane off the model origin and 21 an axis-aligned sketch plane through it. Of those 21, 4 have a datum plane on the sketch plane that faces opposite the decoded normal, and 15 have no datum plane on the sketch plane.
 
-**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
+**Need.** A decoded normal of the wrong sign reverses the travel of each extrusion on that sketch. Sketches on datum planes of both orientations and sketches off the origin must establish the field that sets the sign.
 
-**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
-
-**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+**Note.** Where the solid contradicts a decoded reversal, the decoder keeps the travel that the solid shows (`feature.extrude-reversal-contradicted`). Where the solid neither holds nor contradicts a decoded reversal, the decoder keeps the reversal and names it (`feature.extrude-reversal-assumed`). A configuration state reads the flag of its own lane. The decoder takes the decoded B-rep as the solid of the active configuration (the active solid). Where the model feature travels against the normal, the state of the active configuration follows the model feature. The decoder tests each other reversed state of the active configuration against the active solid. An inactive state whose definition equals the model feature's or the active state's takes the active solid's verdict on that feature or state. Where the active solid contradicts the reversal of an extrusion, the reversed state of that extrusion travels along the normal in every configuration, and the decoder names each such state that the model feature's note does not name, with its configuration (`feature.extrude-reversal-contradicted`). For this fallback the decoder takes the sketch normal of the extrusion as the same in every configuration. Each other reversed configuration state rests on its flag, and the decoder names it with its configuration (`feature.extrude-reversal-assumed`). A write that clears a model reversal writes `0` to the flag in every lane, and names each lane outside the active configuration whose flag it clears (`writer.extrude-reversal-configuration-cleared`). To decide whether an edit changed the lanes, a write reads the configuration states back from the lanes and settles them by the same rules against the same solid, recovering each model extrusion's reading before the settlement from the direction the decoder left. The decoder does not test the opposite case: 39 joins with flag `0` whose whole solid lies against the normal keep travel along it.
 
 ### DI-69. Extrusion Boolean carriers
 

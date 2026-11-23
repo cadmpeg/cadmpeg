@@ -25,17 +25,17 @@ pub(super) fn operand_brep_history_state_pair<'a>(
     }
     for require_direct in [true, false] {
         let mut pairs = histories.iter().filter_map(|history| {
-            let pair = super::state_pair_by(
+            let pair = super::history_states::state_pair_by(
                 history,
                 state_id,
                 previous_state_id,
                 require_direct,
-                super::transition_or_header_previous_state_id,
+                super::history_states::transition_or_header_previous_state_id,
             )?;
-            let source = super::historical_brep_source(&pair.2.id)?;
+            let source = super::face_resolution::historical_brep_source(&pair.2.id)?;
             faces
                 .iter()
-                .all(|face| super::entity_in_brep_source(face.as_str(), source))
+                .all(|face| super::face_resolution::entity_in_brep_source(face.as_str(), source))
                 .then_some(pair)
         });
         if let Some(pair) = pairs.next() {
