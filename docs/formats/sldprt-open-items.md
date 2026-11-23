@@ -1200,6 +1200,22 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** A document that writes a code above `3` and stores a length scalar beside its Keywords display, so that their quotient names the unit.
 
+### DI-87. The base form of each unit object of one units table
+
+**Question.** Does every unit object of a `moUnitsTable_c` open with a base of the form its `moNumberUserUnits_c` object has?
+
+**Known.** `sldprt.md` §2.3 gives the three base forms: 44 and 48 bytes in a compound document, 62 bytes in a block-container document. The decoder measures the `moNumberUserUnits_c` object, from the end of its class declaration to the next class declaration, and reads the `moLengthUserUnits_c` display decimal places and u16 unit code at that form's offsets. A 48-byte length unit base read at the 44-byte offsets gives as its unit code the low u16 of its last u32, which is `0` or `1`.
+
+**Need.** A compound document whose `moLengthUserUnits_c` base and `moNumberUserUnits_c` object differ in length, or a field of the length unit object that states its own base form.
+
+### DI-88. The end of a units table
+
+**Question.** At which byte does the last unit object of a `moUnitsTable_c` end?
+
+**Known.** The table writes a u16 count (12, 16 or 17) and that many unit objects. A unit object is its class declaration or a reference to an earlier one, a base, and what its class adds (`sldprt.md` §2.3). `moLengthUserUnits_c` adds an object pointer to a dual length unit, which the table writes in place as a second length unit object, and `moDensityUnits_c` adds a length-unit pointer when its flag byte is set. The decoder searches from the count to the end of the configuration stream for the first `moLengthUserUnits_c` and `moNumberUserUnits_c` declarations.
+
+**Need.** The encoding of a null and of an in-place object pointer in each unit class that writes one, so that a walk of the table's count of objects ends at the table's last byte and bounds the search.
+
 ### DI-77. The +17 value of a sketch curve record
 
 **Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold? Which construction state does selector `12` declare for a full circle with role u16 `1` at +27?
