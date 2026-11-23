@@ -1577,3 +1577,87 @@ fn fragment_history_join_lists_absent_owners_and_retains_local_children() {
     assert!(skipped[0].contains("external"));
     assert!(skipped[0].contains("absent"));
 }
+
+#[test]
+fn canonical_asm_change_and_history_record_fast_paths_match_serde() {
+    use crate::history_records::{
+        AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord, AsmHistoryRecordFraming,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
+    let changes = [
+        AsmEntityChange {
+            id: "f3d:brep:change#0".to_owned(),
+            parent: "f3d:brep:board#0".to_owned(),
+            byte_offset: 42,
+            kind: AsmEntityChangeKind::Insert { new: 7 },
+        },
+        AsmEntityChange {
+            id: "f3d:brep:change#1".to_owned(),
+            parent: "f3d:brep:board#0".to_owned(),
+            byte_offset: 99,
+            kind: AsmEntityChangeKind::Delete { old: -1 },
+        },
+        AsmEntityChange {
+            id: "f3d:brep:change#2".to_owned(),
+            parent: "f3d:brep:board#0".to_owned(),
+            byte_offset: 123_456,
+            kind: AsmEntityChangeKind::Update { old: 100, new: 12 },
+        },
+    ];
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(&ctx, "asm_entity_changes", &changes)
+        .unwrap();
+    for (rec, change) in namespace.arenas()["asm_entity_changes"]
+        .iter()
+        .zip(&changes)
+    {
+        let json = serde_json::to_string(rec).unwrap();
+        let parsed = super::try_parse_canonical_asm_entity_change(&json).unwrap();
+        assert_eq!(&parsed, change);
+    }
+
+    let records = [
+        AsmHistoryRecord {
+            id: "f3d:brep:rec#0".to_owned(),
+            parent: "f3d:brep:state#0".to_owned(),
+            revision_id: Some(15),
+            byte_offset: 512,
+            framing: AsmHistoryRecordFraming::Framed {
+                index: 3,
+                name: "face".to_owned(),
+                entity_references: vec![1, -1, 42],
+            },
+            raw_bytes: vec![0x00, 0xab, 0xcd, 0xff].into(),
+        },
+        AsmHistoryRecord {
+            id: "f3d:brep:rec#1".to_owned(),
+            parent: "f3d:brep:state#0".to_owned(),
+            revision_id: None,
+            byte_offset: 0,
+            framing: AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "End-of-ASM-data".to_owned(),
+                entity_references: Vec::new(),
+            },
+            raw_bytes: vec![0x11].into(),
+        },
+    ];
+    namespace
+        .set_arena(&ctx, "asm_history_records", &records)
+        .unwrap();
+    for (rec, record) in namespace.arenas()["asm_history_records"]
+        .iter()
+        .zip(&records)
+    {
+        let json = serde_json::to_string(rec).unwrap();
+        let parsed = super::try_parse_canonical_asm_history_record(&json).unwrap();
+        assert_eq!(&parsed, record);
+    }
+}

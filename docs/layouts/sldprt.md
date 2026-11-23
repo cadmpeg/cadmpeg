@@ -3411,39 +3411,69 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
-## `length_user_units_base`
+## `units_length_unit_compound_three_word`
 
-Spec §Configuration objects · layout: byte offsets · size: 48 B
+Spec §Configuration objects · layout: byte offsets · size: 46 B
 
-The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `precision` | `u32` | little | spec | The first u32 of a `moLengthUserUnits_c` base is the number of decimal places |
-| 44 | 4 | `last_word` | `u32` | little | spec | four u32, the last `1`, 48 bytes · value `1` |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
+| 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
 
 Unstated regions:
 
-- `4..44` (40 B): A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them.
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
 
-## `length_user_units_block_base`
+## `units_length_unit_compound_four_word`
 
-Spec §Configuration objects · layout: byte offsets · size: 62 B
+Spec §Configuration objects · layout: byte offsets · size: 50 B
 
-The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 48 | `base` | `bytes[48]` | little | spec | In its four-word base form |
-| 48 | 8 | `block_real` | `f64` | little | spec | an f64, a u32 and a u16 follow |
-| 56 | 4 | `block_word` | `u32` | little | spec | an f64, a u32 and a u16 follow |
-| 60 | 2 | `block_short` | `u16` | little | spec | an f64, a u32 and a u16 follow |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+
+## `units_length_unit_block`
+
+Spec §Configuration objects · layout: byte offsets · size: 64 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+- `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
 
 ## `sketch_record_head`
 

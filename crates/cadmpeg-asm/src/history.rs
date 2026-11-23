@@ -268,7 +268,7 @@ pub fn walk_entity_versions(
     archived_ids: &[i64],
     mut visit: impl FnMut(usize, &BTreeMap<i64, i64>),
 ) -> bool {
-    let mut by_node = HashMap::new();
+    let mut by_node = HashMap::with_capacity(states.len());
     for (ordinal, state) in states.iter().enumerate() {
         by_node.insert(state.node_index, ordinal);
     }
@@ -291,7 +291,79 @@ pub fn walk_entity_versions(
     for id in 0..active_count {
         versions.insert(id, id);
     }
-    let mut visited = HashSet::new();
+    let mut visited = HashSet::with_capacity(states.len());
+    loop {
+        let state = &states[ordinal];
+        if !visited.insert(state.node_index) {
+            return false;
+        }
+        visit(ordinal, &versions);
+        for change in &state.changes {
+            match *change {
+                EntityChange::Update { old, new } => {
+                    if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
+                        return false;
+                    }
+                    versions.insert(new, old);
+                }
+                EntityChange::Insert { new } => {
+                    if versions.remove(&new).is_none() {
+                        return false;
+                    }
+                }
+                EntityChange::Delete { old } => {
+                    if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
+                        return false;
+                    }
+                    versions.insert(old, old);
+                }
+            }
+        }
+        let Some(next) = state.next_ref else {
+            break;
+        };
+        let Some(&next_ordinal) = by_node.get(&next) else {
+            return false;
+        };
+        ordinal = next_ordinal;
+    }
+    visited.len() == states.len() && versions.len() == 1 && versions.get(&0) == Some(&0)
+}
+
+/// Hash-map variant of [`walk_entity_versions`] avoiding `BTreeMap` overhead
+/// when callers only need O(1) slot-to-revision lookups.
+pub fn walk_entity_versions_hashed<S: std::hash::BuildHasher + Default>(
+    states: &[DeltaStateView<'_>],
+    active_count: i64,
+    archived_ids: &[i64],
+    mut visit: impl FnMut(usize, &HashMap<i64, i64, S>),
+) -> bool {
+    let mut by_node =
+        HashMap::<i64, usize, S>::with_capacity_and_hasher(states.len(), S::default());
+    for (ordinal, state) in states.iter().enumerate() {
+        by_node.insert(state.node_index, ordinal);
+    }
+    if by_node.len() != states.len() {
+        return false;
+    }
+    let mut heads = states
+        .iter()
+        .enumerate()
+        .filter(|(_, state)| state.previous_ref.is_none())
+        .map(|(ordinal, _)| ordinal);
+    let Some(mut ordinal) = heads.next() else {
+        return false;
+    };
+    if heads.next().is_some() {
+        return false;
+    }
+
+    let initial_cap = usize::try_from(active_count).unwrap_or(0);
+    let mut versions = HashMap::<i64, i64, S>::with_capacity_and_hasher(initial_cap, S::default());
+    for id in 0..active_count {
+        versions.insert(id, id);
+    }
+    let mut visited = HashSet::<i64, S>::with_capacity_and_hasher(states.len(), S::default());
     loop {
         let state = &states[ordinal];
         if !visited.insert(state.node_index) {
@@ -361,6 +433,21 @@ pub fn decode_record_archive(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Option<RecordArchiveFrames>, CodecError> {
+    decode_record_archive_with_preframed::<std::collections::hash_map::RandomState>(
+        ctx, states, bytes, width, None,
+    )
+}
+
+/// Variant of [`decode_record_archive`] that reuses already-framed history
+/// records keyed by byte offset when their span and name match the stream,
+/// avoiding redundant lexing of archived records.
+pub fn decode_record_archive_with_preframed<S: std::hash::BuildHasher>(
+    ctx: &DecodeContext<'_>,
+    states: &[DeltaStateView<'_>],
+    bytes: &[u8],
+    width: RefWidth,
+    mut preframed: Option<&mut HashMap<usize, Record, S>>,
+) -> Result<Option<RecordArchiveFrames>, CodecError> {
     let Some(start) = crate::asm_header::record_stream_start(bytes) else {
         return Ok(None);
     };
@@ -382,7 +469,11 @@ pub fn decode_record_archive(
         return Ok(None);
     }
     framed.truncate(active_count);
-    let mut archived_frames = HashMap::new();
+    let estimated_archived = states
+        .iter()
+        .map(|state| state.records.len())
+        .sum::<usize>();
+    let mut archived_frames = HashMap::with_capacity(estimated_archived);
     for record in states
         .iter()
         .flat_map(|state| &state.records)
@@ -400,19 +491,31 @@ pub fn decode_record_archive(
         if bytes.get(offset..limit) != Some(record.raw_bytes) {
             return Ok(None);
         }
-        let mut archived = match crate::sab::frame(ctx, bytes, offset, limit, width, None) {
-            Ok(records) => records,
-            Err(failure) => return propagated_error(failure).map_or(Ok(None), Err),
+        let reused = preframed
+            .as_deref_mut()
+            .and_then(|map| map.remove(&offset))
+            .filter(|rec| rec.len == record.raw_bytes.len() && rec.name == record.name);
+        let archived = if let Some(mut pre) = reused {
+            let mut admitted = 0_u64;
+            ctx.admit_entities(1, &mut admitted, "admit SAB native record")?;
+            pre.index = 0;
+            pre
+        } else {
+            let mut archived = match crate::sab::frame(ctx, bytes, offset, limit, width, None) {
+                Ok(records) => records,
+                Err(failure) => return propagated_error(failure).map_or(Ok(None), Err),
+            };
+            if archived.len() != 1 {
+                return Ok(None);
+            }
+            let Some(archived) = archived.pop() else {
+                return Ok(None);
+            };
+            if archived.name != record.name {
+                return Ok(None);
+            }
+            archived
         };
-        if archived.len() != 1 {
-            return Ok(None);
-        }
-        let Some(archived) = archived.pop() else {
-            return Ok(None);
-        };
-        if archived.name != record.name {
-            return Ok(None);
-        }
         if archived_frames.insert(revision_id, archived).is_some() {
             return Ok(None);
         }
@@ -440,7 +543,8 @@ pub fn historical_record_archive(
     frames: RecordArchiveFrames,
 ) -> Option<HashMap<i64, Record>> {
     let active_count = i64::try_from(frames.active.len()).ok()?;
-    let mut revision_entities = HashMap::new();
+    let total = frames.active.len() + frames.archived.len();
+    let mut revision_entities = HashMap::with_capacity(total);
     for entity_ref in 0..active_count {
         revision_entities.insert(entity_ref, entity_ref);
     }
@@ -453,7 +557,7 @@ pub fn historical_record_archive(
             return None;
         }
     }
-    let mut records = HashMap::new();
+    let mut records = HashMap::with_capacity(total);
     for (revision, record) in frames.active.into_iter().enumerate() {
         records.insert(i64::try_from(revision).ok()?, record);
     }

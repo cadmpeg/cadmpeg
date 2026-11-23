@@ -1102,14 +1102,26 @@ pub(super) fn arrangement_region_containing_points(
         return Ok(None);
     };
     let faces: &[SketchArrangementFace] = &faces;
+    let point_in_bounds = |bounds: [Point2; 2], point: Point2| {
+        point.u >= bounds[0].u - tolerance
+            && point.u <= bounds[1].u + tolerance
+            && point.v >= bounds[0].v - tolerance
+            && point.v <= bounds[1].v + tolerance
+    };
     let mut boundary = None;
     let mut boundary_count = 0;
     for face in faces {
+        if !points
+            .iter()
+            .all(|point| point_in_bounds(face.bounds, *point))
+        {
+            continue;
+        }
         let mut matches = true;
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.ring.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance) {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance, work) {
                     on_boundary = true;
                     break;
                 }
@@ -1134,13 +1146,19 @@ pub(super) fn arrangement_region_containing_points(
     let mut interior_count = 0;
     let mut assumed = false;
     for face in faces {
+        if !points
+            .iter()
+            .all(|point| point_in_bounds(face.bounds, *point))
+        {
+            continue;
+        }
         let mut excluded = false;
         let mut assumed_out = false;
         let mut assumed_in = false;
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.ring.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance) {
+                if point_on_profile_boundary_use(*point, use_, entities, tolerance, work) {
                     on_boundary = true;
                     break;
                 }
@@ -4234,10 +4252,11 @@ fn point_on_profile_boundary_use(
     use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
+    work: &ProfileGeometryWork,
 ) -> bool {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
+    let Some(entity) = work.find_entity(entities, &use_.entity) else {
         return false;
     };
     if !point_on_sketch_entity(point, entity, tolerance) {

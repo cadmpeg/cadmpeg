@@ -310,3 +310,51 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             ..
         }))));
 }
+
+#[test]
+fn configuration_hole_inherits_the_dependencies_of_its_construction() {
+    use crate::history::configuration::inherit_hole_construction_dependencies;
+    use crate::history::project::project_features;
+    use crate::history::tests::feature;
+    use std::collections::HashMap;
+
+    let histories = vec![crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            feature("native-other", Some("85"), 0),
+            feature("native-position", Some("86"), 1),
+            feature("native-profile", Some("87"), 2),
+            feature("native-hole", Some("88"), 3),
+        ],
+    }];
+    let mut base = project_features(&histories).unwrap();
+    let ids = base
+        .iter()
+        .map(|feature| feature.id.clone())
+        .collect::<Vec<_>>();
+    let mut state = base[3].clone();
+    base[3].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableChildren"),
+        "87".into(),
+    );
+    for dependency in &ids[..3] {
+        base[3].dependencies.insert(dependency.clone());
+    }
+    let base_features = base
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect::<HashMap<_, _>>();
+
+    inherit_hole_construction_dependencies(
+        &mut state,
+        &base[3],
+        &base_features,
+        &crate::records::HistoryFeatures::new(&histories),
+    );
+
+    assert_eq!(state.dependencies.as_slice(), [ids[2].clone()]);
+}
