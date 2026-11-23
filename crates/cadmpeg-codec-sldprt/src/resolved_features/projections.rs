@@ -1065,6 +1065,28 @@ pub(crate) fn note_blend_edge_generators(
             }
             _ => false,
         };
+        if named
+            && feature.native_ref.as_deref().is_some_and(|native| {
+                let mut owned = lanes
+                    .iter()
+                    .flat_map(|lane| &lane.edge_selections)
+                    .filter(|selection| selection.feature_ref == native)
+                    .peekable();
+                owned.peek().is_some() && owned.all(|selection| selection.mark_reference)
+            })
+        {
+            let name = feature
+                .name
+                .as_deref()
+                .or(feature.native_ref.as_deref())
+                .unwrap_or(feature.id.as_str());
+            losses.push(
+                crate::loss::SldprtLossCode::FeatureBlendMarkReferencesAssumed.note(format!(
+                    "every edge vector of {name} lies inside a mark record; the record's edge \
+                     references are taken as the edges the feature blends"
+                )),
+            );
+        }
         if named && !settled(feature) {
             let name = feature
                 .name

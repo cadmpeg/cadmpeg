@@ -611,8 +611,44 @@ fn a_blend_with_no_edge_outside_its_mark_record_keeps_the_record_edges() {
         blend_edge_vector(0, [1, 4, 2, 3], true),
         blend_edge_vector(1, [4, 2, 1, 0], true),
     ]);
-    super::super::project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
     assert_eq!(blend_generated_paths(&features[0]), ["1,4,2,3", "4,2,1,0"]);
+    let mut losses = Vec::new();
+    super::super::note_blend_edge_generators(
+        &features,
+        std::slice::from_ref(&lane),
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.blend-mark-references-assumed"),
+        "the substitution of the record's references is charged"
+    );
+}
+
+#[test]
+fn a_blend_with_an_edge_outside_its_mark_record_assumes_no_references() {
+    let (mut features, lane) = blend_edge_fixture(vec![
+        blend_edge_vector(0, [1, 4, 2, 3], true),
+        blend_edge_vector(1, [4, 2, 1, 0], false),
+    ]);
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
+    let mut losses = Vec::new();
+    super::super::note_blend_edge_generators(
+        &features,
+        std::slice::from_ref(&lane),
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "feature.blend-mark-references-assumed"));
 }
 
 #[test]
