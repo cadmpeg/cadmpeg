@@ -1326,6 +1326,16 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** Angled planes whose offset planes store their source frame, compared field by field with the angular frame, and the B-rep of features sketched on an angled plane itself.
 
+### DI-84. Produced bodies of a configuration without a bound partition
+
+**Question.** Which carrier states the bodies a feature produces in a configuration whose `Config-N-Partition` is absent or unbound?
+
+**Known.** The `FACE_ID_2001` producers and the `LAST_BODY_MODIFYING_FEATURE_ID` attributes of a configuration's own partition state the bodies each feature produces in that configuration (`sldprt.md` §2, §5). The decoder gives the feature states of a configuration with unresolved body membership no produced body, and a decode loss counts the configurations with unresolved body membership. The document features name their producers over every decoded partition, so a document feature can name a body that the active configuration's partition does not hold.
+
+`Config-N-FeatureBodies/LocalBodies` holds the bodies an Imported feature owns (`sldprt.md` §3.3). Where the active partition is an empty partition/deltas model, they are the active configuration's bodies. A configuration that is not active can store a `Config-N-FeatureBodies` stream with no `Config-N-Partition`. Whether those bodies are that configuration's bodies or the input of its import is not known. The decoder takes them into no state and charges the warning `config.state-imported-bodies-not-transferred` naming the configuration index; it does the same for a configuration that is not active whose partition holds no body. For the active configuration, whose bodies the model would then lack, the same loss is the error `geometry.imported-bodies-not-transferred`.
+
+**Need.** A `Config-N` or `Config-N-ResolvedFeatures` record that names output bodies by an identity the partition also stores (`ATOM_ID_2001`), compared with a configuration whose partition holds the same bodies. For `Config-N-FeatureBodies`: a configuration that is not active whose partition is an empty partition/deltas model beside such a stream, or the Imported feature of its `Config-N-ResolvedFeatures` lane naming its body by an identity the stream also stores.
+
 ### DI-85. Revolution axes that lie outside the profile plane
 
 **Question.** Which plane does the profile sketch of a revolution lie on where the axis read from its `moLineRef_w` record lies outside the plane the decoder binds the sketch to?
