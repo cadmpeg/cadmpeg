@@ -1342,7 +1342,7 @@ fn pmi_parse_cap_skips_the_remaining_candidates_and_names_the_bound() {
 }
 
 #[test]
-fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
+fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_solid() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x0021_0042,
@@ -1392,14 +1392,20 @@ fn duplicate_member_identity_replays_but_refuses_semantic_edit() {
             cadmpeg_ir::scalar::Length::new(50.0).unwrap(),
         ));
     }
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &SldprtCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    let parameter = decoded.ir().model.parameters[0].id.as_str();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref reason) if reason.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss.message.contains(parameter)),
+        "{:#?}",
+        report.losses
     );
 }
