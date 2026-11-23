@@ -1,7 +1,7 @@
 //! Tests for the `names` module.
 
 use super::super::CLASS_MARKER;
-use super::object_names;
+use super::{name_marker, object_names};
 use crate::records::operand_tag::NativeOperandTag;
 
 #[test]
@@ -35,6 +35,18 @@ fn object_names_follow_the_lane_name_class_token() {
             .collect::<Vec<_>>(),
         ["Favorites", "Boss"]
     );
+}
+
+#[test]
+fn the_name_marker_carries_the_lane_name_class_token() {
+    let mut payload = vec![0x42, 0, 0, 0, 0x13, 0];
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&18u16.to_le_bytes());
+    payload.extend_from_slice(b"moFavoriteFolder_c");
+    payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff, 1, b'F', 0]);
+
+    assert_eq!(name_marker(&payload), [0x87, 0x80, 0xff, 0xfe, 0xff]);
+    assert_eq!(name_marker(&[]), [0x04, 0x80, 0xff, 0xfe, 0xff]);
 }
 
 #[test]

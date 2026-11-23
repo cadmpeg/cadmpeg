@@ -273,5 +273,6 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
 }
 
 mod dimension_limits;
+mod tolerance_order;
 
 mod near_coincident_edges;

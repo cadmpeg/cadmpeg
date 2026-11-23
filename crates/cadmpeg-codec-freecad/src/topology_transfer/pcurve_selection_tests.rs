@@ -221,6 +221,20 @@ Co 1001000 +2 1 +2 {second_location} *
         assert_eq!(result.ir().geometry.edges.len(), expected_edges);
         assert_eq!(result.ir().geometry.vertices.len(), 2 * expected_edges);
         assert_eq!(result.ir().geometry.points.len(), 2 * expected_edges);
+        // An alias lists the edge twice at one location: its wire region is
+        // stated once and the later copy is charged.
+        let repeated = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == crate::loss::FreecadLossCode::TopologyRecordRepeated
+                        .note(String::new())
+                        .code
+            })
+            .count();
+        assert_eq!(repeated > 0, expected_edges == 1, "{repeated}");
     }
 }
 
@@ -270,4 +284,49 @@ fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutatio
         .coedges
         .iter()
         .all(|coedge| !coedge.pcurves.is_empty()));
+}
+
+#[test]
+fn a_face_two_shells_list_with_opposite_senses_is_two_faces() {
+    // One face shape at one location, listed forward by one shell and
+    // reversed by another, as the two sides of a face two solids share.
+    let brep = "CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 8
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +8 0 -7 0 *
+Wi 1001000 +6 0 -6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+Sh 1001000 -4 0 *
+Co 1001000 +3 0 +2 0 *
++1 0 *"
+        .to_owned();
+    let result = decode_shapes(&[("Shape", brep)]);
+    let faces = &result.ir().geometry.faces;
+    let [first, second] = faces.as_slice() else {
+        panic!("one face per shell: {faces:#?}");
+    };
+    assert_ne!(first.id, second.id);
+    assert_ne!(first.shell, second.shell);
+    assert_ne!(first.sense, second.sense);
+    assert!(
+        faces
+            .iter()
+            .any(|face| face.id.as_str().ends_with("%7Euse2")),
+        "{faces:#?}"
+    );
+    assert!(!result.report().losses.iter().any(|loss| matches!(
+        loss.code.local_code(),
+        "topology.record-repeated" | "id.repeated"
+    )));
 }

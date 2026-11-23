@@ -2,8 +2,7 @@
 //! Field access by schema name over one framed node.
 
 use super::{has_base_layout, PrimaryEnd, PrimaryRecord, PrimaryRecords};
-use crate::records::BaseVersion;
-use crate::records::DataType;
+use crate::records::{BaseVersion, DataType, SchemaPlan};
 use cadmpeg_core::decode::View;
 use std::ops::Range;
 
@@ -17,7 +16,7 @@ pub struct Node<'r> {
     version: BaseVersion,
 }
 
-impl PrimaryRecords<'_> {
+impl<'a> PrimaryRecords<'a> {
     /// Framed nodes in stream order.
     pub fn nodes(&self) -> impl Iterator<Item = Node<'_>> {
         self.records.iter().map(|record| Node {
@@ -31,6 +30,22 @@ impl PrimaryRecords<'_> {
     #[must_use]
     pub const fn is_terminated(&self) -> bool {
         matches!(self.end, PrimaryEnd::Terminated { .. })
+    }
+
+    /// The bytes before the first node and the bytes from the terminator to
+    /// the end of the stream, when the node sequence reaches its terminator.
+    pub(crate) fn frame(&self) -> Option<(&'a [u8], &'a [u8])> {
+        let PrimaryEnd::Terminated { terminator, .. } = &self.end else {
+            return None;
+        };
+        let start = self
+            .records
+            .first()
+            .map_or(terminator.start, |record| record.range.start);
+        Some((
+            self.source.get(..start)?,
+            self.source.get(terminator.start..)?,
+        ))
     }
 }
 
@@ -51,6 +66,34 @@ impl<'r> Node<'r> {
     #[must_use]
     pub fn range(&self) -> Range<usize> {
         self.record.range.clone()
+    }
+
+    /// The node's effective field list.
+    pub(crate) fn plan(&self) -> &'r SchemaPlan {
+        &self.record.definition
+    }
+
+    /// The bytes between the node's type and its variable count or identity:
+    /// its type's declaration when the node is the first of its type in the
+    /// stream, else empty.
+    pub(crate) fn declaration(&self) -> Option<&'r [u8]> {
+        self.source
+            .get(self.record.range.start.checked_add(2)?..self.encoding_start()?)
+    }
+
+    /// The node's variable count, identity, and fields.
+    pub(crate) fn encoding(&self) -> Option<&'r [u8]> {
+        self.source
+            .get(self.encoding_start()?..self.record.range.end)
+    }
+
+    fn encoding_start(&self) -> Option<usize> {
+        let count = if self.record.variable_length.is_some() {
+            4
+        } else {
+            0
+        };
+        self.record.identity_at.checked_sub(count)
     }
 
     /// Whether each base field of the node's type has its base name,
@@ -268,6 +311,29 @@ impl<'r> Node<'r> {
     pub fn shorts(&self, name: &str) -> Option<Vec<u16>> {
         let (mut view, count) = self.variable(name, DataType::Short)?;
         (0..count).map(|_| view.u16_be()).collect()
+    }
+
+    /// The encoded index of every transmitted pointer element, in field
+    /// order; the null index is `1`.
+    #[must_use]
+    pub fn pointer_targets(&self) -> Option<Vec<u32>> {
+        let mut out = Vec::new();
+        for (field, range) in self
+            .record
+            .definition
+            .fields
+            .iter()
+            .zip(&self.record.fields)
+        {
+            if field.data_type != DataType::Pointer {
+                continue;
+            }
+            let mut view = View::over_retained(self.source.get(range.clone())?);
+            while view.remaining() > 0 {
+                out.push(crate::pointer::read(&mut view).filter(|value| *value != 0)?);
+            }
+        }
+        Some(out)
     }
 
     /// The value of a scalar integer field.

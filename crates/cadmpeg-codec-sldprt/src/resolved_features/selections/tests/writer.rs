@@ -14,7 +14,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn semantic_writer_rejects_compact_edge_selection_edits() {
+fn semantic_writer_keeps_stored_compact_edge_selections_and_names_the_edit() {
     use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -38,7 +38,12 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
@@ -80,6 +85,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
                     references: Vec::new(),
                     producer_feature_refs: Vec::new(),
                     terminal_feature_ref: None,
+                    mark_reference: false,
                 });
         });
         let feature = ir_edit
@@ -97,22 +103,18 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact edge selection"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a compact edge selection")),
+        "{unwritten:?}"
     );
 }
 
 #[test]
-fn semantic_writer_rejects_compact_surface_selection_edits() {
+fn semantic_writer_keeps_stored_compact_surface_selections_and_names_the_edit() {
     use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     use cadmpeg_ir::features::selections::FaceSelection;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -129,7 +131,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         &resolved_feature_classes_with_ids(&[("moExtrusion_c", "UpTo", 31)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
@@ -204,16 +211,12 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact surface selection"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a compact surface selection")),
+        "{unwritten:?}"
     );
 }

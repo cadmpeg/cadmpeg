@@ -1213,6 +1213,7 @@ pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
                 records.as_array(),
             ) {
                 target.extend(records.iter().cloned());
+                target.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
             }
         }
     }

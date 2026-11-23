@@ -129,9 +129,13 @@ fn the_writer_projects_configuration_states_with_the_decoded_profile_bodies() {
         "stale".into(),
     );
     let write = |ir: &CadIr, profiles: Option<ExactProfiles>| {
-        prepare_configurations_for_write(ir, &mut Some(sldprt_native(ir)), &annotations, |_| {
-            Ok(profiles)
-        })
+        prepare_configurations_for_write(
+            ir,
+            &mut Some(sldprt_native(ir)),
+            &annotations,
+            &mut crate::history::write::edits::SourceEdits::without_source(ir),
+            |_| Ok(profiles),
+        )
     };
     write(&projected, Some(exact.clone())).unwrap();
 

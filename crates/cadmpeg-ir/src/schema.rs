@@ -532,7 +532,7 @@ impl_entity_schema!(
     crate::features::evaluation::FeatureInputTopology,
     FeatureInputTopology,
     id;
-    id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref
+    id, input_of, bodies, faces, edges, vertices, edge_geometry, face_owners, native_ref
 );
 impl EntitySchema for crate::features::evaluation::FeatureResultTopology {
     const KIND: EntityKind = EntityKind::FeatureResultTopology;

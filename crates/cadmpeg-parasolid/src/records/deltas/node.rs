@@ -4,7 +4,7 @@
 use super::{DeltasRecords, Event, EventContent, Instance};
 use crate::records::fields::NULL_REAL;
 use crate::records::instance::FieldValue;
-use crate::records::DataType;
+use crate::records::{DataType, SchemaPlan};
 use cadmpeg_core::decode::View;
 use std::ops::Range;
 
@@ -39,6 +39,51 @@ impl<'r> DeltasNode<'r> {
             }),
             _ => None,
         }
+    }
+
+    /// The node's effective field list.
+    pub(crate) fn plan(&self) -> &'r SchemaPlan {
+        self.instance.definition().plan()
+    }
+
+    /// The declaration of the node's type, after its type tag, from the
+    /// type's first use in the stream.
+    pub(crate) fn declaration(&self) -> Option<&'r [u8]> {
+        let range = self.instance.definition().declaration();
+        self.source.get(range.start.checked_add(2)?..range.end)
+    }
+
+    /// The node as a partition encodes it: its variable count, identity, and
+    /// fields, with no status byte after a pointer element and the
+    /// `(x, y, z)` row of each Hvec value.
+    pub(crate) fn primary_encoding(&self) -> Option<Vec<u8>> {
+        let mut out = Vec::new();
+        if let Some(count) = self.instance.variable_length() {
+            out.extend(count.to_be_bytes());
+        }
+        let fields = self.instance.fields();
+        let identity_end = fields.first().map_or(self.range.end, |field| field.start);
+        out.extend_from_slice(self.source.get(self.instance.identity_at()..identity_end)?);
+        for (index, (field, range)) in self.plan().fields.iter().zip(fields).enumerate() {
+            if !matches!(field.data_type, DataType::Pointer | DataType::Hvec) {
+                out.extend_from_slice(self.source.get(range.clone())?);
+                continue;
+            }
+            for value in self.values_at(index)? {
+                match value {
+                    FieldValue::Pointer { target, .. } => {
+                        crate::pointer::write(&mut out, target.get())?;
+                    }
+                    FieldValue::HvecBits(row) => {
+                        for real in &row[..3] {
+                            out.extend(real.to_bits().to_be_bytes());
+                        }
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        Some(out)
     }
 
     /// The number of effective fields.
@@ -219,6 +264,25 @@ impl<'r> DeltasNode<'r> {
         let mut out = Vec::new();
         while view.remaining() > 0 {
             out.push(f64::from_bits(view.u64_be()?));
+        }
+        Some(out)
+    }
+
+    /// The target of every transmitted pointer element, in field order; the
+    /// null index is `1`.
+    #[must_use]
+    pub fn pointer_targets(&self) -> Option<Vec<u32>> {
+        let mut out = Vec::new();
+        for (index, field) in self.instance.definition().plan().fields.iter().enumerate() {
+            if field.data_type != DataType::Pointer {
+                continue;
+            }
+            for value in self.values_at(index)? {
+                let FieldValue::Pointer { target, .. } = value else {
+                    return None;
+                };
+                out.push(target.get());
+            }
         }
         Some(out)
     }

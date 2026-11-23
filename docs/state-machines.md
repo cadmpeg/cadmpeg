@@ -53,7 +53,7 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
+Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch, and the next load ignores the sidecar with `sidecar.stale` and loads the document without it.
 
 No CLI retry loop exists.
 
@@ -199,7 +199,7 @@ Ranked by user-visible impact. “Reachable” means a constructor, deserializer
 | 2 | Feature / configuration | Active-configuration suppression compared `Feature.suppressed` only when `Some(_)`. `None` is active in `configuration_state` (`unwrap_or(false)`), so `None` plus a suppressed config row was accepted. | `validate/topology.rs` former `is_some_and`; `features.rs` `configuration_state`; `features/tests/configurations.rs` | [#1022](https://github.com/cadmpeg/cadmpeg/issues/1022) | **fixed** |
 | 3 | F3D history | `check_transitions` requires `previous_state_id` to match the `next_ref` predecessor. `face_changes_across_state_chain` still walks `transition.previous_state_id` and applies stored deltas. Callers that skip `check_transitions` can aggregate the wrong faces. | `history_records/chain.rs` `bound_chain`; `history.rs` `face_changes_across_state_chain` | [3](#issue-3-remaining-codec-machines) | open |
 | 4 | Creo `DefinitionIdentity` | `Parsed { schema_id: None, owner: Some(n) }.id()` is `0`. `BoundOwner { schema_id: None, owner_feature_id: n }.id()` is `n`. `bind_section_owners` emits both spellings. Joins that key on `id()` diverge. | `feature/definitions.rs` `id` / `bind_section_owners` | [3](#issue-3-remaining-codec-machines) | open |
-| 5 | CADIR + sidecar | Two atomic renames, no joint transaction. Crash between them yields a stale sidecar; load fails closed. | `artifact_store.rs` module docs | [3](#issue-3-remaining-codec-machines) | documented limitation |
+| 5 | CADIR + sidecar | Two atomic renames, no joint transaction. Crash between them yields a stale sidecar; load ignores it with `sidecar.stale`. | `artifact_store.rs` module docs | [3](#issue-3-remaining-codec-machines) | documented limitation |
 
 ### Examined and kept
 

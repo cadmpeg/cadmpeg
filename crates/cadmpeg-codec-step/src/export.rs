@@ -5465,13 +5465,22 @@ impl<'a> Builder<'a> {
                         _ => None,
                     };
                     if let Some(deviations) = deviations {
-                        let lower =
-                            self.emit_pmi_measure(PmiValue::from_parts(deviations.lower, quantity));
-                        let upper =
-                            self.emit_pmi_measure(PmiValue::from_parts(deviations.upper, quantity));
+                        let upper_first = annotation
+                            .source_settings
+                            .get("step:tol_order")
+                            .is_some_and(|value| {
+                                matches!(value, NativeOption::Text(Dimension::Literal(text)) if text.as_str() == "upper_lower")
+                            });
+                        let (first, second) = if upper_first {
+                            (deviations.upper, deviations.lower)
+                        } else {
+                            (deviations.lower, deviations.upper)
+                        };
+                        let first = self.emit_pmi_measure(PmiValue::from_parts(first, quantity));
+                        let second = self.emit_pmi_measure(PmiValue::from_parts(second, quantity));
                         let tolerance = self
                             .emitter
-                            .emit("TOLERANCE_VALUE", &format!("{lower},{upper}"));
+                            .emit("TOLERANCE_VALUE", &format!("{first},{second}"));
                         self.emitter.emit(
                             "PLUS_MINUS_TOLERANCE",
                             &format!("{tolerance},{characteristic}"),

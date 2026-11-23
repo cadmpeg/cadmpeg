@@ -109,6 +109,10 @@ pub struct FeatureInputTopology {
     /// Sampled geometry of edges present in this state, at most one entry
     /// per edge.
     pub edge_geometry: Vec<HistoricalEdgeGeometry>,
+    /// The body of this state that holds each of some of its faces, at most
+    /// one entry per face. A face with no entry has an owner this state does
+    /// not state.
+    pub face_owners: Vec<HistoricalFaceOwner>,
     /// Full-fidelity source state reference.
     #[serde(
         default,
@@ -116,6 +120,17 @@ pub struct FeatureInputTopology {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// The body of a feature's input state that holds one face of that state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalFaceOwner {
+    /// Face of the owning input state.
+    pub face: HistoricalFaceId,
+    /// Body of the owning input state whose shells hold the face.
+    pub body: HistoricalBodyId,
 }
 
 /// One face beside a historical edge that carries an asymmetric chamfer distance.

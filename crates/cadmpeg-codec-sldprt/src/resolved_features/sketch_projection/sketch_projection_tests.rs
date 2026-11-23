@@ -216,3 +216,313 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         } if center == Point2::new(0.0, 0.0) && radius.get() == 1.0
     ));
 }
+
+/// A planar face whose loops are `order` of a line loop (0) and a closed
+/// NURBS loop (1) whose poles leave the finite range when projected onto
+/// the face's diagonal sketch axes. The B-rep holds only the topology of
+/// the face's loops.
+fn face_with_an_unprojectable_loop(order: &[usize]) -> crate::brep::graph::Brep {
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{
+        Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Point,
+        Sense, Vertex,
+    };
+    let id = |kind: &str, n: u32| format!("test:profile:{kind}#{n}");
+    let surface = SurfaceId::mint(id("surface", 1)).unwrap();
+    let face = FaceId::mint(id("face", 1)).unwrap();
+    let loops = [1, 2].map(|n| LoopId::mint(id("loop", n)).unwrap());
+    let coedges = [1, 2].map(|n| CoedgeId::mint(id("coedge", n)).unwrap());
+    let edges = [1, 2].map(|n| EdgeId::mint(id("edge", n)).unwrap());
+    let curves = [1, 2].map(|n| CurveId::mint(id("curve", n)).unwrap());
+    let vertices = [1, 2, 3].map(|n| VertexId::mint(id("vertex", n)).unwrap());
+    let points = [1, 2, 3].map(|n| PointId::mint(id("point", n)).unwrap());
+    let far = Point3::new(1.5e308, 1.5e308, 0.0);
+    let positions = [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), far];
+    let diagonal = Vector3::new(
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+        0.0,
+    );
+    let brep = crate::brep::graph::Brep {
+        surfaces: vec![Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    diagonal,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+            native_ref: None,
+        }],
+        curves: vec![
+            Curve {
+                parameter_range: None,
+                id: curves[0].clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    LineCurve::try_new(positions[0], Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+                )),
+                source_object: None,
+                native_ref: None,
+            },
+            Curve {
+                parameter_range: None,
+                id: curves[1].clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    NurbsCurve::from_lanes(
+                        1,
+                        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+                        vec![far, Point3::new(1.6e308, 1.5e308, 0.0), far],
+                        None,
+                        false,
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+                native_ref: None,
+            },
+        ],
+        faces: vec![Face {
+            id: face.clone(),
+            shell: ShellId::mint(id("shell", 1)).unwrap(),
+            surface,
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(
+                order.iter().map(|index| loops[*index].clone()).collect(),
+            ),
+            name: None,
+            color: None,
+            tolerance: None,
+            native_ref: None,
+        }],
+        loops: (0..2)
+            .map(|index| Loop {
+                id: loops[index].clone(),
+                face: face.clone(),
+                boundary: LoopBoundary::Ring(
+                    LoopRing::new(vec![coedges[index].clone()], Vec::new()).unwrap(),
+                ),
+                native_ref: None,
+            })
+            .collect(),
+        coedges: (0..2)
+            .map(|index| Coedge {
+                id: coedges[index].clone(),
+                owner_loop: loops[index].clone(),
+                edge: edges[index].clone(),
+                radial_next: coedges[index].clone(),
+                sense: Sense::Forward,
+                pcurves: Vec::new(),
+                use_curve: None,
+                native_ref: None,
+            })
+            .collect(),
+        edges: vec![
+            Edge {
+                id: edges[0].clone(),
+                carrier: EdgeCarrier::unbounded(Some(curves[0].clone())),
+                ends: Some(EdgeEnds::new(vertices[0].clone(), vertices[1].clone())),
+                tolerance: None,
+                native_ref: None,
+            },
+            Edge {
+                id: edges[1].clone(),
+                carrier: EdgeCarrier::unbounded(Some(curves[1].clone())),
+                ends: Some(EdgeEnds::new(vertices[2].clone(), vertices[2].clone())),
+                tolerance: None,
+                native_ref: None,
+            },
+        ],
+        vertices: (0..3)
+            .map(|index| Vertex {
+                id: vertices[index].clone(),
+                point: points[index].clone(),
+                tolerance: None,
+                native_ref: None,
+            })
+            .collect(),
+        points: (0..3)
+            .map(|index| {
+                Point::new(
+                    points[index].clone(),
+                    FinitePoint3::new(positions[index]).unwrap(),
+                    None,
+                )
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let kept_vertices = order
+        .iter()
+        .flat_map(|index| if *index == 0 { vec![0, 1] } else { vec![2] })
+        .map(|index| vertices[index].clone())
+        .collect::<Vec<_>>();
+    let kept_points = kept_vertices
+        .iter()
+        .map(|vertex| PointId::mint(vertex.as_str().replace("vertex", "point")).unwrap())
+        .collect::<Vec<_>>();
+    crate::brep::graph::Brep {
+        curves: brep
+            .curves
+            .into_iter()
+            .filter(|curve| order.iter().any(|index| curves[*index] == curve.id))
+            .collect(),
+        loops: brep
+            .loops
+            .into_iter()
+            .filter(|loop_| order.iter().any(|index| loops[*index] == loop_.id))
+            .collect(),
+        coedges: brep
+            .coedges
+            .into_iter()
+            .filter(|coedge| order.iter().any(|index| coedges[*index] == coedge.id))
+            .collect(),
+        edges: brep
+            .edges
+            .into_iter()
+            .filter(|edge| order.iter().any(|index| edges[*index] == edge.id))
+            .collect(),
+        vertices: brep
+            .vertices
+            .into_iter()
+            .filter(|vertex| kept_vertices.contains(&vertex.id))
+            .collect(),
+        points: brep
+            .points
+            .into_iter()
+            .filter(|point| kept_points.contains(&point.id))
+            .collect(),
+        ..brep
+    }
+}
+
+/// The sketches the face of `brep` projects to, and the losses.
+fn project(
+    brep: &crate::brep::graph::Brep,
+) -> (
+    super::ProjectedSketches,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stream = cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures");
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let mut projected = super::ProjectedSketches::default();
+    super::project_brep(
+        &ctx,
+        brep,
+        &super::BrepSketchSource {
+            block_offset: 0,
+            stream_ordinal: 0,
+            stream_offset: 0,
+            source_stream: &stream,
+            sketch_name: "profile",
+            configuration: None,
+            native_ref: "sldprt:feature-input:resolved-features#0",
+        },
+        &mut annotations,
+        &mut losses,
+        &mut projected,
+    )
+    .expect("one unprojectable edge does not fail the projection");
+    (projected, losses)
+}
+
+#[test]
+fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
+    let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1, 0]));
+    let [sketch] = projected.sketches.as_slice() else {
+        panic!("the face states one sketch");
+    };
+    let [entity] = projected.entities.as_slice() else {
+        panic!("the line edge states the one entity");
+    };
+    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert!(sketch.profiles.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss names the refused edge");
+    };
+    assert!(loss.message.contains("test:profile:edge#2"));
+    assert!(loss.message.contains(&format!(
+        "sketch {} states no entity for the edge and no profile for loop \
+         test:profile:loop#2 or a later loop of face test:profile:face#1",
+        sketch.id
+    )));
+}
+
+#[test]
+fn a_face_whose_only_loop_is_refused_states_no_sketch_and_the_loss_names_none() {
+    let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1]));
+    assert!(projected.sketches.is_empty());
+    assert!(projected.entities.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss names the refused edge");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+    );
+    assert!(loss.message.contains("test:profile:edge#2"));
+    assert!(loss
+        .message
+        .ends_with("; face test:profile:face#1 of the feature-input stream states no sketch"));
+    assert!(!loss.message.contains("sldprt:model:sketch#"));
+}
+
+#[test]
+fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let brep = face_with_an_unprojectable_loop(&[0, 1]);
+    let stream = cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures");
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let mut projected = super::ProjectedSketches::default();
+    super::project_brep(
+        &ctx,
+        &brep,
+        &super::BrepSketchSource {
+            block_offset: 0,
+            stream_ordinal: 0,
+            stream_offset: 0,
+            source_stream: &stream,
+            sketch_name: "profile",
+            configuration: None,
+            native_ref: "sldprt:feature-input:resolved-features#0",
+        },
+        &mut annotations,
+        &mut losses,
+        &mut projected,
+    )
+    .expect("one unprojectable edge does not fail the projection");
+    let [sketch] = projected.sketches.as_slice() else {
+        panic!("the face states one sketch");
+    };
+    let [entity] = projected.entities.as_slice() else {
+        panic!("the line edge states the one entity");
+    };
+    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert_eq!(sketch.profiles.len(), 1);
+    assert_eq!(sketch.profiles[0].len(), 1);
+    assert_eq!(sketch.profiles[0][0].entity, *entity.id());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss names the refused edge");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+    );
+    assert!(loss.message.contains("test:profile:edge#2"));
+    assert!(loss.message.contains("test:profile:loop#2"));
+    assert!(loss.message.contains(sketch.id.as_str()));
+}

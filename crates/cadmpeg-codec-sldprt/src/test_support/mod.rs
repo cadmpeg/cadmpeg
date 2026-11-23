@@ -139,12 +139,13 @@ fn fixture_native_envelope_context(
         }
     };
     let scan = container::scan(&source);
-    let source =
-        if crate::container::native_layout::source_envelope(&source, &scan.blocks)?.is_some() {
-            source
-        } else {
-            container::native_envelope_fixture(&source)
-        };
+    let source = if crate::container::native_layout::source_envelope(&source, &scan.blocks, &[])?
+        .is_some()
+    {
+        source
+    } else {
+        container::native_envelope_fixture(&source)
+    };
     let mut fidelity = fidelity.unwrap_or_else(|| {
         SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&source))
     });
@@ -188,6 +189,128 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+fn decode_bytes(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+/// Writes through the public encoder with an authored native envelope, and
+/// checks that no stale-solid loss calls an edit written. Returns the report
+/// and the written part read back.
+fn write_without_stale_solid(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (
+    cadmpeg_ir::report::export::ExportReport,
+    cadmpeg_ir::codec::DecodeResult,
+) {
+    let mut output = Vec::new();
+    let report = plan_fixture_with_native_envelope(
+        EncodeInput::new(ir, Some(fidelity)),
+        TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut output)
+    .unwrap();
+    assert_eq!(
+        loss_messages(
+            &report,
+            crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit
+        ),
+        Vec::<String>::new()
+    );
+    (report, decode_bytes(output))
+}
+
+fn loss_messages(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    code: crate::loss::SldprtLossCode,
+) -> Vec<String> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+/// Writes through the public encoder with an authored native envelope a
+/// document whose feature edits the output keeps as stored, and checks that
+/// no stale-solid loss calls an edit written. Returns the messages of the
+/// unwritten feature edits and the written part read back.
+pub(crate) fn write_unwritten_feature_edits(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+    let (report, written) = write_without_stale_solid(ir, fidelity);
+    (
+        loss_messages(
+            &report,
+            crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
+        ),
+        written,
+    )
+}
+
+/// Writes through the public encoder with an authored native envelope and
+/// returns the messages of the feature edits the output keeps as stored. The
+/// write carries no other edit than a rename, so the output reads back as the
+/// source document under the edited names, and no stale-solid loss calls the
+/// edit written.
+pub(crate) fn unwritten_feature_edits(ir: &CadIr, fidelity: &SourceFidelity) -> Vec<String> {
+    let (report, written) = write_without_stale_solid(ir, fidelity);
+    let unwritten = loss_messages(
+        &report,
+        crate::loss::SldprtLossCode::WriterFeatureEditUnwritten,
+    );
+    let messages = report
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // The write reads the source image the authored envelope wraps.
+    let (_, written_from) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
+        .expect("the authored envelope context");
+    let source = written_from
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .and_then(|record| record.data())
+        .unwrap()
+        .to_vec();
+    let source = decode_bytes(source);
+    let renames = source
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let name = ir
+                .model
+                .features
+                .iter()
+                .find(|edited| edited.id == feature.id)?
+                .name
+                .clone()?;
+            let old = feature.name.clone().filter(|old| *old != name)?;
+            Some((feature.id.as_str().to_owned(), old, name))
+        })
+        .collect::<Vec<_>>();
+    let expected = readback::renamed(source.ir(), &renames);
+    assert_eq!(
+        readback::unnamed(
+            readback::beyond(
+                readback::diff(&expected, written.ir()),
+                &readback::baseline(&source)
+            ),
+            &messages
+        ),
+        Vec::new()
+    );
+    unwritten
+}
+
 /// Write an edit that shapes the solid through the public encoder, and check
 /// that the export report names the stored solid as stale.
 pub(crate) fn write_history_over_stale_solid(
@@ -222,7 +345,7 @@ pub(crate) fn write_in_native_envelope(
 ) -> Result<crate::writer::SemanticOutput, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
+    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, &[], writer)
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
@@ -269,6 +392,7 @@ pub(crate) mod native;
 pub(crate) mod nist;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
+pub(crate) mod readback;
 pub(crate) mod sketch_records;
 pub(crate) mod surfaces;
 pub(crate) mod swift;

@@ -54,16 +54,22 @@ fn malformed_optional_weldment_keeps_the_primary_model_and_whole_source() {
     assert!(!baseline.ir().geometry.faces.is_empty());
     assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
-    let code = crate::loss::SldprtLossCode::ContainerAuxiliaryParasolidRefused.kind();
-    assert_eq!(
-        decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == code)
-            .count(),
-        1
-    );
+    let code = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one record.unreadable loss names the owner's Parasolid content");
+    };
+    assert!(loss
+        .message
+        .contains("part parasolid-streams \"ThirdPty/WELDMENT_STORAGE\""));
+    assert!(decoded.ir().native.0["sldprt"].arenas()["unknowns"]
+        .iter()
+        .any(|stub| loss.message.contains(&format!(" record={}: ", stub.id()))));
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     assert_eq!(
         records
@@ -96,8 +102,7 @@ fn valid_optional_weldment_keeps_the_primary_model_without_a_refusal() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code
-            == crate::loss::SldprtLossCode::ContainerAuxiliaryParasolidRefused.kind()));
+        .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
 }
 
 #[test]
@@ -111,8 +116,8 @@ fn refused_auxiliary_owner_does_not_resurrect_a_later_generic_wrapper() {
         .sections()
         .find(|s| s.name() == Some("ThirdPty/WELDMENT_STORAGE"))
         .unwrap();
-    assert!(owner.ps_auxiliary_refusal().is_some());
     assert!(owner.ps_streams().is_empty());
+    assert_eq!(scan.given_up.len(), 1);
 }
 
 #[test]
@@ -131,10 +136,11 @@ fn malformed_auxiliary_owner_blocks_semantic_writes() {
         decoded.ir(),
         &decoded.source_fidelity().annotations,
         &records,
+        &[],
         &mut output,
     );
     assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("auxiliary Parasolid"))
+        matches!(result, Err(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("every part of the retained source"))
     );
     assert!(output.is_empty());
 }

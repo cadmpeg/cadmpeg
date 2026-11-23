@@ -643,7 +643,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#348:0 (the sketch feature names no planar sketch)",
+        "message": "1 sketch, 0 extrude and 0 revolve features state their family without operands: the sketch feature names no planar sketch (1: sldprt:model:feature#348:0)",
         "severity": "info"
       },
       {

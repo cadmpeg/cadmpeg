@@ -72,7 +72,10 @@ pub(super) fn project(feature: &Feature, losses: &mut Vec<LossNote>) -> Option<F
                 y_axis: frame.y_axis(),
                 z_axis: frame.z_axis(),
             }),
-            ..Default::default()
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved_in: BTreeMap::new(),
         }),
         link: None,
         native_options,

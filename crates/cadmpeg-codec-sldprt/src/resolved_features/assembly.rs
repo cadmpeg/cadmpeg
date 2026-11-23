@@ -23,9 +23,30 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
+/// The stream extents of the `moPMarkRecord_c` records the archive walk of
+/// each lane read, by lane id: each record's body start and end.
+pub(crate) type MarkSpans = HashMap<String, Vec<(u64, u64)>>;
+
+/// Mark the compact edge-selection vectors of `lanes` that lie inside a
+/// `moPMarkRecord_c`: they are the record's edge references, not operands of
+/// the feature that holds it.
+pub(crate) fn tag_mark_references(lanes: &mut [FeatureInputLane], spans: &MarkSpans) {
+    for lane in lanes {
+        let Some(spans) = spans.get(&lane.id) else {
+            continue;
+        };
+        for selection in &mut lane.edge_selections {
+            selection.mark_reference = spans
+                .iter()
+                .any(|&(start, end)| (start..end).contains(&selection.offset));
+        }
+    }
+}
+
 /// The feature-input lanes of a part, the exact sketch profiles of each lane,
-/// the archive walk's `moPMarkRecord_c` holders of each configuration, and
-/// the `Config-N` class map each lane continues, by lane id.
+/// the archive walk's `moPMarkRecord_c` holders of each configuration, the
+/// extents of the records, and the `Config-N` class map each lane continues,
+/// by lane id.
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -36,6 +57,7 @@ pub(crate) fn lanes(
         Vec<FeatureInputLane>,
         super::profiles::ExactProfiles,
         crate::rollback::MarkOwners,
+        MarkSpans,
         ConfigurationMaps,
     ),
     cadmpeg_core::CodecError,
@@ -48,6 +70,7 @@ pub(crate) fn lanes(
     let mut result = Vec::new();
     let mut exact = super::profiles::ExactProfiles::default();
     let mut mark_owners = crate::rollback::MarkOwners::new();
+    let mut mark_spans = MarkSpans::new();
     let mut configuration_maps = ConfigurationMaps::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
@@ -71,6 +94,15 @@ pub(crate) fn lanes(
                 &mut exact,
                 losses,
             )?;
+            mark_spans.insert(
+                lane.id.clone(),
+                marks
+                    .iter()
+                    .filter_map(|mark| {
+                        Some((u64::try_from(mark.at).ok()?, u64::try_from(mark.end).ok()?))
+                    })
+                    .collect(),
+            );
             if let Some(name) = configuration_name(section) {
                 mark_owners.insert(name.to_ascii_lowercase(), marks);
             }
@@ -80,7 +112,7 @@ pub(crate) fn lanes(
         }
         result.push(lane);
     }
-    Ok((result, exact, mark_owners, configuration_maps))
+    Ok((result, exact, mark_owners, mark_spans, configuration_maps))
 }
 
 /// Give each scalar of a `Config-N-ResolvedFeatures` lane the class and the
@@ -343,7 +375,7 @@ pub(crate) fn source_image_profiles(
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
     let scan = crate::container::scan(&ctx, root)?;
-    let (source_lanes, mut exact, _, _) =
+    let (source_lanes, mut exact, _, _, _) =
         self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
     exact.retain(|id| {
         let payload = |of: &[FeatureInputLane]| {

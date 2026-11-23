@@ -16,7 +16,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
+fn thicken_writer_keeps_stored_result_and_chain_settings_it_cannot_encode() {
     use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -24,7 +24,12 @@ fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Thicken Name="Wall" Type="Thicken" id="15" Faces="face:4" BothSides="false" Reverse="true"><Dimension Name="Thickness">2mm</Dimension></Thicken></Keywords>"#));
         let decoded = SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &source,
+                )),
+                &DecodeOptions::default(),
+            )
             .unwrap();
         let mut decoded = EditableDecodeResult::from(decoded);
         decoded.ir_mut().model.features[0]
@@ -44,15 +49,14 @@ fn thicken_writer_refuses_result_and_chain_settings_it_cannot_encode() {
                     *result = Some(SolidFeatureResult::NewBody {});
                 }
             });
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
-            matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported thicken result or tangent-chain settings")),
-            "{error}"
+            unwritten
+                .iter()
+                .any(|message| message
+                    .contains("unsupported thicken result or tangent-chain settings")),
+            "{unwritten:?}"
         );
     }
 }
@@ -610,10 +614,8 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     assert_eq!(feature.properties["Vertex"], "vertex:2");
     assert_eq!(feature.parameters["Depth"], "4mm");
     assert_eq!(feature.parameters["Depth2"], "6mm");
-    assert_eq!(
-        feature.parameters["Draft"],
-        format!("{}rad", 3f64.to_radians())
-    );
+    // A rename keeps the stored text of every parameter.
+    assert_eq!(feature.parameters["Draft"], "3deg");
 }
 
 #[test]
@@ -715,7 +717,7 @@ fn semantic_writer_round_trips_typed_draft() {
 }
 
 #[test]
-fn semantic_writer_refuses_a_two_sided_draft() {
+fn semantic_writer_keeps_the_stored_draft_for_a_two_sided_edit() {
     use cadmpeg_ir::features::direct_edit::DraftSecondSide;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -726,7 +728,12 @@ fn semantic_writer_refuses_a_two_sided_draft() {
         br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -740,15 +747,13 @@ fn semantic_writer_refuses_a_two_sided_draft() {
             *second_side = Some(DraftSecondSide::Symmetric {});
         });
     }
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported draft semantics")),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("unsupported draft semantics")),
+        "{unwritten:?}"
     );
 }
 
@@ -1420,8 +1425,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
 }
 
 #[test]
-fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+fn semantic_writer_keeps_stored_face_motion_without_losing_a_component() {
     use cadmpeg_ir::features::direct_edit::FaceMotion;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -1432,7 +1436,12 @@ fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
         br#"<Keywords><MoveFace Name="Move" Type="MoveFace" id="21" Faces="face:1" Mode="Translate" Direction="1,0,0"><Dimension Name="Distance">3mm</Dimension></MoveFace></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -1453,12 +1462,9 @@ fn semantic_writer_refuses_complete_face_motion_without_losing_a_component() {
             };
         });
     }
-    let error = crate::test_support::plan_fixture_with_native_envelope(
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
-    )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
         motion: FaceMotion::Transform { transform },
         ..
@@ -1621,7 +1627,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
+    let decoded = EditableDecodeResult::from(decoded);
     for (feature, plane) in decoded.ir().model.features[..3].iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
@@ -1674,21 +1680,6 @@ fn semantic_writer_round_trips_principal_reference_planes() {
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].kind,
         "Ebene"
     );
-
-    decoded.ir_mut().model.features[0]
-        .evaluation
-        .set_definition(FeatureDefinition::Operation(
-            FeatureOperation::DatumPrincipalPlane {
-                plane: PrincipalPlane::Right,
-            },
-        ));
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("principal-plane role"));
 }
 
 #[test]

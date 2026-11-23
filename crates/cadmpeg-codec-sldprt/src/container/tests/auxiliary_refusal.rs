@@ -11,6 +11,10 @@ fn entry() -> Vec<u8> {
     result
 }
 
+fn weldment_part(payload: &[u8]) -> cadmpeg_ir::unknown::part::Part<'_> {
+    cadmpeg_ir::unknown::part::Part::at("sldprt", "parasolid-streams", 0, payload, [])
+}
+
 #[test]
 fn malformed_compound_owner_retains_exact_physical_payload() {
     let mut payload = entry();
@@ -18,18 +22,30 @@ fn malformed_compound_owner_retains_exact_physical_payload() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    let mut given_up = Vec::new();
     let stream = crate::container::compound_stream(
         &ctx,
-        "ThirdPty/WELDMENT_STORAGE".to_owned(),
+        "ThirdPty/WELDMENT_STORAGE",
         3,
         0,
         payload.clone(),
         None,
+        &mut given_up,
     )
     .unwrap();
     assert_eq!(stream.payload, payload);
-    assert!(stream.ps_auxiliary_refusal.is_some());
     assert!(stream.ps_streams.is_empty());
+    let [part] = given_up.as_slice() else {
+        panic!("the owner's Parasolid content is one given-up part");
+    };
+    assert_eq!(
+        part.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(part
+        .loss()
+        .message
+        .contains("\"ThirdPty/WELDMENT_STORAGE\""));
 }
 
 #[test]
@@ -41,30 +57,12 @@ fn optional_owner_does_not_swallow_retention_resource_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     assert!(matches!(
         crate::container::extract_streams_for_owner(
+            &ctx,
             &payload,
             Some("ThirdPty/WELDMENT_STORAGE"),
-            &ctx
+            weldment_part(&payload),
+            &mut Vec::new(),
         ),
         Err(CodecError::ResourceLimit(_))
     ));
-}
-
-#[test]
-fn malformed_nonoptional_owner_still_fails() {
-    let error = CodecError::Malformed("owned malformed stream".to_owned());
-    let result = crate::container::contain_optional_parasolid_refusal(
-        Some("Contents/Config-0-Partition"),
-        Err(error),
-    );
-    assert!(
-        matches!(result, Err(CodecError::Malformed(message)) if message == "owned malformed stream")
-    );
-    let error = CodecError::NotImplemented("unsupported transport".to_owned());
-    let result = crate::container::contain_optional_parasolid_refusal(
-        Some("ThirdPty/WELDMENT_STORAGE"),
-        Err(error),
-    );
-    assert!(
-        matches!(result, Err(CodecError::NotImplemented(message)) if message == "unsupported transport")
-    );
 }

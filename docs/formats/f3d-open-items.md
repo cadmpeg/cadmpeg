@@ -919,6 +919,62 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A design of one Sketch and one one-sided new-body `Revolve`, saved in a stream with serializer magic `1234`: the `Body` owner of its result body compared with the 103-byte form.
 
+### DR-1045. Clauses and body recipe of a body that other features changed
+
+**Question.** When the clause identities of the whole-body member of a join or cut name scopes of families other than `Extrude`, which clauses, forms, and recipe entries does the member store, and what do the further items of its body recipe hold?
+
+**Known.** `f3d.md` §3.1 "**Whole-body member.**" and "**Body recipe.**" give the whole-body member and the body recipe, and "**A body that `Extrude` items made.**" gives the clauses and entries of a body that only `Extrude` items made. The clause forms include `2`, `3`, `4`, `8`, `9`, `32`, `33`, `64`, `65`, `128`, and `129`, and a whole-body member that a `Split` owns can store one clause of form `7` that names a new-body `Extrude` scope. By form, a clause identity can name a scope of these families: `2` a `Loft`, `Mirror`, or `SurfaceOffset` scope; `3` a `Base Feature` scope; `4` an `Extrude` or `Sweep` scope; `8` and `9` a cut `Extrude` or a `Combine` scope; `32` a new-body `Extrude`, `Pipe`, `SurfaceStitch`, or `Thicken` scope; `33` an `Extrude` scope; `64` and `65` a `Split` scope; `128` a `Mirror` scope; `129` a `Mirror` or `Loft` scope. A clause identity of form `4`, `33`, or `65` can name no scope of the persistent-id table. The entries of the recipe can name an identity that no clause of the member stores, and they can differ from the body groups of each body of the preceding state. A recipe whose member stores one clause of form `3` can store the further-item count `1` and one 24-byte item (u32 `1`, u64 `0`, u32 `1`, a u32 persistent identity of the Design stream, u32 `0`), then u32 `16`, the family name, and eight zero bytes.
+
+**Need.** A body made by a new-body `Extrude`, then split by a `Split`, mirrored by a `Mirror`, or combined by a `Combine`, then selected by a join `Extrude`: the clauses and the recipe entries of the join's whole-body member compared with the body groups of the selected body in the preceding state.
+
+### DR-1046. Body entries of a cut, and of a join with several bodies
+
+**Question.** Which cuts store body entries, and what do the body entries and their body recipes hold for a cut and for a join whose body-operand group has several members or whose tracked-results table holds several body entries?
+
+**Known.** `f3d.md` §3.1 "**Tracked results of a join or cut.**" gives the body entry of a join and the two forms of the table of a cut. The table of a cut whose result-body list is empty can hold one body entry in the form of the body entry of a join. The table of a cut whose result-body list names browser-node members can hold several body entries whose run counts are greater than `1`, some of them with a reference in the slot at offset 21. The table of a join can hold several body entries, each in the form of the body entry of a join.
+
+**Need.** A cut that splits one body into two bodies, a cut that removes material from one body and leaves one body, and a join of two bodies: their tracked-results tables, body entries, and body recipes compared.
+
+### DR-1047. Groups of the faces that a join or cut inserts
+
+**Question.** Which groups does a face carry when the transition of a join or cut inserts its `generic_tag_attrib_def` attribute?
+
+**Known.** `f3d.md` §3.1 "**Faces that a join or cut changes.**" gives the faces whose attribute the transition updates. An attribute that the transition inserts holds face groups. Each group names identities of the item only, or identities of earlier items only, and a group names one or more identities.
+
+**Need.** A cut through one face of a box `Extrude`, and a join whose start cap lies on a face of the box: the groups of each face in the preceding state and in the current state compared, with each inserted face paired with the faces that the transition deletes.
+
+### DR-1048. Dependency entries of a join or cut after other items, and selection identities
+
+**Question.** When items that store a current identity stand between the creating `Extrude` and a join or cut, which records do the scope (flag `0x400`) and the whole-body member read, and with which flags? How are the local identities of the persistent selection identities numbered across the items of a timeline?
+
+**Known.** `f3d.md` §3.1 "**Owner collection, `B65B5682` record, and dependency table.**" gives the input entries of a join or cut with no such item between. The scope reads records of earlier timeline items with flag `0x400`, and each of them is a record that the whole-body member or the profile selection reads. The whole-body member reads records with the flags `1`, `2`, and `0x10`, and a record that it reads with flag `2` belongs to an earlier timeline item. The start record and the profile selection of one item each name a persistent selection identity (type `C46D3EEB-40E1-43FA-83DC-9CB204335417`) with a u64 local identity at offset 21; the two local identities of one item differ by one or by more than one.
+
+**Need.** A new-body `Extrude`, a `Fillet` of one of its edges, and then a cut `Extrude` of the body: the dependency entries of the cut scope and of its whole-body member, and the local identities of the selection identities of both `Extrude` items, compared with the same design without the `Fillet`.
+
+### DR-1050. Record-timestamp tables of the body-operand group and the whole-body member
+
+**Question.** Which records do record `G + 1` of the body-operand group and record `M + 1` of a whole-body member list, which record does each name as its owner, and in which form does record `M + 1` store them?
+
+**Known.** `f3d.md` §3.1 "**Body-operand group.**" gives record `G + 1` as the record-timestamp table of the group, and "**Whole-body member.**" gives record `M + 1`, which the member references as its record-timestamp table, as a record of type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`. `f3d.md` §3.1 gives the record-timestamp table: the prefix with `01 01` and a u32 entry count, entries of `01 + u32 record_index + six zero bytes + u64 timestamp`, an owner entry in the same form, and eight zero bytes. DR-916 gives the records that the tables of the records of a new-body `Extrude` list in a design of `Sketch` items and one `Extrude`.
+
+**Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body, saved, then a second join `Extrude` of the same body added and saved: the entries and the owner entry of records `G + 1` and `M + 1` of each join compared with the records of the scopes that the clauses of its whole-body member name.
+
+### DR-1051. Context GUID of the whole-body member
+
+**Question.** Which GUID does the whole-body member of a join or cut store as its context GUID?
+
+**Known.** `f3d.md` §3.1 "**Whole-body member.**" gives the LP-UTF16 asset GUID and the LP-UTF16 context GUID of the member, each of 36 code units; in `whole_body_member_single_clause` their length words stand at offsets 52 and 128. The asset GUID is the asset GUID of the profile selection. The context GUID of a persistent selection identity of the start record or of the profile selection is the third LP-UTF16 GUID of the component aggregate (type `E03784ED-5E19-4E14-B9F2-3B07017018CD`) ("**Persistent selection identities.**"). The decoder frames the member and keeps neither GUID.
+
+**Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body in the root component, and the same three features in a child component: the context GUID of the join's whole-body member compared with the GUIDs of the component aggregate and with the context GUID of the join's persistent selection identities.
+
+### DR-1052. GUID and tokens of the body entry of a join
+
+**Question.** Which GUID does the body entry of a join store, and which side keys of the join's tracked-results table do its tokens list?
+
+**Known.** `f3d.md` §3.1 "**Tracked results of a join or cut.**" gives the body entry of a join: the LP-UTF16 GUID of 36 code units at offset 22, u32 `0` at offset 98, the run count `1` at offset 102, the tokens, and the u64 first persistent identity of the join scope. The GUID of the body entry of a new-body `Extrude` is the browser-node GUID of its result body (DR-881), and its tokens are the side tokens `3` to `k + 2` ("**Tracked-results table.**"). In the fixed frame of a join, the result-body node count is `0` ("**Join or cut scope frame.**").
+
+**Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
@@ -1075,6 +1131,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 - When further `Sketch` items follow the `Extrude`, each later `Sketch` scope owns the next persistent identity after `302`.
 
 **Need.** A writer of a design with further items must fill these tables, presentation records, attributes, and identities. Designs whose timeline holds several `Extrude` items or other features, compared record by record with these lists, would settle it.
+
+### DR-1049. Records after the profile group of a written sketch-driven Extrude
+
+**Question.** Does Fusion read a sketch-driven `Extrude` whose profile group `G` is followed by its identity wrapper, its item-tail companion, and its record-timestamp table, in that order?
+
+**Known.** `f3d.md` §3.1 "**Profile group.**" gives the profile group of a sketch-driven `Extrude`: a construction-operand group of type `2CA5A1CD-C99B-4C9B-91AF-57989148E841`, type version `1`, that references its 24-byte identity wrapper (type `2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B`), its item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`), and its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`). In a stream with serializer magic `1234`, the construction-operand groups of `Extrude` scopes and of `Revolve` scopes store the record-timestamp table as record `G + 1` and the item-tail companion as record `G + 2`. The identity wrapper is neither of these two records. `f3d.md` §3.1 "**Revolve groups.**" states this order for the groups of a `Revolve`. The decoder's construction-operand group reader closes a group only when the group's reference to its record-timestamp table names record `G + 1`; it reads the ordinary form when the reference to the item-tail companion names record `G + 2`.
+
+**Conflict.** The writer allocates the profile group of a sketch-driven `Extrude` as `G`, its identity wrapper as `G + 1`, its item-tail companion as `G + 2`, and its record-timestamp table as `G + 3`. The decoder leaves the group of a written `Extrude` unclosed. The written `Extrude` decodes without the group, because its projection does not read the group. The writer allocates the groups of a `Revolve` in the stored order.
+
+**Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
 
 ## 2. External references
 

@@ -351,6 +351,27 @@ consistent scaling equations, and exact EOF closure. Opaque prefix, residual, an
 zero or `ff` bytes are valid opaque values. Their values do not select
 directory membership.
 
+### 1.5 Parts
+
+Each part below has its own framing, and its end follows from that framing.
+The part kind names the part in a `record.unreadable` loss.
+
+| Part kind | Unit | Framing |
+| --- | --- | --- |
+| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) |
+| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) |
+| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
+| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
+| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
+
+A compound stream's bytes are the sectors its chain reaches through the
+sectors its size requires. Two streams whose chains reach one sector are
+both given up, and so is a stream whose chain reaches a sector of the
+compound structure; every other stream is read. A given-up stream keeps the
+bytes of the sectors its chain reached before it stopped. A native block
+that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
+given up; the directory and its other members are read.
+
 ---
 
 ## 2. Block payload families
@@ -756,7 +777,7 @@ An `moTempAxisRef_w` declaration stores two `c7 cf ff ff` handle words at declar
 
 The Hole Wizard `moTempAxisRef_w` form stores the handle pair at declaration offsets `+267` and `+271`, a zero u32 at `+275`, and a nonzero stream address at `+279`. Seven little-endian f64 values begin at `+299`: the first is the hole depth in metres, the next xyz triple is an axis point in metres, and the final xyz triple is the unit operation direction. The scalar record ends at `+355`; at most 24 zero bytes separate it from the next class declaration or typed high-bit token.
 
-An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Forms `5`, `6`, `11`, `60`, `20322`, and `22016` create a new body. Form `8` joins existing bodies. Other forms have unresolved Boolean semantics.
+An `moRevolution_c` object's Boolean form is the little-endian u32 followed by four zero bytes immediately before its declared class marker or compact object-name token. Form `8` joins existing bodies. Form `6` occurs on a revolution that makes the first body of the part and on a revolution whose material joins an earlier body, so it does not determine the Boolean operation (open item DI-92). Other forms have unresolved Boolean semantics.
 
 An `moRevolution_c` or `moRevCut_c` object consumes the immediately preceding profile feature-input object as its profile. When profile objects and revolution objects form separate ordered groups, the line-reference source identifies the consumed profile object. A profile history record without an XML source ID uses its unique feature-input object ID. A non-unique display name does not establish object identity.
 
@@ -2061,6 +2082,8 @@ A `moCompEdge_c` written in a fillet's edge list is followed by 62 zero bytes (t
 
 A `Fillet_c` fillet writes a feature, 58 bytes, and a `moPMarkRecord_c` in its *id-range* form: a little-endian u32, a little-endian u32 identifier, u32 `1`, a second identifier, sixteen zero bytes, a little-endian u32, 30 zero bytes (16 in some), a little-endian u32 count and that many identity hops, a little-endian u16 count and that many edge references, and six zero bytes — or, in place of the six bytes, a `suObList` of edge references (a chamfer's; in files of `swVersion` 12000 there are no six bytes). Then come `suObList` objects (the first holds the filleted edges), little-endian u32 `1`, u32 `0`, a `suObList`, u16 `0` and a `suObList` of `edgeRadiusObject_c` objects. An `edgeRadiusObject_c` writes its radius display dimension, a `moCompEdge_c`, 66 zero bytes, a byte `1`, a `suObList`, 58 bytes (two f64 `0.5` among them), a little-endian u32 count and that many component objects. Then come edge and face objects (`moCompEdge_c`, `moCompFace_c`), an edge preceded by a little-endian u16 (`0`, `2` or `16`) and sometimes followed by its 62-byte tail; a run of zero bytes and eight `ff` bytes; eight zero bytes; a little-endian u32 count *K* and *K* entries of two little-endian u32 (the second a flag), the radius as a little-endian f64 and a `moCompEdge_c` with its 62-byte tail; and a constant 40 bytes (u32 `6`, u16 `0`, u32 `0x5230`, `0x19`, `0x5b2d`, `0x58b7`, `0x59d1`, fourteen zero bytes). A face fillet writes a `moCompFace_c` and u16 `0` between its `suObList` objects, `faceRadiusObject_c` radii, little-endian u32 `0` and a u32 identifier in place of the eight zero bytes, and faces in place of the entries' edges. A `faceRadiusObject_c` writes its radius display dimension, a `moCompFace_c`, u16 `0`, a byte `1`, a `suObList`, 58 bytes (two f64 `0.5` among them), a little-endian u32 count *n* and *n* triples of a `moCompFace_c`, a null pointer and a `moCompEdge_c`. In fillet identity hops, the u16 before the `moFR_c` can be non-zero. A `moIndirectSurfIdRep_c` hop wraps one child hop, as the mirror-pattern hop does.
 
+The edge references inside a blend's `moPMarkRecord_c` are the record's own references, and they can name edges that the blend does not select. The edges a fillet blends are the `moCompEdge_c` objects of its first `suObList` and of its `edgeRadiusObject_c` objects, which lie outside the record; a chamfer's edge list lies after its record in the same way. A compact edge-selection vector that lies inside a `moPMarkRecord_c` is not an operand of the feature that holds the record.
+
 Offset entities: an `sgPGMProfileData_c` object writes a little-endian u16 count and that many `sgPGMLoopOffsetData_c` loops, a little-endian u16 (`0x245`), the offset distance as a little-endian f64, zero bytes (eight, or 22), and a little-endian u32 count *n* with *n* little-endian u32 loop identifiers (those of the next profile). When *n* is `0` the profile ends; otherwise a little-endian u32, u32 `0`, the next offset distance as an f64, six f64 (two points), u16 `2` and the next `sgPGMProfileData_c` written in place follow. An `sgPGMLoopOffsetData_c` writes two little-endian u32 identifiers and a little-endian u16 count and that many `sgPGMLoopOffsetEdgeData_c` objects (one little-endian u32 each). A sketch with several offsets thus writes `00 00 02 00` and a chain of profiles.
 
 A `moContextUnitComponent_c` (a component in another configuration or document) stands where a `moUnitComponent_c` may. It writes little-endian u16 `2`, a little-endian u16, little-endian u32 `1`, the configuration name as a Unicode `CString`, 44 bytes, sixteen `ff` bytes, 20 bytes and the optional version number. A `moSolidRef_w` writes one object pointer (a `moCompSolidBody_c`). A `moSavedExtBody_c` saved body writes a feature, a feature body head, a `moPMarkRecord_c`, sixteen zero bytes, a `moSolidRef_w`, a little-endian u32 count and that many u32 identifiers, i32 `-1`, u32 `0`, four little-endian u32, a transform block, ten zero bytes, four little-endian u32, the optional version number, twelve zero bytes, i32 `-1`, u32 `0`, a little-endian u32 count and that many compressed bodies. Then come u16 `1`, an object pointer, a rotation (nine f64), u32 `1`, a translation (three f64), u32 `0`, f64 `1`, 55 zero bytes, the configuration name as a Unicode `CString` and u32 `0` (four more zero bytes when the stream ends there). A `moDerivedSurfIdRep_c` identity hop wraps one child hop and ends with a little-endian u32.
@@ -2736,15 +2759,15 @@ Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` tr
 
 The post-magic cell order has no discriminator byte. A valid `00 10` interpretation has a zero or a curve-carrier attribute in `refs[3]`; a valid `00 11` interpretation has a loop attribute in `refs[1]`, a same-loop coedge in `refs[3]`, a vertex-use attribute in `refs[4]`, and an edge-use attribute in `refs[6]`. The frame is the unique interpretation that satisfies these reference invariants. If more than one interpretation satisfies them, the record has no selected topology interpretation.
 
-A deltas stream groups its records into change sets. Each change set carries a **change roster**:
+A deltas stream is a Parasolid Deltas transmit (`siemens_nx.md` §4.2) that holds the main-line history of the partition in its site. It holds the current mark's delta, then a PMARK section and a map section for each earlier main-line mark down to the mark after the initial mark, and ends at EOF with the initial mark's PMARK section (`siemens_nx.md` §4.2 "**Delta assignment.**"). The sections of marks off the main line can occur between those of main-line marks. Each delta is a change set. Its **change roster** is a section terminator followed by the delta's map prefix:
 
 ```
-00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01
+00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01  terminal:4
 ```
 
-Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
+Roster entries name, by attribute and node class, the nodes that the change into the delta's mark creates. Every entry names a node of the state at that mark. The state at the current mark is the partition, and the replay of `siemens_nx.md` §4.2 "Main-line replay" gives the state at each earlier mark.
 
-A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. A deltas stream can hold several saved versions of one identity: versions with equal data fill the record once, and versions with differing data leave the identity unresolved. The change roster carries no relation to a superseded partition face.
+A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. A deltas stream can hold several saved versions of one identity: versions with equal data fill the record once, and versions with differing data leave the identity unresolved.
 
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas
@@ -2958,8 +2981,8 @@ sequence, and through the hops a consuming feature's face reference stores
 
 | Code | Class | Fields | Design name (CADIR §5.7) |
 |---:|---|---|---|
-| 74 | `moFromSktEntSurfIdRep_c` | sketch entity id | `Generated`, role `Side` |
-| 83 | `moFromSktEnt3IntSurfIdRep_c` | sketch entity id, two integers | `Generated`, role `Side` |
+| 74 | `moFromSktEntSurfIdRep_c` | the face's local identifier | `Generated`, role `Side` |
+| 83 | `moFromSktEnt3IntSurfIdRep_c` | the face's local identifier, two integers | `Generated`, role `Side` |
 | 40 | `moEndFaceSurfIdRep_c` | end (0 start, 1 end), region | `Generated`, role `Start` or `End`, `index` the region |
 | 81 | `moEndFace3IntSurfIdRep_c` | end, region, 0 | as code 40 |
 | 72 | `moFilletSurfIdRep_c` | ordinal, 1 to the blend face count | `Blend`, `index` the ordinal |
@@ -2975,8 +2998,36 @@ regions, and mostly 0 on the one cap of an end with one; the rule that assigns
 it is not known. Some code-81 caps carry 1 as their third field; what it states
 is not known, and such a cap is `Other("sldprt:81")`. The producer and the
 timestamp are allocations: they stay in the native name. The sketch entity id
-stays there too, and the name states no generating entity, because that it is
-the sketch segment's id is not established.
+stays there too, and the name states no generating entity, because the field is
+the face's local identifier, not the object index of a sketch segment.
+
+The local identifier of a side face of a feature that extrudes a closed polygon
+of lines joins to the profile line that sweeps it through the profile's 92-byte
+line records (§2). The records of the polygon's lines are in contour order: the
+line of each record shares a corner with the line of the next record, and the
+order can run in either rotational direction. In a line record whose u32 at
+marker +80 is zero, the u32 at marker +84 is the local identifier of the side
+face that the next line record sweeps, except that u32 `1` at +84 with a
+nonzero, non-null identity at +88 is the direct-form selector of the §2
+current-prefix direct profile line and names no side face. A record of a
+construction line is not a line of the polygon. The last line record whose u32
+at +80 is zero stores zero at +84.
+The first line record sweeps the one side identifier among the feature's
+side-class generated-surface identities that no +84 value of the profile
+names. The identifiers are not in record order, they can start above 1, and
+each piece of a side face that a later feature cuts keeps its identifier. A
+line after a record whose u32 at +80 is nonzero is not named by the profile.
+
+A component path of an edge selection lists the two faces beside the edge, then
+the faces at the edge's two ends. Each entry carries an instance cell and a
+local identifier equal to those of a generated-surface identity of the feature
+that holds the terminal component. An entry that names a side face carries its
+local identifier, so the rule above joins it to its profile line. The two end
+faces of an extrusion carry the local identifiers 0 (start) and 1 (end) in the
+end-face class. A path of an edge along a side face between the two end faces
+lists the two side faces, then the end-face entries 1 and 0. A path of an edge
+on the end face with local identifier 1 lists that face, the side face beside
+the edge, then the two side faces at the edge's ends.
 Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
 `moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
 instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`

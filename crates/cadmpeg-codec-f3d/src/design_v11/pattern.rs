@@ -328,7 +328,10 @@ fn run(
         direction: Construction {
             inputs,
             resolved,
-            ..Construction::default()
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved_in: BTreeMap::new(),
         },
         run: PatternRun {
             spacing: if adjacent {

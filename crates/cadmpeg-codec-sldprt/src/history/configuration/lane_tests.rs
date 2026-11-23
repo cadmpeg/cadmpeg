@@ -893,6 +893,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             references: Vec::new(),
             producer_feature_refs: vec!["producer-native".into()],
             terminal_feature_ref: Some("producer-native".into()),
+            mark_reference: false,
         });
 
     project_configuration_supplemental_edge_selections(&mut ir, &[lane]).unwrap();
@@ -1015,6 +1016,7 @@ fn supplemental_edge_paths_match_projecting_every_configured_feature() {
                     references: Vec::new(),
                     producer_feature_refs: vec![terminal.into()],
                     terminal_feature_ref: Some(terminal.into()),
+                    mark_reference: false,
                 });
         }
         lanes.push(lane);

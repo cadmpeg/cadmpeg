@@ -4,7 +4,7 @@ use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputKind, SketchInputLink,
+    FeatureInputRelationInstance, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use crate::resolved_features::projections::bind_circular_profile_by_dimension;
 use crate::resolved_features::relation_geometry::project_relation_point_geometry;
@@ -391,6 +391,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     let projected_len = entities.len();
     project_relation_point_geometry(
@@ -398,6 +399,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
@@ -594,6 +596,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
 
     assert!(entities.iter().any(|entity| {
@@ -759,6 +762,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         std::slice::from_ref(&sketch_record),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
 
     assert_eq!(entities.len(), 2);
@@ -774,6 +778,111 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
                 SketchGeometryDefinition::Point { position } if position == Point2::new(5.0, 2.0)
             )
     }));
+}
+
+/// DI-77: a list-curve reading replaces the kind of a record whose +17 code
+/// is a relation code. The points the record's links reach stay drawn, as
+/// for a relation marker; a curve record that never held a relation code
+/// draws none.
+#[test]
+fn relation_points_stay_drawn_from_a_listed_curve_with_a_relation_code() {
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
+        native_ref: Some("feature-native".into()),
+    };
+    let sketch_record = Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    let project = |stored: SketchInputKind| {
+        let mut first = marker("first-point", Some([-0.005, 0.002]));
+        first = first.with_test_position(first.ordinal(), 1);
+        let mut second = marker("second-point", Some([0.005, 0.002]));
+        second = second.with_test_position(second.ordinal(), 2);
+        let mut curve = marker("listed-curve", None);
+        curve = curve.with_test_position(curve.ordinal(), 3);
+        curve.reclassify(SketchInputKind::LineOrCircle);
+        curve.listed_curve = Some(crate::records::ListedCurveOverride {
+            form: "line",
+            code: 4,
+            stored,
+        });
+        curve.links = crate::records::SketchInputLinks::new(
+            0,
+            [(1, first.id()), (2, second.id())]
+                .into_iter()
+                .map(|(local_id, entity_ref)| SketchInputLink {
+                    local_id,
+                    entity_ref: entity_ref.into(),
+                })
+                .collect(),
+        );
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new().into(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![first, second, curve],
+        };
+        let mut entities = Vec::new();
+        project_relation_point_geometry(
+            &mut entities,
+            std::slice::from_ref(&sketch_record),
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&lane),
+            &crate::resolved_features::stream_readings::SolidEdges::default(),
+        );
+        entities
+    };
+
+    let entities = project(SketchInputKind::Relation(SketchRelationKind::Horizontal));
+    for (marker, position) in [
+        ("first-point", Point2::new(-5.0, 2.0)),
+        ("second-point", Point2::new(5.0, 2.0)),
+    ] {
+        assert!(entities.iter().any(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some(marker)
+                && matches!(*entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { position: drawn } if drawn == position
+                )
+        }));
+    }
+    assert!(project(SketchInputKind::Point).is_empty());
 }
 
 #[test]

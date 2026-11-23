@@ -30,7 +30,11 @@ pub(super) fn direction(
         resolved: Some(
             UnitVector3::normalized_nonzero(value.into()).ok_or("the direction is degenerate")?,
         ),
-        ..Construction::default()
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -43,7 +47,11 @@ pub(super) fn axis(
             origin,
             direction: direction(value)?.resolved.ok_or("the axis is degenerate")?,
         }),
-        ..Construction::default()
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -69,7 +77,11 @@ pub(super) fn datum_plane(id: &old::FeatureId) -> Projected<Construction<kinds::
                 part: None,
             },
         )])?)],
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -102,7 +114,9 @@ fn plane(
             x_axis: UnitVector3::normalized_nonzero(value.u_axis().into())
                 .ok_or("the plane x axis is degenerate")?,
         }),
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 

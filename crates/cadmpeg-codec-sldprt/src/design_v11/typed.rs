@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The sketches and extrudes of the timeline, typed from the decoder's own
+//! The sketches, extrudes and revolves of the timeline, typed from the decoder's own
 //! records, and what their dimensions state of the parameters they bind.
 
 use std::collections::{HashMap, HashSet};
@@ -18,9 +18,10 @@ use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
 use super::profile_check::{Difference, Unchecked};
+use super::revolve::AxisPick;
 use super::sketch::{DimensionCircle, Sketches};
 use super::tree::Timeline;
-use super::{extrude, sketch};
+use super::{extrude, revolve, sketch, swept};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
@@ -50,6 +51,21 @@ pub(super) struct Typed {
     /// The note of the typed extrudes whose sketch's closed regions the
     /// check did not compare with the stored profile.
     pub(super) profile_unchecked: Option<LossNote>,
+    /// The note of the typed revolves whose stored axis picks a line of
+    /// their profile sketch.
+    pub(super) revolve_axis_lines: Option<LossNote>,
+    /// The note of the typed revolves whose axis no record stores and which
+    /// lies on a line of their profile sketch.
+    pub(super) revolve_axis_derived: Option<LossNote>,
+    /// The note of the typed revolves whose boolean the design leaves
+    /// unstated.
+    pub(super) revolve_boolean_unstated: Option<LossNote>,
+    /// The note of the typed revolves whose sketch's closed regions differ
+    /// from the stored profile.
+    pub(super) revolve_profile_differs: Option<LossNote>,
+    /// The note of the typed revolves whose sketch's closed regions the
+    /// check did not compare with the stored profile.
+    pub(super) revolve_profile_unchecked: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -62,7 +78,7 @@ pub(super) struct Scope<'a> {
     pub(super) surfaces: &'a [cadmpeg_ir::geometry::Surface],
 }
 
-/// Type the sketches, then the extrudes, of `timeline`.
+/// Type the sketches, then the extrudes and the revolves, of `timeline`.
 pub(super) fn project(
     model: &Model,
     histories: &[FeatureHistory],
@@ -88,18 +104,22 @@ pub(super) fn project(
         .iter()
         .map(|sketch| sketch.id.clone())
         .collect::<HashSet<_>>();
-    let extrudes = extrude::project(
-        &mut timeline.features,
-        &extrude::Context {
-            model,
-            histories,
-            entries,
-            sketches: &stated,
-            entities: &sketches.entities,
-        },
-    );
+    let context = swept::Context {
+        model,
+        histories,
+        entries,
+        sketches: &stated,
+        entities: &sketches.entities,
+    };
+    let extrudes = extrude::project(&mut timeline.features, &context);
+    let revolves = revolve::project(&mut timeline.features, &context);
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
-    for (parameter, quantity) in sketches.bound.iter().chain(&extrudes.bound) {
+    for (parameter, quantity) in sketches
+        .bound
+        .iter()
+        .chain(&extrudes.bound)
+        .chain(&revolves.bound)
+    {
         bound
             .entry(parameter.clone())
             .and_modify(|known| {
@@ -109,17 +129,52 @@ pub(super) fn project(
             })
             .or_insert(Some(*quantity));
     }
-    let loss = loss(&sketches.unprojected, &extrudes.unprojected);
+    let loss = loss(
+        &sketches.unprojected,
+        &extrudes.unprojected,
+        &revolves.unprojected,
+    );
     let assumed = assumed(&extrudes.assumed);
     let state_construction = state_construction(&sketches.outside_profile);
     let dimension_circles = dimension_circles(&sketches.dimension_circles);
-    let profile_differs = profile_differs(&extrudes.differs);
+    let revolve_axis_lines = axis_lines(
+        SldprtLossCode::DesignRevolveAxisLineInferred,
+        "pick, as their axis, the line of their profile sketch that lies on the axis their \
+         record stores; the decoder does not read which entity the record's axis reference names",
+        &revolves.inferred,
+    );
+    let revolve_axis_derived = axis_lines(
+        SldprtLossCode::DesignRevolveAxisDerived,
+        "state, as their axis, a line of their profile sketch that lies on the axis the decoder \
+         derived from the sketch's records or the solid's surfaces; no record stores the axis",
+        &revolves.derived,
+    );
+    let revolve_boolean_unstated = boolean_unstated(&revolves.boolean_unstated);
+    let revolve_profile_differs = profile_differs(
+        SldprtLossCode::DesignRevolveProfileDiffers,
+        "revolves",
+        &revolves.differs,
+    );
+    let revolve_profile_unchecked = profile_unchecked(
+        SldprtLossCode::DesignRevolveProfileUnchecked,
+        "revolves",
+        &revolves.unchecked.iter().collect::<Vec<_>>(),
+    );
+    let profile_differs = profile_differs(
+        SldprtLossCode::DesignExtrudeProfileDiffers,
+        "extrudes",
+        &extrudes.differs,
+    );
     let (empty, unchecked): (Vec<_>, Vec<_>) = extrudes
         .unchecked
         .iter()
         .partition(|(_, _, why)| *why == Unchecked::NoProfileCurve);
     let sketch_empty = sketch_empty(&empty);
-    let profile_unchecked = profile_unchecked(&unchecked);
+    let profile_unchecked = profile_unchecked(
+        SldprtLossCode::DesignExtrudeProfileUnchecked,
+        "extrudes",
+        &unchecked,
+    );
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -137,6 +192,11 @@ pub(super) fn project(
         profile_differs,
         sketch_empty,
         profile_unchecked,
+        revolve_axis_lines,
+        revolve_axis_derived,
+        revolve_boolean_unstated,
+        revolve_profile_differs,
+        revolve_profile_unchecked,
     }
 }
 
@@ -192,18 +252,22 @@ fn dimension_circles(circles: &[DimensionCircle]) -> Option<LossNote> {
     )))
 }
 
-/// One note naming each typed extrude whose `Sketch` pick's closed regions
-/// differ from the profile loops the decoder resolved from the stored
-/// records, with how they differ (§6 "Sources").
-fn profile_differs(extrudes: &[(FeatureId, Option<String>, Vec<Difference>)]) -> Option<LossNote> {
-    if extrudes.is_empty() {
+/// One note naming each typed feature of kind `kind` whose
+/// `Sketch` pick's closed regions differ from the profile loops the decoder
+/// resolved from the stored records, with how they differ (§6 "Sources").
+fn profile_differs(
+    code: SldprtLossCode,
+    kind: &str,
+    features: &[(FeatureId, Option<String>, Vec<Difference>)],
+) -> Option<LossNote> {
+    if features.is_empty() {
         return None;
     }
-    Some(SldprtLossCode::DesignExtrudeProfileDiffers.note(format!(
-        "{} extrudes pick their whole sketch, whose closed regions differ from the profile \
+    Some(code.note(format!(
+        "{} {kind} pick their whole sketch, whose closed regions differ from the profile \
          the decoder read from the stored records: {}",
-        extrudes.len(),
-        listed(extrudes.iter().map(|(feature, name, differences)| format!(
+        features.len(),
+        listed(features.iter().map(|(feature, name, differences)| format!(
             "{} ({})",
             named(feature, name.as_deref()),
             differences
@@ -235,21 +299,68 @@ fn sketch_empty(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<
     )))
 }
 
-/// One note naming each typed extrude whose `Sketch` pick's closed regions
-/// the check did not compare with the stored profile, with why.
-fn profile_unchecked(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<LossNote> {
-    if extrudes.is_empty() {
+/// One note naming each typed feature of kind `kind` whose
+/// `Sketch` pick's closed regions the check did not compare with the stored
+/// profile, with why.
+fn profile_unchecked(
+    code: SldprtLossCode,
+    kind: &str,
+    features: &[&(FeatureId, Option<String>, Unchecked)],
+) -> Option<LossNote> {
+    if features.is_empty() {
         return None;
     }
-    Some(SldprtLossCode::DesignExtrudeProfileUnchecked.note(format!(
-        "{} extrudes pick their whole sketch, whose closed regions the decoder did not compare \
+    Some(code.note(format!(
+        "{} {kind} pick their whole sketch, whose closed regions the decoder did not compare \
          with the stored profile: {}",
-        extrudes.len(),
-        listed(extrudes.iter().map(|(feature, name, why)| format!(
+        features.len(),
+        listed(features.iter().map(|(feature, name, why)| format!(
             "{} ({})",
             named(feature, name.as_deref()),
             why.text()
         ))),
+    )))
+}
+
+/// One note of `code` naming each typed revolve whose axis picks a line of
+/// its profile sketch, with that line and, where several lines lie on the
+/// axis, how many. `what` says what the revolves state.
+fn axis_lines(code: SldprtLossCode, what: &str, revolves: &[AxisPick]) -> Option<LossNote> {
+    if revolves.is_empty() {
+        return None;
+    }
+    Some(code.note(format!(
+        "{} revolves {what}: {}",
+        revolves.len(),
+        listed(revolves.iter().map(|(feature, name, line, among)| {
+            let among = if *among > 1 {
+                format!(", one of {among} lines on the axis")
+            } else {
+                String::new()
+            };
+            format!(
+                "{} ({}{among})",
+                named(feature, name.as_deref()),
+                line.as_str()
+            )
+        })),
+    )))
+}
+
+/// One note naming each typed revolve whose boolean the design leaves
+/// unstated, with why.
+fn boolean_unstated(revolves: &[(FeatureId, Option<String>, &'static str)]) -> Option<LossNote> {
+    if revolves.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignRevolveBooleanUnstated.note(format!(
+        "{} revolves state no boolean: {}",
+        revolves.len(),
+        listed(
+            revolves
+                .iter()
+                .map(|(feature, name, why)| format!("{} ({why})", named(feature, name.as_deref())))
+        ),
     )))
 }
 
@@ -333,24 +444,81 @@ fn principal_plane(feature: &Feature) -> Option<PrincipalEntity> {
     }
 }
 
-/// One note naming the sketch and extrude features the decoder typed in its
-/// own records that the design states `Unresolved`, with the reason of each.
+/// One note naming the sketch, extrude and revolve features the decoder
+/// typed in its own records that the design states `Unresolved`, under each
+/// reason, so that every reason is named however many features the note
+/// lists.
 fn loss(
     sketches: &[(FeatureId, &'static str)],
     extrudes: &[(FeatureId, &'static str)],
+    revolves: &[(FeatureId, &'static str)],
 ) -> Option<LossNote> {
-    if sketches.is_empty() && extrudes.is_empty() {
+    if sketches.is_empty() && extrudes.is_empty() && revolves.is_empty() {
         return None;
     }
+    let mut reasons = Vec::<(&str, Vec<&FeatureId>)>::new();
+    for (feature, reason) in sketches.iter().chain(extrudes).chain(revolves) {
+        match reasons.iter_mut().find(|(known, _)| known == reason) {
+            Some((_, features)) => features.push(feature),
+            None => reasons.push((reason, vec![feature])),
+        }
+    }
     Some(SldprtLossCode::DesignFeatureUnresolved.note(format!(
-        "{} sketch and {} extrude features state their family without operands: {}",
+        "{} sketch, {} extrude and {} revolve features state their family without operands: {}",
         sketches.len(),
         extrudes.len(),
-        listed(
-            sketches
-                .iter()
-                .chain(extrudes)
-                .map(|(feature, reason)| format!("{} ({reason})", feature.as_str()))
-        ),
+        revolves.len(),
+        reasons
+            .iter()
+            .map(|(reason, features)| format!(
+                "{reason} ({}: {})",
+                features.len(),
+                listed(features.iter().map(|feature| feature.as_str().to_owned()))
+            ))
+            .collect::<Vec<_>>()
+            .join("; "),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::features::FeatureId;
+
+    #[test]
+    fn the_unresolved_note_names_every_reason_however_many_features_it_lists() {
+        let id = |index: usize| -> FeatureId {
+            serde_json::from_value(serde_json::json!(format!("sldprt:model:feature#{index}")))
+                .unwrap()
+        };
+        let extrudes = (0..12)
+            .map(|index| {
+                (
+                    id(index),
+                    "the extrude's limit is neither blind nor through all",
+                )
+            })
+            .collect::<Vec<_>>();
+        let revolves = [
+            (
+                id(20),
+                "the revolve is two-sided, and its sense is not read",
+            ),
+            (id(21), "the revolve's sketch is not stated"),
+        ];
+        let message = super::loss(&[], &extrudes, &revolves).unwrap().message;
+        assert!(
+            message.starts_with("0 sketch, 12 extrude and 2 revolve features")
+                && message.contains("neither blind nor through all (12: ")
+                && message.contains("and 4 more")
+                && message.contains(&format!(
+                    "the revolve is two-sided, and its sense is not read (1: {})",
+                    id(20).as_str()
+                ))
+                && message.contains(&format!(
+                    "the revolve's sketch is not stated (1: {})",
+                    id(21).as_str()
+                )),
+            "{message}"
+        );
+    }
 }

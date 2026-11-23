@@ -26,7 +26,12 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Wall Thickness">4mm</Dimension><Dimension Name="Datum &quot;A&quot;">1mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">&quot;Wall Thickness&quot; + &quot;Datum &quot;&quot;A&quot;&quot;&quot; + D1@Equations + &quot;Wall Thickness&quot;</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.parameters.len(), 4);
@@ -80,8 +85,11 @@ fn semantic_writer_projects_and_validates_parameter_dependencies() {
         .contains("dependencies are inconsistent with their expressions"));
 }
 
+/// The decoder orders a parameter after the parameters it depends on; the
+/// stored dimension order of an unedited parameter order is written as
+/// stored.
 #[test]
-fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
+fn semantic_writer_keeps_the_stored_order_of_a_forward_parameter_dependency() {
     use crate::records::FeatureContent;
     use cadmpeg_ir::features::parameters::ParameterValue;
 
@@ -92,7 +100,12 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
         br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Result">Input + 1</Dimension><Dimension Name="Input">2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut parameter_order = decoded
@@ -136,7 +149,7 @@ fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
                 _ => None,
             })
             .collect::<Vec<_>>(),
-        vec!["Input", "Result"]
+        vec!["Result", "Input"]
     );
     let result = regenerated
         .ir()

@@ -2,7 +2,7 @@
 //! Semantic PMI stored in the SWIFT GDT-analysis object graph.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
-use cadmpeg_ir::design::options::NativeOptions;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -1911,13 +1911,20 @@ fn project_dimension(
         None
     };
     let nominal = explicit_nominal.or(implicit_nominal);
-    let tolerance = match (
+    let deviations = match (
         deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
         deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
-        (Some(lower), Some(upper)) => Some(Tolerance::Deviations(Deviations { lower, upper })),
+        (Some(lower), Some(upper)) => Some(Deviations { lower, upper }),
         _ => None,
     };
+    let equal_deviations = deviations
+        .as_ref()
+        .filter(|deviations| deviations.lower.get() == deviations.upper.get())
+        .cloned();
+    let tolerance = deviations
+        .filter(|_| equal_deviations.is_none())
+        .map(Tolerance::Deviations);
     let Some(id) = pmi_id(&reference.id) else {
         return Ok(None);
     };
@@ -1942,6 +1949,22 @@ fn project_dimension(
         PmiDefinition::Dimension(dimension),
     );
     annotation.name = object_name(entity);
+    if let Some(Deviations { lower, upper }) = equal_deviations {
+        for (key, value) in [
+            (
+                cadmpeg_core::nonblank_literal!("sldprt:lower_deviation"),
+                lower,
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("sldprt:upper_deviation"),
+                upper,
+            ),
+        ] {
+            annotation
+                .native_options
+                .insert(key, measure_option(PmiValue::from_parts(value, quantity)));
+        }
+    }
     Ok(Some((annotation, inferred_spherical_target)))
 }
 
@@ -2046,6 +2069,18 @@ fn implicit_dimension_nominal(
             .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
             .or(Some(FiniteReal::from(exact))),
     })
+}
+
+fn measure_option(value: PmiValue) -> NativeOption {
+    match value.quantity {
+        PmiQuantity::Length => NativeOption::Length(Dimension::Literal(
+            cadmpeg_ir::scalar::Length::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Angle => NativeOption::Angle(Dimension::Literal(
+            cadmpeg_ir::scalar::Angle::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Ratio => NativeOption::Real(Dimension::Literal(value.value)),
+    }
 }
 
 fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {

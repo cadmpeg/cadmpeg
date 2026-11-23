@@ -13,6 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::design::projection::project_layer;
 use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
@@ -1563,15 +1564,17 @@ fn decode_container<'a>(
         }
     }
     if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
-        crate::design_v11::project(
-            ctx,
-            &mut ir,
-            &feature_inventory,
-            &sketch_inventory,
-            &design_inventory.parameters,
-            &design_inventory.units,
-            &mut losses,
-        )?;
+        project_layer(ctx, "inventor", &mut ir, &mut losses, |ir, losses| {
+            crate::design_v11::project(
+                ctx,
+                ir,
+                &feature_inventory,
+                &sketch_inventory,
+                &design_inventory.parameters,
+                &design_inventory.units,
+                losses,
+            )
+        })?;
     }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
