@@ -4443,6 +4443,18 @@ fn build_geometry_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
     pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
+    pmi_losses.extend(
+        crate::resolved_features::axes::revolution_axis_off_profile_plane_note(
+            &ir.model.features,
+            ir.model.configurations.iter().flat_map(|configuration| {
+                configuration
+                    .feature_states
+                    .iter()
+                    .map(|(id, state)| (id, &state.definition))
+            }),
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -5425,6 +5437,18 @@ fn build_metadata_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
     pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
+    pmi_losses.extend(
+        crate::resolved_features::axes::revolution_axis_off_profile_plane_note(
+            &ir.model.features,
+            ir.model.configurations.iter().flat_map(|configuration| {
+                configuration
+                    .feature_states
+                    .iter()
+                    .map(|(id, state)| (id, &state.definition))
+            }),
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -5454,18 +5478,13 @@ fn project_design_history(
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
-    let ambiguous_body_features = crate::history::configuration::enrich_history_semantic(
+    losses.extend(crate::history::configuration::enrich_history_semantic(
         ctx,
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
-    )?;
-    if ambiguous_body_features > 0 {
-        losses.push(SldprtLossCode::FeatureBodyPathAmbiguous.note(format!(
-            "{ambiguous_body_features} feature(s) retain ambiguous compact body-path candidates because a local identifier also spells a complete tagged entry."
-        )));
-    }
+    )?);
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?
