@@ -647,8 +647,7 @@ fn revolution_line_reference_inputs(
                 if payload.get(handles_end..handles_end + 4) == Some(&[0; 4])
                     && payload.get(handles_end + 4..handles_end + 12) == Some(&[0; 8])
                 {
-                    if let Some((scalar_count, axis)) = longest_terminated(compact_frame, &[9, 10])
-                    {
+                    if let Some((scalar_count, axis)) = longest_terminated(compact_frame, &[10]) {
                         candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                     }
                 }
@@ -679,7 +678,7 @@ fn revolution_line_reference_inputs(
             let frame = handle_start + 8;
             if let Some(source) = source_cell(source_offset) {
                 if payload.get(frame..frame + 8) == Some(&[0; 8]) {
-                    if let Some((scalar_count, axis)) = longest_terminated(frame, &[8, 9, 10]) {
+                    if let Some((scalar_count, axis)) = longest_terminated(frame, &[10]) {
                         candidates.push((handle_start, scalar_count, (source, axis.0, axis.1)));
                     }
                 }
