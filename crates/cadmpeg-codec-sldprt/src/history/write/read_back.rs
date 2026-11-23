@@ -680,13 +680,16 @@ impl<'a> Scope<'a> {
                     if stated.is_some()
                         && written.is_none()
                         && segments.len() == 2
-                        && !claim.reshapes()
                         && !claim.edits_source_property(key) =>
                 {
-                    Class::Claim(
-                        claim.id.clone(),
-                        format!("its source property {key} missing"),
-                    )
+                    if claim.reshapes() {
+                        Class::Reshaped(claim.id.clone(), format!("drops source property {key}"))
+                    } else {
+                        Class::Claim(
+                            claim.id.clone(),
+                            format!("its source property {key} missing"),
+                        )
+                    }
                 }
                 _ => Class::Explained,
             },

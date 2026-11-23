@@ -356,7 +356,8 @@ pub(crate) enum SldprtLossCode {
     /// cannot encode is not written; the output keeps the stored record.
     WriterFeatureEditUnwritten,
     /// A variant edit of a feature is written in the record shape of the
-    /// edited variant, which adds or drops a parameter of the feature.
+    /// edited variant, which adds or drops a parameter or drops a source
+    /// property of the feature.
     WriterFeatureRecordReshaped,
     /// A compound-file part edited since decode is written as its stored
     /// part: the writer has no compound-file serializer, so no edit of the

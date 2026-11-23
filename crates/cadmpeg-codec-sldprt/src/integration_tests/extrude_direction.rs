@@ -399,7 +399,8 @@ fn clear_and_write(
 
 /// A reversal read from the end-spec word alone travels against the normal
 /// and names its assumption. Cleared by an edit, it is written as a `0`
-/// word, and the written part decodes along the normal with no reversal.
+/// word, the written record drops its `Reverse` property, which a loss names,
+/// and the written part decodes along the normal with no reversal.
 #[test]
 fn a_cleared_reversal_writes_a_zero_end_spec_word() {
     let (bytes, anchor) = lane_flagged(None);
@@ -423,7 +424,12 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
-    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
+    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
+    let reshaped = messages(&write_losses, SldprtLossCode::WriterFeatureRecordReshaped);
+    assert!(
+        reshaped.len() == 1 && reshaped[0].contains("drops source property Reverse"),
+        "{write_losses:?}"
+    );
     let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
     assert!(
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
