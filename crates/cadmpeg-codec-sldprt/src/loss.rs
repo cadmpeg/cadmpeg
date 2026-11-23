@@ -540,6 +540,16 @@ pub(crate) enum SldprtLossCode {
     /// out, its dimension naming the stored curve they lie on, or states
     /// construction where no face of the solid witnesses them.
     DesignSketchDimensionCircle,
+    /// Typed revolves whose axis picks the line of their profile sketch that
+    /// lies on the stored axis, the entity the record's axis reference names
+    /// not being read.
+    DesignRevolveAxisLineInferred,
+    /// Typed revolves whose `Sketch` pick's closed regions differ from the
+    /// profile loops read from the stored records.
+    DesignRevolveProfileDiffers,
+    /// Typed revolves whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignRevolveProfileUnchecked,
 }
 
 impl SldprtLossCode {
@@ -751,6 +761,9 @@ impl SldprtLossCode {
         Self::DesignExtrudeSketchEmpty,
         Self::DesignExtrudeProfileUnchecked,
         Self::DesignSketchDimensionCircle,
+        Self::DesignRevolveAxisLineInferred,
+        Self::DesignRevolveProfileDiffers,
+        Self::DesignRevolveProfileUnchecked,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -991,6 +1004,9 @@ impl SldprtLossCode {
             Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
             Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
             Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
+            Self::DesignRevolveAxisLineInferred => "design.revolve-axis-line-inferred",
+            Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
+            Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
@@ -1193,7 +1209,8 @@ impl SldprtLossCode {
             | Self::DesignSketchConstructionAssumed
             | Self::DesignExtrudeProfileDiffers
             | Self::DesignExtrudeSketchEmpty
-            | Self::DesignSketchDimensionCircle => Severity::Warning,
+            | Self::DesignSketchDimensionCircle
+            | Self::DesignRevolveProfileDiffers => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1203,6 +1220,8 @@ impl SldprtLossCode {
             | Self::DesignFeatureUnresolved
             | Self::SketchSecondReading
             | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignRevolveAxisLineInferred
+            | Self::DesignRevolveProfileUnchecked
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryXmlNormalised => Severity::Info,
         }
@@ -1302,7 +1321,10 @@ impl SldprtLossCode {
             | Self::DesignExtrudeProfileDiffers
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignExtrudeProfileUnchecked
-            | Self::DesignSketchDimensionCircle => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignSketchDimensionCircle
+            | Self::DesignRevolveAxisLineInferred
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1812,6 +1834,9 @@ mod tests {
                 "design.extrude-sketch-empty",
                 "design.extrude-profile-unchecked",
                 "design.sketch-dimension-circle",
+                "design.revolve-axis-line-inferred",
+                "design.revolve-profile-differs",
+                "design.revolve-profile-unchecked",
             ]
         );
     }

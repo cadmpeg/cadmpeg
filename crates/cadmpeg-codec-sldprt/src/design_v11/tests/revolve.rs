@@ -1,0 +1,547 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Revolves typed from the decoder's revolutions: the profile sketch, the
+//! axis picked as a line of that sketch, the angle, and the boolean.
+
+use std::f64::consts::{PI, TAU};
+
+use cadmpeg_ir::design::construction::{
+    AxisValue, InputReference, InputRole, PostStep, Relation, Subject,
+};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::swept::Revolve;
+use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, SymmetricMeasure};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
+use cadmpeg_ir::document::CadIr;
+use serde_json::{json, Value};
+
+use super::{assert_no_design_findings, part_with_history, timeline_feature, typed_timeline};
+use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
+
+const SKETCH: &str = "sldprt:model:sketch#spin";
+
+fn entity(key: &str) -> String {
+    format!("sldprt:model:sketch-entity#spin:{key}")
+}
+
+/// A sketch line from `start` to `end` in sketch coordinates.
+struct Line {
+    key: &'static str,
+    start: (f64, f64),
+    end: (f64, f64),
+    construction: bool,
+}
+
+const fn line(key: &'static str, start: (f64, f64), end: (f64, f64)) -> Line {
+    Line {
+        key,
+        start,
+        end,
+        construction: false,
+    }
+}
+
+const fn centreline(key: &'static str, start: (f64, f64), end: (f64, f64)) -> Line {
+    Line {
+        key,
+        start,
+        end,
+        construction: true,
+    }
+}
+
+/// A rectangle 20 wide and 20 high whose left side lies at `u = left`.
+fn rectangle(left: f64) -> Vec<Line> {
+    let right = left + 20.0;
+    vec![
+        line("bottom", (left, 0.0), (right, 0.0)),
+        line("right", (right, 0.0), (right, 20.0)),
+        line("top", (right, 20.0), (left, 20.0)),
+        line("left", (left, 20.0), (left, 0.0)),
+    ]
+}
+
+/// A revolution of `Sketch1` about the axis through `origin` along
+/// `direction`, with `extent` and `op`.
+fn revolution(origin: [f64; 3], direction: [f64; 3], extent: &Value, op: &str) -> Value {
+    json!({"kind": "resolved", "value": {
+        "profile": {"kind": "sketch", "value": SKETCH},
+        "axis": {
+            "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
+            "direction": {"x": direction[0], "y": direction[1], "z": direction[2]}},
+        "extent": extent,
+        "solid": true},
+        "op": op})
+}
+
+fn one_sided(angle: f64) -> Value {
+    json!({"kind": "one_sided", "termination": {"kind": "angle", "angle": angle}})
+}
+
+/// The full turn about the model y axis, which lies on the sketch's `u = 0`
+/// line.
+fn about_y() -> Value {
+    revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(TAU), "join")
+}
+
+/// A part whose history holds the built-in planes, the origin, a sketch
+/// `Sketch1` on the XY plane holding `lines`, and one revolve per entry of
+/// `revolves` (`Revolve1`, `Revolve2`), each with the dimensions `dimensions`
+/// and the decoded construction and operation of its entry (`{"kind":
+/// "resolved", "value": …, "op": …}`).
+fn part(dimensions: &str, lines: &[Line], revolves: &[Value]) -> (CadIr, SldprtNative) {
+    let revolve_records = (0..revolves.len())
+        .map(|index| {
+            format!(
+                r#"<Revolve Name="Revolve{}" Type="Revolve" id="{}">{dimensions}</Revolve>"#,
+                index + 1,
+                20 + index
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    let keywords = format!(
+        r#"<Keywords Name="Spin">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+            {revolve_records}
+        </Keywords>"#
+    );
+    let names = ["Revolve1", "Revolve2"];
+    let mut classes = vec![
+        ("moRefPlane_c", "Front", 2),
+        ("moRefPlane_c", "Top", 3),
+        ("moRefPlane_c", "Right", 4),
+        ("moOriginProfileFeature_c", "Origin", 106),
+        ("moProfileFeature_c", "Sketch1", 8),
+    ];
+    for (index, name) in names.iter().take(revolves.len()).enumerate() {
+        classes.push(("moRevolution_c", *name, 20 + u32::try_from(index).unwrap()));
+    }
+    let mut ir = part_with_history(keywords.as_bytes(), &classes);
+    let native = SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let id = |name: &str| {
+        ir.model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+            .id
+            .clone()
+    };
+    let sketch_feature = id("Sketch1");
+    let revolve_ids = names
+        .iter()
+        .take(revolves.len())
+        .map(|name| id(name))
+        .collect::<Vec<_>>();
+    ir.model.sketch_entities = serde_json::from_value(Value::Array(
+        lines
+            .iter()
+            .map(|line| {
+                json!({"id": entity(line.key), "sketch": SKETCH,
+                    "construction": line.construction, "endpoint_refs": [],
+                    "geometry": {"kind": "line",
+                        "start": {"u": line.start.0, "v": line.start.1},
+                        "end": {"u": line.end.0, "v": line.end.1}}})
+            })
+            .collect(),
+    ))
+    .unwrap();
+    ir.model.sketches = serde_json::from_value(json!([{
+        "id": SKETCH, "name": "Sketch1",
+        "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
+        "profiles": []
+    }]))
+    .unwrap();
+    for feature in &mut ir.model.features {
+        let definition = if feature.id == sketch_feature {
+            json!({"kind": "operation", "value": {"kind": "sketch",
+                "value": {"sketch": {"kind": "planar", "sketch": SKETCH}}}})
+        } else if let Some(index) = revolve_ids.iter().position(|id| *id == feature.id) {
+            let revolve = &revolves[index];
+            json!({"kind": "operation", "value": {"kind": "revolve", "value": {
+                "construction": {"kind": revolve["kind"], "value": revolve["value"]},
+                "op": revolve["op"]}}})
+        } else {
+            continue;
+        };
+        let definition = serde_json::from_value(definition).unwrap();
+        feature.evaluation.edit(|current, _| *current = definition);
+    }
+    (ir, native)
+}
+
+/// The typed revolve `name`, or the reason the design leaves it
+/// `Unresolved`, from the note naming it.
+fn typed(ir: &CadIr, native: &SldprtNative, name: &str) -> Result<Revolve, String> {
+    let (timeline, _, typed) = typed_timeline(ir, native);
+    let feature = timeline_feature(&timeline, name);
+    match &feature.definition.operation {
+        FeatureOperation::Revolve(revolve) => Ok(revolve.as_ref().clone()),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Revolve,
+        } => Err(typed.loss.map_or_else(String::new, |note| note.message)),
+        other => panic!("{name} is {other:?}"),
+    }
+}
+
+/// The sketch entity the revolve's axis picks, and its `after` steps.
+fn axis_pick(revolve: &Revolve) -> (Option<String>, Vec<PostStep>) {
+    let axis = revolve.axis.as_ref().unwrap();
+    let picked = match axis.inputs.as_slice() {
+        [] => None,
+        [input] => {
+            assert!(matches!(
+                input.role,
+                Some(InputRole {
+                    subject: Subject::Whole,
+                    relation: Relation::Coincident
+                })
+            ));
+            let Some(InputReference::Picks(selection)) = &input.reference else {
+                panic!("the axis input picks");
+            };
+            let Picks::Named(picks) = &selection.picks else {
+                panic!("the axis input names its pick");
+            };
+            let [pick] = picks.as_slice() else {
+                panic!("one pick");
+            };
+            let PickTarget::SketchEntity(line) = &pick.target else {
+                panic!("the axis picks a sketch entity: {:?}", pick.target);
+            };
+            Some(line.as_str().to_owned())
+        }
+        inputs => panic!("one input at most: {inputs:?}"),
+    };
+    (picked, axis.after.clone())
+}
+
+fn with_centreline() -> Vec<Line> {
+    let mut lines = rectangle(10.0);
+    lines.push(centreline("axis", (0.0, -5.0), (0.0, 25.0)));
+    lines
+}
+
+#[test]
+fn a_full_turn_about_a_centreline_picks_it_and_binds_its_angle() {
+    let (mut ir, native) = part(
+        r#"<Dimension Name="D1">360deg</Dimension>"#,
+        &with_centreline(),
+        &[about_y()],
+    );
+    let (timeline, entries, typed) = typed_timeline(&ir, &native);
+    let feature = timeline_feature(&timeline, "Revolve1");
+    let FeatureOperation::Revolve(revolve) = &feature.definition.operation else {
+        panic!(
+            "the revolve is typed: {:?} {:?}",
+            feature.definition.operation, typed.loss
+        );
+    };
+    let Picks::Named(picks) = &revolve.profile.picks else {
+        panic!("the profile names its pick");
+    };
+    assert!(matches!(picks.as_slice(),
+        [pick] if pick.target == PickTarget::Sketch(serde_json::from_value(json!(SKETCH)).unwrap())));
+    assert_eq!(axis_pick(revolve), (Some(entity("axis")), Vec::new()));
+    assert_eq!(
+        revolve.axis.as_ref().unwrap().resolved,
+        Some(
+            serde_json::from_value::<AxisValue>(json!({
+            "origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "direction": {"x": 0.0, "y": 1.0, "z": 0.0}}))
+            .unwrap()
+        )
+    );
+    let angle = entries.owned(&feature.id, "D1").unwrap().clone();
+    assert_eq!(
+        revolve.span,
+        Some(Span::Between {
+            start: Box::new(Limit::AtOrigin),
+            end: Box::new(Limit::Amount(Dimension::Parameter(angle.clone()))),
+        })
+    );
+    assert_eq!(typed.bound.get(&angle), Some(&Quantity::ANGLE));
+    assert_eq!(revolve.output.boolean, Some(Boolean::NewBody));
+    assert_eq!(revolve.output.body, Some(BodyForm::Solid));
+    assert!(typed.loss.is_none(), "{:?}", typed.loss);
+    let note = typed.revolve_axis_lines.expect("the picked line is named");
+    assert_eq!(
+        note.code,
+        SldprtLossCode::DesignRevolveAxisLineInferred.kind()
+    );
+    assert!(
+        note.message.starts_with("1 revolves")
+            && note.message.contains(feature.id.as_str())
+            && note.message.contains(&entity("axis"))
+            && !note.message.contains("one of"),
+        "{}",
+        note.message
+    );
+    let unchecked = typed
+        .revolve_profile_unchecked
+        .expect("no stored loop to compare");
+    assert_eq!(
+        unchecked.code,
+        SldprtLossCode::DesignRevolveProfileUnchecked.kind()
+    );
+
+    let definition = ir.design.scopes[0].definition.clone();
+    let (parameters, _) = entries.parameters(
+        &definition,
+        &super::super::parameters::Readings {
+            decoded: super::super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
+            length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
+            bound: typed.bound,
+            measured: typed.measured,
+            driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
+        },
+    );
+    ir.design.features = timeline.features;
+    ir.design.parameters = parameters;
+    ir.design.sketches = typed.sketches.records;
+    ir.design.sketch_entities = typed.sketches.entities;
+    ir.design.sketch_constraints = typed.sketches.constraints;
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_line_that_runs_against_the_axis_takes_a_flip_step() {
+    let (ir, native) = part(
+        r#"<Dimension Name="D1">360deg</Dimension>"#,
+        &with_centreline(),
+        &[revolution(
+            [0.0, 4.0, 0.0],
+            [0.0, -1.0, 0.0],
+            &one_sided(TAU),
+            "join",
+        )],
+    );
+    let revolve = typed(&ir, &native, "Revolve1").unwrap();
+    assert_eq!(
+        axis_pick(&revolve),
+        (
+            Some(entity("axis")),
+            vec![PostStep::Flip(Dimension::Literal(true))]
+        )
+    );
+}
+
+#[test]
+fn a_profile_line_on_the_axis_is_picked_where_no_centreline_lies_on_it() {
+    let (ir, native) = part("", &rectangle(0.0), &[about_y()]);
+    let revolve = typed(&ir, &native, "Revolve1").unwrap();
+    assert_eq!(
+        axis_pick(&revolve),
+        (
+            Some(entity("left")),
+            vec![PostStep::Flip(Dimension::Literal(true))]
+        )
+    );
+
+    let mut lines = rectangle(0.0);
+    lines.push(centreline("axis", (0.0, -5.0), (0.0, 25.0)));
+    let (ir, native) = part("", &lines, &[about_y()]);
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    let message = typed.revolve_axis_lines.unwrap().message;
+    assert!(
+        message.contains(&entity("axis")) && message.contains("one of 2 lines on the axis"),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_axis_on_no_line_of_the_sketch_states_only_its_value() {
+    let (ir, native) = part(
+        "",
+        &rectangle(10.0),
+        &[revolution(
+            [-5.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            &one_sided(TAU),
+            "join",
+        )],
+    );
+    let revolve = typed(&ir, &native, "Revolve1").unwrap();
+    assert_eq!(axis_pick(&revolve), (None, Vec::new()));
+    assert!(revolve.axis.unwrap().resolved.is_some());
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    assert!(typed.revolve_axis_lines.is_none());
+}
+
+#[test]
+fn an_axis_outside_the_sketch_plane_leaves_the_revolve_unresolved() {
+    let (ir, native) = part(
+        "",
+        &with_centreline(),
+        &[revolution(
+            [0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0],
+            &one_sided(TAU),
+            "join",
+        )],
+    );
+    let reason = typed(&ir, &native, "Revolve1").unwrap_err();
+    assert!(
+        reason.starts_with("0 sketch, 0 extrude and 1 revolve features"),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("outside its profile sketch's plane (DI-85)"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_turn_whose_sense_matters_leaves_the_revolve_unresolved() {
+    for (extent, reason) in [
+        (one_sided(PI), "less than a full turn on one side"),
+        (
+            json!({"kind": "two_sided",
+                "first": {"kind": "angle", "angle": PI}, "second": {"kind": "angle", "angle": 1.0}}),
+            "two-sided",
+        ),
+        (
+            json!({"kind": "one_sided", "termination": {"kind": "through_all"}}),
+            "limit is no angle",
+        ),
+    ] {
+        let (ir, native) = part(
+            "",
+            &with_centreline(),
+            &[revolution(
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                &extent,
+                "join",
+            )],
+        );
+        let message = typed(&ir, &native, "Revolve1").unwrap_err();
+        assert!(message.contains(reason), "{message}");
+    }
+}
+
+#[test]
+fn a_mid_plane_angle_is_a_symmetric_total() {
+    let (ir, native) = part(
+        r#"<Dimension Name="Angle">90deg</Dimension>"#,
+        &with_centreline(),
+        &[revolution(
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            &json!({"kind": "symmetric", "termination": {"kind": "angle", "angle": PI / 2.0}}),
+            "join",
+        )],
+    );
+    let (timeline, entries, _) = typed_timeline(&ir, &native);
+    let feature = timeline_feature(&timeline, "Revolve1");
+    let FeatureOperation::Revolve(revolve) = &feature.definition.operation else {
+        panic!("typed: {:?}", feature.definition.operation);
+    };
+    assert_eq!(
+        revolve.span,
+        Some(Span::Symmetric {
+            amount: Dimension::Parameter(entries.owned(&feature.id, "Angle").unwrap().clone()),
+            measure: Some(SymmetricMeasure::Total),
+        })
+    );
+}
+
+#[test]
+fn an_angle_no_dimension_holds_is_a_literal() {
+    for dimensions in ["", r#"<Dimension Name="D1">90deg</Dimension>"#] {
+        let (ir, native) = part(dimensions, &with_centreline(), &[about_y()]);
+        let revolve = typed(&ir, &native, "Revolve1").unwrap();
+        let Some(Span::Between { end, .. }) = revolve.span else {
+            panic!("one-sided");
+        };
+        let Limit::Amount(Dimension::Literal(angle)) = *end else {
+            panic!("a literal angle: {end:?}");
+        };
+        assert!((angle.get() - TAU).abs() < 1e-12);
+        let (_, _, typed) = typed_timeline(&ir, &native);
+        assert!(typed.bound.is_empty(), "{dimensions}: {:?}", typed.bound);
+    }
+}
+
+#[test]
+fn a_join_after_a_body_joins_and_a_cut_cuts() {
+    let (ir, native) = part(
+        "",
+        &with_centreline(),
+        &[
+            about_y(),
+            revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(TAU), "join"),
+        ],
+    );
+    assert_eq!(
+        typed(&ir, &native, "Revolve1").unwrap().output.boolean,
+        Some(Boolean::NewBody)
+    );
+    assert_eq!(
+        typed(&ir, &native, "Revolve2").unwrap().output.boolean,
+        Some(Boolean::Apply {
+            op: BooleanOp::Join,
+            targets: None
+        })
+    );
+    let (ir, native) = part(
+        "",
+        &with_centreline(),
+        &[revolution(
+            [0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            &one_sided(TAU),
+            "cut",
+        )],
+    );
+    assert_eq!(
+        typed(&ir, &native, "Revolve1").unwrap().output.boolean,
+        Some(Boolean::Apply {
+            op: BooleanOp::Cut,
+            targets: None
+        })
+    );
+}
+
+#[test]
+fn an_unread_operand_or_an_empty_sketch_leaves_the_revolve_unresolved() {
+    let unread = json!({"kind": "unresolved", "value": {"kind": "axis",
+        "profile": {"kind": "sketch", "value": SKETCH}, "solid": true}, "op": "join"});
+    let (ir, native) = part("", &with_centreline(), &[unread]);
+    let message = typed(&ir, &native, "Revolve1").unwrap_err();
+    assert!(
+        message.contains("the revolve's axis is not read"),
+        "{message}"
+    );
+
+    let (ir, native) = part(
+        "",
+        &[centreline("axis", (0.0, -5.0), (0.0, 25.0))],
+        &[about_y()],
+    );
+    let message = typed(&ir, &native, "Revolve1").unwrap_err();
+    assert!(message.contains("holds no profile curve"), "{message}");
+
+    let native_profile = json!({"kind": "resolved", "value": {
+        "profile": {"kind": "native", "value": "sldprt:history:feature#0:8"},
+        "axis": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "direction": {"x": 0.0, "y": 1.0, "z": 0.0}},
+        "extent": one_sided(TAU), "solid": true}, "op": "join"});
+    let (ir, native) = part("", &with_centreline(), &[native_profile]);
+    let message = typed(&ir, &native, "Revolve1").unwrap_err();
+    assert!(message.contains("profile is no whole sketch"), "{message}");
+}
