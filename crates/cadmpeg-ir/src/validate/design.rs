@@ -18,7 +18,7 @@ mod constructions;
 mod containers;
 mod dimensions;
 pub(super) mod evaluations;
-mod expressions;
+pub(super) mod expressions;
 mod fit;
 #[cfg(test)]
 pub(super) mod fixture;

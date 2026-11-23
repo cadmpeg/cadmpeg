@@ -8,12 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::document::design_records::DesignRecords;
 use crate::document::CadIr;
-use crate::drawings::{Drawing, DrawingKind};
+use crate::drawings::{Drawing, DrawingId, DrawingKind};
 use crate::references::ReferenceRecords;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
+use crate::validate::design::expressions::cycles;
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
     if ir.model.drawings.is_empty() {
@@ -21,9 +22,9 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
     }
     let records = DesignRecords::of(ir);
     let named = ReferenceRecords::of(&ir.model);
-    let graph = DrawingGraph::of(&ir.model.drawings);
+    let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
-    for (index, drawing) in ir.model.drawings.iter().enumerate() {
+    for drawing in &ir.model.drawings {
         let mut refs_valid = all_ids.contains(&drawing.object)
             && drawing
                 .native_ref
@@ -55,7 +56,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
                 }
             }
         }
-        if !views_are_valid(drawing, &named) || graph.on_cycle(index) {
+        if !views_are_valid(drawing, &named) || cyclic.contains(drawing.id.as_str()) {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -111,108 +112,30 @@ fn views_are_valid(drawing: &Drawing, targets: &ReferenceRecords<'_>) -> bool {
     })
 }
 
-/// The drawing records reached from themselves through `views`, or through
-/// `base_view`, by arena index.
-struct DrawingGraph {
-    cyclic: Vec<bool>,
-}
-
-impl DrawingGraph {
-    fn of(drawings: &[Drawing]) -> Self {
-        let index: BTreeMap<&str, usize> = drawings
+/// The ids of the drawing records reached from themselves through `views`,
+/// or through `base_view`.
+fn on_cycles(drawings: &[Drawing]) -> BTreeSet<&str> {
+    let ids: BTreeSet<&str> = drawings.iter().map(|drawing| drawing.id.as_str()).collect();
+    let graph = |links: fn(&Drawing) -> Vec<&DrawingId>| {
+        drawings
             .iter()
-            .enumerate()
-            .map(|(position, drawing)| (drawing.id.as_str(), position))
-            .collect();
-        let lookup = |id: &crate::drawings::DrawingId| index.get(id.as_str()).copied();
-        let views: Vec<Vec<usize>> = drawings
-            .iter()
-            .map(|drawing| drawing.views.iter().filter_map(lookup).collect())
-            .collect();
-        let bases: Vec<Vec<usize>> = drawings
-            .iter()
-            .map(|drawing| drawing.base_view.iter().filter_map(lookup).collect())
-            .collect();
-        let through_views = on_cycle(&views);
-        let through_bases = on_cycle(&bases);
-        Self {
-            cyclic: through_views
-                .into_iter()
-                .zip(through_bases)
-                .map(|(views, bases)| views || bases)
-                .collect(),
-        }
-    }
-
-    fn on_cycle(&self, index: usize) -> bool {
-        self.cyclic.get(index).copied().unwrap_or(false)
-    }
-}
-
-/// Which nodes lie on a cycle of the graph whose successors are
-/// `successors`: the members of a strongly connected component with more
-/// than one node, and the nodes that are their own successor. Iterative
-/// Tarjan, so a deep graph costs no call stack.
-fn on_cycle(successors: &[Vec<usize>]) -> Vec<bool> {
-    const UNVISITED: usize = usize::MAX;
-    let count = successors.len();
-    let mut order = vec![UNVISITED; count];
-    let mut low = vec![0; count];
-    let mut on_stack = vec![false; count];
-    let mut stack = Vec::new();
-    let mut cyclic = vec![false; count];
-    let mut next = 0;
-    for root in 0..count {
-        if order[root] != UNVISITED {
-            continue;
-        }
-        let mut frames = vec![(root, 0_usize)];
-        order[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(frame) = frames.last_mut() {
-            let (node, edge) = *frame;
-            if let Some(&successor) = successors[node].get(edge) {
-                frame.1 += 1;
-                if successor == node {
-                    cyclic[node] = true;
-                }
-                if order[successor] == UNVISITED {
-                    order[successor] = next;
-                    low[successor] = next;
-                    next += 1;
-                    stack.push(successor);
-                    on_stack[successor] = true;
-                    frames.push((successor, 0));
-                } else if on_stack[successor] {
-                    low[node] = low[node].min(order[successor]);
-                }
-                continue;
-            }
-            frames.pop();
-            if let Some(&(parent, _)) = frames.last() {
-                low[parent] = low[parent].min(low[node]);
-            }
-            if low[node] == order[node] {
-                let mut component = Vec::new();
-                while let Some(member) = stack.pop() {
-                    on_stack[member] = false;
-                    component.push(member);
-                    if member == node {
-                        break;
-                    }
-                }
-                if component.len() > 1 {
-                    for member in component {
-                        cyclic[member] = true;
-                    }
-                }
-            }
-        }
-    }
-    cyclic
+            .map(|drawing| {
+                let targets = links(drawing)
+                    .into_iter()
+                    .map(DrawingId::as_str)
+                    .filter(|target| ids.contains(target))
+                    .collect::<BTreeSet<_>>();
+                (drawing.id.as_str(), targets)
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let through_views = graph(|drawing| drawing.views.iter().collect());
+    let through_bases = graph(|drawing| drawing.base_view.iter().collect());
+    cycles(&through_views)
+        .into_iter()
+        .chain(cycles(&through_bases))
+        .flatten()
+        .collect()
 }
 
 #[cfg(test)]
