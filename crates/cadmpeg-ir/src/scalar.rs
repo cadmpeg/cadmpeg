@@ -80,10 +80,17 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A finite IEEE-754 binary32 value in its source precision.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
+#[cfg_attr(feature = "schema", schemars(transparent))]
 pub struct FiniteBinary32(f32);
+
+impl Serialize for FiniteBinary32 {
+    /// Writes negative zero as zero (§2.5).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f32(self.0 + 0.0)
+    }
+}
 
 impl FiniteBinary32 {
     /// Zero in source precision.
@@ -109,7 +116,7 @@ impl<'de> Deserialize<'de> for FiniteBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("FiniteBinary32 must be finite"))
     }
 }
@@ -136,10 +143,17 @@ impl From<FiniteBinary32> for FiniteReal {
 }
 
 /// A finite binary32 fraction in the closed unit interval.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
+#[cfg_attr(feature = "schema", schemars(transparent))]
 pub struct UnitBinary32(f32);
+
+impl Serialize for UnitBinary32 {
+    /// Writes negative zero as zero (§2.5).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f32(self.0 + 0.0)
+    }
+}
 
 impl UnitBinary32 {
     /// Admit a binary32 fraction in the closed unit interval.
@@ -181,7 +195,7 @@ impl<'de> Deserialize<'de> for UnitBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("UnitBinary32 must be in [0, 1]"))
     }
 }
@@ -239,11 +253,18 @@ impl From<PositiveI64> for i64 {
 macro_rules! checked_scalar {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[serde(transparent)]
+        #[cfg_attr(feature = "schema", schemars(transparent))]
         pub struct $name(f64);
         rewrite_scalar!($name);
+
+        impl Serialize for $name {
+            /// Writes negative zero as zero (§2.5).
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_f64(self.0 + 0.0)
+            }
+        }
 
         impl $name {
             /// Admits a value within the scalar's domain.
@@ -261,7 +282,7 @@ macro_rules! checked_scalar {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where D: serde::Deserializer<'de>,
             {
-                Self::new(f64::deserialize(deserializer)?)
+                Self::new(f64::deserialize(deserializer)? + 0.0)
                     .ok_or_else(|| serde::de::Error::custom($error))
             }
         }

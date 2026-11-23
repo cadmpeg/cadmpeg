@@ -81,8 +81,8 @@ pub(crate) trait Structs {
 /// Writes `value` as the pretty JSON `serde_json::to_writer_pretty` produces,
 /// admitting each value through `admission`.
 ///
-/// Floats are spelled as `serde_json` spells them: negative zero keeps its
-/// sign and a non-finite float is `null`. `structs` receives each struct the
+/// Floats are spelled as `serde_json` spells them, except that negative zero
+/// is written as zero (§2.5): a non-finite float is `null`. `structs` receives each struct the
 /// walk writes.
 ///
 /// # Errors
@@ -136,8 +136,8 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
 ///
 /// The value is written as JSON text through the canonical writer's
 /// serializer and read back. Floats pass as `serde_json::to_value` stores
-/// them: a non-finite float becomes `null`, negative zero stays negative, and
-/// an `f32` widens to `f64`. An object key is plain text, also a key that
+/// them, except that negative zero is zero (§2.5): a non-finite float becomes
+/// `null` and an `f32` widens to `f64`. An object key is plain text, also a key that
 /// spells `serde_json`'s `RawValue` token.
 ///
 /// # Errors
@@ -177,10 +177,10 @@ pub(crate) fn write_json_value_bytes<T: Serialize + ?Sized>(
 enum Floats {
     /// Refuse a non-finite float and write negative zero as zero.
     Canonical,
-    /// Write every float as `serde_json` writes it.
+    /// Write every float as `serde_json` writes it, negative zero as zero.
     SerdeJson,
-    /// Write every float as `serde_json::to_value` stores it: an `f32` as the
-    /// `f64` it widens to.
+    /// Write every float as `serde_json::to_value` stores it, negative zero as
+    /// zero: an `f32` as the `f64` it widens to.
     Value,
 }
 
@@ -304,8 +304,8 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         match self.guard.floats {
-            Floats::SerdeJson | Floats::Value => self.inner.serialize_f64(value),
             // `-0.0 + 0.0` is `0.0`, so a writer never writes negative zero.
+            Floats::SerdeJson | Floats::Value => self.inner.serialize_f64(value + 0.0),
             Floats::Canonical if value.is_finite() => self.inner.serialize_f64(value + 0.0),
             Floats::Canonical => Err(self.guard.refuse(value)),
         }
@@ -314,8 +314,8 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         match self.guard.floats {
-            Floats::SerdeJson => self.inner.serialize_f32(value),
-            Floats::Value => self.inner.serialize_f64(f64::from(value)),
+            Floats::SerdeJson => self.inner.serialize_f32(value + 0.0),
+            Floats::Value => self.inner.serialize_f64(f64::from(value) + 0.0),
             Floats::Canonical if value.is_finite() => self.inner.serialize_f32(value + 0.0),
             Floats::Canonical => Err(self.guard.refuse(f64::from(value))),
         }
