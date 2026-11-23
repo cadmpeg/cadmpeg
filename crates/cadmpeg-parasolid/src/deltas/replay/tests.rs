@@ -63,23 +63,21 @@ fn nx() -> Vec<u8> {
 
 type Image = (u32, u16, u32, f64);
 
+fn image(node: &impl NodeFields) -> Image {
+    let value = match node.kind() {
+        POINT => node.vector("pvec").unwrap()[0],
+        _ => f64::from(node.byte("type").unwrap()),
+    };
+    (
+        node.index(),
+        node.kind(),
+        node.pointer("next").unwrap(),
+        value,
+    )
+}
+
 fn images(replay: &Replay<'_, '_>) -> Vec<Image> {
-    replay
-        .state()
-        .nodes()
-        .map(|node| {
-            let value = match node.kind() {
-                POINT => node.vector("pvec").unwrap()[0],
-                _ => f64::from(node.byte("type").unwrap()),
-            };
-            (
-                node.index(),
-                node.kind(),
-                node.pointer("next").unwrap(),
-                value,
-            )
-        })
-        .collect()
+    replay.state().nodes().map(image).collect()
 }
 
 /// The identifier and node images of every state, from the current mark.
@@ -304,12 +302,18 @@ fn first_step(stream: &[u8]) -> (Result<(), ReplayError>, usize, u32) {
 
 #[test]
 fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
-    let cases: [Case<'_>; 6] = [
+    let cases: [Case<'_>; 7] = [
         (
             &[],
             &[(14, POINT)],
             &[],
             ReplayError::RemovedAbsent { mark: 9, xmt: 14 },
+        ),
+        (
+            &[TestNode::point(14, 1, 0), TestNode::point(14, 1, 1)],
+            &[],
+            &[],
+            ReplayError::RestoredPresent { mark: 9, xmt: 14 },
         ),
         (
             &[],
@@ -474,6 +478,32 @@ fn truncated_and_corrupted_streams_end_in_a_state_or_a_typed_error() {
                 };
                 while let Ok(Some(_)) = replay.step() {}
                 let _ = replay.state().dangling().count();
+            }
+        }
+    });
+}
+
+/// The nodes a written partition frames, in node-index order.
+fn written_images(bytes: &[u8]) -> Vec<Image> {
+    let records = PrimaryRecords::read(bytes).unwrap().unwrap();
+    assert!(records.is_terminated());
+    let mut out: Vec<Image> = records.nodes().map(|node| image(&node)).collect();
+    out.sort_by_key(|image| image.0);
+    out
+}
+
+#[test]
+fn every_state_writes_as_a_partition_that_reads_back_to_its_nodes() {
+    let partition_bytes = partition(&current());
+    with_decode_context(|_ctx| {
+        for stream in [solidworks(), nx()] {
+            let records = DeltasRecords::read(&stream).unwrap();
+            let line = MainLine::read(&records).unwrap();
+            let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+            let mut replay = line.replay(&partition).unwrap();
+            assert_eq!(replay.transmit().unwrap(), partition_bytes);
+            while replay.step().unwrap().is_some() {
+                assert_eq!(written_images(&replay.transmit().unwrap()), images(&replay));
             }
         }
     });

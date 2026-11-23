@@ -4,7 +4,7 @@
 use super::{DeltasRecords, Event, EventContent, Instance};
 use crate::records::fields::NULL_REAL;
 use crate::records::instance::FieldValue;
-use crate::records::DataType;
+use crate::records::{DataType, SchemaPlan};
 use cadmpeg_core::decode::View;
 use std::ops::Range;
 
@@ -39,6 +39,43 @@ impl<'r> DeltasNode<'r> {
             }),
             _ => None,
         }
+    }
+
+    /// The node's effective field list.
+    pub(crate) fn plan(&self) -> &'r SchemaPlan {
+        self.instance.definition().plan()
+    }
+
+    /// The declaration of the node's type, after its type tag, from the
+    /// type's first use in the stream.
+    pub(crate) fn declaration(&self) -> Option<&'r [u8]> {
+        let range = self.instance.definition().declaration();
+        self.source.get(range.start.checked_add(2)?..range.end)
+    }
+
+    /// The node as a node sequence encodes it: its variable count, identity,
+    /// and fields, with no status byte after a pointer element.
+    pub(crate) fn primary_encoding(&self) -> Option<Vec<u8>> {
+        let mut out = Vec::new();
+        if let Some(count) = self.instance.variable_length() {
+            out.extend(count.to_be_bytes());
+        }
+        let fields = self.instance.fields();
+        let identity_end = fields.first().map_or(self.range.end, |field| field.start);
+        out.extend_from_slice(self.source.get(self.instance.identity_at()..identity_end)?);
+        for (index, (field, range)) in self.plan().fields.iter().zip(fields).enumerate() {
+            if field.data_type != DataType::Pointer {
+                out.extend_from_slice(self.source.get(range.clone())?);
+                continue;
+            }
+            for value in self.values_at(index)? {
+                let FieldValue::Pointer { target, .. } = value else {
+                    return None;
+                };
+                crate::pointer::write(&mut out, target.get())?;
+            }
+        }
+        Some(out)
     }
 
     /// The number of effective fields.

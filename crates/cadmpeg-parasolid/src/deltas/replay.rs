@@ -16,7 +16,7 @@ use crate::records::deltas::node::DeltasNode;
 use crate::records::deltas::{DeltasEnd, DeltasRecords, EventContent, Metadata};
 use crate::records::node_type::{BODY, EDGE, FACE, GROUP, VERTEX};
 use crate::records::primary::Node;
-use crate::records::{NodeFields, PrimaryRecords};
+use crate::records::{NodeFields, PrimaryRecords, SchemaPlan};
 
 /// Why a Deltas stream yields no main line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +171,36 @@ impl std::fmt::Display for ReplayError {
 }
 
 impl std::error::Error for ReplayError {}
+
+/// Why a state does not write as a partition transmit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransmitError {
+    /// A node's field list differs from the field list its type was written
+    /// with.
+    SchemaMismatch {
+        /// Node type.
+        kind: u16,
+    },
+    /// The written stream does not frame back to the state's node types and
+    /// indices.
+    Reframe,
+}
+
+impl std::fmt::Display for TransmitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SchemaMismatch { kind } => write!(
+                formatter,
+                "a type {kind} node has another field list than the type was written with"
+            ),
+            Self::Reframe => {
+                formatter.write_str("the written partition does not frame back to the state")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransmitError {}
 
 /// The content of one delta.
 #[derive(Debug, Clone, Default)]
@@ -440,12 +470,14 @@ impl<'r> MainLine<'r> {
         &'a self,
         partition: &'r PrimaryRecords<'_>,
     ) -> Result<Replay<'a, 'r>, ReplayError> {
-        if !partition.is_terminated() {
-            return Err(ReplayError::PartitionIncomplete);
-        }
+        let (header, end) = partition.frame().ok_or(ReplayError::PartitionIncomplete)?;
         let mut nodes = BTreeMap::new();
+        let mut declarations = BTreeMap::new();
         for node in partition.nodes() {
             let xmt = node.index();
+            declarations
+                .entry(node.kind())
+                .or_insert_with(|| node.declaration());
             if nodes.insert(xmt, StateNode::Partition(node)).is_some() {
                 return Err(ReplayError::DuplicateNode { xmt });
             }
@@ -454,6 +486,11 @@ impl<'r> MainLine<'r> {
             line: self,
             state: State { nodes },
             applied: 0,
+            frame: Frame {
+                header,
+                end,
+                declarations,
+            },
         })
     }
 }
@@ -702,6 +739,19 @@ pub struct Replay<'a, 'r> {
     line: &'a MainLine<'r>,
     state: State<'r>,
     applied: usize,
+    frame: Frame<'r>,
+}
+
+/// The partition bytes a written state reuses.
+#[derive(Debug, Clone)]
+struct Frame<'r> {
+    /// The bytes before the partition's first node.
+    header: &'r [u8],
+    /// The partition's terminator and the bytes after it.
+    end: &'r [u8],
+    /// The declaration of each node type, from its first node in the
+    /// partition.
+    declarations: BTreeMap<u16, Option<&'r [u8]>>,
 }
 
 impl<'r> Replay<'_, 'r> {
@@ -731,6 +781,85 @@ impl<'r> Replay<'_, 'r> {
         self.state.apply(delta)?;
         self.applied += 1;
         Ok(Some(self.mark()))
+    }
+
+    /// The state at [`Replay::mark`] as a partition transmit: the
+    /// partition's header, the state's partition nodes in partition order,
+    /// its delta images in node-index order, and the partition's terminator.
+    /// Each node type carries its declaration at its first node; a delta
+    /// image loses the status byte after each pointer element. At the
+    /// current mark the result is the partition's bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransmitError`] when two nodes of one type have different
+    /// field lists, or when the written stream does not frame back to the
+    /// state's node types and indices.
+    pub fn transmit(&self) -> Result<Vec<u8>, TransmitError> {
+        let mut partition = Vec::new();
+        let mut images = Vec::new();
+        for node in self.state.nodes() {
+            match node {
+                StateNode::Partition(node) => partition.push(node),
+                StateNode::Delta(node) => images.push(node),
+            }
+        }
+        partition.sort_by_key(|node| node.range().start);
+        let mut out = self.frame.header.to_vec();
+        let mut written = BTreeMap::<u16, &SchemaPlan>::new();
+        let mut expected = Vec::new();
+        let mut write = |kind: u16,
+                         xmt: u32,
+                         plan: &'r SchemaPlan,
+                         declaration: Option<&[u8]>,
+                         encoding: Option<&[u8]>|
+         -> Result<(), TransmitError> {
+            out.extend(kind.to_be_bytes());
+            match written.get(&kind) {
+                Some(first) if *first != plan => {
+                    return Err(TransmitError::SchemaMismatch { kind });
+                }
+                Some(_) => {}
+                None => {
+                    written.insert(kind, plan);
+                    out.extend_from_slice(declaration.ok_or(TransmitError::Reframe)?);
+                }
+            }
+            out.extend_from_slice(encoding.ok_or(TransmitError::Reframe)?);
+            expected.push((xmt, kind));
+            Ok(())
+        };
+        for node in partition {
+            let declaration = self.frame.declarations.get(&node.kind()).copied().flatten();
+            write(
+                node.kind(),
+                node.index(),
+                node.plan(),
+                declaration,
+                node.encoding(),
+            )?;
+        }
+        for node in images {
+            write(
+                node.kind(),
+                node.index(),
+                node.plan(),
+                node.declaration(),
+                node.primary_encoding().as_deref(),
+            )?;
+        }
+        out.extend_from_slice(self.frame.end);
+        let framed = PrimaryRecords::read(&out)
+            .ok()
+            .flatten()
+            .filter(PrimaryRecords::is_terminated)
+            .is_some_and(|records| {
+                records
+                    .nodes()
+                    .map(|node| (node.index(), node.kind()))
+                    .eq(expected.iter().copied())
+            });
+        framed.then_some(out).ok_or(TransmitError::Reframe)
     }
 }
 
