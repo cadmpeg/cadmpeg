@@ -517,6 +517,16 @@ impl CodecBackend for SldprtCodec {
         let classification = dialect::classify_layers(&scan)?;
         let mut summary = container::summarize(&scan, classification.layers().clone());
         classification.append_losses(&mut summary.losses);
+        summary.losses.extend(
+            scan.given_up
+                .iter()
+                .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+        );
+        summary.losses.extend(
+            scan.noncanonical.iter().map(|deviation| {
+                loss::SldprtLossCode::ContainerNoncanonical.note(deviation.clone())
+            }),
+        );
         Ok(summary)
     }
 

@@ -675,6 +675,8 @@ mod default_properties;
 
 mod weldment_refusal;
 
+mod partial_decode;
+
 mod partition_sketches;
 
 mod configuration_states;
