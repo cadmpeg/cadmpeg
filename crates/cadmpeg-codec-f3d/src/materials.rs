@@ -740,8 +740,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
             continue;
         };
         // The override is assumed to take precedence over the body's material
-        // assignment, so it replaces that binding. The first override of a
-        // body binds it.
+        // assignment, so it replaces that binding. The override record stores
+        // only the body's entity suffix, not the component-qualified entity ID
+        // that names an ACT entity, so the binding has no source entity.
         bind_body_override(
             &mut bindings,
             &mut overridden,
@@ -2182,8 +2183,10 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
 /// Binds a body-override appearance. The override is assumed to take
 /// precedence over the body's material assignment: a binding of the same body
 /// to another appearance is replaced and charged as a loss, and a binding to
-/// the same appearance is kept with its assignment provenance. Only the first
-/// override of a body binds it.
+/// the same appearance is kept with its assignment provenance. No stored order
+/// among several differing overrides of one body is known, so the decoder
+/// assumes the first in decode order binds and charges each later differing
+/// override it drops.
 fn bind_body_override(
     bindings: &mut Vec<AppearanceBinding>,
     overridden: &mut BTreeSet<AppearanceTarget>,
@@ -2198,6 +2201,10 @@ fn bind_body_override(
         return;
     }
     if !overridden.insert(binding.target.entity.clone()) {
+        losses.push(F3dLossCode::BodyOverrideSuperseded.note(format!(
+            "A body-override appearance {} was not bound because an earlier body-override appearance already binds the body; the first override is assumed to bind.",
+            binding.appearance
+        )));
         return;
     }
     let before = bindings.len();
