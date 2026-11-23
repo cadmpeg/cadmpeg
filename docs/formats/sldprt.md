@@ -2943,8 +2943,32 @@ regions, and mostly 0 on the one cap of an end with one; the rule that assigns
 it is not known. Some code-81 caps carry 1 as their third field; what it states
 is not known, and such a cap is `Other("sldprt:81")`. The producer and the
 timestamp are allocations: they stay in the native name. The sketch entity id
-stays there too, and the name states no generating entity, because that it is
-the sketch segment's id is not established.
+stays there too, and the name states no generating entity, because the field is
+the face's local identifier, not the object index of a sketch segment.
+
+The local identifier of a side face of a feature that extrudes a closed polygon
+of lines joins to the profile line that sweeps it through the profile's 92-byte
+line records (§2). The records of the polygon's lines are in contour order: the
+line of each record shares a corner with the line of the next record, and the
+order can run in either rotational direction. In a line record whose u32 at
+marker +80 is zero, the u32 at marker +84 is the local identifier of the side
+face that the next line record sweeps. The last line record stores zero there.
+The first line record sweeps the one side identifier among the feature's
+side-class generated-surface identities that no +84 value of the profile
+names. The identifiers are not in record order, they can start above 1, and
+each piece of a side face that a later feature cuts keeps its identifier. A
+line after a record whose u32 at +80 is nonzero is not named by the profile.
+
+A component path of an edge selection lists the two faces beside the edge, then
+the faces at the edge's two ends. Each entry carries an instance cell and a
+local identifier equal to those of a generated-surface identity of the feature
+that holds the terminal component. An entry that names a side face carries its
+local identifier, so the rule above joins it to its profile line. The two end
+faces of an extrusion carry the local identifiers 0 (start) and 1 (end) in the
+end-face class. A path of an edge along a side face between the two end faces
+lists the two side faces, then the end-face entries 1 and 0. A path of an edge
+on the end face with local identifier 1 lists that face, the side face beside
+the edge, then the two side faces at the edge's ends.
 Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
 `moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
 instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`

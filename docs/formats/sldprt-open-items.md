@@ -1134,17 +1134,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
 
-### EV-33. Component paths of blend edge selections
+### EV-33. Side-face identifiers of non-extruded producers and of unnamed profile lines
 
-**Question.** What does each entry of the four-entry path of an edge in a fillet or chamfer edge list name, and which sketch entity generates a side face that a path names?
+**Question.** Which profile line sweeps a side face whose local identifier no `+84` value of the profile names, and what do the entries of a blend edge's component path name for a producer other than an extrusion?
 
-**Known.** Every entry carries an instance cell and a local identifier. For a fillet or chamfer of a feature that extrudes a closed sketch, each pair equals the instance cell and local identifier of a generated-surface identity of the feature that holds the terminal component: instance cells of the end-face class with local identifiers 0 and 1, and instance cells of the side-face class with the side faces' local identifiers. A path of a vertical edge ends with the pairs of local identifiers 1 and 0 of the end-face class. A path of an edge on the end face with local identifier 1 begins with that pair.
+**Known.** `sldprt.md` §5 gives the join from the local identifier of an extrusion side face to its profile line, and the order of a component path's entries for an extrusion. A line record whose u32 at marker +80 is nonzero stores zero at +84 in two profiles. In a seven-line profile, the closing line record has `00 00 02 00` at +80 and stores `1` at +84. In a rectangular profile, two of the four line records are line handles whose geometry is not read (EV-27), so the join states no sketch entity for their faces.
 
-**Known (side identifiers).** A side face's `FACE_ID_2001` list is a one-hop list of class 74 or 83, whose entity field is the face's local identifier, so the identifier joins the face to the feature-local identity that a component path names. In an extrusion of a closed polygon of lines whose side faces are all present, the side identifiers form a run of consecutive integers and the faces they name follow the contour in one rotational direction. The run can start above 1. Where later features cut a side face, its remaining pieces keep the identifier. In an eight-line profile, the length of the profile line in record order *k* equals the length of an edge of the face with identifier *k* for every identifier whose face is not cut, and no other line of the profile has that length.
-
-**Conflict.** A rectangular profile whose blend paths place the vertical edge at one corner between the faces with identifiers 4 and 2, and the vertical edge at the adjacent corner between 3 and 4, assigns identifiers 1 to 4 to the sides in the order bottom, right, left, top. The line records of that profile are in the order bottom, left, top, right, and the sides then follow the contour as 1, 3, 4, 2, not as consecutive identifiers. The two observations do not fit one rule that maps the line records in record order to identifiers.
-
-**Need.** The rule that orders the entries of a path and the entity each entry names for producers other than an extrusion, and the join from a side face's local identifier to the sketch entity that generates it (§5.7 states that this identifier is not established as the sketch segment's id). A record that stores the identifier given to each profile segment would settle it. Until then a blend's selected edges keep their component paths.
+**Need.** The identifier that a record with nonzero `+80` gives the next line; whether the closing record's `+84` names the first line's face where it is nonzero; and the entry order and entities of a component path for producers other than an extrusion.
 
 ### EV-24. Bytes after the last top-level object
 
