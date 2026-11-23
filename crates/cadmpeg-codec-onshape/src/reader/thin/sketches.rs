@@ -54,7 +54,11 @@ pub(in crate::reader) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Res
                     y_axis,
                     z_axis,
                 }),
-                ..Construction::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: BTreeMap::new(),
             })),
             solve: SketchSolve {
                 state: None,

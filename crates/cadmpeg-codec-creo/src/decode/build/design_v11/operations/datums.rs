@@ -25,7 +25,10 @@ pub(super) fn datum(value: &LegacyOperation) -> Option<FeatureOperation> {
                     normal: UnitVector3::normalized_nonzero(frame.normal().into())?,
                     x_axis: UnitVector3::normalized_nonzero(frame.u_axis().into())?,
                 }),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: BTreeMap::new(),
             })
         }
         LegacyOperation::DatumCoordinateSystem { frame } => {
@@ -37,7 +40,10 @@ pub(super) fn datum(value: &LegacyOperation) -> Option<FeatureOperation> {
                     y_axis: frame.y_axis(),
                     z_axis: frame.z_axis(),
                 }),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: BTreeMap::new(),
             })
         }
         _ => return None,

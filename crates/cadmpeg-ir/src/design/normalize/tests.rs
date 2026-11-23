@@ -192,7 +192,10 @@ fn offset_plane() -> Construction<kinds::Plane> {
             None,
         )],
         after: vec![translate_z(5.0), translate_z(2.0)],
-        ..Construction::default()
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
     }
 }
 
@@ -205,7 +208,11 @@ fn point_at(reference: InputReference, ratio: f64) -> Construction<kinds::Point>
                 ratio,
             )))),
         )],
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
     }
 }
 
@@ -216,7 +223,14 @@ fn points() -> Vec<Construction<kinds::Point>> {
         point_at(selection(named(vec![picks_feature("fillet")])), 1.0),
         point_at(selection(named(vec![picks_feature("fillet")])), 0.25),
         point_at(
-            InputReference::Built(Box::new(AnyConstruction::Curve(Construction::default()))),
+            InputReference::Built(Box::new(AnyConstruction::Curve(Construction {
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: BTreeMap::new(),
+            }))),
             0.25,
         ),
         Construction {
@@ -226,7 +240,10 @@ fn points() -> Vec<Construction<kinds::Point>> {
                 None,
             )],
             after: vec![translate_z(5.0)],
-            ..Construction::default()
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
         },
     ]
 }
@@ -1638,7 +1655,11 @@ fn nested_point(depth: usize) -> Construction<kinds::Point> {
             )))),
             reversed: None,
         }],
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
     };
     for _ in 1..depth {
         point = Construction {
@@ -1647,7 +1668,11 @@ fn nested_point(depth: usize) -> Construction<kinds::Point> {
                 InputReference::Built(Box::new(AnyConstruction::Point(point))),
                 None,
             )],
-            ..Construction::default()
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
         };
     }
     point
