@@ -45,7 +45,7 @@ pub(super) fn primary_reference_common_edge(
 
 #[cfg(test)]
 mod tests {
-    use super::primary_reference_common_edge;
+    use crate::history::reference_edge::primary_reference_common_edge;
     use crate::records::topology::edge_recipe::DesignEdgeRecipeStructure;
 
     const PROGRAM: &[i32] = &[

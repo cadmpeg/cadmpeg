@@ -42409,7 +42409,6 @@ anchor = "The compact spacing direction form is a 195-byte frame."
 name = "distance_type"
 offset = 89
 type = "u32"
-value = 7
 source = "spec"
 anchor = "The compact spacing direction form is a 195-byte frame."
 
@@ -54536,6 +54535,351 @@ offset = 78
 type = "u32"
 source = "spec"
 anchor = "The sketch collection of a component with `k` sketches stores, in order"
+
+[[record]]
+name = "rectangular_pattern_linked_spacing_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The linked spacing direction form is a 216-byte frame."
+size = 216
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "distance_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "selection_count"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "selection_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "selection_link_one"
+offset = 108
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "selection_link_two"
+offset = 119
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 134
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "role"
+offset = 145
+type = "u64"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 153
+type = "bytes[10]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "opaque_index"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 167
+type = "f64"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 179
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "separator_flag"
+offset = 190
+type = "u8"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 191
+type = "bytes[2]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 193
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "scope_separator"
+offset = 204
+type = "u8"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 205
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked spacing direction form is a 216-byte frame."
+
+[[record]]
+name = "rectangular_pattern_linked_extent_direction_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The linked extent direction form is a 215-byte frame."
+size = 215
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "selection_kind"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "displacement"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "zero_run_16"
+offset = 73
+type = "bytes[16]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "distance_type"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "selection_count"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "selection_reference"
+offset = 97
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "selection_link_one"
+offset = 108
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "selection_link_two"
+offset = 119
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "auxiliary_count"
+offset = 130
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "auxiliary_reference"
+offset = 134
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "role"
+offset = 145
+type = "u64"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "zero_run_after_role"
+offset = 153
+type = "bytes[10]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "opaque_index"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "opaque_scalar"
+offset = 167
+type = "f64"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "opaque_index_repeat"
+offset = 175
+type = "u32"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "index_plus_two_reference"
+offset = 179
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "separator_zero_run"
+offset = 190
+type = "bytes[2]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "index_plus_one_reference"
+offset = 192
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "scope_separator"
+offset = 203
+type = "u8"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
+
+[[record.field]]
+name = "scope_reference"
+offset = 204
+type = "bytes[11]"
+source = "spec"
+anchor = "The linked extent direction form is a 215-byte frame."
 
 [[record]]
 name = "local_component_occurrence_attributed_source_matrix"

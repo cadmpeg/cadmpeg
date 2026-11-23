@@ -200,6 +200,28 @@ fn padded_value_only_scalar_value_follows_its_four_zero_bytes() {
 }
 
 #[test]
+fn a_padded_value_only_scalar_whose_trailer_opens_with_a_class_reference_holds_its_f64() {
+    // A class token (`0x8134`) or a class declaration after a zero byte.
+    let token = [0x00, 0x34, 0x81];
+    let mut declaration = vec![0x00, 0xff, 0xff, 0x01, 0x00, 0x05, 0x00];
+    declaration.extend_from_slice(b"sgArc");
+    for opening in [token.as_slice(), declaration.as_slice()] {
+        let (mut payload, value_offset) = padded_value_only_scalar(0.0127, 0x465);
+        payload[value_offset + 8..value_offset + 8 + opening.len()].copy_from_slice(opening);
+        let names = decoded_names(&payload);
+        let scalars = named_scalars(&payload, "lane", &names).unwrap();
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value.get(), 0.0127);
+        assert_eq!(
+            scalar.offset,
+            cadmpeg_core::decode::u64_from_index(value_offset)
+        );
+    }
+}
+
+#[test]
 fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     let mut payload = Vec::new();
     payload.extend_from_slice(NAME_MARKER);

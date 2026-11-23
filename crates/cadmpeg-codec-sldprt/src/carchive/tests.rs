@@ -284,14 +284,14 @@ fn a_reconciled_configuration_map_types_the_parameter_object() {
     let arena = DecodeArena::new();
     let (ctx, _root) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
-    let walk = super::walk_configuration(
-        &ctx,
-        &config_object_stream(),
-        &resolved_features_stream(),
-        Some(17_000),
-    )
-    .expect("the class walk succeeds")
-    .expect("the map reconciles with the leading count");
+    let resolved = resolved_features_stream();
+    let count = crate::archive::resolved_count(&resolved).expect("the leading count");
+    let map = crate::archive::class_index_map(&config_object_stream(), count, &ctx)
+        .expect("the class walk succeeds")
+        .expect("the map reconciles with the leading count");
+    let walk = super::walk_configuration(&ctx, &map, &resolved, Some(17_000))
+        .expect("the walk succeeds")
+        .expect("the stream opens with its count");
     assert_eq!(walk.status, Status::End);
     assert_eq!(walk.parameters.len(), 1);
     assert_eq!(&*walk.parameters[0].class, "moLengthParameter_c");

@@ -2,7 +2,7 @@
 //! Combine operands named by model bodies or by the features that generate
 //! them.
 
-use crate::history::FeatureBodySelectionInputs;
+use crate::history::body_selections::FeatureBodySelectionInputs;
 use crate::history_records::{AsmDeltaState, AsmEntityVersion, AsmHistoricalTopology};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::operation_settings::{BooleanKind, CombineDestination};

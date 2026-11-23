@@ -70,6 +70,68 @@ source = "spec"
 anchor = "seven zero bytes at trailer +28"
 
 [[record]]
+name = "feature_input_padded_scalar_cell"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+kind = "byte"
+section = "2"
+anchor = "In a part that writes the 18-byte header, a value-only scalar also begins with that header"
+size = 19
+endianness = "little"
+note = "Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form."
+
+[[record.field]]
+name = "padding"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes follow the 14-byte value-only header"
+
+[[record.field]]
+name = "value"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "the f64 begins at the 18-byte header's end"
+
+[[record.field]]
+name = "trailer_zero_prefix"
+offset = 12
+type = "bytes[3]"
+source = "spec"
+anchor = "the trailer begins after the f64"
+
+[[record.field]]
+name = "object_id"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "three zero bytes and the scalar object identifier"
+
+[[record]]
+name = "feature_input_class_reference_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+kind = "byte"
+section = "2"
+anchor = "or with a zero byte and a class token or class declaration"
+size = 3
+endianness = "little"
+note = "The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "with a zero byte and a class token"
+
+[[record.field]]
+name = "class_reference"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "a class token or class declaration"
+
+[[record]]
 name = "feature_input_operand_cell12"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
 kind = "byte"
@@ -115,7 +177,7 @@ section = "2"
 anchor = "In the token form this is an 8-byte prefix"
 size = 8
 endianness = "little"
-note = "The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form."
+note = "The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it."
 
 [[record.field]]
 name = "relation_class_token"
@@ -15119,6 +15181,73 @@ offset = 36
 type = "bytes[4]"
 source = "spec"
 anchor = "four zero tail bytes"
+
+[[record]]
+name = "extrusion_end_spec_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs"
+kind = "byte"
+section = "2"
+anchor = "A compact extrusion end-spec child carries its class"
+size = 26
+endianness = "little"
+note = "Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26."
+
+[[record.field]]
+name = "class"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "The direct form uses the declaration's final `_c` bytes as its anchor"
+
+[[record.field]]
+name = "zero_after_class"
+offset = 2
+type = "bytes[2]"
+source = "spec"
+anchor = "Anchor +2 is zero"
+
+[[record.field]]
+name = "direction_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The little-endian u32 at anchor +4 is the direction count"
+
+[[record.field]]
+name = "boolean_word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Anchor +8 is a little-endian u32 Boolean word"
+
+[[record.field]]
+name = "reversal"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "anchor +12 is the little-endian u32 reversal flag"
+
+[[record.field]]
+name = "zero_before_codes"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "anchor +16 is a zero u16"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The little-endian u32 first-direction termination code is at anchor +18"
+
+[[record.field]]
+name = "second_code"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the little-endian u32 second-direction termination code is at anchor +22"
 
 [[record]]
 name = "pmark_record_head"

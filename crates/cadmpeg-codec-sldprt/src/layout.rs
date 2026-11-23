@@ -28,6 +28,36 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
     pub(crate) const ZERO_TAIL: usize = 28;
 }
 
+/// Byte offsets for the `feature_input_padded_scalar_cell` record.
+///
+/// Spec §2. Record length 19 B.
+///
+/// ```text
+/// Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form.
+/// ```
+pub(crate) mod feature_input_padded_scalar_cell {
+    /// Offset of `padding` (`bytes[4]`). Spec §2.
+    pub(crate) const PADDING: usize = 0;
+    /// Offset of `value` (`f64`, little-endian). Spec §2.
+    pub(crate) const VALUE: usize = 4;
+    /// Offset of `trailer_zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_ZERO_PREFIX: usize = 12;
+}
+
+/// Byte offsets for the `feature_input_class_reference_trailer` record.
+///
+/// Spec §2. Record length 3 B.
+///
+/// ```text
+/// The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is.
+/// ```
+pub(crate) mod feature_input_class_reference_trailer {
+    /// Offset of `zero` (`u8`). Spec §2.
+    pub(crate) const ZERO: usize = 0;
+    /// Offset of `class_reference` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_REFERENCE: usize = 1;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.
@@ -53,11 +83,15 @@ pub(crate) mod feature_input_operand_cell12 {
 /// Spec §2. Record length 8 B.
 ///
 /// ```text
-/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form.
+/// The relation and parameter classes of a sketch dimension's named scalar in the token form; the scalar's name record begins at +8. The parameter-class token at +6 is the two bytes before the name record of every named scalar in the token form. A relation class declared in place ends at +2, and the zero u32 at +2 and the parameter-class token at +6 follow it.
 /// ```
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
+    /// Offset of `relation_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const RELATION_CLASS_TOKEN: usize = 0;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 2;
     /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
     pub(crate) const PARAMETER_CLASS_TOKEN: usize = 6;
 }
@@ -3593,6 +3627,18 @@ pub(crate) mod extrusion_compact_operation_trailer {
     pub(crate) const FINAL_TOKEN: usize = 34;
     /// Offset of `zero_tail` (`bytes[4]`). Spec §2.
     pub(crate) const ZERO_TAIL: usize = 36;
+}
+
+/// Byte offsets for the `extrusion_end_spec_header` record.
+///
+/// Spec §2. Record length 26 B.
+///
+/// ```text
+/// Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26.
+/// ```
+pub(crate) mod extrusion_end_spec_header {
+    /// Offset of `reversal` (`u32`, little-endian). Spec §2.
+    pub(crate) const REVERSAL: usize = 12;
 }
 
 /// Byte offsets for the `pmark_record_head` record.

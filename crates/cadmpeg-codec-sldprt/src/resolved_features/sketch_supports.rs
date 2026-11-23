@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The reference plane each sketch's profile names: the compact
-//! `moCompRefPlane_c` record of `docs/formats/sldprt.md`.
+//! The reference plane each sketch's profile names: the principal plane of
+//! its local component records, else the compact `moCompRefPlane_c` record
+//! of `docs/formats/sldprt.md`.
 
 use std::collections::HashMap;
 
 use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
-use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{principal_source, CompactReferencePlaneIndex};
 use super::holes::feature_object_byte_ranges;
 use super::scalars::FeatureObjectNames;
 
@@ -46,7 +47,9 @@ pub(crate) fn sketch_supports<'a>(
                 continue;
             };
             let plane = index
-                .profile_source(context, start, end)
+                .local_principal_component(context, start, end)
+                .map(principal_source)
+                .or_else(|| index.profile_source(context, start, end))
                 .and_then(|object| by_object.get(&object).copied().flatten());
             let Some(plane) = plane else {
                 continue;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{scope_between, state};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPlane,
     AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,

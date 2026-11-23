@@ -4,7 +4,7 @@
 #![allow(clippy::default_trait_access)]
 
 use super::bind_feature_body_selections;
-use crate::history::FeatureBodySelectionInputs;
+use crate::history::body_selections::FeatureBodySelectionInputs;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
@@ -255,7 +255,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         shells: &[],
         faces: &[],
     };
-    super::super::bind_pattern_body_selections(
+    crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
         &inputs,
         &mut crate::history::body_candidates::BodyCandidates::new(
@@ -487,7 +487,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         shells: &[],
         faces: &[],
     };
-    super::super::bind_pattern_body_selections(
+    crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
         &inputs,
         &mut crate::history::body_candidates::BodyCandidates::new(
