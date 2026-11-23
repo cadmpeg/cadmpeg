@@ -202,11 +202,25 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignReverseNormalOperation {
     pub(crate) body_group: Located<u32>,
+    /// GUID shared by the linked Reverse Normal scopes of one timeline item,
+    /// one per component; absent for the null GUID of an unlinked scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_normal_link"
+    )]
+    pub(crate) link: Option<Located<crate::records::mesh::DesignRelaxedGuidText>>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_reverse_normal_link,
+    Located<crate::records::mesh::DesignRelaxedGuidText>,
+    "link"
+);
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, PartialEq, Deserialize)]

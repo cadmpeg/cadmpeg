@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::feature_project::scope_properties;
+use crate::design::feature_project::scope_properties::scope_properties;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 
 #[test]

@@ -4,10 +4,9 @@ use crate::design::construction::{
 };
 use crate::design::dimension::Dimension;
 use crate::design::options::NativeOption;
-use crate::features::{
-    DistinctMembers, FeatureContent, FeatureDirection3, FeatureOperation, FinitePoint3,
-    ParameterId, UnresolvedFamily,
-};
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::selections::DistinctMembers;
+use crate::features::{FeatureContent, FeatureOperation, ParameterId, UnresolvedFamily};
 use crate::math::{Point3, Vector3};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
@@ -107,7 +106,7 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
         ..Default::default()
     })
     .unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = Vec::new();
     axis.visit_identity_references(&ctx, &mut |identity| {
         seen.push(identity.to_owned());
@@ -156,7 +155,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(operation),
         ),
         native_ref: None,
@@ -165,7 +164,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
 
 #[test]
 fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
-    use crate::features::{DesignParameter, ParameterValue};
+    use crate::features::parameters::{DesignParameter, ParameterValue};
     let mut ir = crate::CadIr::empty();
     let prior = feature(FeatureOperation::datum_axis(origin(), direction()), 1);
     let parameter: ParameterId = "test:model:parameter#length".try_into().unwrap();
@@ -292,7 +291,7 @@ fn axis_source_literals_preserve_both_collision_keys_while_other_feature_maps_ke
     let replacements =
         std::collections::BTreeMap::from([(source.to_owned(), destination.to_owned())]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

@@ -3,8 +3,8 @@
 
 use super::depth::ModelEvaluationDepthGuard;
 use super::{admission, decode, EvaluationFailure};
-use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::LawExpression;
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::laws::LawExpression;
 use crate::math::portable::Portable;
 use crate::math::sum::{ExactSignedSum, ScaledValue};
 use crate::math::Vector3;

@@ -16,7 +16,8 @@ use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Witness,
 };
 use cadmpeg_ir::features::datums::DatumAxisDraft;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length};
@@ -527,7 +528,7 @@ mod tests {
                 candidates: vec![candidate],
                 ..Default::default()
             });
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut Vec::new()).unwrap();
             let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } = definition.operation()
             else {
@@ -592,7 +593,7 @@ mod tests {
                 ..Default::default()
             });
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut losses).unwrap();
             assert!(
                 losses
@@ -693,7 +694,7 @@ mod tests {
                 ..Default::default()
             };
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &axis_scope(candidate), &mut losses).unwrap();
             let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } = definition.operation()
             else {
@@ -722,7 +723,7 @@ mod tests {
                 usize::from(unread)
             );
             assert_eq!(axis.inputs().len(), expected.len() + usize::from(unread));
-            assert!(axis.inputs().last().is_some_and(is_unread) == unread);
+            assert_eq!(axis.inputs().last().is_some_and(is_unread), unread);
         }
     }
 
@@ -742,7 +743,7 @@ mod tests {
             complete: true,
             ..Default::default()
         };
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let definition = project(&ctx, &axis_scope(candidate), &mut Vec::new()).unwrap();
         let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } = definition.operation()
         else {

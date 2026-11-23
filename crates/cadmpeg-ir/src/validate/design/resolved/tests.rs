@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::configuration::FeatureStateOverride;
 use crate::design::evaluation::StateBase;
 use crate::design::feature::{FeatureDefinition, FeatureOperation, StoredOrigin};
 use crate::design::names::NameEntry;
-use crate::design::refs::EntityRef;
+use crate::design::refs::{EntityRef, Evaluated};
 use crate::document::CadIr;
 use crate::ids::BodyId;
 use crate::validate::design::fixture::{
-    after, assert_finding, assert_no_design_finding, body, document, feature, id, set_base,
+    after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
+    document, evaluation, feature, id, set_base, stored,
 };
 
 #[test]
@@ -153,3 +154,56 @@ fn the_current_geometry_names_its_own_entities() {
     .into();
     assert_finding(&ir, "which is no record of the current geometry's edges");
 }
+
+/// The baseline with evaluations after `extrude`, each of its own
+/// configuration: `e0` on `Empty`, whose delta has an owner entry for a body
+/// that no state holds, `e1` on `e0`, and `e2` and `e3` on `e1`.
+fn owner_chain() -> CadIr {
+    let mut ir = document();
+    for (at, base) in [(0, None), (1, Some(0)), (2, Some(1)), (3, Some(1))] {
+        let key = format!("e{at}");
+        ir.design.configurations.push(configuration(&key, None));
+        let mut content = stored(base.map_or(StateBase::Empty, |base| {
+            StateBase::Evaluation(id("evaluation", &format!("e{base}")))
+        }));
+        if base.is_none() {
+            content
+                .delta
+                .owners
+                .insert(id("body", "missing"), Some(id("definition", "part")));
+        }
+        ir.design.evaluations.push(evaluation(
+            &key,
+            &key,
+            Evaluated::State(after("extrude")),
+            Some(content),
+        ));
+    }
+    ir
+}
+
+/// The evaluations whose resolved state has the owner entry of `e0`.
+fn with_owner_entry(ir: &CadIr) -> BTreeSet<String> {
+    design_findings(ir)
+        .into_iter()
+        .filter(|finding| {
+            finding
+                .message
+                .contains("owner entry names test:design:body#missing, which is no body")
+        })
+        .filter_map(|finding| finding.entity)
+        .collect()
+}
+
+#[test]
+fn a_base_delta_reaches_each_state_above_it_in_any_arena_order() {
+    let expected: BTreeSet<String> = (0..4)
+        .map(|at| format!("test:design:evaluation#e{at}"))
+        .collect();
+    let mut ir = owner_chain();
+    assert_eq!(with_owner_entry(&ir), expected);
+    ir.design.evaluations.reverse();
+    assert_eq!(with_owner_entry(&ir), expected);
+}
+
+mod unproduced;

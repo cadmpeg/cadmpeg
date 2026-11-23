@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_profile_face_group_cardinality;
+use crate::history::profile_face_groups::bind_profile_face_group_cardinality;
 use crate::history_records::AsmDeltaState;
 use crate::history_records::AsmHistoricalCarrierBinding;
 use crate::history_records::AsmHistoricalTopology;
@@ -12,7 +12,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         feature::scope::DesignParameterScope,
         topology::{construction::DesignConstructionOperandGroup, face::DesignFaceOperand},
     };
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
         let member_offsets = (0..members.len())

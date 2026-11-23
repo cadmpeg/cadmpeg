@@ -1,0 +1,276 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for the eDrawings `.eprt` / `.easm` package.
+schema = 1
+format = "edrawings"
+spec = "docs/formats/edrawings.md"
+endianness = "little"
+note = """
+The wrapper of the `eModel` member, the fixed head of a shell record, and the
+range block of a shell have fixed offsets. The model stream is a tag grammar
+whose records have their own length rules.
+"""
+
+[[record]]
+name = "wrapper"
+kind = "byte"
+section = "2.1"
+anchor = "The member is one byte string in this order:"
+size = 47
+parsed_by = "crates/cadmpeg-codec-edrawings/src/stream.rs"
+note = "Comment line, `I` record, `B` record, and the `Z` tag. The zlib stream starts at offset 47."
+
+[[record.field]]
+name = "comment"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "| Comment line | 15 bytes |"
+
+[[record.field]]
+name = "info"
+offset = 15
+type = "bytes[5]"
+source = "spec"
+anchor = "| `I` record | 5 bytes |"
+
+[[record.field]]
+name = "bounds"
+offset = 20
+type = "bytes[26]"
+source = "spec"
+anchor = "| `B` record | 26 bytes |"
+
+[[record.field]]
+name = "body_tag"
+offset = 46
+type = "u8"
+source = "spec"
+anchor = "Tag `0x5a`, one zlib stream"
+value = 0x5a
+
+[[record]]
+name = "wrapper_comment"
+kind = "byte"
+section = "2.1"
+anchor = "| Comment line | 15 bytes |"
+size = 15
+parsed_by = "crates/cadmpeg-codec-edrawings/src/stream.rs"
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "ASCII `;; HSF V<major>.<minor> `"
+value = ";; HSF V"
+
+[[record.gap]]
+offset = 8
+size = 7
+note = "The version number, a space, and the line end byte `0x0a`. The reader reads up to the line end byte."
+
+[[record]]
+name = "wrapper_info"
+kind = "byte"
+section = "2.1"
+anchor = "| `I` record | 5 bytes |"
+size = 5
+parsed_by = "crates/cadmpeg-codec-edrawings/src/stream.rs"
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Tag `0x49`, then a `u32` little-endian."
+value = 0x49
+
+[[record.field]]
+name = "value"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "Tag `0x49`, then a `u32` little-endian."
+
+[[record]]
+name = "wrapper_bounds"
+kind = "byte"
+section = "2.1"
+anchor = "| `B` record | 26 bytes |"
+size = 26
+parsed_by = "crates/cadmpeg-codec-edrawings/src/stream.rs"
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Tag `0x42`, one flag byte"
+value = 0x42
+
+[[record.field]]
+name = "flag"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "Tag `0x42`, one flag byte"
+
+[[record.field]]
+name = "min"
+offset = 2
+type = "f32[3]"
+source = "spec"
+anchor = "the minimum corner `x y z`"
+
+[[record.field]]
+name = "max"
+offset = 14
+type = "f32[3]"
+source = "spec"
+anchor = "the maximum corner `x y z`"
+
+[[record]]
+name = "shell_head"
+kind = "byte"
+section = "3.6"
+anchor = "A shell is stored in the object store as:"
+size = 11
+parsed_by = "crates/cadmpeg-codec-edrawings/src/hsf/walk.rs"
+note = "The fixed head of a shell record. The vertices follow at offset 11."
+
+[[record.field]]
+name = "opcode"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `S`, `0x0e` | 2 |"
+value = 0x53
+
+[[record.field]]
+name = "constant"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "| `S`, `0x0e` | 2 |"
+value = 0x0e
+
+[[record.field]]
+name = "id"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "| Id | 4 |"
+
+[[record.field]]
+name = "zero"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "| Zero | 1 | Constant. |"
+value = 0
+
+[[record.field]]
+name = "vertex_count"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "| N | 4 |"
+
+[[record]]
+name = "shell_face_list_head"
+kind = "byte"
+section = "3.6"
+anchor = "| `0x01`, L | 5 |"
+size = 5
+parsed_by = "crates/cadmpeg-codec-edrawings/src/hsf/walk.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `0x01`, L | 5 |"
+value = 1
+
+[[record.field]]
+name = "length"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "| `0x01`, L | 5 |"
+
+[[record]]
+name = "shell_normals_head"
+kind = "byte"
+section = "3.6"
+anchor = "| `01 07 0C`, M | 7 |"
+size = 7
+parsed_by = "crates/cadmpeg-codec-edrawings/src/hsf/walk.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "| `01 07 0C`, M | 7 |"
+value = [0x01, 0x07, 0x0c]
+
+[[record.field]]
+name = "length"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "| `01 07 0C`, M | 7 |"
+
+[[record]]
+name = "shell_range_head"
+kind = "byte"
+section = "3.6.1"
+anchor = "`03` starts the range block: `03 01 02`, four `f32` `u0 v0 u1 v1`, the byte `08`, a `u32` K, and K bytes."
+size = 24
+parsed_by = "crates/cadmpeg-codec-edrawings/src/hsf/walk.rs"
+note = "The range block without its K bytes. The K bytes follow at offset 24."
+
+[[record.field]]
+name = "opcode"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`03` starts the range block"
+value = 0x03
+
+[[record.field]]
+name = "head"
+offset = 1
+type = "bytes[2]"
+source = "spec"
+anchor = "`03 01 02`"
+value = [0x01, 0x02]
+
+[[record.field]]
+name = "range"
+offset = 3
+type = "f32[4]"
+source = "spec"
+anchor = "four `f32` `u0 v0 u1 v1`"
+
+[[record.field]]
+name = "marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "the byte `08`"
+value = 0x08
+
+[[record.field]]
+name = "length"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "a `u32` K"
+
+[[not_applicable]]
+area = "Model stream records"
+reason = "A tag grammar: every opcode has its own length rule, and the record offsets depend on the preceding values."
+section = "3"
+anchor = "Every opcode has its own rule for the length of the record"

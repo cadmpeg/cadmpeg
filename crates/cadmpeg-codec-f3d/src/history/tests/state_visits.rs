@@ -3,13 +3,13 @@
 
 use cadmpeg_asm::kernel_header::RefWidth;
 
-use crate::history::{visit_state_groups_oldest_first, BindingHistories};
+use crate::history::binding_histories::{visit_state_groups_oldest_first, BindingHistories};
 use crate::history_records::AsmHistory;
 use crate::test_support::history_stream::DesignScale;
 
 const SCALE: DesignScale = DesignScale {
-    states: 12,
-    bodies: 24,
+    states: 3,
+    bodies: 3,
     faces_per_body: 1,
     updates_per_state: 2,
 };

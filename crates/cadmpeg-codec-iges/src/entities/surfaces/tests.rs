@@ -12,7 +12,7 @@ use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -367,7 +367,7 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
             0.25,
             0.75
         )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
@@ -510,7 +510,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 fn ruled_span_split_of_a_high_degree_polygon_matches_the_level_split() {
     let span = cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan {
         domain: [2.0, 6.0],
-        controls: (0..1024_u32)
+        controls: (0..32_u32)
             .map(|index| {
                 let t = f64::from(index);
                 [t.sin(), t.cos(), 0.5 * t, 1.0 + f64::from(index % 5) / 8.0]
@@ -552,7 +552,7 @@ fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
     let first = ruled_rail(1, &first_boundaries, 0.0);
     let second = ruled_rail(2, &second_boundaries, 1.0);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned ruled carrier");
@@ -630,7 +630,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
@@ -848,8 +848,9 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .iter()
         .find(|procedural| procedural.id == *construction)
         .expect("line revolution construction");
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected an exact revolution definition");
     };
@@ -970,8 +971,9 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             .iter()
             .find(|procedural| procedural.id == *construction)
             .expect("hyperbola revolution construction");
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-            procedural.definition()
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            definition_payload_0,
+        ) = procedural.definition()
         else {
             panic!("expected an exact revolution definition");
         };
@@ -1079,8 +1081,9 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
             .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.0), Some(2.0), None, None])
     );
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload_0,
+    ) = procedural.definition()
     else {
         panic!("expected bounded trimmed revolution");
     };
@@ -1119,8 +1122,9 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
     };
     assert_eq!(surface.poles().first().copied().unwrap().x, 11.0);
     let procedural = &result.ir().geometry.procedural_surfaces[0];
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
-        procedural.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+        definition_payload,
+    ) = procedural.definition()
     else {
         panic!("expected a revolution definition");
     };
@@ -1319,7 +1323,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");

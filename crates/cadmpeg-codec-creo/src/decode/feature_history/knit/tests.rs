@@ -8,7 +8,8 @@ fn feature_result_topology(
     rows: &[crate::surface::SurfaceRow],
     curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
-) -> Result<Option<cadmpeg_ir::features::FeatureResultTopology>, cadmpeg_core::CodecError> {
+) -> Result<Option<cadmpeg_ir::features::evaluation::FeatureResultTopology>, cadmpeg_core::CodecError>
+{
     let edges = feature_result_edge_ids_by_feature(curve_rows)
         .remove(&feature_id)
         .unwrap_or_default();
@@ -72,7 +73,7 @@ fn knit_operand_fixture_generates_a_surface_face() {
         definition,
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Generated { .. },
+                faces: cadmpeg_ir::features::selections::FaceSelection::Generated { .. },
                 ..
             }
         )
@@ -104,9 +105,10 @@ fn one_result_surface() -> (
 
 #[test]
 fn feature_result_topology_emits_one_row_per_result_surface() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let (tables, rows) = one_result_surface();
@@ -178,7 +180,9 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
 
     assert_eq!(
         super::draft_neutral_plane_selection(&scan, 225),
-        cadmpeg_ir::features::FaceSelection::Native("creo:visibgeom:surface#226".to_string())
+        cadmpeg_ir::features::selections::FaceSelection::Native(
+            "creo:visibgeom:surface#226".to_string()
+        )
     );
 
     scan.features.entity_tables[0]
@@ -186,7 +190,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
         .push(crate::feature::entity::dummy_table_entry(226));
     assert_eq!(
         super::draft_neutral_plane_selection(&scan, 225),
-        cadmpeg_ir::features::FaceSelection::Unresolved
+        cadmpeg_ir::features::selections::FaceSelection::Unresolved
     );
 }
 

@@ -17,7 +17,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
     assert!(!admit::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         admit::DRAFT_CORE_CHECKS,
         Vec::new()
@@ -25,7 +25,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     .expect("admit the model")
     .is_ok());
     assert!(matches!(
-        admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(), &ir),
+        admit_evaluation_cycles(&cadmpeg_core::decode::test_support::service_decode_context(), &ir),
         Err(CodecError::Malformed(message)) if message == expected
     ));
 }
@@ -55,7 +55,7 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     // Repeated carrier rows still share the last graph entry and one active state.
     ir.geometry.curves.push(ir.geometry.curves[0].clone());
     let index = crate::index::ModelIndex::new_model_only(&ir);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_evaluation_cycles(&ctx, &ir, &index, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);
@@ -102,10 +102,9 @@ fn cycle_admission_finds_cycles_among_many_unrelated_points() {
 
 #[test]
 fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
-    use crate::geometry::{
-        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-        ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use crate::geometry::{CurveGeometry, ProceduralCurve, ProceduralSurface, SurfaceGeometry};
     use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
     let (mut ir, curve, surface) = cyclic_model();
     // Duplicate construction IDs select the first construction row.

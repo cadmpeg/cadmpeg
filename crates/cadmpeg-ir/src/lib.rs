@@ -101,12 +101,8 @@ pub use document::{
 };
 pub use draft::ModelDraft;
 pub use features::{
-    BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement, ConfigurationEvaluation,
-    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
-    DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    LoftGuidance, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter,
-    ScaleFactors, SolidFeatureResult,
+    ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance,
+    ParameterId,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{
@@ -164,6 +160,15 @@ pub use validate::admit::{
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
+
+/// The JSON Schema of the current [`CadIr`] representation: the pretty JSON
+/// text of `cadir_json_schema()`, which requires the `schema` feature.
+pub const CADIR_JSON_SCHEMA: &str = include_str!("../schema/cadir.schema.json");
+
+/// The JSON Schema of the decode sidecar (`<stem>.fidelity.json`): the pretty
+/// JSON text of `decode_sidecar_json_schema()`, which requires the `schema`
+/// feature.
+pub const DECODE_SIDECAR_JSON_SCHEMA: &str = include_str!("../schema/decode-sidecar.schema.json");
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///

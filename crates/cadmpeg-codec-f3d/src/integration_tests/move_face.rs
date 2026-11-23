@@ -1,5 +1,5 @@
 use crate::design::decode::meta::decode_types;
-use crate::design::decode::operands::decode_construction_operand_groups;
+use crate::design::decode::operands::construction_groups::decode_construction_operand_groups;
 use crate::design::decode::scopes::parameter_scope::{
     decode_parameter_scopes, ParameterScopeSources,
 };
@@ -12,7 +12,9 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::move_face::{
     MoveFaceFixture, MoveFaceFrame, GROUP_GUID, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
 };
-use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 struct Projection {
     scope: DesignParameterScope,
@@ -24,7 +26,7 @@ struct Projection {
 fn project(fixture: &MoveFaceFixture) -> Projection {
     crate::test_support::zip_test::with_scan(&fixture.archive(), |scan| {
         let types = decode_types(scan).unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut decoded = decode_parameter_scopes(
             &ctx,
             scan,

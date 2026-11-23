@@ -38,7 +38,7 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
 }
 
 fn test_indexed_polygon(
-    nodes: Vec<cadmpeg_ir::features::FinitePoint3>,
+    nodes: Vec<cadmpeg_ir::features::geometry::FinitePoint3>,
     parameters: Option<Vec<FiniteReal>>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<IndexedPolygon, CodecError> {
@@ -49,7 +49,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
             tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            point: cadmpeg_ir::features::FinitePoint3::ZERO,
+            point: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
             representations: Vec::new(),
         },
         TextShapeKind::Edge => TextTShapeGeometry::Edge {
@@ -78,7 +78,7 @@ const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn indexed_polygon_pairs_checked_samples() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let node = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
     let polygon = test_indexed_polygon(
         vec![node],
         Some(vec![
@@ -105,7 +105,7 @@ fn indexed_polygon_pairs_checked_samples() {
 
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
-    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let node = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
     let deflection = cadmpeg_ir::scalar::NonNegativeReal::ZERO;
     assert!(test_indexed_polygon(vec![node], Some(vec![]), deflection).is_err());
     let polygon = test_indexed_polygon(
@@ -512,8 +512,11 @@ fn edge_representation_selection_follows_family_rules() {
         },
         _ => panic!("test helper kind {kind}"),
     };
-    let point = |x, y, z| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
-    let vector = |x, y, z| cadmpeg_ir::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
+    let point =
+        |x, y, z| cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
+    let vector = |x, y, z| {
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(x, y, z)).unwrap()
+    };
     let curves = [
         TextCurve::Line {
             origin: point(0.0, 0.0, 0.0),
@@ -1004,9 +1007,11 @@ fn mesh_scale_face_connectivity_is_linear() {
 
 #[test]
 fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
-    let origin = cadmpeg_ir::features::FinitePoint3::ZERO;
-    let axis = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
-    let reference = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    let origin = cadmpeg_ir::features::geometry::FinitePoint3::ZERO;
+    let axis =
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let reference =
+        cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     let surface = TextSurface::Sphere {
         center: origin,
         axis,
@@ -1780,7 +1785,7 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
         assert_eq!(super::uniform_scale(similarity).unwrap().get(), a);
         assert_eq!(
             super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.))
-                .map(cadmpeg_ir::features::FiniteVector3::get),
+                .map(cadmpeg_ir::features::geometry::FiniteVector3::get),
             Some(Vector3::new(1., 0., 0.))
         );
         assert_eq!(

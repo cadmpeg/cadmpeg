@@ -17,7 +17,7 @@ fn tag(index: u16) -> [u8; 2] {
 }
 
 fn test_context() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn end_count(payload: &[u8], resolved_count: Option<u32>) -> i64 {
@@ -146,6 +146,7 @@ fn a_resolved_features_stream_that_opens_with_a_declaration_carries_no_count() {
     let mut compound = vec![0x0d, 0x00];
     compound.extend(declaration("moSensorFolder_c"));
     assert_eq!(resolved_count(&compound), None);
+    assert_eq!(resolved_count(&declaration("moSensorFolder_c")), None);
     let mut block = 7_u32.to_le_bytes().to_vec();
     block.extend_from_slice(&[0, 0]);
     block.extend(declaration("moSensorFolder_c"));

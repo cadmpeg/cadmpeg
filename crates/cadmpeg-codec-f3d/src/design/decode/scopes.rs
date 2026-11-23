@@ -9,7 +9,7 @@ pub(crate) mod assembly_v3;
 pub(crate) use assembly_operand_frames::wide_family_frame_offsets;
 mod assembly_operand_paths;
 mod axial_assembly;
-mod base_feature;
+pub(crate) mod base_feature;
 mod boundary_fill;
 pub(crate) mod chamfer_set;
 mod coil;

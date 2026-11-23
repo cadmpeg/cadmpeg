@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
@@ -74,6 +74,8 @@ impl CurveDescriptor {
 
 #[derive(Debug, Clone, Copy)]
 struct SurfaceDescriptor {
+    /// Offset of the descriptor's type tag.
+    start: usize,
     end: usize,
     attr: u32,
     u_periodic: bool,
@@ -99,7 +101,11 @@ fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
     }
 }
 
-fn parse_surface_descriptor_at(bytes: &[u8], payload: usize) -> Option<SurfaceDescriptor> {
+fn parse_surface_descriptor_at(
+    bytes: &[u8],
+    start: usize,
+    payload: usize,
+) -> Option<SurfaceDescriptor> {
     let p = payload;
     let mut fields = p + surf_desc::ATTR;
     let attr = cadmpeg_parasolid::pointer::read_at(bytes, &mut fields)?;
@@ -154,6 +160,7 @@ fn parse_surface_descriptor_at(bytes: &[u8], payload: usize) -> Option<SurfaceDe
     }
 
     Some(SurfaceDescriptor {
+        start,
         end: refs_end,
         attr,
         u_periodic,
@@ -172,7 +179,7 @@ fn parse_surface_descriptor_at(bytes: &[u8], payload: usize) -> Option<SurfaceDe
 
 fn parse_surface_descriptor(bytes: &[u8], off: usize) -> Option<SurfaceDescriptor> {
     let mut candidates = super::record_starts(bytes, off, 0x7e)
-        .filter_map(|p| parse_surface_descriptor_at(bytes, p));
+        .filter_map(|p| parse_surface_descriptor_at(bytes, off, p));
     let first = candidates.next()?;
     candidates.next().is_none().then_some(first)
 }
@@ -305,14 +312,25 @@ fn wrapper_start<T>(
     (super::word_at(bytes, p)? <= 0x7fff).then_some(p)
 }
 
+/// The attrs a compact array can carry, and the byte ranges of the framed
+/// records it cannot start inside, ascending and disjoint.
+type CompactScope<'a> = (&'a HashSet<u32>, &'a [std::ops::Range<usize>]);
+
 fn scan_arrays(
     bytes: &[u8],
     referenced_attrs: Option<&HashSet<u32>>,
-    compact_attrs: Option<&HashSet<u32>>,
+    compact: Option<CompactScope<'_>>,
 ) -> Arrays {
     let mut arrays = Arrays::default();
+    let compact_attrs = compact.map(|(attrs, _)| attrs);
+    let inside_framed = |off: usize| {
+        compact.is_some_and(|(_, framed)| {
+            let index = framed.partition_point(|range| range.end <= off);
+            framed.get(index).is_some_and(|range| range.start <= off)
+        })
+    };
     for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
-        if bytes.get(off) == Some(&0) {
+        if bytes.get(off) == Some(&0) && !inside_framed(off) {
             let count = usize::from(bytes[off + compact_arr::COUNT]);
             if count > 0 {
                 let mut values_at = off + compact_arr::ATTR;
@@ -877,11 +895,7 @@ pub(crate) fn patch_nurbs_surface(
         return Ok(None);
     }
     let descriptors = scan_surface_descriptors(bytes);
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect::<HashSet<_>>();
-    let arrays = scan_arrays(bytes, Some(&compact_attrs), Some(&compact_attrs));
+    let arrays = surface_arrays(bytes, &descriptors);
     let mut p = wrapper_offset.checked_add(2).ok_or_else(|| {
         cadmpeg_core::CodecError::malformed("Parasolid patch wrapper offset overflow")
     })?;
@@ -1108,6 +1122,29 @@ fn assemble_pcurve(
     }
 }
 
+/// The arrays the surface descriptors `descriptors` reference. A framed
+/// descriptor's references belong to it (§4), so no compact array starts
+/// inside one.
+fn surface_arrays(bytes: &[u8], descriptors: &HashMap<u32, SurfaceDescriptor>) -> Arrays {
+    let attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect::<HashSet<_>>();
+    let mut spans = descriptors
+        .values()
+        .map(|descriptor| descriptor.start..descriptor.end)
+        .collect::<Vec<_>>();
+    spans.sort_by_key(|span| span.start);
+    let mut framed: Vec<std::ops::Range<usize>> = Vec::with_capacity(spans.len());
+    for span in spans {
+        match framed.last_mut() {
+            Some(last) if span.start <= last.end => last.end = last.end.max(span.end),
+            _ => framed.push(span),
+        }
+    }
+    scan_arrays(bytes, Some(&attrs), Some((&attrs, &framed)))
+}
+
 fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u32, SurfaceDescriptor> {
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
@@ -1214,11 +1251,7 @@ pub(crate) fn scan_surface_carriers(
     refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, SurfaceCarrier> {
     let descriptors = scan_surface_descriptors(bytes);
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect::<HashSet<_>>();
-    let arrays = scan_arrays(bytes, Some(&compact_attrs), Some(&compact_attrs));
+    let arrays = surface_arrays(bytes, &descriptors);
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
@@ -1735,11 +1768,7 @@ fn surface_spans(body: &[u8], spans: &mut Vec<super::read_ledger::RawSpan>) {
     }
     let descriptors = scan_surface_descriptors(body);
     let desc_offsets = surface_descriptor_offsets(body);
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect::<HashSet<_>>();
-    let arrays = scan_arrays(body, Some(&compact_attrs), Some(&compact_attrs));
+    let arrays = surface_arrays(body, &descriptors);
     for (wrapper_attr, carrier) in &carriers {
         let off = carrier.offset;
         let Some(attr_at) = wrapper_attr_pos(body, off) else {
@@ -1859,7 +1888,7 @@ mod tests {
         scan_curve_descriptors, scan_surface_carriers, surface_knot_values, unique_knots,
         unique_surface_knot_span, Arrays, CurveDescriptor,
     };
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
@@ -1909,7 +1938,7 @@ mod tests {
     fn repeated_compact_knot_arrays_resolve_once() {
         let bytes = repeated_compact_knots(20_000);
         let attrs = [0x1234, 0x1235].into_iter().collect();
-        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        let arrays = scan_arrays(&bytes, None, Some((&attrs, &[])));
         assert_eq!(arrays.compact.get(&0x1234).map(Vec::len), Some(20_000));
         let resolved =
             surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).expect("one knot pair");
@@ -1923,7 +1952,7 @@ mod tests {
         bytes.extend(be16s(&[1, 3]));
         bytes.extend(repeated_compact_knots(3));
         let attrs = [0x1234, 0x1235].into_iter().collect();
-        let arrays = scan_arrays(&bytes, None, Some(&attrs));
+        let arrays = scan_arrays(&bytes, None, Some((&attrs, &[])));
         assert!(surface_knot_values(&bytes, &arrays, 0x1234, 0x1235, 2).is_none());
     }
 
@@ -1947,14 +1976,14 @@ mod tests {
                 bytes.extend(pair(knot, multiplicity, &[2, 2]));
             }
             let attrs = [knot, multiplicity].into_iter().collect();
-            let arrays = scan_arrays(&bytes, None, Some(&attrs));
+            let arrays = scan_arrays(&bytes, None, Some((&attrs, &[])));
             assert_eq!(arrays.compact.get(&knot).map(Vec::len), Some(3));
             let resolved = surface_knot_values(&bytes, &arrays, knot, multiplicity, 2)
                 .expect("one wide knot pair");
             assert_eq!(resolved.unique, [0.0, 1.0]);
             assert_eq!(resolved.multiplicities, [2, 2]);
             bytes.extend(pair(knot, multiplicity, &[1, 3]));
-            let arrays = scan_arrays(&bytes, None, Some(&attrs));
+            let arrays = scan_arrays(&bytes, None, Some((&attrs, &[])));
             assert!(surface_knot_values(&bytes, &arrays, knot, multiplicity, 2).is_none());
         }
     }

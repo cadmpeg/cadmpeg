@@ -16,8 +16,8 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-**Note.** The ND release comparison establishes header token values and
-directory forms, not the numeric meanings of every producer declaration or
+**Note.** `creo_prt.md` §1.1 gives the ND header token values and directory
+forms of each release, not the numeric meanings of every producer declaration or
 trailing TOC field. Need independent field semantics before using those
 values as format selectors or interpreting them as dates, capabilities, or
 checksums.
@@ -257,7 +257,7 @@ dimension.
 
 **Need.** Resolve each remaining body through complete scalar ownership and chart roles before it supplies curve or endpoint geometry.
 
-**Note.** UPDATE. The body counts predate #425, which binds the source circle of a two-cap circular sweep table. Re-verify the 72 counted, two short, and 68 opaque counts against the current decoder before using them as coverage evidence.
+**Note.** UPDATE. The classification of bodies as counted, short, or opaque predates #425, which binds the source circle of a two-cap circular sweep table. Re-verify that classification against the current decoder before using it as coverage evidence.
 
 ### GS-09. Other `fc 05` variants
 
@@ -271,7 +271,7 @@ dimension.
 
 **Question.** How do the remaining undefined scalar images, signed coordinate branches, and native chart transforms define complete placed paths?
 
-**Known.** The complete point-first and parameter-first productions associate one parameter with three coordinate roles. Their shortened terminal group completes the preceding parameter's sample. These roles do not prove a spatial control polyline, NURBS control poles, or a native-to-model transform. A radius identity alone does not select a signed branch. One path retains unresolved branch signs, and the role proofs do not establish complete native model-space placements. No named nineteen-by-four array declaration establishes a universal interpretation of `13` as a sample count.
+**Known.** The complete point-first and parameter-first productions associate one parameter with three coordinate roles. Their shortened terminal group completes the preceding parameter's sample. These roles do not prove a spatial control polyline, NURBS control poles, or a native-to-model transform. A radius identity alone does not select a signed branch. A path can retain unresolved branch signs, and the role proofs do not establish complete native model-space placements. No named nineteen-by-four array declaration establishes a universal interpretation of `13` as a sample count.
 
 **Need.** Resolve the undefined images and derive each complete signed chart from native ownership before constructing placed geometry.
 
@@ -394,13 +394,21 @@ and `41 <tail7>` second-coordinate images in pcurve chart slots, the
 end-cylinder axis sign, and the mirrored end-cylinder placement before
 nonzero finite endpoints or complete cap charts are promoted.
 
+### GS-37. Packed surface-row identifiers after an unclosed body
+
+**Question.** Where does a positional `srf_array` row with a packed `c0..df XX YY` `geom_id` begin when it follows a row body without a row-close `e3`?
+
+**Known.** `creo_prt.md` §3 defines the packed tier of `geom_id`, `feat_id`, and `next_geom_ptr`. The positional scan finds a row from its type byte and reads the identifier backwards. The decoder reads each payload twice: with the one- and two-byte tiers, and with the packed tier where it applies. In the packed reading, a positional packed `geom_id` lies inside a counted frame, starts at the frame start or after an `e3` byte, and no one- or two-byte identifier that ends at the same type byte starts at such a position. A packed field ends before the next frame label and before its namespace end, and its two value bytes hold no `e3` and start no named-record header. A positional `feat_id` whose packed reading is not followed by valid discriminators, and a named field or a positional `feat_id` or `next_geom_ptr` with no packed reading, take the one- or two-byte reading, which reads a lone `c0..ff` byte as its own value. The payload keeps the packed reading when, with every boundary type and with boundary types `00` and `06`, it keeps at least as many rows as the one- and two-byte reading in every counted frame and outside the frames. Otherwise the payload keeps the one- and two-byte reading, and a named datum plane reads its identifiers as reference identifiers. `geometry.surface-row-packed-reading` counts, per frame and outside the frames, the kept rows of the one- and two-byte reading that the packed reading replaces, and `geometry.surface-row-compact-reading` counts the kept rows of the packed reading that the one- and two-byte reading replaces.
+
+**Need.** A row-body grammar that bounds every body, so that each row start is known before its identifier is read.
+
 ### GS-19. Unresolved cone origin-coordinate images
 
 **Question.** Which owned scalar or model-reference grammar resolves the remaining cone origin-coordinate images and establishes their placement?
 
-**Known.** `creo_prt.md` §3.2 defines the twelve-slot owner and the zero/reference/short origin production. Its last image is `origin[2]`, not a station parameter. The bounded `2f3400` value is source-length 20; the inch selector converts it to 508 mm. Independent apices constrain the checked `1b`/`34` instances to zero Z but supply no raw-only formula. For a raw origin `18`, `19c60fafbfd97304`, `2f3400`, interpreting the first two as independent generic numeric lanes gives X/Y values that disagree with the independent carrier. Complete seven-byte scalar owners also prohibit splitting their suffix bytes into another coordinate.
+**Known.** `creo_prt.md` §3.2 defines the twelve-slot owner and the zero/reference/short origin production. Its last image is `origin[2]`, not a station parameter. The bounded `2f3400` value is source-length 20; the inch selector converts it to 508 mm. Independent apices constrain some `1b`/`34` instances to zero Z but supply no raw-only formula. For a raw origin `18`, `19c60fafbfd97304`, `2f3400`, interpreting the first two as independent generic numeric lanes gives X/Y values that disagree with the independent carrier. Complete seven-byte scalar owners also prohibit splitting their suffix bytes into another coordinate.
 
-**Need.** Resolve the reference-backed origin through its complete native owner before admitting a placed cone. Preserve unresolved bytes and withhold dependent geometry. Do not map a prefix to zero from the checked instances or use a STEP fit as the runtime decoder.
+**Need.** Resolve the reference-backed origin through its complete native owner before admitting a placed cone. Preserve unresolved bytes and withhold dependent geometry. Do not map a prefix to zero from such instances or use a STEP fit as the runtime decoder.
 
 ### GS-21. Non-prismatic round radii
 
@@ -414,7 +422,7 @@ nonzero finite endpoints or complete cap charts are promoted.
 
 **Question.** Which complete direct and shared field trees define numeric fillet spline values, parameter domains and instance charts?
 
-**Known.** `creo_prt.md` §3.2 defines the published three-spline carrier equation and independent contour roles. A direct body bounds three arrays of 25 interpolation points, two endpoint tangents per spline, and byte-identical strictly increasing parameter arrays. The center and tangent bodies have no complete numeric projection. Both the signed-coordinate and sign-cleared rivals violate unit-tangent and perpendicular-radius invariants. Five checked shared-form prefixes start with `shrsrf_data`; they do not prove a complete shared-reference join or the absence of later fields. Current native faces 374 and 468 both have closed four-edge cycles and unknown carriers.
+**Known.** `creo_prt.md` §3.2 defines the published three-spline carrier equation and independent contour roles. A direct body bounds three arrays of 25 interpolation points, two endpoint tangents per spline, and byte-identical strictly increasing parameter arrays. The center and tangent bodies have no complete numeric projection. Both the signed-coordinate and sign-cleared rivals violate unit-tangent and perpendicular-radius invariants. A shared-form prefix can start with `shrsrf_data`; such a prefix does not prove a complete shared-reference join or the absence of later fields. A native face can have a closed four-edge cycle and an unknown carrier.
 
 **Need.** Establish the complete positional scalar lanes and direct/shared ownership from native numeric evidence or a controlled asymmetric Toolkit oracle. Resolve the unique instance chart, reflection and domain before constructing the fillet. Do not select signs from continuity or a mirror-symmetric STEP fit.
 
@@ -422,7 +430,7 @@ nonzero finite endpoints or complete cap charts are promoted.
 
 **Question.** Which complete native fields establish carrier/sense inheritance for a row-unresolved generated face, and which body grammar bounds the final plain generated-entity entry?
 
-**Known.** `creo_prt.md` §6 defines complete generated-result identities through unique, same-owner surface rows across all owned tables. Current face-side identity and independent B-rep admission are separate joins. The bounded round example reproduces its complete nine-member result roster. This does not establish the general rowless-cylinder carrier claim or the final plain-entry grammar.
+**Known.** `creo_prt.md` §6 defines complete generated-result identities through unique, same-owner surface rows across all owned tables. Current face-side identity and independent B-rep admission are separate joins. For a bounded round, the rule reproduces the complete nine-member result roster. This does not establish the general rowless-cylinder carrier claim or the final plain-entry grammar.
 
 **Need.** Obtain complete source-owned rowless carrier/sense discriminators and plain-entry field consumption or a positively owned enclosing boundary. Keep the final plain-entry extent unresolved where it overlaps the header of a candidate following table. A raw `f2 f7` search, a fixed byte subtraction, or table adjacency is not a boundary or carrier proof. Historical topology/census counts and inactive-item selection remain separate from this verified result-identity rule.
 
@@ -610,9 +618,10 @@ center and radii.
 
 **Note.** The extended `order_table.rg_ref_id` form is defined only for its
 null `f6` slot. Need the referenced namespace, owner, and non-null value
-grammar before transferring a non-null operand. Need a complete ownership
-and replay comparison to explain changes in generated-entity and
-affected-geometry replay counts across the release saves. Equal neutral
+grammar before transferring a non-null operand. Need saves of one model from
+several releases and a complete ownership and replay comparison to explain how
+its generated-entity and affected-geometry replay counts change between
+releases. Equal neutral
 feature definitions do not establish completeness of those native tables.
 
 ### SP-01. Nonlinear simultaneous equations
@@ -634,8 +643,8 @@ section's direct model-plane identity independently of its owner and placement?
 
 **Known.** A positional `gsec3d_ptr` stores its outer plane after the complete
 owner, first-chain, and quilt fields. Inline chain data and a pointer's class
-reference do not supply that plane ID. Five independently bounded residual
-sections join one typed nonvisible model-plane row despite zero or four
+reference do not supply that plane ID. Several independently bounded residual
+sections can join one typed nonvisible model-plane row despite zero or four
 complete generated-datum tables. Their incomplete plane parameters and absent
 saved location leave placement unresolved. A same-integer non-plane row and
 multiple typed-plane candidates do not define a unique binding.
@@ -882,7 +891,7 @@ retain native geometry instead of selecting a same-valued datum or class ID.
 
 **Question.** What complete boundary and root-schema grammar safely discovers every physical `AllFeatur` row before decoded feature-namespace admission, and bounds positional section definitions without extending an earlier owner through an omitted row?
 
-**Known.** The bounded class-916 rows with a shared sketch-plane identifier are separate records. In the verified pattern-member form, independent audit rows retain a pattern header and five predecessor-linked members; each member has its own physical row header and positional section record. A shared datum identifier is therefore insufficient to group those records as alternative states. The current fixed-prefix probe and known-feature filter do not establish a general row grammar. A canonical row identifier, a model operation, and a stored section/schema identifier remain separate identities.
+**Known.** The bounded class-916 rows with a shared sketch-plane identifier are separate records. In the pattern-member form, independent audit rows retain a pattern header and a chain of predecessor-linked members; each member has its own physical row header and positional section record. A shared datum identifier is therefore insufficient to group those records as alternative states. The current fixed-prefix probe and known-feature filter do not establish a general row grammar. A canonical row identifier, a model operation, and a stored section/schema identifier remain separate identities.
 
 **Need.** A complete owned boundary/root grammar and positional section parser must preserve each row range independently of current-feature filtering. Repeated definitions within one genuine owner range, or unresolved `DEPDB_DATA` repeats, require their own selector evidence; first/last order and sketch-plane arithmetic supply none.
 
@@ -898,7 +907,7 @@ retain native geometry instead of selecting a same-valued datum or class ID.
 
 **Question.** Which complete owner-qualified frame or generated carrier places a section when its typed orientation reference is parallel to the sketch normal?
 
-**Known.** A parallel plane normal has no nonzero projection into the sketch plane and supplies no in-plane direction. The existing resolver can use a fully established generated carrier or a unique complete definition local frame, with owner, finite/nonzero axes, and perpendicular-axis guards. The two bounded named reference controls are perpendicular, so they do not establish an authored parallel-case selector. Their direct placement origin differs from their saved local-frame origin; those frames are not interchangeable. `SP-08` retains the distinct placement/transform/saved-result owner problem, and `SP-17` retains qualified typed reference-row ownership.
+**Known.** A parallel plane normal has no nonzero projection into the sketch plane and supplies no in-plane direction. The existing resolver can use a fully established generated carrier or a unique complete definition local frame, with owner, finite/nonzero axes, and perpendicular-axis guards. A bounded named orientation reference perpendicular to the sketch normal does not establish an authored parallel-case selector. In such a section, the direct placement origin can differ from the saved local-frame origin; those frames are not interchangeable. `SP-08` retains the distinct placement/transform/saved-result owner problem, and `SP-17` retains qualified typed reference-row ownership.
 
 **Need.** An authored parallel-reference witness with complete frame ownership and independent placed geometry must establish the eligible fallback. Do not select another table member, reinterpret a PSB table class as a model datum, or choose the first/last nearby local frame.
 
@@ -1030,6 +1039,14 @@ nearby schema markers and reject a class field borrowed from another row.
 
 **Conflict.** Joining a nearby schema-object record through its numeric key can
 conflict with an independently established model-feature definition.
+
+### SP-47. Datum, hole-placement, and revolve-axis construction constraints
+
+**Question.** Which Creo feature-input records carry the defining constraints and references of a datum plane, datum coordinate system, placed hole position, and revolve axis?
+
+**Known.** The decoder reads the resolved frame of a datum plane or coordinate system, the resolved point of a directed hole placement, and the resolved axis of a revolve. In v11 design projection, each construction carries one unread input (`Picks::Unread`) beside its resolved value so the element is never stated as a fixed element without constraints.
+
+**Need.** Feature records whose datum constraints, hole-placement dimensions, and revolve-axis references resolve to prior entities, so the v11 constructions state their real inputs in place of the unread input.
 
 ## 4. Topology and appearance
 
@@ -1350,7 +1367,7 @@ roster overlap, pointer ancestry, or a possible cyclic rotation is insufficient.
 **Conflict.** The prefix reader consumes one- and two-byte attributes with
 the same compact-integer grammar as its other fields, but still omits the
 three-byte tier and ends a row at the first compound close. A prefix with
-attributes `513`, direction `84`, and next-loop pointer `196` shows that correcting those fields does
+attributes `513`, direction `84`, and a next-loop pointer shows that correcting those fields does
 not resolve its nested auxiliary body or recover the full declared roster.
 Bodies can remain truncated and later rows omitted. Typed row output must
 not be treated as a complete framing or current-ownership proof. General row
@@ -1392,7 +1409,7 @@ admitting the face.
 
 **Question.** What grammar defines the leading opaque region and the unresolved packed scalar values of a hybrid visibility section?
 
-**Known.** A hybrid section has a clear prefix and an XOR-96 tail with 1,718 complete eight-slot pcurve rows. The 691 recovered face identities all occur in the independently expanded persistence roster. Complete successor joins preserve face ownership; endpoint continuity distinguishes packed `e4 = 0` from the ordinary lane's one. The `0a = 0`, `1`, and `-1` rivals produce identical continuity outcomes and do not select its value. The leading region and the undefined three-, seven-, and eight-byte scalar images do not define geometry. Opposite endpoint slots do not all have equal form populations, so that claim is not a field-role proof.
+**Known.** A hybrid section has a clear prefix and an XOR-96 tail of complete eight-slot pcurve rows. Each recovered face identity occurs in the independently expanded persistence roster. Complete successor joins preserve face ownership; endpoint continuity distinguishes packed `e4 = 0` from the ordinary lane's one. The `0a = 0`, `1`, and `-1` rivals produce identical continuity outcomes and do not select its value. The leading region and the undefined three-, seven-, and eight-byte scalar images do not define geometry. Opposite endpoint slots do not all have equal form populations, so that claim is not a field-role proof.
 
 **Need.** Establish the Source-owned tail start and count, the leading-region record or compression grammar, and independent numeric or chart oracles for each undefined scalar form. Preserve the bytes and abstain from neutral geometry until those inputs are complete.
 
@@ -1418,7 +1435,7 @@ admitting the face.
 
 **Known.** `creo_prt.md` §8.8 defines the bounded table/class/ordinal reference domain, named row zero, handle-name variants, and separate segment identifiers. Handle class differs from concrete row type. The container expansion retains the payload; the decoder has no typed PGL object graph or persistent-reference resolver. Recognized common headers alone do not prove full row boundaries.
 
-**Need.** Establish complete field-tree grammars for the object classes and host-prefix variants, including nested reference ownership. Preserve ordered rows and duplicate stored IDs. Missing or ambiguous table/class selection, absent GPU membership, and unresolved model/occurrence/display placement must remain explicit. Original nonzero or multiple-table cases and the historical population totals remain unverified; a private bounded selector is not a production parser.
+**Need.** Establish complete field-tree grammars for the object classes and host-prefix variants, including nested reference ownership. Preserve ordered rows and duplicate stored IDs. Missing or ambiguous table/class selection, absent GPU membership, and unresolved model/occurrence/display placement must remain explicit. Nonzero and multiple-table cases remain unverified; a bounded selector is not a production parser.
 
 ### PP-21. ND header intervening token
 
@@ -1432,7 +1449,7 @@ admitting the face.
 
 **Question.** Which complete physical persistence bodies, beyond empty roots, establish feature, section, unit or model-metadata ownership?
 
-**Known.** Three independently indexed originals contain complete empty physical `DEPDB_DATA` roots. Their surface, curve, section and recipe labels belong to other indexed sections. This establishes those three boundaries, not a population-wide absence result or a replacement owner for every implemented value grammar. The visible-geometry and namespace-census readers do not borrow physical `DEPDB_DATA` when `VisibGeom` is absent or sparse; newly refused geometry-looking sections retain their complete physical bytes with an explicit untyped-owner warning. Failed expansion retains its existing precedence.
+**Known.** A complete physical `DEPDB_DATA` root can be empty. In a model with an empty root, the surface, curve, section and recipe labels belong to other indexed sections. This establishes the boundary of an empty root, not that every physical root is empty or a replacement owner for every implemented value grammar. The visible-geometry and namespace-census readers do not borrow physical `DEPDB_DATA` when `VisibGeom` is absent or sparse; newly refused geometry-looking sections retain their complete physical bytes with an explicit untyped-owner warning. Failed expansion retains its existing precedence.
 
 **Need.** Establish source-owned complete grammars and audit the remaining physical feature/operation, section, model-name and unit readers before further semantic admission or quarantine. Preserve unknown physical variants and original offsets. Authored composition fixtures and an encoding-family name are not native ownership evidence; fixture relocation requires a proved producer grammar.
 
@@ -1457,8 +1474,8 @@ the declared output length and a fully consumed record grammar with an
 independent decoder. A partial output, valid magic prefix, or printable run
 does not establish the substrate.
 
-**Note.** One part re-saved in Creo 7 through 13 retains this gap in every
-release. The Creo 7 through 11 streams fail with invalid or incomplete LZW
+**Note.** This body variant occurs in saves from every release from Creo 7
+through 13. The Creo 7 through 11 streams fail with invalid or incomplete LZW
 framing; the Creo 12 and 13 streams reach an undefined code. Other compressed
 sections expand with the defined Unix-compress grammar. Need a complete
 dictionary and width-state proof with synthetic streams before applying that
@@ -1636,13 +1653,13 @@ which section a type-`25` identifier selects when both sections define it.
 1. A type-1 pointer selects a zero-based dimension slot: the selected dimensions link back to their tolerances.
 2. A type-1 pointer selects a one-based dimension slot: the preceding slots lack those backlinks.
 3. A feature identifier uniquely selects the dimension: feature identifiers repeat.
-4. A dimension selects at most one tolerance: one dimension has two reciprocal links.
+4. A dimension selects at most one tolerance: a dimension can have two reciprocal links.
 5. A type-2 pointer selects a dimension slot: tested identifiers exceed the dimension array bounds.
 6. A type-4 pointer selects a reciprocal dimension: the tested in-range slots lack backlinks.
 7. A class reference states an inline attachment type: the byte after a positional `e3` is the replayed `type` field, and a class reference uses `f7`.
 8. A `c0`-prefixed placement identifier is a separate lane: it is a three-byte compact integer.
-9. A dimension feature identifier selects the position target faces: the 85 mm dimension has a null `feat_id`.
-10. The dimension distance selects the position target faces: four native face pairs match each of the 85 mm and 50 mm distances.
+9. A dimension feature identifier selects the position target faces: a dimension that locates position targets can store a null `feat_id`.
+10. The dimension distance selects the position target faces: four native face pairs can match one dimension distance.
 11. Only a flatness tolerance's type-`25` attachment selects its target: perpendicularity, profile, runout, and position attachments select the STEP-twin target surface.
 12. A dimension's edge links name its target faces directly: each edge bounds the face shared by both links and one STEP-twin target face.
 13. A dimension's `p_sld_info` always starts with its owner fields: a class reference can precede them.

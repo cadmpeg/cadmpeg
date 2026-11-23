@@ -5,12 +5,13 @@ use crate::records::feature::sheet_metal::{
     DesignEdgeFlangeHeightExtent, DesignEdgeFlangeShape, DesignEdgeFlangeWidthParameterSource,
 };
 use cadmpeg_core::{decode::DecodeContext, CodecError};
+use cadmpeg_ir::features::selections::NonEmptyMembers;
 use cadmpeg_ir::features::sheet_metal::{
     SheetMetalFlangeOffset, SheetMetalFlangeSymmetricWidth, SheetMetalFlangeTargetConstruction,
 };
-use cadmpeg_ir::features::{
-    NonEmptyMembers, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
-    SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
+use cadmpeg_ir::features::sheet_metal_forms::{
+    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
+    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Length, PositiveLength};

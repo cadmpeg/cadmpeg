@@ -713,7 +713,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     surfaces: &[cadmpeg_ir::geometry::Surface],
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -769,14 +769,16 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             let Some(parameter) = relation_parameter(relation) else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
                 parameter.value.as_ref()
             else {
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                    value.get() * 0.5
+                }
                 None => continue,
             };
             if !(radius.is_finite() && radius > 0.0) {
@@ -841,14 +843,16 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 continue;
             };
             let parameter = relation_parameter(relation);
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
                 parameter.and_then(|parameter| parameter.value.as_ref())
             else {
                 continue;
             };
             let radius = match parameter.and_then(|parameter| parameter.display) {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                    value.get() * 0.5
+                }
                 None => continue,
             };
             if !(radius.is_finite() && radius > 0.0) {
@@ -974,7 +978,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
 pub(crate) fn project_relation_point_dimensioned_circles(
     entities: &mut Vec<SketchEntity>,
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut sketches_by_feature = HashMap::<&str, _>::new();
@@ -1310,13 +1314,17 @@ pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Opt
     supported.then_some(usize::from(index))
 }
 
-fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) -> Option<f64> {
-    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+fn radial_dimension_radius(
+    parameter: &cadmpeg_ir::features::parameters::DesignParameter,
+) -> Option<f64> {
+    let cadmpeg_ir::features::parameters::ParameterValue::Length(value) =
+        parameter.value.as_ref()?
+    else {
         return None;
     };
     let radius = match parameter.display {
-        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+        Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return None,
     };
     (radius.is_finite() && radius > 0.0).then_some(radius)
@@ -1488,7 +1496,7 @@ fn unique_marker_circle_center(
 
 fn marker_circle_one_to_one(
     markers: &[(&SketchInputEntity, [f64; 2])],
-    dimensions: &[(&cadmpeg_ir::features::DesignParameter, f64)],
+    dimensions: &[(&cadmpeg_ir::features::parameters::DesignParameter, f64)],
     center: [f64; 2],
 ) -> bool {
     if markers.len() != dimensions.len() {
@@ -1554,7 +1562,7 @@ struct FeatureLaneMarkers<'a> {
 struct MarkerCircleInputs<'a> {
     radial_dimensions: HashMap<
         &'a cadmpeg_ir::features::FeatureId,
-        Vec<(&'a cadmpeg_ir::features::DesignParameter, f64)>,
+        Vec<(&'a cadmpeg_ir::features::parameters::DesignParameter, f64)>,
     >,
     markers: HashMap<&'a str, Vec<FeatureLaneMarkers<'a>>>,
     circle_diameters: HashMap<&'a str, Vec<&'a FeatureInputRelationInstance>>,
@@ -1564,7 +1572,7 @@ struct MarkerCircleInputs<'a> {
 
 impl<'a> MarkerCircleInputs<'a> {
     fn new(
-        parameters: &'a [cadmpeg_ir::features::DesignParameter],
+        parameters: &'a [cadmpeg_ir::features::parameters::DesignParameter],
         lanes: &'a [FeatureInputLane],
     ) -> Self {
         let mut radial_dimensions = HashMap::<_, Vec<_>>::new();
@@ -1620,7 +1628,7 @@ impl<'a> MarkerCircleInputs<'a> {
     fn radial_dimensions(
         &self,
         feature: &cadmpeg_ir::features::FeatureId,
-    ) -> &[(&'a cadmpeg_ir::features::DesignParameter, f64)] {
+    ) -> &[(&'a cadmpeg_ir::features::parameters::DesignParameter, f64)] {
         self.radial_dimensions
             .get(feature)
             .map_or(&[], Vec::as_slice)
@@ -1686,7 +1694,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     entities: &mut Vec<SketchEntity>,
     sketches: &mut [Sketch],
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;

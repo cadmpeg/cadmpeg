@@ -12,17 +12,13 @@ use crate::records::{
     SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
-};
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        ParameterId, ParameterValue,
-    },
-    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -1520,7 +1516,7 @@ fn radial_dimensions_normalize_radius_and_diameter_displays() {
         expression: String::new(),
         display,
         value: Some(ParameterValue::Length(Length::new(value).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1602,12 +1598,12 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -1623,7 +1619,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

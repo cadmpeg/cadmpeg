@@ -21,7 +21,8 @@ use super::names::{CodecId, NativeNameValue};
 use super::options::NativeOptions;
 use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
-use crate::features::{ConfigurationId, FinitePoint3};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ConfigurationId;
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength};
 use crate::transform::Transform;
 use crate::units::UnitVector3;
@@ -40,7 +41,7 @@ pub mod kinds {
     use schemars::JsonSchema;
 
     use super::{AxisValue, ConstructionKind, CurveValue, FrameValue, PlaneValue};
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::units::UnitVector3;
 
     macro_rules! kinds {
@@ -239,7 +240,7 @@ pub struct ConstructionInput {
 }
 
 /// The reference of a construction input.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -256,7 +257,7 @@ pub enum InputReference {
 }
 
 /// A construction of any kind.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AnyConstruction {
@@ -316,7 +317,7 @@ pub enum Subject {
 }
 
 /// How an input constrains its subject.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -388,7 +389,7 @@ pub enum Relation {
 }
 
 /// The value of a construction input.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -445,7 +446,7 @@ pub enum ScalarDimension {
 
 /// A step on a construction's result after the inputs. Each step acts in the
 /// result's frame as the earlier steps leave it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -555,7 +556,7 @@ pub struct FrameValue {
 }
 
 /// A curve that a construction resolves to.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveValue {

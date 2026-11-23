@@ -6,16 +6,20 @@ use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
+use crate::geometry::intersection_curves::{
+    TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+};
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::pcurve::{
     CirclePcurve, HyperbolaPcurve, LinePcurve, OffsetPcurve, ParabolaPcurve, PcurveGeometry,
     PcurveNurbs, PlacedPcurve, PolarHarmonicPcurve, PolarNurbsPole, PolarPcurveNurbs,
     SphericalGreatCirclePcurve,
 };
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry, TolerantIntersectionConstruction, TolerantIntersectionParameterization,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
@@ -585,7 +589,7 @@ fn a_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_point_ro
             .within_work_slice(&budget, |admission| crate::eval::decode::surface_point(
                 admission, &surface, 5.0e-301, 0.5
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
     assert_eq!(
@@ -595,7 +599,7 @@ fn a_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_point_ro
             5.0e-301,
             0.5
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
 }
@@ -726,7 +730,7 @@ fn a_replica_whose_placement_overflows_reports_the_point_it_reached() {
             -f64::MAX,
             2.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 2.0, 0.0))
     );
 }
@@ -945,7 +949,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
             &source,
             0.25
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         expected
     );
     let budget = WorkBudget::new(usize::MAX);
@@ -954,7 +958,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
             .within_work_slice(&budget, |admission| model_curve_point_by_id(
                 admission, &index, &source, 0.25
             ))
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
         expected
     );
     assert!(!budget.exhausted());
@@ -1035,7 +1039,7 @@ fn a_tolerant_intersection_reads_the_point_of_a_pcurve_whose_placed_tangent_over
             &curve,
             0.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 0.0))
     );
 }
@@ -1070,7 +1074,8 @@ fn a_tolerant_intersection_has_no_point_where_its_offset_pcurve_point_overflows(
 
 #[test]
 fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows() {
-    use crate::geometry::{RollingBallSide, RollingBallSupportSurface, VariableBlendSupportKind};
+    use crate::geometry::blends::{RollingBallSide, RollingBallSupportSurface};
+    use crate::geometry::variable_blends::VariableBlendSupportKind;
 
     let plane = solved(SolvedSurfaceGeometry::Plane(
         crate::geometry::analytic::PlaneSurface::try_new(
@@ -1097,7 +1102,7 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
         }),
         curve: None,
         pcurve: Some(pcurve),
-        location: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        location: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("finite location"),
         secondary_pcurve: None,
         extension: None,
@@ -1370,7 +1375,7 @@ fn an_arena_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_i
                 5.0e-301,
                 0.5
             )
-            .map(crate::features::FinitePoint3::get),
+            .map(crate::features::geometry::FinitePoint3::get),
             Ok(Point3::new(5.0e9, 0.5, 0.0))
         );
         assert_eq!(
@@ -1380,7 +1385,7 @@ fn an_arena_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_i
                         admission, &index, surface, 5.0e-301, 0.5,
                     )
                 })
-                .map(crate::features::FinitePoint3::get),
+                .map(crate::features::geometry::FinitePoint3::get),
             Ok(Point3::new(5.0e9, 0.5, 0.0))
         );
         assert!(matches!(
@@ -1486,7 +1491,7 @@ fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
             0.0,
             0.0
         )
-        .map(crate::features::FinitePoint3::get),
+        .map(crate::features::geometry::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 1.0))
     );
 }

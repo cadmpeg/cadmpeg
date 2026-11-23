@@ -172,3 +172,174 @@ fn text_flag_admits_the_text_value_after_the_source_kind() {
     ))
     .is_none());
 }
+
+/// An eleven-byte discriminated parameter whose expression `1` is followed by
+/// `trailer`.
+fn discriminated(owner: Option<u32>, kind: &str, trailer: &[u8]) -> Vec<u8> {
+    let mut frame = parameter_record(owner, "1", kind, None, "d4", 1.0);
+    let expression_end = if owner.is_some() { 46 } else { 36 } + 4 + 2;
+    frame.splice(expression_end..expression_end + 9, trailer.iter().copied());
+    frame
+}
+
+#[test]
+fn discriminated_frame_reads_the_nine_byte_and_the_ten_byte_trailer() {
+    for trailer in [&[0; 9][..], &[0; 10][..]] {
+        let owned = parse_design_parameter_record(&discriminated(
+            Some(0x31),
+            "Linear Dimension-2",
+            trailer,
+        ))
+        .expect("owned parameter");
+        assert_eq!(owned.owner_record_index(), Some(0x31));
+        assert_eq!(owned.source_kind(), "Linear Dimension-2");
+        assert_eq!(owned.text_value(), None);
+
+        let mut document_trailer = trailer.to_vec();
+        *document_trailer.last_mut().unwrap() = 1;
+        let document = parse_design_parameter_record(&discriminated(
+            None,
+            "User Parameter",
+            &document_trailer,
+        ))
+        .expect("document parameter");
+        assert_eq!(document.kind(), DesignParameterKind::User);
+    }
+}
+
+#[test]
+fn ten_byte_trailer_keeps_a_parameter_with_a_set_flag_byte() {
+    let tangency = parse_design_parameter_record(&discriminated(
+        Some(0x5d),
+        "TangencyWeight",
+        &[0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    ))
+    .expect("ten-byte trailer with its first flag byte set");
+    assert_eq!(tangency.owner_record_index(), Some(0x5d));
+    assert_eq!(tangency.source_kind(), "TangencyWeight");
+    assert_eq!(tangency.driving(), None);
+
+    let null_owner = parse_design_parameter_record(&discriminated(
+        None,
+        "Angular Dimension-2",
+        &[0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+    ))
+    .expect("ten-byte trailer with its fourth flag byte set");
+    assert_eq!(null_owner.owner_record_index(), None);
+    assert_eq!(null_owner.source_kind(), "Angular Dimension-2");
+
+    let nine_byte = parse_design_parameter_record(&discriminated(
+        Some(0x5d),
+        "TangencyWeight",
+        &[0, 0, 0, 0, 1, 0, 0, 0, 0],
+    ))
+    .expect("nine-byte trailer with its first flag byte set");
+    assert_eq!(nine_byte.source_kind(), "TangencyWeight");
+
+    for refused in [
+        &[0, 0, 0, 0, 0, 2, 0, 0, 0, 0][..],
+        &[0, 0, 1, 0, 0, 0, 0, 0, 0, 0][..],
+        &[2, 0, 0, 0, 0, 0, 0, 0, 0, 0][..],
+        &[0, 0, 0, 0, 2, 0, 0, 0, 0][..],
+    ] {
+        assert!(
+            parse_design_parameter_record(&discriminated(Some(0x5d), "TangencyWeight", refused))
+                .is_none(),
+            "{refused:?}"
+        );
+    }
+}
+
+#[test]
+fn second_flag_byte_of_the_nine_and_ten_byte_trailers_is_the_driven_flag() {
+    for trailer in [
+        &[0, 0, 0, 0, 0, 1, 0, 0, 0][..],
+        &[0, 0, 0, 0, 0, 0, 1, 0, 0, 0][..],
+    ] {
+        let driven = parse_design_parameter_record(&discriminated(
+            Some(0x31),
+            "Linear Dimension-2",
+            trailer,
+        ))
+        .unwrap_or_else(|| panic!("driven dimension parameter, {trailer:?}"));
+        assert!(driven.flags().driven, "{trailer:?}");
+        assert_eq!(driven.driving(), Some(false), "{trailer:?}");
+    }
+    // A document parameter has driven flag 0, so the byte is not its
+    // driven flag.
+    let document = parse_design_parameter_record(&discriminated(
+        None,
+        "User Parameter",
+        &[0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+    ))
+    .expect("document parameter");
+    assert_eq!(document.kind(), DesignParameterKind::User);
+    assert!(!document.flags().driven);
+}
+
+#[test]
+fn ten_byte_text_flag_admits_the_text_value_after_the_source_kind() {
+    let text_parameter = |trailer: [u8; 10], text: &str| {
+        let kind = "Text1-Text";
+        let mut frame = parameter_record(Some(0xf6), "'AB'", kind, Some("Text"), "tp", 0.0);
+        let expression_end = 46 + 4 + 2 * "'AB'".len();
+        frame.splice(expression_end..expression_end + 9, trailer);
+        let text_at = expression_end + 10 + 4 + 2 * kind.len();
+        let mut field = Vec::new();
+        lp_utf16(&mut field, text);
+        frame.splice(text_at..text_at + 4, field);
+        parse_design_parameter_record(&frame)
+    };
+    let text =
+        text_parameter([1, 0, 0, 0, 0, 0, 0, 0, 0, 0], "B6 Probe").expect("owned text parameter");
+    assert_eq!(text.text_value(), Some("B6 Probe"));
+    assert_eq!(text.source_kind(), "Text1-Text");
+    assert_eq!(text.unit().map(|unit| unit.value.as_str()), Some("Text"));
+    assert!(text_parameter([0; 10], "B6 Probe").is_none());
+}
+
+#[test]
+fn localized_document_source_kind_matches_the_document_flag() {
+    let parameter = parse_design_parameter_record(&discriminated(
+        None,
+        "Parâmetro do usuário",
+        &[0, 0, 0, 0, 0, 0, 0, 0, 1],
+    ))
+    .expect("Portuguese document parameter");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.source_kind(), "Parâmetro do usuário");
+}
+
+#[test]
+fn document_flag_selects_a_document_parameter_whatever_its_source_kind() {
+    for trailer in [
+        &[0, 0, 0, 0, 0, 0, 0, 0, 1][..],
+        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 1][..],
+    ] {
+        let parameter =
+            parse_design_parameter_record(&discriminated(None, "Benutzerparameter", trailer))
+                .unwrap_or_else(|| panic!("German document parameter, {trailer:?}"));
+        assert_eq!(parameter.kind(), DesignParameterKind::User);
+        assert_eq!(parameter.source_kind(), "Benutzerparameter");
+        assert_eq!(parameter.owner_record_index(), None);
+        assert_eq!(parameter.name(), "d4");
+
+        // Without the document flag, a document source kind names an owned
+        // parameter.
+        let mut unflagged = trailer.to_vec();
+        *unflagged.last_mut().unwrap() = 0;
+        let owned =
+            parse_design_parameter_record(&discriminated(Some(0x31), "User Parameter", &unflagged))
+                .unwrap_or_else(|| panic!("owned parameter, {unflagged:?}"));
+        assert_ne!(owned.kind(), DesignParameterKind::User);
+        assert_eq!(owned.owner_record_index(), Some(0x31));
+
+        // An owner with the document flag matches no grammar.
+        assert!(parse_design_parameter_record(&discriminated(
+            Some(0x31),
+            "Benutzerparameter",
+            trailer
+        ))
+        .is_none());
+    }
+}

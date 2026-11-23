@@ -8,7 +8,7 @@
 //! `S_u × S_v`. NURBS and extrusion charts evaluate their carriers in local
 //! coordinates and map points and partials by the composed placement.
 
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -18,7 +18,7 @@ use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::geom::{combine, offset, Aabb};
 use crate::reason::UnavailableReason;
-use crate::tolerance::INVERSION_PARAMETER_RESOLUTION;
+use crate::tolerance::{INVERSION_PARAMETER_RESOLUTION, NURBS_SEAM_RATIO};
 
 /// Gauss–Newton steps refining one point inverted onto a NURBS carrier.
 const MAX_INVERSION_REFINEMENT_STEPS: usize = 16;
@@ -235,7 +235,7 @@ impl<'ir> NurbsChart<'ir> {
             surface.v_degree(),
             surface.v_count(),
         )?;
-        Some(Self {
+        let mut chart = Self {
             surface,
             placement,
             evaluation: None,
@@ -247,7 +247,22 @@ impl<'ir> NurbsChart<'ir> {
                 surface.u_periodic().then_some(u[1] - u[0]),
                 surface.v_periodic().then_some(v[1] - v[0]),
             ],
-        })
+        };
+        // A clamped axis whose two boundary curves are one curve closes at a
+        // seam, and its parameter repeats there as a periodic one does.
+        let size = chart
+            .control_hull()
+            .map_or(0.0, |hull| hull.min_point().distance(hull.max_point()));
+        for axis in 0..2 {
+            if chart.periods[axis].is_none()
+                && chart.clamped(axis)
+                && chart.seam(axis, NURBS_SEAM_RATIO * size)
+            {
+                let [low, high] = chart.domain[axis];
+                chart.periods[axis] = Some(high - low);
+            }
+        }
+        Some(chart)
     }
 
     /// The model points to which a whole `v` side of the pole grid
@@ -277,63 +292,111 @@ impl<'ir> NurbsChart<'ir> {
     }
 
     pub(crate) fn closed_domain(&self, tolerance: f64) -> bool {
-        let counts = [self.surface.u_count(), self.surface.v_count()];
+        (0..2).all(|axis| {
+            self.periods[axis].is_some()
+                || self.clamped(axis)
+                    && (self.seam(axis, tolerance)
+                        || self.collapsed(axis, 0, tolerance)
+                            && self.collapsed(axis, self.counts()[axis] - 1, tolerance))
+        })
+    }
+
+    fn counts(&self) -> [usize; 2] {
+        [self.surface.u_count(), self.surface.v_count()]
+    }
+
+    /// Whether the knots of `axis` repeat its domain ends a degree plus one
+    /// times, so that the first and last pole columns are the surface's
+    /// boundary curves there.
+    fn clamped(&self, axis: usize) -> bool {
         let degrees = [self.surface.u_degree(), self.surface.v_degree()];
         let knots = [
             self.surface.u_knots().as_slice(),
             self.surface.v_knots().as_slice(),
         ];
-        for axis in 0..2 {
-            if self.periods[axis].is_some() {
-                continue;
-            }
-            let Ok(degree) = usize::try_from(degrees[axis]) else {
-                return false;
-            };
-            if knots[axis]
-                .get(..=degree)
-                .is_none_or(|head| head.iter().any(|knot| *knot != self.domain[axis][0]))
-                || knots[axis]
-                    .get(counts[axis]..)
-                    .is_none_or(|tail| tail.iter().any(|knot| *knot != self.domain[axis][1]))
-            {
-                return false;
-            }
-            let pole = |side: usize, index: usize| {
-                let [u, v] = if axis == 0 {
-                    [side, index]
-                } else {
-                    [index, side]
-                };
-                let point = self.placement.point(self.surface.pole(u, v)?.get());
-                let weight = self
-                    .surface
-                    .weight(u, v)
-                    .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
-                (weight > 0.0).then_some((point, weight))
-            };
-            let last = counts[axis] - 1;
-            let width = counts[1 - axis];
-            let same = |a: Point3, b: Point3| a.distance(b) <= tolerance;
-            let seam = (0..width).all(|index| match (pole(0, index), pole(last, index)) {
-                (Some((a, w)), Some((b, v))) => w == v && same(a, b),
+        let Ok(degree) = usize::try_from(degrees[axis]) else {
+            return false;
+        };
+        let [low, high] = self.domain[axis];
+        knots[axis]
+            .get(..=degree)
+            .is_some_and(|head| head.iter().all(|knot| *knot == low))
+            && knots[axis]
+                .get(self.counts()[axis]..)
+                .is_some_and(|tail| tail.iter().all(|knot| *knot == high))
+    }
+
+    /// The placed pole and weight at `index` of the pole column `side` of
+    /// `axis`, when its weight is positive.
+    fn side_pole(&self, axis: usize, side: usize, index: usize) -> Option<(Point3, f64)> {
+        let [u, v] = if axis == 0 {
+            [side, index]
+        } else {
+            [index, side]
+        };
+        let point = self.placement.point(self.surface.pole(u, v)?.get());
+        let weight = self
+            .surface
+            .weight(u, v)
+            .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
+        (weight > 0.0).then_some((point, weight))
+    }
+
+    /// Whether the first and last pole columns of `axis` coincide within
+    /// `tolerance`, with equal weights.
+    fn seam(&self, axis: usize, tolerance: f64) -> bool {
+        let last = self.counts()[axis] - 1;
+        (0..self.counts()[1 - axis]).all(|index| {
+            match (
+                self.side_pole(axis, 0, index),
+                self.side_pole(axis, last, index),
+            ) {
+                (Some((a, w)), Some((b, v))) => w == v && a.distance(b) <= tolerance,
                 _ => false,
-            });
-            let collapsed = |side| {
-                let Some((origin, _)) = pole(side, 0) else {
-                    return false;
-                };
-                (0..width)
-                    .all(|index| pole(side, index).is_some_and(|(point, _)| same(origin, point)))
-            };
-            if !(seam || collapsed(0) && collapsed(last)) {
-                return false;
             }
-        }
-        true
+        })
+    }
+
+    /// Whether the pole column `side` of `axis` collapses to one point
+    /// within `tolerance`.
+    fn collapsed(&self, axis: usize, side: usize, tolerance: f64) -> bool {
+        let Some((origin, _)) = self.side_pole(axis, side, 0) else {
+            return false;
+        };
+        (0..self.counts()[1 - axis]).all(|index| {
+            self.side_pole(axis, side, index)
+                .is_some_and(|(point, _)| origin.distance(point) <= tolerance)
+        })
+    }
+
+    /// `[u, v]` with each periodic parameter moved by whole periods into the
+    /// knot domain, outside which the spline extrapolates.
+    fn in_domain(&self, uv: [f64; 2]) -> [f64; 2] {
+        std::array::from_fn(|axis| {
+            let [low, high] = self.domain[axis];
+            match self.periods[axis] {
+                Some(period) if uv[axis] < low || uv[axis] > high => {
+                    low + (uv[axis] - low).rem_euclid(period)
+                }
+                _ => uv[axis],
+            }
+        })
     }
 
     fn partials(&self, eval: &Eval<'_, '_>, u: f64, v: f64) -> Measure<Partials> {
+        let [u, v] = self.in_domain([u, v]);
+        if self.evaluation.is_none() {
+            if let Some(fast) = super::column::nurbs_surface_partials_fast(
+                eval,
+                self.surface,
+                u,
+                v,
+                self.domain,
+                self.placement,
+            )? {
+                return Ok(fast);
+            }
+        }
         let local = eval
             .work
             .evaluate(eval.ctx, |admission| match self.evaluation {
@@ -350,16 +413,109 @@ impl<'ir> NurbsChart<'ir> {
         })
     }
 
+    /// Fast damped Gauss-Newton inversion from a close `seed` using `self.partials`.
+    /// Returns `Some((uv, partials))` only when it converges to both parameter
+    /// resolution and model-space `tolerance`.
+    fn refine_from_seed(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: [f64; 2],
+        tolerance: f64,
+    ) -> Measure<Option<([f64; 2], Partials)>> {
+        let mut uv = [0, 1].map(|axis| {
+            let [low, high] = self.domain[axis];
+            if let Some(period) = self.periods[axis] {
+                if seed[axis] < low || seed[axis] > high {
+                    low + (seed[axis] - low).rem_euclid(period)
+                } else {
+                    seed[axis]
+                }
+            } else {
+                seed[axis].clamp(low, high)
+            }
+        });
+        let resolution = [0, 1].map(|axis| {
+            INVERSION_PARAMETER_RESOLUTION * (self.domain[axis][1] - self.domain[axis][0])
+        });
+        let mut partials = self.partials(eval, uv[0], uv[1])?;
+        let mut current_dist = partials.point.distance(point);
+        if !current_dist.is_finite() {
+            return Ok(None);
+        }
+        for _ in 0..MAX_INVERSION_REFINEMENT_STEPS {
+            let (Some(du), Some(dv)) = (
+                FiniteVector3::new(partials.du),
+                FiniteVector3::new(partials.dv),
+            ) else {
+                break;
+            };
+            let Some((step_u, step_v)) = cadmpeg_ir::math::solve::least_squares_step(
+                du,
+                dv,
+                point.vector_from(partials.point),
+            ) else {
+                break;
+            };
+            let step = [step_u.get(), step_v.get()];
+            let mut scale = 1.0_f64;
+            let mut accepted = None;
+            for _ in 0..8 {
+                let mut next_uv = [0.0; 2];
+                let mut moved = [0.0; 2];
+                for axis in 0..2 {
+                    let mut next = uv[axis] + scale * step[axis];
+                    if self.periods[axis].is_none() {
+                        next = next.clamp(self.domain[axis][0], self.domain[axis][1]);
+                    }
+                    moved[axis] = next - uv[axis];
+                    next_uv[axis] = next;
+                }
+                let next_partials = self.partials(eval, next_uv[0], next_uv[1])?;
+                let next_dist = next_partials.point.distance(point);
+                if next_dist.is_finite()
+                    && (next_dist <= current_dist
+                        || (moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1]))
+                {
+                    accepted = Some((next_uv, moved, next_partials, next_dist));
+                    break;
+                }
+                scale *= 0.5;
+            }
+            let Some((next_uv, moved, next_partials, next_dist)) = accepted else {
+                break;
+            };
+            uv = next_uv;
+            partials = next_partials;
+            current_dist = next_dist;
+            if moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1] {
+                break;
+            }
+        }
+        if current_dist.is_finite() && current_dist <= tolerance {
+            Ok(Some((uv, partials)))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// The parameters of a model point within `tolerance`, seeded at
     /// `seed`, refined by Gauss–Newton steps until a step moves it less
-    /// than the parameter resolution.
-    fn invert(
+    /// than the parameter resolution, together with its partials.
+    fn invert_with_partials(
         &self,
         eval: &Eval<'_, '_>,
         point: Point3,
         seed: Option<[f64; 2]>,
         tolerance: f64,
-    ) -> Measure<Option<[f64; 2]>> {
+    ) -> Measure<Option<([f64; 2], Partials)>> {
+        if let Some(seed) = seed {
+            if self.evaluation.is_none() {
+                if let Some(fast) = self.refine_from_seed(eval, point, seed, tolerance)? {
+                    return Ok(Some(fast));
+                }
+            }
+        }
         let Some(local) = self.placement.inverse_point(point) else {
             return Ok(None);
         };
@@ -382,8 +538,8 @@ impl<'ir> NurbsChart<'ir> {
         let resolution = [0, 1].map(|axis| {
             INVERSION_PARAMETER_RESOLUTION * (self.domain[axis][1] - self.domain[axis][0])
         });
+        let mut partials = self.partials(eval, uv[0], uv[1])?;
         for _ in 0..MAX_INVERSION_REFINEMENT_STEPS {
-            let partials = self.partials(eval, uv[0], uv[1])?;
             let (Some(du), Some(dv)) = (
                 FiniteVector3::new(partials.du),
                 FiniteVector3::new(partials.dv),
@@ -407,11 +563,24 @@ impl<'ir> NurbsChart<'ir> {
                 moved[axis] = next - uv[axis];
                 uv[axis] = next;
             }
+            partials = self.partials(eval, uv[0], uv[1])?;
             if moved[0].abs() <= resolution[0] && moved[1].abs() <= resolution[1] {
                 break;
             }
         }
-        Ok(Some(uv))
+        Ok(Some((uv, partials)))
+    }
+
+    fn invert(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: Option<[f64; 2]>,
+        tolerance: f64,
+    ) -> Measure<Option<[f64; 2]>> {
+        Ok(self
+            .invert_with_partials(eval, point, seed, tolerance)?
+            .map(|(uv, _)| uv))
     }
 }
 
@@ -547,6 +716,26 @@ impl Chart<'_> {
             Self::Nurbs(nurbs) => nurbs.invert(eval, point, seed, tolerance),
             Self::Extrusion(extrusion) => extrusion.invert(eval, point, seed, tolerance),
             analytic => Ok(analytic.closed_invert(point)),
+        }
+    }
+
+    /// Invert `point` onto the chart and return the partials at the inverted
+    /// parameters when already computed (avoiding a second surface evaluation).
+    pub(crate) fn invert_with_partials(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: Option<[f64; 2]>,
+        tolerance: f64,
+    ) -> Measure<Option<([f64; 2], Option<Partials>)>> {
+        match self {
+            Self::Nurbs(nurbs) => Ok(nurbs
+                .invert_with_partials(eval, point, seed, tolerance)?
+                .map(|(uv, partials)| (uv, Some(partials)))),
+            Self::Extrusion(extrusion) => Ok(extrusion
+                .invert(eval, point, seed, tolerance)?
+                .map(|uv| (uv, None))),
+            analytic => Ok(analytic.closed_invert(point).map(|uv| (uv, None))),
         }
     }
 

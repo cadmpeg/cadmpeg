@@ -89,6 +89,7 @@ fn rolled_back(pick: &Value) -> CadIr {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     ir.design.features = vec![a, b];
     let records = crate::examples::unit_cube().unwrap().geometry;
@@ -322,19 +323,37 @@ fn a_parameter_ratio_picks_a_sketch_curve_or_an_edge() {
     ));
 }
 
-/// The named unit cube with a linear pattern `p` of two instances after `b`,
-/// the current state after `p`, and its first face named as instance
-/// `instance` of `a`'s face.
+/// The named unit cube with a linear pattern `p` of `run` after `b`, the
+/// current state after `p`, and its first face named as instance `instance`
+/// of `a`'s face.
 fn patterned(run: &Value, instance: &[i32]) -> CadIr {
+    patterned_in(
+        &json!({"kind": "linear", "value": {"first": {
+            "direction": {"inputs": [], "after": [], "resolved_in": {}, "resolved": {"x": 1.0, "y": 0.0, "z": 0.0}},
+            "run": run
+        }}}),
+        instance,
+    )
+}
+
+/// As [`patterned`], with the pattern laid out along an unread path.
+fn path_patterned(run: &Value, instance: &[i32]) -> CadIr {
+    patterned_in(
+        &json!({"kind": "path", "value": {
+            "path": {"at": input_anchor(), "picks": {"kind": "unread"}},
+            "run": run
+        }}),
+        instance,
+    )
+}
+
+fn patterned_in(layout: &Value, instance: &[i32]) -> CadIr {
     let mut ir = named_cube();
     ir.design.features.push(feature(
         "p",
         json!({"kind": "pattern", "value": {
             "seeds": {"kind": "features", "features": {"at": input_anchor(), "picks": {"kind": "unread"}}},
-            "layout": {"kind": "linear", "value": {"first": {
-                "direction": {"inputs": [], "after": [], "resolved_in": {}, "resolved": {"x": 1.0, "y": 0.0, "z": 0.0}},
-                "run": run
-            }}},
+            "layout": layout,
             "instances": {"kind": "implicit", "value": []},
             "native_options": {},
             "source_settings": {}
@@ -383,6 +402,21 @@ fn a_linear_instance_index_lies_in_its_run() {
         refused,
     );
     assert_no_finding(&patterned(&run(None, None), &[-1]), refused);
+    assert_no_finding(&patterned(&run(None, None), &[-5]), refused);
+    assert_finding(
+        &patterned(&run(None, Some(3)), &[2]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
+    let mut parameter_seed = run(None, None);
+    parameter_seed["seed"] = json!({"kind": "parameter", "value": "test:design:parameter#n"});
+    assert_finding(
+        &patterned(&parameter_seed, &[2]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
     assert_finding(
         &patterned(&run(Some("one"), None), &[-1]),
         Check::Design,
@@ -392,6 +426,45 @@ fn a_linear_instance_index_lies_in_its_run() {
     assert_no_finding(&patterned(&run(Some("one"), Some(1)), &[-1]), refused);
     assert_finding(
         &patterned(&run(Some("one"), Some(1)), &[1]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
+}
+
+/// Interim, gap 20261119-ERR1-C-H6-2: an unread side of a `Path` run may be
+/// `Against`, which reaches the seed's step count, so its upper bound is the
+/// greater of `last` and a literal seed, and there is none for a parameter
+/// seed.
+#[test]
+fn a_path_run_with_unread_sides_reaches_its_seed() {
+    let run = |seed: Value| {
+        let mut run = json!({
+            "spacing": {"kind": "pitch", "value": {"count": {"kind": "literal", "value": 2}, "pitch": literal(1.0)}},
+            "increments": []
+        });
+        if !seed.is_null() {
+            run["seed"] = seed;
+        }
+        run
+    };
+    let refused = "names no implicit copy";
+    let parameter = run(json!({"kind": "parameter", "value": "test:design:parameter#n"}));
+    assert_no_finding(&path_patterned(&parameter, &[2]), refused);
+    assert_no_finding(&path_patterned(&parameter, &[-5]), refused);
+    let seeded = run(json!({"kind": "literal", "value": 3}));
+    assert_no_finding(&path_patterned(&seeded, &[3]), refused);
+    assert_no_finding(&path_patterned(&seeded, &[-5]), refused);
+    assert_finding(
+        &path_patterned(&seeded, &[4]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
+    let unseeded = run(Value::Null);
+    assert_no_finding(&path_patterned(&unseeded, &[1]), refused);
+    assert_finding(
+        &path_patterned(&unseeded, &[2]),
         Check::Design,
         Severity::Error,
         refused,

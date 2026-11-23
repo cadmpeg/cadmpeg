@@ -61,7 +61,7 @@ fn model(native: &F3dNative) -> Model {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Native {
                         kind: "synthetic".into(),
@@ -82,7 +82,7 @@ fn product_history_owner_uses_distinct_component_namespaces() {
     for feature in &model.features {
         model
             .parameters
-            .push(cadmpeg_ir::features::DesignParameter {
+            .push(cadmpeg_ir::features::parameters::DesignParameter {
                 id: format!("f3d:test:parameter#{}", feature.ordinal)
                     .try_into()
                     .unwrap(),
@@ -145,9 +145,8 @@ fn product_history_owner_absent_source_timeline_has_no_loss() {
 
 #[test]
 fn product_history_owner_attaches_bound_planar_sketch_to_component() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 
     let native = native();
     let mut model = model(&native);
@@ -233,7 +232,7 @@ fn product_history_owner_uses_parameter_scope_before_parameter_record() {
     );
     model
         .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
             id: crate::ids::neutral_parameter_id(&parameter),
             product_definition: None,
             owner: None,
@@ -306,11 +305,12 @@ fn sketch_model(native: &F3dNative, sketch_id: &str) -> (Model, cadmpeg_ir::sket
 }
 
 fn bind_sketch(model: &mut Model, feature: usize, sketch: &cadmpeg_ir::sketches::SketchId) {
-    model.features[feature].evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
-        FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: SketchFeatureBinding::Planar(Some(sketch.clone())),
-        }),
-    );
+    model.features[feature].evaluation =
+        cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        );
 }
 
 fn is_unbound_sketch(model: &Model, feature: usize) -> bool {
@@ -398,7 +398,7 @@ fn sketch_feature(native: &F3dNative, name: &str) -> cadmpeg_ir::features::Featu
         format!("test:model:sketch#{name}").try_into().unwrap();
     let mut row = model(native).features.remove(0);
     row.id = format!("test:model:feature#{name}").try_into().unwrap();
-    row.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    row.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: SketchFeatureBinding::Planar(Some(sketch)),
         }),

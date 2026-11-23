@@ -449,7 +449,7 @@ pub(super) fn point_at(
         }
         _ => super::evaluation::surface_point(ctx, surface, uv.u, uv.v)?,
     };
-    Ok(point.map(cadmpeg_ir::features::FinitePoint3::get))
+    Ok(point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
 }
 
 /// A bare `SP_CURVE` over its whole knot domain (spec §7.6).
@@ -560,7 +560,7 @@ mod tests {
     /// `surface_point` gives: `u` across the first index, `v` the second.
     #[test]
     fn a_b_surface_support_evaluates_where_surface_point_does() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let rows = [
             [[0.0, 0.0, 0.0], [0.0, 30.0, 5.0]],
             [[10.0, 0.0, 2.0], [10.0, 30.0, 9.0]],
@@ -607,7 +607,7 @@ mod tests {
     /// plane `z = 0` with `u` along `x` has `du x dv` along `+z`.
     #[test]
     fn an_offset_support_moves_its_carrier_along_the_natural_normal() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let base = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
@@ -637,7 +637,7 @@ mod tests {
     /// B-surface support in each direction; any span is on another support.
     #[test]
     fn a_span_over_several_b_surface_pieces_is_not_resolved() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let surface = ridged();
         let crosses = |surface: &SurfaceGeometry, pcurve: &PcurveGeometry, low: f64, high: f64| {
             crosses_one_knot_line(&ctx, surface, pcurve, low, high).unwrap()
@@ -664,7 +664,7 @@ mod tests {
     /// samples alone misses the ridge by more than 1e-3 mm.
     #[test]
     fn a_fit_resolves_a_ridge_narrower_than_its_samples() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let surface = ridged();
         let pcurve = line(Point2::new(0.0, 0.5), Point2::new(1.0, 0.0));
         let on_support = |t: f64| point_at(&ctx, &surface, &pcurve, t);

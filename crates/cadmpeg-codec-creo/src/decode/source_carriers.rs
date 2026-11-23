@@ -6,7 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
@@ -575,14 +576,16 @@ mod tests {
     use super::SourceUnitCarriers;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-        FuzzyTolerance, ParameterValue,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::operation_settings::FuzzyTolerance;
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::geometry::helix::{HelixCurveConstruction, HelixFrame};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, ProceduralCurve,
-        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-        SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -857,7 +860,7 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -880,7 +883,7 @@ mod tests {
             value: Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(value).expect("finite source length"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -1277,7 +1280,7 @@ mod tests {
                     None,
                     Vector3::new(0.0, 0.0, 1.0),
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .expect("valid extrusion fixture"),
             ),
@@ -1315,7 +1318,7 @@ mod tests {
                         None,
                         Vector3::new(0.0, 0.0, 1.0),
                         None,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .expect("valid extrusion fixture"),
                 ),
@@ -1433,7 +1436,7 @@ mod tests {
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let point = Point::new(
             cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
                 .expect("finite source point"),
             None,
         );

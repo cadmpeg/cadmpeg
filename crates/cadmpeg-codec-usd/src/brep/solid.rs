@@ -866,6 +866,7 @@ pub(crate) fn decode(packed: &Packed) -> Result<Decoded, Refusal> {
                 brep.loops.push(LoopRecord {
                     oriented_edges: oriented,
                     vertex: loop_vertex,
+                    poles: Vec::new(),
                 });
                 loop_indices.push(brep.loops.len() - 1);
             }

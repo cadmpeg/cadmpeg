@@ -10,10 +10,8 @@ use cadmpeg_ir::design::ops::{
     body as new,
     shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing},
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDirection3, FinitePoint3,
-};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::UnitVector3;

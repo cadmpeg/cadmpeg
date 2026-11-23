@@ -82,6 +82,10 @@ class SerializedItems(unittest.TestCase):
         self.assertEqual(check.serialized_items(STRUCT), check.serialized_items(commented))
         self.assertEqual(check.serialized_items("pub struct Plain {\n    a: u8,\n}\n"), {})
 
+    def test_a_tagged_reader_derive_reads_the_same_wire_form(self) -> None:
+        tagged = STRUCT.replace("Deserialize", "cadmpeg_derive::DeserializeTagged")
+        self.assertEqual(check.serialized_items(STRUCT), check.serialized_items(tagged))
+
     def test_multiline_derive(self) -> None:
         text = "#[derive(\n    Debug,\n    Serialize,\n)]\npub enum Kind {\n    A,\n}\n"
         self.assertEqual(list(check.serialized_items(text)), ["enum Kind"])

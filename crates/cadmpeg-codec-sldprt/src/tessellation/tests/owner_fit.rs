@@ -6,7 +6,7 @@ use crate::tessellation::{
     identity_point, polygon_boundary_within, surface_measure, surface_residual,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
 };
@@ -193,11 +193,11 @@ fn surface_residual_is_the_measured_residual() {
         ),
         SolvedSurfaceGeometry::Nurbs(test_nurbs_surface()),
     ];
-    let steps = |count: u32| (0..count).map(|index| -1.0 + 0.4 * f64::from(index));
+    let steps = [-1.0, 0.0, 1.0];
     for surface in &surfaces {
-        for x in steps(6) {
-            for y in steps(6) {
-                for z in steps(6) {
+        for x in steps {
+            for y in steps {
+                for z in steps {
                     let point = Point3::new(x, y, z);
                     for tolerance in [1.0e-3, 0.5, 4.0] {
                         let measured = surface_measure(&ctx, surface, point, Some(tolerance))

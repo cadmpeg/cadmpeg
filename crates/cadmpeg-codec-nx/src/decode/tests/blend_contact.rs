@@ -12,10 +12,12 @@ use crate::decode::offset::solve_damped_least_squares_4x4;
 use crate::decode::offset::test_support::continue_surface_intersection_parameters;
 use cadmpeg_ir::math::Point3;
 
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw, CurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 
@@ -58,7 +60,8 @@ fn test_pcurve(
 
 #[test]
 fn blend_grid_samples_a_wide_finite_spine_domain() {
-    use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
     crate::test_support::with_decode_context(|geometry_ctx| {
@@ -134,7 +137,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
                     Some(spine),
                     BlendRadiusLaw::constant(2.0).expect("positive radius"),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .expect("valid blend"),
             ),
@@ -182,7 +185,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         None,
@@ -195,7 +198,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
     let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(f64::NAN, 0.5)),
@@ -659,7 +662,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.875, 0.3)),
@@ -698,7 +701,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.50011, 0.3)),
@@ -1017,7 +1020,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
 
 #[test]
 fn blend_contact_matches_concentric_blend_carriers() {
-    use cadmpeg_ir::geometry::{BlendSupport, ProceduralSurface, Surface};
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -1097,7 +1101,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
                     Some(spine.clone()),
                     BlendRadiusLaw::constant(radius).unwrap(),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1132,10 +1136,10 @@ fn blend_contact_matches_concentric_blend_carriers() {
             definition_payload.spine().clone(),
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
-            cadmpeg_ir::geometry::CacheContract::from_form(
+            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                 definition_payload
                     .native()
-                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                    .map(cadmpeg_ir::geometry::blends::RollingBallConstruction::to_raw)
                     .map(Box::new),
             ),
         )
@@ -1146,10 +1150,9 @@ fn blend_contact_matches_concentric_blend_carriers() {
 
 #[test]
 fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
-    use cadmpeg_ir::geometry::{
-        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralSurface, Surface,
-    };
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -1255,7 +1258,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     Some(spine.clone()),
                     BlendRadiusLaw::constant(1.0).unwrap(),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),

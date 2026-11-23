@@ -229,6 +229,8 @@ pub(crate) enum F3dContainerKind {
     Document {
         /// Exact archive folder of the Design asset.
         design_asset_folder: String,
+        /// Primary GUID of the Design asset's per-asset manifest.
+        design_asset_guid: String,
         /// Dialect classified from the document manifest.
         matched: DialectMatch,
     },
@@ -270,6 +272,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) kind: F3dContainerKind,
     /// Optional manifest payloads rejected after their byte spans were admitted.
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
+    pub(crate) manifest_reference_extension: Option<View<'a>>,
+    pub(crate) manifest_lineage_urn: Option<String>,
     /// Optional archive entries the scan could not open.
     pub(crate) given_up: Vec<GivenUpPart>,
     /// Design `BulkStream` record runs after the last indexed record, by
@@ -312,6 +316,8 @@ impl<'a> ContainerScan<'a> {
             text_breps: self.text_breps.clone(),
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
+            manifest_reference_extension: self.manifest_reference_extension,
+            manifest_lineage_urn: self.manifest_lineage_urn.clone(),
             given_up: self.given_up.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
@@ -420,6 +426,17 @@ impl<'a> ContainerScan<'a> {
                 design_asset_folder,
                 ..
             } => Some(design_asset_folder),
+            F3dContainerKind::MultiDocument { .. } => None,
+        }
+    }
+
+    /// Primary GUID of the manifest-selected Design asset. An outer F3Z
+    /// archive has no Design asset of its own.
+    pub(crate) fn design_asset_guid(&self) -> Option<&str> {
+        match &self.kind {
+            F3dContainerKind::Document {
+                design_asset_guid, ..
+            } => Some(design_asset_guid),
             F3dContainerKind::MultiDocument { .. } => None,
         }
     }
@@ -568,6 +585,8 @@ fn scan_in<'a>(
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
                         | ContainerRole::Other
+                        | ContainerRole::BrepSmb
+                        | ContainerRole::BrepSmbh
                 ) || matches!(
                     error,
                     CodecError::ResourceLimit(ResourceLimit {
@@ -707,17 +726,30 @@ fn scan_in<'a>(
     );
     root_document_members.sort_unstable();
     let mut manifest_diagnostics = Vec::new();
-    let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
-        let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
+    let mut manifest_reference_extension = None;
+    let mut manifest_lineage_urn = None;
+    let kind = if let Some(top_level_view) = inflated_entries.get("Manifest.dat") {
+        let top_level_manifest = manifest::parse_top_level(top_level_view.window())?;
+        let mut extension = *top_level_view;
+        extension
+            .req_take(top_level_manifest.reference_extension.start)
+            .map_err(CodecError::from)?;
+        manifest_reference_extension = Some(
+            extension
+                .req_take_child(top_level_manifest.reference_extension.len())
+                .map_err(CodecError::from)?,
+        );
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
-        let design_asset_folder = manifest::resolve_design_folder(
+        let design_asset = manifest::resolve_design_folder(
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
+        manifest_lineage_urn = top_level_manifest.lineage_urn;
         manifest_diagnostics = top_level_manifest.diagnostics;
         F3dContainerKind::Document {
-            design_asset_folder,
+            design_asset_folder: design_asset.folder,
+            design_asset_guid: design_asset.asset_guid,
             matched,
         }
     } else if inflated_entries.contains_key("Manifest.json")
@@ -762,6 +794,8 @@ fn scan_in<'a>(
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,
+        manifest_reference_extension,
+        manifest_lineage_urn,
         given_up,
         unindexed_record_runs: Vec::new(),
         inflated_entries,

@@ -14,7 +14,8 @@ use crate::records::feature::fillet_set::{
 };
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 const PREVIOUS_STATE: i64 = 7;
 const TOLERANCE: f64 = 1e-12;

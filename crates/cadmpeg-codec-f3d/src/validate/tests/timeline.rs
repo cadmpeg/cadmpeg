@@ -96,7 +96,7 @@ fn timeline_valid_records_keep_no_findings() {
         let native = native();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
+        super::super::design_records::validate_feature_timelines(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
     })
 }
@@ -207,7 +207,7 @@ fn timeline_history_findings_keep_specific_messages() {
         ] {
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
-            super::super::validate_feature_timelines(&ctx, &mut findings).unwrap();
+            super::super::design_records::validate_feature_timelines(&ctx, &mut findings).unwrap();
             assert!(findings.iter().any(|finding| finding.message == message));
         }
     })

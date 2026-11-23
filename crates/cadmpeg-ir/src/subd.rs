@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Subdivision-surface control cages.
 
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::ids::SubdId;
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
@@ -404,7 +404,7 @@ impl SubdPlaneFrame {
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdSymmetryKind {
@@ -784,7 +784,7 @@ impl SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdGripWedge {
@@ -1070,7 +1070,7 @@ impl SubdEdge {
 }
 
 /// A user-supplied knot interval layered over an edge's base interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

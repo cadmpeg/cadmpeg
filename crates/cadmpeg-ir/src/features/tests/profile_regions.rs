@@ -1,9 +1,9 @@
-use crate::features::PlanarProfileRef;
-use crate::features::{
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::profiles::{
     ProfileRef, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
     SketchProfileRegions,
 };
-use crate::geometry::DirectedParameterRange;
+use crate::geometry::procedural_curves::DirectedParameterRange;
 use crate::sketches::{SketchEntityId, SketchId};
 
 #[test]

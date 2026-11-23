@@ -77,6 +77,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         role: FeatureInputScalarRole::Driving,
         operands: vec![reference(143), reference(287)],
         archive_class: None,
+        archive_object_id: None,
     }];
     let classes = [FeatureInputClass {
         id: "sldprt:feature-input:class#synthetic:155".into(),
@@ -128,6 +129,7 @@ fn reference_cells_copy_operand_identity() {
             entity_ref: None,
         }],
         archive_class: None,
+        archive_object_id: None,
     };
     assert_eq!(
         reference_cells(std::slice::from_ref(&scalar), &[]).unwrap(),
@@ -407,12 +409,12 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
@@ -513,12 +515,12 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
@@ -699,6 +701,7 @@ fn relation_binding_requires_family_operand_signature() {
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(kind, 0), operand(kind, 1)],
         archive_class: None,
+        archive_object_id: None,
     };
 
     assert_eq!(
@@ -752,6 +755,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(0), operand(1)],
         archive_class: None,
+        archive_object_id: None,
     };
 
     assert!(relation_bindings(
@@ -792,6 +796,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         role: FeatureInputScalarRole::Driving,
         operands: vec![operand(0), operand(1)],
         archive_class: None,
+        archive_object_id: None,
     };
 
     assert!(relation_bindings(
@@ -1374,7 +1379,7 @@ fn spatial_vertex_record_decodes_model_coordinates() {
     assert_eq!(
         crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
         vec![
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75
             ))
             .expect("finite spatial vertex")
@@ -1411,6 +1416,7 @@ fn reference_cells_index_classes_by_parent_and_offset() {
         role: FeatureInputScalarRole::Driving,
         operands,
         archive_class: None,
+        archive_object_id: None,
     }];
     let class = |parent: &str, offset: u64, id: String| FeatureInputClass {
         id,

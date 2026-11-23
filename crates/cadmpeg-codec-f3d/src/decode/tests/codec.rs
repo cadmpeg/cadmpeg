@@ -168,7 +168,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 2.5,
             moved.y,
             moved.z,

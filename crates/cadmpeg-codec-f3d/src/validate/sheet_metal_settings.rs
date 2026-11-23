@@ -2,6 +2,7 @@
 //! Validate the common settings carrier's indexed and typed links.
 
 use super::{design_stream, Ctx};
+use crate::layout::sheet_metal_settings_leading_prefix as leading_prefix;
 use crate::layout::sheet_metal_settings_prefix as settings_prefix;
 use crate::records::sheet_metal_settings::{PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID};
 use cadmpeg_ir::report::check::{Check, Finding};
@@ -59,16 +60,16 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let expected_pair = header.and_then(|header| {
             let header_width =
                 cadmpeg_core::decode::u64_from_index(header.class_tag.as_str().len()) + 8;
-            let optional_width: u64 = settings
-                .inputs
-                .slots()
-                .iter()
-                .map(|slot| if slot.is_some() { 11 } else { 1 })
-                .sum();
+            // The leading-reference form has no mask word.
+            let prefix = if settings.inputs.leading_reference().is_some() {
+                leading_prefix::LEADING_REFERENCE
+            } else {
+                settings_prefix::LEN
+            };
             let version_flags = settings.inputs.rule_reference_tail_width();
             let delta = header_width
-                + cadmpeg_core::decode::u64_from_index(settings_prefix::LEN)
-                + optional_width
+                + cadmpeg_core::decode::u64_from_index(prefix)
+                + settings.inputs.optional_width()
                 + 33
                 + version_flags
                 + 1;

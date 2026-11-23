@@ -9,9 +9,8 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::{
-    BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedBodyRef,
-};
+use cadmpeg_ir::features::selections::{BodySelection, GeneratedBodyRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
@@ -65,19 +64,27 @@ fn resolve_tool(
     })
 }
 
-/// Resolve every tool of `scope`. Each entry is the proven tool or the reason
-/// that it stays native.
+/// Resolve every tool body of `scope` by its tool ordinal. Each entry is the
+/// proven tool or the reason that it stays native. A tool that names the
+/// browser node of an earlier tool is that tool's body and has no entry.
 fn resolve_tools(
     operation: &crate::records::feature::combine::DesignCombineOperation,
     stream: Option<&str>,
     combine_ordinal: u64,
     inputs: &Inputs<'_>,
-) -> Vec<Result<ResolvedTool, &'static str>> {
-    let mut resolved = Vec::<Result<ResolvedTool, &'static str>>::new();
-    for tool in operation.tools.iter() {
+) -> Vec<(usize, Result<ResolvedTool, &'static str>)> {
+    let mut resolved = Vec::<(usize, Result<ResolvedTool, &'static str>)>::new();
+    let mut tool_nodes = std::collections::HashSet::new();
+    for (ordinal, tool) in operation.tools.iter().enumerate() {
+        if tool
+            .body_node
+            .is_some_and(|node| !tool_nodes.insert(node.record_index))
+        {
+            continue;
+        }
         let mut entry = resolve_tool(tool, stream, combine_ordinal, inputs);
         if let Ok(candidate) = &entry {
-            let repeated = resolved.iter().any(|existing| {
+            let repeated = resolved.iter().any(|(_, existing)| {
                 existing
                     .as_ref()
                     .is_ok_and(|existing| existing.local_id == candidate.local_id)
@@ -86,7 +93,7 @@ fn resolve_tools(
                 entry = Err("another tool names the same body");
             }
         }
-        resolved.push(entry);
+        resolved.push((ordinal, entry));
     }
     resolved
 }
@@ -102,14 +109,16 @@ struct Inputs<'a> {
 /// Every proven tool adds its generating feature to the `Combine`
 /// dependencies and records `combine:tool:<ordinal>:generator`; the product
 /// definition of that feature owns the tool body. The tools become generated
-/// bodies only when every tool is proven.
+/// bodies only when every tool is proven. Return the losses and the native
+/// tools that each bound `Combine` replaces.
 pub(crate) fn bind(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     bindings: &[DesignBodyBinding],
-) -> Vec<LossNote> {
+) -> (Vec<LossNote>, Vec<ReplacedTools>) {
     let mut losses = Vec::new();
-    let mut updates = Vec::<(usize, Vec<Result<ResolvedTool, &'static str>>)>::new();
+    let mut replaced = Vec::new();
+    let mut updates = Vec::<(usize, Vec<(usize, Result<ResolvedTool, &'static str>)>)>::new();
     {
         let inputs = Inputs {
             scopes,
@@ -165,18 +174,17 @@ pub(crate) fn bind(
     }
     for (index, tools) in updates {
         let feature = &mut features[index];
-        for (ordinal, tool) in tools.iter().enumerate() {
+        for (ordinal, tool) in &tools {
             let Ok(tool) = tool else {
                 continue;
             };
-            insert_property(feature, ordinal, "generator", tool.generator.as_str());
+            insert_property(feature, *ordinal, "generator", tool.generator.as_str());
             if tool.generator != feature.id {
                 feature.dependencies.insert(tool.generator.clone());
             }
         }
         let unproven = tools
             .iter()
-            .enumerate()
             .filter_map(|(ordinal, tool)| {
                 tool.as_ref()
                     .err()
@@ -196,7 +204,7 @@ pub(crate) fn bind(
         };
         let refs = tools
             .into_iter()
-            .flatten()
+            .filter_map(|(_, tool)| tool.ok())
             .map(|tool| GeneratedBodyRef::new(tool.generator, tool.local_id))
             .collect::<Result<Vec<_>, _>>();
         let Some(selection) = refs
@@ -216,13 +224,94 @@ pub(crate) fn bind(
             else {
                 return;
             };
+            let mut previous = None;
             refusal = operands
-                .try_edit(|_, operand_tools| *operand_tools = selection)
+                .try_edit(|_, operand_tools| {
+                    previous = Some(std::mem::replace(operand_tools, selection));
+                })
                 .err();
+            if refusal.is_none() {
+                replaced.extend(previous.map(|tools| ReplacedTools {
+                    feature: feature.id.clone(),
+                    tools,
+                }));
+            }
         });
         if let Some(error) = refusal {
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
                 "feature {} retains its native Combine tools: {error}",
+                feature.id
+            )));
+        }
+    }
+    (losses, replaced)
+}
+
+/// The native tools of a `Combine` that [`bind`] replaced with generated
+/// bodies.
+pub(crate) struct ReplacedTools {
+    feature: FeatureId,
+    tools: BodySelection,
+}
+
+/// Name each generated tool body by the identity that the result state of its
+/// generating feature lists. A generating feature whose result state lists one
+/// body generates that body, so a tool that it generates is that body. A
+/// `Combine` with a tool whose generating feature lists several bodies, or
+/// whose tools then name one body twice, takes back its native tools.
+pub(crate) fn align_with_result_states(
+    features: &mut [Feature],
+    results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
+    replaced: Vec<ReplacedTools>,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    for ReplacedTools { feature: id, tools } in replaced {
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == id) else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let BodySelection::Generated { bodies, native } = operands.tools() else {
+            continue;
+        };
+        let aligned = bodies
+            .iter()
+            .map(|body| {
+                let Some(state) = results.iter().find(|state| state.output_of == body.feature)
+                else {
+                    return Some(body.clone());
+                };
+                let [only] = state.bodies() else {
+                    return None;
+                };
+                GeneratedBodyRef::new(body.feature.clone(), only.as_str().to_owned()).ok()
+            })
+            .collect::<Option<Vec<_>>>()
+            .and_then(|refs| BodySelection::generated(refs, native.as_str().to_owned()).ok());
+        let mut reverted = false;
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                definition
+            else {
+                return;
+            };
+            let aligned = aligned.is_some_and(|selection| {
+                operands
+                    .try_edit(|_, operand_tools| *operand_tools = selection)
+                    .is_ok()
+            });
+            if !aligned {
+                reverted = operands
+                    .try_edit(|_, operand_tools| *operand_tools = tools)
+                    .is_ok();
+            }
+        });
+        if reverted {
+            losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
+                "feature {} retains its native Combine tools: the result state of a generating feature lists several bodies, or two tools name one body",
                 feature.id
             )));
         }

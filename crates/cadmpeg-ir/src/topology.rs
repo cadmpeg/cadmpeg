@@ -8,7 +8,8 @@
 //! order carries no meaning (a shell's faces, a body's regions) is derived
 //! from those parent pointers and is not stored.
 
-use crate::features::{FinitePoint3, NonEmptyMembers};
+use crate::features::geometry::FinitePoint3;
+use crate::features::selections::NonEmptyMembers;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -201,7 +202,7 @@ pub struct Region {
 
 /// One member of a shell that names no parent of its own: a wire edge or a
 /// free vertex. A shell's faces name it through [`Face::shell`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -435,7 +436,7 @@ impl Face {
 /// `loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface
 /// with no boundary is a face with no loop, and nx, sat, step and freecad all
 /// produce one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -603,11 +604,11 @@ pub struct PcurveUse {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_parameter_range"
     )]
-    pub parameter_range: Option<crate::geometry::DirectedParameterRange>,
+    pub parameter_range: Option<crate::geometry::procedural_curves::DirectedParameterRange>,
 }
 
 /// The mutually exclusive forms of a loop boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopBoundary {
@@ -1641,7 +1642,7 @@ mod tests {
     #[test]
     fn parameter_interval_admission_preserves_direction_contracts() {
         use super::{EdgeCarrier, ParameterInterval};
-        use crate::geometry::DirectedParameterRange;
+        use crate::geometry::procedural_curves::DirectedParameterRange;
         assert!(ParameterInterval::new([2.0, 1.0]).is_err());
         assert!(ParameterInterval::new([f64::INFINITY, 1.0]).is_err());
         assert_eq!(
@@ -1828,7 +1829,7 @@ mod tests {
         coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
         LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
     };
-    use crate::features::NonEmptyMembers;
+    use crate::features::selections::NonEmptyMembers;
 
     #[test]
     fn incremental_loop_ring_keeps_order_and_rejects_duplicates() {
@@ -1844,7 +1845,7 @@ mod tests {
 
     #[test]
     fn loop_ring_membership_checks_complete_text_and_keeps_source_order() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let first = super::CoedgeId::mint("test:model:coedge#prefix-long").unwrap();
         let second = super::CoedgeId::mint("test:model:coedge#prefix").unwrap();
         let third = super::CoedgeId::mint("test:model:coedge#alpha").unwrap();
@@ -2289,7 +2290,7 @@ mod tests {
     #[test]
     fn a_point_position_must_be_finite() {
         use super::{Point, PointWire};
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -2361,7 +2362,7 @@ mod tests {
     #[test]
     fn a_point_hands_back_and_takes_its_admitted_position() {
         use super::Point;
-        use crate::features::FinitePoint3;
+        use crate::features::geometry::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -2420,7 +2421,7 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_isoparametric, bool, "isoparametric");
 cadmpeg_core::named_optional_field!(
     deserialize_parameter_range,
-    crate::geometry::DirectedParameterRange,
+    crate::geometry::procedural_curves::DirectedParameterRange,
     "parameter_range"
 );
 cadmpeg_core::named_optional_field!(deserialize_use_curve, CoedgeUseCurve, "use_curve");

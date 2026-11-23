@@ -99,7 +99,7 @@ fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
                     .iter()
                     .any(|curve| matches!(
                         curve.definition(),
-                        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+                        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection { .. }
                     )));
                 assert_eq!(
                     decoded
@@ -168,6 +168,50 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
             assert_eq!(streams.len(), 2);
             assert_eq!(streams[0].file_offset, 0);
             assert_eq!(streams[1].file_offset, second);
+        },
+    );
+}
+
+#[test]
+fn legacy_part_with_compressed_sections_yields_its_parasolid_streams() {
+    let mut bytes = b"prefix".to_vec();
+    let member = bytes.len();
+    bytes.extend_from_slice(&zlib_compress(&partition_stream()));
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let streams = super::extract_legacy_streams(ctx, root).unwrap();
+
+            assert_eq!(streams.len(), 1);
+            assert_eq!(streams[0].file_offset, member);
+            assert_eq!(streams[0].kind(), StreamKind::Partition);
+        },
+    );
+}
+
+#[test]
+fn legacy_part_view_inside_a_larger_file_scans_its_members_without_failing() {
+    let mut bytes = b"prefix".to_vec();
+    let part_start = bytes.len();
+    bytes.extend_from_slice(&[0x78, 0x9c, 0x00, 0x01]);
+    let member = bytes.len();
+    bytes.extend_from_slice(&zlib_compress(&partition_stream()));
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+            let part = root.child(part_start, bytes.len()).unwrap();
+
+            let streams = super::extract_legacy_streams(ctx, part).unwrap();
+
+            assert_eq!(streams.len(), 1);
+            assert_eq!(streams[0].file_offset, member);
         },
     );
 }

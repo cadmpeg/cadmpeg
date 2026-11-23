@@ -7,9 +7,9 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
-use crate::design::decode::operands::parse_construction_operand_group;
-use crate::design::decode::operands::ConstructionOperandGroupParse;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_group;
+use crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse;
+use crate::design::decode::operands::construction_groups::RecordFrame;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
@@ -88,7 +88,7 @@ pub(super) fn surface_extend_loss(
             )),
         );
     }
-    (operation.extension() == cadmpeg_ir::features::SurfaceExtension::Unresolved).then(|| {
+    (operation.extension() == cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved).then(|| {
         crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
             match operation.method_code {
                 Some(code) => format!(
