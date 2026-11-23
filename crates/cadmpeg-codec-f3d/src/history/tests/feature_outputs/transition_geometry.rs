@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{base_feature, scope_between, state};
-use crate::history::{bind_feature_outputs, binding::transition_geometry::unchanged};
+use crate::history::binding::transition_geometry::unchanged;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::history_records::{AsmEntityVersion, AsmHistoricalTopology};
 use cadmpeg_asm::sab::{Record, Token};
 use std::collections::HashMap;

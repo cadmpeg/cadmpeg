@@ -7852,8 +7852,8 @@ pub(crate) mod typed_reference_parameter_scope_tail {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 70;
     /// Offset of `second_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 90;
-    /// Offset of `suppressed_flag` (`u8`). Spec §3.1.
-    pub(crate) const SUPPRESSED_FLAG: usize = 141;
+    /// Offset of `no_result_flag` (`u8`). Spec §3.1.
+    pub(crate) const NO_RESULT_FLAG: usize = 141;
     /// Offset of `rolled_back_flag` (`u8`). Spec §3.1.
     pub(crate) const ROLLED_BACK_FLAG: usize = 142;
     /// Offset of `third_reference` (`bytes[51]`). Spec §3.1.
@@ -13654,6 +13654,32 @@ pub(crate) mod manifest_reference_extension_prefix {
     pub(crate) const ZERO_RUN_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
     /// Stated value of `reference_flag` (`u8`). Spec §1.4.
     pub(crate) const REFERENCE_FLAG_VALUE: u8 = 1;
+}
+
+/// Byte offsets for the `rectangular_pattern_linked_spacing_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 216 B.
+pub(crate) mod rectangular_pattern_linked_spacing_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 216;
+    /// Offset of `selection_link_one` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SELECTION_LINK_ONE: usize = 108;
+    /// Offset of `selection_link_two` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SELECTION_LINK_TWO: usize = 119;
+    /// Offset of `auxiliary_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const AUXILIARY_COUNT: usize = 130;
+}
+
+/// Byte offsets for the `rectangular_pattern_linked_extent_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 215 B.
+pub(crate) mod rectangular_pattern_linked_extent_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `separator_zero_run` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const SEPARATOR_ZERO_RUN: usize = 190;
+    /// Offset of `index_plus_one_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 192;
 }
 
 /// Byte offsets for the `local_component_occurrence_attributed_source_matrix` record.

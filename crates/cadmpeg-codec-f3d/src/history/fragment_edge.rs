@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[cfg(test)]
-use super::{
-    face_boundary_contexts_for_slots, selection, stable_ref, AsmHistoricalTopology, SideOneEdge,
-    TopologyQueryCache,
-};
+use super::body_closures::stable_ref;
+#[cfg(test)]
+use super::edge_operand_history::SideOneEdge;
+#[cfg(test)]
+use super::face_boundaries::face_boundary_contexts_for_slots;
+#[cfg(test)]
+use super::selection;
+#[cfg(test)]
+use crate::history::topology_cache::TopologyQueryCache;
+#[cfg(test)]
+use crate::history_records::AsmHistoricalTopology;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
@@ -62,7 +69,7 @@ fn common_edge(
     transition_deleted_edges: &[i64],
     required_edges: Option<&[i64]>,
     mut lane: impl FnMut(usize) -> Option<BTreeMap<i64, BTreeSet<i64>>>,
-) -> Option<super::SideOneEdge> {
+) -> Option<super::edge_operand_history::SideOneEdge> {
     let ordinals = side_one_ordinals(structure)?;
     let mut common: Option<BTreeMap<i64, BTreeSet<i64>>> = None;
     for ordinal in ordinals {
@@ -92,11 +99,11 @@ fn common_edge(
         .copied()
         .filter(|edge| candidate_boundary_edges.contains(edge));
     match (proven.next(), proven.next(), common.as_slice()) {
-        (Some(slot), None, _) => Some(super::SideOneEdge {
+        (Some(slot), None, _) => Some(super::edge_operand_history::SideOneEdge {
             slot,
             inferred: false,
         }),
-        (None, _, [slot]) => Some(super::SideOneEdge {
+        (None, _, [slot]) => Some(super::edge_operand_history::SideOneEdge {
             slot: *slot,
             inferred: !transition_deleted_edges.contains(slot),
         }),
@@ -143,7 +150,7 @@ pub(crate) fn context_edge(
         &str,
         &crate::records::topology::historical_context::AsmFaceBoundary,
     >,
-) -> Option<super::SideOneEdge> {
+) -> Option<super::edge_operand_history::SideOneEdge> {
     let lanes = crate::records::dimensions::reference_lanes(&operand.recipe_references);
     let disjoint_names = side_one_ordinals(operand.recipe_structure.as_ref())?
         .into_iter()
@@ -168,7 +175,7 @@ pub(crate) fn context_edge(
                 .iter()
                 .zip(&context.preceding_face_boundary_ids)
             {
-                let face = super::stable_ref(face.as_str())?;
+                let face = super::body_closures::stable_ref(face.as_str())?;
                 let boundary = boundaries.get(id.as_str())?;
                 if boundary.face_slot != face || boundary.loops.is_empty() {
                     return None;
@@ -301,7 +308,7 @@ mod tests {
                 let faces = super::super::recipe_index::reference_lane_faces(lane).faces;
                 serde_json::from_value(serde_json::json!({
                     "reference_ordinal":ordinal, "result_faces":[], "result_shared_edge_slots":[],
-                    "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
+                    "preceding_face_boundary_ids":faces.iter().map(|f| format!("boundary-{}", super::super::body_closures::stable_ref(f.as_str()).unwrap())).collect::<Vec<_>>(),
                     "preceding_faces":faces, "shared_edge_slots":[], "changed_shared_edge_slots":[],
                 })).unwrap()
             }).collect();

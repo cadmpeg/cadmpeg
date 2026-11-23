@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind historical snapshots by replacing the dependency closure of each delta.
 
+use super::topology_rows::historical_topology_with_tags;
 use super::{
-    archived_active_record_count, decode_record_archive, historical_topology_with_tags,
-    insert_only_active_record_count, walk_entity_versions, HistoricalRecordArchive,
+    archived_active_record_count, decode_record_archive, insert_only_active_record_count,
+    walk_entity_versions, HistoricalRecordArchive,
 };
 use crate::clock::Instant;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition};
@@ -884,7 +885,7 @@ fn container_rows(
         },
     )?;
     emit_attributes(&mut out, &records, &by_index, &reach, crate::ids::ID_FORMAT)?;
-    Ok(super::historical_topology(&out)?.filter(IndexedTopology::ordered))
+    Ok(super::topology_rows::historical_topology(&out)?.filter(IndexedTopology::ordered))
 }
 
 fn decode_slots(

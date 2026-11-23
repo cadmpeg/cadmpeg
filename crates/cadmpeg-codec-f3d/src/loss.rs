@@ -489,6 +489,12 @@ pub(crate) enum F3dLossCode {
     /// A linear rectangular-pattern direction has no admitted direction
     /// record and no generated-instance run.
     FeatureRectangularPatternDirectionUnresolved,
+    /// The auxiliary selection links of a 215- or 216-byte direction remain native.
+    FeatureRectangularPatternDirectionLinksNative,
+    /// A malformed rectangular-pattern construction remains native.
+    FeatureRectangularPatternConstructionNative,
+    /// A rectangular pattern or an unproved input retains its native record.
+    FeatureRectangularPatternDesignNative,
     /// A single linear rectangular-pattern direction record disagrees with
     /// the generated-instance run; the run direction is kept.
     FeatureRectangularPatternDirectionRecordDisagrees,
@@ -811,6 +817,10 @@ pub(crate) enum F3dLossCode {
     /// An Extrude face profile stays native because the face its selection names is on a curved carrier.
     FeatureExtrudeProfileFaceCurved,
     FeatureSketchProfileFlagsAssumed,
+    /// A scope tail sets the third state byte; the scope is read as an active feature with no evaluated result.
+    FeatureUnevaluatedStateAssumed,
+    /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
+    FeatureNoResultActiveAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     FeatureProfileJoinEnvelopeCapped,
@@ -1709,6 +1719,9 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
         Self::FeatureRectangularPatternDirectionOneRecordAssumed,
         Self::FeatureRectangularPatternDirectionUnresolved,
+        Self::FeatureRectangularPatternDirectionLinksNative,
+        Self::FeatureRectangularPatternConstructionNative,
+        Self::FeatureRectangularPatternDesignNative,
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
@@ -1897,6 +1910,8 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileFaceSetDisputed,
         Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
+        Self::FeatureUnevaluatedStateAssumed,
+        Self::FeatureNoResultActiveAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
@@ -2561,6 +2576,15 @@ impl F3dLossCode {
             Self::FeatureRectangularPatternDirectionOneRecordAssumed => {
                 "feature.rectangular-pattern-direction-one-record-assumed"
             }
+            Self::FeatureRectangularPatternDirectionLinksNative => {
+                "feature.rectangular-pattern-direction-links-native"
+            }
+            Self::FeatureRectangularPatternConstructionNative => {
+                "feature.rectangular-pattern-construction-native"
+            }
+            Self::FeatureRectangularPatternDesignNative => {
+                "feature.rectangular-pattern-design-native"
+            }
             Self::FeatureRectangularPatternDirectionUnresolved => {
                 "feature.rectangular-pattern-direction-unresolved"
             }
@@ -2918,6 +2942,8 @@ impl F3dLossCode {
             Self::SketchCurveRegionBoundary => "sketch.curve-region-boundary",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
+            Self::FeatureUnevaluatedStateAssumed => "feature.unevaluated-state-assumed",
+            Self::FeatureNoResultActiveAssumed => "feature.no-result-active-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileGroupUnionAssumed => {
@@ -3736,6 +3762,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -4002,6 +4031,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
+            | Self::FeatureNoResultActiveAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -4512,6 +4543,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -4768,6 +4802,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileFaceSetDisputed
             | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
+            | Self::FeatureUnevaluatedStateAssumed
+            | Self::FeatureNoResultActiveAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -5502,6 +5538,9 @@ mod tests {
                 "feature.rectangular-pattern-inactive-symmetric-dropped",
                 "feature.rectangular-pattern-direction-one-record-assumed",
                 "feature.rectangular-pattern-direction-unresolved",
+                "feature.rectangular-pattern-direction-links-native",
+                "feature.rectangular-pattern-construction-native",
+                "feature.rectangular-pattern-design-native",
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
@@ -5690,6 +5729,8 @@ mod tests {
                 "feature.extrude-profile-face-set-disputed",
                 "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
+                "feature.unevaluated-state-assumed",
+                "feature.no-result-active-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",

@@ -38,7 +38,11 @@ fn generated_part_object_streams_walk_to_their_end() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let version =
         crate::carchive::walk_version(crate::container::declared_sw_version(&scan), config);
-    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, version)
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, version)
         .expect("walk")
         .expect("the Config-0 class map reaches the ResolvedFeatures count");
     assert_eq!(walk.status, crate::carchive::Status::End);
@@ -228,7 +232,11 @@ fn walk(bytes: &[u8]) -> (crate::carchive::Walk, Vec<u8>) {
     let config = payload("Contents/Config-0");
     let resolved = payload("Contents/Config-0-ResolvedFeatures");
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, Some(14000))
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, Some(14000))
         .expect("walk")
         .expect("the class map reconciles");
     assert_eq!(walk.status, crate::carchive::Status::End);
@@ -318,7 +326,11 @@ fn generated_sketches_are_native_profile_features_that_decode_back() {
     let config = payload("Contents/Config-0");
     let resolved = payload("Contents/Config-0-ResolvedFeatures");
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, Some(14000))
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, Some(14000))
         .expect("walk")
         .expect("the class map reconciles");
     assert_eq!(walk.status, crate::carchive::Status::End);
@@ -889,7 +901,11 @@ fn a_blind_extrusion_is_a_native_feature_in_place_of_the_stored_body() {
     let config = payload("Contents/Config-0");
     let resolved = payload("Contents/Config-0-ResolvedFeatures");
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, Some(14000))
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, Some(14000))
         .expect("walk")
         .expect("the class map reconciles");
     assert_eq!(walk.status, crate::carchive::Status::End);

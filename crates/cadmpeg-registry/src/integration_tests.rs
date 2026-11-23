@@ -11,3 +11,5 @@ mod repro;
 
 #[cfg(feature = "onshape")]
 mod onshape;
+
+mod scan;

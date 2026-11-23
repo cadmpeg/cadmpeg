@@ -123,7 +123,7 @@ fn edge_envelope(
     nurbs_bounds: &mut HashMap<cadmpeg_ir::ids::CurveId, Option<AsmHistoricalEnvelope>>,
     endpoints: Option<[Point3; 2]>,
 ) -> Option<AsmHistoricalEnvelope> {
-    let entity = super::stable_ref(edge.id.as_str())?;
+    let entity = super::body_closures::stable_ref(edge.id.as_str())?;
     let curve = curves.get(edge.curve()?)?.as_ref()?;
     let CurveGeometry::Solved(geometry) = &curve.geometry else {
         return None;
@@ -283,7 +283,7 @@ pub(super) fn derive(brep: &AsmBrep) -> (Vec<AsmHistoricalEnvelope>, Vec<AsmHist
         .faces
         .iter()
         .filter_map(|face| {
-            let entity = super::stable_ref(face.id.as_str())?;
+            let entity = super::body_closures::stable_ref(face.id.as_str())?;
             let mut boundary = Vec::new();
             let mut boundary_edges = Vec::new();
             for loop_id in &face.loops {
@@ -292,7 +292,7 @@ pub(super) fn derive(brep: &AsmBrep) -> (Vec<AsmHistoricalEnvelope>, Vec<AsmHist
                     if coedge.use_curve.is_some() {
                         return None;
                     }
-                    let edge = super::stable_ref(coedge.edge.as_str())?;
+                    let edge = super::body_closures::stable_ref(coedge.edge.as_str())?;
                     boundary_edges.push(edge);
                     boundary.extend(ends(edge_bounds.get(&edge)?));
                 }
