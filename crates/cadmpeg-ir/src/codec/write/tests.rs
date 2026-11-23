@@ -374,6 +374,22 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
     .unwrap()
 }
 
+/// `omitted` names the arenas the `arena.omitted` losses name: an omitted
+/// design arena that a v10 record restates is not among them.
+#[test]
+fn omitted_names_the_arenas_the_omission_losses_name() {
+    let mut ir = CadIr::empty();
+    ir.design.spreadsheets.push(design_sheet("v11"));
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    assert!(dispositions.omitted(&ir).is_empty());
+    dispositions.design.spreadsheets = ArenaDisposition::Omitted;
+    assert_eq!(dispositions.omitted(&ir), ["design.spreadsheets"]);
+
+    ir.model.spreadsheets.push(v10_sheet());
+    dispositions.spreadsheets = ArenaDisposition::Omitted;
+    assert_eq!(dispositions.omitted(&ir), ["spreadsheets"]);
+}
+
 /// While a document holds a v10 design record, an omitted design-home arena
 /// restates what the v10 path writes and is charged nothing.
 #[test]

@@ -81,16 +81,29 @@ pub(crate) struct SemanticOutput {
     pub(crate) coverage: ArenaDispositions,
     /// The metadata attributes the write did not write, each with why.
     pub(crate) unwritten: UnwrittenAttributes,
+    /// The edits the native records cannot carry, kept as stored.
+    pub(crate) unwritten_edits: crate::history::write::edits::UnwrittenLosses,
+    /// Which edits `unwritten_edits` names: the stale-solid check reads no
+    /// edit of these as written.
+    pub(crate) written: crate::history::write::edits::UnwrittenEdits,
+    /// The construction edits of the written features and what the rest of
+    /// the document reads back as.
+    pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
+    /// The retained source image decoded again, when the write compared the
+    /// document with it.
+    pub(crate) source: Option<cadmpeg_ir::codec::Decoded>,
     /// The write's other losses.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
-/// wrote.
+/// wrote. Each feature of `withheld` keeps its stored definition record, for
+/// the reason it is paired with.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
+    withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
@@ -176,6 +189,12 @@ pub(crate) fn write_semantic_with_records(
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+    if native
+        .as_ref()
+        .is_some_and(|native| !native.feature_histories.is_empty())
+    {
+        retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+    }
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
@@ -206,20 +225,27 @@ pub(crate) fn write_semantic_with_records(
         renamed = history_drop::foreign_records_as_keywords(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
-    let feature_input_renames = loop {
+    let (feature_input_renames, edit_outcome) = loop {
         let snapshot = reducible.then(|| (normalized.model.parameters.clone(), native.clone()));
         let mut attempt_cut = Vec::new();
+        let mut edits = crate::history::write::edits::SourceEdits::new(
+            ir,
+            native.as_ref(),
+            source_baseline.as_ref().map(|baseline| &baseline.ir),
+            withheld,
+        )?;
         match prepare_history(
             &mut normalized,
             &mut native,
             annotations,
             retained_records,
             &mut attempt_cut,
+            &mut edits,
         ) {
             Ok(prepared) => {
                 cut.extend(attempt_cut);
                 losses.extend(prepared.losses);
-                break prepared.renames;
+                break (prepared.renames, edits.into_parts());
             }
             Err(error) => {
                 let Some((parameters, source_native)) = snapshot else {
@@ -231,6 +257,13 @@ pub(crate) fn write_semantic_with_records(
             }
         }
     };
+    let crate::history::write::edits::EditOutcome {
+        unwritten: mut unwritten_edits,
+        claims,
+        written,
+        edited_parameters,
+        source_lanes,
+    } = edit_outcome;
     losses.extend(dropped_history.finish());
     losses.extend(displayed_values.note(&normalized));
     losses.extend(renamed.note(&normalized));
@@ -486,7 +519,12 @@ pub(crate) fn write_semantic_with_records(
             &mut sections,
             &mut unwritten,
             section,
-            resolved_feature_payload(lane, histories, &feature_input_renames)?,
+            lane_payload(
+                lane,
+                source_lanes.get(&lane.id),
+                histories,
+                &feature_input_renames,
+            )?,
         );
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
@@ -508,8 +546,12 @@ pub(crate) fn write_semantic_with_records(
         &generated_partition_sections,
         &emitted_sections,
         retain_native_brep,
-        patch_active_configuration,
+        RetainedBlockPatches {
+            active_configuration: patch_active_configuration,
+            edited_parameters: &edited_parameters,
+        },
     )?;
+    unwritten_edits.extend(opaque.kept_pmi);
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
@@ -606,6 +648,10 @@ pub(crate) fn write_semantic_with_records(
         dialect: written_dialect,
         coverage,
         unwritten,
+        unwritten_edits,
+        written,
+        claims,
+        source: source_baseline,
         losses,
     })
 }
@@ -983,6 +1029,68 @@ fn semantic_coverage(retained_brep: bool) -> ArenaDispositions {
         declared_measures: Omitted,
         design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
         process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
+    }
+}
+
+/// What a stored part written for an edited document carries: it may
+/// represent a record of any arena, and the write charges a loss for the
+/// edits it does not carry.
+pub(crate) fn stored_part_coverage() -> ArenaDispositions {
+    use ArenaDisposition::Reported;
+    ArenaDispositions {
+        bodies: Reported,
+        regions: Reported,
+        shells: Reported,
+        faces: Reported,
+        loops: Reported,
+        coedges: Reported,
+        edges: Reported,
+        vertices: Reported,
+        points: Reported,
+        surfaces: Reported,
+        curves: Reported,
+        subds: Reported,
+        pcurves: Reported,
+        procedural_surfaces: Reported,
+        procedural_curves: Reported,
+        assets: Reported,
+        features: Reported,
+        feature_input_topologies: Reported,
+        feature_result_topologies: Reported,
+        configurations: Reported,
+        parameters: Reported,
+        sketches: Reported,
+        sketch_entities: Reported,
+        sketch_constraints: Reported,
+        spatial_sketches: Reported,
+        spatial_sketch_entities: Reported,
+        spatial_sketch_constraints: Reported,
+        spreadsheets: Reported,
+        product_definitions: Reported,
+        occurrences: Reported,
+        assembly_joints: Reported,
+        drawings: Reported,
+        semantic_annotations: Reported,
+        presentation_documents: Reported,
+        view_presentations: Reported,
+        tessellations: Reported,
+        point_clouds: Reported,
+        history_bodies: Reported,
+        appearances: Reported,
+        appearance_bindings: Reported,
+        attributes: Reported,
+        pmi: Reported,
+        presentation_layers: Reported,
+        physical_materials: Reported,
+        mass_properties: Reported,
+        rigid_bodies: Reported,
+        colliders: Reported,
+        articulations: Reported,
+        physics_scenes: Reported,
+        solver_settings: Reported,
+        declared_measures: Reported,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Reported),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Reported),
     }
 }
 
@@ -1683,6 +1791,15 @@ fn retained_blocks<'a>(
         .collect()
 }
 
+/// What the writer patches into the retained blocks it writes.
+#[derive(Clone, Copy)]
+struct RetainedBlockPatches<'a> {
+    /// The active configuration name in the document XML.
+    active_configuration: bool,
+    /// The PMI records of these parameters; other records keep their bytes.
+    edited_parameters: &'a HashSet<cadmpeg_ir::features::ParameterId>,
+}
+
 /// The retained blocks the output holds as stored, and the retained blocks it
 /// omits.
 fn opaque_blocks(
@@ -1692,7 +1809,7 @@ fn opaque_blocks(
     generated_partitions: &HashSet<String>,
     emitted_sections: &HashMap<String, usize>,
     retain_native_brep: bool,
-    patch_active_configuration: bool,
+    patches: RetainedBlockPatches<'_>,
 ) -> Result<OpaqueBlocks, CodecError> {
     let native = ir
         .native
@@ -1704,7 +1821,7 @@ fn opaque_blocks(
         .model
         .configurations
         .iter()
-        .find(|value| value.active && patch_active_configuration)
+        .find(|value| value.active && patches.active_configuration)
     {
         Some(active) => Some(active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
@@ -1714,6 +1831,7 @@ fn opaque_blocks(
     let mut seen = HashSet::new();
     let mut blocks = Vec::new();
     let mut unavailable = Vec::new();
+    let mut kept_pmi = Vec::new();
     let mut replaced = HashMap::<&str, Vec<&str>>::new();
     for record in records
         .iter()
@@ -1751,7 +1869,12 @@ fn opaque_blocks(
         };
         let mut payload = data.to_vec();
         if lower.contains("pmisemanticdatadb") {
-            crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)?;
+            kept_pmi.extend(crate::pmi::patch_payload(
+                ir,
+                record.id.as_str(),
+                &mut payload,
+                &|id| patches.edited_parameters.contains(id),
+            )?);
         }
         if let Some(active_name) = active_name {
             if let Some(patched) = patch_active_configuration_xml(&payload, active_name)? {
@@ -1776,6 +1899,7 @@ fn opaque_blocks(
         blocks,
         replaced,
         unavailable,
+        kept_pmi,
     })
 }
 
@@ -1789,6 +1913,8 @@ struct OpaqueBlocks {
     /// Each retained block whose bytes the source fidelity does not hold,
     /// as its stream and id.
     unavailable: Vec<String>,
+    /// The losses of the edited PMI records that keep their stored bytes.
+    kept_pmi: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// The patchable metadata members of one write, as the source stores them,
@@ -2215,6 +2341,7 @@ fn prepare_history(
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     cut: &mut Vec<String>,
+    edits: &mut crate::history::write::edits::SourceEdits<'_>,
 ) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
@@ -2225,13 +2352,14 @@ fn prepare_history(
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut prepared = crate::history::write::prepare_features_for_write(ir, native)?;
+    let mut prepared = crate::history::write::prepare_features_for_write(ir, native, edits)?;
     fit_feature_input_renames(&mut prepared.renames, cut);
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, cut)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, edits, cut)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
         native,
         feature_parameter_changes_authorized,
+        edits,
     )?;
     // The configuration states are projected again with the profile bodies
     // the decode bound, read from the retained source image.
@@ -2240,6 +2368,7 @@ fn prepare_history(
             ir,
             native,
             annotations,
+            edits,
             |lanes| {
                 source_image(retained_records)
                     .map(|image| {
@@ -2307,13 +2436,32 @@ fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotatio
     }
 }
 
+/// The payload written for `lane`. A lane equal to `stored`, the lane of the
+/// same id in the decoded source, is the decoder's reading of its own bytes,
+/// so nothing in it is edited: it is written as stored, with the renamed
+/// object names spliced in. Every other lane is checked against its payload
+/// first.
+fn lane_payload(
+    lane: &crate::records::FeatureInputLane,
+    stored: Option<&crate::records::FeatureInputLane>,
+    histories: &[crate::records::FeatureHistory],
+    renames: &[crate::history::write::features::FeatureInputRename],
+) -> Result<Vec<u8>, CodecError> {
+    if stored == Some(lane) {
+        let mut payload = lane.native_payload.to_vec();
+        splice_renamed_names(lane, &mut payload, renames)?;
+        return Ok(payload);
+    }
+    resolved_feature_payload(lane, histories, renames)
+}
+
 /// The bytes written for one feature-input lane.
 ///
 /// Every object-name record states the payload bytes at its own offset, so the
 /// lane is written as it stands. `renames` carries the write-side object-name
 /// changes that `synchronize_feature_input_names` derived from the neutral
-/// feature names; the splice loop at the end of this function writes each one
-/// into the emitted payload.
+/// feature names; `splice_renamed_names` writes each one into the emitted
+/// payload.
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
@@ -2457,7 +2605,7 @@ fn resolved_feature_payload(
     {
         // All decoder-supported layouts can replay an unchanged marker. Writing
         // current-family offsets into legacy markers would alter unrelated bytes.
-        if entity == expected_entity {
+        if !marker_fields_edited(entity, expected_entity) {
             continue;
         }
         entity
@@ -2572,6 +2720,18 @@ fn resolved_feature_payload(
             }
         }
     }
+    let mut payload = payload.into_inner();
+    splice_renamed_names(lane, &mut payload, renames)?;
+    Ok(payload)
+}
+
+/// Writes each of `renames` that names an object of `lane` into `payload`,
+/// the lane's payload.
+fn splice_renamed_names(
+    lane: &crate::records::FeatureInputLane,
+    payload: &mut Vec<u8>,
+    renames: &[crate::history::write::features::FeatureInputRename],
+) -> Result<(), CodecError> {
     let mut lane_renames = renames
         .iter()
         .filter(|rename| rename.lane == lane.id)
@@ -2588,6 +2748,7 @@ fn resolved_feature_payload(
     // Descending offset order: a spliced name changes the length of the payload
     // after it, and every remaining name sits before the one just written.
     lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
+    let name_marker = crate::resolved_features::names::name_marker(&lane.native_payload);
     for (name, rename) in lane_renames {
         let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
         let length = u8::try_from(utf16.len()).map_err(|_| {
@@ -2599,18 +2760,33 @@ fn resolved_feature_payload(
         let end = start
             .checked_add(6 + name.value.encode_utf16().count() * 2)
             .ok_or_else(|| CodecError::Malformed("feature-input name range overflow".into()))?;
-        if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
+        if payload.get(start..start + name_marker.len()) != Some(name_marker.as_slice()) {
             return Err(CodecError::Malformed(
                 "feature-input name marker does not match retained payload".into(),
             ));
         }
-        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff, length];
+        let mut replacement = name_marker.to_vec();
+        replacement.push(length);
         for unit in utf16 {
             replacement.extend_from_slice(&unit.to_le_bytes());
         }
         payload.splice(start..end, replacement);
     }
-    Ok(payload.into_inner())
+    Ok(())
+}
+
+/// Whether `entity` states a field the lane writer writes differently from
+/// the marker read from the payload. Decode reclassifies some markers into
+/// `Point` or `LineOrCircle` from their neighbourhood; the payload keeps its
+/// own code for them.
+fn marker_fields_edited(
+    entity: &crate::records::SketchInputEntity,
+    admitted: &crate::records::SketchInputEntity,
+) -> bool {
+    use crate::records::SketchInputKind::{LineOrCircle, Point};
+    entity.state_value != admitted.state_value
+        || entity.coordinates_m != admitted.coordinates_m
+        || (entity.kind() != admitted.kind() && !matches!(entity.kind(), Point | LineOrCircle))
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of

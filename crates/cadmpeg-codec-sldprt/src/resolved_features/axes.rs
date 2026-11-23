@@ -1099,9 +1099,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     }
                 }
             }
-            if feature.properties.contains_key("AxisOrigin")
-                || feature.properties.contains_key("AxisDirection")
-            {
+            if feature.states_any(&crate::records::REVOLUTION_AXIS_PROPERTIES) {
                 continue;
             }
             let agreed = inputs.get(&feature.id).and_then(|votes| {

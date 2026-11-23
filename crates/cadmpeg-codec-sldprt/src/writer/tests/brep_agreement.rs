@@ -763,8 +763,10 @@ fn a_snapshot_only_parameter_edit_without_the_source_image_is_named_unwritten() 
     );
 }
 
+/// A dependency that the feature's operands do not state reads back as
+/// stored: the write keeps it as stored and names it.
 #[test]
-fn a_dependency_its_operands_do_not_state_is_refused() {
+fn a_dependency_its_operands_do_not_state_is_written_and_named() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -790,19 +792,26 @@ fn a_dependency_its_operands_do_not_state_is_refused() {
         }
     }
 
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    let ir = decoded.ir().clone();
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
-
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    let unwritten = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
     assert!(
-        error.to_string().contains(&format!(
-            "SLDPRT feature {} dependencies are inconsistent",
-            cut.as_str()
-        )),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains(cut.as_str()) && message.contains("dependencies")),
+        "{:?}",
+        report.losses
     );
 }
 

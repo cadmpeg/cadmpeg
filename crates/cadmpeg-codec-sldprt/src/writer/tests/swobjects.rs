@@ -1620,6 +1620,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &ir,
             &fidelity.annotations,
             &records,
+            &[],
             &mut written,
         )
         .unwrap();
@@ -1658,6 +1659,7 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
     let output = crate::writer::write_semantic_with_records(
         &baseline,
         &fidelity.annotations,
+        &[],
         &[],
         &mut Vec::new(),
     )

@@ -364,18 +364,19 @@ fn decode_dispatches_typed_features_by_xml_family() {
     dependencies.pop();
     regenerated.ir_mut().model.features[2].dependencies =
         cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    // The record states its operands, not the dependency list: a removed
+    // dependency is named, and the stored operands read back.
+    let (unwritten, written) = crate::test_support::write_unwritten_feature_edits(
         regenerated.ir(),
         regenerated.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("dependencies are inconsistent with its operands"),
-        "{error}"
     );
+    assert_eq!(unwritten.len(), 1, "{unwritten:?}");
+    assert!(
+        unwritten[0].contains("changes dependencies"),
+        "{}",
+        unwritten[0]
+    );
+    assert_eq!(written.ir().model.features[2].dependencies.len(), 2);
 }
 
 #[test]
@@ -851,15 +852,14 @@ fn decode_projects_surface_sweep_reference_curve_path() {
     };
     *path = Some(PathRef::Native("other".into()));
     updated_changed_profile_evaluation.set_definition(updated_changed_profile_definition);
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &changed_profile,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("changes a reference-curve sweep path"));
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(&changed_profile, decoded.source_fidelity());
+    assert!(
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes a reference-curve sweep path")),
+        "{unwritten:?}"
+    );
 
     decoded
         .ir_mut()

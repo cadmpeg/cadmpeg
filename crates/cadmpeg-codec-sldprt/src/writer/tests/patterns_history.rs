@@ -30,6 +30,25 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
         .expect("compute the object names")
 }
 
+/// Writes `ir` and asserts that the record that fails validation with
+/// `finding` is written from the canonical side and named.
+fn named_invalid(ir: &cadmpeg_ir::CadIr, fidelity: &cadmpeg_ir::SourceFidelity, finding: &str) {
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(fidelity)),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    assert!(
+        report.losses.iter().any(
+            |loss| loss.code.local_code() == "record.invalid" && loss.message.contains(finding)
+        ),
+        "{:?}",
+        report.losses
+    );
+}
+
 #[test]
 fn semantic_writer_round_trips_all_pattern_forms() {
     use cadmpeg_ir::features::{
@@ -170,17 +189,10 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    named_invalid(
         &inconsistent,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("dependencies are inconsistent with its operands"),
-        "{error}"
+        "pattern omits seed feature",
     );
 
     let mut encoded = Vec::new();
@@ -713,17 +725,10 @@ fn semantic_writer_round_trips_typed_sweep() {
     dependencies.remove(0);
     inconsistent.model.features[3].dependencies =
         cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    named_invalid(
         &inconsistent,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("dependencies are inconsistent with its operands"),
-        "{error}"
+        "profile feature is not a preceding dependency",
     );
 
     let mut encoded = Vec::new();

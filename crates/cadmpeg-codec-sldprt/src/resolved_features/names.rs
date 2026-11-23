@@ -97,14 +97,21 @@ pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
-fn payload_name_candidates(
-    payload: &[u8],
-) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+/// The marker that opens every object-name record of a lane: the lane's
+/// name class token, then the UTF-16 name prefix.
+pub(crate) fn name_marker(payload: &[u8]) -> [u8; 5] {
     let mut name_marker = [0; 5];
     name_marker.copy_from_slice(NAME_MARKER);
     if let Some(token) = name_class_token(payload) {
         name_marker[..2].copy_from_slice(&token.to_le_bytes());
     }
+    name_marker
+}
+
+fn payload_name_candidates(
+    payload: &[u8],
+) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
+    let name_marker = name_marker(payload);
     payload
         .windows(name_marker.len())
         .enumerate()
