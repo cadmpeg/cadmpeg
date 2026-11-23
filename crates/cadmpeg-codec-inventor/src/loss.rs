@@ -52,6 +52,8 @@ pub(crate) enum InventorLossCode {
     FeatureRecordMalformed,
     /// A decoded operation has operands outside the v11 operation contract.
     FeatureDesignOperationNative,
+    /// A sketch relation retains operands whose v11 relation is unresolved.
+    SketchDesignConstraintNative,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -165,6 +167,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// The active unfold rule states no decimal K-factor; sheet-metal rules keep no allowance.
     FeatureSheetMetalUnfoldFactorNative,
+    /// Relief forms and unadmitted relief dimensions retain native values.
+    FeatureSheetMetalReliefNative,
     /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
     FeatureSheetMetalStyleFactorConflict,
     /// No active unfold rule resolves in a part with sheet-metal styles.
@@ -175,7 +179,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalPlateRefused,
     /// Projected contour flanges retain construction controls and their bend and corner records natively.
     FeatureSheetMetalContourControlsRetained,
-    /// A contour flange stays native; the note names the first refused admission check.
+    /// The legacy feature record of a contour flange stays native; the note
+    /// names the first refused admission check.
     FeatureSheetMetalContourFlangeRefused,
     /// Projected Unfold and Refold features retain controls and face operands natively.
     FeatureSheetMetalFoldControlsRetained,
@@ -299,6 +304,9 @@ pub(crate) enum InventorLossCode {
     AssemblyPlacementNotTransferred,
     /// Occurrences hidden below a root occurrence stay in native records.
     AssemblyVisibilityNestedNative,
+    /// Grounding joints leave the document; at design depth only their
+    /// grounded occurrences remain, without the joint ids and native records.
+    AssemblyGroundingJointDropped,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -362,6 +370,7 @@ impl InventorLossCode {
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
         Self::FeatureDesignOperationNative,
+        Self::SketchDesignConstraintNative,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -415,6 +424,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureSheetMetalUnfoldFactorNative,
+        Self::FeatureSheetMetalReliefNative,
         Self::FeatureSheetMetalStyleFactorConflict,
         Self::FeatureSheetMetalUnfoldRuleUnresolved,
         Self::FeatureSheetMetalStyleFactorAssumed,
@@ -482,6 +492,7 @@ impl InventorLossCode {
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
         Self::AssemblyVisibilityNestedNative,
+        Self::AssemblyGroundingJointDropped,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -521,6 +532,7 @@ impl InventorLossCode {
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureDesignOperationNative => "feature.design-operation-native",
+            Self::SketchDesignConstraintNative => "sketch.design-constraint-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
@@ -597,6 +609,7 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureSheetMetalUnfoldFactorNative => "feature.sheet-metal-unfold-factor-native",
+            Self::FeatureSheetMetalReliefNative => "feature.sheet-metal-relief-native",
             Self::FeatureSheetMetalStyleFactorConflict => {
                 "feature.sheet-metal-style-factor-conflict"
             }
@@ -676,6 +689,7 @@ impl InventorLossCode {
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
             Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
+            Self::AssemblyGroundingJointDropped => "assembly.grounding-joint-dropped",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -763,6 +777,7 @@ impl InventorLossCode {
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
             | Self::FeatureDesignOperationNative
+            | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
@@ -773,6 +788,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureSheetMetalUnfoldFactorNative
+            | Self::FeatureSheetMetalReliefNative
             | Self::FeatureSheetMetalStyleFactorConflict
             | Self::FeatureSheetMetalUnfoldRuleUnresolved
             | Self::FeatureSheetMetalStyleFactorAssumed
@@ -851,7 +867,8 @@ impl InventorLossCode {
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
-            | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
+            | Self::FeatureLabelNameReplaced
+            | Self::AssemblyGroundingJointDropped => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -917,6 +934,7 @@ mod tests {
                 "sketch.record-malformed",
                 "feature.record-malformed",
                 "feature.design-operation-native",
+                "sketch.design-constraint-native",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
@@ -970,6 +988,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.sheet-metal-unfold-factor-native",
+                "feature.sheet-metal-relief-native",
                 "feature.sheet-metal-style-factor-conflict",
                 "feature.sheet-metal-unfold-rule-unresolved",
                 "feature.sheet-metal-style-factor-assumed",
@@ -1037,6 +1056,7 @@ mod tests {
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
                 "assembly.visibility-nested-native",
+                "assembly.grounding-joint-dropped",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

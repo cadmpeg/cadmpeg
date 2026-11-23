@@ -276,7 +276,8 @@ fn sheet_metal_no_unfold_rule_takes_style_k_parameter() {
         codes(&losses),
         [
             "feature.sheet-metal-unfold-rule-unresolved",
-            "feature.sheet-metal-style-factor-assumed"
+            "feature.sheet-metal-style-factor-assumed",
+            "feature.sheet-metal-relief-native"
         ]
     );
 }
@@ -287,7 +288,10 @@ fn sheet_metal_no_unfold_rule_without_style_k_parameter_has_no_allowance() {
     assert_eq!(rules[0].allowance, None);
     assert_eq!(
         codes(&losses),
-        ["feature.sheet-metal-unfold-rule-unresolved"]
+        [
+            "feature.sheet-metal-unfold-rule-unresolved",
+            "feature.sheet-metal-relief-native"
+        ]
     );
 }
 
@@ -306,7 +310,8 @@ fn sheet_metal_several_unfold_entries_take_style_k_parameter() {
             codes(&losses),
             [
                 "feature.sheet-metal-unfold-rule-unresolved",
-                "feature.sheet-metal-style-factor-assumed"
+                "feature.sheet-metal-style-factor-assumed",
+                "feature.sheet-metal-relief-native"
             ]
         );
     }
@@ -329,12 +334,13 @@ fn sheet_metal_unfold_entry_naming_no_rule_is_unresolved() {
         if factor.is_some() {
             expected.push("feature.sheet-metal-style-factor-assumed");
         }
+        expected.push("feature.sheet-metal-relief-native");
         assert_eq!(codes(&losses), expected, "{entry:?}");
     }
 }
 
 #[test]
-fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_no_loss() {
+fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_only_the_relief_loss() {
     use unfold::tests::{rule, selection, RULE_ORDINAL};
     let (rules, losses) = projected_document(
         vec![rule("Unfold_A", "0.44 ul")],
@@ -342,7 +348,7 @@ fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_no_loss() {
         Some(0.44),
     );
     assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
-    assert!(losses.is_empty());
+    assert_eq!(codes(&losses), ["feature.sheet-metal-relief-native"]);
 }
 
 #[test]
@@ -491,4 +497,298 @@ fn sheet_metal_binds_projected_length_parameters() {
         Some(Dimension::Parameter(id))
     );
     assert_eq!(ir.design.sheet_metal_rules[0].allowance, None);
+}
+
+#[test]
+fn relief_keeps_enumeration_pair_and_positive_dimensions() {
+    use crate::feature::{sheet_metal::SheetMetalProperty, PmDcFeaturePropertyKind};
+    use crate::test_support::sheet_metal::property;
+    let mut ir = root_part_ir();
+    let mut inventory = FeatureInventory::default();
+    let mut style = style(20);
+    style.edit(|payload| {
+        payload.bend_relief_form = PmDcReference::from_packed(80);
+        payload.bend_relief_width = PmDcReference::from_packed(1);
+        payload.bend_relief_depth = PmDcReference::from_packed(2);
+    });
+    inventory.sheet_metal_styles.push(style);
+    inventory.properties.push(property(
+        80,
+        &PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::Enumeration {
+                type_value: 501,
+                value: 7,
+            },
+        },
+    ));
+    let mut parameters = Vec::new();
+    for (index, value) in [(0, 0.25), (1, -0.5)] {
+        let (raw, legacy) = crate::feature::fillet::tests::parameter(
+            index,
+            ParameterValue::Length(Length::new(value).expect("length")),
+        );
+        parameters.push(raw);
+        ir.model.parameters.push(legacy);
+    }
+    let token = parameters[0].identity.segment_token.clone();
+    inventory.sheet_metal_styles[0].identity.segment_token = token.clone();
+    inventory.properties[0].identity.segment_token = token;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    project(&ctx, &mut ir, &inventory, &parameters, &mut Vec::new()).expect("projection");
+    let relief = ir.design.sheet_metal_rules[0]
+        .bend
+        .relief
+        .as_ref()
+        .expect("relief");
+    assert_eq!(
+        relief.shape,
+        Some(ReliefShape::Native(cadmpeg_core::nonblank_literal!(
+            "inventor:bend_relief:501:7"
+        )))
+    );
+    assert_eq!(
+        relief.width,
+        Some(Dimension::Literal(
+            PositiveLength::new(0.25).expect("width")
+        ))
+    );
+    assert_eq!(relief.depth, None);
+}
+
+#[test]
+fn native_validation_rejects_a_changed_relief_form() {
+    use crate::feature::{sheet_metal::SheetMetalProperty, PmDcFeaturePropertyKind};
+    use crate::test_support::sheet_metal::property;
+    let mut ir = root_part_ir();
+    let mut inventory = FeatureInventory::default();
+    let mut style = style(20);
+    style.edit(|payload| payload.bend_relief_form = PmDcReference::from_packed(80));
+    inventory.sheet_metal_styles.push(style);
+    inventory.properties.push(property(
+        80,
+        &PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::Enumeration {
+                type_value: 501,
+                value: 7,
+            },
+        },
+    ));
+    let sketches = crate::sketch::SketchInventory {
+        sketches: Vec::new(),
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        text_members: Vec::new(),
+        issues: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    crate::design_v11::project(
+        &ctx,
+        &mut ir,
+        &inventory,
+        &sketches,
+        &[],
+        &[],
+        &mut Vec::new(),
+    )
+    .expect("projection");
+    let namespace = ir.native.namespace_mut("inventor");
+    namespace
+        .set_arena(
+            &ctx,
+            "pm_dc_sheet_metal_styles",
+            &inventory.sheet_metal_styles,
+        )
+        .expect("native styles");
+    namespace
+        .set_arena(&ctx, "pm_dc_feature_properties", &inventory.properties)
+        .expect("native properties");
+    assert!(crate::design_v11::tests::validate_from_native(&ctx, &ir)
+        .expect("validation")
+        .is_empty());
+    ir.design.sheet_metal_rules[0]
+        .bend
+        .relief
+        .as_mut()
+        .expect("relief")
+        .shape = Some(ReliefShape::Native(cadmpeg_core::nonblank_literal!(
+        "changed"
+    )));
+    assert_eq!(
+        crate::design_v11::tests::validate_from_native(&ctx, &ir)
+            .expect("validation")
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn style_factor_fallback_binds_the_decoded_unitless_parameter() {
+    use cadmpeg_ir::design::expr::{Expression, ExpressionDialect};
+    use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+    let mut ir = root_part_ir();
+    let (mut raw, mut legacy) = crate::feature::fillet::tests::parameter(
+        0,
+        ParameterValue::Real(FiniteReal::new(0.42).expect("factor")),
+    );
+    raw.edit(|payload| payload.name = STYLE_FACTOR_NAME.into());
+    legacy.name = STYLE_FACTOR_NAME.into();
+    let id = legacy.id.clone();
+    ir.model.parameters.push(legacy);
+    ir.design.parameters.push(DesignParameter {
+        id: id.clone(),
+        scope: ir.model.product_definitions[0].id.clone(),
+        owner: None,
+        name: cadmpeg_core::text::NonBlankString::new("KFactor"),
+        kind: ValueKind::Quantity(Quantity::REAL),
+        unit: None,
+        definition: ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Inventor,
+            tokens: Vec::new(),
+        }),
+        value: Some(cadmpeg_ir::design::parameter::ParameterValue::Number(
+            FiniteReal::new(0.42).expect("factor"),
+        )),
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: Some(raw.id()),
+    });
+    let mut inventory = FeatureInventory::default();
+    let mut style = style(20);
+    style.identity.segment_token = raw.identity.segment_token.clone();
+    inventory.sheet_metal_styles.push(style);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &inventory, &[raw], &mut losses).expect("projection");
+    assert_eq!(
+        ir.design.sheet_metal_rules[0].allowance,
+        Some(BendAllowance::KFactor(Dimension::Parameter(id)))
+    );
+    assert!(codes(&losses).contains(&InventorLossCode::FeatureSheetMetalStyleFactorAssumed.code()));
+    assert!(codes(&losses).contains(&InventorLossCode::FeatureSheetMetalReliefNative.code()));
+    assert_eq!(
+        InventorLossCode::FeatureSheetMetalReliefNative.code(),
+        "feature.sheet-metal-relief-native"
+    );
+}
+
+#[test]
+fn equal_style_relief_forms_admit_both_boolean_values() {
+    use crate::feature::{sheet_metal::SheetMetalProperty, PmDcFeaturePropertyKind};
+    use crate::test_support::sheet_metal::ContourFixture;
+    use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::design::ops::sheet_metal::{SheetMetal, SheetMetalKind};
+    use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
+    let fixture = ContourFixture::new();
+    let mut inventory = FeatureInventory::default();
+    inventory.features.push(fixture.plate.clone());
+    inventory.properties = fixture.properties.clone();
+    inventory.sheet_metal_styles.push(fixture.style);
+    let operation = FeatureOperation::SheetMetal(Box::new(SheetMetal {
+        kind: SheetMetalKind::ContourFlange {
+            profile: Selection {
+                at: Anchor::Input,
+                picks: Picks::Unread,
+                native: Some(
+                    vec!["inventor:pmdc:profile#synthetic".into()]
+                        .try_into()
+                        .expect("profile"),
+                ),
+            },
+            edges: None,
+            width: None,
+            extent: None,
+            thickness: None,
+            bend: BendSpec {
+                radius: None,
+                radius_side: None,
+                relief: None,
+            },
+            vertex_bends: Vec::new(),
+            rule: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    let mut source = root_part_ir();
+    source.design.features.push(Feature {
+        id: crate::feature::history_feature_id(&fixture.plate.identity).expect("id"),
+        name: None,
+        suppressed: None,
+        definition: FeatureDefinition {
+            operation,
+            refine: None,
+            fuzzy_tolerance: None,
+        },
+        placement: None,
+        component: None,
+        driven_by: None,
+        native_ref: Some(fixture.plate.id()),
+    });
+    for control in [false, true] {
+        let index = inventory
+            .properties
+            .iter()
+            .position(|property| property.identity.record_ordinal == 28)
+            .expect("control");
+        inventory.properties[index].edit(|payload| {
+            let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind else {
+                panic!("Boolean")
+            };
+            *value = control;
+        });
+        let mut ir = source.clone();
+        let losses = feature_reliefs(&mut ir, &inventory, &[]).expect("projection");
+        let FeatureOperation::SheetMetal(operation) = &ir.design.features[0].definition.operation
+        else {
+            panic!("sheet metal")
+        };
+        let SheetMetalKind::ContourFlange { bend, .. } = &operation.kind else {
+            panic!("contour")
+        };
+        assert_eq!(
+            bend.relief.as_ref().expect("relief").shape,
+            Some(ReliefShape::Native(cadmpeg_core::nonblank_literal!(
+                "inventor:bend_relief:501:1"
+            )))
+        );
+        assert_eq!(
+            losses[0].code.local_code(),
+            InventorLossCode::FeatureSheetMetalReliefNative.code()
+        );
+    }
+    let index = inventory
+        .properties
+        .iter()
+        .position(|property| property.identity.record_ordinal == 39)
+        .expect("style form");
+    inventory.properties[index].edit(|payload| {
+        payload.kind = PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::Enumeration {
+                type_value: 501,
+                value: 2,
+            },
+        }
+    });
+    feature_reliefs(&mut source, &inventory, &[]).expect("projection");
+    let FeatureOperation::SheetMetal(operation) = &source.design.features[0].definition.operation
+    else {
+        panic!("sheet metal")
+    };
+    let SheetMetalKind::ContourFlange { bend, .. } = &operation.kind else {
+        panic!("contour")
+    };
+    assert_eq!(bend.relief, None);
 }
