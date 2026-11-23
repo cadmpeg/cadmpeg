@@ -142,11 +142,11 @@ impl Space for Spatial {
     }
 
     fn shape(curve: &SpatialCurve) -> Shape {
-        let SpatialCurve::Bounded { carrier, range } = curve else {
+        let SpatialCurve::Bounded(curve) = curve else {
             return Shape::Point;
         };
-        let bounded = range.is_some();
-        match carrier {
+        let bounded = curve.range.is_some();
+        match &curve.carrier {
             SolvedCurveGeometry::Line(_) if bounded => Shape::Line,
             SolvedCurveGeometry::Line(_) => Shape::InfiniteLine,
             SolvedCurveGeometry::Circle(_) if bounded => Shape::Arc,

@@ -20,10 +20,10 @@ use crate::design::ids::SpatialSketchConstraintId;
 use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
 use crate::design::ops::shared::Spacing;
 use crate::design::ops::sketch::{
-    AngleOperands, AngleSector, BlockInstance, Contact, DefiningRole, Derivation, DerivationMode,
-    DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline, Operand, Planar,
-    PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchOffset,
-    SketchPattern, SketchPatternAxis, SketchPatternDirection, SketchPatternInstance,
+    AngleOperands, AngleSector, BlockInstance, BoundedCurve, Contact, DefiningRole, Derivation,
+    DerivationMode, DistanceAxis, EntityDefinition, EntityForm, EntityRole, InterpolatedSpline,
+    Operand, Planar, PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity,
+    SketchOffset, SketchPattern, SketchPatternAxis, SketchPatternDirection, SketchPatternInstance,
     SketchPatternLayout, SketchPlane, SketchPolygon, SketchRelation, SketchSlot, SketchSolve,
     SketchSpace, SketchText, SlotKind, SolveState, Spatial, SpatialCurve, SpatialSketch,
     SplineHandle, TextAlign, TextContent, TextHorizontalBox, TextLayout, TextVerticalBox,
@@ -38,6 +38,7 @@ use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
 use crate::test_support::nurbs;
+use crate::topology::IncreasingParameterInterval;
 use crate::units::{UnitVector2, UnitVector3};
 
 /// The ids, a direction, and curves of one sketch space.
@@ -196,14 +197,14 @@ fn line_carrier() -> SolvedCurveGeometry {
 fn spatial_curves() -> Vec<SpatialCurve> {
     vec![
         SpatialCurve::Point(point3(1.0, 2.0, 3.0)),
-        SpatialCurve::Bounded {
+        SpatialCurve::Bounded(BoundedCurve {
             carrier: line_carrier(),
-            range: Some([real(0.0), real(4.0)]),
-        },
-        SpatialCurve::Bounded {
+            range: IncreasingParameterInterval::new([0.0, 4.0]),
+        }),
+        SpatialCurve::Bounded(BoundedCurve {
             carrier: line_carrier(),
             range: None,
-        },
+        }),
     ]
 }
 

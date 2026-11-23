@@ -38,7 +38,7 @@ use crate::design::units::{Quantity, ValueKind};
 use crate::document::{Design, Topology};
 use crate::pmi::{FitStandard, FitZone, LimitsAndFits};
 use crate::products::NestedOverride;
-use crate::scalar::Fraction;
+use crate::scalar::{Fraction, PositiveReal};
 use crate::spreadsheets::{CellAddress, SpreadsheetCell, SpreadsheetDimension, SpreadsheetRange};
 use crate::transform::Transform;
 
@@ -282,7 +282,7 @@ pub(super) fn links() -> Vec<Link> {
             source: Some(selections().remove(0)),
             document: Some(fixtures::definition_ref()),
             transform: Some(Transform::identity()),
-            scale: Some(real(2.0)),
+            scale: Some(PositiveReal::new(2.0).unwrap()),
             associative: Some(true),
             state: Some(LinkState::OutOfDate),
             native_ref: Some("catia:link#1".to_owned()),
@@ -692,6 +692,7 @@ pub(super) fn parameter_definitions() -> Vec<ParameterDefinition> {
         ParameterDefinition::Expression(fixtures::expressions().remove(0)),
         ParameterDefinition::Driven,
         ParameterDefinition::Assigned(id("parameter-program", 1)),
+        ParameterDefinition::Unset,
     ]
 }
 

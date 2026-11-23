@@ -23,7 +23,7 @@ use crate::design::evaluation::Evaluation;
 use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::ops::datum::DatumElement;
 use crate::design::ops::sketch::{
-    EntityDefinition, Planar, PlanarCurve, SketchEntity, Spatial, SpatialCurve,
+    BoundedCurve, EntityDefinition, Planar, PlanarCurve, SketchEntity, Spatial, SpatialCurve,
 };
 use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
@@ -264,10 +264,10 @@ const fn planar_straight_or_circular(curve: &PlanarCurve) -> bool {
 const fn spatial_straight_or_circular(curve: &SpatialCurve) -> bool {
     matches!(
         curve,
-        SpatialCurve::Bounded {
+        SpatialCurve::Bounded(BoundedCurve {
             carrier: SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_),
             ..
-        }
+        })
     )
 }
 
