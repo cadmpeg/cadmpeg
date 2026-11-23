@@ -261,7 +261,16 @@ fn cap(base: u16, owner: u16, z: f64, normal: f64) -> Vec<u8> {
 /// blind (`0`), Keywords state no end condition, so that the lanes decide
 /// it.
 fn lane_flagged(caps: Option<f64>, alternate: Option<u8>) -> (Vec<u8>, usize) {
-    use crate::test_support::history::resolved_features_payload;
+    flagged_part(caps, alternate, false)
+}
+
+/// The `lane_flagged` part, and with `round` a fillet `Round1` after the
+/// extrusion whose radius `D1` each lane states as a scalar: 25 mm in the
+/// first lane and 50 mm in the second.
+fn flagged_part(caps: Option<f64>, alternate: Option<u8>, round: bool) -> (Vec<u8>, usize) {
+    use crate::test_support::history::{
+        resolved_features_payload, resolved_features_payload_with_names_relation_and_scalar,
+    };
     use crate::test_support::parasolid::{parasolid_with_body, triangle_body};
     let (mut source, mut payload, keywords) = match caps {
         Some(side) => {
@@ -318,14 +327,35 @@ fn lane_flagged(caps: Option<f64>, alternate: Option<u8>) -> (Vec<u8>, usize) {
         }
         None => keywords.to_owned(),
     };
+    let keywords = if round {
+        keywords.replacen(
+            "</Keywords>",
+            r#"<Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension></Fillet></Keywords>"#,
+            1,
+        )
+    } else {
+        keywords
+    };
+    let lane = |radius: f64| {
+        let mut lane = payload.clone();
+        if round {
+            lane.extend(resolved_features_payload_with_names_relation_and_scalar(
+                &[],
+                &["Round1", "D1"],
+                "sgPntPntDist",
+                radius,
+            ));
+        }
+        lane
+    };
     source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
     source.extend(make_block(
         0x45,
         "Contents/Config-0-ResolvedFeatures",
-        &payload,
+        &lane(0.025),
     ));
     if let Some(code) = alternate {
-        let mut payload = payload;
+        let mut payload = lane(0.050);
         payload[anchor + 18] = code;
         source.extend(make_block(
             0x45,
@@ -835,6 +865,18 @@ fn deepen_alternate(ir: &mut cadmpeg_ir::CadIr) {
 /// contradicts it (`1`).
 const SETTLED_CASES: [(u8, f64); 4] = [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0)];
 
+/// The travel of `Extrude` in the model, in `Default` and in `Alternate`.
+fn directions(
+    ir: &cadmpeg_ir::CadIr,
+    anchor: usize,
+) -> (ExtrudeDirection, ExtrudeDirection, ExtrudeDirection) {
+    (
+        extrusion_state(ir, anchor).1,
+        default_direction(ir),
+        alternate_direction(ir),
+    )
+}
+
 /// An edit of a configuration parameter over configuration states whose
 /// reversal the decoder settled against the active solid is no native edit:
 /// the writer settles the states it reads back from the lanes as the
@@ -868,14 +910,7 @@ fn configuration_states_without_baselines_write_over_settled_reversals() {
     for (alternate, side) in SETTLED_CASES {
         let (bytes, anchor) = lane_flagged(Some(side), Some(alternate));
         let decoded = decode(bytes);
-        let directions = |ir: &cadmpeg_ir::CadIr| {
-            (
-                extrusion_state(ir, anchor).1,
-                default_direction(ir),
-                alternate_direction(ir),
-            )
-        };
-        let decoded_directions = directions(decoded.ir());
+        let decoded_directions = directions(decoded.ir(), anchor);
         let written = edit_and_write(decoded, |ir| {
             let source = ir.source.as_mut().expect("the decoded source");
             source
@@ -887,7 +922,7 @@ fn configuration_states_without_baselines_write_over_settled_reversals() {
         });
         match written {
             Ok((written, _)) => assert_eq!(
-                directions(decode(written).ir()),
+                directions(decode(written).ir(), anchor),
                 decoded_directions,
                 "alternate={alternate} side={side}"
             ),
@@ -895,4 +930,130 @@ fn configuration_states_without_baselines_write_over_settled_reversals() {
         }
     }
     assert!(refused.is_empty(), "{refused:#?}");
+}
+
+/// The value of `D1` of `Round1` in the configuration `Alternate`, and the
+/// radius of that configuration's state of `Round1`.
+fn alternate_round(ir: &cadmpeg_ir::CadIr) -> (f64, f64) {
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .expect("the fillet");
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
+        .expect("the radius of the fillet");
+    let configuration = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Alternate"))
+        .expect("the configuration Alternate");
+    let Some(ParameterValue::Length(value)) = configuration.parameter_values.get(&parameter.id)
+    else {
+        panic!("Alternate states no radius for Round1");
+    };
+    let FeatureOperation::Fillet { groups } = configuration.feature_states[&feature.id]
+        .definition
+        .operation()
+    else {
+        panic!("Round1 is no fillet in Alternate");
+    };
+    let [FilletGroup {
+        radius: RadiusSpec::Constant { radius },
+        ..
+    }] = groups.as_slice()
+    else {
+        panic!("Round1 has no constant radius in Alternate");
+    };
+    (value.get(), radius.get())
+}
+
+/// Sets the radius of `Round1` in the configuration `Alternate`: the value of
+/// `D1` there, and the radius of that configuration's state of `Round1`.
+fn round_alternate(ir: &mut cadmpeg_ir::CadIr, radius: f64) {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::{Length, PositiveLength};
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .expect("the fillet")
+        .id
+        .clone();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature) && parameter.name == "D1")
+        .expect("the radius of the fillet")
+        .id
+        .clone();
+    let configuration = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Alternate"))
+        .expect("the configuration Alternate");
+    configuration.parameter_values.insert(
+        parameter,
+        ParameterValue::Length(Length::new(radius).expect("a finite radius")),
+    );
+    let Some(FeatureDefinition::Operation(FeatureOperation::Fillet { groups })) = configuration
+        .feature_states
+        .get_mut(&feature)
+        .map(|state| &mut state.definition)
+    else {
+        panic!("Round1 is no fillet in Alternate");
+    };
+    groups[0].radius = RadiusSpec::Constant {
+        radius: PositiveLength::new(radius).expect("a positive radius"),
+    };
+}
+
+/// An edit of a configuration parameter that a lane scalar carries, over
+/// configuration states whose reversal the decoder settled against the
+/// active solid, is written: the writer settles the states it reads back
+/// from the patched lanes as it settled those it read before the patch. The
+/// written part decodes the edited value and the same travel in every
+/// configuration.
+#[test]
+fn a_lane_scalar_configuration_edit_writes_over_settled_reversals() {
+    let mut failures = Vec::new();
+    for (alternate, side) in SETTLED_CASES {
+        let case = format!("alternate={alternate} side={side}");
+        let (bytes, anchor) = flagged_part(Some(side), Some(alternate), true);
+        let decoded = decode(bytes);
+        assert_eq!(alternate_round(decoded.ir()), (50.0, 50.0), "{case}");
+        assert_eq!(
+            lane_words(decoded.ir(), anchor),
+            [[1, 0, 0, 0], [1, 0, 0, 0]],
+            "{case}"
+        );
+        let decoded_directions = directions(decoded.ir(), anchor);
+        if side > 0.0 {
+            assert_eq!(
+                decoded_directions.1,
+                ExtrudeDirection::ProfileNormal {},
+                "{case}"
+            );
+        }
+        match edit_and_write(decoded, |ir| round_alternate(ir, 75.0)) {
+            Ok((written, _)) => {
+                let again = decode(written);
+                assert_eq!(alternate_round(again.ir()), (75.0, 75.0), "{case}");
+                assert_eq!(directions(again.ir(), anchor), decoded_directions, "{case}");
+            }
+            Err(error) => failures.push(format!("{case}: {error}")),
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
