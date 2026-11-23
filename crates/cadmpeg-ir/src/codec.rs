@@ -220,8 +220,8 @@ impl DecodeBody {
 }
 
 impl DecodeResult {
-    /// Finalizes backend output with classification, depth, model validation,
-    /// and the context's strict-loss policy.
+    /// Finalizes backend output with classification, depth, and the context's
+    /// strict-loss policy.
     /// The caller must close the context with `finish_session`, including on error.
     pub fn from_decoded(
         ctx: &DecodeContext<'_>,
@@ -238,7 +238,6 @@ impl DecodeResult {
             ))
             .into());
         }
-        crate::validate::evaluation_cycles::admit_evaluation_cycles(ctx, result.ir())?;
         let strict_loss_index = if ctx.policy().mode == DecodeMode::Strict && !ctx.container_only()
         {
             result
