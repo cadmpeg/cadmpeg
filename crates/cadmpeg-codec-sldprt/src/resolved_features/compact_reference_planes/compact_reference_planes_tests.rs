@@ -290,6 +290,12 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
         CompactReferencePlaneIndex::new(&shifted_right).principal_profile_plane(0, right.len()),
         Some(PrincipalPlane::Right)
     );
+    let mut both_right = right.to_vec();
+    both_right.extend_from_slice(&right);
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&both_right).principal_profile_plane(0, both_right.len()),
+        Some(PrincipalPlane::Right)
+    );
     let mut mixed = top.to_vec();
     mixed.extend_from_slice(&right);
     assert_eq!(

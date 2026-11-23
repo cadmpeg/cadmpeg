@@ -10,9 +10,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{model_curve_point_by_id, EvaluationFailure};
 use cadmpeg_ir::geometry::analytic::TorusSurface;
-use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;

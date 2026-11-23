@@ -9,6 +9,8 @@ use serde_json::json;
 
 use crate::F3dCodec;
 
+const EPS_HOLE_POSITION_MM: f64 = 1.0e-8;
+
 /// The decoded IR of a corpus file as JSON, after checking that the neutral
 /// model validates.
 fn decoded(bytes: &[u8]) -> serde_json::Value {
@@ -395,4 +397,205 @@ fn a_negative_symmetric_extent_reverses_the_direction_and_its_extra_instance() {
     assert_eq!(pattern["spacing"], 10.0);
     assert_eq!(pattern["count"], 4);
     assert_eq!(pattern["symmetric"], true);
+}
+
+#[test]
+fn a_rectangular_feature_pattern_keeps_its_direction_in_the_v11_record() {
+    let ir = decoded(include_bytes!(
+        "../../../../corpus/f3d/optimized_extent_pattern.f3d"
+    ));
+    let features = ir["design"]["features"].as_array().expect("v11 features");
+    let feature = features
+        .iter()
+        .find(|feature| feature["name"] == "R-Pattern 1")
+        .expect("rectangular pattern");
+    let operation = &feature["definition"]["operation"];
+    assert_eq!(operation["kind"], "pattern");
+    let layout = &operation["value"]["layout"];
+    assert_eq!(layout["kind"], "linear");
+    let run = &layout["value"]["first"];
+    assert_eq!(
+        run["direction"]["resolved"],
+        json!({"x": 1.0, "y": 0.0, "z": 0.0})
+    );
+    assert_eq!(run["run"]["spacing"]["kind"], "span");
+    assert_eq!(
+        run["run"]["spacing"]["value"]["count"],
+        json!({"kind": "literal", "value": 3})
+    );
+    assert_eq!(
+        run["run"]["spacing"]["value"]["span"],
+        json!({"kind": "literal", "value": 20.0})
+    );
+    let mut centers = ir["geometry"]["surfaces"]
+        .as_array()
+        .expect("final surfaces")
+        .iter()
+        .filter_map(|surface| {
+            let geometry = &surface["geometry"]["value"];
+            (geometry["kind"] == "cylinder").then(|| {
+                let origin = &geometry["origin"];
+                [origin["x"].as_f64().unwrap(), origin["y"].as_f64().unwrap()]
+            })
+        })
+        .collect::<Vec<_>>();
+    centers.sort_by(|a, b| a[0].total_cmp(&b[0]));
+    assert_eq!(centers.len(), 3);
+    for (center, expected_x) in centers.iter().zip([10.0, 20.0, 30.0]) {
+        assert!((center[0] - expected_x).abs() < EPS_HOLE_POSITION_MM);
+        assert!((center[1] - 20.0).abs() < EPS_HOLE_POSITION_MM);
+    }
+}
+
+#[test]
+fn an_unproved_body_seed_keeps_its_native_record_and_final_geometry() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../../corpus/f3d/symmetric_pattern_body.f3d"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the body pattern");
+    assert_eq!(result.ir().geometry.bodies.len(), 5);
+    let feature = result
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("R-Pattern 1"))
+        .expect("body pattern feature");
+    let cadmpeg_ir::design::feature::FeatureOperation::Pattern(pattern) =
+        &feature.definition.operation
+    else {
+        panic!("typed body pattern");
+    };
+    let cadmpeg_ir::design::ops::body::PatternSeeds::Bodies { bodies, join } = &pattern.seeds
+    else {
+        panic!("body seeds");
+    };
+    assert_eq!(*join, None);
+    let cadmpeg_ir::design::selection::Picks::Named(picks) = &bodies.picks else {
+        panic!("native body seed");
+    };
+    assert!(picks.as_slice()[0].native.is_some());
+    assert!(feature.native_ref.is_some());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureRectangularPatternDesignNative.kind()
+    }));
+}
+
+#[test]
+fn suppressed_instances_are_omitted_from_the_pattern() {
+    // Positions 1 and 3 of five along X, and one position of a 3 by 3 grid,
+    // are suppressed.
+    let files: [(&[u8], u64, Option<u64>, serde_json::Value); 3] = [
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_two_instances.f3d"),
+            5,
+            None,
+            json!([[1, 0], [3, 0]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_grid_middle.f3d"),
+            3,
+            Some(3),
+            json!([[1, 1]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_grid_corner.f3d"),
+            3,
+            Some(3),
+            json!([[2, 2]]),
+        ),
+    ];
+    for (bytes, count, second, omitted) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        let spacing = pattern["spacing"].as_f64().expect("spacing");
+        assert!((spacing - 6.0).abs() < 1e-9, "{pattern}");
+        assert_eq!(pattern["count"], count);
+        assert_eq!(pattern["second"]["count"].as_u64(), second);
+        assert_eq!(pattern["omitted_instances"], omitted);
+    }
+}
+
+/// A save, its first direction, its counts, its symmetric bytes and its
+/// omitted grid positions.
+type SymmetricSuppression = (
+    &'static [u8],
+    serde_json::Value,
+    u64,
+    Option<u64>,
+    bool,
+    Option<bool>,
+    serde_json::Value,
+);
+
+#[test]
+fn suppressed_instances_of_symmetric_directions_keep_the_neutral_numbering() {
+    // A symmetric direction's odd positions lie along it and its even ones
+    // against it. The pattern with direction one at count one projects as one
+    // direction along Y.
+    let files: [SymmetricSuppression; 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_even.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            4,
+            None,
+            true,
+            None,
+            json!([[1, 0], [2, 0]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_direction_two.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            3,
+            Some(3),
+            false,
+            Some(true),
+            json!([[0, 1], [1, 2]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_symmetric_both.f3d"),
+            json!({"x": 1.0, "y": 0.0, "z": 0.0}),
+            3,
+            Some(3),
+            true,
+            Some(true),
+            json!([[1, 1], [2, 2]]),
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/suppressed_direction_two_only.f3d"),
+            json!({"x": 0.0, "y": 1.0, "z": 0.0}),
+            4,
+            None,
+            false,
+            None,
+            json!([[1, 0], [3, 0]]),
+        ),
+    ];
+    for (bytes, direction, count, second, symmetric, second_symmetric, omitted) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        assert_eq!(pattern["direction"], direction, "{pattern}");
+        if second.is_some() {
+            assert_eq!(
+                pattern["second"]["direction"],
+                json!({"x": 0.0, "y": 1.0, "z": 0.0}),
+                "{pattern}"
+            );
+        }
+        assert_eq!(pattern["count"], count, "{pattern}");
+        assert_eq!(pattern["second"]["count"].as_u64(), second, "{pattern}");
+        assert_eq!(pattern["symmetric"], symmetric, "{pattern}");
+        assert_eq!(
+            pattern["second"]["symmetric"].as_bool(),
+            second_symmetric,
+            "{pattern}"
+        );
+        assert_eq!(pattern["omitted_instances"], omitted, "{pattern}");
+    }
 }

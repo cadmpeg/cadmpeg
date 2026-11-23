@@ -492,8 +492,8 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
 }
 
 /// The frame the decoder keeps for a Front reference whose profile holds
-/// principal-plane component records that do not name its plane
-/// (`sldprt-open-items.md` SF-01). No support plane stores it.
+/// principal-plane component records that `principal_profile_frame` does not
+/// bind (`sldprt-open-items.md` SF-01). No support plane stores it.
 fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
@@ -550,8 +550,19 @@ pub(crate) enum PlaneBinding {
     /// frame of the other sketches of its lane.
     LaneFrame,
     /// The Front lane fallback frame (SF-01): a Front reference whose
-    /// profile's principal-plane component records do not name its plane.
+    /// profile's principal-plane component records `principal_profile_frame`
+    /// does not bind.
     FrontFallback,
+}
+
+impl PlaneBinding {
+    /// The principal plane whose own component record gave the frame.
+    pub(crate) fn principal(self) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+        match self {
+            Self::Principal(plane) => Some(plane),
+            _ => None,
+        }
+    }
 }
 
 /// The binding route of each profile sketch whose route is not
@@ -693,8 +704,11 @@ impl PlaneBindings {
             routes.push(format!(
                 "{} lie on the Front lane fallback frame (origin 0,0,0, normal -Y, u-axis -Z), \
                  which no plane of the part stores, because their reference names the Front \
-                 plane and the principal-plane component records of their own object do not \
-                 name their plane, open item SF-01 ({front_fallback})",
+                 plane and the principal-plane component records of their own object bind \
+                 them to no plane by sldprt.md §2: the records name two planes, a \
+                 component frame record lies from the preceding object through the profile, \
+                 or their own object holds a plane reference other than a declared Front \
+                 record, open item SF-01 ({front_fallback})",
                 front_fallback.count(),
             ));
         }

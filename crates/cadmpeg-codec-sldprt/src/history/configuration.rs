@@ -632,6 +632,12 @@ pub(crate) fn project_configuration_sketch_states(
     plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
+    let solid = crate::resolved_features::stream_readings::SolidEdges::new(
+        &ir.geometry.edges,
+        &ir.geometry.vertices,
+        &ir.geometry.points,
+        &ir.geometry.curves,
+    );
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -749,8 +755,11 @@ pub(crate) fn project_configuration_sketch_states(
                         projected: &mut ir.model.sketch_entities,
                         held: &mut held_handles,
                     },
-                    histories,
-                    scoped_lanes,
+                    crate::resolved_features::profiles::MarkerSources {
+                        histories,
+                        lanes: scoped_lanes,
+                        solid: &solid,
+                    },
                     &mut losses,
                 )?,
             );
@@ -900,6 +909,17 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::resolved_features::sweeps::bind(
+                &mut features,
+                histories,
+                scoped_lanes,
+                crate::resolved_features::sweeps::Geometry {
+                    sketches: &ir.model.sketches,
+                    entities: &mut ir.model.sketch_entities,
+                    spatial_entities: &mut ir.model.spatial_sketch_entities,
+                },
+                &mut losses,
+            );
             crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]

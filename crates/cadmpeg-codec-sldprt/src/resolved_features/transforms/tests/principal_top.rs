@@ -1,7 +1,7 @@
 use crate::resolved_features::compact_reference_planes::principal_sketch_frame;
 use crate::resolved_features::transforms::{
     component_sketch_marker_transform, feature_sketch_marker_transform,
-    record_top_marker_coordinates,
+    record_component_marker_coordinates,
 };
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::{
@@ -89,7 +89,7 @@ fn top_coordinate_provenance_follows_the_sketch_binding() {
             },
         )),
     };
-    record_top_marker_coordinates(&mut feature, true);
+    record_component_marker_coordinates(&mut feature, Some(PrincipalPlane::Top));
     assert_eq!(
         feature_sketch_marker_transform(&sketch, 1.0, &[feature])
             .unwrap()
@@ -242,6 +242,54 @@ fn assumed_plane_binding_names_each_route_and_its_plane() {
          configuration lane (1 on the Front plane (Sketch7)); 1 lie on the Front lane fallback \
          frame (origin 0,0,0, normal -Y, u-axis -Z), which no plane of the part stores, because \
          their reference names the Front plane and the principal-plane component records of \
-         their own object do not name their plane, open item SF-01 (Sketch8)."
+         their own object bind them to no plane by sldprt.md §2: the records name two planes, a \
+         component frame record lies from the preceding object through the profile, or their \
+         own object holds a plane reference other than a declared Front record, open item \
+         SF-01 (Sketch8)."
+    );
+}
+
+#[test]
+fn right_component_markers_are_sketch_coordinates_on_the_right_plane() {
+    let (origin, normal, u_axis) = principal_sketch_frame(PrincipalPlane::Right);
+    let sketch = Sketch {
+        placement: SketchPlacement::try_resolved(origin, normal, u_axis).unwrap(),
+        ..sketch()
+    };
+    let v_axis = normal.cross(u_axis);
+    let transform = component_sketch_marker_transform(&sketch, 1.0, true).unwrap();
+    assert_eq!(transform.apply((2, 3)), Some((2, 3)));
+    let point = origin.translated(u_axis, 2.0).translated(v_axis, 3.0);
+    assert_eq!(point, Point3::new(0.0, 3.0, -2.0));
+    assert_eq!(
+        component_sketch_marker_transform(&sketch, 1.0, false)
+            .unwrap()
+            .apply((2, 3)),
+        Some((-3, 2))
+    );
+    let mut feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("synthetic:test:id#right-feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        native_ref: None,
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            },
+        )),
+    };
+    record_component_marker_coordinates(&mut feature, Some(PrincipalPlane::Right));
+    assert_eq!(
+        feature_sketch_marker_transform(&sketch, 1.0, &[feature])
+            .unwrap()
+            .apply((2, 3)),
+        Some((2, 3))
     );
 }

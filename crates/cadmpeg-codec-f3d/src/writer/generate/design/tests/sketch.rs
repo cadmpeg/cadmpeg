@@ -35,24 +35,24 @@ use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1e-9;
 
-fn feature_id(name: &str) -> FeatureId {
+pub(super) fn feature_id(name: &str) -> FeatureId {
     FeatureId::mint(format!("test:design:feature#{name}")).expect("identity grammar")
 }
 
-fn sketch_id(name: &str) -> SketchId {
+pub(super) fn sketch_id(name: &str) -> SketchId {
     SketchId::mint(format!("test:design:sketch#{name}")).expect("identity grammar")
 }
 
-fn entity_id(sketch: &str, name: &str) -> SketchEntityId {
+pub(super) fn entity_id(sketch: &str, name: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("test:design:entity#{sketch}-{name}")).expect("identity grammar")
 }
 
-fn constraint_id(sketch: &str, name: &str) -> SketchConstraintId {
+pub(super) fn constraint_id(sketch: &str, name: &str) -> SketchConstraintId {
     SketchConstraintId::mint(format!("test:design:constraint#{sketch}-{name}"))
         .expect("identity grammar")
 }
 
-fn feature(name: &str, operation: FeatureOperation) -> Feature {
+pub(super) fn feature(name: &str, operation: FeatureOperation) -> Feature {
     Feature {
         id: feature_id(name),
         name: None,
@@ -73,12 +73,12 @@ fn unit(x: f64, y: f64, z: f64) -> UnitVector3 {
     UnitVector3::new(Vector3::new(x, y, z)).expect("a unit vector")
 }
 
-fn point2(u: f64, v: f64) -> FinitePoint2 {
+pub(super) fn point2(u: f64, v: f64) -> FinitePoint2 {
     FinitePoint2::new(Point2 { u, v }).expect("a finite point")
 }
 
 /// A frame from its origin and its x and y axes.
-fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
+pub(super) fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
     let z = Vector3::from(x).cross(Vector3::from(y));
     FrameValue {
         origin: FinitePoint3::new(Point3 {
@@ -93,7 +93,7 @@ fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
     }
 }
 
-fn picked(target: PickTarget) -> ConstructionInput {
+pub(super) fn picked(target: PickTarget) -> ConstructionInput {
     ConstructionInput {
         role: Some(InputRole {
             subject: Subject::Whole,
@@ -119,7 +119,7 @@ fn picked(target: PickTarget) -> ConstructionInput {
     }
 }
 
-fn unread() -> ConstructionInput {
+pub(super) fn unread() -> ConstructionInput {
     ConstructionInput {
         role: None,
         reference: Some(InputReference::Picks(Selection {
@@ -132,14 +132,14 @@ fn unread() -> ConstructionInput {
     }
 }
 
-fn principal(entity: PrincipalEntity) -> PickTarget {
+pub(super) fn principal(entity: PrincipalEntity) -> PickTarget {
     PickTarget::Principal {
         entity,
         container: None,
     }
 }
 
-fn datum(name: &str, plane: PrincipalEntity) -> Feature {
+pub(super) fn datum(name: &str, plane: PrincipalEntity) -> Feature {
     feature(
         name,
         FeatureOperation::Datum(Box::new(Datum {
@@ -155,7 +155,7 @@ fn datum(name: &str, plane: PrincipalEntity) -> Feature {
 }
 
 /// One source sketch: its feature, record, entities and constraints.
-struct Source {
+pub(super) struct Source {
     name: &'static str,
     input: ConstructionInput,
     frame: FrameValue,
@@ -164,7 +164,7 @@ struct Source {
 }
 
 impl Source {
-    fn new(name: &'static str, input: ConstructionInput, frame: FrameValue) -> Self {
+    pub(super) fn new(name: &'static str, input: ConstructionInput, frame: FrameValue) -> Self {
         Self {
             name,
             input,
@@ -174,7 +174,7 @@ impl Source {
         }
     }
 
-    fn entity(
+    pub(super) fn entity(
         &mut self,
         name: &str,
         curve: PlanarCurve,
@@ -201,7 +201,7 @@ impl Source {
         self
     }
 
-    fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
+    pub(super) fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
         self.constraints.push(SketchConstraint {
             id: constraint_id(self.name, name),
             sketch: sketch_id(self.name),
@@ -215,11 +215,11 @@ impl Source {
         self
     }
 
-    fn operand(&self, name: &str) -> Operand<Planar> {
+    pub(super) fn operand(&self, name: &str) -> Operand<Planar> {
         Operand::Entity(entity_id(self.name, name))
     }
 
-    fn add_to(self, ir: &mut CadIr) -> FeatureId {
+    pub(super) fn add_to(self, ir: &mut CadIr) -> FeatureId {
         let id = feature_id(self.name);
         ir.design.features.push(feature(
             self.name,
@@ -249,7 +249,7 @@ impl Source {
 }
 
 /// The world position of the source sketch point `(u, v)`.
-fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
+pub(super) fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
     let origin = frame.origin.get();
     let (x_axis, y_axis) = (frame.x_axis.as_raw(), frame.y_axis.as_raw());
     [
@@ -261,8 +261,8 @@ fn world(frame: &FrameValue, u: f64, v: f64) -> [f64; 3] {
 
 /// A rectangle of four lines whose corners are four points with two roles
 /// each, on Top (`XZ`) with its x axis along +Z; a circle on Front (`XY`);
-/// an arc and a chord on Right (`YZ`); an offset sketch; and a line on `XZ`
-/// whose normal is −Y.
+/// an arc and a chord on Right (`YZ`); a sketch on a plane tilted 30° about
+/// X; and a line on `XZ` whose normal is −Y.
 fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
     let mut ir = scoped_cube();
     let mut members = vec![
@@ -428,8 +428,9 @@ fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
     frames.push(("sketch3", right));
     timeline.push(Member::Feature(sketch3.add_to(&mut ir)));
 
-    let offset = frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-    let mut sketch4 = Source::new("sketch4", unread(), offset);
+    let (sin, cos) = std::f64::consts::FRAC_PI_6.sin_cos();
+    let tilted = frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, cos, sin]);
+    let mut sketch4 = Source::new("sketch4", unread(), tilted);
     sketch4.entity("p", PlanarCurve::Point(point2(1.0, 1.0)), &[]);
     timeline.push(Member::Feature(sketch4.add_to(&mut ir)));
 
@@ -455,7 +456,7 @@ fn scoped_sketches() -> (CadIr, Vec<(&'static str, FrameValue)>) {
 }
 
 /// The model-space position of every decoded sketch point and line end.
-fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
+pub(super) fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
     let mut points = Vec::new();
     for sketch in &decoded.model.sketches {
         let (origin, normal, u) = sketch.resolved_placement().expect("a decoded frame");
@@ -490,7 +491,7 @@ fn decoded_points(decoded: &CadIr) -> Vec<[f64; 3]> {
     points
 }
 
-fn near(a: [f64; 3], b: [f64; 3]) -> bool {
+pub(super) fn near(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|axis| (a[axis] - b[axis]).abs() <= TOLERANCE)
 }
 
@@ -638,7 +639,7 @@ fn written_sketches_leave_evaluation_missing() {
     let note = missing[0];
     assert!(
         note.contains(&format!(
-            "{} (its sketch lies on no origin plane)",
+            "{} (its sketch lies on a plane tilted from every origin plane)",
             feature_id("sketch4")
         )),
         "{note}"
@@ -653,26 +654,30 @@ fn written_sketches_leave_evaluation_missing() {
 fn the_sketch_note_names_the_point_and_curve_identities() {
     let (ir, _) = scoped_sketches();
     let (report, _) = write(&ir);
-    let notes = loss(&report, "export/record.residual-unavailable")
-        .into_iter()
-        .filter(|message| message.contains("DR-901"))
-        .collect::<Vec<_>>();
-    let [note] = notes.as_slice() else {
-        panic!("one DR-901 note: {:#?}", report.losses);
-    };
+    let notes = loss(&report, "export/record.residual-unavailable");
     for named in [
         "point and curve identities (`pt_tag`, `crv_primary_id`): one sequence from 100",
         "record 10 (sketch collection: `crv_tag_id_idx`",
     ] {
-        assert!(note.contains(named), "{named}: {note}");
+        let holding = notes
+            .iter()
+            .filter(|message| message.contains(named))
+            .collect::<Vec<_>>();
+        let [note] = holding.as_slice() else {
+            panic!("{named} in one note: {notes:#?}");
+        };
+        assert!(note.contains("DR-901 leaves their rule open"), "{note}");
+        assert_eq!(note.matches(named).count(), 1, "{note}");
     }
 }
 
-#[test]
-fn the_fixed_clock_note_names_every_record_timestamp_table() {
-    let (ir, _) = scoped_sketches();
-    let (report, _, bytes) = write_bytes(&ir);
-    let design = segment(&bytes, "FusionDesignSegmentType1");
+/// The record-timestamp tables of the written Design segment `bytes`, each
+/// of which the one fixed-clock note of `report` names.
+pub(super) fn fixed_clock_tables(
+    report: &cadmpeg_ir::report::export::ExportReport,
+    bytes: &[u8],
+) -> Vec<u64> {
+    let design = segment(bytes, "FusionDesignSegmentType1");
     let tables = design
         .primary
         .iter()
@@ -684,22 +689,34 @@ fn the_fixed_clock_note_names_every_record_timestamp_table() {
                 .eq_ignore_ascii_case(super::super::types::RECORD_TIMESTAMPS.guid)
         })
         .collect::<Vec<_>>();
-    // The component, Base Feature scope and result tables, and three for
-    // each of the four sketches.
-    assert_eq!(tables.len(), 3 + 3 * 4);
-    let notes = loss(&report, "export/record.residual-unavailable")
+    let notes = loss(report, "export/record.residual-unavailable")
         .into_iter()
         .filter(|message| message.contains("fixed-clock"))
         .collect::<Vec<_>>();
     let [note] = notes.as_slice() else {
         panic!("one fixed-clock note: {:#?}", report.losses);
     };
-    for table in tables {
+    for table in &tables {
         assert!(
             note.contains(&format!("record {table} (")),
             "{table}: {note}"
         );
     }
+    assert_eq!(
+        note.matches("(record-timestamp table)").count(),
+        tables.len(),
+        "{note}"
+    );
+    tables
+}
+
+#[test]
+fn the_fixed_clock_note_names_every_record_timestamp_table() {
+    let (ir, _) = scoped_sketches();
+    let (report, _, bytes) = write_bytes(&ir);
+    // The component, Base Feature scope and result tables, and three for
+    // each of the four sketches.
+    assert_eq!(fixed_clock_tables(&report, &bytes).len(), 3 + 3 * 4);
 }
 
 #[test]
@@ -1024,7 +1041,7 @@ fn a_failure_in_the_sketch_records_keeps_the_design() {
     }
     assert!(
         missing.contains(&format!(
-            "{} (its sketch lies on no origin plane)",
+            "{} (its sketch lies on a plane tilted from every origin plane)",
             feature_id("sketch4")
         )),
         "{missing}"
@@ -1210,7 +1227,7 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
     use super::super::sketch::{plan, RelationKind, TangencyEnds};
     let mut ir = scoped_cube();
     let id = tangent_sketch().add_to(&mut ir);
-    let plan = plan(&ir, &[&id]);
+    let plan = plan(&ir, &[&id], None);
     let [item] = plan.items.as_slice() else {
         panic!("one written sketch: {:?}", plan.unwritten);
     };
@@ -1240,6 +1257,20 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
         .filter(|relation| relation.kind == RelationKind::Coincident)
         .count();
     assert_eq!(joins, 1);
+}
+
+#[test]
+fn relation_ordinals_are_named_in_a_sketch_without_dimensions() {
+    let (ir, _) = scoped_sketches();
+    let (report, _) = write(&ir);
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("relation ordinals"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one relation-ordinal note: {:#?}", report.losses);
+    };
+    assert!(!note.contains("dimension frames"), "{note}");
 }
 
 #[test]
@@ -1307,7 +1338,7 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
             },
         );
     let id = sketch.add_to(&mut ir);
-    let planned = plan(&ir, &[&id]);
+    let planned = plan(&ir, &[&id], None);
     let [item] = planned.items.as_slice() else {
         panic!("one written sketch: {:?}", planned.unwritten);
     };

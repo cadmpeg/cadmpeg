@@ -117,9 +117,9 @@ pub(crate) fn derived_base_snapshots(
         let Some(blob) = result.blob_name().strip_prefix("BREP.") else {
             continue;
         };
-        let mut matching = histories
-            .iter()
-            .filter(|history| super::historical_brep_source(&history.id) == Some(blob));
+        let mut matching = histories.iter().filter(|history| {
+            super::face_resolution::historical_brep_source(&history.id) == Some(blob)
+        });
         let Some(history) = matching.next() else {
             continue;
         };
@@ -131,9 +131,11 @@ pub(crate) fn derived_base_snapshots(
         else {
             continue;
         };
-        let Some((_, state, _)) =
-            super::unique_history_state_pair(std::slice::from_ref(history), current, previous)
-        else {
+        let Some((_, state, _)) = super::history_states::unique_history_state_pair(
+            std::slice::from_ref(history),
+            current,
+            previous,
+        ) else {
             continue;
         };
         let Some(topology) = history.topology(state) else {
@@ -205,6 +207,7 @@ pub(crate) fn derived_base_snapshots(
 pub(crate) struct ConsumerContext {
     pub(crate) bindings: HashMap<String, String>,
     pub(crate) remaining_work: usize,
+    pub(crate) tails: super::body_history_tail::BodyHistoryTails,
 }
 
 pub(crate) fn fill(
@@ -355,7 +358,7 @@ fn result_state_wants<'a>(
                 consumer: None,
                 identity: None,
                 state: current,
-                slot: super::stable_ref(body.as_str())?,
+                slot: super::body_closures::stable_ref(body.as_str())?,
                 capture_current,
                 consumed: false,
             })
@@ -517,7 +520,8 @@ pub(crate) fn fill_consumed(
         &work,
         losses,
     );
-    contain_consumed_failure(ctx, result, losses)
+    contain_consumed_failure(ctx, result, losses)?;
+    super::body_history_tail::append(model, &context.tails, losses)
 }
 
 fn contain_consumed_failure(
@@ -584,8 +588,12 @@ fn initial_cut_body<'a>(
         return None;
     }
     let product = feature.product_definition.as_ref()?;
-    let selected =
-        super::face_selection_state(feature, inputs.scopes, inputs.bindings, inputs.histories)?;
+    let selected = super::face_selections::face_selection_state(
+        feature,
+        inputs.scopes,
+        inputs.bindings,
+        inputs.histories,
+    )?;
     let history = &inputs.histories[selected.history];
     let previous = &history.states()[selected.previous];
     let [slot] = history.topology(previous)?.bodies.as_slice() else {
@@ -616,7 +624,7 @@ fn initial_cut_body<'a>(
         );
         return None;
     };
-    if super::stable_ref(output.as_str()) != Some(*slot)
+    if super::body_closures::stable_ref(output.as_str()) != Some(*slot)
         || output_history(
             std::iter::once(output.as_str()),
             inputs.histories,
@@ -668,7 +676,8 @@ fn scope_history(
             (matches.next().is_none() && holds(history)).then_some(index)
         }
         None => {
-            let (history, _, _) = super::unique_history_state_pair(histories, current, previous)?;
+            let (history, _, _) =
+                super::history_states::unique_history_state_pair(histories, current, previous)?;
             let index = histories
                 .iter()
                 .position(|candidate| std::ptr::eq(candidate, history))?;
@@ -774,7 +783,8 @@ fn split_identity_target(
     let native = feature.native_ref.as_deref()?;
     let scope = inputs.scopes.iter().find(|scope| scope.id == native)?;
     let current = scope.history_state_id()?;
-    let input = super::effective_scope_previous_history_state_id(scope, inputs.histories)?;
+    let input =
+        super::history_states::effective_scope_previous_history_state_id(scope, inputs.histories)?;
     let index = scope_history(native, (current, input), inputs.histories, inputs.bindings)?;
     let state = inputs.histories[index]
         .states()
@@ -842,7 +852,7 @@ fn identity_slot(
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &attribute.target.entity else {
             continue;
         };
-        let Some(slot) = super::stable_ref(body.as_str()) else {
+        let Some(slot) = super::body_closures::stable_ref(body.as_str()) else {
             continue;
         };
         for link in crate::brep::persistent_design_links(attribute)? {
@@ -858,7 +868,7 @@ fn identity_slot(
     Ok(slot.filter(|slot| carriers.next().is_none() && identity.revised.contains(slot)))
 }
 
-fn output_history<'a>(
+pub(super) fn output_history<'a>(
     bodies: impl Iterator<Item = &'a str>,
     histories: &'a [AsmHistory],
     primary_brep: Option<&str>,
@@ -876,9 +886,9 @@ fn output_history<'a>(
         source = Some(candidate);
     }
     let source = source?;
-    let mut matches = histories
-        .iter()
-        .filter(|history| super::historical_brep_source(&history.id) == Some(source));
+    let mut matches = histories.iter().filter(|history| {
+        super::face_resolution::historical_brep_source(&history.id) == Some(source)
+    });
     let history = matches.next()?;
     matches.next().is_none().then_some(history.id.as_str())
 }
@@ -1107,7 +1117,7 @@ fn build(
     let Some(body) = brep
         .bodies
         .iter()
-        .find(|body| super::stable_ref(body.id.as_str()) == Some(want.slot))
+        .find(|body| super::body_closures::stable_ref(body.id.as_str()) == Some(want.slot))
         .map(|body| body.id.clone())
     else {
         return Ok(None);

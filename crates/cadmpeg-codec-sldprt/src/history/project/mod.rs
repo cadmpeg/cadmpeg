@@ -255,7 +255,7 @@ pub(crate) fn project_feature_model(
                         source_properties.insert(marker, "false".to_owned());
                     }
                 }
-                let projected = cadmpeg_ir::features::Feature {
+                let mut projected = cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id)?,
                     ordinal: source_ordered
                         .then(|| feature.source_value().map(u64::from))
@@ -282,6 +282,7 @@ pub(crate) fn project_feature_model(
                     native_ref: Some(feature.id.clone()),
                     product_definition: None,
                 };
+                crate::history::extrude_direction::mark_unread_reversal(&mut projected);
                 features.push(projected);
                 parents.push(parent);
             }
@@ -1302,7 +1303,7 @@ pub(crate) fn project_configurations(
                 id,
                 ordinal: configuration.ordinal,
                 active: false,
-                source_index: configuration.source_index,
+                source_index: configuration.partition_index(),
                 name: Some(name),
                 material,
                 properties,

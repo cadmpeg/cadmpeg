@@ -7,13 +7,15 @@ use cadmpeg_ir::features::selections::{BodyMember, BodySelection};
 use cadmpeg_ir::features::{CombineOperands, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{
-    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies, body_member,
-    combine_external_local_tools, combine_recipe_family_tool_slots,
-    effective_scope_previous_history_state_id, historical_brep_source, pattern_combine_tool_slots,
+use super::body_selections::{
+    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies,
+    combine_external_local_tools, combine_recipe_family_tool_slots, pattern_combine_tool_slots,
     singleton_revised_input_body_across_state_chain, unique_feature_history_states,
-    unique_history_state_pair, BodyCandidates, CombineOperandSide, FeatureBodySelectionInputs,
+    CombineOperandRefusal, CombineOperandSide, FeatureBodySelectionInputs,
 };
+use super::face_resolution::{body_member, historical_brep_source};
+use super::history_states::{effective_scope_previous_history_state_id, unique_history_state_pair};
+use crate::history::body_candidates::BodyCandidates;
 use crate::records::feature::scope::DesignParameterScope;
 
 /// Bind `target` and `tools` in the history state before the scope.
@@ -30,7 +32,7 @@ pub(super) fn bind_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    losses: &mut Vec<LossNote>,
+    (refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
     let (Some(state_id), Some(previous_state_id)) = (
         scope.history_state_id(),
@@ -55,7 +57,7 @@ pub(super) fn bind_combine_operands<'a>(
         pattern_bodies,
         inputs,
         body_candidates,
-        losses,
+        (refusals, losses),
     );
     if scope.previous_history_state_id().is_none() {
         for operand in [target, tools] {
@@ -76,7 +78,7 @@ fn bind_historical_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    losses: &mut Vec<LossNote>,
+    (operand_refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
     if let Some(local) = combine_external_local_tools(scope) {
         *tools = local;
@@ -105,7 +107,7 @@ fn bind_historical_combine_operands<'a>(
         &mut refusals,
     ) == Some(true);
     if shared_body {
-        losses.extend(refusals.into_iter().map(|(_, loss)| loss));
+        operand_refusals.extend(refusals);
         return;
     }
     bind_recipe_combine_operands(
@@ -120,7 +122,7 @@ fn bind_historical_combine_operands<'a>(
         (target.clone(), tools.clone()),
         (recipe_target, recipe_tools),
     );
-    losses.extend(unbound_refusals((&merged_target, &merged_tools), refusals));
+    operand_refusals.extend(unbound_refusals((&merged_target, &merged_tools), refusals));
     losses.extend(tool_replacement_loss(feature_id, tools, &merged_tools));
     *target = merged_target;
     *tools = merged_tools;
@@ -214,17 +216,16 @@ fn selection_bodies(selection: &BodySelection) -> Vec<&str> {
 /// The slot refusals of the operands that stay native.
 fn unbound_refusals(
     (target, tools): (&BodySelection, &BodySelection),
-    refusals: Vec<(CombineOperandSide, LossNote)>,
-) -> Vec<LossNote> {
+    refusals: Vec<CombineOperandRefusal>,
+) -> Vec<CombineOperandRefusal> {
     refusals
         .into_iter()
-        .filter(|(side, _)| {
-            native_operand(match side {
+        .filter(|refusal| {
+            native_operand(match refusal.side {
                 CombineOperandSide::Target => target,
                 CombineOperandSide::Tools => tools,
             })
         })
-        .map(|(_, loss)| loss)
         .collect()
 }
 

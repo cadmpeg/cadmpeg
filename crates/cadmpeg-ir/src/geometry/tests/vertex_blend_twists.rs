@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-use crate::geometry::VertexBlendTwists;
+use crate::geometry::blends::VertexBlendTwists;
 use crate::math::Point3;
 
 #[test]
@@ -44,7 +44,7 @@ fn vertex_blend_twists_preserve_exact_forms_and_reject_count_conflicts() {
 
 #[test]
 fn vertex_blend_circle_keeps_the_flat_form_and_twists_fields() {
-    use crate::geometry::VertexBlendBoundaryGeometry;
+    use crate::geometry::blends::VertexBlendBoundaryGeometry;
     let wire = serde_json::json!({
         "kind": "circle",
         "curve": "test:model:curve#0",

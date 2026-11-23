@@ -3,17 +3,17 @@
 
 use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
 
-use crate::solve::mesh_quotient::edge_class_search_constraint;
+use crate::solve::mesh_quotient::selection_state::edge_class_search_constraint;
 
 use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
 
-use crate::solve::mesh_quotient::MeshSelectionSearch;
+use crate::solve::mesh_quotient::selection_state::MeshSelectionSearch;
 
 use crate::solve::mesh_quotient::SearchOutcome;
 
-use crate::solve::mesh_quotient::possible_face_equations;
+use crate::solve::mesh_quotient::selection_state::possible_face_equations;
 
-use crate::solve::mesh_quotient::possible_face_choices;
+use crate::solve::mesh_quotient::selection_state::possible_face_choices;
 
 #[test]
 fn single_edge_class_choice_yields_a_search_constraint() {

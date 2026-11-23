@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{
-    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallJetStation,
+use crate::geometry::blends::{
+    RollingBallJetDerivative, RollingBallJetSite, RollingBallJetStation,
 };
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::math::{Point3, Vector3};
 use serde_json::json;
 
@@ -30,7 +30,7 @@ fn station(knot: f64, multiplicity: u32) -> RollingBallJetStation {
 #[test]
 fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
     let definition = ProceduralSurfaceDefinition::RollingBallJet(
-        crate::geometry::RollingBallJetStations::try_new(
+        crate::geometry::blends::RollingBallJetStations::try_new(
             5,
             vec![station(2.0, 6), station(4.0, 3), station(8.0, 6)],
         )
@@ -65,7 +65,7 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
 
 #[test]
 fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
-    use crate::geometry::RollingBallJetStations;
+    use crate::geometry::blends::RollingBallJetStations;
 
     let valid = || vec![station(2.0, 6), station(8.0, 6)];
     for degree in [0, u32::MAX] {
@@ -133,7 +133,7 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
 
 #[test]
 fn admitted_rolling_ball_stations_keep_the_refusals_of_raw_stations() {
-    use crate::geometry::RollingBallJetStations;
+    use crate::geometry::blends::RollingBallJetStations;
     use crate::scalar::FiniteReal;
 
     let admit = |stations: Vec<RollingBallJetStation>| {
@@ -185,13 +185,13 @@ fn rolling_ball_typed_constructor_moves_owned_rows_without_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let jet = crate::geometry::RollingBallJetStations::from_parts(5, rows).unwrap();
+    let jet = crate::geometry::blends::RollingBallJetStations::from_parts(5, rows).unwrap();
     assert_eq!(jet.stations().as_ptr(), pointer);
     assert_eq!(jet.stations(), expected);
     ctx.finish_session().unwrap();
     let wire = serde_json::to_value(&jet).unwrap();
     assert_eq!(
-        serde_json::from_value::<crate::geometry::RollingBallJetStations>(wire).unwrap(),
+        serde_json::from_value::<crate::geometry::blends::RollingBallJetStations>(wire).unwrap(),
         jet
     );
 }

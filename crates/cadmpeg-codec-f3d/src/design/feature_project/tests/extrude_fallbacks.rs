@@ -738,7 +738,7 @@ fn blind_new_body_retains_the_offset_of_an_unresolved_start_face() {
 
 #[test]
 fn slotted_extrude_targets_keep_their_signed_side_offsets() {
-    use crate::design::decode::operands::assign_slotted_extrude_face_targets;
+    use crate::design::decode::operands::extrude_roles::assign_slotted_extrude_face_targets;
     use crate::records::topology::extrude_selection::DesignOperandRole;
     use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
     use cadmpeg_ir::features::selections::FaceSelection;
