@@ -58,8 +58,7 @@ pub(crate) const PM_DC_SHEET_METAL_STYLES: CoverageKey =
     CoverageKey::new("pm_dc_sheet_metal_styles");
 pub(crate) const PM_DC_SHEET_METAL_FLANGES: CoverageKey =
     CoverageKey::new("pm_dc_sheet_metal_flanges");
-pub(crate) const PM_DC_SHEET_METAL_FACES: CoverageKey =
-    CoverageKey::new("pm_dc_sheet_metal_faces");
+pub(crate) const PM_DC_SHEET_METAL_FACES: CoverageKey = CoverageKey::new("pm_dc_sheet_metal_faces");
 pub(crate) const PM_DC_FEATURE_LABELS: CoverageKey = CoverageKey::new("pm_dc_feature_labels");
 pub(crate) const PM_DC_ENTITY_STYLE_LINKS: CoverageKey =
     CoverageKey::new("pm_dc_entity_style_links");
