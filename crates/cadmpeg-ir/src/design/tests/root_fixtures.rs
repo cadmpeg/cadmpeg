@@ -241,6 +241,7 @@ pub(super) fn design_scopes() -> Vec<DesignScope> {
             active_arrangements: BTreeSet::from([id("arrangement", 1), id("arrangement", 2)]),
             occurrences: BTreeMap::from([(id("occurrence", 1), occurrence_designs().remove(0))]),
             current: current_states(),
+            unproduced: BTreeSet::from([id("body", 8), id("body", 9)]),
         },
         DesignScope {
             definition: id("product-definition", 2),
@@ -249,6 +250,7 @@ pub(super) fn design_scopes() -> Vec<DesignScope> {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::default(),
         },
     ]
 }

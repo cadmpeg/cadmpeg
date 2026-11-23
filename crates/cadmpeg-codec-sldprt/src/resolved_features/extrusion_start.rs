@@ -12,7 +12,7 @@
 use super::is_class_token;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::ExtrudeStart;
+use cadmpeg_ir::features::extents::ExtrudeStart;
 use std::collections::BTreeMap;
 
 /// The start type that names the profile plane.

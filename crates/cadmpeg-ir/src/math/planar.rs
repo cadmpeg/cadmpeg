@@ -47,6 +47,9 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
     if points.iter().any(|point| !point.is_finite()) {
         return None;
     }
+    if let Some(exact) = fast_polygon_area_twice(points) {
+        return Some(exact);
+    }
     let mut area = ExactSignedSum::default();
     for (first, second) in points
         .iter()
@@ -58,6 +61,69 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
     }
     area.finish()
         .map_or(Some(FiniteReal::ZERO), |value| value.finite().ok())
+}
+
+/// Bit-exact compensated-summation fast path for [`polygon_area_twice`].
+/// Returns `Some` only when every `two_prod` is exact (no overflow/underflow)
+/// and the accumulated error margin cannot cross an `f64` rounding boundary.
+fn fast_polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
+    const SAFE_LOW: f64 = 1.0e-150;
+    const SAFE_HIGH: f64 = 1.0e150;
+    #[inline]
+    fn in_safe_range(v: f64) -> bool {
+        let a = v.abs();
+        a == 0.0 || (SAFE_LOW..=SAFE_HIGH).contains(&a)
+    }
+    #[inline]
+    fn two_sum(a: f64, b: f64) -> (f64, f64) {
+        let s = a + b;
+        let bb = s - a;
+        let e = (a - (s - bb)) + (b - bb);
+        (s, e)
+    }
+    let n = points.len();
+    if !(3..=(1 << 20)).contains(&n) {
+        return (n < 3).then_some(FiniteReal::ZERO);
+    }
+    let mut hi = 0.0_f64;
+    let mut lo = 0.0_f64;
+    let mut lo_abs = 0.0_f64;
+    let mut prev = points[n - 1];
+    if !in_safe_range(prev.u) || !in_safe_range(prev.v) {
+        return None;
+    }
+    for &next in points {
+        if !in_safe_range(next.u) || !in_safe_range(next.v) {
+            return None;
+        }
+        let p1_hi = prev.u * next.v;
+        let p1_lo = prev.u.mul_add(next.v, -p1_hi);
+        let (s1, e1) = two_sum(hi, p1_hi);
+        lo += e1 + p1_lo;
+        lo_abs += e1.abs() + p1_lo.abs();
+
+        let neg_v = -prev.v;
+        let p2_hi = neg_v * next.u;
+        let p2_lo = neg_v.mul_add(next.u, -p2_hi);
+        let (s2, e2) = two_sum(s1, p2_hi);
+        hi = s2;
+        lo += e2 + p2_lo;
+        lo_abs += e2.abs() + p2_lo.abs();
+
+        prev = next;
+    }
+    let terms = cadmpeg_core::convert::f64_from_index(4 * n)?;
+    let margin = 2.0 * (terms * f64::EPSILON * lo_abs + terms * f64::MIN_POSITIVE);
+    if !hi.is_finite() || !lo.is_finite() || !margin.is_finite() {
+        return None;
+    }
+    let low = hi + (lo - margin);
+    let high = hi + (lo + margin);
+    if low == high && low.is_finite() && (low != 0.0 || margin == 0.0) {
+        FiniteReal::new(if low == 0.0 { 0.0 } else { low })
+    } else {
+        None
+    }
 }
 
 /// Distance to a closed segment, with projection from the nearer endpoint.
@@ -220,6 +286,31 @@ pub fn line_circle_intersections(
         return None;
     }
     let length = direction.u.portable_hypot(direction.v);
+    // Fast binary64 rejection when the infinite line clearly misses the circle.
+    // Every error term is bounded conservatively before skipping the exact path.
+    if direction_scale.is_normal() && length.is_normal() {
+        let du = end.u - start.u;
+        let dv = end.v - start.v;
+        let cu = center.u - start.u;
+        let cv = center.v - start.v;
+        let cross = du * cv - dv * cu;
+        let cross_bound = du.abs() * cv.abs() + dv.abs() * cu.abs();
+        let seg_len = length * direction_scale;
+        if du.is_finite()
+            && dv.is_finite()
+            && cu.is_finite()
+            && cv.is_finite()
+            && cross.is_finite()
+            && cross_bound.is_finite()
+            && seg_len.is_normal()
+        {
+            let err_margin = 16.0 * f64::EPSILON * cross_bound;
+            let rhs = radius * seg_len * (1.0 + 16.0 * f64::EPSILON) + err_margin;
+            if rhs.is_finite() && cross.abs() > rhs {
+                return None;
+            }
+        }
+    }
     // `(end - start) . (end - start) / direction_scale`, the divisor that turns a
     // projection on `direction` into a parameter on `end - start`. It is formed
     // exactly, so a tangent, whose half chord contributes nothing, keeps every bit
@@ -798,6 +889,39 @@ mod tests {
                 super::polygon_area_twice(&p).map(FiniteReal::get),
                 Some(-2.)
             );
+        }
+    }
+
+    #[test]
+    fn fast_polygon_area_twice_matches_exact_signed_sum() {
+        let cases: Vec<Vec<Point2>> = vec![
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(3.25, -1.5),
+                Point2::new(2.75, 4.125),
+                Point2::new(-1.0, 2.5),
+            ],
+            vec![
+                Point2::new(1e7, 1e7),
+                Point2::new(1e7 + 1.0, 1e7),
+                Point2::new(1e7 + 1.0, 1e7 + 1.0),
+                Point2::new(1e7, 1e7 + 1.0),
+            ],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 1.0),
+                Point2::new(2.0, 2.0),
+            ],
+        ];
+        for poly in &cases {
+            let mut exact = super::ExactSignedSum::default();
+            for (i, &cur) in poly.iter().enumerate() {
+                let next = poly[(i + 1) % poly.len()];
+                exact.add_product(cur.u, next.v);
+                exact.add_product(-next.u, cur.v);
+            }
+            let expected = exact.finite_sum();
+            assert_eq!(super::polygon_area_twice(poly), expected);
         }
     }
 }

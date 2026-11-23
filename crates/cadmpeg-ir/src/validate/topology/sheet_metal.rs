@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Plane checks for an attached-plate face profile.
 
-use crate::{
-    features::{FeatureId, PlanarProfileRef},
-    geometry::{analytic::PlaneSurface, SolvedSurfaceGeometry},
-    index::{ModelIndex, StandardIndex},
-    report::check::Finding,
-};
+use crate::features::profiles::PlanarProfileRef;
+use crate::features::FeatureId;
+use crate::geometry::analytic::PlaneSurface;
+use crate::geometry::SolvedSurfaceGeometry;
+use crate::index::{ModelIndex, StandardIndex};
+use crate::report::check::Finding;
 
 const EPS_PROFILE_NORMAL: f64 = 1.0e-9;
 const EPS_PROFILE_DISTANCE_MM: f64 = 1.0e-9;
@@ -81,6 +81,17 @@ pub(super) fn check_pair(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::evaluation::FeatureInputTopology;
+    use crate::features::evaluation::HistoricalEdgeGeometry;
+    use crate::features::geometry::FinitePoint3;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::selections::EdgeSelection;
+    use crate::features::sheet_metal_forms::SheetMetalRelief;
+    use crate::features::sheet_metal_forms::SheetMetalReliefForm;
+    use crate::features::sheet_metal_forms::SheetMetalThicknessSide;
+    use crate::features::sheet_metal_forms::SheetMetalTransition;
+    use crate::features::sheet_metal_forms::SheetMetalTransitionForm;
     use crate::math::{Point3, Vector3};
 
     #[test]
@@ -215,8 +226,11 @@ mod tests {
             interior: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point"),
             tangent: Some(crate::units::UnitVector3::X_AXIS),
             faces: DistinctMembers::default(),
+            carrier: None,
+            supports: Vec::new(),
         };
         let state = |id, input_of| FeatureInputTopology {
+            face_owners: Vec::new(),
             id,
             input_of,
             bodies: DistinctMembers::default(),
@@ -254,11 +268,12 @@ mod tests {
     }
     #[test]
     fn refold_source_requires_unfold_kind_earlier_ordinal_and_dependency() {
-        use crate::features::{
-            sheet_metal::{SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction},
-            DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-            FeatureOperation,
+        use crate::features::evaluation::FeatureEvaluation;
+        use crate::features::selections::DistinctMembers;
+        use crate::features::sheet_metal::{
+            SheetMetalRefoldConstruction, SheetMetalUnfoldConstruction,
         };
+        use crate::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
         let mut ir = crate::examples::unit_cube().unwrap();
         let source = FeatureId::mint("test:model:feature#unfold").unwrap();
         let target = FeatureId::mint("test:model:feature#refold").unwrap();

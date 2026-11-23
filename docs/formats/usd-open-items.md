@@ -22,11 +22,21 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 
 ### USD-01. Trim-loop region rule
 
-**Question.** Which part of the `(u, v)` domain of a `NurbsPatch` do the trim loops keep: the region inside an odd number of loops, or the region that the loop orientations select?
+**Question.** Which part of the `(u, v)` domain of a `NurbsPatch` do the trim loops keep: the inside of the loops or the outside, and, for loops whose orientation disagrees with their nesting depth, the region inside an odd number of loops or the region to the left of the curves?
 
-**Known.** `usd.md` §14.1 gives the trim-curve encoding. The UsdGeom schema states that the encoding follows the RenderMan `RiTrimCurve` call, and gives no region rule or loop orientation.
+**Known.** `usd.md` §14.1 gives the trim-curve encoding and the `RiTrimCurve` definition of the inside: the region that an odd winding rule and a curve orientation rule select together, which the curves "must" specify "consistently". The RenderMan attribute `trimcurve:sense` selects the region that a renderer draws, with this description (<https://web.archive.org/web/20210620060800/https://renderman.pixar.com/resources/RenderMan_20/attributes.html>):
 
-**Need.** We must know the rule to map trim loops to outer and inner face loops, and to write face loops as trim loops that other applications read with the same region.
+> The sense of Trim Curves can now be reversed using an attribute. The sense can be set to either inside or outside. The default is inside. When the sense is set to outside, all portions of the surface inside the Trim Curve, those drawn in the default case, will not be drawn, and those portions outside the Trim Curve, those not drawn in the default case, will be drawn.
+
+The UsdGeom `NurbsPatch` schema carries the trim loops in the attributes of §14.1. The decoder keeps the region inside an odd number of loops: a loop at an even nesting depth is the outer loop of a face, and a loop at an odd depth is an inner loop of the face of the loop that holds it. It charges `nurbs.trim-region-assumed` when an outer loop runs clockwise or an inner loop counterclockwise in `(u, v)`, where the two rules disagree. The encoder writes each outer loop counterclockwise and each inner loop clockwise in `(u, v)`, where the two rules agree.
+
+**Need.** We must know the region that other applications keep for a `NurbsPatch` with the default sense, and for loops that disobey the curve orientation rule, to read those loops as the faces that the author drew and to write face loops that other applications read with the same region.
+
+**Conflict.** The attribute table of the same RenderMan page gives `trimcurve` `sense` the default `"inside"` and this description:
+
+> If "inside", trim the interior of Trim Curve regions. If "outside", trim the exterior of the trim region.
+
+With the default sense, the Trim Curve Sense section draws the inside of the trim loops, and the table removes it.
 
 ## 2. BrepArray
 
@@ -87,3 +97,13 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 **Known.** `usd.md` §17.4 gives the proposal examples, which bind materials through subsets with `elementType = "face"` and `elementType = "brep"`. `UsdGeomSubset` registers neither token for a `BrepArray`. The decoder binds the material of such a subset to the faces or bodies it selects, and the encoder writes a `face` subset for each material bound to faces of a body.
 
 **Need.** We must read face and B-rep appearances.
+
+## 3. Mesh
+
+### USD-09. Face appearance on a triangle group
+
+**Question.** When a triangle group of a tessellation names a B-rep face, does the encoder bind an appearance of that face to the `GeomSubset` of the group?
+
+**Known.** `usd.md` §15.1 "A prim binds a material" gives the binding of a `materialBind` subset. A CADIR triangle group can name the face whose triangles it holds. The encoder writes a `materialBind` subset only for a group that has a source identity and a binding to that triangle group. It does not map a `Face` binding to the group that names the face, and it writes no subset for a group with no source identity. The `usd/export.appearance-reduced` note for bindings to faces counts such a `Face` binding. No `GeomSubset` property states the face of a group, and the `usd/export.group-face-not-written` note counts each group that names a face. No decoder sets the face of a triangle group now.
+
+**Need.** We must write the face appearances of a body whose mesh the encoder writes without its B-rep, so that the subset of each face shows the material of its face.

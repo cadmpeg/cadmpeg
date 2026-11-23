@@ -174,10 +174,9 @@ fn projected_two_set_fillet(
     first: &[&[u32]],
     second: &[&[u32]],
 ) -> (FeatureInventory, Feature) {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, FeatureEvaluation, NonEmptyMembers,
-    };
+    use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::{EdgeSelection, NonEmptyMembers};
 
     let (mut inventory, mut feature) = fixture(ctx, FILLET_CLASS_ID, first);
     inventory.properties[0] = test_property(

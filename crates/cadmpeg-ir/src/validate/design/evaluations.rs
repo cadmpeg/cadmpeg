@@ -19,7 +19,7 @@ use crate::report::check::Finding;
 /// A position names an existing member of a container, an ordered container
 /// that is a root of its scope, or the start of an existing ordered
 /// container (§5.3). Returns whether it does.
-pub(super) fn check_position(
+pub(in crate::validate) fn check_position(
     index: &DesignRecords<'_>,
     position: PositionKey<'_>,
     entity: &str,
@@ -292,14 +292,16 @@ pub(super) fn check_evaluations(
 /// evaluation its base names, or one where its base is another arm or names
 /// no evaluation. The walk is iterative.
 #[derive(Default)]
-struct StateChains<'a> {
-    cyclic: BTreeSet<&'a str>,
-    depths: BTreeMap<&'a str, u64>,
+pub(in crate::validate) struct StateChains<'a> {
+    pub(in crate::validate) cyclic: BTreeSet<&'a str>,
+    pub(in crate::validate) depths: BTreeMap<&'a str, u64>,
 }
 
 /// Walks every chain of state bases. Returns the evaluation whose depth
 /// overflows, if one does.
-fn state_chains<'a>(index: &DesignRecords<'a>) -> Result<StateChains<'a>, &'a str> {
+pub(in crate::validate) fn state_chains<'a>(
+    index: &DesignRecords<'a>,
+) -> Result<StateChains<'a>, &'a str> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -472,6 +474,20 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     let mut listed: BTreeMap<&str, usize> = BTreeMap::new();
     for scope in &ir.design.scopes {
         let entity = scope.definition.as_str();
+        let spanned = index.spanned_definitions(entity);
+        let owned: BTreeSet<&str> = spanned
+            .iter()
+            .filter_map(|definition| index.definitions.get(definition))
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|entry| &entry.bodies),
+                )
+            })
+            .map(crate::ids::BodyId::as_str)
+            .collect();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
         for current in &scope.current {
             check_current_position(index, &current.at, entity, findings);
@@ -493,6 +509,29 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 check_path_steps(index, path, entity, "pose", findings);
             }
         }
+        for body in &scope.unproduced {
+            *listed.entry(body.as_str()).or_default() += 1;
+            if !bodies.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced entry {} must be a body of the current geometry",
+                        body.as_str()
+                    ),
+                );
+            }
+            if !owned.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced body {} must be owned by a definition the scope spans",
+                        body.as_str()
+                    ),
+                );
+            }
+        }
         for count in posed.into_values() {
             if count > 1 {
                 super::error(
@@ -503,30 +542,31 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
         }
     }
+    // A body of a scoped definition is listed by some scope, not
+    // necessarily its own.
+    for scope in &ir.design.scopes {
+        let entity = scope.definition.as_str();
+        let own = index
+            .definitions
+            .get(entity)
+            .map_or(&[][..], |definition| &definition.bodies[..]);
+        for body in own.iter().map(crate::ids::BodyId::as_str) {
+            if !listed.contains_key(body) {
+                super::error(
+                    findings,
+                    body,
+                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
+                );
+            }
+        }
+    }
     for (body, count) in &listed {
         if *count > 1 {
             super::error(
                 findings,
                 body,
-                format_args!("body belongs to {count} current states; it belongs to exactly one"),
+                format_args!("body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
             );
-        }
-    }
-    for scope in &ir.design.scopes {
-        let Some(definition) = index.definitions.get(scope.definition.as_str()) else {
-            continue;
-        };
-        for body in &definition.bodies {
-            if !listed.contains_key(body.as_str()) {
-                super::error(
-                    findings,
-                    body.as_str(),
-                    format_args!(
-                        "body of scoped definition {} belongs to no current state",
-                        scope.definition.as_str()
-                    ),
-                );
-            }
         }
     }
     check_stored_features(index, findings);

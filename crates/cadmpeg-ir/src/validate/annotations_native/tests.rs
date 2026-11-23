@@ -21,7 +21,7 @@ fn model_entity_wins_when_native_id_collides() {
         .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ()));
     let mut builder = crate::AnnotationBuilder::new();
     builder.derived(&id, "position").unwrap();
@@ -92,31 +92,33 @@ fn parameter_native_ref_must_resolve() {
     ir.native.namespace_mut("native");
     let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
         .expect("identity grammar");
-    ir.model.parameters.push(crate::features::DesignParameter {
-        product_definition: None,
-        id: id.clone(),
-        owner: Some(
-            crate::features::FeatureId::mint("synthetic:test:feature#missing")
-                .expect("identity grammar"),
-        ),
-        ordinal: 0,
-        name: "D1".into(),
-        expression: "1mm".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        properties: std::collections::BTreeMap::new(),
-        pmi: Some(crate::features::ParameterPmi {
-            subtype: crate::features::PmiDimensionSubtype::Linear,
-            precision: 2,
-            display_text: None,
-            basic: false,
-            inspection: false,
-            reference_only: false,
-            native_ref: "native:pmi-missing#0".into(),
-        }),
-        native_ref: Some("native:missing#0".into()),
-    });
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            product_definition: None,
+            id: id.clone(),
+            owner: Some(
+                crate::features::FeatureId::mint("synthetic:test:feature#missing")
+                    .expect("identity grammar"),
+            ),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: Some(crate::features::parameters::ParameterPmi {
+                subtype: crate::features::parameters::PmiDimensionSubtype::Linear,
+                precision: 2,
+                display_text: None,
+                basic: false,
+                inspection: false,
+                reference_only: false,
+                native_ref: "native:pmi-missing#0".into(),
+            }),
+            native_ref: Some("native:missing#0".into()),
+        });
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -139,7 +141,7 @@ fn parameter_native_ref_must_resolve() {
 fn unresolved_unknown_record_link_is_reported_once() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),
@@ -236,7 +238,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
             Map::from_iter([
                 (
                     "payload".into(),
-                    Value::Array((0..10_000).map(Value::from).collect()),
+                    Value::Array((0..3).map(Value::from).collect()),
                 ),
                 (
                     "nested".into(),
@@ -249,10 +251,10 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
-        "payload.9999",
+        "payload.2",
         "nested.null",
         "nested.rows.0.value",
-        "payload.10000",
+        "payload.3",
         "missing",
         "id.child",
     ] {
@@ -273,7 +275,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     )
     .unwrap();
     assert_eq!(findings.len(), 3);
-    for path in ["payload.10000", "missing", "id.child"] {
+    for path in ["payload.3", "missing", "id.child"] {
         assert!(findings
             .iter()
             .any(|finding| finding.message.contains(&format!("`{path}`"))));

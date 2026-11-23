@@ -12,7 +12,7 @@
 
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition};
@@ -125,12 +125,9 @@ fn profile_cap(
         return None;
     }
     let area = polygon_area(&ring).abs();
-    (area > tolerance * tolerance).then(|| Cap {
-        loops: vec![ring],
-        measured: vec![None; pieces.len()],
-        pieces,
-        corners,
-        area,
+    (area > tolerance * tolerance).then(|| {
+        let measured = vec![None; pieces.len()];
+        Cap::new(vec![ring], pieces, corners, area, measured)
     })
 }
 

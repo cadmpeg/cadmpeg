@@ -4,7 +4,10 @@
 //! The current geometry holds each scope's active configuration. Changing it
 //! exchanges, per current state of the scope, that state's extent with the
 //! incoming configuration's evaluation at the same position, and keeps every
-//! state the document holds.
+//! state the document holds that has a spelling. A current state at an
+//! unstated rollback is read as built through its container's end; its
+//! outgoing state has no spelling as an evaluation (part 10), so it is left
+//! out and reported.
 
 use std::collections::BTreeSet;
 
@@ -13,14 +16,17 @@ use serde::Serialize;
 
 use super::states::{reached, remove, upsert, State};
 use super::wire::{exchange_constructions, rewrite};
-use super::{malformed, EditError};
+use super::{malformed, ConfigurationSwitch, EditError};
+use crate::design::container::Container;
 use crate::design::evaluation::{
     Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
 use crate::design::ids::EvaluationId;
 use crate::design::refs::{Evaluated, Member, Position};
+use crate::document::Process;
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, ProductDefinitionId};
+use crate::process::state::{ProcessBase, ProcessContent};
 use crate::CadIr;
 
 /// What one current state exchanges.
@@ -32,6 +38,9 @@ struct Exchange {
     /// The incoming configuration's evaluation at the state's position, and
     /// its resolved state.
     incoming: Option<(EvaluationId, State)>,
+    /// Whether the state is at an unstated rollback, where its outgoing state
+    /// has no spelling as an evaluation.
+    unspelled: bool,
 }
 
 /// The key part of an id: the text after its `#`.
@@ -46,6 +55,22 @@ fn namespace(id: &str) -> Option<String> {
     Some(format!("{}:{}:", parts.next()?, parts.next()?))
 }
 
+/// Rebases every process state based on the design state `from` onto `to`,
+/// which holds the same resolved state.
+fn rebase_process(process: &mut Process, from: &StateBase, to: &StateBase) {
+    for state in &mut process.states {
+        if let Some(ProcessContent {
+            base: ProcessBase::Design(base),
+            ..
+        }) = &mut state.content
+        {
+            if base == from {
+                base.clone_from(to);
+            }
+        }
+    }
+}
+
 fn position_key(at: &Position) -> String {
     match at {
         Position::After(Member::Feature(feature)) => key(feature.as_str()).to_owned(),
@@ -55,6 +80,38 @@ fn position_key(at: &Position) -> String {
 }
 
 impl CadIr {
+    /// Where `at` is `After(Container(c))` for an ordered container `c`
+    /// whose rollback is unstated (§5.3): the position of the state after
+    /// `c`'s last member, as which the editor reads it (built through its
+    /// end), spelled through its nearest feature member, else `Start(c)`.
+    fn unstated_end(&self, at: &Position) -> Option<Position> {
+        let Position::After(Member::Container(id)) = at else {
+            return None;
+        };
+        let Container::Ordered {
+            members,
+            rollback: None,
+            ..
+        } = self
+            .design
+            .containers
+            .iter()
+            .find(|container| container.id() == id)?
+        else {
+            return None;
+        };
+        Some(
+            members
+                .iter()
+                .rev()
+                .find(|member| matches!(member, Member::Feature(_)))
+                .map_or_else(
+                    || Position::Start(id.clone()),
+                    |feature| Position::After(feature.clone()),
+                ),
+        )
+    }
+
     /// A new evaluation id for the outgoing configuration's state at a
     /// position, in the configuration id's namespace.
     fn mint_evaluation(
@@ -93,8 +150,9 @@ impl CadIr {
         &mut self,
         scope: &ProductDefinitionId,
         configuration: &ConfigurationId,
-    ) -> Result<(), EditError> {
+    ) -> Result<ConfigurationSwitch, EditError> {
         let record = self
+            .design
             .design_scope(scope)
             .ok_or_else(|| EditError::UnknownScope(scope.clone()))?;
         if !self
@@ -110,10 +168,11 @@ impl CadIr {
             .clone()
             .ok_or_else(|| EditError::UnknownConfiguration(configuration.clone()))?;
         if &outgoing == configuration {
-            return Ok(());
+            return Ok(ConfigurationSwitch::default());
         }
         let mut exchanges = Vec::new();
         for (index, current) in record.current.iter().enumerate() {
+            let end = self.unstated_end(&current.at);
             let incoming = self
                 .design
                 .evaluations
@@ -121,7 +180,10 @@ impl CadIr {
                 .find(|evaluation| {
                     &evaluation.scope == scope
                         && evaluation.configuration.as_ref() == Some(configuration)
-                        && evaluation.of == Evaluated::State(current.at.clone())
+                        && (evaluation.of == Evaluated::State(current.at.clone())
+                            || end
+                                .as_ref()
+                                .is_some_and(|end| evaluation.of == Evaluated::State(end.clone())))
                         && evaluation.content.is_some()
                 })
                 .map(|evaluation| evaluation.id.clone());
@@ -136,6 +198,7 @@ impl CadIr {
                 index,
                 outgoing: self.extent(scope, current)?,
                 incoming,
+                unspelled: end.is_some(),
             });
         }
         let leaving: BTreeSet<BodyId> = exchanges
@@ -164,6 +227,14 @@ impl CadIr {
             .iter()
             .position(|candidate| &candidate.definition == scope)
             .ok_or_else(|| EditError::UnknownScope(scope.clone()))?;
+        let mut switch = ConfigurationSwitch::default();
+        for exchange in exchanges.iter().filter(|exchange| exchange.unspelled) {
+            let at = self.design.scopes[scope_at].current[exchange.index]
+                .at
+                .clone();
+            self.rebase_off_current(scope, &at)?;
+            switch.unspelled.push(at);
+        }
         for exchange in &exchanges {
             self.retire(scope, scope_at, &outgoing, exchange, &kept)?;
         }
@@ -174,14 +245,15 @@ impl CadIr {
         self.design.scopes[scope_at].active_configuration = Some(configuration.clone());
         self.geometry.finalize();
         self.design.finalize();
-        Ok(())
+        Ok(switch)
     }
 
     /// Writes one current state's outgoing extent into an evaluation of the
     /// outgoing configuration, rebases the evaluations based on that state
     /// onto it, and, where an incoming state replaces it, removes from the
     /// geometry the outgoing records that no staying body reaches, with
-    /// their names and owners.
+    /// their names and owners. A state at an unstated rollback writes no
+    /// evaluation: the caller has rebased what was based on it.
     fn retire(
         &mut self,
         scope: &ProductDefinitionId,
@@ -191,6 +263,46 @@ impl CadIr {
         kept: &BTreeSet<String>,
     ) -> Result<(), EditError> {
         let current = self.design.scopes[scope_at].current[exchange.index].clone();
+        if !exchange.unspelled {
+            self.write_outgoing(scope, outgoing, exchange, &current)?;
+        }
+        if exchange.incoming.is_none() {
+            self.design.scopes[scope_at].current[exchange.index].status = EvaluationStatus::Stale;
+            return Ok(());
+        }
+        let leaving: BTreeSet<String> = super::states::ids(&exchange.outgoing.records)
+            .into_iter()
+            .filter(|record| !kept.contains(record))
+            .collect();
+        remove(&mut self.geometry, &leaving);
+        let mut names = self.design.names.entries().clone();
+        names.retain(|entity, _| !leaving.contains(entity.id()));
+        self.design.names = names.into();
+        let outgoing_bodies: BTreeSet<&BodyId> = exchange
+            .outgoing
+            .records
+            .bodies
+            .iter()
+            .map(|body| &body.id)
+            .collect();
+        for definition in &mut self.model.product_definitions {
+            definition.bodies.retain(|body| {
+                !(outgoing_bodies.contains(body) && leaving.contains(body.as_str()))
+            });
+        }
+        Ok(())
+    }
+
+    /// Writes one current state's outgoing extent into an evaluation of the
+    /// outgoing configuration at the state's position, and rebases the
+    /// evaluations and process states based on that state onto it.
+    fn write_outgoing(
+        &mut self,
+        scope: &ProductDefinitionId,
+        outgoing: &ConfigurationId,
+        exchange: &Exchange,
+        current: &crate::design::evaluation::CurrentState,
+    ) -> Result<(), EditError> {
         let id = self.mint_evaluation(outgoing, &current.at)?;
         let installed = exchange.incoming.is_some();
         let owners = exchange
@@ -240,31 +352,12 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(
+            &mut self.process,
+            &from_current,
+            &StateBase::Evaluation(id.clone()),
+        );
         self.design.evaluations.push(written);
-        if exchange.incoming.is_none() {
-            self.design.scopes[scope_at].current[exchange.index].status = EvaluationStatus::Stale;
-            return Ok(());
-        }
-        let leaving: BTreeSet<String> = super::states::ids(&exchange.outgoing.records)
-            .into_iter()
-            .filter(|record| !kept.contains(record))
-            .collect();
-        remove(&mut self.geometry, &leaving);
-        let mut names = self.design.names.entries().clone();
-        names.retain(|entity, _| !leaving.contains(entity.id()));
-        self.design.names = names.into();
-        let outgoing_bodies: BTreeSet<&BodyId> = exchange
-            .outgoing
-            .records
-            .bodies
-            .iter()
-            .map(|body| &body.id)
-            .collect();
-        for definition in &mut self.model.product_definitions {
-            definition.bodies.retain(|body| {
-                !(outgoing_bodies.contains(body) && leaving.contains(body.as_str()))
-            });
-        }
         Ok(())
     }
 
@@ -327,6 +420,7 @@ impl CadIr {
                 }
             }
         }
+        rebase_process(&mut self.process, &to_current, &from_current);
         let target = &mut self.design.scopes[scope_at].current[exchange.index];
         target.bodies = bodies;
         target.poses = state.poses;

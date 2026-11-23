@@ -70,13 +70,13 @@ impl Removal {
 
 /// Whether a name mentions a record of `records`.
 fn mentions(name: &TopoName, records: &BTreeSet<String>) -> Result<bool, EditError> {
-    let json = serde_json::to_value(name).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(name).map_err(malformed)?;
     Ok(names_deleted(&json, records, &BTreeSet::new()))
 }
 
 /// The wire form of every record of every arena of a home, with its arena.
 fn arena_records<T: Serialize>(home: &T) -> Result<Vec<(String, Json)>, EditError> {
-    let json = serde_json::to_value(home).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(home).map_err(malformed)?;
     let mut found = Vec::new();
     if let Json::Object(arenas) = json {
         for (arena, records) in arenas {
@@ -296,13 +296,13 @@ impl CadIr {
         for (id, state) in keyed {
             self.delete_evaluation(&id)?;
             gone.insert(id.as_str().to_owned());
-            states.push(serde_json::to_value(state).map_err(malformed)?);
+            states.push(crate::hash::finite_json::to_json_value(&state).map_err(malformed)?);
         }
         let lost = self.delete_current_states(&doomed)?;
         let from = positions(&removal.positions)?;
         match &before {
             Some(before) => {
-                let to = serde_json::to_value(before).map_err(malformed)?;
+                let to = crate::hash::finite_json::to_json_value(before).map_err(malformed)?;
                 rewrite(&mut self.design, |json| Ok(retarget(json, &from, &to)))?;
                 rewrite(&mut self.process, |json| Ok(retarget(json, &from, &to)))?;
                 rewrite(&mut self.model, |json| Ok(retarget(json, &from, &to)))?;
@@ -344,7 +344,7 @@ impl CadIr {
     /// Rebases every evaluation and process state based on the current
     /// state at `at` onto `Empty`, its delta composed with that state's
     /// extent, so its resolved state is unchanged.
-    fn rebase_off_current(
+    pub(super) fn rebase_off_current(
         &mut self,
         scope: &ProductDefinitionId,
         at: &Position,

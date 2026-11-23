@@ -15,7 +15,10 @@
                 "kind": "feature",
                 "value": "creo:depdb:curve_expression_feature#7-125"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -86,8 +89,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "container",
-                  "value": "creo:model:timeline#root"
+                  "kind": "feature",
+                  "value": "creo:depdb:curve_expression_feature#7-125"
                 }
               },
               "bodies": [],
@@ -99,7 +102,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

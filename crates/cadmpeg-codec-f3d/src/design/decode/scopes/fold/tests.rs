@@ -48,7 +48,14 @@ fn unfold_retains_material_scalar_with_an_independent_first_rule_entry() {
         (30, (SETTINGS_GUID, 1)),
         (60, (super::super::sheet_metal_rule::RULE_GUID, 1)),
     ]);
-    let value = unfold(&bytes, &records, &scope, &types).expect("independent rule entries");
+    let value = unfold(
+        &bytes,
+        &records,
+        &scope,
+        &types,
+        &ParameterScopeSources::default(),
+    )
+    .expect("independent rule entries");
     assert_eq!(value.rule_record_index, Some(60));
     assert_eq!(
         value
@@ -104,7 +111,14 @@ fn unfold_prefix_reads_both_reference_forms_and_extension_widths() {
                 bytes.resize(512, 0);
                 let records = IndexedRecordOffsets::build(&bytes);
                 let types = HashMap::from([(10, (UNFOLD_GUID, 0))]);
-                let value = unfold(&bytes, &records, &scope, &types).unwrap();
+                let value = unfold(
+                    &bytes,
+                    &records,
+                    &scope,
+                    &types,
+                    &ParameterScopeSources::default(),
+                )
+                .unwrap();
                 assert!(value.valid_for_scope(&scope));
                 let mut unresolved_link = value.clone();
                 unresolved_link.rule_reference_assumed = true;
@@ -120,7 +134,14 @@ fn unfold_prefix_reads_both_reference_forms_and_extension_widths() {
                 assert_eq!(value.stationary_group.value, 40);
                 assert!(value.rule_material_scalar.is_none());
                 bytes[11] = 1;
-                assert!(unfold(&bytes, &records, &scope, &types).is_none());
+                assert!(unfold(
+                    &bytes,
+                    &records,
+                    &scope,
+                    &types,
+                    &ParameterScopeSources::default()
+                )
+                .is_none());
             }
         }
     }
@@ -209,6 +230,7 @@ fn group_source_uses_registered_type_and_order_before_refold() {
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &types,
+            &ParameterScopeSources::default(),
             &mut scopes,
         )
         .unwrap();
@@ -246,6 +268,7 @@ fn equivalent_group_carriers_keep_one_source_and_incompatible_groups_refuse_it()
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &types,
+            &ParameterScopeSources::default(),
             &mut scopes,
         )
         .unwrap();
@@ -259,6 +282,7 @@ fn equivalent_group_carriers_keep_one_source_and_incompatible_groups_refuse_it()
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
             &types,
+            &ParameterScopeSources::default(),
             &mut scopes,
         )
         .unwrap();

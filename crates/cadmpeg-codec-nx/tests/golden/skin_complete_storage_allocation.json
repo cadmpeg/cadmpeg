@@ -16,7 +16,10 @@
                   "kind": "feature",
                   "value": "nx:feature-history:feature#0000000000-0000000000"
                 }
-              ]
+              ],
+              "rollback": {
+                "kind": "end"
+              }
             }
           }
         ],
@@ -47,8 +50,8 @@
                 "at": {
                   "kind": "after",
                   "value": {
-                    "kind": "container",
-                    "value": "nx:feature-history:timeline#root"
+                    "kind": "feature",
+                    "value": "nx:feature-history:feature#0000000000-0000000000"
                   }
                 },
                 "bodies": [],
@@ -60,7 +63,8 @@
             "occurrences": {},
             "roots": [
               "nx:feature-history:timeline#root"
-            ]
+            ],
+            "unproduced": []
           }
         ],
         "sheet_metal_rules": [],

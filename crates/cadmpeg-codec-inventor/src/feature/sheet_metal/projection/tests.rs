@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::test_support::sheet_metal::Fixture;
-use cadmpeg_ir::{
-    features::{FeatureId, GeneratedEdgeRef, PlanarProfileRef},
-    ids::IdentityKey,
-    sketches::SketchId,
-};
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::GeneratedEdgeRef;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::sketches::SketchId;
 
 fn attached(fixture: &Fixture) -> Feature {
     let values = operands::plate(
@@ -24,8 +24,10 @@ fn attached(fixture: &Fixture) -> Feature {
                 &cadmpeg_ir::identity_namespace!("test", "design", "feature"),
                 IdentityKey::try_new("base").expect("key"),
             ),
-            local_id: cadmpeg_ir::features::SelectionReference::new("boundary".to_owned())
-                .expect("name"),
+            local_id: cadmpeg_ir::features::selections::SelectionReference::new(
+                "boundary".to_owned(),
+            )
+            .expect("name"),
         }],
         "inventor:pmdc:feature-property#fixture-10".to_owned(),
     )
@@ -461,6 +463,25 @@ fn the_first_refusal_of_a_plate_is_kept_and_other_operations_have_none() {
 }
 
 #[test]
+fn a_native_plate_reports_the_first_direction_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = Fixture::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let feature =
+        crate::feature::native_feature(&ctx, &fixture.plate.identity, None, fixture.plate.id())
+            .expect("native plate");
+    let mut refusals = Refusals::default();
+    refusals.insert(fixture.plate.id(), PlateRefusal::FirstDirection);
+    let notes = refusals.losses(&[feature]);
+    assert_eq!(notes.len(), 1);
+    let wire = serde_json::to_string(&notes).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-refused"));
+    assert!(wire.contains("first-direction"));
+}
+
+#[test]
 fn the_result_slot_follows_the_plate_form() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let arena = DecodeArena::new();
@@ -597,13 +618,13 @@ fn refusal(result: Result<EdgeSelection, PlateError>) -> Result<EdgeSelection, P
     })
 }
 
-fn named_edge() -> cadmpeg_ir::features::GeneratedEdgeRef {
+fn named_edge() -> cadmpeg_ir::features::selections::GeneratedEdgeRef {
     GeneratedEdgeRef {
         feature: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("test", "design", "feature"),
             IdentityKey::try_new("base").expect("key"),
         ),
-        local_id: cadmpeg_ir::features::SelectionReference::new("boundary".to_owned())
+        local_id: cadmpeg_ir::features::selections::SelectionReference::new("boundary".to_owned())
             .expect("name"),
     }
 }
@@ -775,8 +796,10 @@ fn a_repeated_generated_edge_is_refused_as_an_edge_name() {
 
 fn stored_edge(item: u32) -> historical::SelectedEdge {
     let point = |x| {
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, 0.0, 0.0))
-            .expect("point")
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            x, 0.0, 0.0,
+        ))
+        .expect("point")
     };
     historical::SelectedEdge {
         owner: 7,
@@ -903,7 +926,7 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
         cadmpeg_ir::ids::FeatureResultTopologyId::mint("test:model:feature-result#producer")
             .expect("result"),
         producer.id.clone(),
-        cadmpeg_ir::features::FeatureResultMembers::new(
+        cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
             vec![cadmpeg_core::text::NonBlankString::new("body").expect("body")],
             vec![],
             vec![],

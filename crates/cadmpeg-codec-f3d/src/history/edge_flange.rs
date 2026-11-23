@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{historical_edge_axis, parallel_directions, same_axis_line, unique_history_state_pair};
+use super::body_closures::same_axis_line;
+use super::edge_operand_history::historical_edge_axis;
+use super::hem_gap_forms::parallel_directions;
+use super::history_states::unique_history_state_pair;
 use crate::history_records::{AsmHistoricalCylinder, AsmHistory};
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_ir::{math::Vector3, scalar::PositiveLength};
@@ -15,7 +18,8 @@ pub(crate) fn inside_radius_for_scope(
     histories: &[AsmHistory],
 ) -> Option<PositiveLength> {
     let state_id = scope.history_state_id()?;
-    let previous_id = super::effective_scope_previous_history_state_id(scope, histories)?;
+    let previous_id =
+        super::history_states::effective_scope_previous_history_state_id(scope, histories)?;
     let (history, state, previous) = unique_history_state_pair(histories, state_id, previous_id)?;
     let previous_topology = history.topology(previous)?;
     let current_topology = history.topology(state)?;

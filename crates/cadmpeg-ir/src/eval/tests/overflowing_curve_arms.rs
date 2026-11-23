@@ -8,17 +8,20 @@ use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
+use crate::geometry::helix::{HelixCurveConstruction, HelixFrame};
+use crate::geometry::legacy_cache::CacheContract;
 use crate::geometry::pcurve::{CirclePcurve, LinePcurve, OffsetPcurve, PcurveGeometry};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::surface_payloads::{
     AxisRevolutionSurfaceConstruction, ExtrusionSurfaceConstruction,
     LinearSweepSurfaceConstruction, RevolutionSurfaceConstruction, SumSurfaceConstruction,
 };
 use crate::geometry::{
-    CacheContract, Curve, CurveGeometry, HelixCurveConstruction, HelixFrame, PlacedCurve,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, PlacedCurve, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::portable::Portable;

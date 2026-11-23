@@ -25,7 +25,7 @@ The checked-in [`freecad_fcstd-profile.json`](freecad_fcstd-profile.json) is gen
 manifested corpus rather than edited by hand. Regenerate it from the repository root with:
 
 ```sh
-cargo run -p cadmpeg-codec-freecad --bin fcstd-profile -- \
+cargo run -p cadmpeg-codec-freecad --example fcstd-profile -- \
   corpus/freecad_fcstd/fixtures corpus/manifest.toml \
   docs/formats/freecad_fcstd-profile.json
 ```
@@ -272,6 +272,14 @@ names, and incomplete or cyclic container paths keep the native operation and em
 attachment properties keep an absent neutral placement and emit the same loss. The native
 attachment summary product is separate from the neutral primitive frame. Multiple parent
 containers violate product or feature-tree ownership and refuse the document.
+
+## First body feature
+
+The first solid feature of a `PartDesign::Body` decodes with a new-body operation when it adds
+material and both the body and feature `BaseFeature` links are empty. When that first solid feature
+removes material, it keeps its typed removal operation with an empty input solid and emits
+`fcstd/feature.removal-without-base`. Each body owns its result;
+a feature outside every body keeps its additive operation.
 
 ## Revolution admission
 

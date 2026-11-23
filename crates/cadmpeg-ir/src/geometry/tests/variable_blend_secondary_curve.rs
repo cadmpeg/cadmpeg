@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::geometry::RollingBallSupportCurve;
+use crate::geometry::blends::RollingBallSupportCurve;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 

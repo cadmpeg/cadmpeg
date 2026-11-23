@@ -19,9 +19,12 @@ use super::eval::{
     Value,
 };
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
+use super::resolve::ParameterOverrides;
 use super::wire::{clear_measures, clear_transformations, reads, rewrite};
 use super::{EditError, Literal, ParameterDrivers};
-use crate::design::configuration::{ArrangementRef, Overrides, ParameterOverride};
+use crate::design::configuration::{
+    ArrangementRef, DesignConfiguration, Overrides, ParameterOverride, Stated,
+};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{print, Expression, ExpressionToken, Neutral, Node as ExprNode, UnaryOp};
@@ -83,7 +86,9 @@ fn literal_node(literal: Literal) -> Result<ExprNode<ParameterRef>, String> {
 }
 
 /// Evaluates an expression of the declared kind. `value_of` gives a
-/// reference's cache; a reference to a parameter of `pending` blocks.
+/// reference's cache; a reference to a parameter of `pending` blocks. A
+/// reference `through` an occurrence path has no value: the edit resolves no
+/// path, so it clears what reads one.
 fn attempt(
     expression: &Expression,
     kind: &ValueKind,
@@ -97,6 +102,7 @@ fn attempt(
     let result = evaluate(
         node,
         &mut |reference: &ParameterRef| match &reference.target {
+            RefTarget::Parameter(_) if reference.through.is_some() => None,
             RefTarget::Parameter(target) if pending.contains(target) => {
                 blocked = true;
                 None
@@ -136,6 +142,7 @@ fn kind_refusal(
     let result = evaluate(
         node,
         &mut |reference: &ParameterRef| match &reference.target {
+            RefTarget::Parameter(_) if reference.through.is_some() => None,
             RefTarget::Parameter(target) => value_of(target),
             RefTarget::External { .. } => None,
         },
@@ -169,17 +176,44 @@ impl CadIr {
         cache_value(&record.kind, cache)
     }
 
-    /// The cache of a prototype parameter that an occurrence of `scope` does
-    /// not override: its value in the configuration of its scope that the
-    /// occurrence uses, and then in the arrangements in force there, of each
-    /// kind the one the occurrence names where it names one (§5.1, §5.11).
-    /// `None` where the occurrence uses a configuration or an arrangement
-    /// that the parameter's scope does not hold.
+    /// A parameter's cache as an expression value, where `levels` are the
+    /// parameter overrides that apply, nearest first, and `stated` what else
+    /// they state (§5.13).
+    fn cache_over_levels(
+        &self,
+        parameter: &ParameterId,
+        levels: &[&ParameterOverrides],
+        stated: Stated,
+    ) -> Option<Value> {
+        let record = self.design_parameter(parameter).ok()?;
+        cache_value(&record.kind, self.cache_over(record, levels, stated)?)
+    }
+
+    /// A configuration and its ancestors, nearest first; none for the base.
+    /// `None` where the configuration does not resolve.
+    fn chain_of(
+        &self,
+        configuration: Option<&ConfigurationId>,
+    ) -> Option<Vec<&DesignConfiguration>> {
+        match configuration {
+            Some(configuration) => self.design.configuration_chain(configuration).ok(),
+            None => Some(Vec::new()),
+        }
+    }
+
+    /// The cache of a prototype parameter in an occurrence of `scope` whose
+    /// own parameter overrides are `entries`: the value `entries` holds, else
+    /// the value in the configuration of its scope that the occurrence uses,
+    /// and then in the arrangements in force there, of each kind the one the
+    /// occurrence names where it names one (§5.1, §5.11, §5.13). `None` where
+    /// the occurrence uses a configuration or an arrangement that the
+    /// parameter's scope does not hold.
     fn occurrence_cache(
         &self,
         scope: &DesignScope,
         occurrence: &OccurrenceId,
         parameter: &ParameterId,
+        entries: &ParameterOverrides,
     ) -> Option<Value> {
         let record = self.design_parameter(parameter).ok()?;
         let prototype = &record.scope;
@@ -207,6 +241,7 @@ impl CadIr {
         }
         let own = in_force.len();
         for arrangement in self
+            .design
             .arrangements_in_force(prototype, configuration.as_ref())
             .ok()?
         {
@@ -217,13 +252,22 @@ impl CadIr {
                 in_force.push(arrangement);
             }
         }
-        match in_force
-            .iter()
-            .find_map(|arrangement| arrangement.overrides.parameters.get(parameter))
-        {
-            Some(arranged) => cache_value(&record.kind, arranged.value.as_ref()?),
-            None => self.cache_in(parameter, configuration.as_ref()),
-        }
+        let chain = self.chain_of(configuration.as_ref())?;
+        let mut levels = vec![entries];
+        levels.extend(
+            in_force
+                .iter()
+                .map(|arrangement| &arrangement.overrides.parameters),
+        );
+        levels.extend(parameter_levels(&chain));
+        let stated = Stated {
+            anything: true,
+            occurrences: Stated::of(&chain).occurrences
+                || in_force
+                    .iter()
+                    .any(|arrangement| !arrangement.overrides.occurrences.is_empty()),
+        };
+        self.cache_over_levels(parameter, &levels, stated)
     }
 
     /// [`Editor::set_dimension`](super::Editor::set_dimension) on the
@@ -332,7 +376,8 @@ impl CadIr {
         let dependents = graph.dependents(&history, &currents, seeds);
         self.mark_states_stale(&history, &dependents.features);
         self.mark_sketches_stale(&dependents.features);
-        self.refresh_caches(&history, &currents, &dependents)
+        self.refresh_caches(&history, &currents, &dependents)?;
+        self.refresh_process(&history, &currents, &dependents)
     }
 
     /// Marks `Stale` every evaluation and current state that depends on any
@@ -564,27 +609,37 @@ impl CadIr {
         let mut order: Vec<(usize, usize)> = Vec::new();
         for (at, configuration) in self.design.configurations.iter().enumerate() {
             let depth = self
+                .design
                 .configuration_chain(&configuration.id)
                 .map_or(0, |chain| chain.len());
             order.push((depth, at));
         }
         order.sort_unstable();
         for (_, at) in order {
-            let parent = self.design.configurations[at].parent.clone();
-            let updated = self.settle_overrides(
-                &self.design.configurations[at].overrides,
-                targets,
-                &|target| self.cache_in(target, parent.as_ref()),
-            );
+            let configuration = &self.design.configurations[at];
+            let chain = self.chain_of(Some(&configuration.id));
+            let updated =
+                self.settle_overrides(&configuration.overrides, targets, &|target, entries| {
+                    let (_, parents) = chain.as_deref()?.split_first()?;
+                    let levels = stack(entries, &parameter_levels(parents));
+                    self.cache_over_levels(target, &levels, Stated::of(chain.as_deref()?))
+                });
             self.design.configurations[at].overrides.parameters = updated;
         }
         for at in 0..self.design.arrangements.len() {
-            let configuration = self.design.arrangements[at].configuration.clone();
-            let updated = self.settle_overrides(
-                &self.design.arrangements[at].overrides,
-                targets,
-                &|target| self.cache_in(target, configuration.as_ref()),
-            );
+            let arrangement = &self.design.arrangements[at];
+            let chain = self.chain_of(arrangement.configuration.as_ref());
+            let updated =
+                self.settle_overrides(&arrangement.overrides, targets, &|target, entries| {
+                    let chain = chain.as_deref()?;
+                    let stated = Stated {
+                        anything: true,
+                        occurrences: Stated::of(chain).occurrences
+                            || !arrangement.overrides.occurrences.is_empty(),
+                    };
+                    let levels = stack(entries, &parameter_levels(chain));
+                    self.cache_over_levels(target, &levels, stated)
+                });
             self.design.arrangements[at].overrides.parameters = updated;
         }
         for scope in 0..self.design.scopes.len() {
@@ -601,8 +656,8 @@ impl CadIr {
                     ..Overrides::default()
                 };
                 let holder = &self.design.scopes[scope];
-                let updated = self.settle_overrides(&overrides, targets, &|target| {
-                    self.occurrence_cache(holder, &occurrence, target)
+                let updated = self.settle_overrides(&overrides, targets, &|target, own| {
+                    self.occurrence_cache(holder, &occurrence, target, own)
                 });
                 if let Some(design) = self.design.scopes[scope].occurrences.get_mut(&occurrence) {
                     design.parameters = updated;
@@ -612,14 +667,14 @@ impl CadIr {
     }
 
     /// The parameter overrides of `overrides` after recomputing those of the
-    /// parameters of `targets`. A parameter that the map overrides reads its
-    /// own entry; any other reads `fallback`, the values the map's level
-    /// resolves over.
+    /// parameters of `targets`. A reference reads `cache`, given the map as
+    /// it stands: the map's own entry where it states the parameter, else the
+    /// value the map's level resolves over (§5.13).
     fn settle_overrides(
         &self,
         overrides: &Overrides,
         targets: &BTreeSet<ParameterId>,
-        fallback: &dyn Fn(&ParameterId) -> Option<Value>,
+        cache: &dyn Fn(&ParameterId, &ParameterOverrides) -> Option<Value>,
     ) -> BTreeMap<ParameterId, ParameterOverride> {
         let mut map = overrides.parameters.clone();
         let mut pending: BTreeSet<ParameterId> = map
@@ -650,13 +705,7 @@ impl CadIr {
                     done.push((parameter.clone(), None));
                     continue;
                 };
-                let value_of = |target: &ParameterId| match map.get(target) {
-                    Some(entry) => {
-                        let kind = self.design_parameter(target).ok()?.kind.clone();
-                        cache_value(&kind, entry.value.as_ref()?)
-                    }
-                    None => fallback(target),
-                };
+                let value_of = |target: &ParameterId| cache(target, &map);
                 if let Attempt::Done(value) = attempt(expression, kind, &pending, &value_of) {
                     done.push((parameter.clone(), value));
                 }
@@ -680,6 +729,24 @@ impl CadIr {
         map.retain(|_, entry| entry.expression.is_some() || entry.value.is_some());
         map
     }
+}
+
+/// `own` above `below`, nearest first.
+fn stack<'a>(
+    own: &'a ParameterOverrides,
+    below: &[&'a ParameterOverrides],
+) -> Vec<&'a ParameterOverrides> {
+    let mut levels = vec![own];
+    levels.extend_from_slice(below);
+    levels
+}
+
+/// The parameter overrides of a configuration chain, nearest first.
+fn parameter_levels<'a>(chain: &[&'a DesignConfiguration]) -> Vec<&'a ParameterOverrides> {
+    chain
+        .iter()
+        .map(|level| &level.overrides.parameters)
+        .collect()
 }
 
 /// Clears the cached value of every measure whose anchored state depends on

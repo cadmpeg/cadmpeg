@@ -1,7 +1,8 @@
 //! Every owned lane must corroborate a sweep operation.
 
 use super::*;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode};
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn sweep_history() -> FeatureHistory {
     FeatureHistory {
@@ -100,7 +101,7 @@ fn an_owned_unknown_word_cannot_corroborate_join_in_either_lane_order() {
     assert!(matches!(
         projected_mode(&[sweep_lane(15), sweep_lane(15)]),
         SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::Join
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join
         }
     ));
 }
@@ -126,7 +127,7 @@ fn a_lane_without_an_owner_does_not_veto_an_independent_sweep() {
     assert!(matches!(
         projected_mode(&[sweep_lane(15), unrelated]),
         SweepMode::Solid {
-            op: cadmpeg_ir::features::SolidSweepOperation::Join
+            op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join
         }
     ));
 }

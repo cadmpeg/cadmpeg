@@ -15,7 +15,10 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -51,7 +54,8 @@
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -431,6 +435,30 @@
           }
         },
         "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#247:0 (the sketch feature names no planar sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
         "severity": "warning"
       },
       {

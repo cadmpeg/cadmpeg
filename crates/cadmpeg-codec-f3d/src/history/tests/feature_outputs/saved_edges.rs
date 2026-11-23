@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{history_in_source, native_base_feature};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::loss::F3dLossCode;
-use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::topology::{Body, BodyKind};
 
 #[test]

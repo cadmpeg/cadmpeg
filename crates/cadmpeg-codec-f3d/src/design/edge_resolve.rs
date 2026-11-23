@@ -38,8 +38,8 @@ fn sorted_transition_slots(slots: &[i64]) -> Vec<i64> {
 
 fn native_edge_selection(
     group: &DesignConstructionOperandGroup,
-) -> cadmpeg_ir::features::EdgeSelection {
-    cadmpeg_ir::features::EdgeSelection::Native(group.id.clone())
+) -> cadmpeg_ir::features::selections::EdgeSelection {
+    cadmpeg_ir::features::selections::EdgeSelection::Native(group.id.clone())
 }
 
 fn historical_identity_slots(
@@ -48,14 +48,14 @@ fn historical_identity_slots(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     slots: &[i64],
-) -> cadmpeg_ir::features::EdgeSelection {
+) -> cadmpeg_ir::features::selections::EdgeSelection {
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let mut edges = Vec::new();
     for &slot in slots {
         edges.push(crate::ids::history_input_edge_id(&prefix, slot));
     }
     let native = group.id.clone();
-    cadmpeg_ir::features::EdgeSelection::historical(state, edges, native)
+    cadmpeg_ir::features::selections::EdgeSelection::historical(state, edges, native)
         .unwrap_or_else(|_| native_edge_selection(group))
 }
 
@@ -67,7 +67,7 @@ pub(super) fn resolved_edge_group(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     resolved_edge_group_with_transition_chain(
         group,
         groups,
@@ -91,7 +91,7 @@ pub(super) fn resolved_surface_patch_edge_group(
     face_boundaries: &[crate::records::topology::historical_context::AsmFaceBoundary],
     transition: EdgeGroupTransition<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     let EdgeGroupTransition {
         previous_state_id,
         feature_id,
@@ -132,7 +132,7 @@ pub(super) fn resolved_surface_patch_edge_group(
     let edges = match surface_patch_grouped_recipe_edges(&matched_operands, face_boundaries) {
         SurfacePatchRecipeEdges::Absent => return fallback(),
         SurfacePatchRecipeEdges::Inconclusive => {
-            return Ok(cadmpeg_ir::features::EdgeSelection::Native(
+            return Ok(cadmpeg_ir::features::selections::EdgeSelection::Native(
                 group.id.clone(),
             ));
         }
@@ -159,7 +159,9 @@ pub(super) fn resolved_surface_patch_edge_group(
         .then_some(state_id)
     });
     let Some(state_id) = state_id else {
-        return Ok(cadmpeg_ir::features::EdgeSelection::Edges(edges));
+        return Ok(cadmpeg_ir::features::selections::EdgeSelection::Edges(
+            edges,
+        ));
     };
     let mut edge_slots = Vec::new();
     for edge in &edges {
@@ -177,14 +179,14 @@ pub(super) fn resolved_surface_patch_edge_group(
         historical_edges.push(id);
     }
     let native = group.id.clone();
-    let resolved = cadmpeg_ir::features::EdgeSelection::historical(
+    let resolved = cadmpeg_ir::features::selections::EdgeSelection::historical(
         crate::ids::feature_input_topology_id(feature_id, state_id),
         historical_edges,
         native,
     );
     Ok(match resolved {
         Ok(selection) => selection,
-        Err(_) => cadmpeg_ir::features::EdgeSelection::Native(group.id.clone()),
+        Err(_) => cadmpeg_ir::features::selections::EdgeSelection::Native(group.id.clone()),
     })
 }
 
@@ -213,8 +215,8 @@ pub(super) fn resolved_edge_flange_group(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    use cadmpeg_ir::features::EdgeSelection;
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let selection = resolved_edge_group(
         group,
@@ -270,8 +272,11 @@ pub(super) fn resolved_edge_flange_group(
         historical_edges.push(id);
     }
     let native = group.id.clone();
-    let historical =
-        cadmpeg_ir::features::EdgeSelection::historical(state, historical_edges, native);
+    let historical = cadmpeg_ir::features::selections::EdgeSelection::historical(
+        state,
+        historical_edges,
+        native,
+    );
     Ok(match historical {
         Ok(selection) => selection,
         Err(_) => EdgeSelection::Native(group.id.clone()),
@@ -310,7 +315,7 @@ pub(super) fn resolved_edge_treatment_group(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     crate::test_support::with_decode_context(|decode_ctx| {
         resolved_edge_treatment_group_with_corners(
             group,
@@ -364,7 +369,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
     let mut deleted_set_assumed = false;
     let selection = resolved_edge_treatment_group_with_corners_inner(
         group,
@@ -375,7 +380,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     if deleted_set_assumed
         && matches!(
             selection,
-            cadmpeg_ir::features::EdgeSelection::Historical { .. }
+            cadmpeg_ir::features::selections::EdgeSelection::Historical { .. }
         )
     {
         losses.push(crate::loss::F3dLossCode::HistoricalEdgeSelectionDeletedSetAssumed.note(format!(
@@ -391,8 +396,8 @@ fn resolved_edge_treatment_group_with_corners_inner(
     input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
     deleted_set_assumed: &mut bool,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    use cadmpeg_ir::features::EdgeSelection;
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
     let EdgeTreatmentInputs {
         groups,
         operands,
@@ -568,8 +573,8 @@ fn resolved_edge_group_with_transition_chain(
         &mut bool,
     ),
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    use cadmpeg_ir::features::EdgeSelection;
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let EdgeGroupTransition {
         previous_state_id,
@@ -675,7 +680,7 @@ fn resolved_edge_group_with_transition_chain(
             historical_edges.push(edge);
         }
         let native = group.id.clone();
-        return match cadmpeg_ir::features::EdgeSelection::historical(
+        return match cadmpeg_ir::features::selections::EdgeSelection::historical(
             crate::ids::feature_input_topology_id(feature_id, state_id),
             historical_edges,
             native,
@@ -867,7 +872,9 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = group.id.clone();
-            return match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native) {
+            return match cadmpeg_ir::features::selections::EdgeSelection::historical(
+                state, edges, native,
+            ) {
                 Ok(selection) => Ok(selection),
                 Err(_) => Ok(native_edge_selection(group)),
             };
@@ -1097,7 +1104,9 @@ fn resolved_edge_group_with_transition_chain(
                 }
             }
             let native = group.id.clone();
-            return match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native) {
+            return match cadmpeg_ir::features::selections::EdgeSelection::historical(
+                state, edges, native,
+            ) {
                 Ok(selection) => Ok(selection),
                 Err(_) => Ok(native_edge_selection(group)),
             };
@@ -1136,7 +1145,7 @@ fn resolved_edge_group_with_transition_chain(
         Ok(native_edge_selection(group))
     } else {
         let native = group.id.clone();
-        match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native) {
+        match cadmpeg_ir::features::selections::EdgeSelection::historical(state, edges, native) {
             Ok(selection) => Ok(selection),
             Err(_) => Ok(native_edge_selection(group)),
         }
@@ -1151,8 +1160,8 @@ pub(super) fn resolved_hem_edge_group(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     ctx: &DecodeContext<'_>,
-) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    use cadmpeg_ir::features::EdgeSelection;
+) -> Result<cadmpeg_ir::features::selections::EdgeSelection, CodecError> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let selection = resolved_edge_group(
         group,
@@ -1186,7 +1195,7 @@ pub(super) fn resolved_hem_edge_group(
     let Some(edge) = hem_transition_edge_slot(operand) else {
         return Ok(selection);
     };
-    Ok(cadmpeg_ir::features::EdgeSelection::historical(
+    Ok(cadmpeg_ir::features::selections::EdgeSelection::historical(
         crate::ids::feature_input_topology_id(feature_id, previous_state_id),
         vec![crate::ids::history_input_edge_id(
             &crate::ids::feature_input_prefix(feature_id, previous_state_id),
@@ -1345,8 +1354,8 @@ fn partial_historical_edge_selection<'a>(
     feature_id: &cadmpeg_ir::features::FeatureId,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
     native: &str,
-) -> Option<cadmpeg_ir::features::EdgeSelection> {
-    use cadmpeg_ir::features::EdgeSelection;
+) -> Option<cadmpeg_ir::features::selections::EdgeSelection> {
+    use cadmpeg_ir::features::selections::EdgeSelection;
 
     let mut edges = Vec::new();
     let mut unresolved = Vec::new();
@@ -1373,7 +1382,7 @@ fn partial_historical_edge_selection<'a>(
     }
     let native_id = native.to_owned();
     Some(
-        match cadmpeg_ir::features::EdgeSelection::historical_partial(
+        match cadmpeg_ir::features::selections::EdgeSelection::historical_partial(
             state,
             historical_edges,
             unresolved,
@@ -2730,7 +2739,7 @@ pub(super) fn project_fixed_fillet_with_corners(
         complete_edge_groups.push(group);
     }
     let selection_pair =
-        crate::design::decode::operands::fillet_edge_and_face_groups(&scope_groups);
+        crate::design::decode::operands::fillets::fillet_edge_and_face_groups(&scope_groups);
     let assignments = if let (Some(pair), [fixed_group]) = (selection_pair, fixed.groups.as_slice())
     {
         pair.map(|group| (fixed_group, group)).to_vec()

@@ -51,7 +51,12 @@ fn nurbs_display_model(placed: bool) -> CadIr {
 fn assign(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<String>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
-    let result = super::super::assign_unique_surface_owners(&ctx, ir, &mut Vec::new());
+    let result = super::super::assign_unique_surface_owners(
+        &ctx,
+        ir,
+        &std::collections::HashSet::default(),
+        &mut Vec::new(),
+    );
     if let Err(CodecError::ResourceLimit(first)) = &result {
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(sticky)) if sticky == *first));

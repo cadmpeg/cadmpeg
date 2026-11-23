@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, SplitFaceTool};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::test_support::split::{
     boolean, face_fixture as fixture, face_item, set_kind, set_marker, set_slot,

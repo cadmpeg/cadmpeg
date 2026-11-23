@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::admit;
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, Curve, CurveGeometry, LegacyCache, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::legacy_cache::LegacyCache;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
@@ -275,11 +275,10 @@ fn an_unowned_vertex_has_no_body_bound() {
 
 #[test]
 fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
-    use cadmpeg_ir::geometry::{
-        pcurve::{PcurveGeometry, PcurveNurbs},
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition,
-        SupportPcurve,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+    use cadmpeg_ir::geometry::procedural_curves::{ProceduralCurveDefinition, SupportPcurve};
+    use cadmpeg_ir::geometry::ProceduralCurve;
     use cadmpeg_ir::ids::{ProceduralCurveId, SurfaceId};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::CadIr;
@@ -322,7 +321,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
                 },
             ));
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             admit(&ctx, &mut ir, &mut losses, &mut []).unwrap();
             assert_eq!(
                 losses.len(),

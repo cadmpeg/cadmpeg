@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{
-    edge_recipe_structure, edge_recipe_structure_within, face_recipe_nodes, FaceRecipeProgramKind,
-    RECIPE_SIDE_SEARCH_WORK,
+use super::super::recipe_structure::{
+    edge_recipe_structure, edge_recipe_structure_within, face_recipe_nodes, RECIPE_SIDE_SEARCH_WORK,
 };
+use super::super::FaceRecipeProgramKind;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
 };
@@ -57,7 +57,7 @@ fn exhausting_edge_recipe_program() -> Vec<i32> {
 
 #[test]
 fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = exhausting_edge_recipe_program();
     assert_eq!(edge_recipe_structure(&ctx, &program).unwrap(), None);
     let budget = WorkBudget::new(RECIPE_SIDE_SEARCH_WORK);
@@ -85,7 +85,7 @@ fn edge_recipe_side_search_skips_the_structure_past_its_work_cap() {
 
 #[test]
 fn edge_recipe_admits_variable_preludes_single_headers_and_empty_extended_payloads() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for prelude in [
         vec![-1, -1, 2, 0, 1, 1, 0],
         vec![0, 1, 1, 1, -1],
@@ -122,7 +122,7 @@ fn edge_recipe_admits_variable_preludes_single_headers_and_empty_extended_payloa
 
 #[test]
 fn edge_recipe_requires_valid_prelude_ordinals_tags_and_complete_terminal() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = [-1, -1, 2, 0, -1, 1, -1, 1, -1, 1, 0, -1, 0, 0, -1];
     assert!(edge_recipe_structure(&ctx, &program).unwrap().is_some());
     for offset in [0, 1, 2, 3, 4, 5, 6, 8, 11, 14] {
@@ -144,35 +144,41 @@ fn edge_recipe_requires_valid_prelude_ordinals_tags_and_complete_terminal() {
 
 #[test]
 fn face_recipe_retains_its_delimiter_and_header_count_domain() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let program = [
         0, -1, 2, -1, 2, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
     ];
-    assert!(super::super::face_recipe_structure(&ctx, &program)
-        .unwrap()
-        .is_some());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &program)
+            .unwrap()
+            .is_some()
+    );
     for offset in [8, 10, 13, 16, 18] {
         let mut invalid = program;
         invalid[offset] = 1;
-        assert!(super::super::face_recipe_structure(&ctx, &invalid)
-            .unwrap()
-            .is_none());
+        assert!(
+            super::super::recipe_structure::face_recipe_structure(&ctx, &invalid)
+                .unwrap()
+                .is_none()
+        );
     }
     let mut single_header = program.to_vec();
     single_header[6] = 1;
     single_header.drain(9..11);
-    assert!(super::super::face_recipe_structure(&ctx, &single_header)
-        .unwrap()
-        .is_none());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &single_header)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn face_recipe_second_prelude_counts_its_side_clauses() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let single = [
         1, -1, 0, -1, 1, -1, 2, 0, -1, 1, -1, 0, 1, 0, 2, 1, 1, 1, 1, 0, 1, -1,
     ];
-    let structure = super::super::face_recipe_structure(&ctx, &single)
+    let structure = super::super::recipe_structure::face_recipe_structure(&ctx, &single)
         .unwrap()
         .unwrap();
     assert_eq!((structure.root, structure.prelude), (1, [0, 1]));
@@ -184,15 +190,17 @@ fn face_recipe_second_prelude_counts_its_side_clauses() {
 
     let mut double = single.to_vec();
     double[4] = 2;
-    assert!(super::super::face_recipe_structure(&ctx, &double)
-        .unwrap()
-        .is_none());
+    assert!(
+        super::super::recipe_structure::face_recipe_structure(&ctx, &double)
+            .unwrap()
+            .is_none()
+    );
 
     let two = [
         0, -1, 2, -1, 2, -1, 2, 0, -1, 1, -1, 0, 0, -1, 2, 0, -1, 1, -1, 0, 0, -1,
     ];
     assert_eq!(
-        super::super::face_recipe_structure(&ctx, &two)
+        super::super::recipe_structure::face_recipe_structure(&ctx, &two)
             .unwrap()
             .unwrap()
             .sides
@@ -202,8 +210,10 @@ fn face_recipe_second_prelude_counts_its_side_clauses() {
     for count in [0, 1, 3] {
         let mut miscounted = two;
         miscounted[4] = count;
-        assert!(super::super::face_recipe_structure(&ctx, &miscounted)
-            .unwrap()
-            .is_none());
+        assert!(
+            super::super::recipe_structure::face_recipe_structure(&ctx, &miscounted)
+                .unwrap()
+                .is_none()
+        );
     }
 }

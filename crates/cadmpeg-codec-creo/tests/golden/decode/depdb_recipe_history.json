@@ -19,7 +19,10 @@
                 "kind": "feature",
                 "value": "creo:model:feature#8053"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -42,9 +45,23 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
+              "kind": "extrude",
               "value": {
-                "family": "extrude"
+                "native_options": {},
+                "output": {
+                  "boolean": {
+                    "kind": "new_body"
+                  }
+                },
+                "profile": {
+                  "at": {
+                    "kind": "input"
+                  },
+                  "picks": {
+                    "kind": "unread"
+                  }
+                },
+                "source_settings": {}
               }
             }
           },
@@ -63,8 +80,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "container",
-                  "value": "creo:model:timeline#root"
+                  "kind": "feature",
+                  "value": "creo:model:feature#8053"
                 }
               },
               "bodies": [],
@@ -76,7 +93,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

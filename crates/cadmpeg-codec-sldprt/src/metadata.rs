@@ -63,6 +63,24 @@ pub(crate) fn attributes(
     Ok(out)
 }
 
+/// The saved-property attributes and unit mirrors a decode reads from the
+/// saved-property owners of `scan`.
+pub(crate) fn saved_property_rows(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SourceAttribute>, CodecError> {
+    let (mut out, mut annotations, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
+    for section in scan
+        .sections()
+        .filter(|section| is_saved_property_owner(*section))
+    {
+        scan_units_xml(ctx, section, &mut out, &mut annotations)?;
+    }
+    default_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
+    configuration_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
+    Ok(out)
+}
+
 pub(crate) fn is_saved_property_attribute(attribute: &SourceAttribute) -> bool {
     default_properties::is_attribute(attribute) || configuration_properties::is_attribute(attribute)
 }
@@ -355,7 +373,8 @@ fn attribute(
         id,
         target: AttributeTarget::Document.into(),
         name: name.as_str().into(),
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     })
 }
 

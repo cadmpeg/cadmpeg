@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::first_marked_reference_offsets;
-use super::named_parameter_scope_tail_is_valid;
 use super::reference_table_ends_at;
 use crate::test_support::lp_utf16;
 
@@ -91,7 +90,7 @@ fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_co
     let tail = scope.boundary_fill().unwrap().named_tail.as_ref().unwrap();
     assert_eq!(tail.associated[0].value, 700);
     assert_eq!(tail.closing.as_ref().unwrap().value, 701);
-    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(4));
     let wire = serde_json::to_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
@@ -111,7 +110,7 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     assert_eq!(scope.paired_byte_offset(), 272);
     assert_eq!(scope.label.as_ref().unwrap().value, "NewBody");
     assert_eq!(scope.label.as_ref().unwrap().offset, 182);
-    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(4));
     assert_eq!(
         scope
             .reference_members()
@@ -195,18 +194,25 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (203, 0),
         (214, 2),
         (220, 1),
-        (241, 2),
         (245, 0),
         (256, 0),
-        (258, 1),
         (259, 0),
         (270, 2),
         (271, 1),
+        (258, 2),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
         assert!(
             parse_marked_named_combine(&broken).is_none(),
+            "offset {offset}"
+        );
+    }
+    for (offset, value) in [(241, 2), (258, 1)] {
+        let mut admitted = bytes.clone();
+        admitted[offset] = value;
+        assert!(
+            parse_marked_named_combine(&admitted).is_some(),
             "offset {offset}"
         );
     }
@@ -222,112 +228,6 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let mut broken = bytes;
     broken.insert(272, 0);
     assert!(parse_marked_named_combine(&broken).is_none());
-}
-
-fn named_scope_tail(lane_value: u64) -> Vec<u8> {
-    named_scope_tail_with_class_word(lane_value, 0xfc)
-}
-
-fn named_scope_tail_with_class_word(lane_value: u64, class_word: u32) -> Vec<u8> {
-    named_scope_tail_with_label("Canvas", lane_value, class_word)
-}
-
-fn named_scope_tail_with_label(label: &str, lane_value: u64, class_word: u32) -> Vec<u8> {
-    let label_code_units = label.encode_utf16().count();
-    let marker = 19 + label_code_units * 2;
-    let mut bytes = vec![0; marker + 59];
-    bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
-    let mut label_bytes = Vec::new();
-    lp_utf16(&mut label_bytes, label);
-    bytes[8..8 + label_bytes.len()].copy_from_slice(&label_bytes);
-    bytes[marker] = 1;
-    bytes[marker + 1] = 0xd5;
-    bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
-    bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
-    bytes[marker + 16..marker + 20].copy_from_slice(&class_word.to_le_bytes());
-    bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
-    bytes[marker + 28..marker + 32].copy_from_slice(&class_word.to_le_bytes());
-    bytes[marker + 32] = 1;
-    bytes[marker + 33] = 0xd4;
-    bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
-    bytes[marker + 42..marker + 46].copy_from_slice(&[0, 1, 0, 0]);
-    bytes[marker + 46] = 1;
-    bytes[marker + 47] = 0xd3;
-    bytes[marker + 48..marker + 56].copy_from_slice(&lane_value.to_le_bytes());
-    bytes
-}
-
-#[test]
-fn named_scope_tail_requires_one_repeated_byte_lane_value() {
-    for lane_value in [0, 1, 8, 0xff] {
-        let bytes = named_scope_tail(lane_value);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(true)
-        );
-    }
-
-    let mut mismatched = named_scope_tail(0);
-    let marker = mismatched.len() - 59;
-    mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
-        Some(false)
-    );
-
-    let outside_domain = named_scope_tail(0x100);
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(
-            &outside_domain,
-            0,
-            outside_domain.len(),
-            outside_domain.len()
-        ),
-        Some(false)
-    );
-}
-
-#[test]
-fn empty_label_named_tail_keeps_the_binary_lane_and_class_252() {
-    for (lane_value, class_word, admitted) in [
-        (0, 0xfc, true),
-        (1, 0xfc, true),
-        (8, 0xfc, false),
-        (1, 0x101, false),
-        (8, 0x101, false),
-    ] {
-        let bytes = named_scope_tail_with_label("", lane_value, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(admitted),
-            "lane {lane_value} class {class_word}"
-        );
-    }
-}
-
-#[test]
-fn named_scope_tail_admits_equal_three_digit_class_words_only() {
-    for class_word in [100, 0xfc, 0x101, 999] {
-        let bytes = named_scope_tail_with_class_word(8, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(true)
-        );
-    }
-    for class_word in [0, 99, 1000] {
-        let bytes = named_scope_tail_with_class_word(8, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(false)
-        );
-    }
-    let mut unequal = named_scope_tail_with_class_word(8, 0x101);
-    let marker = unequal.len() - 59;
-    unequal[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(&unequal, 0, unequal.len(), unequal.len()),
-        Some(false)
-    );
 }
 
 #[test]
@@ -673,6 +573,186 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
     }
 }
 
+/// The 88-byte companion tail of Thread scope 12, which owns Hole 5.
+fn thread_companion_tail(suppressed: bool) -> Vec<u8> {
+    use crate::layout::thread_hole_companion_tail as companion;
+    let marked = |tail: &mut [u8], at: usize, record_index: u32| {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    let mut tail = vec![0; companion::LEN];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    marked(&mut tail, companion::FIRST_COMPANION, 9);
+    tail[companion::PREVIOUS_HISTORY_STATE..companion::PREVIOUS_HISTORY_STATE + 4]
+        .copy_from_slice(&8u32.to_le_bytes());
+    tail[companion::EVALUATION_DURATION..companion::EVALUATION_DURATION + 8]
+        .copy_from_slice(&0.25f64.to_le_bytes());
+    marked(&mut tail, companion::SECOND_COMPANION, 8);
+    tail[companion::FLAGS] = u8::from(suppressed);
+    marked(&mut tail, companion::THIRD_COMPANION, 7);
+    marked(&mut tail, companion::HOLE, 5);
+    tail
+}
+
+/// A Thread scope 12 with current state 9 and two references, ending in
+/// `tail`; returns the frame and the end of the feature-family name.
+fn thread_scope_frame(tail: &[u8]) -> (Vec<u8>, usize) {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"344");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    push_marked(&mut bytes, 16);
+    push_marked(&mut bytes, 19);
+    bytes.extend_from_slice(&9u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Thread");
+    let kind_end = bytes.len();
+    bytes.extend_from_slice(tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    (bytes, kind_end)
+}
+
+fn parse_thread_scope(
+    bytes: &[u8],
+) -> Option<crate::records::feature::scope::DesignParameterScope> {
+    use crate::design::test_support::indexed_record_offsets_for_test;
+    super::parse_parameter_scope(
+        bytes,
+        &indexed_record_offsets_for_test(bytes),
+        12,
+        &"344".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+}
+
+/// The suppression flag of a Thread companion tail decodes as the Thread's
+/// suppression, with its location, and the tail stores no item tail state:
+/// the flag byte sits where an item tail stores its `01` marker. The
+/// reciprocal Hole tails leave the tail state unread.
+#[test]
+fn a_thread_companion_tail_decodes_its_suppression_flag() {
+    use crate::layout::thread_hole_companion_tail as companion;
+    for suppressed in [false, true] {
+        let (bytes, kind_end) = thread_scope_frame(&thread_companion_tail(suppressed));
+        let scope = parse_thread_scope(&bytes).expect("Thread companion tail");
+        assert_eq!(scope.previous_history_state_id(), Some(8));
+        assert_eq!(scope.tail_flags, None, "suppressed {suppressed}");
+        assert_eq!(
+            scope.companion_suppressed,
+            Some(crate::records::identity::Located {
+                value: suppressed,
+                offset: cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS),
+            })
+        );
+        let wire = serde_json::to_value(&scope).unwrap();
+        assert_eq!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                wire.clone()
+            )
+            .unwrap(),
+            scope
+        );
+        let flag_at = cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS);
+        for offset in [
+            scope.feature_ordinal_offset(),
+            flag_at - 1,
+            flag_at + 1,
+            scope.paired_byte_offset(),
+        ] {
+            let mut moved = wire.clone();
+            moved["companion_suppressed"]["offset"] = offset.into();
+            assert!(
+                serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                    moved
+                )
+                .is_err(),
+                "offset {offset}"
+            );
+        }
+        for (members, further) in [
+            (&[12][..], false),
+            (&[12][..], true),
+            (&[12, 100][..], false),
+            (&[12, 100][..], true),
+        ] {
+            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
+                .expect("reciprocal Hole tail");
+            assert_eq!(scope.tail_flags, None, "{members:?} {further}");
+            assert_eq!(scope.companion_suppressed, None, "{members:?} {further}");
+        }
+    }
+}
+
+/// Two envelopes of one Thread that differ only in the suppression flag of
+/// their companion tail keep the later envelope with its own flag,
+/// whichever envelope is primary-indexed, and one note names both flags.
+#[test]
+fn thread_envelopes_that_differ_only_in_the_companion_flag_keep_the_later() {
+    use super::{admit_history_bound_scope_variants, SupersededScopeEnvelopes};
+    use crate::design::test_support::indexed_record_offsets_for_test;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    for flags in [[false, true], [true, false]] {
+        let frames =
+            flags.map(|suppressed| thread_scope_frame(&thread_companion_tail(suppressed)).0);
+        let bytes = frames.concat();
+        let records = indexed_record_offsets_for_test(&bytes);
+        let scopes = [0, frames[0].len()].map(|start| {
+            let mut scope = super::parse_parameter_scope(
+                &bytes,
+                &records,
+                12,
+                &"344".to_owned().try_into().unwrap(),
+                cadmpeg_core::decode::u64_from_index(start),
+            )
+            .unwrap()
+            .expect("Thread envelope");
+            scope.id = format!("f3d:stream:design-parameter-scope#{start}");
+            scope
+        });
+        let later_at = scopes[1].byte_offset();
+        let note = format!(
+            "Feature scope f3d:stream:design-parameter-scope#{later_at} (record 12): the decoder kept companion suppression flag={} from its later envelope at byte {later_at} (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 0, companion suppression flag={}.",
+            u8::from(flags[1]),
+            u8::from(flags[0]),
+        );
+        for primary_at in [None, Some(0), Some(later_at)] {
+            let mut variants = scopes.to_vec();
+            let primary = primary_at
+                .map(|at| ("f3d:stream".to_owned(), at))
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>();
+            let superseded = admit_history_bound_scope_variants(&ctx, &mut variants, &[], &primary)
+                .expect("the document decodes");
+            let [kept] = variants.as_slice() else {
+                panic!("one retained envelope")
+            };
+            let case = format!("flags {flags:?}, primary {primary_at:?}");
+            assert_eq!(kept.byte_offset(), later_at, "{case}");
+            assert_eq!(
+                kept.companion_suppressed, scopes[1].companion_suppressed,
+                "{case}"
+            );
+            assert_eq!(kept.tail_flags, None, "{case}");
+            assert_eq!(
+                superseded,
+                SupersededScopeEnvelopes {
+                    primary_indexed: 0,
+                    tail_flags: vec![note.clone()],
+                },
+                "{case}"
+            );
+        }
+    }
+}
+
 #[test]
 fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
@@ -688,6 +768,7 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
         Some("Tapped Hole")
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
+    assert_eq!(scope.tail_flags, None);
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }
@@ -781,7 +862,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     with_scan(&archive, |scan| {
         for type_rows in [&types[..], &[][..]] {
             let scopes = super::decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &super::ParameterScopeSources {
                     types: type_rows,
@@ -807,12 +888,15 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .previous_history_state_id_offset
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
-                assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_test_support::service_decode_context(),
-                    scope,
-                    &english,
-                )
-                .unwrap());
+                assert_eq!(
+                    super::compare_scope_variant_payloads(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        scope,
+                        &english,
+                    )
+                    .unwrap(),
+                    super::EnvelopeComparison::Equivalent
+                );
             }
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
@@ -1000,4 +1084,57 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(entity.entity_id.suffix(), 173);
         assert_eq!(at, 1);
     }
+}
+
+#[test]
+fn a_malformed_rectangular_pattern_is_a_local_loss() {
+    let mut losses = Vec::new();
+    let construction = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::malformed(
+            "direction records must use the same distance representation",
+        )),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap();
+    assert!(construction.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureRectangularPatternConstructionNative.kind()
+    );
+    assert!(
+        super::rectangular_construction_or_native(Ok(None), "f3d:scope#11", &mut losses).is_ok()
+    );
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn rectangular_pattern_recovery_preserves_file_level_errors() {
+    let mut losses = Vec::new();
+    let error = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::WrongFormat("source".into())),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::WrongFormat(reason) if reason == "source"));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stripped = |mut value: serde_json::Value| {
+        super::strip_scope_variant_provenance(&ctx, &mut value, false).unwrap();
+        value
+    };
+    let standard = |offset: u64| {
+        serde_json::json!({"hole_extent": {"standard": {
+            "offset": offset, "standard": "ISO", "fit": "Normal",
+            "size": "M6", "fastener": "Socket head cap screw"}}})
+    };
+    assert_eq!(stripped(standard(120)), stripped(standard(480)));
+    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

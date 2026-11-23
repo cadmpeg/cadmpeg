@@ -3,9 +3,11 @@
 use super::{design_configuration, feature_input_lane};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, ConfigurationFeatureState};
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    ConfigurationEvaluation, ConfigurationFeatureState, DistinctMembers, Feature, FeatureContent,
-    FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, FeatureSourceContent,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
 };
 use std::collections::BTreeMap;
 
@@ -21,13 +23,13 @@ fn model() -> cadmpeg_ir::CadIr {
         )]),
     });
     let outputs: DistinctMembers<cadmpeg_ir::ids::BodyId> =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
-            "synthetic:test:id#copied-body",
-        )
-        .unwrap()])
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            cadmpeg_ir::ids::BodyId::mint("synthetic:test:id#copied-body").unwrap(),
+        ])
         .unwrap();
     let dependencies: DistinctMembers<FeatureId> =
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![dependency.clone()]).unwrap();
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![dependency.clone()])
+            .unwrap();
     let state = ConfigurationFeatureState {
         definition: definition.clone(),
         dependencies: dependencies.clone(),
@@ -75,6 +77,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     assert_eq!(ir.model.features, features);
     assert!(ir.model.configurations[0].feature_states.is_empty());
@@ -103,6 +106,7 @@ fn run_topology() -> Result<(), CodecError> {
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &[],
+        crate::history::bind::FeatureOutputSources::default(),
     )?;
     assert_eq!(ir, expected);
     Ok(())
@@ -113,15 +117,17 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut ir = model();
     let expected = ir.clone();
-    let losses = super::super::project_configuration_sketch_states(
+    let (losses, relation_points) = super::super::project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     assert!(losses.is_empty());
+    assert_eq!(relation_points.into_notes().count(), 0);
     assert_eq!(ir, expected);
     Ok(())
 }

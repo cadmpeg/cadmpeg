@@ -83,7 +83,7 @@ fn parameter_discriminator_is_independent_of_source_kind_and_tail() {
                     parse_design_parameter_record(&frame)
                         .expect("discriminated parameter")
                         .family_discriminator()
-                        .map(|value| value.value.code()),
+                        .map(|value| u64::from(value.value.code())),
                     Some(discriminator)
                 );
             }
@@ -131,7 +131,8 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
     assert_eq!(parameter.owner_record_index(), None);
     assert_eq!(parameter.source_kind(), "User Parameter");
 
-    // The eleven-byte document trailer marks a localized document source kind.
+    // The document flag of the eleven-byte trailer selects a document
+    // parameter whatever its source kind.
     let kind_at = 40 + 4 + 2 * "3 mm".len() + 11;
     let localize = |frame: &[u8], kind: &str| {
         let mut localized = frame.to_vec();
@@ -145,22 +146,25 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
         .expect("localized document parameter");
     assert_eq!(localized.kind(), DesignParameterKind::User);
     assert_eq!(localized.source_kind(), "Paramètre utilisateur");
-    assert!(parse_design_parameter_record(&localize(&document, "Expression")).is_none());
+    let unlisted = parse_design_parameter_record(&localize(&document, "Expression"))
+        .expect("document parameter with an unlisted source kind");
+    assert_eq!(unlisted.kind(), DesignParameterKind::User);
+    assert_eq!(unlisted.source_kind(), "Expression");
 
-    // Discriminators 5 and 6 also store the eleven-byte document trailer.
+    // Discriminators 4, 5 and 6 also store the eleven-byte document trailer.
     let mut other = document;
-    for discriminator in [5u64, 6] {
+    for discriminator in [4u64, 5, 6] {
         other[26..34].copy_from_slice(&discriminator.to_le_bytes());
         let parameter = parse_design_parameter_record(&other).expect("discriminated document");
         assert_eq!(parameter.kind(), DesignParameterKind::User);
         assert_eq!(
             parameter
                 .family_discriminator()
-                .map(|field| field.value.code()),
+                .map(|field| u64::from(field.value.code())),
             Some(discriminator)
         );
     }
-    other[26..34].copy_from_slice(&4u64.to_le_bytes());
+    other[26..34].copy_from_slice(&3u64.to_le_bytes());
     assert!(parse_design_parameter_record(&other).is_none());
 
     // The narrow reading wins when it closes.
@@ -187,11 +191,12 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     let tail = other_target.len() - 10;
     other_target[tail] = 20;
     bulk.extend_from_slice(&other_target);
-    // The document flag with a source kind outside the document kinds matches
-    // no grammar.
-    let mut localized = parameter_record(None, "12 mm", "Expression", Some("mm"), "o", 1.2);
-    localized[7] = 51;
-    bulk.extend_from_slice(&localized);
+    // An owner with the document flag matches no grammar.
+    let mut owned_document =
+        parameter_record(Some(50), "12 mm", "Expression", Some("mm"), "o", 1.2);
+    owned_document[7] = 51;
+    owned_document[46 + 4 + 2 * "12 mm".len() + 8] = 1;
+    bulk.extend_from_slice(&owned_document);
     // A non-finite value closes the grammar and defines no record; the decode
     // continues.
     let mut non_finite = parameter_record(

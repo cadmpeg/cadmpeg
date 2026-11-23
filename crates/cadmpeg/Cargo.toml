@@ -33,7 +33,9 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "edrawings",
   "usd",
+  "onshape",
 ]
 #
 # Each id forwards to the same feature of `cadmpeg-registry`, which owns the
@@ -51,12 +53,14 @@ step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
 iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
+edrawings = ["cadmpeg-registry/edrawings"]
+onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
 cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }

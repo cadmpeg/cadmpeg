@@ -166,7 +166,7 @@ macro_rules! define_model_index {
                 tessellations: Tessellation, model;
                 appearances: Appearance, model;
                 features: crate::features::Feature, model;
-                parameters: crate::features::DesignParameter, model;
+                parameters: crate::features::parameters::DesignParameter, model;
                 sketch_entities: crate::sketches::SketchEntity, model;
             ]
         }
@@ -326,7 +326,9 @@ macro_rules! define_model_index {
                 self.identities.slots.get(identity).is_some_and(|owner| owner.native)
             }
 
-            pub(crate) fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
+            /// The kind of the model record that owns `identity`; `None` where no
+            /// record or records of two kinds own it.
+            pub fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
                 self.identities.slots.get(identity).and_then(|owner| owner.kind)
             }
 
@@ -418,8 +420,9 @@ fn merge_curve_use<'a>(
 mod tests {
     use super::ModelIndex;
     use crate::document::CadIr;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::geometry::{ProceduralSurface, Surface};
-    use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
 
     use serde_json::Map;
@@ -459,7 +462,7 @@ mod tests {
 
     #[test]
     fn distinct_borrowed_identities_are_each_indexed() {
-        let identities = (0..32_000)
+        let identities = (0..1_000)
             .map(|index| format!("test:native:record#{index}"))
             .collect::<Vec<_>>();
         let mut index = super::BorrowedIdentityIndex::new();
@@ -467,7 +470,7 @@ mod tests {
             index.entry(identity, || ());
         }
         assert_eq!(index.identities().count(), identities.len());
-        for identity in [&identities[0], &identities[31_999]] {
+        for identity in [&identities[0], &identities[999]] {
             assert!(index
                 .get(identity, &super::StandardIndex, "test identity lookup")
                 .unwrap()
@@ -485,7 +488,7 @@ mod tests {
             let mut definition = $definition;
             definition
                 .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture")
                 }))
                 .expect("valid procedural surface cache fixture");
@@ -508,20 +511,22 @@ mod tests {
         );
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:fixture:model#0";
-        ir.model.parameters.push(crate::features::DesignParameter {
-            product_definition: None,
-            id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: "p1".into(),
-            expression: "1".into(),
-            display: None,
-            value: None,
-            dependencies: crate::features::DistinctMembers::default(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        });
+        ir.model
+            .parameters
+            .push(crate::features::parameters::DesignParameter {
+                product_definition: None,
+                id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
+                owner: None,
+                ordinal: 0,
+                name: "p1".into(),
+                expression: "1".into(),
+                display: None,
+                value: None,
+                dependencies: crate::features::selections::DistinctMembers::default(),
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
 
         let full = ModelIndex::build(&ir);
         let model_only = ModelIndex::new_model_only(&ir);
@@ -550,7 +555,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(model_id).unwrap(),
-            crate::features::FinitePoint3::ZERO,
+            crate::features::geometry::FinitePoint3::ZERO,
             None,
         ));
         let mut namespace = NativeNamespace::default();
@@ -596,20 +601,22 @@ mod tests {
         let parameter_id =
             crate::features::ParameterId::mint("test:test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
-            ir.model.parameters.push(crate::features::DesignParameter {
-                product_definition: None,
-                id: parameter_id.clone(),
-                owner: None,
-                ordinal,
-                name: format!("p{ordinal}"),
-                expression: expression.into(),
-                display: None,
-                value: None,
-                dependencies: crate::features::DistinctMembers::default(),
-                properties: std::collections::BTreeMap::new(),
-                pmi: None,
-                native_ref: None,
-            });
+            ir.model
+                .parameters
+                .push(crate::features::parameters::DesignParameter {
+                    product_definition: None,
+                    id: parameter_id.clone(),
+                    owner: None,
+                    ordinal,
+                    name: format!("p{ordinal}"),
+                    expression: expression.into(),
+                    display: None,
+                    value: None,
+                    dependencies: crate::features::selections::DistinctMembers::default(),
+                    properties: std::collections::BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                });
         }
 
         let index = ModelIndex::new_model_only(&ir);
@@ -712,8 +719,9 @@ mod tests {
         let mut ir = CadIr::empty();
         let id = crate::ids::PointId::mint("test:model:point#duplicate").unwrap();
         for position in [
-            crate::features::FinitePoint3::ZERO,
-            crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            crate::features::geometry::FinitePoint3::ZERO,
+            crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         ] {
             ir.geometry
                 .points

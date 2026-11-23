@@ -83,7 +83,7 @@ fn source_association_is_a_free_carrier_root() {
 fn point(id: &str) -> Point {
     Point::new(
         PointId::mint(id.to_owned()).expect("valid identity"),
-        crate::features::FinitePoint3::new(Point3 {
+        crate::features::geometry::FinitePoint3::new(Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -269,7 +269,7 @@ proptest! {
             })
             .unwrap();
         let mut base = CadIr::empty();
-        let dangling_result = dangling.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap();
+        let dangling_result = dangling.commit_model(&mut base, &cadmpeg_core::decode::test_support::service_decode_context()).unwrap();
         let is_unresolved = matches!(
             dangling_result,
             Err(DraftError::UnresolvedReference { .. })
@@ -290,7 +290,7 @@ proptest! {
             &shell_id,
         );
         let mut base = CadIr::empty();
-        draft.commit_model(&mut base, &cadmpeg_test_support::service_decode_context()).unwrap().unwrap();
+        draft.commit_model(&mut base, &cadmpeg_core::decode::test_support::service_decode_context()).unwrap().unwrap();
         base.finalize();
         let report = validate_neutral(&base, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(
@@ -312,5 +312,7 @@ mod borrowed_serialization;
 
 mod wire_form_census;
 
-#[cfg(feature = "schema")]
 mod repro;
+
+#[cfg(feature = "schema")]
+mod json_schema;

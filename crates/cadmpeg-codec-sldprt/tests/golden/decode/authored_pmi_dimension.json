@@ -30,7 +30,10 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#348:0"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -67,8 +70,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "container",
-                  "value": "sldprt:model:container#timeline"
+                  "kind": "feature",
+                  "value": "sldprt:model:feature#348:0"
                 }
               },
               "bodies": [
@@ -82,7 +85,8 @@
           "occurrences": {},
           "roots": [
             "sldprt:model:container#timeline"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -634,6 +638,30 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#348:0 (the sketch feature names no planar sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "feature.typed-operand-incomplete",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
@@ -804,7 +832,7 @@
         }
       }
     },
-    "decode_digest": "8826c7cba725aa9e26046dca86e6981ba5c11b4cd5015ee933147884ec8b59ba",
+    "decode_digest": "fc5b7c93ea061bd6601a06340b4f83afaff8f370415366a7e030c4de27fe67cc",
     "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
@@ -848,7 +876,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBa2ciHFAAGAAgAQgAAAInIcqFkAAAAcgAAABEAAAA09uZHVuZHN/K0Vpd39idGNz2NQQqDMBQFrxL+BWz30U1LoRSKoBcI+qJBzZdvgnp7FcXlwAyjf1hnlnrKdNEhVK36mwEpnfAkVa7jjrmwdT0+MCEKKMn0i711TRQTHPsresOa2AdSBUep8PU1lpQeh57cnw1a2ciHFAAGAAgASQAAAGiYMzLYAAAALQEAABoAAAA09uZHVuZHN/IF1JQ1VtYW5keWNkQWRxZEJJ2OTU7DMBSEi7gIFzBKCuVnBULZVEICkV7AtafwRPxa/JyInqBrlrAvSaNKXAHRJZfC7hGY3ftGb2ZqfqkoYPBfZfnw5HR0dq4uLvVUGYuZSkglllAiq04zzyfLBQ5ao+0Er6Ev8uvyGcE85Z0lNw5w8rZam0qL9AW5Eq7QQffRK+tpev28JYb2LcmNFjK7LcmYZQETaM4/XyQPmMGDDe64Wu62ja7uPQxJtA/X8arxe/W+10cbY9OKzXB0nGXZkXN7ElsGHRVl8MSPG9aBGiiynYfAN7Dff1rZyIcUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAADT25kdW5kc38mRWFkdXJ1Y3bY+7DoJAEEV/hUwvS7QzLI1YmIgFFMZyA4ts3Idhhoyfr0vlRrvJnNx7ckvkLlgzXMP8wOzlrEcJE9FzLwQz5xghR5j3wQnkbVHsBPaTdgqqErkJg7aZGSS4eG0KyJAPwY/mvsyKTPAX5bSEWo9qsQQihhJ+Nkg/z0/JqZawtq2KVo+JoglIre61pyQn4XbsokT8tYjvudUbRSt+KAAAFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAAAAAAAAQAAAAAAAAAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25kUrfigAABQABgAIAEIAAACJyHKhZAAAAHIAAAARAAAAAAAAAAEAAAAAAFABAAA09uZHVuZHN/K0Vpd39idGN0UrfigAABQABgAIAEkAAABomDMy2AAAAC0BAAAaAAAAAAAAAAEAAAAAAOMBAAA09uZHVuZHN/IF1JQ1VtYW5keWNkQWRxZEJEUrfigAABQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAAAAAAAAEAAAAAAPMCAAA09uZHVuZHN/JkVhZHVydWN5+CXgIAAAAABAAEAA8BAAC7AwAAAAA=",
+          "data": "AQAAAAAAAARmWn5WFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uYKCGZgYOArSCwqySzJzM9TSMpPqWRgEAp29ogPDo83NjY0MI43NDQwMGAwYkhhQAHaqFzcwP4DKo0B+Bi4IIxDeyb1z8yDiooAcQqyJfxgIRCQA2sQBNIgZfIMCgzGQJYGSEobKCwPFlYASpsAWZowYQWwsBxQ2gjI0oIIC0C0odkNBcwtQHmwfjzyYINwyguBLUMAG5g6sBzI2QhgiyJngiJnBxiSnCyDDYocLiDLYIvMxRn+sgx26EIggKGe5z/QcsYuFQZWBjYGRgh06HcAy9m5VvY9MuixgogyMjAxMjK3whSBIHMblMX7HyjBLHAUKNSCIin8H0ixTE+DSTC3BjPw/QdGNZtUFwMjPHxBGhiARqRoAwBmWn5WFAAGAAgAQgAAAInIcqFkAAAAcgAAABEAAAA09uZHVuZHN/K0Vpd39idGNz2NQQqDMBQFrxL+BWz30U1LoRSKoBcI+qJBzZdvgnp7FcXlwAyjf1hnlnrKdNEhVK36mwEpnfAkVa7jjrmwdT0+MCEKKMn0i711TRQTHPsresOa2AdSBUep8PU1lpQeh57cnw1mWn5WFAAGAAgASQAAAGiYMzLYAAAALQEAABoAAAA09uZHVuZHN/IF1JQ1VtYW5keWNkQWRxZEJJ2OTU7DMBSEi7gIFzBKCuVnBULZVEICkV7AtafwRPxa/JyInqBrlrAvSaNKXAHRJZfC7hGY3ftGb2ZqfqkoYPBfZfnw5HR0dq4uLvVUGYuZSkglllAiq04zzyfLBQ5ao+0Er6Ev8uvyGcE85Z0lNw5w8rZam0qL9AW5Eq7QQffRK+tpev28JYb2LcmNFjK7LcmYZQETaM4/XyQPmMGDDe64Wu62ja7uPQxJtA/X8arxe/W+10cbY9OKzXB0nGXZkXN7ElsGHRVl8MSPG9aBGiiynYfAN7Dff2ZaflYUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAADT25kdW5kc38mRWFkdXJ1Y3bY+7DoJAEEV/hUwvS7QzLI1YmIgFFMZyA4ts3Idhhoyfr0vlRrvJnNx7ckvkLlgzXMP8wOzlrEcJE9FzLwQz5xghR5j3wQnkbVHsBPaTdgqqErkJg7aZGSS4eG0KyJAPwY/mvsyKTPAX5bSEWo9qsQQihhJ+Nkg/z0/JqZawtq2KVo+JoglIre61pyQn4XbsokT8tYjvudUbk/+tRwAAFAAGAAgAIAAAAELkeVwXAQAAvQIAABsAAAAAAAAAAQAAAAAAAAAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25pP/rUcAABQABgAIAEIAAACJyHKhZAAAAHIAAAARAAAAAAAAAAEAAAAAAFABAAA09uZHVuZHN/K0Vpd39idGN5P/rUcAABQABgAIAEkAAABomDMy2AAAAC0BAAAaAAAAAAAAAAEAAAAAAOMBAAA09uZHVuZHN/IF1JQ1VtYW5keWNkQWRxZEJJP/rUcAABQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAAAAAAAAEAAAAAAPMCAAA09uZHVuZHN/JkVhZHVydWNyw1BzEAAAAABAAEAA8BAAC7AwAAAAA=",
           "kind": "inline"
         },
         "offset": 0,

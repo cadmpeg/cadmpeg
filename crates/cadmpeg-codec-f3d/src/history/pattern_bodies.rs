@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Seed-body selections of body patterns.
 
-use super::{
+use super::body_selections::{
     bind_body_recipe_body_selection, bind_direct_body_recipe_body_selection,
-    effective_scope_previous_history_state_id, BodyCandidates, FeatureBodySelectionInputs,
+    FeatureBodySelectionInputs,
 };
+use super::history_states::effective_scope_previous_history_state_id;
+use crate::history::body_candidates::BodyCandidates;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 pub(super) fn bind_pattern_body_selections<'a>(
@@ -12,9 +14,9 @@ pub(super) fn bind_pattern_body_selections<'a>(
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
 ) {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;

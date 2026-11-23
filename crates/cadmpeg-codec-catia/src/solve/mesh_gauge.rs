@@ -1,6 +1,6 @@
 //! Evidence-preserving gauge quotient for standard mesh candidates.
 
-use cadmpeg_ir::features::NonEmptyMembers;
+use cadmpeg_ir::features::selections::NonEmptyMembers;
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::mesh_quotient::{
+use super::mesh_quotient::endpoint_relations::{
     raw_endpoint_relation_state_signature, MeshEndpointRelationChoice,
     MeshEndpointRelationSelection, MeshEndpointRelationStateSignature,
 };
@@ -104,7 +104,7 @@ mod boundary_tests {
     use super::{canonicalize_topology_boundary_gauges, CoedgeUse, StandardTopologyDraft};
     use crate::families::standard::topology::{BoundaryDraft, FaceTopologyDraft};
 
-    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
 
     fn coedge(edge_row: usize, reversed: bool) -> CoedgeUse {
         CoedgeUse {

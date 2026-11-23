@@ -169,6 +169,7 @@ fn project_history(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }

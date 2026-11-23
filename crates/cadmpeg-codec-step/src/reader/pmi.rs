@@ -462,6 +462,12 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten();
             if let (Some(lower), Some(upper)) = (lower, upper) {
+                let upper_first = lower.value.get() > upper.value.get();
+                let (lower, upper) = if upper_first {
+                    (upper, lower)
+                } else {
+                    (lower, upper)
+                };
                 if set_dimension_tolerance(
                     &mut ir.model.pmi[index.get()].definition,
                     StepTolerance::Deviations { lower, upper },
@@ -469,6 +475,14 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
+                    if upper_first {
+                        ir.model.pmi[index.get()].source_settings.insert(
+                            cadmpeg_core::nonblank_literal!("step:tol_order"),
+                            NativeOption::Text(Dimension::Literal(
+                                cadmpeg_core::nonblank_literal!("upper_lower"),
+                            )),
+                        );
+                    }
                     typed.insert(id);
                     typed.extend(refs);
                 } else {

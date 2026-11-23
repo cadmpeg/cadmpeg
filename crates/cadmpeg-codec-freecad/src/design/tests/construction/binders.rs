@@ -145,7 +145,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
     assert!(matches!(
         definition(&shape_absent, "ShapeBind"),
         FeatureDefinition::Operation(FeatureOperation::Binder {
-            construction: cadmpeg_ir::features::BinderConstruction::Shape {
+            construction: cadmpeg_ir::features::binders::BinderConstruction::Shape {
                 trace_support: false
             },
             ..
@@ -173,7 +173,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         let FeatureOperation::Binder { construction, .. } = operation else {
             panic!("subshape binder")
         };
-        let cadmpeg_ir::features::BinderConstruction::SubShape {
+        let cadmpeg_ir::features::binders::BinderConstruction::SubShape {
             lifecycle,
             placement,
             copy_on_change,
@@ -191,25 +191,25 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
         assert_eq!(
             *lifecycle,
             if name == "BindMode" {
-                cadmpeg_ir::features::BinderLifecycle::Synchronized
+                cadmpeg_ir::features::binders::BinderLifecycle::Synchronized
             } else {
-                cadmpeg_ir::features::BinderLifecycle::Frozen
+                cadmpeg_ir::features::binders::BinderLifecycle::Frozen
             }
         );
         assert_eq!(
             *placement,
             if name == "Relative" {
-                cadmpeg_ir::features::BinderPlacement::Relative
+                cadmpeg_ir::features::binders::BinderPlacement::Relative
             } else {
-                cadmpeg_ir::features::BinderPlacement::Global
+                cadmpeg_ir::features::binders::BinderPlacement::Global
             }
         );
         assert_eq!(
             *copy_on_change,
             if name == "BindCopyOnChange" {
-                cadmpeg_ir::features::BinderCopyOnChange::Disabled
+                cadmpeg_ir::features::binders::BinderCopyOnChange::Disabled
             } else {
-                cadmpeg_ir::features::BinderCopyOnChange::Mutated
+                cadmpeg_ir::features::binders::BinderCopyOnChange::Mutated
             }
         );
         assert_eq!(*claim_children, name != "ClaimChildren");
@@ -225,9 +225,9 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert_eq!(
                 offset.join,
                 if name == "OffsetJoinType" {
-                    cadmpeg_ir::features::BinderOffsetJoin::Arcs
+                    cadmpeg_ir::features::binders::BinderOffsetJoin::Arcs
                 } else {
-                    cadmpeg_ir::features::BinderOffsetJoin::Intersection
+                    cadmpeg_ir::features::binders::BinderOffsetJoin::Intersection
                 }
             );
             assert_eq!(offset.fill, name != "OffsetFill");

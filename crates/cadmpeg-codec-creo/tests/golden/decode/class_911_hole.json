@@ -15,7 +15,10 @@
                 "kind": "feature",
                 "value": "creo:model:feature#4"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -34,7 +37,32 @@
           "name": "Hole id 4"
         }
       ],
-      "names": [],
+      "names": [
+        [
+          {
+            "kind": "surface",
+            "value": "creo:visibgeom:surface#7"
+          },
+          {
+            "name": {
+              "kind": "generated",
+              "value": {
+                "feature": "creo:model:feature#4",
+                "kind": "surface"
+              }
+            },
+            "native": {
+              "codec": "creo",
+              "value": {
+                "kind": "integers",
+                "value": [
+                  7
+                ]
+              }
+            }
+          }
+        ]
+      ],
       "parameters": [],
       "programs": [],
       "publications": [],
@@ -46,8 +74,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "container",
-                  "value": "creo:model:timeline#root"
+                  "kind": "feature",
+                  "value": "creo:model:feature#4"
                 }
               },
               "bodies": [],
@@ -59,7 +87,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

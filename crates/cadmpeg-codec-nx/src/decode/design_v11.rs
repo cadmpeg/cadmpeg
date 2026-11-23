@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::{Arrangement, ArrangementKind, Overrides};
-use cadmpeg_ir::design::container::{Container, OrderedKind};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -20,9 +20,10 @@ use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureOperation as LegacyOperation,
-    FeatureTreeNodeRole, UnresolvedFamily,
+    Feature as LegacyFeature, FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
@@ -30,7 +31,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 mod parameters;
 
 /// The root definition of an NX part that states no assembly root.
-const PART_ROOT: &str = "nx:document:product-definition#root";
+pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
 
 /// Project the decoded NX history into `ir.design` as the design of
@@ -80,6 +81,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
         active_arrangements,
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(container);
     design.features.extend(features);
@@ -136,9 +138,11 @@ fn is_history(feature: &LegacyFeature) -> bool {
 }
 
 /// One ordered timeline of the history in construction order. The decoder
-/// reads no current feature (part 11, entry B.96), so the timeline's rollback
-/// is unstated and its one current state, at `After(Container(timeline))`
-/// (§5.3), holds every current body.
+/// reads no current feature (part 11, entry B.96), so the rollback of a
+/// timeline with members is unstated and its one current state, at
+/// `After(Container(timeline))` (§5.3), holds every current body. A timeline
+/// with no member has no member to stand before: it is built through its end,
+/// and its current state is at its start.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -148,13 +152,17 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = Position::After(Member::Container(id.clone()));
+    let (rollback, at) = if members.is_empty() {
+        (Some(Rollback::End), Position::Start(id.clone()))
+    } else {
+        (None, Position::After(Member::Container(id.clone())))
+    };
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: None,
+        rollback,
         placement: None,
     };
     let current = vec![CurrentState {

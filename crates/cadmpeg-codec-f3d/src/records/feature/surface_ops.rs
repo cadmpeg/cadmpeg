@@ -87,8 +87,8 @@ cadmpeg_core::named_optional_field!(
 
 impl DesignSurfaceExtendOperation {
     /// The extension law that `method_code` names.
-    pub(crate) fn extension(&self) -> cadmpeg_ir::features::SurfaceExtension {
-        use cadmpeg_ir::features::SurfaceExtension;
+    pub(crate) fn extension(&self) -> cadmpeg_ir::features::surface_inputs::SurfaceExtension {
+        use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
         match self.method_code {
             Some(0) => SurfaceExtension::Perpendicular,
             Some(1) => SurfaceExtension::Natural,

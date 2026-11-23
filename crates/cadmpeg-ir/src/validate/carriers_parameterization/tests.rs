@@ -30,7 +30,7 @@ fn face_on_unknown_surface_validates_clean() {
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -293,7 +293,9 @@ fn cube_with_one_coedge_pcurve(
     coedge.pcurves = vec![crate::topology::PcurveUse {
         pcurve: id,
         isoparametric: None,
-        parameter_range: Some(crate::geometry::DirectedParameterRange::new(range).unwrap()),
+        parameter_range: Some(
+            crate::geometry::procedural_curves::DirectedParameterRange::new(range).unwrap(),
+        ),
     }];
     ir
 }
@@ -442,7 +444,7 @@ fn pcurve_requires_bounded_domain_preserves_session_depth_refusals() {
 
 #[test]
 fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
-    use crate::geometry::LawExpression;
+    use crate::geometry::laws::LawExpression;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let expression: LawExpression = LawExpression::Algebraic {
@@ -527,7 +529,7 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
         self_intersect: None,
     });
     ir.geometry.curves.extend([first, second]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -559,7 +561,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     point.id = "test:model:point#orphan".try_into().unwrap();
     point.source_object = None;
     ir.geometry.points.push(point);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -579,63 +581,88 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     }
 }
 
-#[test]
-fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
+/// The `ParameterDomain` messages on the first edge after it states `range`
+/// on a subset of local span 1 whose carrier holds `cache`.
+fn subset_edge_domain_findings(range: [f64; 2], cache: Option<SolvedCurveGeometry>) -> Vec<String> {
     use crate::geometry::analytic::LineCurve;
     use crate::geometry::curve_payloads::SubsetCurveConstruction;
-    use crate::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
+    use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+    use crate::geometry::{Curve, ProceduralCurve};
     use crate::ids::ProceduralCurveId;
     use crate::topology::ParameterInterval;
 
-    let subset_cube = |range: [f64; 2]| {
-        let mut ir = unit_cube().unwrap();
-        let root = CurveId::mint("test:model:curve#root").unwrap();
-        ir.geometry.curves.push(Curve {
-            id: root.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
-            )),
-            parameter_range: None,
-            source_object: None,
-            native_ref: None,
-        });
-        let edge = ir.geometry.edges[0].clone();
-        let curve = edge.curve().unwrap().clone();
-        let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
-        ir.geometry
-            .curves
-            .iter_mut()
-            .find(|item| item.id == curve)
-            .unwrap()
-            .geometry = CurveGeometry::Procedural {
-            construction: construction.clone(),
-            cache: None,
-        };
-        ir.geometry
-            .add_procedural_curve(
-                &curve,
-                ProceduralCurve::new(
-                    construction,
-                    ProceduralCurveDefinition::Subset(
-                        SubsetCurveConstruction::try_new(root, [2.0, 3.0], true, None).unwrap(),
-                    ),
-                ),
-            )
-            .unwrap();
-        ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
-        let edge = ir.geometry.edges[0].id.clone();
-        validate_neutral(&ir, Vec::new())
-            .unwrap()
-            .findings
-            .iter()
-            .any(|finding| {
-                finding.check == Check::ParameterDomain
-                    && finding.entity.as_deref() == Some(edge.as_str())
-            })
+    let mut ir = unit_cube().unwrap();
+    let root = CurveId::mint("test:model:curve#root").unwrap();
+    ir.geometry.curves.push(Curve {
+        id: root.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    });
+    let edge = ir.geometry.edges[0].clone();
+    let curve = edge.curve().unwrap().clone();
+    let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|item| item.id == curve)
+        .unwrap()
+        .geometry = CurveGeometry::Procedural {
+        construction: construction.clone(),
+        cache: None,
     };
-    assert!(!subset_cube([0.0, 1.0]));
-    assert!(subset_cube([2.0, 3.0]));
+    ir.geometry
+        .add_procedural_curve(
+            &curve,
+            ProceduralCurve::new(
+                construction.clone(),
+                ProceduralCurveDefinition::Subset(
+                    SubsetCurveConstruction::try_new(root, [2.0, 3.0], true, None).unwrap(),
+                ),
+            ),
+        )
+        .unwrap();
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|item| item.id == curve)
+        .unwrap()
+        .geometry = CurveGeometry::Procedural {
+        construction,
+        cache,
+    };
+    ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
+    let edge = ir.geometry.edges[0].id.clone();
+    validate_neutral(&ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::ParameterDomain
+                && finding.entity.as_deref() == Some(edge.as_str())
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
+    assert!(subset_edge_domain_findings([0.0, 1.0], None).is_empty());
+    assert!(!subset_edge_domain_findings([2.0, 3.0], None).is_empty());
+}
+
+#[test]
+fn a_subset_edge_past_its_local_domain_and_its_cache_has_one_finding() {
+    assert!(subset_edge_domain_findings([0.0, 1.0], Some(unit_line_nurbs(false))).is_empty());
+    let findings = subset_edge_domain_findings([0.0, 1.5], Some(unit_line_nurbs(false)));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(
+        findings[0].contains("outside the local domain [0, 1] of its subset curve"),
+        "{findings:?}"
+    );
 }
 
 #[test]
@@ -770,7 +797,7 @@ fn use_curve_on_a_periodic_carrier_may_cross_the_seam() {
 }
 
 #[test]
-fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
+fn use_curve_on_a_procedural_carrier_with_no_cache_has_no_domain_finding() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
     let construction =
@@ -779,7 +806,7 @@ fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
         .procedural_curves
         .push(crate::geometry::ProceduralCurve::new(
             construction.clone(),
-            crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
+            crate::geometry::procedural_curves::ProceduralCurveDefinition::Exact { cache: None },
         ));
     ir.geometry
         .curves
@@ -799,4 +826,161 @@ fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("coedge use-curve")));
+}
+
+/// The `ParameterDomain` messages on the first edge and the first coedge
+/// after both state `range` on `geometry`.
+fn range_domain_findings(geometry: CurveGeometry, range: [f64; 2]) -> Vec<String> {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    if let Some(construction) = geometry.procedural_construction() {
+        ir.geometry
+            .procedural_curves
+            .push(crate::geometry::ProceduralCurve::new(
+                construction.clone(),
+                crate::geometry::procedural_curves::ProceduralCurveDefinition::Exact {
+                    cache: None,
+                },
+            ));
+    }
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = geometry;
+    let interval = crate::topology::ParameterInterval::new(range).unwrap();
+    ir.geometry.edges[0].set_param_range(Some(interval));
+    ir.geometry.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: curve_id,
+        parameter_range: interval,
+    });
+    let entities = [
+        ir.geometry.edges[0].id.as_str().to_owned(),
+        ir.geometry.coedges[0].id.as_str().to_owned(),
+    ];
+    validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::ParameterDomain
+                && finding
+                    .entity
+                    .as_ref()
+                    .is_some_and(|entity| entities.contains(entity))
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+fn unit_line_nurbs(periodic: bool) -> SolvedCurveGeometry {
+    SolvedCurveGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            periodic,
+        )
+        .unwrap(),
+    )
+}
+
+fn cached(cache: SolvedCurveGeometry) -> CurveGeometry {
+    CurveGeometry::Procedural {
+        construction: crate::ids::ProceduralCurveId::mint("test:model:construction#cached")
+            .unwrap(),
+        cache: Some(cache),
+    }
+}
+
+#[test]
+fn a_range_past_a_procedural_carriers_nurbs_cache_is_out_of_domain() {
+    assert!(range_domain_findings(cached(unit_line_nurbs(false)), [0.0, 1.0]).is_empty());
+    let findings = range_domain_findings(cached(unit_line_nurbs(false)), [0.0, 2.0]);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(findings
+        .iter()
+        .any(|message| message.contains("edge parameter range")));
+    assert!(findings
+        .iter()
+        .any(|message| message.contains("coedge use-curve range [0, 2]")));
+}
+
+#[test]
+fn a_range_on_a_periodic_cache_may_wrap_one_period() {
+    assert!(range_domain_findings(cached(unit_line_nurbs(true)), [0.9, 1.1]).is_empty());
+    assert_eq!(
+        range_domain_findings(cached(unit_line_nurbs(true)), [0.0, 1.5]).len(),
+        2
+    );
+}
+
+#[test]
+fn a_range_past_a_placed_curves_basis_domain_is_out_of_domain() {
+    let placed = |basis| {
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            crate::geometry::PlacedCurve::try_new(
+                Box::new(basis),
+                crate::transform::Transform::affine([
+                    [1.0, 0.0, 0.0, 5.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])
+                .unwrap(),
+            )
+            .unwrap(),
+        ))
+    };
+    assert!(range_domain_findings(placed(unit_line_nurbs(false)), [0.25, 0.75]).is_empty());
+    assert_eq!(
+        range_domain_findings(placed(unit_line_nurbs(false)), [-0.5, 0.75]).len(),
+        2
+    );
+}
+
+#[test]
+fn a_range_past_a_polylines_sample_parameters_is_out_of_domain() {
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    let points = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+    ];
+    let indexed = || {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Unparameterized {
+                    points: points.clone().try_into().unwrap(),
+                },
+                0.0,
+            )
+            .unwrap(),
+        ))
+    };
+    let descending = || {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Parameterized {
+                    vertices: points
+                        .iter()
+                        .zip([4.0, 2.0, 0.0])
+                        .map(|(point, parameter)| PolylineVertex {
+                            parameter,
+                            point: *point,
+                        })
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                },
+                0.0,
+            )
+            .unwrap(),
+        ))
+    };
+    assert!(range_domain_findings(indexed(), [0.0, 2.0]).is_empty());
+    assert_eq!(range_domain_findings(indexed(), [0.0, 3.0]).len(), 2);
+    assert!(range_domain_findings(descending(), [0.0, 4.0]).is_empty());
+    assert_eq!(range_domain_findings(descending(), [-1.0, 4.0]).len(), 2);
 }

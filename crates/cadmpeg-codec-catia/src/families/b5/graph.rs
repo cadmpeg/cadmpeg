@@ -14,10 +14,10 @@ use std::ops::Range;
 use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_pcurve_uv;
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::{
-    analytic::ConeSurface, nurbs::NurbsSurface, ProceduralSurfaceDefinition,
-};
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::ConeSurface;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{
     Angle, FiniteReal, NonNegativeLength, PositiveAngle, PositiveLength, PositiveReal,
@@ -1530,9 +1530,11 @@ fn copy_surface(surface: &B5Surface) -> Result<B5Surface, CodecError> {
                 return Ok(surface.clone());
             };
             let stations = jet.stations().to_vec();
-            let jet =
-                cadmpeg_ir::geometry::RollingBallJetStations::from_parts(jet.degree(), stations)
-                    .map_err(CodecError::malformed)?;
+            let jet = cadmpeg_ir::geometry::blends::RollingBallJetStations::from_parts(
+                jet.degree(),
+                stations,
+            )
+            .map_err(CodecError::malformed)?;
 
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,

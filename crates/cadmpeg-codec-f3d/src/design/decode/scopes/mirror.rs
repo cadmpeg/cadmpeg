@@ -5,7 +5,7 @@ use crate::bytes::lp_utf16_bounded;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
-use crate::design::decode::operands::parse_face_operand;
+use crate::design::decode::operands::face_operand_frames::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
 
@@ -349,7 +349,7 @@ pub(crate) fn bind_mirror_constructions(
                 ctx,
                 bytes,
                 records,
-                crate::design::decode::operands::FaceOperandFrame {
+                crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                     registered_frame: None,
                     scope: &scopes[index],
                     scope_reference_ordinal: plane_group.scope_reference_ordinal,
@@ -371,7 +371,7 @@ pub(crate) fn bind_mirror_constructions(
                     }),
                     None,
                 )
-            } else if crate::design::decode::operands::parse_entity_selection_operand(
+            } else if crate::design::decode::operands::entity_selections::parse_entity_selection_operand(
                 bytes,
                 plane_group,
                 0,

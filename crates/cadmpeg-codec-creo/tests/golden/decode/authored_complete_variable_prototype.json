@@ -15,7 +15,10 @@
                 "kind": "feature",
                 "value": "creo:model:sketch_feature#40"
               }
-            ]
+            ],
+            "rollback": {
+              "kind": "end"
+            }
           }
         }
       ],
@@ -44,8 +47,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "container",
-                  "value": "creo:model:timeline#root"
+                  "kind": "feature",
+                  "value": "creo:model:sketch_feature#40"
                 }
               },
               "bodies": [],
@@ -57,7 +60,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

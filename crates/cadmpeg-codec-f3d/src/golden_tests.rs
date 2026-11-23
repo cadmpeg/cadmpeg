@@ -12,13 +12,14 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
@@ -74,11 +75,16 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
     f3d_with_smbh_and_protein_with_generated_surface_stitch,
 };
-use cadmpeg_core::CodecError;
 
-/// Covering fixture set as `(golden name, full .f3d bytes)`.
+/// Covering fixture set as `(golden name, full .f3d bytes)`, built once per
+/// test binary.
+fn fixtures() -> &'static [(&'static str, Vec<u8>)] {
+    static FIXTURES: LazyLock<Vec<(&'static str, Vec<u8>)>> = LazyLock::new(build_fixtures);
+    &FIXTURES
+}
+
 #[allow(clippy::vec_init_then_push)]
-fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+fn build_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         (
             "display_scene_poses",
@@ -492,19 +498,29 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     Some(outcome)
 }
 
-fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+/// The generate lane's bytes, and its losses one per line as
+/// `code severity message`.
+fn generate_outcome(bytes: &[u8]) -> (Option<Result<Vec<u8>, String>>, String) {
+    let Ok(result) = decode_result(bytes) else {
+        return (None, String::new());
+    };
     let mut out = Vec::new();
-    Some(match F3dCodec.encode(result.ir(), &mut out) {
+    match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
             assert!(
                 matches!(report.write_path(), WritePath::Synthesized { .. }),
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
-            Ok(out)
+            let losses = report.losses.iter().fold(String::new(), |mut text, loss| {
+                use std::fmt::Write as _;
+                writeln!(text, "{} {:?} {}", loss.code, loss.severity, loss.message)
+                    .expect("a String takes every write");
+                text
+            });
+            (Some(Ok(out)), losses)
         }
-        Err(error) => Err(error.to_string()),
-    })
+        Err(error) => (Some(Err(error.to_string())), String::new()),
+    }
 }
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
@@ -515,7 +531,7 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -739,12 +755,12 @@ fn golden_snapshots_are_byte_identical() {
     let update = update_requested();
     let root = golden_root();
     let mut failures = Vec::new();
-    for (name, builder_bytes) in fixtures() {
+    for &(name, ref builder_bytes) in fixtures() {
         if fixture_update_requested() {
             let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
             std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
                 .expect("create fixtures dir");
-            std::fs::write(&fixture_path, &builder_bytes)
+            std::fs::write(&fixture_path, builder_bytes)
                 .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
         }
         let input = match read_fixture(name) {
@@ -776,15 +792,29 @@ fn golden_snapshots_are_byte_identical() {
             replay_outcome(&input),
             &mut failures,
         );
+        let (generated, generate_losses) = generate_outcome(&input);
         compare_encode(
             update,
             &root,
             "generate",
             name,
             ByteComparison::Decoded,
-            generate_outcome(&input),
+            generated,
             &mut failures,
         );
+        let losses_path = root.join("generate").join(format!("{name}.losses.txt"));
+        if generate_losses.is_empty() {
+            if update {
+                remove_if_exists(&losses_path);
+            } else if losses_path.exists() {
+                failures.push(format!(
+                    "{}: the write charged no loss",
+                    losses_path.display()
+                ));
+            }
+        } else {
+            compare_text(update, &losses_path, &generate_losses, &mut failures);
+        }
         compare_encode(
             update,
             &root,
@@ -805,17 +835,17 @@ fn golden_snapshots_are_byte_identical() {
 
 #[test]
 fn golden_output_is_deterministic() {
-    for (name, bytes) in fixtures() {
-        let decode_first = decode_snapshot(&bytes);
-        let decode_second = decode_snapshot(&bytes);
+    for &(name, ref bytes) in fixtures() {
+        let decode_first = decode_snapshot(bytes);
+        let decode_second = decode_snapshot(bytes);
         if decode_first != decode_second {
             let (line, first, second) = first_line_diff(&decode_first, &decode_second);
             panic!(
                 "fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {first}\n    run 2: {second}"
             );
         }
-        let inspect_first = inspect_snapshot(&bytes);
-        let inspect_second = inspect_snapshot(&bytes);
+        let inspect_first = inspect_snapshot(bytes);
+        let inspect_second = inspect_snapshot(bytes);
         if inspect_first != inspect_second {
             let (line, first, second) = first_line_diff(&inspect_first, &inspect_second);
             panic!(
@@ -823,18 +853,18 @@ fn golden_output_is_deterministic() {
             );
         }
         assert_eq!(
-            replay_outcome(&bytes),
-            replay_outcome(&bytes),
+            replay_outcome(bytes),
+            replay_outcome(bytes),
             "fixture `{name}`: nondeterministic replay"
         );
         assert_eq!(
-            generate_outcome(&bytes),
-            generate_outcome(&bytes),
+            generate_outcome(bytes),
+            generate_outcome(bytes),
             "fixture `{name}`: nondeterministic generate"
         );
         assert_eq!(
-            patch_outcome(&bytes),
-            patch_outcome(&bytes),
+            patch_outcome(bytes),
+            patch_outcome(bytes),
             "fixture `{name}`: nondeterministic patch"
         );
     }
@@ -843,7 +873,7 @@ fn golden_output_is_deterministic() {
 /// Every committed fixture replays its retained bytes back to itself.
 #[test]
 fn fixtures_replay_verbatim() {
-    for (name, _) in fixtures() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         verbatim_replay_holds(&F3dCodec, name, &input);
     }
@@ -851,20 +881,31 @@ fn fixtures_replay_verbatim() {
 
 /// Write path requires a decode baseline.
 #[test]
-fn fixtures_refuse_to_write_without_a_baseline() {
-    for (name, _) in fixtures() {
+fn fixtures_without_a_baseline_regenerate_and_report_the_declined_patch() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
-            match outcome {
-            SemanticOutcome::Refused { error } => assert!(
-                matches!(error, CodecError::NotImplemented(_)),
-                "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
-            ),
-            SemanticOutcome::Written { report, .. } => panic!(
-                "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
-                report.write_path()
-            ),
-        }
+        semantic_roundtrip(&F3dCodec, name, &input, |outcome| match outcome {
+            SemanticOutcome::Refused { error } => {
+                panic!("fixture `{name}`: a missing baseline must not refuse the write: {error}")
+            }
+            SemanticOutcome::Written { report, bytes } => {
+                assert!(
+                    matches!(report.write_path(), WritePath::Synthesized { .. }),
+                    "fixture `{name}`: {}",
+                    report.write_path()
+                );
+                assert!(
+                    report.losses.iter().any(|loss| {
+                        loss.code == crate::loss::F3dLossCode::WriterPatchDeclined.kind()
+                            && loss.message.contains("baseline")
+                    }),
+                    "fixture `{name}`: {:#?}",
+                    report.losses
+                );
+                decode_result(bytes).unwrap_or_else(|error| {
+                    panic!("fixture `{name}`: the regenerated file decodes: {error}")
+                });
+            }
         });
     }
 }
@@ -897,7 +938,7 @@ fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
     let mut measured_count = 0usize;
     let mut skipped: Vec<&str> = Vec::new();
-    for (name, _) in fixtures() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         let ran = mutation_roundtrip(
             &F3dCodec,
@@ -910,11 +951,9 @@ fn an_edit_survives_the_patch_writer() {
                 };
                 let moved = point.position().get();
                 point.set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        moved.x + MUTATION_MM,
-                        moved.y,
-                        moved.z,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(moved.x + MUTATION_MM, moved.y, moved.z),
+                    )
                     .expect("a finite position is a point"),
                 );
                 true
@@ -939,8 +978,10 @@ fn an_edit_survives_the_patch_writer() {
                             "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
                         );
                     }
-                    if measures_decide(name, edited).expect("the fixture is measured") {
-                        measures_agree(name, edited, round_trip.ir())
+                    if let Some(report) =
+                        measures_decide(name, edited).expect("the fixture is measured")
+                    {
+                        measures_agree_with(name, edited, report, round_trip.ir())
                             .expect("the round trip keeps its measured geometry");
                         measured_count += 1;
                     }
@@ -979,12 +1020,12 @@ fn golden_fixtures_match_builders() {
         return;
     }
     let mut failures: Vec<String> = Vec::new();
-    for (name, builder_bytes) in fixtures() {
+    for &(name, ref builder_bytes) in fixtures() {
         match read_fixture(name) {
-            Ok(bytes) if bytes == builder_bytes => {}
+            Ok(bytes) if bytes == *builder_bytes => {}
             Ok(bytes) => failures.push(format!(
                 "fixture `{name}`: {}",
-                first_byte_diff(&bytes, &builder_bytes)
+                first_byte_diff(&bytes, builder_bytes)
             )),
             Err(message) => failures.push(message),
         }
@@ -1004,7 +1045,7 @@ fn golden_fixtures_match_builders() {
 #[test]
 fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
-    use cadmpeg_ir::geometry::VectorOffsetRoles;
+    use cadmpeg_ir::geometry::procedural_curves::VectorOffsetRoles;
 
     let decoded = F3dCodec
         .decode(
@@ -1116,8 +1157,8 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let inputs = fixtures()
-        .into_iter()
-        .map(|(name, _)| (name, read_fixture(name).expect("committed fixture")))
+        .iter()
+        .map(|&(name, _)| (name, read_fixture(name).expect("committed fixture")))
         .collect::<Vec<_>>();
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
     assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_ir::features::{
-    DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId, SketchFeatureBinding,
-};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::{FeatureContent, FeatureId, SketchFeatureBinding};
 
 use super::*;
 

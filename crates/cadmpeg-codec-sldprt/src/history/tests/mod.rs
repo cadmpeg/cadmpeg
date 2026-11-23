@@ -8,8 +8,8 @@ use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
+use cadmpeg_ir::features::parameters::DesignConfiguration;
 use cadmpeg_ir::features::ConfigurationId;
-use cadmpeg_ir::features::DesignConfiguration;
 use std::collections::BTreeMap;
 
 #[test]
@@ -94,7 +94,7 @@ pub(in crate::history) fn design_configuration(
         name: Some(id.to_string()),
         material: None,
         properties: BTreeMap::new(),
-        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        bodies: Some(cadmpeg_ir::features::selections::DistinctMembers::default()),
         parameter_values: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         feature_states: BTreeMap::new(),
@@ -151,6 +151,7 @@ mod diagnostics;
 mod equations;
 mod extrusion_profile;
 mod feature_operations;
+mod keywords_text;
 mod metadata;
 mod sketch_bind;
 mod sketch_relations;

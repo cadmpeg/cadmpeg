@@ -411,7 +411,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 <Constrain Type="1" First="2" FirstPos="2" Second="0" SecondPos="1"/>
 </ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");
@@ -1173,7 +1173,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) if (value.get() - 1.33).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         result
@@ -1184,7 +1184,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.as_str().ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Real(value)) if (value.get() - 0.75).abs() < EPS_PARAMETER_VALUE
     ));
     assert!(matches!(
         constraint(6).definition.kind(),
