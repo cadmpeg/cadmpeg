@@ -15,6 +15,7 @@ use super::markers::{
     legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
     sketch_marker_prefix_at,
 };
+use super::relation_geometry::RELATION_POINT_PREFIX;
 use super::relation_loci::{
     canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands,
     linked_single_arc_entity, linked_single_ellipse_entity, linked_single_entities,
@@ -268,7 +269,7 @@ fn unique_entity_from_link_intersection(
     let mut count = 0;
     for index in 0..candidates.len() {
         let entity = &candidates[index];
-        if entity.as_str().contains("sketch-entity#relation-point:")
+        if entity.as_str().starts_with(RELATION_POINT_PREFIX)
             || !sketch_entities
                 .iter()
                 .any(|candidate| candidate.id() == entity && candidate.sketch == *sketch)
@@ -628,8 +629,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 match owner_entities.as_slice() {
                     [owner]
                         if direct_entities.iter().all(|entity| {
-                            entity == owner
-                                || entity.as_str().contains("sketch-entity#relation-point:")
+                            entity == owner || entity.as_str().starts_with(RELATION_POINT_PREFIX)
                         }) =>
                     {
                         owner_entities
@@ -640,7 +640,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if let [entity] = entities.as_slice() {
                 if axes.is_some()
                     && sketch_entities.is_empty()
-                    && entity.as_str().contains("sketch-entity#relation-point:")
+                    && entity.as_str().starts_with(RELATION_POINT_PREFIX)
                 {
                     return Ok(Some(native()?));
                 }
@@ -772,7 +772,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     loci_by_marker,
                     MarkerEntityFilter::All,
                 )? {
-                    if entity.as_str().contains("sketch-entity#relation-point:") {
+                    if entity.as_str().starts_with(RELATION_POINT_PREFIX) {
                         continue;
                     }
                     forward_entities.push(entity);
