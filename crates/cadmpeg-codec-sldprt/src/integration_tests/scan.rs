@@ -208,23 +208,17 @@ fn scan_sldprt_complete_non_history_block_ending_in_a_marker_prefix_is_skipped()
 }
 
 #[test]
-fn scan_sldprt_history_block_cut_in_its_header_is_truncated() {
+fn scan_sldprt_history_block_cut_after_its_marker_is_truncated() {
     let preview = make_block(0x42, "Preview/Thumbnail", LIST);
     for lead in [&[][..], &preview[..], &[0][..]] {
         let marker = make_block(0x42, "Contents/Keywords", LIST);
         // A cut inside the six-byte marker leaves a partial marker, which the
-        // decoder does not read: the file holds no history block.
+        // decoder does not read: the listing before it stays complete.
         for cut in 1..6 {
             let mut bytes = source(LIST);
             bytes.extend_from_slice(lead);
             bytes.extend_from_slice(&marker[..cut]);
-            let scan = scan_bytes(&bytes);
-            assert!(
-                matches!(scan.stop_reason, Some(StopReason::Unsupported(_))),
-                "cut at {cut} after {} lead bytes: {:?}",
-                lead.len(),
-                scan.stop_reason
-            );
+            assert_complete_history_listing(&bytes);
         }
         // A cut after the marker ends the file inside the block header.
         let mut bytes = source(LIST);
