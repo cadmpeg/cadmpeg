@@ -729,10 +729,10 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 **Ladder: L0.**
 
-| Dialect             | Read                   | Write |
-| ------------------- | ---------------------- | ----- |
-| `solidedge:cfb`     | detected               | none  |
-| `solidedge:unknown` | unclassified-recovered | none  |
+| Dialect             | Read     | Write |
+| ------------------- | -------- | ----- |
+| `solidedge:cfb`     | detected | none  |
+| `solidedge:unknown` | refused  | none  |
 
 <!-- /generated: dialects solidedge -->
 
