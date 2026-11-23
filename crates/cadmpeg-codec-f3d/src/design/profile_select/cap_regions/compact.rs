@@ -5,7 +5,7 @@ use super::super::ResolvedProfileSelection;
 use super::{
     changed_planes, covered_regions, distance, face_cap, intervals_cover, oriented_loops,
     outlines_agree, parallel_plane, sample_regions, unique_state, Agreement, Cap, ParallelPlane,
-    Piece, PlaneFrame, PARALLEL_CAP, SIDE_OFFSET, STRAIGHT_CARRIER,
+    Piece, PlaneFrame, PlaneSides, PARALLEL_CAP, SIDE_OFFSET, STRAIGHT_CARRIER,
 };
 use crate::design::geometry::{atomic_sketch_regions, ProfileGeometryWork};
 use crate::history_records::AsmHistoricalTopology;
@@ -210,9 +210,12 @@ pub(in crate::design::profile_select) fn selection_agrees(
         }
         for index in covered {
             let point = sampled[index].point;
-            if plane.before.iter().any(|cap| cap.contains(point)) {
+            let at_floor = (plane.offset - far).abs() <= tolerance;
+            if plane.before.iter().any(|cap| cap.contains(point))
+                || (at_floor && plane.before.is_empty())
+            {
                 witnessed.insert(index);
-            } else if (plane.offset - far).abs() > tolerance {
+            } else if !at_floor {
                 return Ok(false);
             }
         }
@@ -399,6 +402,15 @@ fn inserted_sides_agree(
                     travel,
                     tolerance,
                 )
+                && !bounded_lateral_cylinder_cap(
+                    after,
+                    binding.carrier,
+                    edge,
+                    frame,
+                    start,
+                    travel,
+                    tolerance,
+                )
             {
                 return false;
             }
@@ -577,6 +589,11 @@ pub(in crate::design::profile_select) fn removed_candidate(
         })
         .map(|(index, _)| index)
         .collect();
+    let selected = if selected.is_empty() {
+        floor_regions(&sampled, &planes, signed_length(&sweep), tolerance)
+    } else {
+        selected
+    };
     let Some(ResolvedProfileSelection::Regions(regions)) =
         super::trimmed_selection(&sampled, &selected, tolerance)
     else {
@@ -596,6 +613,36 @@ pub(in crate::design::profile_select) fn removed_candidate(
     } else {
         Ok(None)
     }
+}
+
+/// The regions of a blind Cut that its floor covers, when no changed plane
+/// held material before the transition. A Cut that starts in air above a
+/// curved face deletes and changes no face parallel to the sketch at the
+/// sketch plane. The face it inserts on the plane at the signed length is
+/// the section of the tool in the material, so the regions that face covers
+/// are the regions the Cut removed. `selection_agrees` checks the result
+/// against every changed face.
+fn floor_regions(
+    sampled: &[super::Sampled<'_>],
+    planes: &[PlaneSides],
+    far: Option<f64>,
+    tolerance: f64,
+) -> Vec<usize> {
+    let Some(far) = far else {
+        return Vec::new();
+    };
+    let mut floors = planes
+        .iter()
+        .filter(|plane| plane.before.is_empty() && (plane.offset - far).abs() <= tolerance);
+    let (Some(floor), None) = (floors.next(), floors.next()) else {
+        return Vec::new();
+    };
+    sampled
+        .iter()
+        .enumerate()
+        .filter(|(_, region)| floor.after.iter().any(|cap| cap.contains(region.point)))
+        .map(|(index, _)| index)
+        .collect()
 }
 
 pub(in crate::design::profile_select) fn added_candidate(
@@ -735,6 +782,97 @@ fn lateral_carrier_agrees(
     false
 }
 
+/// The carriers of the faces that use `edge`.
+fn edge_surfaces(topology: &AsmHistoricalTopology, edge: i64) -> HashSet<i64> {
+    let mut surfaces = HashSet::new();
+    for row in topology
+        .coedge_topology
+        .iter()
+        .filter(|row| row.edge == edge)
+    {
+        for face in topology
+            .face_loops
+            .iter()
+            .filter(|face| face.member_refs.contains(&row.owner_loop))
+        {
+            surfaces.extend(
+                topology
+                    .face_surfaces
+                    .iter()
+                    .filter(|binding| binding.entity == face.owner_ref)
+                    .map(|binding| binding.carrier),
+            );
+        }
+    }
+    surfaces
+}
+
+/// Whether the edge of a lateral cylinder face that a transverse cylinder
+/// cuts off stays within `travel`. The lateral cylinder `surface` has its
+/// axis along the sketch normal. A second cylinder that uses `edge` has an
+/// axis perpendicular to the normal. Each point of the edge has a height
+/// `h` and a position `w` along the direction perpendicular to both axes
+/// with `(h - axis_height)^2 + w^2 = radius^2`. The edge lies on the branch
+/// of the vertex `start`, and `w` ranges over the lateral circle's diameter
+/// about the second axis. The edge stays on that branch when the circle
+/// does not reach the second cylinder's silhouette.
+fn bounded_lateral_cylinder_cap(
+    topology: &AsmHistoricalTopology,
+    surface: i64,
+    edge: i64,
+    frame: &PlaneFrame,
+    start: Point3,
+    travel: (f64, f64),
+    tolerance: f64,
+) -> bool {
+    let Some(lateral) = topology
+        .surface_cylinders
+        .iter()
+        .find(|cylinder| cylinder.surface == surface)
+    else {
+        return false;
+    };
+    let surfaces = edge_surfaces(topology, edge);
+    topology
+        .surface_cylinders
+        .iter()
+        .filter(|cylinder| cylinder.surface != surface && surfaces.contains(&cylinder.surface))
+        .any(|cap| {
+            let Some(axis) = unit(cap.axis) else {
+                return false;
+            };
+            if axis.dot(frame.normal).abs() > PERPENDICULAR_SIDE || cap.radius <= tolerance {
+                return false;
+            }
+            let Some(across) = unit(frame.normal.cross(axis)) else {
+                return false;
+            };
+            let axis_height = frame.height(cap.origin);
+            let center = lateral.origin.vector_from(cap.origin).dot(across);
+            let (near, far) = (center - lateral.radius, center + lateral.radius);
+            let narrowest = if near <= 0.0 && far >= 0.0 {
+                0.0
+            } else {
+                near.abs().min(far.abs())
+            };
+            let widest = near.abs().max(far.abs());
+            if widest >= cap.radius - tolerance {
+                return false;
+            }
+            let (low, high) = (
+                (cap.radius.powi(2) - widest.powi(2)).sqrt(),
+                (cap.radius.powi(2) - narrowest.powi(2)).sqrt(),
+            );
+            let side = frame.height(start) - axis_height;
+            let (from, to) = if side >= 0.0 {
+                (axis_height + low, axis_height + high)
+            } else {
+                (axis_height - high, axis_height - low)
+            };
+            from >= travel.0 - tolerance && to <= travel.1 + tolerance
+        })
+}
+
 fn bounded_lateral_ellipse(
     topology: &AsmHistoricalTopology,
     surface: i64,
@@ -756,26 +894,7 @@ fn bounded_lateral_ellipse(
         return false;
     }
     let tangent = tangent.scale(1.0 / tangent.norm());
-    let mut surfaces = HashSet::new();
-    for row in topology
-        .coedge_topology
-        .iter()
-        .filter(|row| row.edge == edge)
-    {
-        for face in topology
-            .face_loops
-            .iter()
-            .filter(|face| face.member_refs.contains(&row.owner_loop))
-        {
-            surfaces.extend(
-                topology
-                    .face_surfaces
-                    .iter()
-                    .filter(|binding| binding.entity == face.owner_ref)
-                    .map(|binding| binding.carrier),
-            );
-        }
-    }
+    let surfaces = edge_surfaces(topology, edge);
     for cylinder in topology
         .surface_cylinders
         .iter()

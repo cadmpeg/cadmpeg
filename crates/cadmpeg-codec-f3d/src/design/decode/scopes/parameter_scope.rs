@@ -2033,20 +2033,27 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let move_face_frame = type_family.as_ref().map_or_else(
             || {
                 kind_offsets.clone().any(|at| {
-                    lp_utf16_bounded(bytes, at, 1..=256).is_some_and(|(kind, _)| {
-                        scope_feature_kind(&kind, None) == Some(scope::DesignFeatureKind::MoveFace)
-                    })
+                    crate::bytes::lp_utf16_bounded_view_no_control(bytes, at, 1..=256).is_some_and(
+                        |(kind_view, _)| {
+                            let kind = kind_view.to_owned_string();
+                            scope_feature_kind(&kind, None)
+                                == Some(scope::DesignFeatureKind::MoveFace)
+                        },
+                    )
                 })
             },
             |family| *family == scope::DesignFeatureKind::MoveFace,
         );
         for at in kind_offsets {
-            let Some((kind, kind_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+            let Some((kind_view, kind_end)) =
+                crate::bytes::lp_utf16_bounded_view_no_control(bytes, at, 1..=256)
+            else {
                 continue;
             };
-            if !kind.chars().all(|character| !character.is_control()) {
+            let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
-            }
+            };
+            let kind = kind_view.to_owned_string();
             let selected = scope_feature_kind(&kind, type_family.as_ref());
             let kind = selected
                 .as_ref()
@@ -2070,9 +2077,6 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 continue;
             }
-            let Some(tail_length) = paired_at.checked_sub(kind_end) else {
-                continue;
-            };
             let fixed_tail = matches!(tail_length, 72 | 76 | 77 | 78 | 82 | 87 | 88 | 104 | 110)
                 || (kind == "Canvas"
                     && (exact_canvas_scope_tail(bytes.get(kind_end..paired_at)?, record_index)

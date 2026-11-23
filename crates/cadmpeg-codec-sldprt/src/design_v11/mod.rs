@@ -213,7 +213,17 @@ pub(crate) fn project(
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
         .collect();
-    let names = names::Names::new(persistent, histories, &timeline.features_by_record);
+    let designed = sketches
+        .entities
+        .iter()
+        .map(|entity| &entity.id)
+        .collect::<HashSet<_>>();
+    let generators = crate::resolved_features::side_generators::SideGenerators::derive(
+        &ir.model, histories, lanes,
+    )
+    .into_stated(|id| designed.contains(id));
+    let names = names::Names::new(persistent, histories, &timeline.features_by_record)
+        .with_generators(generators);
     let table = names.entries(&ir.geometry, &bodies, |_| true);
     let states = states::configuration_states(
         ctx,

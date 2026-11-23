@@ -596,36 +596,166 @@ impl<'ir> Measurer<'ir> {
             .map(|id| (*id, self.flux_origin(id, &edges, &placement_of(Some(id)))))
             .collect();
 
-        let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
-        for face in &geometry.faces {
-            let body = self.owners.face_body(face);
-            let slice = pass.face_slice();
-            let eval = Eval {
-                ctx,
-                index: &self.index,
-                work: &slice,
-            };
-            let input = FaceInput {
-                work: Work::Orientation,
-                owners: &self.owners,
-                edges: &edges,
-                fidelity: None,
-                body,
-                placement: placement_of(body),
-                flux_origin: body.and_then(|body| flux_origins.get(body).copied()),
-            };
-            let result = input.measure(&eval, face)?;
-            let uses_starved = face
-                .loops
-                .iter()
-                .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
-                .flat_map(cadmpeg_ir::topology::Loop::coedges)
-                .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
-                .any(|coedge| starved.contains(coedge.edge.as_str()));
-            if slice.exhausted() || uses_starved {
-                starved.insert(face.id.as_str());
+        let mut faces: HashMap<&'ir str, FaceResult<'ir>> =
+            HashMap::with_capacity(geometry.faces.len());
+        let parallel_workers = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(6);
+        let pass_remaining = pass.remaining();
+        let face_limit = pass.face_limit();
+        let edge_limit = pass.edge_limit();
+        let mut measured_parallel = false;
+        if parallel_workers > 1 && geometry.faces.len() >= 16 && pass_remaining >= face_limit {
+            let chunk_size = geometry.faces.len().div_ceil(parallel_workers);
+            let checkpoint = ctx.checkpoint();
+            let chunks: Vec<_> = geometry.faces.chunks(chunk_size).collect();
+            let owners = &self.owners;
+            let index = &self.index;
+            let edges_ref = &edges;
+            let placements_ref = &placements;
+            let flux_origins_ref = &flux_origins;
+            let outcomes = std::thread::scope(|scope| {
+                let handles: Vec<_> = chunks
+                    .into_iter()
+                    .map(|chunk| {
+                        let cp = checkpoint.clone();
+                        scope.spawn(move || {
+                            let arena = cadmpeg_core::decode::DecodeArena::new();
+                            let local_ctx = cp.resume(&arena);
+                            let local_pass =
+                                PassAllowance::with_limits(pass_remaining, face_limit, edge_limit);
+                            let mut chunk_results = Vec::with_capacity(chunk.len());
+                            for face in chunk {
+                                let body = owners.face_body(face);
+                                let slice = local_pass.face_slice();
+                                let eval = Eval {
+                                    ctx: &local_ctx,
+                                    index,
+                                    work: &slice,
+                                };
+                                let placement = body
+                                    .and_then(|body| placements_ref.get(body))
+                                    .cloned()
+                                    .unwrap_or(Ok(Placement::identity()));
+                                let input = FaceInput {
+                                    work: Work::Orientation,
+                                    owners,
+                                    edges: edges_ref,
+                                    fidelity: None,
+                                    body,
+                                    placement,
+                                    flux_origin: body
+                                        .and_then(|body| flux_origins_ref.get(body).copied()),
+                                };
+                                match input.measure(&eval, face) {
+                                    Ok(result) => {
+                                        chunk_results.push((face, result, slice.exhausted()));
+                                    }
+                                    Err(limit) => {
+                                        return (
+                                            Err(limit),
+                                            local_pass.used(),
+                                            local_pass.exhausted(),
+                                            local_ctx.take_trace(),
+                                        );
+                                    }
+                                }
+                            }
+                            (
+                                Ok(chunk_results),
+                                local_pass.used(),
+                                local_pass.exhausted(),
+                                local_ctx.take_trace(),
+                            )
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().ok())
+                    .collect::<Vec<_>>()
+            });
+            let mut total_used = Some(0_usize);
+            let mut all_ok = true;
+            for outcome in &outcomes {
+                match outcome {
+                    Some((Ok(_), used, false, _)) => {
+                        total_used = total_used.and_then(|acc| acc.checked_add(*used));
+                    }
+                    _ => {
+                        all_ok = false;
+                        break;
+                    }
+                }
             }
-            faces.insert(face.id.as_str(), result);
+            let fits_without_truncation =
+                all_ok && total_used.is_some_and(|used| used <= pass_remaining - face_limit);
+            if fits_without_truncation {
+                let mut accepted = true;
+                for outcome in outcomes {
+                    let Some((Ok(chunk_results), used, false, trace)) = outcome else {
+                        accepted = false;
+                        break;
+                    };
+                    if !ctx.accept_trace(&trace) {
+                        accepted = false;
+                        break;
+                    }
+                    // discarded-value: total_used <= pass_remaining - face_limit verified above.
+                    let _ = pass.charge_committed(used);
+                    for (face, result, slice_exhausted) in chunk_results {
+                        let uses_starved = face
+                            .loops
+                            .iter()
+                            .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
+                            .flat_map(cadmpeg_ir::topology::Loop::coedges)
+                            .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
+                            .any(|coedge| starved.contains(coedge.edge.as_str()));
+                        if slice_exhausted || uses_starved {
+                            starved.insert(face.id.as_str());
+                        }
+                        faces.insert(face.id.as_str(), result);
+                    }
+                }
+                if accepted {
+                    measured_parallel = true;
+                }
+            }
+        }
+        if !measured_parallel {
+            for face in &geometry.faces {
+                if faces.contains_key(face.id.as_str()) {
+                    continue;
+                }
+                let body = self.owners.face_body(face);
+                let slice = pass.face_slice();
+                let eval = Eval {
+                    ctx,
+                    index: &self.index,
+                    work: &slice,
+                };
+                let input = FaceInput {
+                    work: Work::Orientation,
+                    owners: &self.owners,
+                    edges: &edges,
+                    fidelity: None,
+                    body,
+                    placement: placement_of(body),
+                    flux_origin: body.and_then(|body| flux_origins.get(body).copied()),
+                };
+                let result = input.measure(&eval, face)?;
+                let uses_starved = face
+                    .loops
+                    .iter()
+                    .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
+                    .flat_map(cadmpeg_ir::topology::Loop::coedges)
+                    .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
+                    .any(|coedge| starved.contains(coedge.edge.as_str()));
+                if slice.exhausted() || uses_starved {
+                    starved.insert(face.id.as_str());
+                }
+                faces.insert(face.id.as_str(), result);
+            }
         }
         let witness_slice = pass.face_slice();
         WitnessInput {
