@@ -20,6 +20,7 @@ use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::edits::{UnwrittenEdits, UnwrittenPart};
 use crate::history::hash::{configuration_hash, feature_hash, history_hash, parameter_hash};
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
@@ -28,13 +29,23 @@ use crate::native::SldprtNative;
 /// configuration snapshot cause: one stale-solid loss per construction edit
 /// that shapes the solid, and one loss per snapshot edit the model does not
 /// state. The writer has no modeling kernel, so the output keeps the stored
-/// solid and its caches as they were before the edit. Without the retained
-/// source image, [`imageless_losses`] names what it can tell.
+/// solid and its caches as they were before the edit. `unwritten` names the
+/// edits the write does not carry: the construction edit of a feature in its
+/// `kept_definitions` is not written, and a part
+/// of a parameter edit it names does not reach the written history, so no
+/// stale-solid loss calls them written. `misread` holds the features whose
+/// tree place (`ordinal`) or output bodies (`outputs`) the written part reads
+/// back other than the document states; the read-back names them, and no
+/// stale-solid loss calls them written. Without the retained source image,
+/// [`imageless_losses`] names what it can tell.
 pub(crate) fn stale_solid_losses(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     source_image: Option<&[u8]>,
+    unwritten: &UnwrittenEdits,
+    misread: &HashSet<(FeatureId, String)>,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let kept_definitions = &unwritten.kept_definitions;
     let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
         return Ok(Vec::new());
     };
@@ -83,16 +94,23 @@ pub(crate) fn stale_solid_losses(
     // same edit.
     let mut named = HashSet::new();
     if features_changed {
-        feature_edits(ir, baseline, &hash_ctx, &mut named, &mut losses)?;
+        feature_edits(
+            ir,
+            baseline,
+            &hash_ctx,
+            (kept_definitions, misread),
+            &mut named,
+            &mut losses,
+        )?;
     }
     if parameters_changed {
-        parameter_edits(ir, baseline, &mut losses);
+        parameter_edits(ir, baseline, unwritten, &mut losses);
     }
     if native_changed {
         native_edits(ir, native, baseline, &mut losses)?;
     }
     if configurations_changed {
-        configuration_design_edits(ir, baseline, &named, &mut losses);
+        configuration_design_edits(ir, baseline, &named, unwritten, &mut losses);
     }
     Ok(losses)
 }
@@ -212,9 +230,12 @@ fn feature_edits(
     ir: &CadIr,
     source: &CadIr,
     hash_ctx: &DecodeContext<'_>,
+    (kept_definitions, misread): (&HashSet<FeatureId>, &HashSet<(FeatureId, String)>),
     named: &mut HashSet<FeatureId>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let misread_field =
+        |id: &FeatureId, field: &str| misread.contains(&(id.clone(), field.to_owned()));
     let baseline = &source.model.features;
     // Whether a construction edit, a removal or an output edit explains the
     // changed feature digest; only an unexplained change is a tree edit.
@@ -234,17 +255,30 @@ fn feature_edits(
         if original.evaluation.outputs() != feature.evaluation.outputs() {
             explained = true;
             named.insert(feature.id.clone());
+            if misread_field(&feature.id, "outputs") {
+                continue;
+            }
             losses.push(stale(format!(
                 "Feature {} is written with its edited output bodies, and the stored solid shows the state before the edit.",
                 feature_label(feature)
             )));
             continue;
         }
-        if !construction_changed(original, feature) {
+        let definition_written = !kept_definitions.contains(&feature.id);
+        if !definition_written
+            && (original.evaluation.definition() != feature.evaluation.definition()
+                || original.dependencies != feature.dependencies
+                || original.source_properties != feature.source_properties)
+        {
+            // The definition edit is not written; an unwritten-edit loss
+            // names it.
+            explained = true;
+        }
+        if !construction_changed(original, feature, definition_written) {
             continue;
         }
         explained = true;
-        if feature_affects_brep(feature, &ir.model.features) {
+        if stale_after_edit(original, feature, &ir.model.features, definition_written) {
             let edit = match feature.suppressed {
                 Some(true) if original.suppressed != feature.suppressed => {
                     "written suppressed as edited"
@@ -318,7 +352,10 @@ fn feature_edits(
             "The written feature tree is edited in order or placement, and the stored solid shows the state before the edit.",
         ));
     }
-    for feature in moved {
+    for feature in moved
+        .into_iter()
+        .filter(|feature| !misread_field(&feature.id, "ordinal"))
+    {
         losses.push(stale(format!(
             "Feature {} is written at its edited place in the feature tree, and the stored solid shows the state before the edit.",
             feature_label(feature)
@@ -327,28 +364,49 @@ fn feature_edits(
     Ok(())
 }
 
-fn parameter_edits(ir: &CadIr, source: &CadIr, losses: &mut Vec<LossNote>) {
+fn parameter_edits(
+    ir: &CadIr,
+    source: &CadIr,
+    unwritten: &UnwrittenEdits,
+    losses: &mut Vec<LossNote>,
+) {
     let baseline = &source.model.parameters;
     for parameter in &ir.model.parameters {
+        let part = unwritten.parameters.get(&parameter.id).copied();
+        if part == Some(UnwrittenPart::Whole) {
+            continue;
+        }
         let original = baseline.iter().find(|original| original.id == parameter.id);
-        if original.is_some_and(|original| !driving_parameter_changed(original, parameter)) {
+        if original.is_some_and(|original| !driving_parameter_changed(original, parameter, part)) {
             continue;
         }
         let driven = driven_features(parameter, ir);
         if !driven.is_empty() {
+            // The written part of the edit: the value where the expression
+            // is not written.
+            let written = match (part, parameter.value.as_ref()) {
+                (Some(UnwrittenPart::Expression), Some(value)) => {
+                    format!(
+                        "value {}",
+                        crate::history::literals::format_parameter_value(value)
+                    )
+                }
+                _ => parameter.expression.clone(),
+            };
             losses.push(stale(format!(
-                "Parameter {} is written as edited ({}), and the stored solid shows {} before the edit.",
+                "Parameter {} is written as edited ({written}), and the stored solid shows {} before the edit.",
                 parameter_label(parameter),
-                parameter.expression,
                 features_label(&driven)
             )));
         }
     }
     for removed in baseline.iter().filter(|original| {
-        !ir.model
-            .parameters
-            .iter()
-            .any(|parameter| parameter.id == original.id)
+        !unwritten.parameters.contains_key(&original.id)
+            && !ir
+                .model
+                .parameters
+                .iter()
+                .any(|parameter| parameter.id == original.id)
     }) {
         let driven = driven_features(removed, ir);
         if !driven.is_empty() {
@@ -423,6 +481,7 @@ fn configuration_design_edits(
     ir: &CadIr,
     baseline: &CadIr,
     named: &HashSet<FeatureId>,
+    unwritten: &UnwrittenEdits,
     losses: &mut Vec<LossNote>,
 ) {
     // The writer writes no synthesized snapshot; the written part decodes with
@@ -481,6 +540,12 @@ fn configuration_design_edits(
             let override_edited = original.is_none_or(|value| {
                 configuration.parameter_overrides.get(id) != value.parameter_overrides.get(id)
             });
+            if unwritten
+                .configuration_values
+                .contains(&(configuration.id.as_str().to_owned(), id.clone()))
+            {
+                value_edited = false;
+            }
             if !(value_edited || override_edited) {
                 continue;
             }
@@ -683,19 +748,44 @@ fn feature_directly_affects_brep(feature: &Feature) -> bool {
     )
 }
 
-fn construction_changed(original: &Feature, current: &Feature) -> bool {
-    original.evaluation.definition() != current.evaluation.definition()
+/// Whether the stale-solid loss of a write names the construction edit of
+/// `current`, a feature of `features`, against its source feature
+/// `original`: the edit reaches the written record (`definition_written`
+/// states whether its definition does) and the feature shapes the solid.
+pub(crate) fn stale_after_edit(
+    original: &Feature,
+    current: &Feature,
+    features: &[Feature],
+    definition_written: bool,
+) -> bool {
+    construction_changed(original, current, definition_written)
+        && feature_affects_brep(current, features)
+}
+
+/// Whether the written construction of `current` differs from `original`.
+/// The definition, the dependencies and the source properties count only
+/// when the definition is written: a stored definition record states its
+/// stored operands and properties.
+fn construction_changed(original: &Feature, current: &Feature, definition_written: bool) -> bool {
+    (definition_written
+        && (original.evaluation.definition() != current.evaluation.definition()
+            || original.dependencies != current.dependencies
+            || original.source_properties != current.source_properties))
         || original.suppressed != current.suppressed
-        || original.dependencies != current.dependencies
-        || original.source_properties != current.source_properties
         || original.source_tag != current.source_tag
         || original.source_text != current.source_text
         || original.source_content != current.source_content
 }
 
-fn driving_parameter_changed(original: &DesignParameter, current: &DesignParameter) -> bool {
-    original.expression != current.expression
-        || original.value != current.value
+/// Whether the written part of a parameter edit changes what drives the
+/// solid; `unwritten` is the part of the edit the write does not carry.
+fn driving_parameter_changed(
+    original: &DesignParameter,
+    current: &DesignParameter,
+    unwritten: Option<UnwrittenPart>,
+) -> bool {
+    (unwritten != Some(UnwrittenPart::Expression) && original.expression != current.expression)
+        || (unwritten != Some(UnwrittenPart::Value) && original.value != current.value)
         || original.dependencies != current.dependencies
         || original.properties != current.properties
         || original.owner != current.owner

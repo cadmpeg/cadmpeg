@@ -550,7 +550,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         {
             insert_termination_field(&mut feature.properties, "Reverse", "true".to_owned())?;
         }
-        if feature.properties.contains_key("EndCondition") {
+        if feature.states_any(&crate::records::EXTRUSION_TERMINATION_GATE) {
             continue;
         }
         let condition = vote.condition().to_owned();

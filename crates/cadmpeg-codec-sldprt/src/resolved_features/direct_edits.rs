@@ -160,8 +160,7 @@ pub(crate) fn enrich_history_move_face_translations(
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::MoveFace)
-                || feature.properties.contains_key("Mode")
-                || feature.properties.contains_key("Direction")
+                || feature.states_any(&crate::records::MOVE_FACE_PROPERTIES)
             {
                 continue;
             }

@@ -501,6 +501,26 @@ pub(crate) enum SldprtLossCode {
     /// synthesized from the model is not written; the written configuration
     /// states the model's state.
     WriterConfigurationSnapshotEditUnwritten,
+    /// An edit of a parameter that the writer has no carrier for is not
+    /// written; the output keeps the stored native value.
+    WriterParameterEditUnwritten,
+    /// An edit of a feature's definition or selection that the native record
+    /// cannot encode is not written; the output keeps the stored record.
+    WriterFeatureEditUnwritten,
+    /// A variant edit of a feature is written in the record shape of the
+    /// edited variant, which adds or drops a parameter or drops a source
+    /// property of the feature.
+    WriterFeatureRecordReshaped,
+    /// A compound-file part edited since decode is written as its stored
+    /// part, as its write into a native envelope refuses or lands on another
+    /// dialect: no edit of the document is written.
+    WriterCompoundFileEditUnwritten,
+    /// The written part, decoded again, differs from the document as the
+    /// write of the unedited source does: a writer defect no edit causes.
+    WriterReadBackDiffers,
+    /// The written part does not decode again or does not serialize, so it
+    /// is not compared with the document.
+    WriterReadBackUnread,
     /// An edit cleared a decoded extrusion reversal whose end-spec flag the
     /// writer found no place to clear.
     WriterExtrudeReversalUnwritten,
@@ -798,6 +818,12 @@ impl SldprtLossCode {
         Self::WriterHistoryRegenerationRefused,
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
+        Self::WriterParameterEditUnwritten,
+        Self::WriterFeatureEditUnwritten,
+        Self::WriterFeatureRecordReshaped,
+        Self::WriterCompoundFileEditUnwritten,
+        Self::WriterReadBackDiffers,
+        Self::WriterReadBackUnread,
         Self::WriterExtrudeReversalUnwritten,
         Self::WriterExtrudeReversalConfigurationCleared,
         Self::SourceDialectDisplaced,
@@ -1035,6 +1061,12 @@ impl SldprtLossCode {
             Self::WriterConfigurationSnapshotEditUnwritten => {
                 "writer.configuration-snapshot-edit-unwritten"
             }
+            Self::WriterParameterEditUnwritten => "writer.parameter-edit-unwritten",
+            Self::WriterFeatureEditUnwritten => "writer.feature-edit-unwritten",
+            Self::WriterFeatureRecordReshaped => "writer.feature-record-reshaped",
+            Self::WriterCompoundFileEditUnwritten => "writer.compound-file-edit-unwritten",
+            Self::WriterReadBackDiffers => "writer.read-back-differs",
+            Self::WriterReadBackUnread => "writer.read-back-unread",
             Self::WriterExtrudeReversalUnwritten => "writer.extrude-reversal-unwritten",
             Self::WriterExtrudeReversalConfigurationCleared => {
                 "writer.extrude-reversal-configuration-cleared"
@@ -1133,6 +1165,12 @@ impl SldprtLossCode {
             Self::WriterHistoryRegenerationRefused => Severity::Error,
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
+            Self::WriterParameterEditUnwritten => Severity::Warning,
+            Self::WriterFeatureEditUnwritten => Severity::Warning,
+            Self::WriterFeatureRecordReshaped => Severity::Warning,
+            Self::WriterCompoundFileEditUnwritten => Severity::Error,
+            Self::WriterReadBackDiffers => Severity::Warning,
+            Self::WriterReadBackUnread => Severity::Error,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
@@ -1364,6 +1402,12 @@ impl SldprtLossCode {
                 LossTaxonomy::FeatureHistoryRetained
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParameterEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureRecordReshaped => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterCompoundFileEditUnwritten => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackDiffers => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterReadBackUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1925,6 +1969,12 @@ mod tests {
                 "writer.history-regeneration-refused",
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
+                "writer.parameter-edit-unwritten",
+                "writer.feature-edit-unwritten",
+                "writer.feature-record-reshaped",
+                "writer.compound-file-edit-unwritten",
+                "writer.read-back-differs",
+                "writer.read-back-unread",
                 "writer.extrude-reversal-unwritten",
                 "writer.extrude-reversal-configuration-cleared",
                 "target.source-dialect-displaced",
