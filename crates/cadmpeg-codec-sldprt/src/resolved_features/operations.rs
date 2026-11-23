@@ -116,7 +116,6 @@ fn feature_operation_code(
 
 fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => Some(BooleanOp::NewBody),
         (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
         (Some("moRevCut_c"), _) => Some(BooleanOp::Cut),
         _ => None,

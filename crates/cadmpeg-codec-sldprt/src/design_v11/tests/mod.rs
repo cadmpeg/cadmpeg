@@ -1298,7 +1298,7 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
     let loss = typed.loss.expect("the sketch is reported");
     assert!(
         loss.message
-            .contains(&format!("{} ({reason})", sketch.id.as_str())),
+            .contains(&format!("{reason} (1: {})", sketch.id.as_str())),
         "{}",
         loss.message
     );

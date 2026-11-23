@@ -3,16 +3,26 @@
 //!
 //! A revolution whose profile is a whole sketch the design states, whose
 //! axis lies in that sketch's plane, and whose angle is one full turn on one
-//! side or a mid-plane angle is typed: the profile is a `Sketch` pick checked
-//! against the stored profile loops as an extrude's is, the angle binds the
-//! dimension the decoder read it from, and a merge into a part that holds no
-//! body yet is a new body (§6). The axis states the stored axis as its value
-//! and picks the line of the profile sketch that lies on it, a construction
-//! line before a profile line, the input `reversed` where that line runs
-//! against the stored direction (§5.9 Sense). A partial or two-sided turn, whose sense
-//! the decoder does not read, stays `Unresolved`, and so does a revolution
-//! whose axis lies outside its sketch's plane (open item DI-85) or whose
-//! sketch holds no profile curve.
+//! side or a mid-plane angle is typed. The profile is a `Sketch` pick checked
+//! against the stored profile loops as an extrude's is, and the angle binds
+//! the dimension the decoder read it from.
+//!
+//! The axis states the decoder's axis as its value and picks the line of the
+//! profile sketch that lies on it, a construction line before a profile line,
+//! the input `reversed` where that line runs against the axis direction
+//! (§5.9 Sense). Where the revolution's record stores the axis, the pick is
+//! inferred. Where no record stores it, the decoder derived it from the
+//! sketch's records or the solid's surfaces: the revolve is typed only where
+//! a line of its sketch lies on that axis, with a warning naming the line.
+//!
+//! A cut cuts, and a join joins, into a part that holds no body yet as a new
+//! body (§6). A revolution of the adding class whose operation the decoder
+//! did not read is a new body where nothing precedes it that can hold a body,
+//! and states no boolean after one.
+//!
+//! A partial or two-sided turn, whose sense the decoder does not read, stays
+//! `Unresolved`, and so does a revolution whose axis lies outside its
+//! sketch's plane (open item DI-85) or whose sketch holds no profile curve.
 
 use std::collections::HashMap;
 
@@ -24,11 +34,14 @@ use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sketch::{EntityDefinition, Planar, PlanarCurve, SketchEntity};
 use cadmpeg_ir::design::ops::swept::Revolve;
-use cadmpeg_ir::design::options::{BodyForm, NativeOptions, SolidOutput, SymmetricMeasure};
+use cadmpeg_ir::design::options::{
+    BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure,
+};
 use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::operation_settings::BooleanOp as DecodedOp;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::features::revolve::{
@@ -55,10 +68,15 @@ pub(super) struct Revolves {
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The revolve features left `Unresolved`, with the reason.
     pub(super) unprojected: Vec<(FeatureId, &'static str)>,
-    /// The typed revolves whose axis picks a line of their profile sketch,
-    /// with their name, that line, and how many of the sketch's lines lie on
-    /// the axis.
-    pub(super) inferred: Vec<(FeatureId, Option<String>, SketchEntityId, usize)>,
+    /// The typed revolves whose stored axis picks a line of their profile
+    /// sketch.
+    pub(super) inferred: Vec<AxisPick>,
+    /// The typed revolves whose axis no record stores, which the decoder
+    /// derived and which lies on a line of their profile sketch.
+    pub(super) derived: Vec<AxisPick>,
+    /// The typed revolves whose boolean the design leaves unstated, with
+    /// their name and why.
+    pub(super) boolean_unstated: Vec<(FeatureId, Option<String>, &'static str)>,
     /// The typed revolves whose sketch's closed regions differ from the
     /// profile loops the decoder resolved, with their name and how they
     /// differ.
@@ -72,10 +90,18 @@ pub(super) struct Revolves {
 /// on the axis.
 type AxisLine = (SketchEntityId, usize);
 
+/// A typed revolve, its name, the line its axis picks, and how many of its
+/// sketch's lines lie on the axis.
+pub(super) type AxisPick = (FeatureId, Option<String>, SketchEntityId, usize);
+
 /// What a typed revolve adds to the notes.
 #[derive(Default)]
 struct Notes {
     line: Option<AxisLine>,
+    /// Whether a record stores the axis.
+    stored: bool,
+    /// Why the design states no boolean.
+    boolean_unstated: Option<&'static str>,
     /// How its sketch's closed regions differ from the stored profile, or
     /// why the check did not compare them.
     profile: Option<Result<Vec<Difference>, Unchecked>>,
@@ -90,8 +116,16 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Revolv
             Ok(revolve) => {
                 feature.definition.operation = FeatureOperation::Revolve(Box::new(revolve));
                 let (id, name) = (feature.id.clone(), feature.name.clone());
+                if let Some(why) = notes.boolean_unstated {
+                    out.boolean_unstated.push((id.clone(), name.clone(), why));
+                }
                 if let Some((line, among)) = notes.line {
-                    out.inferred.push((id.clone(), name.clone(), line, among));
+                    let picks = if notes.stored {
+                        &mut out.inferred
+                    } else {
+                        &mut out.derived
+                    };
+                    picks.push((id.clone(), name.clone(), line, among));
                 }
                 match notes.profile {
                     Some(Ok(differs)) if !differs.is_empty() => {
@@ -174,8 +208,34 @@ fn revolve(
     if matches!(profile, Err(Unchecked::NoProfileCurve)) {
         return Err("the revolve's sketch holds no profile curve");
     }
+    let record = feature.native_ref.as_deref().and_then(|native| {
+        context
+            .histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|record| record.id == native)
+    });
+    let stored = record.is_some_and(|record| {
+        record.properties.contains_key("AxisOrigin")
+            && record.properties.contains_key("AxisDirection")
+    });
     let (axis, line) = axis_construction(axis, sketch, context)?;
+    if !stored && line.is_none() {
+        return Err(
+            "no record stores the revolve's axis, and no line of its sketch lies on the axis \
+             the decoder derived",
+        );
+    }
+    let adds = record.and_then(|record| record.input_class.as_deref()) == Some("moRevolution_c");
+    let boolean = boolean(*op, adds, before.body);
     notes.line = line;
+    notes.stored = stored;
+    notes.boolean_unstated = boolean.is_none().then_some(if adds {
+        "it adds material after an earlier member, and the decoder reads no stored field that \
+         tells a new body from a join"
+    } else {
+        "the decoder reads no Boolean operation"
+    });
     notes.profile = Some(profile);
     Ok(Revolve {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
@@ -191,11 +251,28 @@ fn revolve(
                     BodyForm::Sheet
                 }
             }),
-            boolean: swept::boolean(*op, before.body),
+            boolean,
         },
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
     })
+}
+
+/// The boolean of a revolution whose decoded operation is `op`: a cut cuts
+/// and a join joins, into a part that holds no body yet as a new body (§6).
+/// A revolution of a class that adds material (`adds`) whose operation the
+/// decoder did not read is a new body where no member precedes it that can
+/// hold a body; after one, no read field decides, and the boolean is `None`.
+fn boolean(op: DecodedOp, adds: bool, body_before: bool) -> Option<Boolean> {
+    let apply = |op| Some(Boolean::Apply { op, targets: None });
+    match op {
+        DecodedOp::Cut => apply(BooleanOp::Cut),
+        DecodedOp::Intersect => apply(BooleanOp::Intersect),
+        DecodedOp::Join if body_before => apply(BooleanOp::Join),
+        DecodedOp::Join | DecodedOp::NewBody => Some(Boolean::NewBody),
+        DecodedOp::Unresolved if adds && !body_before => Some(Boolean::NewBody),
+        DecodedOp::Unresolved => None,
+    }
 }
 
 /// The span of `extent`, each angle bound to the dimension `dimension`
@@ -278,10 +355,10 @@ fn angle_dimension(feature: &FeatureId, context: &Context<'_>, angle: f64) -> Op
         .then(|| parameter.clone())
 }
 
-/// The axis of a revolve about `axis` whose profile is `sketch`: the stored
-/// axis as its value, and a `Coincident` pick of the sketch's line that lies
-/// on it, with that line and the number of lines on the axis. An axis
-/// outside the sketch's plane fails.
+/// The axis of a revolve about `axis` whose profile is `sketch`: the
+/// decoder's axis as its value, and a `Coincident` pick of the sketch's line
+/// that lies on it, with that line and the number of lines on the axis. An
+/// axis outside the sketch's plane fails.
 fn axis_construction(
     axis: &RevolutionAxis,
     sketch: &SketchId,

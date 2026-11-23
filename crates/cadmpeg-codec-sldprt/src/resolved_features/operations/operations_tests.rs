@@ -461,18 +461,14 @@ fn form_code_padding_follows_the_solidworks_schema_version() {
 }
 
 #[test]
-fn revolution_form_words_distinguish_new_body_and_join() {
-    for code in [5, 6, 11, 60, 20_322, 22_016] {
-        assert_eq!(
-            revolution_operation(Some("moRevolution_c"), code),
-            Some(BooleanOp::NewBody)
-        );
+fn revolution_form_eight_joins_and_other_forms_leave_the_operation_unread() {
+    for code in [5, 6, 7, 11, 60, 20_322, 22_016] {
+        assert_eq!(revolution_operation(Some("moRevolution_c"), code), None);
     }
     assert_eq!(
         revolution_operation(Some("moRevolution_c"), 8),
         Some(BooleanOp::Join)
     );
-    assert_eq!(revolution_operation(Some("moRevolution_c"), 7), None);
     assert_eq!(
         revolution_operation(Some("moRevCut_c"), 13),
         Some(BooleanOp::Cut)

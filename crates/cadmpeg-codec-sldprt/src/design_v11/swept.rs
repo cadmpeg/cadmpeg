@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What the extrude and revolve projections share: the member walk that
 //! finds each `Unresolved` feature of a family with the sketches and bodies
-//! before it, the boolean, and the profile check.
+//! before it, and the profile check.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::sketch::{Planar, SketchEntity};
-use cadmpeg_ir::design::options::{Boolean, BooleanOp};
-use cadmpeg_ir::features::operation_settings::BooleanOp as DecodedOp;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::sketches::SketchId;
 
@@ -90,20 +88,6 @@ pub(super) fn walk(
 
 fn suppressed(feature: &Feature) -> bool {
     matches!(feature.suppressed, Some(Dimension::Literal(true)))
-}
-
-/// The boolean of a decoded operation: a join into a part that holds no
-/// body yet is a new body (§6).
-pub(super) fn boolean(op: DecodedOp, body_before: bool) -> Option<Boolean> {
-    let apply = |op| Boolean::Apply { op, targets: None };
-    match op {
-        DecodedOp::Join if !body_before => Some(Boolean::NewBody),
-        DecodedOp::Join => Some(apply(BooleanOp::Join)),
-        DecodedOp::Cut => Some(apply(BooleanOp::Cut)),
-        DecodedOp::Intersect => Some(apply(BooleanOp::Intersect)),
-        DecodedOp::NewBody => Some(Boolean::NewBody),
-        DecodedOp::Unresolved => None,
-    }
 }
 
 /// How the closed regions of `sketch` differ from the profile loops the

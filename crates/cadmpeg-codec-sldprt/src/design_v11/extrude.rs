@@ -18,11 +18,14 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
-use cadmpeg_ir::design::options::{BodyForm, NativeOptions, SolidOutput, SymmetricMeasure};
+use cadmpeg_ir::design::options::{
+    BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure,
+};
 use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp as DecodedOp;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
@@ -166,7 +169,7 @@ fn extrude(
     if !before.preceding.contains(sketch) {
         return Err("the extrude's sketch follows it in the timeline");
     }
-    let boolean = swept::boolean(*op, before.body);
+    let boolean = boolean(*op, before.body);
     notes.profile = Some(swept::differences(sketch, context));
     Ok(Extrude {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
@@ -306,5 +309,19 @@ impl Depths {
     /// The dimension of a single depth: the first, else the sole one.
     fn first_or_sole(&self) -> Option<&ParameterId> {
         self.first.as_ref().or(self.sole.as_ref())
+    }
+}
+
+/// The boolean of a decoded operation: a join into a part that holds no
+/// body yet is a new body (§6).
+fn boolean(op: DecodedOp, body_before: bool) -> Option<Boolean> {
+    let apply = |op| Boolean::Apply { op, targets: None };
+    match op {
+        DecodedOp::Join if !body_before => Some(Boolean::NewBody),
+        DecodedOp::Join => Some(apply(BooleanOp::Join)),
+        DecodedOp::Cut => Some(apply(BooleanOp::Cut)),
+        DecodedOp::Intersect => Some(apply(BooleanOp::Intersect)),
+        DecodedOp::NewBody => Some(Boolean::NewBody),
+        DecodedOp::Unresolved => None,
     }
 }

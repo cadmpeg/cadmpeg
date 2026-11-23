@@ -152,6 +152,8 @@ pub(crate) fn project(
     losses.extend(typed.sketch_empty);
     losses.extend(typed.profile_unchecked);
     losses.extend(typed.revolve_axis_lines);
+    losses.extend(typed.revolve_axis_derived);
+    losses.extend(typed.revolve_boolean_unstated);
     losses.extend(typed.revolve_profile_differs);
     losses.extend(typed.revolve_profile_unchecked);
     let mut readings = parameters::Readings {
