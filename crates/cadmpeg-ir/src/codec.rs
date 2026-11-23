@@ -364,6 +364,11 @@ impl DecodeResult {
         &self.report
     }
 
+    /// Borrow the decode-time source fidelity.
+    pub fn source_fidelity(&self) -> &SourceFidelity {
+        &self.source_fidelity
+    }
+
     /// Consume into IR, report, and source fidelity.
     pub fn into_parts(self) -> (CadIr, DecodeReport, SourceFidelity) {
         (self.ir, self.report, self.source_fidelity)

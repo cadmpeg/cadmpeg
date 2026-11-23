@@ -2,7 +2,9 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
+use cadmpeg_ir::codec::write::{
+    carried_source_losses, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
+};
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -156,6 +158,7 @@ fn finish(
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
+    losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
         WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
             "preserved compound-file source replayed verbatim without the document's edits"

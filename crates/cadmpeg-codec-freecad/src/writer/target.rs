@@ -11,8 +11,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    carried_source_losses, edit_unverified, target::ResolvedWrite, ArenaCoverage, Consumption,
+    EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
@@ -94,8 +94,8 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
-    admit_unedited(input.ir)?;
-    finish(&resolution)
+    let baseline = admit_unedited(input.ir)?;
+    finish(&resolution, input.fidelity, baseline)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -126,20 +126,28 @@ pub(crate) fn document_local_sha256(
     )
 }
 
+/// What [`admit_unedited`] could establish about edits since decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Baseline {
+    /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
+    Unedited,
+    /// The document records no digest, so its edits are not known.
+    Unrecorded,
+}
+
 /// Refuse a document edited since decode outside [`CARRIED_NATIVE_ARENAS`].
 ///
 /// The writer patches retained records and regenerates no `Document.xml`, so
-/// a neutral edit has no serializer here and would otherwise be dropped.
-fn admit_unedited(ir: &CadIr) -> Result<(), CodecError> {
+/// a neutral edit has no serializer here and would otherwise be dropped. A
+/// document that records no digest (every decode below `Full`) is admitted as
+/// [`Baseline::Unrecorded`].
+fn admit_unedited(ir: &CadIr) -> Result<Baseline, CodecError> {
     let Some(expected) = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
     else {
-        return Err(CodecError::NotImplemented(format!(
-            "FCStd source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline, so neutral \
-             edits cannot be excluded and source-less graph regeneration is required"
-        )));
+        return Ok(Baseline::Unrecorded);
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(
@@ -156,25 +164,39 @@ fn admit_unedited(ir: &CadIr) -> Result<(), CodecError> {
                 .into(),
         ));
     }
-    Ok(())
+    Ok(Baseline::Unedited)
 }
 
 /// Write the resolved export. The sealed encoder stamps the target identity
 /// and the fidelity resolution; this writer patches the retained document and
-/// consumes no sidecar. [`admit_unedited`] has proved that nothing outside the
-/// carried native arenas changed since decode, so the retained graph carries
-/// every model arena.
-fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
+/// consumes no sidecar. The retained graph carries every model arena that
+/// [`admit_unedited`] found unedited. Every write is a patch, so `untyped`
+/// retained records in `fidelity` charge both carried-source codes, and a
+/// [`Baseline::Unrecorded`] document charges `export:edit.unverified`.
+fn finish(
+    resolution: &Resolution<'_>,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+    baseline: Baseline,
+) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(&mut bytes, resolution)?;
+    let write_path = WritePath::Patched {
+        consumption: PatchConsumption::Independent(Consumption::NotConsumed),
+    };
+    let mut losses = carried_source_losses(fidelity, &write_path);
+    if baseline == Baseline::Unrecorded {
+        losses.push(edit_unverified(format!(
+            "the FCStd source records no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline, so edits \
+             since decode are not known; the file patches the retained Document.xml with the \
+             carried native records and holds no other edit"
+        )));
+    }
     Ok(ExportBody {
         bytes,
         census: outcome.census,
-        write_path: WritePath::Patched {
-            consumption: PatchConsumption::Independent(Consumption::NotConsumed),
-        },
+        losses,
+        write_path,
         coverage: ArenaCoverage::Complete,
-        losses: Vec::new(),
         notes: outcome.notes,
     })
 }
@@ -195,7 +217,8 @@ fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution
 ///
 /// The graph is the whole baseline: the writer never regenerates a
 /// `Document.xml`, so preservation is possible exactly when the retained
-/// document record is present. `target` is the dialect witness resolved from
+/// document record and its `Document.xml` entry are present. A `Container`
+/// decode retains no entry. `target` is the dialect witness resolved from
 /// the source declaration; this adapter does not derive a second identity from
 /// the retained graph.
 pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option<Resolution<'a>> {
@@ -204,6 +227,18 @@ pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option
     let [document] = documents.as_slice() else {
         return None;
     };
+    let retains_document_xml = namespace.arenas().get("entries").is_some_and(|entries| {
+        entries.iter().any(|entry| {
+            entry
+                .field("name")
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                == Some("Document.xml")
+        })
+    });
+    if !retains_document_xml {
+        return None;
+    }
     let schema_version = ir
         .source
         .as_ref()?
