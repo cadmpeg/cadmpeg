@@ -294,7 +294,7 @@ fn a_full_turn_about_a_centreline_picks_it_and_binds_its_angle() {
     );
 
     let definition = ir.design.scopes[0].definition.clone();
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &definition,
         &super::super::parameters::Readings {
             decoded: super::super::parameters::Decoded::new(

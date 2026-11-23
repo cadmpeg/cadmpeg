@@ -680,6 +680,38 @@ resolve a seed feature?
 
 **Need.** We must know the sign before a writer can store a negative value. Without it, the writer refuses one.
 
+### DI-79. Trailer of a value-only scalar behind the 18-byte header
+
+**Question.** What do the bytes from trailer +7 of a value-only scalar behind the 18-byte header hold where they are not the compact layout's trailer, and what do the first byte at trailer +21 and the byte at trailer +27 hold where trailer +21 stores `xx 00 00 00 02 00` with a first byte other than `01`?
+
+**Known.** `sldprt.md` §2: in a part that writes the 18-byte header, a value-only scalar stores its f64 at the header's end and a trailer after it that opens with three zero bytes and the scalar object identifier. The compact layout's trailer stores `01 00 00 00 02 00` at +21 and the role at +27, `0` driving or `1` display. Other trailers of this form take these forms: `xx 00 00 00 02 00` at +21 with `xx` one of `02`, `03`, `0f`, `10`, `29`, `2b` and `2f`, and `0` or `1` at +27; `01 00 00 00 02 00` at +21 with nonzero bytes in +7 through +20 or in +28 through +34, where the compact layout's trailer holds zero bytes; `01 00 00 00 03 00` at +21; an f64 at +21; zero bytes from +7 through +34; a small little-endian u32 at +11. The decoder reads every scalar of these forms with the native role.
+
+**Need.** Scalars of each first byte compared with the dimensions their names give: whether the +27 byte separates a driving value from a display value as it does in the compact layout, and which record kind each first byte names.
+
+### DI-89. The 22-byte scalar header whose last eight bytes are zero
+
+**Question.** Is the 22-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 00 00 00 00 00 00` a named-scalar header whose value begins at its end, and which roles do its trailers assign?
+
+**Known.** `sldprt.md` §2: a part writes all of its named scalars with one header width, and the primary and legacy layouts use a 22-byte header whose bytes 16 through 18 are `ff fe ff`. This other 22-byte header is the 14-byte value-only header and eight zero bytes. An f64 follows it, and a trailer of three zero bytes and the scalar object identifier follows the f64. A little-endian i32 can follow it instead, with such a trailer after the i32; the stored i32 values are positive counts. The decoder reads the value at the end of the 14-byte value-only header, so these scalars state 0.
+
+**Need.** Scalars of this header compared with the Keywords displays of the dimensions their names give: the value at the header's end equal to the displayed number in the part's unit settles the value offset, and the trailer bytes compared with the compact and primary trailers settle the role.
+
+### DI-90. A value-only scalar whose trailer opens with a zero byte and a class reference
+
+**Question.** Where does a value-only scalar behind the 18-byte header store its object identifier when the trailer after its f64 opens with a zero byte and a class token or class declaration, and is that zero byte the whole trailer, so that the class reference opens the next object?
+
+**Known.** `sldprt.md` §2: such a trailer follows the f64 at the 18-byte header's end. The zero byte is at trailer +0. A class token occupies trailer +1 and +2, and a class declaration's `ff ff` marker begins at trailer +1, where a trailer of the first form holds zero bytes; that form's object identifier is at trailer +3. The classes declared there are `moDimTolerance_c` and `moEnvFolder_c`. The decoder reads the f64 at the 18-byte header's end. The u32 it reads as the object identifier at trailer +3 holds the four bytes after a class token, or a class declaration's u16 schema number and u16 name length.
+
+**Need.** The object that the class reference opens, compared with the objects that follow trailers of the first form, and the scalar's f64 compared with the Keywords display of its dimension.
+
+### DI-91. Relation instances of token-form dimension scalars
+
+**Question.** Which relation instances do the token-form display scalars and driving scalars of a sketch form, and which of a feature's sketches binds the feature when they all form?
+
+**Known.** `sldprt.md` §2 and §2.2: a relation class declared with its parameter class inside its first relation object, after that object's zero u32, is two map indices below the parameter class. A token-form scalar whose parameter-class token is two above its relation-class token, and names the parameter class that the lane declares once, has as its relation class the class whose declaration ends four zero bytes before that parameter-class declaration. The decoder forms the instance that these tokens name in one case only: the relation-class declaration opens a value-only scalar of the native role, the display scalar is the first scalar after it that a display or driving role frames, and the driving scalar follows the display scalar. This is the instance that the declaration gave before the decoder read the padded value-only scalar. Every other scalar takes the nearest preceding compatible declaration before the next relation-class declaration, or forms no instance. That declaration can be a class declared after the parameter class that the scalar's tokens name. Its map index is then above the parameter-class token, so the scalar's tokens rule the class out, and the decoder types the instance, and a driving scalar's constraint, with a family the tokens do not state. Relation points of the instances that the tokens name change which of a feature's marker sketch and profile-stream sketch binds it, and the decoder drops the relation-table rows of the sketch that gives way.
+
+**Need.** For each feature whose binding changes, the marker sketch and the profile-stream sketch compared with the faces of the stored solid and with the operands of the sketch's relation-table rows, so that the sketch that holds the feature's profile and relation table is known before every token-named instance forms.
+
 ### DI-45. Relation-table row flag
 
 **Question.** What does the u16 row flag `1` of a relation-table row mean?
