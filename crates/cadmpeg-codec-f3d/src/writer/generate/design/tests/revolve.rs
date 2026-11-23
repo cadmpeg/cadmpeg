@@ -483,6 +483,18 @@ fn a_profile_line_on_the_axis_takes_no_side_entry() {
 }
 
 #[test]
+fn an_axis_against_its_picked_line_is_the_same_full_turn() {
+    let mut construction = axis("axis");
+    construction.inputs[0].reversed = Some(true);
+    let ir = design(
+        revolved(&tube()),
+        profile(&tube(), Some(0.0)),
+        revolve(Some(construction)),
+    );
+    assert_eq!(decided(&ir), Ok(4));
+}
+
+#[test]
 fn a_resolved_axis_finds_the_construction_line() {
     let mut construction = axis("axis");
     construction.inputs.clear();

@@ -245,7 +245,8 @@ fn axis(
 }
 
 /// The written line of `sketch` that `input`, a `Coincident` pick of a
-/// whole sketch entity, names.
+/// whole sketch entity, names, in either sense: a full turn about the line
+/// makes the same solid in both.
 fn picked_line(
     input: &ConstructionInput,
     sketch: &PlannedSketch<'_>,
@@ -258,7 +259,7 @@ fn picked_line(
             }),
         reference: Some(InputReference::Picks(selection)),
         value: None,
-        reversed: None | Some(false),
+        reversed: _,
     } = input
     else {
         return Err(NOT_A_LINE);
