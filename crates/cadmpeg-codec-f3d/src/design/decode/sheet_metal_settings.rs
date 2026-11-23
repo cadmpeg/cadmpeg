@@ -214,6 +214,8 @@ fn local(view: &mut View<'_>) -> Result<Option<u64>, ()> {
         _ => Err(()),
     }
 }
+/// The mask-and-slots reading comes first; a version-3 frame that it does not
+/// close is read as the leading-reference form.
 fn parse_settings(
     bytes: &[u8],
     frame: PrimaryRecordFrame,
@@ -221,6 +223,23 @@ fn parse_settings(
     primary: &HashSet<u64>,
     types: &HashMap<u64, (&str, u32)>,
     registrations: &[crate::records::entity_header::SegmentTypeData],
+) -> Option<SettingsFields> {
+    parse_form(bytes, frame, version, primary, types, registrations, false).or_else(|| {
+        if version != 3 {
+            return None;
+        }
+        parse_form(bytes, frame, version, primary, types, registrations, true)
+    })
+}
+
+fn parse_form(
+    bytes: &[u8],
+    frame: PrimaryRecordFrame,
+    version: u32,
+    primary: &HashSet<u64>,
+    types: &HashMap<u64, (&str, u32)>,
+    registrations: &[crate::records::entity_header::SegmentTypeData],
+    leading: bool,
 ) -> Option<SettingsFields> {
     let mut view = View::over_retained(bytes.get(frame.start..frame.end)?);
     let primary_class = header(&mut view, frame.entity_id)?;
@@ -237,7 +256,6 @@ fn parse_settings(
     if view.take(settings_prefix::OVERRIDE_MASK)? != [0; settings_prefix::OVERRIDE_MASK] {
         return None;
     }
-    let leading = version == 3 && view.unread().first() == Some(&1);
     let mask = if leading { None } else { Some(view.u32_le()?) };
     let (inputs, rule) = match version {
         2 => {

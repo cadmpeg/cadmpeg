@@ -32,7 +32,9 @@ pub(crate) enum DesignSheetMetalSettingsInputs {
 
 /// Bytes between the leading reference and the rule reference of a
 /// [`DesignSheetMetalSettingsInputs::V3LeadingReference`] frame.
-pub(crate) const V3_LEADING_ZERO_RUN: usize = 12;
+pub(crate) const V3_LEADING_ZERO_RUN: usize =
+    crate::layout::sheet_metal_settings_leading_prefix::LEN
+        - crate::layout::sheet_metal_settings_leading_prefix::ZERO_RUN_12;
 
 /// Exact suffix bytes; their control meaning is unassigned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

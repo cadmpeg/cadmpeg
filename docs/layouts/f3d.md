@@ -7833,6 +7833,21 @@ Unstated regions:
 
 - `0..10` (10 B): Ten zero bytes precede the override mask.
 
+## `sheet_metal_settings_leading_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Offsets are relative to the end of the variable-length primary indexed header. The rule reference follows this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 11 | `leading_reference` | `bytes[11]` | little | spec | a present local reference where the mask-and-slots form stores its mask |
+| 21 | 12 | `zero_run_12` | `bytes[12]` | little | spec | twelve zero bytes. The rule reference follows |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes precede the leading reference.
+
 ## `sheet_metal_bend_radius_override_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 21 B
