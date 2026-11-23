@@ -804,6 +804,41 @@ fn principal_planes_are_datums_on_the_principal_planes() {
     assert_no_design_findings(&ir);
 }
 
+/// An extrusion whose record states a reversal is typed along the reversed
+/// profile normal.
+#[test]
+fn a_reversed_extrusion_is_typed_with_a_reversed_profile_normal() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::ops::swept::ExtrudeDirection;
+
+    let (ir, _) = sketch_and_extrude_from(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7" Reverse="true">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+    );
+    let FeatureOperation::Extrude(extrude) = &feature_named(&ir, "Boss").definition.operation
+    else {
+        panic!("Boss is no extrude");
+    };
+    assert_eq!(
+        extrude.direction,
+        Some(ExtrudeDirection::ProfileNormal {
+            reversed: Some(Dimension::Literal(true)),
+        })
+    );
+}
+
 #[test]
 fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     use cadmpeg_ir::design::dimension::Dimension;
@@ -822,7 +857,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
@@ -915,7 +954,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     let (parameters, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             length_places: None,
             bound: typed.bound,
@@ -971,7 +1014,11 @@ fn typed_timeline<'a>(
         &[],
         &mut timeline,
         &entries,
-        &ir.design.scopes[0].definition,
+        &super::typed::Scope {
+            definition: &ir.design.scopes[0].definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     (timeline, entries, typed)
 }
@@ -1119,7 +1166,11 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
     let (parameters, _) = entries.parameters(
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             length_places: None,
             bound: typed.bound,
@@ -1359,7 +1410,11 @@ fn members_follow_the_features_they_depend_on() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
@@ -1493,5 +1548,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
+mod dimension_curves;
 mod parameters;
 mod rollback;
+mod state_zero;

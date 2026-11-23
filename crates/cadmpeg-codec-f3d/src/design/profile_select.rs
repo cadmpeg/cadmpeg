@@ -95,7 +95,7 @@ fn histories_for_scope<'a>(
     histories: &'a [crate::history_records::AsmHistory],
 ) -> &'a [crate::history_records::AsmHistory] {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+        crate::history::history_states::bound_scope_history(scope_id, scope_histories, histories)
             .map_or(&[], std::slice::from_ref)
     } else {
         histories
@@ -538,7 +538,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     );
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
-                        crate::history::effective_scope_previous_history_state_id(
+                        crate::history::history_states::effective_scope_previous_history_state_id(
                             scope,
                             scoped_histories,
                         );
@@ -1271,7 +1271,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.histories,
                             );
                             let effective_previous_history_state_id =
-                                crate::history::effective_scope_previous_history_state_id(
+                                crate::history::history_states::effective_scope_previous_history_state_id(
                                     scope,
                                     scoped_histories,
                                 );

@@ -535,7 +535,8 @@ mod tests {
     fn unsupported_definition_framing_does_not_use_structural_color_fallback() {
         let mut bytes = face_color_definition(16);
         let field_names = 8 + FACE_COLOR_FAMILY.len() + 24;
-        bytes.splice(field_names..field_names + 2, [0xff, 0xff, 0, 1]);
+        // Remainder word -32768 has no int16 magnitude (`parasolid.md` §1).
+        bytes.splice(field_names..field_names + 2, [0x80, 0x00, 0, 1]);
         bytes.extend(bare_entity(700, 1, 16, &[0, 0, 0, 0, 0, 1]));
         bytes.extend(color(900, [0.25, 0.5, 0.75], false));
 

@@ -127,14 +127,14 @@ fn finish(
         .collect();
     if let Written::Semantic {
         coverage,
-        omitted_envelope_bytes,
         stale_solid,
         unwritten,
+        losses: written_losses,
         ..
     } = written
     {
         losses.extend(stale_solid.iter().cloned());
-        losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
+        losses.extend(written_losses.iter().cloned());
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.
         let regenerated_brep = coverage.pcurves

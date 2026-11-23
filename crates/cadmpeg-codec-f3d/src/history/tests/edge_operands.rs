@@ -2,7 +2,7 @@
 //! Historical edge-operand binding tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::bind_edge_operand_history_candidates;
+use crate::history::edge_operand_history::bind_edge_operand_history_candidates;
 use std::collections::HashMap;
 
 #[test]
@@ -97,7 +97,7 @@ fn sole_transition_deletion_does_not_supply_operand_identity() {
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&scope),
         &[],
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &scope_histories,
     )
     .unwrap();
@@ -173,7 +173,7 @@ fn a_rebind_that_stops_before_the_transition_clears_its_deleted_edges() {
         std::slice::from_mut(&mut operand),
         &[],
         &[],
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::new(),
     )
     .unwrap();
@@ -349,7 +349,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                 std::slice::from_mut(&mut operand),
                 &[scope],
                 &[recipe],
-                crate::history::BindingHistories::Shared(&[history]),
+                crate::history::binding_histories::BindingHistories::Shared(&[history]),
                 &owners,
             )
             .unwrap();
@@ -549,7 +549,7 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
             std::slice::from_mut(&mut operand),
             &[scope],
             &[recipe],
-            crate::history::BindingHistories::Shared(&[history]),
+            crate::history::binding_histories::BindingHistories::Shared(&[history]),
             &owners,
         )
         .unwrap();
@@ -666,7 +666,11 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
 
 #[test]
 fn an_inferred_side_one_edge_names_its_operand_state_and_slot() {
-    let note = crate::history::inferred_edge_selection_note("f3d:test:operand#20", 7, 31);
+    let note = crate::history::edge_operand_history::inferred_edge_selection_note(
+        "f3d:test:operand#20",
+        7,
+        31,
+    );
     assert_eq!(
         note.code,
         crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.kind()

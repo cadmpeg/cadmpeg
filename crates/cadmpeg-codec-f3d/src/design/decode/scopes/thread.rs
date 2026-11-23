@@ -23,7 +23,16 @@ use crate::records::feature::thread::DesignThreadForm;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::report::loss::LossNote;
 
-pub(super) fn hole_companion_history(tail: &[u8], thread: u32) -> Option<usize> {
+/// The 88-byte companion tail of a Thread scope that owns a Hole.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct HoleCompanionTail {
+    /// Tail offset of the preceding history-state identity.
+    pub(super) previous_history_state: usize,
+    /// The suppression flag.
+    pub(super) suppressed: bool,
+}
+
+pub(super) fn hole_companion_tail(tail: &[u8], thread: u32) -> Option<HoleCompanionTail> {
     let reference = |at| super::shared_frames::marked_record_reference(tail, at);
     let first = reference(companion_tail::FIRST_COMPANION)?;
     let hole = reference(companion_tail::HOLE)?;
@@ -43,7 +52,10 @@ pub(super) fn hole_companion_history(tail: &[u8], thread: u32) -> Option<usize> 
         && hole != 0
         && hole < thread
         && tail.get(companion_tail::ZERO_SUFFIX) == Some(&0))
-    .then_some(companion_tail::PREVIOUS_HISTORY_STATE)
+    .then_some(HoleCompanionTail {
+        previous_history_state: companion_tail::PREVIOUS_HISTORY_STATE,
+        suppressed: tail.get(companion_tail::FLAGS) == Some(&1),
+    })
 }
 
 pub(super) fn exact_thread_construction(

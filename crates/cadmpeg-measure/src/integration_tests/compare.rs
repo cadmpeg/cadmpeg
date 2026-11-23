@@ -368,16 +368,16 @@ fn a_nurbs_body_turned_about_its_centroid_disagrees_by_its_box() {
     assert_eq!(result.verdict(), Verdict::Disagree);
     let report = measure(&plain, &Selection::default());
     let bbox = report.bodies()[0].bbox().measured().expect("body box");
-    assert_eq!(bbox.value().kind, BoxKind::Conservative);
-    assert!(bbox.value().boundary.is_some());
+    assert_eq!(bbox.value().kind, BoxKind::Tight);
+    assert!(bbox.value().boundary.is_none());
     assert_eq!(result.unmatched_a().len(), 1);
     assert_eq!(result.unmatched_b().len(), 1);
     let row = result
         .document()
         .iter()
-        .find(|row| row.quantity() == "bbox")
+        .find(|row| row.quantity() == "bbox.min.x")
         .expect("document box row");
-    assert_eq!(row.rule(), Rule::Containment);
+    assert_eq!(row.rule(), Rule::Equal);
     assert_eq!(row.agrees(), Some(false));
     let violation = row.difference().expect("violation");
     assert!((violation - 0.5).abs() <= 1.0e-9, "{violation}");

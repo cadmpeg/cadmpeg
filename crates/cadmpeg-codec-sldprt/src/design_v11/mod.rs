@@ -19,6 +19,7 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod profile_check;
 mod sketch;
 mod states;
 #[cfg(test)]
@@ -44,9 +45,11 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
@@ -58,6 +61,8 @@ pub(crate) struct Part<'a> {
     pub(crate) histories: &'a [FeatureHistory],
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
+    /// The `Config-N` class map each lane continues, by lane id.
+    pub(crate) configuration_maps: &'a ConfigurationMaps,
     /// The bodies of the current geometry: those of the active
     /// configuration.
     pub(crate) bodies: Vec<BodyId>,
@@ -72,6 +77,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
+    /// The sketch entities read from a curve record of state `0`: curves
+    /// outside their sketch's profile.
+    pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
@@ -91,12 +99,14 @@ pub(crate) fn project(
     let Part {
         histories,
         lanes,
+        configuration_maps,
         bodies,
         persistent,
         length,
         equations: managers,
         length_places,
         rollback,
+        outside_profile,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -113,12 +123,21 @@ pub(crate) fn project(
         lanes,
         &mut timeline,
         &entries,
-        &definition,
+        &typed::Scope {
+            definition: &definition,
+            outside_profile,
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
+    losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_circles);
+    losses.extend(typed.profile_differs);
+    losses.extend(typed.sketch_empty);
+    losses.extend(typed.profile_unchecked);
     let mut readings = parameters::Readings {
-        decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
+        decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
         length_places,
         bound: typed.bound,

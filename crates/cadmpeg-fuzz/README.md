@@ -123,6 +123,8 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
 - IGES: `iges_cards`, `iges_global`, `iges_directory`, `iges_parameters` go
   through `cadmpeg_codec_iges::fuzz`
 - Creo View: `pvz_package` and `pvz_exact` go through `cadmpeg_codec_pvz::fuzz`
+- eDrawings: `edrawings_package`, `edrawings_stream`, and `edrawings_model` go through
+  `cadmpeg_codec_edrawings::fuzz`
 - OpenUSD: `usd_layer` goes through `cadmpeg_codec_usd::fuzz`
 
 IR and STEP:
