@@ -28,6 +28,7 @@ use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::units::UnitVector3;
 
+use crate::construction;
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::{dimension, double_value, ref_axis};
 use crate::loss::SolidEdgeLossCode;
@@ -384,7 +385,7 @@ fn revolve(
         loops: None,
         axis: Some(Construction::<kinds::Axis> {
             resolved: Some(axis),
-            ..Construction::default()
+            ..construction::empty()
         }),
         span: Some(span),
         fit: None,
