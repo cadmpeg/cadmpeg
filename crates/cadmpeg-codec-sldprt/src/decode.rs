@@ -3555,8 +3555,9 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    let (assumed_planes, mut top_references) =
+    let mut plane_bindings =
+        crate::resolved_features::compact_reference_planes::PlaneBindings::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -3565,8 +3566,8 @@ fn build_geometry_ir(
             &histories,
             &lanes,
             &mut pmi_losses,
-        )?;
-    held_handles.hold_assumed_planes(assumed_planes);
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -3582,7 +3583,8 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    top_references.extend(
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_marker_backed_sketches(
             ctx,
             &mut ir.model.features,
@@ -3672,8 +3674,10 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
-        &sketches,
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -3904,7 +3908,7 @@ fn build_geometry_ir(
         &all_lanes,
         &exact_profiles,
         &mut annotations,
-        &mut top_references,
+        &mut plane_bindings,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -4233,21 +4237,12 @@ fn build_geometry_ir(
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
-            source_block.offset,
-        );
+        let member = container::Section::Block(source_block);
+        let id = member.native_id();
         if unknowns.iter().any(|record| record.id() == &id) {
             continue;
         }
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            source_block.section.source_stream(),
-            u64_from_index(source_block.offset),
-            source_block.family.label(),
-            Exactness::ByteExact,
-        )?;
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -4256,18 +4251,9 @@ fn build_geometry_ir(
         ));
     }
     for source_stream in &mut scan.compound_streams {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
-            source_stream.directory_id,
-        );
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            &source_stream.path,
-            0,
-            container::payload_family(&source_stream.payload).label(),
-            Exactness::ByteExact,
-        )?;
+        let member = container::Section::Compound(source_stream);
+        let id = member.native_id();
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -4372,11 +4358,12 @@ fn build_geometry_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(top_references.note(&ir.model.sketches));
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4954,8 +4941,9 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    let (assumed_planes, mut top_references) =
+    let mut plane_bindings =
+        crate::resolved_features::compact_reference_planes::PlaneBindings::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -4964,8 +4952,8 @@ fn build_metadata_ir(
             &histories,
             &lanes,
             &mut pmi_losses,
-        )?;
-    held_handles.hold_assumed_planes(assumed_planes);
+        )?,
+    );
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -4981,7 +4969,8 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    top_references.extend(
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_marker_backed_sketches(
             ctx,
             &mut ir.model.features,
@@ -5151,8 +5140,10 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
-        &ir.model.sketches,
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5200,7 +5191,7 @@ fn build_metadata_ir(
         lanes,
         &exact_profiles,
         &mut annotations,
-        &mut top_references,
+        &mut plane_bindings,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -5296,11 +5287,12 @@ fn build_metadata_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
     }
-    pmi_losses.extend(top_references.note(&ir.model.sketches));
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

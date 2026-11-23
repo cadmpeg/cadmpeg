@@ -1,4 +1,4 @@
-use super::container::{make_block, sldprt_with_body};
+use super::container::{make_block, outer_header, sldprt_with_body};
 use super::parasolid::owned_triangle;
 
 struct Entity {
@@ -36,6 +36,44 @@ impl Entity {
 }
 
 pub(crate) fn empty_hole_pattern_nominal_fixture() -> Vec<u8> {
+    let body = owned_triangle(0, 700, 0.0);
+    let mut source = sldprt_with_body(&body);
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Seed" Type="NativeSeed" id="1"/>
+            <Pattern Name="LPattern6" Type="LinearPattern" id="2" Seeds="1" Direction="1,0,0">
+                <Dimension Name="Spacing">1mm</Dimension>
+                <Dimension Name="Count">2</Dimension>
+            </Pattern>
+            <Hole Name="Hole6" Type="Hole" id="3" Profile="1">
+                <Dimension Name="Diameter">6mm</Dimension>
+                <Dimension Name="Depth">5mm</Dimension>
+            </Hole>
+        </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x40,
+        "SWIFT/Schema",
+        &hole_pattern_swift_payload(),
+    ));
+    source
+}
+
+/// A part with no body whose `SWIFT/Schema` stream holds the diameter
+/// annotation of [`empty_hole_pattern_nominal_fixture`].
+pub(crate) fn faceless_swift_fixture() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x40,
+        "SWIFT/Schema",
+        &hole_pattern_swift_payload(),
+    ));
+    source
+}
+
+fn hole_pattern_swift_payload() -> Vec<u8> {
     let mut cad_reference = Entity::new("PrizMetrik.GdtAnalysis.CadRef");
     cad_reference.strings.push(("CadIdentifier", ""));
     let mut cad_references = Entity::new("PrizMetrik.GdtAnalysis.CadRefCollection");
@@ -78,26 +116,7 @@ pub(crate) fn empty_hole_pattern_nominal_fixture() -> Vec<u8> {
 
     let mut payload = vec![0x11, 0x22, 0x33];
     encode_entity(&root, &mut payload);
-
-    let body = owned_triangle(0, 700, 0.0);
-    let mut source = sldprt_with_body(&body);
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords>
-            <Feature Name="Seed" Type="NativeSeed" id="1"/>
-            <Pattern Name="LPattern6" Type="LinearPattern" id="2" Seeds="1" Direction="1,0,0">
-                <Dimension Name="Spacing">1mm</Dimension>
-                <Dimension Name="Count">2</Dimension>
-            </Pattern>
-            <Hole Name="Hole6" Type="Hole" id="3" Profile="1">
-                <Dimension Name="Diameter">6mm</Dimension>
-                <Dimension Name="Depth">5mm</Dimension>
-            </Hole>
-        </Keywords>"#,
-    ));
-    source.extend(make_block(0x40, "SWIFT/Schema", &payload));
-    source
+    payload
 }
 
 fn encode_entity(entity: &Entity, bytes: &mut Vec<u8>) {

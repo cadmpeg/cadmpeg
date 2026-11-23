@@ -1319,14 +1319,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(scope.tail_flags.map_or_else(
-                    || {
+                suppressed: Some(match (scope.tail_flags, scope.companion_suppressed) {
+                    (Some(flags), _) => {
+                        projection_losses
+                            .extend(flags.assumption_notes(&format!("scope {}", scope.id)));
+                        flags.suppressed()
+                    }
+                    (None, Some(flag)) => flag.value,
+                    (None, None) => {
                         family.is_some_and(stateless_scope_is_suppressed)
                             && scope.history_state_id().is_none()
                             && scope.previous_history_state_id().is_none()
-                    },
-                    |flags| flags.suppressed,
-                )),
+                    }
+                }),
                 dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
@@ -2657,7 +2662,7 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .count()
 }
 
-/// Whether a scope of this family whose tail stores no flags and whose
+/// Whether a scope of this family whose tail stores no timeline state and whose
 /// current and preceding history-state identities are null is suppressed. An
 /// active scope of these families changes ASM topology and carries both
 /// identities.

@@ -168,6 +168,50 @@ impl DecodeContext<'_> {
     }
 }
 
+impl crate::scan::ScanBudget<'_> {
+    /// Parses XML after admitting its input, tree storage, and nesting depth.
+    pub fn parse_xml<'input>(
+        &self,
+        text: &'input str,
+    ) -> Result<roxmltree::Document<'input>, crate::scan::StopReason> {
+        use crate::scan::StopReason;
+
+        self.source(u64_from_index(text.len()))?;
+        self.retain(XML_FIXED_BYTES)?;
+        let shape = xml_shape_checked(text, || self.check())?;
+        self.check()?;
+        let prefixes = u64_from_index(shape.prefixes.len());
+        if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES || prefixes > MAX_XML_NAMESPACE_PREFIXES {
+            return Err(StopReason::Unsupported(
+                "XML attribute or namespace limit".into(),
+            ));
+        }
+        self.depth(shape.depth)?;
+        let nodes = shape
+            .less_than
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+            .ok_or(StopReason::RetainedBytes)?;
+        let storage = xml_storage_bytes(&shape, prefixes)
+            .and_then(|bytes| bytes.checked_sub(XML_FIXED_BYTES))
+            .and_then(|bytes| {
+                nodes
+                    .checked_mul(3 * XML_NODE_BYTES)
+                    .and_then(|nodes| bytes.checked_add(nodes))
+            })
+            .ok_or(StopReason::RetainedBytes)?;
+        self.retain(storage)?;
+        let options = roxmltree::ParsingOptions {
+            nodes_limit: u32::try_from(nodes).map_err(|_| StopReason::RetainedBytes)?,
+            ..roxmltree::ParsingOptions::default()
+        };
+        let document = roxmltree::Document::parse_with_options(text, options)
+            .map_err(|error| StopReason::Malformed(error.to_string()))?;
+        self.check()?;
+        Ok(document)
+    }
+}
+
 fn tree_too_large(kind: &str, allowance: u64, operation: &str) -> CodecError {
     CodecError::NotImplemented(format!(
         "{operation}: the {kind} tree could need more than the \
@@ -242,6 +286,14 @@ impl<'text> XmlShape<'text> {
 /// the counts do not fall below what the parser stores. A text run ends at
 /// markup other than CDATA, where roxmltree stops merging text.
 fn xml_shape(text: &str) -> XmlShape<'_> {
+    xml_shape_checked(text, || Ok::<(), std::convert::Infallible>(()))
+        .unwrap_or_else(|never| match never {})
+}
+
+fn xml_shape_checked<E>(
+    text: &str,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<XmlShape<'_>, E> {
     let bytes = text.as_bytes();
     let mut shape = XmlShape::default();
     let mut state = XmlScan::Text;
@@ -257,6 +309,7 @@ fn xml_shape(text: &str) -> XmlShape<'_> {
     let mut run_start = 0_usize;
     let mut copied = false;
     for (index, &byte) in bytes.iter().enumerate() {
+        check()?;
         shape.less_than += u64::from(byte == b'<');
         shape.equals += u64::from(byte == b'=');
         let tail = bytes.get(index..).unwrap_or_default();
@@ -370,7 +423,7 @@ fn xml_shape(text: &str) -> XmlShape<'_> {
     if let Some(start) = prefix_start {
         shape.prefix(bytes.get(start..).unwrap_or_default());
     }
-    shape
+    Ok(shape)
 }
 
 /// Bytes that roxmltree 0.21.1 and this module hold while they parse a text
@@ -828,6 +881,119 @@ mod tests {
                     "{reserved} {rest}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn scan_xml_admits_input_storage_and_depth_before_parsing() {
+        use crate::scan::{ManualClock, ScanBudget, ScanLimits, StopReason};
+
+        let clock = ManualClock::default();
+        let malformed = "<r><a><b>";
+        for (limits, expected) in [
+            (
+                ScanLimits {
+                    source_bytes: 1,
+                    ..ScanLimits::default()
+                },
+                StopReason::SourceBytes,
+            ),
+            (
+                ScanLimits {
+                    retained_bytes: 1,
+                    ..ScanLimits::default()
+                },
+                StopReason::RetainedBytes,
+            ),
+            (
+                ScanLimits {
+                    nesting_depth: 2,
+                    ..ScanLimits::default()
+                },
+                StopReason::NestingDepth,
+            ),
+        ] {
+            let budget = ScanBudget::new(limits, &clock);
+            assert_eq!(
+                budget
+                    .parse_xml(malformed)
+                    .expect_err("scan resource refusal"),
+                expected
+            );
+        }
+        let budget = ScanBudget::new(ScanLimits::default(), &clock);
+        assert!(matches!(
+            budget.parse_xml(malformed),
+            Err(StopReason::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn scan_xml_cancellation_interrupts_the_admission_pass() {
+        use crate::scan::{ScanBudget, ScanClock, ScanLimits, StopReason};
+        use std::cell::Cell;
+        use std::time::Duration;
+
+        struct Clock(Cell<u64>);
+        impl ScanClock for Clock {
+            fn elapsed(&self) -> Duration {
+                Duration::ZERO
+            }
+            fn is_cancelled(&self) -> bool {
+                let calls = self.0.get();
+                self.0.set(calls + 1);
+                calls >= 16
+            }
+        }
+        let clock = Clock(Cell::new(0));
+        let budget = ScanBudget::new(ScanLimits::default(), &clock);
+        let text = format!("<r>{}</r>", "<a/>".repeat(100));
+        assert_eq!(
+            budget.parse_xml(&text).expect_err("cancelled input pass"),
+            StopReason::Cancelled
+        );
+        assert_eq!(budget.stop_reason(), Some(StopReason::Cancelled));
+    }
+
+    #[test]
+    fn scan_xml_storage_reservation_covers_the_parse_peak() {
+        use crate::scan::{ManualClock, ScanBudget, ScanLimits, StopReason};
+
+        for text in [
+            realistic_document(128),
+            format!("<r>{}</r>", "a<![CDATA[b]]>&amp;<c/>".repeat(128)),
+            format!(
+                "<r xmlns:p='u'>{}</r>",
+                "<p:a xmlns:q='v' q:b='&amp;'/>".repeat(128)
+            ),
+        ] {
+            let shape = xml_shape(&text);
+            let nodes = shape.less_than * 2 + 1;
+            let storage = xml_storage_bytes(&shape, u64_from_index(shape.prefixes.len()))
+                .expect("XML storage bound")
+                + nodes * 3 * XML_NODE_BYTES;
+            let clock = ManualClock::default();
+            let budget = ScanBudget::new(
+                ScanLimits {
+                    retained_bytes: storage - 1,
+                    ..ScanLimits::default()
+                },
+                &clock,
+            );
+            assert_eq!(
+                budget.parse_xml(&text).expect_err("tree storage refusal"),
+                StopReason::RetainedBytes
+            );
+            let budget = ScanBudget::new(
+                ScanLimits {
+                    retained_bytes: storage,
+                    ..ScanLimits::default()
+                },
+                &clock,
+            );
+            let (document, peak) = heap::peak(|| budget.parse_xml(&text));
+            assert!(document.is_ok());
+            assert!(peak <= storage, "peak {peak} exceeds reservation {storage}");
         }
     }
 
