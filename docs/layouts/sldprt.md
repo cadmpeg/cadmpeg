@@ -4347,12 +4347,26 @@ Parsed by:
 Spec §2 · layout: byte offsets · size: 14 B
 
 Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/lofts.rs`
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/sweeps/read.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `sentinel` | `bytes[8]` | little | spec | an eight-byte `ff` block · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
 | 8 | 6 | `zeros` | `bytes[6]` | little | spec | a six-byte zero block · value `[0, 0, 0, 0, 0, 0]` |
+
+## `loft_section_tail`
+
+Spec §2 · layout: byte offsets · size: 29 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/lofts.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 20 | `zeros` | `bytes[20]` | little | spec | a zero block of twenty bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 8 | `unit` | `f64` | little | spec | a unit f64 `1` |
+| 28 | 1 | `body_flag` | `u8` | little | spec | a body flag byte `0` · value `0` |
 
 ## `sweep_reference_blob_prefix`
 

@@ -207,6 +207,9 @@ pub(crate) fn enrich_history_semantic(
     }
     losses
         .extend(crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes));
+    losses.extend(crate::resolved_features::lofts::enrich_history_loft_inputs(
+        histories, lanes,
+    ));
     Ok(losses)
 }
 
@@ -975,6 +978,13 @@ pub(crate) fn project_configuration_sketch_states(
                     entities: &mut ir.model.sketch_entities,
                     spatial_entities: &mut ir.model.spatial_sketch_entities,
                 },
+                &mut losses,
+            );
+            crate::resolved_features::lofts::bind_guides(
+                &mut features,
+                &ir.model.features,
+                histories,
+                scoped_lanes,
                 &mut losses,
             );
             crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);

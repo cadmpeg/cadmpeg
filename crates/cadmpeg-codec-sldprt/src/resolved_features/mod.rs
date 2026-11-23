@@ -95,6 +95,8 @@ mod helix;
 
 pub(crate) mod holes;
 
+pub(crate) mod lofts;
+
 pub(crate) mod markers;
 
 pub(crate) mod names;

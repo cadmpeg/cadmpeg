@@ -228,6 +228,15 @@ pub(crate) enum SldprtLossCode {
     FeatureSweepPathHeaderAssumed,
     /// A generated solid sweep uses the Merge reading of its Boolean operation.
     FeatureSweepMergeAssumed,
+    /// A loft keeps no sections: its records are unreadable, its configurations
+    /// disagree, or a section names no unique preceding sketch.
+    FeatureLoftSectionsUnresolved,
+    /// A loft with three or more sections takes their stored order as the section order.
+    FeatureLoftSectionOrderAssumed,
+    /// Loft guide curves keep their native references.
+    FeatureLoftGuidesRetained,
+    /// A loft with readable sections keeps no guide curves: its guide-curve records are unreadable, its configurations disagree, or its stated sections differ from its section records.
+    FeatureLoftGuidesUnresolved,
     /// Extrusion profile curve data remains unresolved.
     FeatureProfileCurvesUnavailable,
     /// Extrusion travel sense remains in its native feature-input lane.
@@ -715,6 +724,10 @@ impl SldprtLossCode {
         Self::FeatureSweepPathRosterAssumed,
         Self::FeatureSweepPathHeaderAssumed,
         Self::FeatureSweepMergeAssumed,
+        Self::FeatureLoftSectionsUnresolved,
+        Self::FeatureLoftSectionOrderAssumed,
+        Self::FeatureLoftGuidesRetained,
+        Self::FeatureLoftGuidesUnresolved,
         Self::FeatureProfileCurvesUnavailable,
         Self::FeatureExtrudeDirectionUnresolved,
         Self::FeatureExtrudeReversalContradicted,
@@ -947,6 +960,10 @@ impl SldprtLossCode {
             Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
             Self::FeatureSweepPathHeaderAssumed => "feature.sweep-path-header-assumed",
             Self::FeatureSweepMergeAssumed => "feature.sweep-merge-assumed",
+            Self::FeatureLoftSectionsUnresolved => "feature.loft-sections-unresolved",
+            Self::FeatureLoftSectionOrderAssumed => "feature.loft-section-order-assumed",
+            Self::FeatureLoftGuidesRetained => "feature.loft-guides-retained",
+            Self::FeatureLoftGuidesUnresolved => "feature.loft-guides-unresolved",
             Self::FeatureProfileCurvesUnavailable => "feature.profile-curves-unavailable",
             Self::FeatureExtrudeDirectionUnresolved => "feature.extrude-direction-unresolved",
             Self::FeatureExtrudeReversalContradicted => "feature.extrude-reversal-contradicted",
@@ -1262,6 +1279,10 @@ impl SldprtLossCode {
             | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
+            | Self::FeatureLoftSectionsUnresolved
+            | Self::FeatureLoftSectionOrderAssumed
+            | Self::FeatureLoftGuidesRetained
+            | Self::FeatureLoftGuidesUnresolved
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeReversalContradicted
@@ -1592,6 +1613,10 @@ impl SldprtLossCode {
             | Self::FeatureSweepPathRosterAssumed
             | Self::FeatureSweepPathHeaderAssumed
             | Self::FeatureSweepMergeAssumed
+            | Self::FeatureLoftSectionsUnresolved
+            | Self::FeatureLoftSectionOrderAssumed
+            | Self::FeatureLoftGuidesRetained
+            | Self::FeatureLoftGuidesUnresolved
             | Self::FeatureProfileCurvesUnavailable
             | Self::FeatureExtrudeDirectionUnresolved
             | Self::FeatureExtrudeReversalContradicted
@@ -1870,6 +1895,10 @@ mod tests {
                 "feature.sweep-path-roster-assumed",
                 "feature.sweep-path-header-assumed",
                 "feature.sweep-merge-assumed",
+                "feature.loft-sections-unresolved",
+                "feature.loft-section-order-assumed",
+                "feature.loft-guides-retained",
+                "feature.loft-guides-unresolved",
                 "feature.profile-curves-unavailable",
                 "feature.extrude-direction-unresolved",
                 "feature.extrude-reversal-contradicted",

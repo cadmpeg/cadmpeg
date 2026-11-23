@@ -1,7 +1,7 @@
 //! Owned sweep path references and generated circular sections.
 
 mod paths;
-mod read;
+pub(super) mod read;
 
 use super::component_paths::component_feature_precedes;
 use super::scalars::FeatureObjectNames;

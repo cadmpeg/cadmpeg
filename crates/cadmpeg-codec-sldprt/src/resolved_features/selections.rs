@@ -3406,7 +3406,7 @@ pub(super) fn compact_profile_general_curve_ref_at(payload: &[u8], offset: usize
 }
 
 /// The ten-byte child prefix after a component-source class declaration.
-fn component_child_prefix_at(payload: &[u8], prefix: usize) -> bool {
+pub(super) fn component_child_prefix_at(payload: &[u8], prefix: usize) -> bool {
     View::u16_le_at(payload, prefix).is_some_and(is_class_token)
         && payload.get(prefix + 2..prefix + 10) == Some(&[0x02, 0, 0, 0, 0, 0, 0, 0])
 }
