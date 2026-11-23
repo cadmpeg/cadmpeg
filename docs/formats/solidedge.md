@@ -14,8 +14,9 @@ root storage's mini stream.
 
 A part, sheet-metal, or assembly document has the root entries `JSitesList`
 and `PSMroots`. A family-of-assemblies document has the root entries
-`FamilyInfo` and `FOAPublishData` and keeps its content storages below a
-nested storage named `Master` followed by U+0001. Entry names compare without regard to ASCII case.
+`FamilyInfo` and `FOAPublishData`. Entry names compare without regard to ASCII
+case. A document of the first form has the root storage CLSID of a part, sheet-metal,
+or assembly document, and a document of the second form has the family CLSID.
 The root storage CLSID distinguishes the document kind:
 
 | Kind | Extension | Root CLSID |
