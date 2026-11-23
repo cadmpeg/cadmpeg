@@ -450,7 +450,9 @@ fn suppression(word: u32, excluded: &[u32]) -> Vec<Option<bool>> {
 
 #[test]
 fn family_member_state_suppresses_the_excluded_occurrences_it_keeps() {
-    let off = Some(false);
+    // The family documents hold no structure list, so only an excluded
+    // occurrence states its suppression.
+    let off = None;
     let on = Some(true);
     // The first member is active: nothing is excluded.
     assert_eq!(suppression(3, &[21]), [off; 4]);
