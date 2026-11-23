@@ -2670,21 +2670,28 @@ fn merge_local_bodies(
     Ok(())
 }
 
-/// One loss for each configuration whose partition holds no body and whose
-/// `Config-N-FeatureBodies` streams the decode does not take. Only the
-/// selected partition's empty model takes its configuration's imported
-/// bodies (spec §3.3); what those streams state for any other configuration
-/// is open (DI-84).
+/// One loss for each configuration whose partition holds no body, or that
+/// has no partition, and whose `Config-N-FeatureBodies` streams the decode
+/// does not take. Only the selected partition's empty model takes its
+/// configuration's imported bodies (spec §3.3); what those streams state for
+/// any other configuration is open (DI-84). The loss is a warning for a
+/// configuration that is not active, and an error for the active one, whose
+/// bodies the model would then lack.
 fn untaken_local_bodies_losses(
     scan: &ContainerScan<'_>,
     taken: Option<usize>,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let partitioned = configuration_bodies
+        .iter()
+        .map(|(index, _)| *index)
+        .collect::<BTreeSet<_>>();
     let held = configuration_bodies
         .iter()
         .filter(|(_, bodies)| !bodies.is_empty())
         .map(|(index, _)| *index)
         .collect::<BTreeSet<_>>();
+    let active = container::active_configuration_index(scan);
     let mut streams = BTreeMap::<usize, usize>::new();
     for (_, stream) in all_local_body_streams(scan) {
         if let Some(index) = configuration_index(stream.section.name().unwrap_or("")) {
@@ -2695,10 +2702,19 @@ fn untaken_local_bodies_losses(
         .into_iter()
         .filter(|(index, _)| Some(*index) != taken && !held.contains(index))
         .map(|(index, count)| {
-            SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
-                "configuration index {index}: its partition holds no body, and the \
-                 {count} imported body stream(s) of its Config-{index}-FeatureBodies are not \
-                 decoded."
+            let code = if Some(index) == active {
+                SldprtLossCode::GeometryImportedBodiesNotTransferred
+            } else {
+                SldprtLossCode::ConfigStateImportedBodiesNotTransferred
+            };
+            let partition = if partitioned.contains(&index) {
+                "its partition holds no body"
+            } else {
+                "the file stores no partition of it"
+            };
+            code.note(format!(
+                "configuration index {index}: {partition}, and the {count} imported body \
+                 stream(s) of its Config-{index}-FeatureBodies are not decoded."
             ))
         })
         .collect()

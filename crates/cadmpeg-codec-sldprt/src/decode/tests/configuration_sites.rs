@@ -614,24 +614,28 @@ fn imported_bodies_stay_out_while_another_site_has_geometry() {
     );
     assert_eq!(
         untaken_imported_bodies(&decoded),
-        [
+        [(
+            "config.state-imported-bodies-not-transferred",
             "configuration index 1: its partition holds no body, and the 1 imported body \
-          stream(s) of its Config-1-FeatureBodies are not decoded."
-        ]
+             stream(s) of its Config-1-FeatureBodies are not decoded."
+        )]
     );
 }
 
-/// The messages of the losses of imported bodies that the decode does not
-/// take.
-fn untaken_imported_bodies(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<&str> {
+/// The local code and message of each loss of imported bodies, of a
+/// configuration that is not active or of the active one.
+fn untaken_imported_bodies(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<(&str, &str)> {
+    use crate::loss::SldprtLossCode;
+    let kinds = [
+        SldprtLossCode::ConfigStateImportedBodiesNotTransferred.kind(),
+        SldprtLossCode::GeometryImportedBodiesNotTransferred.kind(),
+    ];
     decoded
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code == crate::loss::SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
-        })
-        .map(|loss| loss.message.as_str())
+        .filter(|loss| kinds.contains(&loss.code))
+        .map(|loss| (loss.code.local_code(), loss.message.as_str()))
         .collect()
 }
 
@@ -656,10 +660,29 @@ fn imported_bodies_of_another_configuration_are_not_taken() {
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert_eq!(
         untaken_imported_bodies(&decoded),
-        [
-            "configuration index 1: its partition holds no body, and the 1 imported body \
-          stream(s) of its Config-1-FeatureBodies are not decoded."
-        ]
+        [(
+            "config.state-imported-bodies-not-transferred",
+            "configuration index 1: the file stores no partition of it, and the 1 imported \
+             body stream(s) of its Config-1-FeatureBodies are not decoded."
+        )]
+    );
+}
+
+#[test]
+fn untaken_imported_bodies_of_the_active_configuration_are_an_error() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x43, "Contents/Features", br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="2" swConfigurationName="Default" swConfigurationId="0"/><swModel id="9" swConfigurationName="Other" swConfigurationId="1"/><swConfiguration id="1" swName="Default" swID="0" swModelRef="2" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="NO"/><swConfiguration id="8" swName="Other" swID="1" swModelRef="9" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#));
+    source.extend(local_bodies_block(1, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        untaken_imported_bodies(&decoded),
+        [(
+            "geometry.imported-bodies-not-transferred",
+            "configuration index 1: the file stores no partition of it, and the 1 imported \
+             body stream(s) of its Config-1-FeatureBodies are not decoded."
+        )]
     );
 }
 
