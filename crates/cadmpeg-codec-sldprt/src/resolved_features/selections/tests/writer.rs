@@ -85,6 +85,7 @@ fn semantic_writer_keeps_stored_compact_edge_selections_and_names_the_edit() {
                     references: Vec::new(),
                     producer_feature_refs: Vec::new(),
                     terminal_feature_ref: None,
+                    mark_reference: false,
                 });
         });
         let feature = ir_edit

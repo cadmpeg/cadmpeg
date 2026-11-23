@@ -3523,7 +3523,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3532,6 +3532,7 @@ fn build_geometry_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -3638,6 +3639,11 @@ fn build_geometry_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    crate::resolved_features::markers::report_listed_curve_relation_drops(
+        sketch_lanes,
+        &histories,
+        &mut pmi_losses,
+    );
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             &mut ir.model.features,
@@ -3647,6 +3653,12 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    let solid = crate::resolved_features::stream_readings::SolidEdges::new(
+        &brep.edges,
+        &brep.vertices,
+        &brep.points,
+        &brep.curves,
+    );
     plane_bindings.extend(
         crate::resolved_features::profiles::project_marker_backed_sketches(
             ctx,
@@ -3659,12 +3671,7 @@ fn build_geometry_ir(
             crate::resolved_features::profiles::MarkerSources {
                 histories: &histories,
                 lanes: sketch_lanes,
-                solid: &crate::resolved_features::stream_readings::SolidEdges::new(
-                    &brep.edges,
-                    &brep.vertices,
-                    &brep.points,
-                    &brep.curves,
-                ),
+                solid: &solid,
             },
             &mut pmi_losses,
         )?,
@@ -3710,12 +3717,14 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    crate::resolved_features::relation_geometry::project_relation_point_geometry(
-        &mut sketch_entities,
-        &sketches,
-        &ir.model.features,
-        sketch_lanes,
-    );
+    let mut relation_points =
+        crate::resolved_features::relation_geometry::project_relation_point_geometry(
+            &mut sketch_entities,
+            &sketches,
+            &ir.model.features,
+            sketch_lanes,
+            &solid,
+        );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut sketch_entities,
         &ir.model.features,
@@ -3967,16 +3976,19 @@ fn build_geometry_ir(
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
     let stored_bodies = stored_partition_bodies(&ir, &configuration_bodies);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
-    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        ctx,
-        &mut ir,
-        &histories,
-        &all_lanes,
-        &exact_profiles,
-        &mut annotations,
-        &mut plane_bindings,
-    )?;
+    let (configuration_losses, configuration_points) =
+        crate::history::configuration::project_configuration_sketch_states(
+            ctx,
+            &mut ir,
+            &histories,
+            &all_lanes,
+            &exact_profiles,
+            &mut annotations,
+            &mut plane_bindings,
+        )?;
     pmi_losses.extend(configuration_losses);
+    relation_points.extend(configuration_points);
+    pmi_losses.extend(relation_points.into_notes());
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,
@@ -4415,6 +4427,17 @@ fn build_geometry_ir(
     if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4923,7 +4946,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4932,6 +4955,7 @@ fn build_metadata_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -5098,6 +5122,11 @@ fn build_metadata_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    crate::resolved_features::markers::report_listed_curve_relation_drops(
+        sketch_lanes,
+        &histories,
+        &mut pmi_losses,
+    );
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             &mut ir.model.features,
@@ -5170,12 +5199,14 @@ fn build_metadata_ir(
         &ir.model.parameters,
         sketch_lanes,
     );
-    crate::resolved_features::relation_geometry::project_relation_point_geometry(
-        &mut ir.model.sketch_entities,
-        &ir.model.sketches,
-        &ir.model.features,
-        sketch_lanes,
-    );
+    let mut relation_points =
+        crate::resolved_features::relation_geometry::project_relation_point_geometry(
+            &mut ir.model.sketch_entities,
+            &ir.model.sketches,
+            &ir.model.features,
+            sketch_lanes,
+            &crate::resolved_features::stream_readings::SolidEdges::default(),
+        );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut ir.model.sketch_entities,
         &ir.model.features,
@@ -5321,16 +5352,19 @@ fn build_metadata_ir(
     );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        ctx,
-        &mut ir,
-        &histories,
-        lanes,
-        &exact_profiles,
-        &mut annotations,
-        &mut plane_bindings,
-    )?;
+    let (configuration_losses, configuration_points) =
+        crate::history::configuration::project_configuration_sketch_states(
+            ctx,
+            &mut ir,
+            &histories,
+            lanes,
+            &exact_profiles,
+            &mut annotations,
+            &mut plane_bindings,
+        )?;
     pmi_losses.extend(configuration_losses);
+    relation_points.extend(configuration_points);
+    pmi_losses.extend(relation_points.into_notes());
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,
@@ -5403,6 +5437,17 @@ fn build_metadata_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir

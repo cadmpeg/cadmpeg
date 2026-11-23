@@ -31,7 +31,8 @@ pub(crate) struct PreparedFeatures {
     /// The serialized object names to rewrite.
     pub(crate) renames: Vec<FeatureInputRename>,
     /// The feature edits the written records hold only in part, or that the
-    /// stored solid does not show.
+    /// stored solid does not show, and the relation point charges of the
+    /// configuration states projected again for the write.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 

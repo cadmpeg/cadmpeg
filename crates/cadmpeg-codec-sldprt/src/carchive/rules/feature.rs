@@ -2069,7 +2069,11 @@ pub(crate) fn pmark(r: &mut Reader<'_>) -> Res<V> {
     let at = r.p;
     let owner = r.holder_name();
     let value = pmark_record(r)?;
-    r.marks.push(MarkOwner { at, owner });
+    r.marks.push(MarkOwner {
+        at,
+        end: r.p,
+        owner,
+    });
     Ok(value)
 }
 

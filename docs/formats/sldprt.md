@@ -2061,6 +2061,8 @@ A `moCompEdge_c` written in a fillet's edge list is followed by 62 zero bytes (t
 
 A `Fillet_c` fillet writes a feature, 58 bytes, and a `moPMarkRecord_c` in its *id-range* form: a little-endian u32, a little-endian u32 identifier, u32 `1`, a second identifier, sixteen zero bytes, a little-endian u32, 30 zero bytes (16 in some), a little-endian u32 count and that many identity hops, a little-endian u16 count and that many edge references, and six zero bytes — or, in place of the six bytes, a `suObList` of edge references (a chamfer's; in files of `swVersion` 12000 there are no six bytes). Then come `suObList` objects (the first holds the filleted edges), little-endian u32 `1`, u32 `0`, a `suObList`, u16 `0` and a `suObList` of `edgeRadiusObject_c` objects. An `edgeRadiusObject_c` writes its radius display dimension, a `moCompEdge_c`, 66 zero bytes, a byte `1`, a `suObList`, 58 bytes (two f64 `0.5` among them), a little-endian u32 count and that many component objects. Then come edge and face objects (`moCompEdge_c`, `moCompFace_c`), an edge preceded by a little-endian u16 (`0`, `2` or `16`) and sometimes followed by its 62-byte tail; a run of zero bytes and eight `ff` bytes; eight zero bytes; a little-endian u32 count *K* and *K* entries of two little-endian u32 (the second a flag), the radius as a little-endian f64 and a `moCompEdge_c` with its 62-byte tail; and a constant 40 bytes (u32 `6`, u16 `0`, u32 `0x5230`, `0x19`, `0x5b2d`, `0x58b7`, `0x59d1`, fourteen zero bytes). A face fillet writes a `moCompFace_c` and u16 `0` between its `suObList` objects, `faceRadiusObject_c` radii, little-endian u32 `0` and a u32 identifier in place of the eight zero bytes, and faces in place of the entries' edges. A `faceRadiusObject_c` writes its radius display dimension, a `moCompFace_c`, u16 `0`, a byte `1`, a `suObList`, 58 bytes (two f64 `0.5` among them), a little-endian u32 count *n* and *n* triples of a `moCompFace_c`, a null pointer and a `moCompEdge_c`. In fillet identity hops, the u16 before the `moFR_c` can be non-zero. A `moIndirectSurfIdRep_c` hop wraps one child hop, as the mirror-pattern hop does.
 
+The edge references inside a blend's `moPMarkRecord_c` are the record's own references, and they can name edges that the blend does not select. The edges a fillet blends are the `moCompEdge_c` objects of its first `suObList` and of its `edgeRadiusObject_c` objects, which lie outside the record; a chamfer's edge list lies after its record in the same way. A compact edge-selection vector that lies inside a `moPMarkRecord_c` is not an operand of the feature that holds the record.
+
 Offset entities: an `sgPGMProfileData_c` object writes a little-endian u16 count and that many `sgPGMLoopOffsetData_c` loops, a little-endian u16 (`0x245`), the offset distance as a little-endian f64, zero bytes (eight, or 22), and a little-endian u32 count *n* with *n* little-endian u32 loop identifiers (those of the next profile). When *n* is `0` the profile ends; otherwise a little-endian u32, u32 `0`, the next offset distance as an f64, six f64 (two points), u16 `2` and the next `sgPGMProfileData_c` written in place follow. An `sgPGMLoopOffsetData_c` writes two little-endian u32 identifiers and a little-endian u16 count and that many `sgPGMLoopOffsetEdgeData_c` objects (one little-endian u32 each). A sketch with several offsets thus writes `00 00 02 00` and a chain of profiles.
 
 A `moContextUnitComponent_c` (a component in another configuration or document) stands where a `moUnitComponent_c` may. It writes little-endian u16 `2`, a little-endian u16, little-endian u32 `1`, the configuration name as a Unicode `CString`, 44 bytes, sixteen `ff` bytes, 20 bytes and the optional version number. A `moSolidRef_w` writes one object pointer (a `moCompSolidBody_c`). A `moSavedExtBody_c` saved body writes a feature, a feature body head, a `moPMarkRecord_c`, sixteen zero bytes, a `moSolidRef_w`, a little-endian u32 count and that many u32 identifiers, i32 `-1`, u32 `0`, four little-endian u32, a transform block, ten zero bytes, four little-endian u32, the optional version number, twelve zero bytes, i32 `-1`, u32 `0`, a little-endian u32 count and that many compressed bodies. Then come u16 `1`, an object pointer, a rotation (nine f64), u32 `1`, a translation (three f64), u32 `0`, f64 `1`, 55 zero bytes, the configuration name as a Unicode `CString` and u32 `0` (four more zero bytes when the stream ends there). A `moDerivedSurfIdRep_c` identity hop wraps one child hop and ends with a little-endian u32.
@@ -2958,8 +2960,8 @@ sequence, and through the hops a consuming feature's face reference stores
 
 | Code | Class | Fields | Design name (CADIR §5.7) |
 |---:|---|---|---|
-| 74 | `moFromSktEntSurfIdRep_c` | sketch entity id | `Generated`, role `Side` |
-| 83 | `moFromSktEnt3IntSurfIdRep_c` | sketch entity id, two integers | `Generated`, role `Side` |
+| 74 | `moFromSktEntSurfIdRep_c` | the face's local identifier | `Generated`, role `Side` |
+| 83 | `moFromSktEnt3IntSurfIdRep_c` | the face's local identifier, two integers | `Generated`, role `Side` |
 | 40 | `moEndFaceSurfIdRep_c` | end (0 start, 1 end), region | `Generated`, role `Start` or `End`, `index` the region |
 | 81 | `moEndFace3IntSurfIdRep_c` | end, region, 0 | as code 40 |
 | 72 | `moFilletSurfIdRep_c` | ordinal, 1 to the blend face count | `Blend`, `index` the ordinal |
@@ -2975,8 +2977,36 @@ regions, and mostly 0 on the one cap of an end with one; the rule that assigns
 it is not known. Some code-81 caps carry 1 as their third field; what it states
 is not known, and such a cap is `Other("sldprt:81")`. The producer and the
 timestamp are allocations: they stay in the native name. The sketch entity id
-stays there too, and the name states no generating entity, because that it is
-the sketch segment's id is not established.
+stays there too, and the name states no generating entity, because the field is
+the face's local identifier, not the object index of a sketch segment.
+
+The local identifier of a side face of a feature that extrudes a closed polygon
+of lines joins to the profile line that sweeps it through the profile's 92-byte
+line records (§2). The records of the polygon's lines are in contour order: the
+line of each record shares a corner with the line of the next record, and the
+order can run in either rotational direction. In a line record whose u32 at
+marker +80 is zero, the u32 at marker +84 is the local identifier of the side
+face that the next line record sweeps, except that u32 `1` at +84 with a
+nonzero, non-null identity at +88 is the direct-form selector of the §2
+current-prefix direct profile line and names no side face. A record of a
+construction line is not a line of the polygon. The last line record whose u32
+at +80 is zero stores zero at +84.
+The first line record sweeps the one side identifier among the feature's
+side-class generated-surface identities that no +84 value of the profile
+names. The identifiers are not in record order, they can start above 1, and
+each piece of a side face that a later feature cuts keeps its identifier. A
+line after a record whose u32 at +80 is nonzero is not named by the profile.
+
+A component path of an edge selection lists the two faces beside the edge, then
+the faces at the edge's two ends. Each entry carries an instance cell and a
+local identifier equal to those of a generated-surface identity of the feature
+that holds the terminal component. An entry that names a side face carries its
+local identifier, so the rule above joins it to its profile line. The two end
+faces of an extrusion carry the local identifiers 0 (start) and 1 (end) in the
+end-face class. A path of an edge along a side face between the two end faces
+lists the two side faces, then the end-face entries 1 and 0. A path of an edge
+on the end face with local identifier 1 lists that face, the side face beside
+the edge, then the two side faces at the edge's ends.
 Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
 `moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
 instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`

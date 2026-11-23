@@ -164,6 +164,18 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
+    /// A relation point marker whose record form reads a coordinate pair
+    /// that holds a nonzero subnormal value gives no relation point.
+    SketchPointCoordinatesSubnormal,
+    /// A relation point marker gives no relation point where the decode
+    /// does not settle its place: no unique fitted marker transform and no
+    /// sketch frame place it; or, for a marker that only a list-read record
+    /// reaches, the fitted transform and the frame place it more than the
+    /// linear resolution apart and a curve end or centre of the sketch or a
+    /// vertex or circular-edge centre of the solid marks both places or
+    /// neither, or the sketch its feature binds is read from another
+    /// feature-input lane.
+    SketchRelationPointPlaceUnsettled,
     /// A profile sketch lies on a plane the decoder assumes (open item
     /// DI-73): the plane that the preceding object's or the lane's plane
     /// reference names, the Top plane its feature-input reference names, the
@@ -194,6 +206,14 @@ pub(crate) enum SldprtLossCode {
     /// The archive walk of a feature-input lane stopped before the stream's
     /// end, so the lane scalars keep no archive parameter class.
     FeatureInputArchiveWalkStopped,
+    /// A fillet or chamfer names its edges by the feature-local component paths
+    /// of the feature that made them; the sketch entities that generate those
+    /// edges are not established, so the selection keeps the paths.
+    FeatureBlendEdgeGeneratorUnstated,
+    /// Every edge vector of a fillet or chamfer lies inside a
+    /// `moPMarkRecord_c`; the selection takes the record's edge references as
+    /// the feature's edge list.
+    FeatureBlendMarkReferencesAssumed,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
     /// Sweep path geometry keeps its native reference after an unreadable record.
@@ -651,6 +671,8 @@ impl SldprtLossCode {
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
+        Self::SketchPointCoordinatesSubnormal,
+        Self::SketchRelationPointPlaceUnsettled,
         Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
@@ -663,6 +685,8 @@ impl SldprtLossCode {
         Self::FeatureInputObjectUnbound,
         Self::FeatureInputSolidBodyRetained,
         Self::FeatureInputArchiveWalkStopped,
+        Self::FeatureBlendEdgeGeneratorUnstated,
+        Self::FeatureBlendMarkReferencesAssumed,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureSweepPathRetained,
         Self::FeatureSweepPathRosterAssumed,
@@ -876,6 +900,8 @@ impl SldprtLossCode {
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
+            Self::SketchRelationPointPlaceUnsettled => "sketch.relation-point-place-unsettled",
             Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
@@ -885,6 +911,8 @@ impl SldprtLossCode {
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureInputSolidBodyRetained => "feature.input-solid-body-retained",
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
+            Self::FeatureBlendEdgeGeneratorUnstated => "feature.blend-edge-generator-unstated",
+            Self::FeatureBlendMarkReferencesAssumed => "feature.blend-mark-references-assumed",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureSweepPathRetained => "feature.sweep-path-retained",
             Self::FeatureSweepPathRosterAssumed => "feature.sweep-path-roster-assumed",
@@ -1178,6 +1206,8 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1190,6 +1220,8 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
+            | Self::FeatureBlendMarkReferencesAssumed
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1493,6 +1525,8 @@ impl SldprtLossCode {
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
+            | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1505,6 +1539,8 @@ impl SldprtLossCode {
             | Self::FeatureInputSolidBodyRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureInputArchiveWalkStopped
+            | Self::FeatureBlendEdgeGeneratorUnstated
+            | Self::FeatureBlendMarkReferencesAssumed
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureSweepPathRetained
             | Self::FeatureSweepPathRosterAssumed
@@ -1766,6 +1802,8 @@ mod tests {
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
+                "sketch.point-coordinates-subnormal",
+                "sketch.relation-point-place-unsettled",
                 "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
@@ -1778,6 +1816,8 @@ mod tests {
                 "feature.input-object-unbound",
                 "feature.input-solid-body-retained",
                 "feature.input-archive-walk-stopped",
+                "feature.blend-edge-generator-unstated",
+                "feature.blend-mark-references-assumed",
                 "feature.typed-operand-incomplete",
                 "feature.sweep-path-retained",
                 "feature.sweep-path-roster-assumed",

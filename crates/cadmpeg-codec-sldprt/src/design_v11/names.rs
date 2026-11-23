@@ -17,8 +17,10 @@
 //! feature-scoped set that names no role; every other class is a role whose
 //! meaning is not established, `Other("sldprt:<class>")`. The producer id and
 //! time stamp are allocations and stay in the native name. The sketch-entity
-//! id also stays there, and the name states no generator: that it is the
-//! sketch segment's id is not established. A face whose producer is no
+//! id also stays there: it is the face's local identifier, not the object
+//! index of a sketch segment. The name states a side face's generator where
+//! the profile's line records join the identifier to one line of the
+//! extruded polygon (`docs/formats/sldprt.md` §5), and none otherwise. A face whose producer is no
 //! feature of the document, one the state does not depend on, or one whose
 //! source id several history records carry, and a body, whose list is one
 //! identity that names no feature, keep their native name and have no
@@ -28,12 +30,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::names::{
-    CodecId, GenerationRole, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+    CodecId, GenerationRole, Generator, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
 };
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, FaceId};
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::brep::attrib::NativeIdentity;
 use crate::records::FeatureHistory;
@@ -84,6 +87,9 @@ pub(super) struct Names<'a> {
     faces: HashMap<&'a str, &'a [u32]>,
     bodies: HashMap<&'a str, &'a [u32]>,
     producers: HashMap<u32, Producer<'a>>,
+    /// The sketch entity that generates a side face, by the producer's source
+    /// id and the face's local identifier.
+    generators: HashMap<(u32, u32), SketchEntityId>,
 }
 
 impl<'a> Names<'a> {
@@ -118,7 +124,17 @@ impl<'a> Names<'a> {
                 .map(|identity| (identity.target.as_str(), identity.values.as_slice()))
                 .collect(),
             producers,
+            generators: HashMap::new(),
         }
+    }
+
+    /// State `generators` as the generators of the side faces they name.
+    pub(super) fn with_generators(
+        mut self,
+        generators: HashMap<(u32, u32), SketchEntityId>,
+    ) -> Self {
+        self.generators = generators;
+        self
     }
 
     /// The name entries of `bodies` and of the faces of `topology` that
@@ -153,7 +169,18 @@ impl<'a> Names<'a> {
             };
             let name = match self.producers.get(&producer).copied() {
                 Some(Producer::Feature(feature)) if depends(feature) => {
-                    Some(face_name(feature, code, fields))
+                    let generator = match (code, fields) {
+                        (
+                            class::FROM_SKETCH_ENTITY | class::FROM_SKETCH_ENTITY_3INT,
+                            [local, ..],
+                        ) => self
+                            .generators
+                            .get(&(producer, *local))
+                            .cloned()
+                            .map(Generator::SketchEntity),
+                        _ => None,
+                    };
+                    Some(face_name(feature, code, fields, generator))
                 }
                 _ => None,
             };
@@ -171,7 +198,12 @@ impl<'a> Names<'a> {
 
 /// The name of a face that `feature` produced, from the class and fields of
 /// its one hop (§5.7).
-fn face_name(feature: &FeatureId, code: u32, fields: &[u32]) -> TopoName {
+fn face_name(
+    feature: &FeatureId,
+    code: u32,
+    fields: &[u32],
+    side_generator: Option<Generator>,
+) -> TopoName {
     let generated = |role: Option<GenerationRole>, index: Option<u32>| TopoName::Generated {
         kind: NameKind::Face,
         feature: feature.clone(),
@@ -181,7 +213,22 @@ fn face_name(feature: &FeatureId, code: u32, fields: &[u32]) -> TopoName {
     };
     match (code, fields) {
         (class::FROM_SKETCH_ENTITY, [_]) | (class::FROM_SKETCH_ENTITY_3INT, [_, _, _]) => {
-            generated(Some(GenerationRole::Side), None)
+            match generated(Some(GenerationRole::Side), None) {
+                TopoName::Generated {
+                    kind,
+                    feature,
+                    role,
+                    index,
+                    ..
+                } => TopoName::Generated {
+                    kind,
+                    feature,
+                    role,
+                    generator: side_generator,
+                    index,
+                },
+                other => other,
+            }
         }
         (class::END_FACE, &[0, region]) | (class::END_FACE_3INT, &[0, region, 0]) => {
             generated(Some(GenerationRole::Start), Some(region))
