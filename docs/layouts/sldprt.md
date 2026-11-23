@@ -4329,6 +4329,51 @@ Unstated regions:
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
 
+## `sketch_dimension_parameter_trailer`
+
+Spec §Sketch objects · layout: byte offsets · size: 32 B
+
+The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `object_id` | `u32` | little | spec | the parameter's object identifier as a little-endian u32 at trailer +0 |
+| 20 | 4 | `measure` | `u32` | little | spec | the relation code of the dimension's measure as a little-endian u32 at trailer +20 |
+| 24 | 2 | `operand_count` | `u16` | little | spec | the operand count as a little-endian u16 at trailer +24 |
+| 26 | 4 | `word` | `u32` | little | spec | a little-endian u32 at trailer +26 |
+
+Unstated regions:
+
+- `4..20` (16 B): Sixteen bytes.
+- `30..32` (2 B): Two bytes.
+
+## `sketch_external_handle_block_54`
+
+Spec §Sketch objects · layout: byte offsets · size: 54 B
+
+The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 4 | `word_4` | `u32` | little | spec | a little-endian u32 at +4 |
+| 20 | 4 | `first_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 24 | 4 | `second_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 28 | 4 | `third_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 36 | 4 | `version` | `u32` | little | spec | a version number at +36 |
+| 40 | 14 | `trailing_zeros` | `bytes[14]` | little | spec | which end with fourteen zero bytes after the version · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..4` (4 B): Four bytes.
+- `8..20` (12 B): Twelve bytes.
+- `32..36` (4 B): Four bytes.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
