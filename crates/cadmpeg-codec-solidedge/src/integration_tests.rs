@@ -428,8 +428,16 @@ fn swept_ring_direction(scale: f64) -> f64 {
 }
 
 #[test]
-fn swept_surface_face_rests_on_a_linear_sweep_of_its_section_curve() {
-    assert!((swept_ring_direction(0.01) - 10.0).abs() < EPS_RING_VERTEX_MM);
+fn swept_surface_with_a_stated_scale_keeps_an_unsupported_carrier() {
+    let bytes = test_support::with_partitions(&[test_support::swept_ring_partition(0.01)]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::SolidEdgeLossCode::SurfaceUnsupported
+            .note("")
+            .code));
 }
 
 #[test]
