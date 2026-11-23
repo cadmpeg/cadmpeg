@@ -187,6 +187,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         references: Vec::new(),
         producer_feature_refs: vec!["producer-native".into()],
         terminal_feature_ref: Some("producer-native".into()),
+        mark_reference: false,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -255,6 +256,7 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
         references: Vec::new(),
         producer_feature_refs: producer.into_iter().map(str::to_string).collect(),
         terminal_feature_ref: producer.map(str::to_string),
+        mark_reference: false,
     };
     let retained = input_owned_edge_selections(vec![
         selection(0, Some("input")),

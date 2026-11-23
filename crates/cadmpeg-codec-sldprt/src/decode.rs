@@ -3523,7 +3523,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3532,6 +3532,7 @@ fn build_geometry_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -4426,6 +4427,17 @@ fn build_geometry_ir(
     if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4934,7 +4946,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4943,6 +4955,7 @@ fn build_metadata_ir(
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(ctx, &histories, &mut lanes)?;
+    crate::resolved_features::assembly::tag_mark_references(&mut lanes, &mark_spans);
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &histories,
@@ -5424,6 +5437,17 @@ fn build_metadata_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir

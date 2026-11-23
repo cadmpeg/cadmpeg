@@ -161,7 +161,7 @@ fn continued_lane(config: &[u8], stream: &Stream) -> (FeatureInputLane, Option<C
     ));
     let scan = scan(&file);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let (mut lanes, _, _, mut maps) = super::super::assembly::lanes(
+    let (mut lanes, _, _, _, mut maps) = super::super::assembly::lanes(
         &ctx,
         &scan,
         &mut cadmpeg_ir::annotations::Annotations::default(),

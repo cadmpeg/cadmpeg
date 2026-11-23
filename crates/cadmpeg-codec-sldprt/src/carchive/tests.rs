@@ -848,6 +848,7 @@ fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
         walk.marks,
         [super::reader::MarkOwner {
             at,
+            end: at + 4 + 4 + 4 + 8 + 12 + 16,
             owner: Some("Base-Extrude1".to_owned()),
         }]
     );
