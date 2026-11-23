@@ -2926,18 +2926,6 @@ pub(crate) mod named_object_header {
     pub(crate) const OBJECT_ID: usize = 8;
 }
 
-/// Byte offsets for the `parameter_scalar_trailer` record.
-///
-/// Spec §2.3. Record length 35 B.
-///
-/// ```text
-/// Offsets from the end of a moLengthParameter_c, moAngleParameter_c or moScalerParameter_c object's f64 value. That many operand objects follow the trailer.
-/// ```
-pub(crate) mod parameter_scalar_trailer {
-    /// Offset of `zero_prefix` (`bytes[3]`). Spec §2.3.
-    pub(crate) const ZERO_PREFIX: usize = 0;
-}
-
 /// Byte offsets for the `length_user_units_base` record.
 ///
 /// Spec §Configuration objects. Record length 48 B.

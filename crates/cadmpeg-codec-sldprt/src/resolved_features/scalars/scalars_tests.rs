@@ -44,6 +44,7 @@ fn named_scalar_identity_decodes_record_fields() {
             role: crate::records::FeatureInputScalarRole::Native,
             operands: Vec::new(),
             archive_class: None,
+            archive_object_id: None,
         }]
     );
 }

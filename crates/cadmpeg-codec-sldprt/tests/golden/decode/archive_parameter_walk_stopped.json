@@ -133,6 +133,7 @@
         "feature_input_relation_instances": [],
         "feature_input_scalars": [
           {
+            "archive_object_id": 1,
             "id": "sldprt:feature-input:scalar#128:38",
             "name": "sldprt:feature-input:name#128:8",
             "object_id": 1,
@@ -177,7 +178,7 @@
         "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "200ad280acb91f0e0ea6a8bd68bf3d7976c830afb0e5d906fa50baa23f2b6583",
+        "sldprt_native_sketch_sha256": "f2da7af509ffcbb493d3d8fa3e9df099628a064464e8aab41f63b697b35f9cea",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",

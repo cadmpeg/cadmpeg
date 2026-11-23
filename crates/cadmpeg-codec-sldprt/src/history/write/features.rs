@@ -963,61 +963,18 @@ mod tests {
         let projected = neutral_feature_id(&record).unwrap();
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
-    /// An added feature takes an identifier past every identifier the part's
-    /// objects hold: past the parameter `D1`, whose trailer identifier `133`
-    /// is above the history's largest, `132`, which `KeyWords` does not list,
-    /// and past no value a scalar without a parameter trailer holds.
-    #[test]
-    fn an_added_feature_takes_an_identifier_past_every_identifier_the_part_holds() {
+    /// Decode `source`, add a datum point named `Added` that has no native
+    /// record, write the part and decode the written bytes.
+    fn written_with_an_added_datum_point(source: &[u8]) -> crate::native::SldprtNative {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
-        let mut resolved = resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]);
-        resolved.extend([0x04, 0x80, 0xff, 0xfe, 0xff, 2]);
-        resolved.extend("D1".encode_utf16().flat_map(u16::to_le_bytes));
-        resolved.extend([
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
-            0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
-        ]);
-        resolved.extend(0.015_f64.to_le_bytes());
-        let mut trailer = [0_u8; 35];
-        trailer[3..7].copy_from_slice(&133_u32.to_le_bytes());
-        resolved.extend(trailer);
-        // A named scalar whose value a class declaration follows: the bytes
-        // at +3 are no identifier.
-        resolved.extend([0x04, 0x80, 0xff, 0xfe, 0xff, 2]);
-        resolved.extend("D2".encode_utf16().flat_map(u16::to_le_bytes));
-        resolved.extend([
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
-            0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
-        ]);
-        resolved.extend(0.02_f64.to_le_bytes());
-        resolved.extend([0x00, 0xff, 0xff, 0x01, 0x00, 0x09, 0x00]);
-        resolved.extend(b"moAfter_c");
-        let mut source = sldprt_with_body(&triangle_body());
-        source.extend(make_block(
-            0x42,
-            "Contents/Keywords",
-            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
-        ));
-        source.extend(make_block(
-            0x42,
-            "Contents/Config-0-ResolvedFeatures",
-            &resolved,
-        ));
         let decoded = SldprtCodec
             .decode(
                 &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
-                    &source,
+                    source,
                 )),
                 &DecodeOptions::default(),
             )
             .expect("the fixture decodes");
-        let parameters = sldprt_native(decoded.ir()).feature_input_lanes[0]
-            .scalars
-            .iter()
-            .map(|scalar| scalar.object_id)
-            .collect::<Vec<_>>();
-        assert_eq!(parameters, [133, 0x0009_0001]);
-
         let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
         let ordinal = u64::try_from(decoded.ir().model.features.len()).expect("ordinal");
         decoded.ir_mut().model.features.push(Feature {
@@ -1048,18 +1005,62 @@ mod tests {
         let written = SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("the written part decodes");
-        let native = sldprt_native(written.ir());
-        let source_ids = |name: &str| {
-            native
-                .feature_histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .filter(|record| record.name == name)
-                .map(crate::records::Feature::source_value)
-                .collect::<Vec<_>>()
+        sldprt_native(written.ir())
+    }
+
+    /// The history source identifiers of the records named `name`.
+    fn source_ids(native: &crate::native::SldprtNative, name: &str) -> Vec<Option<u32>> {
+        native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|record| record.name == name)
+            .map(crate::records::Feature::source_value)
+            .collect()
+    }
+
+    /// An added feature takes an identifier past every identifier the part's
+    /// objects hold: past the history record `132` and past both parameter
+    /// objects, an integer parameter and a parameter with a tolerance, which
+    /// hold their identifiers after the trailer's zero byte and tolerance
+    /// pointer (sldprt.md §2.3). Either parameter can hold the largest.
+    #[test]
+    fn an_added_feature_takes_an_identifier_past_every_identifier_the_part_holds() {
+        use crate::test_support::carchive::{
+            config_object_stream, toleranced_and_integer_parameters_stream,
         };
-        assert_eq!(source_ids("MatrizL1"), [Some(132)]);
-        assert_eq!(source_ids("Added"), [Some(134)]);
+        for (integer, toleranced) in [(135, 134), (134, 135)] {
+            let mut source = sldprt_with_body(&triangle_body());
+            source.extend(make_block(
+                0x42,
+                "Contents/Keywords",
+                br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+            ));
+            source.extend(make_block(
+                0x20,
+                "Contents/Config-0",
+                &config_object_stream(),
+            ));
+            source.extend(make_block(
+                0x21,
+                "Contents/Config-0-ResolvedFeatures",
+                &toleranced_and_integer_parameters_stream(integer, toleranced),
+            ));
+            let decoded = SldprtCodec
+                .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+                .expect("the fixture decodes");
+            let parameters = sldprt_native(decoded.ir())
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| &lane.scalars)
+                .map(|scalar| scalar.archive_object_id)
+                .collect::<Vec<_>>();
+            assert_eq!(parameters, [Some(integer), Some(toleranced)]);
+
+            let written = written_with_an_added_datum_point(&source);
+            assert_eq!(source_ids(&written, "MatrizL1"), [Some(132)]);
+            assert_eq!(source_ids(&written, "Added"), [Some(136)]);
+        }
     }
 
     #[test]

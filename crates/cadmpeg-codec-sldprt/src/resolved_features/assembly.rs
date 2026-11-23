@@ -73,9 +73,10 @@ pub(crate) fn lanes(
     Ok((result, exact, mark_owners))
 }
 
-/// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
-/// parameter object whose value it is, from the exact walk of the stream.
-/// Scalars the walk did not reach keep no class. Returns the walk's
+/// Give each scalar of a `Config-N-ResolvedFeatures` lane the class and the
+/// object identifier of the parameter object whose value it is, from the
+/// exact walk of the stream. Scalars the walk did not reach keep neither, and
+/// a walk that stopped gives no class. Returns the walk's
 /// `moPMarkRecord_c` records with the features that hold them.
 fn type_scalars_from_archive(
     ctx: &DecodeContext<'_>,
@@ -110,6 +111,10 @@ fn type_scalars_from_archive(
     if walk.status == crate::carchive::Status::End {
         exact.insert(&lane.id, std::mem::take(&mut walk.sketch_profiles));
     }
+    let object_ids = scalar_archive_object_ids(&walk);
+    for scalar in &mut lane.scalars {
+        scalar.archive_object_id = object_ids.get(&scalar.offset).copied();
+    }
     if let crate::carchive::Status::Stop(_) = walk.status {
         losses.push(SldprtLossCode::FeatureInputArchiveWalkStopped.note(format!(
             "the archive walk of {config_name} stopped before the end of the stream, so its \
@@ -135,6 +140,20 @@ fn configuration_name(section: &str) -> Option<String> {
                 && normalized[length..].eq_ignore_ascii_case(RESOLVED_FEATURES_SUFFIX)
         })
         .map(|length| normalized[..length].to_owned())
+}
+
+/// The object identifier of each parameter the walk read, by value offset.
+/// A parameter read before a stop was read by its class's rule, so it keeps
+/// its identifier.
+fn scalar_archive_object_ids(walk: &crate::carchive::Walk) -> HashMap<u64, u32> {
+    walk.parameters
+        .iter()
+        .filter_map(|parameter| {
+            let id = crate::brep::feature_source::FeatureSourceId::try_from(parameter.object_id?)
+                .ok()?;
+            Some((u64_from_index(parameter.value_at), id.value()))
+        })
+        .collect()
 }
 
 /// The archive parameter class of each scalar value offset.

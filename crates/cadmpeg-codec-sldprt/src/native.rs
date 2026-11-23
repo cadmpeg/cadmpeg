@@ -313,7 +313,8 @@ pub(crate) mod lanes;
 impl SldprtNative {
     /// The object identifiers the part's objects hold, as the decoder reads
     /// them (sldprt.md §2.3): each history record's, each named object's
-    /// header identifier and each parameter object's trailer identifier.
+    /// header identifier and each parameter object's identifier the exact
+    /// archive walk read.
     pub(crate) fn object_ids(&self) -> impl Iterator<Item = u32> + '_ {
         let records = self
             .feature_histories
@@ -324,9 +325,10 @@ impl SldprtNative {
             let named = lane.names.iter().filter_map(|name| {
                 crate::resolved_features::names::header_object_id(&lane.native_payload, name)
             });
-            let parameters = lane.scalars.iter().filter_map(|scalar| {
-                crate::resolved_features::scalars::parameter_object_id(&lane.native_payload, scalar)
-            });
+            let parameters = lane
+                .scalars
+                .iter()
+                .filter_map(|scalar| scalar.archive_object_id);
             named.chain(parameters)
         });
         records.chain(objects)
