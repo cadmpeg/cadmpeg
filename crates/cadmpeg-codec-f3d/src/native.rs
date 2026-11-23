@@ -76,24 +76,76 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
-fn owner_indices<'a>(ids: impl ExactSizeIterator<Item = &'a str>) -> HashMap<String, usize> {
-    let mut indexed = HashMap::new();
+/// Fast non-cryptographic hasher for internal bounded ID lookup tables.
+#[derive(Default)]
+struct FastStrHasher(u64);
 
+impl std::hash::Hasher for FastStrHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut h = self.0;
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            let word = u64::from_ne_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+            ]);
+            // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+            h = (h.rotate_left(5) ^ word).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+        let mut tail = 0_u64;
+        for (i, &b) in chunks.remainder().iter().enumerate() {
+            tail |= u64::from(b) << (i * 8);
+        }
+        if !chunks.remainder().is_empty() {
+            // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+            h = (h.rotate_left(5) ^ tail).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+        let mixed = h ^ cadmpeg_core::decode::u64_from_index(bytes.len());
+        // wrapping-exception: 64-bit multiplicative hash mixing operates modulo 2^64
+        self.0 = mixed.wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+type FastStrMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<FastStrHasher>>;
+
+fn owner_indices<'a>(ids: impl ExactSizeIterator<Item = &'a str>) -> FastStrMap<&'a str, usize> {
+    let mut indexed =
+        FastStrMap::with_capacity_and_hasher(ids.len(), std::hash::BuildHasherDefault::default());
     for (ordinal, id) in ids.enumerate() {
-        let key = id.to_owned();
-        indexed.insert(key, ordinal);
+        indexed.insert(id, ordinal);
     }
     indexed
 }
 
+#[cfg(test)]
 fn group_by_owner<T>(
     records: Vec<T>,
     owners: &HashMap<String, usize>,
     owner_count: usize,
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
-    mut skipped: Option<&mut Vec<String>>,
+    skipped: Option<&mut Vec<String>>,
 ) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
+    group_by_owner_map(records, owners, owner_count, id, owner, skipped)
+}
+
+fn group_by_owner_map<T, K, S>(
+    records: Vec<T>,
+    owners: &HashMap<K, usize, S>,
+    owner_count: usize,
+    id: impl Fn(&T) -> &str,
+    owner: impl Fn(&T) -> &str,
+    mut skipped: Option<&mut Vec<String>>,
+) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError>
+where
+    K: std::borrow::Borrow<str> + Eq + std::hash::Hash,
+    S: std::hash::BuildHasher,
+{
     let mut grouped = (0..owner_count).map(|_| Vec::new()).collect::<Vec<_>>();
     for record in records {
         let parent = owner(&record);
@@ -234,23 +286,23 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
 #[derive(Serialize)]
 pub(crate) struct FlatAsmDeltaState<'a> {
     id: &'a str,
-    parent: &'a str,
+    bulletin_boards: EmptyList,
     byte_offset: u64,
-    state_id: i64,
-    version_flag: i64,
-    state_flag: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    previous_ref: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     next_ref: Option<i64>,
     node_index: i64,
+    owner_ref: i64,
+    parent: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     partner_ref: Option<i64>,
-    owner_ref: i64,
-    bulletin_boards: EmptyList,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_ref: Option<i64>,
     records: EmptyList,
+    state_flag: i64,
+    state_id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     transition: Option<&'a AsmHistoricalTransition>,
+    version_flag: i64,
 }
 
 impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
@@ -277,11 +329,11 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
 #[derive(Serialize)]
 struct FlatAsmBulletinBoard<'a> {
     id: &'a str,
-    parent: &'a str,
     byte_offset: u64,
-    owner_ref: i64,
-    number: i64,
     changes: EmptyList,
+    number: i64,
+    owner_ref: i64,
+    parent: &'a str,
 }
 
 impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
@@ -295,6 +347,215 @@ impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
             changes: EmptyList,
         }
     }
+}
+
+/// Read an unescaped JSON string literal starting after its opening `"` and
+/// return `(slice, rest_after_closing_quote)`. Returns `None` on any backslash
+/// escape or control character so the caller falls back to `serde_json`.
+#[inline]
+fn take_unescaped_json_str(input: &str) -> Option<(&str, &str)> {
+    let bytes = input.as_bytes();
+    let end = memchr::memchr2(b'"', b'\\', bytes)?;
+    if bytes[end] == b'\\' || bytes[..end].iter().any(|&b| b < 0x20) {
+        return None;
+    }
+    Some((&input[..end], &input[end + 1..]))
+}
+
+#[inline]
+fn push_u64(out: &mut String, mut value: u64) {
+    let mut buf = [0_u8; 20];
+    let mut pos = buf.len();
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + u8::try_from(value % 10).unwrap_or(0);
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    if let Ok(text) = std::str::from_utf8(&buf[pos..]) {
+        out.push_str(text);
+    }
+}
+
+#[inline]
+fn push_i64(out: &mut String, value: i64) {
+    if value < 0 {
+        out.push('-');
+    }
+    push_u64(out, value.unsigned_abs());
+}
+
+#[inline]
+fn push_hex_bytes(out: &mut String, raw: &[u8]) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut buf = [0_u8; 256];
+    for chunk in raw.chunks(128) {
+        for (i, &byte) in chunk.iter().enumerate() {
+            buf[i * 2] = HEX[usize::from(byte >> 4)];
+            buf[i * 2 + 1] = HEX[usize::from(byte & 0x0f)];
+        }
+        if let Ok(text) = std::str::from_utf8(&buf[..chunk.len() * 2]) {
+            out.push_str(text);
+        }
+    }
+}
+
+#[inline]
+fn take_json_u64(input: &str) -> Option<(u64, &str)> {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == 0 || (i > 1 && bytes[0] == b'0') {
+        return None;
+    }
+    let val = input[..i].parse::<u64>().ok()?;
+    Some((val, &input[i..]))
+}
+
+#[inline]
+fn take_json_i64(input: &str) -> Option<(i64, &str)> {
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    if bytes.first() == Some(&b'-') {
+        i = 1;
+    }
+    let digits_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    let digit_len = i - digits_start;
+    if digit_len == 0 || (digit_len > 1 && bytes[digits_start] == b'0') {
+        return None;
+    }
+    let val = input[..i].parse::<i64>().ok()?;
+    Some((val, &input[i..]))
+}
+
+/// Fast canonical parser for `asm_entity_changes` records emitted by
+/// `emit_asm_entity_changes`. Returns `None` on any non-canonical form so
+/// `NativeRecord::to_typed_fast` falls back to `serde_json`.
+fn try_parse_canonical_asm_entity_change(
+    json: &str,
+) -> Option<crate::history_records::AsmEntityChange> {
+    let rest = json.strip_prefix("{\"id\":\"")?;
+    let (id, rest) = take_unescaped_json_str(rest)?;
+    let rest = rest.strip_prefix(",\"byte_offset\":")?;
+    let (byte_offset, rest) = take_json_u64(rest)?;
+    let rest = rest.strip_prefix(",\"kind\":\"")?;
+    let (kind, rest) = if let Some(rest) = rest.strip_prefix("insert\",\"new_ref\":") {
+        let (new, rest) = take_json_i64(rest)?;
+        (
+            crate::history_records::AsmEntityChangeKind::Insert { new },
+            rest,
+        )
+    } else if let Some(rest) = rest.strip_prefix("delete\",\"old_ref\":") {
+        let (old, rest) = take_json_i64(rest)?;
+        (
+            crate::history_records::AsmEntityChangeKind::Delete { old },
+            rest,
+        )
+    } else {
+        let rest = rest.strip_prefix("update\",\"new_ref\":")?;
+        let (new, rest) = take_json_i64(rest)?;
+        let rest = rest.strip_prefix(",\"old_ref\":")?;
+        let (old, rest) = take_json_i64(rest)?;
+        (
+            crate::history_records::AsmEntityChangeKind::Update { old, new },
+            rest,
+        )
+    };
+    let rest = rest.strip_prefix(",\"parent\":\"")?;
+    let (parent, rest) = take_unescaped_json_str(rest)?;
+    if rest != "}" {
+        return None;
+    }
+    Some(crate::history_records::AsmEntityChange {
+        id: id.to_owned(),
+        parent: parent.to_owned(),
+        byte_offset,
+        kind,
+    })
+}
+
+#[inline]
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// Fast canonical parser for framed `asm_history_records` records emitted by
+/// `emit_asm_history_records`. Returns `None` on opaque records or any
+/// non-canonical form so `NativeRecord::to_typed_fast` falls back to `serde_json`.
+fn try_parse_canonical_asm_history_record(
+    json: &str,
+) -> Option<crate::history_records::AsmHistoryRecord> {
+    let rest = json.strip_prefix("{\"id\":\"")?;
+    let (id, rest) = take_unescaped_json_str(rest)?;
+    let rest = rest.strip_prefix(",\"byte_offset\":")?;
+    let (byte_offset, mut rest) = take_json_u64(rest)?;
+    let mut entity_references = Vec::new();
+    if let Some(mut arr) = rest.strip_prefix(",\"entity_references\":[") {
+        if let Some(after) = arr.strip_prefix(']') {
+            rest = after;
+        } else {
+            loop {
+                let (val, after) = take_json_i64(arr)?;
+                entity_references.push(val);
+                if let Some(next) = after.strip_prefix(',') {
+                    arr = next;
+                } else {
+                    rest = after.strip_prefix(']')?;
+                    break;
+                }
+            }
+        }
+    }
+    let rest = rest.strip_prefix(",\"index\":")?;
+    let (index, rest) = take_json_u64(rest)?;
+    let rest = rest.strip_prefix(",\"name\":\"")?;
+    let (name, rest) = take_unescaped_json_str(rest)?;
+    let rest = rest.strip_prefix(",\"parent\":\"")?;
+    let (parent, rest) = take_unescaped_json_str(rest)?;
+    let rest = rest.strip_prefix(",\"raw_bytes\":\"")?;
+    let (hex_str, mut rest) = take_unescaped_json_str(rest)?;
+    let hex_bytes = hex_str.as_bytes();
+    if !hex_bytes.len().is_multiple_of(2) {
+        return None;
+    }
+    let mut raw_bytes = Vec::new();
+    for pair in hex_bytes.chunks_exact(2) {
+        raw_bytes.push((hex_nibble(pair[0])? << 4) | hex_nibble(pair[1])?);
+    }
+    let revision_id = if let Some(after) = rest.strip_prefix(",\"revision_id\":") {
+        let (rev, after) = take_json_i64(after)?;
+        rest = after;
+        Some(rev)
+    } else {
+        None
+    };
+    if rest != "}" {
+        return None;
+    }
+    Some(crate::history_records::AsmHistoryRecord {
+        id: id.to_owned(),
+        parent: parent.to_owned(),
+        revision_id,
+        byte_offset,
+        framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+            index,
+            name: name.to_owned(),
+            entity_references,
+        },
+        raw_bytes: raw_bytes.into(),
+    })
 }
 
 /// A nested collection the flat projection always emits empty.
@@ -361,13 +622,66 @@ fn emit_asm_entity_changes(
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let records = model
+    let mut out = Vec::new();
+    for (ordinal, change) in model
         .asm_histories
         .iter()
         .flat_map(crate::history_records::AsmHistory::states)
         .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes);
-    namespace.set_arena_from(ctx, row.arena, records)
+        .flat_map(|board| &board.changes)
+        .enumerate()
+    {
+        let mut json = String::with_capacity(change.id.len() + change.parent.len() + 96);
+        json.push_str("{\"id\":");
+        cadmpeg_ir::native::push_json_str(&mut json, &change.id);
+        json.push_str(",\"byte_offset\":");
+        push_u64(&mut json, change.byte_offset);
+        json.push_str(",\"kind\":");
+        match change.kind {
+            crate::history_records::AsmEntityChangeKind::Insert { new } => {
+                json.push_str("\"insert\",\"new_ref\":");
+                push_i64(&mut json, new);
+            }
+            crate::history_records::AsmEntityChangeKind::Delete { old } => {
+                json.push_str("\"delete\",\"old_ref\":");
+                push_i64(&mut json, old);
+            }
+            crate::history_records::AsmEntityChangeKind::Update { old, new } => {
+                json.push_str("\"update\",\"new_ref\":");
+                push_i64(&mut json, new);
+                json.push_str(",\"old_ref\":");
+                push_i64(&mut json, old);
+            }
+        }
+        json.push_str(",\"parent\":");
+        cadmpeg_ir::native::push_json_str(&mut json, &change.parent);
+        json.push('}');
+        let record = match cadmpeg_ir::NativeRecord::from_canonical_flat(ctx, &change.id, json, 1) {
+            Ok(record) => record,
+            Err(source)
+                if matches!(
+                    source,
+                    cadmpeg_ir::NativeConvertError::Resource(
+                        cadmpeg_core::CodecError::ResourceLimit(_)
+                    )
+                ) =>
+            {
+                return Err(source);
+            }
+            Err(source) => {
+                return Err(cadmpeg_ir::NativeConvertError::Arena {
+                    arena: row.arena.to_owned(),
+                    source: Box::new(cadmpeg_ir::NativeConvertError::WriteRecord {
+                        ordinal,
+                        source: Box::new(source),
+                    }),
+                });
+            }
+        };
+        out.push(record);
+    }
+    namespace.set_arena_records(row.arena, out);
+    Ok(())
 }
 
 fn emit_asm_history_records(
@@ -376,12 +690,95 @@ fn emit_asm_history_records(
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let records = model
+    let mut out = Vec::new();
+    for (ordinal, record) in model
         .asm_histories
         .iter()
         .flat_map(crate::history_records::AsmHistory::states)
-        .flat_map(|state| &state.records);
-    namespace.set_arena_from(ctx, row.arena, records)
+        .flat_map(|state| &state.records)
+        .enumerate()
+    {
+        let (index, name, framing_error, entity_references) = match &record.framing {
+            crate::history_records::AsmHistoryRecordFraming::Framed {
+                index,
+                name,
+                entity_references,
+            } => (*index, name.as_str(), None, entity_references.as_slice()),
+            crate::history_records::AsmHistoryRecordFraming::Opaque { error } => {
+                (0, "opaque_history_payload", Some(error.as_str()), &[][..])
+            }
+        };
+        let raw = record.raw_bytes.as_slice();
+        let mut json = String::with_capacity(
+            record.id.len()
+                + record.parent.len()
+                + name.len()
+                + raw.len() * 2
+                + entity_references.len() * 6
+                + 128,
+        );
+        json.push_str("{\"id\":");
+        cadmpeg_ir::native::push_json_str(&mut json, &record.id);
+        json.push_str(",\"byte_offset\":");
+        push_u64(&mut json, record.byte_offset);
+        let depth = if entity_references.is_empty() {
+            1
+        } else {
+            json.push_str(",\"entity_references\":[");
+            for (i, &r) in entity_references.iter().enumerate() {
+                if i > 0 {
+                    json.push(',');
+                }
+                push_i64(&mut json, r);
+            }
+            json.push(']');
+            2
+        };
+        if let Some(error) = framing_error {
+            json.push_str(",\"framing_error\":");
+            cadmpeg_ir::native::push_json_str(&mut json, error);
+        }
+        json.push_str(",\"index\":");
+        push_u64(&mut json, index);
+        json.push_str(",\"name\":");
+        cadmpeg_ir::native::push_json_str(&mut json, name);
+        json.push_str(",\"parent\":");
+        cadmpeg_ir::native::push_json_str(&mut json, &record.parent);
+        json.push_str(",\"raw_bytes\":\"");
+        push_hex_bytes(&mut json, raw);
+        json.push('"');
+        if let Some(revision_id) = record.revision_id {
+            json.push_str(",\"revision_id\":");
+            push_i64(&mut json, revision_id);
+        }
+        json.push('}');
+        let native_record =
+            match cadmpeg_ir::NativeRecord::from_canonical_flat(ctx, &record.id, json, depth) {
+                Ok(native_record) => native_record,
+                Err(source)
+                    if matches!(
+                        source,
+                        cadmpeg_ir::NativeConvertError::Resource(
+                            cadmpeg_core::CodecError::ResourceLimit(_)
+                        )
+                    ) =>
+                {
+                    return Err(source);
+                }
+                Err(source) => {
+                    return Err(cadmpeg_ir::NativeConvertError::Arena {
+                        arena: row.arena.to_owned(),
+                        source: Box::new(cadmpeg_ir::NativeConvertError::WriteRecord {
+                            ordinal,
+                            source: Box::new(source),
+                        }),
+                    });
+                }
+            };
+        out.push(native_record);
+    }
+    namespace.set_arena_records(row.arena, out);
+    Ok(())
 }
 
 const F3D_FAMILIES: &[F3dFamilyRow] = &[
@@ -1591,6 +1988,220 @@ impl F3dNative {
                 records
             }};
         }
+        let big_history_count = namespace
+            .arenas()
+            .get("asm_entity_changes")
+            .map_or(0, Vec::len)
+            + namespace
+                .arenas()
+                .get("asm_history_records")
+                .map_or(0, Vec::len);
+        let run_parallel_load = skipped.is_none() && big_history_count >= 512;
+        let (native_res, states_outcome, changes_outcome, records_outcome) = if run_parallel_load {
+            let checkpoint = ctx.checkpoint();
+            std::thread::scope(|scope| {
+                let states_handle = {
+                    let cp = checkpoint.clone();
+                    scope.spawn(move || {
+                        let arena = cadmpeg_core::decode::DecodeArena::new();
+                        let local_ctx = cp.resume(&arena);
+                        let res = (|| -> Result<_, cadmpeg_ir::NativeConvertError> {
+                            let states: Vec<crate::history_records::AsmDeltaState> =
+                                namespace.arena_as_for_decode(&local_ctx, "asm_delta_states")?;
+                            let boards: Vec<crate::history_records::AsmBulletinBoard> =
+                                namespace.arena_as_for_decode(&local_ctx, "asm_bulletin_boards")?;
+                            Ok((states, boards))
+                        })();
+                        (res, local_ctx.take_trace())
+                    })
+                };
+                let changes_handle = {
+                    let cp = checkpoint.clone();
+                    scope.spawn(move || {
+                        let arena = cadmpeg_core::decode::DecodeArena::new();
+                        let local_ctx = cp.resume(&arena);
+                        let res: Result<Vec<crate::history_records::AsmEntityChange>, _> =
+                            namespace
+                                .arena_iter_as_for_decode_fast(
+                                    &local_ctx,
+                                    "asm_entity_changes",
+                                    try_parse_canonical_asm_entity_change,
+                                )
+                                .collect();
+                        (res, local_ctx.take_trace())
+                    })
+                };
+                let records_handle = {
+                    let cp = checkpoint.clone();
+                    scope.spawn(move || {
+                        let arena = cadmpeg_core::decode::DecodeArena::new();
+                        let local_ctx = cp.resume(&arena);
+                        let res: Result<Vec<crate::history_records::AsmHistoryRecord>, _> =
+                            namespace
+                                .arena_iter_as_for_decode_fast(
+                                    &local_ctx,
+                                    "asm_history_records",
+                                    try_parse_canonical_asm_history_record,
+                                )
+                                .collect();
+                        (res, local_ctx.take_trace())
+                    })
+                };
+                let native_res = Self::load_non_history_arenas(ctx, namespace, None);
+                (
+                    native_res,
+                    Some(states_handle.join().ok()),
+                    Some(changes_handle.join().ok()),
+                    Some(records_handle.join().ok()),
+                )
+            })
+        } else {
+            let native_res = Self::load_non_history_arenas(ctx, namespace, skipped.as_deref_mut());
+            (native_res, None, None, None)
+        };
+        let mut native = native_res?;
+        let (states, boards) = match states_outcome {
+            Some(Some((Ok(pair), trace))) if ctx.accept_trace(&trace) => pair,
+            _ => {
+                let states: Vec<crate::history_records::AsmDeltaState> =
+                    read_arena!("asm_delta_states");
+                let boards: Vec<crate::history_records::AsmBulletinBoard> =
+                    read_arena!("asm_bulletin_boards");
+                (states, boards)
+            }
+        };
+        let changes: Vec<crate::history_records::AsmEntityChange> = match changes_outcome {
+            Some(Some((Ok(records), trace))) if ctx.accept_trace(&trace) => records,
+            _ => {
+                let mut records = Vec::new();
+                for record in namespace.arena_iter_as_for_decode_fast(
+                    ctx,
+                    "asm_entity_changes",
+                    try_parse_canonical_asm_entity_change,
+                ) {
+                    match record {
+                        Ok(record) => records.push(record),
+                        Err(error) if ctx.resource_refusal().is_some() => return Err(error),
+                        Err(error) => match skipped.as_deref_mut() {
+                            Some(skipped) => skipped.push(format!("asm_entity_changes: {error}")),
+                            None => return Err(error),
+                        },
+                    }
+                }
+                records
+            }
+        };
+        let records: Vec<crate::history_records::AsmHistoryRecord> = match records_outcome {
+            Some(Some((Ok(records), trace))) if ctx.accept_trace(&trace) => records,
+            _ => {
+                let mut records = Vec::new();
+                for record in namespace.arena_iter_as_for_decode_fast(
+                    ctx,
+                    "asm_history_records",
+                    try_parse_canonical_asm_history_record,
+                ) {
+                    match record {
+                        Ok(record) => records.push(record),
+                        Err(error) if ctx.resource_refusal().is_some() => return Err(error),
+                        Err(error) => match skipped.as_deref_mut() {
+                            Some(skipped) => skipped.push(format!("asm_history_records: {error}")),
+                            None => return Err(error),
+                        },
+                    }
+                }
+                records
+            }
+        };
+        let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
+        let changes_by_board = group_by_owner_map(
+            changes,
+            &board_indices,
+            boards.len(),
+            |change| &change.id,
+            |change| &change.parent,
+            skipped.as_deref_mut(),
+        )?;
+        let mut attached_boards = Vec::new();
+        for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
+            board.changes = changes;
+            attached_boards.push(board);
+        }
+        let boards = attached_boards;
+        let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
+        let boards_by_state = group_by_owner_map(
+            boards,
+            &state_indices,
+            states.len(),
+            |board| &board.id,
+            |board| &board.parent,
+            skipped.as_deref_mut(),
+        )?;
+        let records_by_state = group_by_owner_map(
+            records,
+            &state_indices,
+            states.len(),
+            |record| &record.id,
+            |record| &record.parent,
+            skipped.as_deref_mut(),
+        )?;
+        let mut attached_states = Vec::new();
+        for ((mut state, bulletin_boards), records) in states
+            .into_iter()
+            .zip(boards_by_state)
+            .zip(records_by_state)
+        {
+            state.bulletin_boards = bulletin_boards;
+            state.records = records;
+            attached_states.push(state);
+        }
+        let states = attached_states;
+        let history_indices = owner_indices(
+            native
+                .asm_histories
+                .iter()
+                .map(|history| history.id.as_str()),
+        );
+        let states_by_history = group_by_owner_map(
+            states,
+            &history_indices,
+            native.asm_histories.len(),
+            |state| &state.id,
+            |state| &state.parent,
+            skipped.as_deref_mut(),
+        )?;
+        for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
+            *history.states_mut() = states;
+        }
+        if let Err(error) = crate::records::feature::path_features::pipe::admit_native(&native) {
+            match skipped {
+                Some(skipped) => skipped.push(format!("pipe stream admission: {error}")),
+                None => return Err(error),
+            }
+        }
+        Ok(native)
+    }
+
+    fn load_non_history_arenas(
+        ctx: &DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+        mut skipped: Option<&mut Vec<String>>,
+    ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        macro_rules! read_arena {
+            ($name:literal) => {{
+                let mut records = Vec::new();
+                for record in namespace.arena_iter_as_for_decode(ctx, $name) {
+                    match record {
+                        Ok(record) => records.push(record),
+                        Err(error) if ctx.resource_refusal().is_some() => return Err(error),
+                        Err(error) => match skipped.as_deref_mut() {
+                            Some(skipped) => skipped.push(format!("{}: {error}", $name)),
+                            None => return Err(error),
+                        },
+                    }
+                }
+                records
+            }};
+        }
         let sketch_relations = {
             let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
 
@@ -1609,7 +2220,7 @@ impl F3dNative {
             read_arena!("design_dimension_null_locus_pairs");
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
-        let mut native = Self {
+        Ok(Self {
             act_entities: read_arena!("act_entities"),
             act_guids: read_arena!("act_guids"),
             act_registry_channels: read_arena!("act_registry_channels"),
@@ -1704,81 +2315,7 @@ impl F3dNative {
             xref_references: read_arena!("xref_references"),
             asm_histories: read_arena!("asm_histories"),
             asm_face_boundaries: read_arena!("asm_face_boundaries"),
-        };
-        let states: Vec<crate::history_records::AsmDeltaState> = read_arena!("asm_delta_states");
-        let boards: Vec<crate::history_records::AsmBulletinBoard> =
-            read_arena!("asm_bulletin_boards");
-        let changes: Vec<crate::history_records::AsmEntityChange> =
-            read_arena!("asm_entity_changes");
-        let records: Vec<crate::history_records::AsmHistoryRecord> =
-            read_arena!("asm_history_records");
-        let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
-        let changes_by_board = group_by_owner(
-            changes,
-            &board_indices,
-            boards.len(),
-            |change| &change.id,
-            |change| &change.parent,
-            skipped.as_deref_mut(),
-        )?;
-        let mut attached_boards = Vec::new();
-        for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
-            board.changes = changes;
-            attached_boards.push(board);
-        }
-        let boards = attached_boards;
-        let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
-        let boards_by_state = group_by_owner(
-            boards,
-            &state_indices,
-            states.len(),
-            |board| &board.id,
-            |board| &board.parent,
-            skipped.as_deref_mut(),
-        )?;
-        let records_by_state = group_by_owner(
-            records,
-            &state_indices,
-            states.len(),
-            |record| &record.id,
-            |record| &record.parent,
-            skipped.as_deref_mut(),
-        )?;
-        let mut attached_states = Vec::new();
-        for ((mut state, bulletin_boards), records) in states
-            .into_iter()
-            .zip(boards_by_state)
-            .zip(records_by_state)
-        {
-            state.bulletin_boards = bulletin_boards;
-            state.records = records;
-            attached_states.push(state);
-        }
-        let states = attached_states;
-        let history_indices = owner_indices(
-            native
-                .asm_histories
-                .iter()
-                .map(|history| history.id.as_str()),
-        );
-        let states_by_history = group_by_owner(
-            states,
-            &history_indices,
-            native.asm_histories.len(),
-            |state| &state.id,
-            |state| &state.parent,
-            skipped.as_deref_mut(),
-        )?;
-        for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
-            *history.states_mut() = states;
-        }
-        if let Err(error) = crate::records::feature::path_features::pipe::admit_native(&native) {
-            match skipped {
-                Some(skipped) => skipped.push(format!("pipe stream admission: {error}")),
-                None => return Err(error),
-            }
-        }
-        Ok(native)
+        })
     }
 
     pub(crate) fn store(
@@ -1786,7 +2323,98 @@ impl F3dNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        F3D_CATALOGUE.emit_all(ctx, self, namespace)?;
+        let big_history_items: usize = self
+            .asm_histories
+            .iter()
+            .flat_map(crate::history_records::AsmHistory::states)
+            .map(|state| {
+                state.records.len()
+                    + state
+                        .bulletin_boards
+                        .iter()
+                        .map(|board| board.changes.len())
+                        .sum::<usize>()
+            })
+            .sum();
+        if big_history_items < 256 {
+            F3D_CATALOGUE.emit_all(ctx, self, namespace)?;
+            return Ok(());
+        }
+        let delta_idx = F3D_FAMILIES
+            .iter()
+            .position(|row| row.arena == "asm_delta_states");
+        let changes_idx = F3D_FAMILIES
+            .iter()
+            .position(|row| row.arena == "asm_entity_changes");
+        let records_idx = F3D_FAMILIES
+            .iter()
+            .position(|row| row.arena == "asm_history_records");
+        let (Some(delta_idx), Some(changes_idx), Some(records_idx)) =
+            (delta_idx, changes_idx, records_idx)
+        else {
+            F3D_CATALOGUE.emit_all(ctx, self, namespace)?;
+            return Ok(());
+        };
+        if !(delta_idx < changes_idx && changes_idx < records_idx) {
+            F3D_CATALOGUE.emit_all(ctx, self, namespace)?;
+            return Ok(());
+        }
+        let checkpoint = ctx.checkpoint();
+        let spawn_row = |row: &'static F3dFamilyRow, cp: cadmpeg_core::decode::DecodeCheckpoint| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let local_ctx = cp.resume(&arena);
+            let mut local_ns = cadmpeg_ir::NativeNamespace::default();
+            let res = (row.emit)(&local_ctx, self, row, &mut local_ns).map(|()| local_ns);
+            (res, local_ctx.take_trace())
+        };
+        let (prefix_res, delta_out, changes_out, records_out) = std::thread::scope(|scope| {
+            let delta_row = &F3D_FAMILIES[delta_idx];
+            let changes_row = &F3D_FAMILIES[changes_idx];
+            let records_row = &F3D_FAMILIES[records_idx];
+            let cp1 = checkpoint.clone();
+            let h1 = scope.spawn(move || spawn_row(delta_row, cp1));
+            let cp2 = checkpoint.clone();
+            let h2 = scope.spawn(move || spawn_row(changes_row, cp2));
+            let cp3 = checkpoint.clone();
+            let h3 = scope.spawn(move || spawn_row(records_row, cp3));
+            let prefix_res = (|| -> Result<(), cadmpeg_ir::NativeConvertError> {
+                for row in &F3D_FAMILIES[..delta_idx] {
+                    (row.emit)(ctx, self, row, namespace)?;
+                }
+                Ok(())
+            })();
+            (prefix_res, h1.join().ok(), h2.join().ok(), h3.join().ok())
+        });
+        prefix_res?;
+        let commit_or_emit = |namespace: &mut cadmpeg_ir::NativeNamespace,
+                              row: &F3dFamilyRow,
+                              outcome: Option<(
+            Result<cadmpeg_ir::NativeNamespace, cadmpeg_ir::NativeConvertError>,
+            cadmpeg_core::decode::DecodeTrace,
+        )>|
+         -> Result<(), cadmpeg_ir::NativeConvertError> {
+            if let Some((Ok(mut local_ns), trace)) = outcome {
+                if ctx.accept_trace(&trace) {
+                    if let Some((key, records)) = local_ns.arenas_mut().pop_first() {
+                        namespace.arenas_mut().insert(key, records);
+                    }
+                    return Ok(());
+                }
+            }
+            (row.emit)(ctx, self, row, namespace)
+        };
+        commit_or_emit(namespace, &F3D_FAMILIES[delta_idx], delta_out)?;
+        for row in &F3D_FAMILIES[delta_idx + 1..changes_idx] {
+            (row.emit)(ctx, self, row, namespace)?;
+        }
+        commit_or_emit(namespace, &F3D_FAMILIES[changes_idx], changes_out)?;
+        for row in &F3D_FAMILIES[changes_idx + 1..records_idx] {
+            (row.emit)(ctx, self, row, namespace)?;
+        }
+        commit_or_emit(namespace, &F3D_FAMILIES[records_idx], records_out)?;
+        for row in &F3D_FAMILIES[records_idx + 1..] {
+            (row.emit)(ctx, self, row, namespace)?;
+        }
         Ok(())
     }
 }

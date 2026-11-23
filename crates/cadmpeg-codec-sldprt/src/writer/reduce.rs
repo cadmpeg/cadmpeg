@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid, rule_invalid};
+use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -94,6 +95,60 @@ pub(super) fn edge_ranges_omitted(
             omitted.join(", ")
         ))
     }))
+}
+
+/// The generated partitions carry no `FACE_ID_2001`,
+/// `LAST_BODY_MODIFYING_FEATURE_ID` or `ATOM_ID_2001` attribute, from which a
+/// reader takes the feature that produced each face and body and their
+/// persistent names (`sldprt.md` §5): the document feature outputs, the
+/// configuration feature-state outputs, and the face and body names of the
+/// current state and of the stored states that the writer writes as
+/// partitions are not written.
+pub(super) fn producer_attributes_omitted(ir: &CadIr) -> Option<LossNote> {
+    let feature_outputs = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.outputs().len())
+        .sum::<usize>();
+    let state_outputs = ir
+        .model
+        .configurations
+        .iter()
+        .flat_map(|configuration| configuration.feature_states.values())
+        .map(|state| state.evaluation.outputs().len())
+        .sum::<usize>();
+    let stored = ir
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| crate::decode::retired_states::stored_state(ir, configuration))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let named = ir.design.names.entries().keys().chain(
+        stored
+            .values()
+            .flat_map(|state| state.names.iter())
+            .filter(|(_, entry)| entry.is_some())
+            .map(|(entity, _)| entity),
+    );
+    let (mut faces, mut bodies) = (0_usize, 0_usize);
+    for entity in named {
+        match entity {
+            EntityRef::Face(_) => faces += 1,
+            EntityRef::Body(_) => bodies += 1,
+            _ => {}
+        }
+    }
+    (feature_outputs + state_outputs + faces + bodies > 0).then(|| {
+        SldprtLossCode::WriterProducerAttributesOmitted.note(format!(
+            "the generated SLDPRT partitions carry no FACE_ID_2001, \
+             LAST_BODY_MODIFYING_FEATURE_ID or ATOM_ID_2001 attribute, from which a reader takes \
+             the feature that produced each face and body and their persistent names: \
+             {feature_outputs} document feature output(s), {state_outputs} configuration \
+             feature-state output(s), {faces} face name(s) and {bodies} body name(s) of the \
+             current state and of the stored states are not written"
+        ))
+    })
 }
 
 fn derived_range(annotations: &Annotations, edge: &Edge) -> bool {
@@ -475,9 +530,15 @@ pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
     )
 }
 
-/// The written document holds no face and no tessellation.
+/// The written document holds no face and no tessellation: the geometry
+/// holds none, and no state the design stores for a configuration, which
+/// the writer writes as that configuration's partition, holds a face.
 pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
-    (ir.geometry.faces.is_empty() && ir.model.tessellations.is_empty())
+    let stored_face = ir.model.configurations.iter().any(|configuration| {
+        crate::decode::retired_states::stored_state(ir, configuration)
+            .is_some_and(|(_, state)| !state.records.faces.is_empty())
+    });
+    (ir.geometry.faces.is_empty() && ir.model.tessellations.is_empty() && !stored_face)
         .then(|| output_empty("the written SLDPRT document holds no face and no tessellation"))
 }
 

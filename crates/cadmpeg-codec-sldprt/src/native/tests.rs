@@ -78,6 +78,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 references: Vec::new(),
                 producer_feature_refs: Vec::new(),
                 terminal_feature_ref: None,
+                mark_reference: false,
             });
         lane.surface_selections
             .push(crate::records::FeatureInputSurfaceSelection {
@@ -1213,6 +1214,7 @@ fn circle_run_scalar(
             .into_iter()
             .collect(),
         archive_class: None,
+        archive_object_id: None,
     }
 }
 

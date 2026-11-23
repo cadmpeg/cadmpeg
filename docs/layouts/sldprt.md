@@ -2654,6 +2654,21 @@ Offsets begin immediately after the data-class name. The pairwise-orthogonal for
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 
+## `reference_plane_data_head`
+
+Spec §2 · layout: byte offsets · size: 49 B
+
+Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `point` | `f64[3]` | little | spec | Its head is the plane's point (three f64, metres) |
+| 24 | 24 | `normal` | `f64[3]` | little | spec | its unit normal (three f64) |
+| 48 | 1 | `flag` | `u8` | little | spec | With flag `1` the head continues as the 97-byte frame |
+
 ## `constructed_reference_plane_matrix_frame`
 
 Spec §2 · layout: byte offsets · size: 121 B
@@ -3305,6 +3320,17 @@ Offsets from the end of the name object's string. A Unicode CString follows at +
 | 8 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier; `ff ff ff ff` when the object has none |
 | 12 | 4 | `word_12` | `u32` | little | spec | \| +12 \| little-endian u32 \| |
 
+## `model_header_log_tail`
+
+Spec §2.3 · layout: byte offsets · size: 8 B
+
+Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Header2.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `time_stamp` | `u32` | little | spec | come a little-endian u32 time stamp |
+| 4 | 4 | `next_object_id` | `u32` | little | spec | the part's next object identifier |
+
 ## `feature_object_block_head`
 
 Spec §2.3 · layout: byte offsets · size: 55 B
@@ -3400,39 +3426,69 @@ Offsets from the end of the ambient light's name string; the light's bytes end a
 | 24 | 8 | `value_24` | `f64` | little | spec | \| +24 \| little-endian f64 \| |
 | 32 | 4 | `word_32` | `u32` | little | spec | \| +32 \| little-endian u32 \| |
 
-## `length_user_units_base`
+## `units_length_unit_compound_three_word`
 
-Spec §Configuration objects · layout: byte offsets · size: 48 B
+Spec §Configuration objects · layout: byte offsets · size: 46 B
 
-The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read.
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `precision` | `u32` | little | spec | The first u32 of a `moLengthUserUnits_c` base is the number of decimal places |
-| 44 | 4 | `last_word` | `u32` | little | spec | four u32, the last `1`, 48 bytes · value `1` |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 12 | `words` | `u32[3]` | little | spec | three or four u32 words |
+| 44 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
 
 Unstated regions:
 
-- `4..44` (40 B): A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them.
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
 
-## `length_user_units_block_base`
+## `units_length_unit_compound_four_word`
 
-Spec §Configuration objects · layout: byte offsets · size: 62 B
+Spec §Configuration objects · layout: byte offsets · size: 50 B
 
-The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62.
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long.
 
 Parsed by:
 - `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 48 | `base` | `bytes[48]` | little | spec | In its four-word base form |
-| 48 | 8 | `block_real` | `f64` | little | spec | an f64, a u32 and a u16 follow |
-| 56 | 4 | `block_word` | `u32` | little | spec | an f64, a u32 and a u16 follow |
-| 60 | 2 | `block_short` | `u16` | little | spec | an f64, a u32 and a u16 follow |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 48 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+
+## `units_length_unit_block`
+
+Spec §Configuration objects · layout: byte offsets · size: 64 B
+
+A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/design_v11/units.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `display_decimals` | `u32` | little | spec | The number of decimal places at which the document displays lengths. |
+| 8 | 8 | `value` | `f64` | little | spec | f64 value |
+| 32 | 16 | `words` | `u32[4]` | little | spec | three or four u32 words |
+| 62 | 2 | `unit_code` | `u16` | little | spec | The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths |
+
+Unstated regions:
+
+- `4..8` (4 B): The u32 after the display decimal places.
+- `16..32` (16 B): Two u32 and an f64. The first u32 is 4 or 10.
+- `48..62` (14 B): The f64, u32 and u16 that follow the four words in a block-container document.
 
 ## `sketch_record_head`
 
@@ -4358,6 +4414,25 @@ Unstated regions:
 
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
+
+## `profile_line_side_words`
+
+Spec §5 · layout: byte offsets · size: 92 B
+
+The words of the current-prefix 92-byte profile-locus line record (value 1 or 2, role and state 1, selector 04 00 at marker +37) that join the side faces of an extruded polygon to its lines. Bytes 0..80 are those of the profile curve records of section 2. Bytes 80..92 overlap the zero tail of current_extended_zero_tail_92_profile_curve, which stores zero at +80, +84 and +88 and so names no side face, and the direct profile line of section 2, whose +84 value 1 with a nonzero +88 is a selector and names no side face.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 80 | 4 | `line_state` | `u32` | little | spec | In a line record whose u32 at marker +80 is zero |
+| 84 | 4 | `next_side` | `u32` | little | spec | the u32 at marker +84 is the local identifier of the side face that the next line record sweeps |
+| 88 | 4 | `identity` | `u32` | little | spec | nonzero, non-null identity at +88 |
+
+Unstated regions:
+
+- `0..80` (80 B): Marker prefix, endpoint indices, selectors and constants of the profile curve records of section 2.
 
 ## `sketch_dimension_parameter_trailer`
 

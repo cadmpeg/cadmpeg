@@ -2,10 +2,10 @@
 //! A design parameter's Boolean value in a configuration (§5.11, §5.12), where
 //! a stated value or in-IR arithmetic decides it.
 
-use std::collections::BTreeSet;
-
 use super::records::DesignRecords;
-use crate::design::configuration::{DesignConfiguration, ParameterOverride};
+use crate::design::configuration::{
+    own_value_holds, DesignConfiguration, ParameterOverride, Stated,
+};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::expr::{BinaryOp, Expression, ExpressionToken, Neutral, Node, UnaryOp};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
@@ -17,8 +17,9 @@ use crate::features::ParameterId;
 ///
 /// The nearest override that states the parameter decides: its `value`, the
 /// cache of its expression, else its `expression`. With no override, the
-/// parameter's cached value holds where its expression reads no parameter
-/// the chain overrides; otherwise its expression decides.
+/// parameter's cached value holds where its definition reads nothing that
+/// may differ in the chain's configuration (§5.13); otherwise its expression
+/// decides.
 pub(super) fn boolean_in(
     index: &DesignRecords<'_>,
     chain: &[&DesignConfiguration],
@@ -74,43 +75,30 @@ const fn boolean(value: &ParameterValue) -> Option<bool> {
     }
 }
 
-/// Whether the expression of `parameter`, through the expressions of the
-/// parameters it reads, reads a parameter the chain overrides, or one whose
-/// value the chain does not decide (another scope's, or an external one).
+/// Whether the cached value of `parameter` may differ in the chain's
+/// configuration from the base (§5.13, [`own_value_holds`]).
 fn reads_override(
     index: &DesignRecords<'_>,
     chain: &[&DesignConfiguration],
     parameter: &ParameterId,
 ) -> bool {
-    if chain
-        .iter()
-        .all(|configuration| configuration.overrides.parameters.is_empty())
-    {
-        return false;
-    }
-    let mut seen = BTreeSet::from([parameter]);
-    let mut pending = vec![parameter];
-    while let Some(parameter) = pending.pop() {
-        let Some(ParameterDefinition::Expression(expression)) = index
-            .parameters
-            .get(parameter.as_str())
-            .map(|record| &record.definition)
-        else {
-            continue;
-        };
-        for reference in references(expression) {
-            let RefTarget::Parameter(target) = &reference.target else {
-                return true;
-            };
-            if reference.through.is_some() || nearest_override(chain, target).is_some() {
-                return true;
-            }
-            if seen.insert(target) {
-                pending.push(target);
-            }
-        }
-    }
-    false
+    let Some(record) = index.parameters.get(parameter.as_str()) else {
+        return true;
+    };
+    !own_value_holds(
+        record,
+        Stated::of(chain),
+        &|target| nearest_override(chain, target).is_some(),
+        &|target| index.parameters.get(target.as_str()).copied(),
+        &|program| {
+            index
+                .ir
+                .design
+                .programs
+                .iter()
+                .find(|candidate| &candidate.id == program)
+        },
+    )
 }
 
 /// The parameter references of an expression, walked without recursion.

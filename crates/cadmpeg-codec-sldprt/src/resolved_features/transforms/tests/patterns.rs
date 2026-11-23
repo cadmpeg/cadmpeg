@@ -1818,6 +1818,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
     );
     project_relation_solved_point_geometry(
         &ctx,

@@ -692,7 +692,7 @@ resolve a seed feature?
 
 **Question.** Is the 22-byte header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 00 00 00 00 00 00` a named-scalar header whose value begins at its end, and which roles do its trailers assign?
 
-**Known.** `sldprt.md` §2: a part writes all of its named scalars with one header width, and the primary and legacy layouts use a 22-byte header whose bytes 16 through 18 are `ff fe ff`. This other 22-byte header is the 14-byte value-only header and eight zero bytes. An f64 follows it, and a trailer of three zero bytes and the scalar object identifier follows the f64. A little-endian i32 can follow it instead, with such a trailer after the i32; the stored i32 values are positive counts. The decoder reads the value at the end of the 14-byte value-only header, so these scalars state 0.
+**Known.** `sldprt.md` §2: a part writes all of its named scalars with one header width, and the primary and legacy layouts use a 22-byte header whose bytes 16 through 18 are `ff fe ff`. This other 22-byte header is the 14-byte value-only header and eight zero bytes. An f64 follows it, and a trailer of three zero bytes and the scalar object identifier follows the f64. A little-endian i32 can follow it instead, with such a trailer after the i32; the stored i32 values are positive counts. The decoder reads the value at the end of the 14-byte value-only header, so these scalars state 0. Behind this header, the `D1` parameter object of an offset reference plane stores the plane's distance in metres at the header's end, as its display shows; behind the same header and trailer form, sketch-dimension scalars store values at the header's end that their displays do not show in every case. The decoder takes such an offset plane's distance from its display and names it under `feature.offset-plane-distance-displayed`.
 
 **Need.** Scalars of this header compared with the Keywords displays of the dimensions their names give: the value at the header's end equal to the displayed number in the part's unit settles the value offset, and the trailer bytes compared with the compact and primary trailers settle the role.
 
@@ -1146,7 +1146,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set, and when bit 0 is clear and its locus (+23) is `05 00 01 00`?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 clear and locus `05 00 01 00`, the current-prefix 92-byte selector-4 line that `sldprt.md` §2 reads takes each endpoint value plus one as the object index of a point marker. The decoder reads the indices of the other such records as point-record positions and charges `sketch.point-record-index-basis-assumed`. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 clear and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 clear and locus `05 00 01 00`, the current-prefix 92-byte selector-4 line that `sldprt.md` §2 reads takes each endpoint value plus one as the object index of a point marker. The decoder reads the indices of the other such records as point-record positions and charges `sketch.point-record-index-basis-assumed`. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face. In a rectangular profile, a 92-byte line record with an identity trailer at +88 reads as the bottom line under the one-based ordinal rule and as the top line under zero-based endpoint indices; the stored solid has a top face and the decoded profile has none.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
@@ -1173,6 +1173,64 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** A curve record of state `0` has u32 `0` after its endpoint indices, and a curve record of state `1` or `2` has u32 `1` there (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). Every construction curve has state `0`. State `2` occurs in one sketch saved at three `swVersion` values, schema `07 00`: four lines and three arcs, which together form the sketch's one closed loop. Most non-construction curves of state `0` lie off the stored solid: an outer rectangle around a profile of state `1`, or a second record of a curve that a record of state `1` already gives. In one sketch, twelve lines of state `0` each run along a straight edge of the solid from end to end, and each is the only curve that joins two arcs of state `1`. The decoder reads a curve record of state `0` as a curve outside the profile, which joins no profile loop, and reads a curve record of state `1` or `2` as a curve of the profile. The design states a curve of state `0` as construction and charges `design.sketch-construction-assumed` where the record's construction bit is clear, except in a sketch where a curve of state `1` or `2` closes a loop only with curves of state `0`: there every curve of state `0` stays profile geometry. The profile loops the decoder resolves keep the curves of state `0` out in these sketches too, so there the extrude's `Sketch` pick closes regions the loops do not hold; read with every curve of state `0` of the sketch, the loop rule closes fewer loops or none.
 
 **Need.** For each curve record of state `0` or `2`, its curve against the edges and faces of the feature that consumes its sketch, and the fields of its record that differ from those of a curve record of state `1`.
+
+### EV-33. The four identifiers below an extrusion
+
+**Question.** Which objects hold the four identifiers between an extrusion's depth parameter and the extrusion?
+
+**Known.** `sldprt.md` §2.3 gives the identifier order of a sketch and its extrusion: the sketch, its dimension parameters, the extrusion's depth parameter, four identifiers and the extrusion. No `KeyWords` record, named-object header or parameter trailer that the decoder reads holds the four identifiers. The extrusion's objects after its end specification include its dimension display objects, a body chooser and a `moFromEndSpec_c` (EV-17).
+
+**Need.** The class of each object that holds one of the four identifiers, and the field that holds it, so that a writer that creates an extrusion numbers its objects as native parts do and a feature added to a part takes none of the four.
+
+**Conflict.** The writer numbers a generated part's user features first, from `23`, and their dimension parameters after them, the extrusion's depth parameter last. It writes the extrusion one above its sketch and nothing at the four identifiers. A feature added to a part takes an identifier past the largest that the decoder reads in the part, so it takes none of the four.
+
+### EV-34. The light set of the default tree
+
+**Question.** Which `moDirectionLight_c` objects and which `moEqnFolder_c` identifier does a part hold when its `moEnvFolder_c` holds fewer than three directional lights?
+
+**Known.** `sldprt.md` §2.3 gives the two identifier sets of the default nodes: directional lights `13`, `14` and `15` with the `moEqnFolder_c` `16`, or those lights and a fourth `16` with the `moEqnFolder_c` `61`. Parts of other versions that hold exactly two directional lights, at `13` and `14`, hold the `moEqnFolder_c` at an identifier other than `16`, some at `15`. Parts that hold the `moAmbientLight_c` at `12` and the `moEqnFolder_c` at `16` with `15` empty hold their directional lights at other identifiers.
+
+**Need.** The light set and `moEqnFolder_c` identifier a writer gives a generated part, so that its default tree is one native parts hold.
+
+**Conflict.** The writer writes two directional lights, `13` and `14`, and the `moEqnFolder_c` at `16`, and leaves `15` empty. No native part holds that combination. The first identifier set with a third directional light at `15` is a combination native parts hold.
+
+### EV-35. The next object identifier after an edit
+
+**Question.** What does a save that adds or deletes a node write to the creation log and to the next object identifier of `Contents/Config-N-ModelHeader` and `Header2`?
+
+**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger. A parameter object's trailer can hold an identifier at or above the next object identifier (EV-36).
+
+**Need.** Two saves of one part, before and after a feature is added, and two before and after a feature is deleted, with their creation logs and next object identifiers compared: the `moLogs_c` record and stamps of the added or deleted feature, the time stamps, and the change of the next object identifier.
+
+**Conflict.** The writer of an edited part keeps the source part's `ModelHeader` and `Header2` streams, so an added feature has no `moLogs_c` record and the next object identifier does not change. The writer gives an added feature an identifier past every identifier the decoder reads in the part's `KeyWords` records, named-object headers and parameter objects, and it does not read the next object identifier. The decoder reads the identifier of a parameter object with a tolerance or an integer value only from the object walk of the stream, and the walk reads no identifier from a feature-dimension parameter that writes its `moDimTolerance_c`. The writer counts no identifier from a parameter the walk gives none for: when that parameter holds the part's largest identifier, the added feature takes the same identifier. A part the writer generates holds no `ModelHeader` or `Header2` stream.
+
+### EV-36. Parameter identifiers that other records hold
+
+**Question.** What does the object identifier in a parameter object's trailer name when a `KeyWords` record or another parameter object of the part holds the same identifier?
+
+**Known.** `sldprt.md` §2.3 gives the parameter trailer: a zero byte, the tolerance pointer and the u32 object identifier. Parameter objects can hold identifiers that `KeyWords` records also hold, among them the `moDirectionLight_c` identifiers `13` to `16`, and one identifier can be held by many parameter objects of one part. The parameter objects that hold these identifiers form a block whose first identifier is `13` or `14` and whose last is between `37` and `53`. Several parameter objects of the block can hold one identifier, and the values the block's parameter objects hold differ between parts. An identifier of the block can be at or above the part's next object identifier (EV-35).
+
+**Need.** A part that holds such a block and a save of the same part without the feature or library object that brings the block, with their parameter objects, `KeyWords` records and next object identifiers compared.
+
+**Conflict.** The writer counts every parameter identifier the decoder reads among the part's identifiers when it numbers an added feature, so the block can raise the added feature's identifier above the next object identifier.
+
+### EV-37. The layout of the first identifiers by version
+
+**Question.** What decides which of the two layouts of the first identifiers (`sldprt.md` §2.3) a part of a version other than 14000 holds?
+
+**Known.** In the first layout `1` is the `moDetailCabinet_c`, `2`, `3` and `4` the Front, Top and Right planes and `5` the origin. In the second `2` is the `moEnvFolder_c`, `3`, `4` and `5` the planes and `6` the origin; its origin projection names feature `6` and a `moCompRefPlane_c` names the Front plane by feature `3` with plane word `3`. Parts of `swVersion` 14000 hold the first layout. Parts of other versions from 8000 to 16000 hold either layout.
+
+**Need.** Two parts of one version from 8000 to 16000 that hold different layouts, with their creation logs (EV-35) compared: the version and stamps of each part's first `moLogs_c` records.
+
+**Conflict.** The writer writes `swVersion` 14000 and the first layout.
+
+### EV-38. Side-face identifiers of non-extruded producers and of unnamed profile lines
+
+**Question.** Which profile line sweeps a side face whose local identifier no `+84` value of the profile names, and what do the entries of a blend edge's component path name for a producer other than an extrusion?
+
+**Known.** `sldprt.md` §5 gives the join from the local identifier of an extrusion side face to its profile line, and the order of a component path's entries for an extrusion. A line record whose u32 at marker +80 is nonzero stores zero at +84 in two profiles. A side identifier of 1 cannot be told from the §2 direct-form selector, which stores u32 `1` at +84 with a nonzero identity at +88; the join states no face from such a record. In a seven-line profile, the closing line record has `00 00 02 00` at +80 and stores `1` at +84. In a rectangular profile, two of the four line records are line handles whose geometry is not read (EV-27), so the join states no sketch entity for their faces.
+
+**Need.** The identifier that a record with nonzero `+80` gives the next line; whether the closing record's `+84` names the first line's face where it is nonzero; and the entry order and entities of a component path for producers other than an extrusion.
 
 ### EV-24. Bytes after the last top-level object
 
@@ -1240,20 +1298,35 @@ The design reads a built circle in this order. A built circle that has the cente
 
 **Conflict.** A cylinder face witnesses a circle whichever feature cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads cylinders along the sketch normal, so a built circle that a revolution sweeps has none.
 
-### DI-72. Length unit codes and the three-word unit base
+### DI-72. Length unit codes above `3`
 
-**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+**Question.** Which length units do the `moLengthUserUnits_c` unit codes above `3` name?
 
-**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+**Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
-**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+**Need.** A document that writes a code above `3` and stores a length scalar beside its Keywords display, so that their quotient names the unit.
 
+### DI-87. The base form of each unit object of one units table
+
+**Question.** Does every unit object of a `moUnitsTable_c` open with a base of the form its `moNumberUserUnits_c` object has?
+
+**Known.** `sldprt.md` §2.3 gives the three base forms: 44 and 48 bytes in a compound document, 62 bytes in a block-container document. The decoder measures the `moNumberUserUnits_c` object, from the end of its class declaration to the next class declaration, and reads the `moLengthUserUnits_c` display decimal places and u16 unit code at that form's offsets. A 48-byte length unit base read at the 44-byte offsets gives as its unit code the low u16 of its last u32, which is `0` or `1`.
+
+**Need.** A compound document whose `moLengthUserUnits_c` base and `moNumberUserUnits_c` object differ in length, or a field of the length unit object that states its own base form.
+
+### DI-88. The end of a units table
+
+**Question.** At which byte does the last unit object of a `moUnitsTable_c` end?
+
+**Known.** The table writes a u16 count (12, 16 or 17) and that many unit objects. A unit object is its class declaration or a reference to an earlier one, a base, and what its class adds (`sldprt.md` §2.3). `moLengthUserUnits_c` adds an object pointer to a dual length unit, which the table writes in place as a second length unit object, and `moDensityUnits_c` adds a length-unit pointer when its flag byte is set. The decoder searches from the count to the end of the configuration stream for the first `moLengthUserUnits_c` and `moNumberUserUnits_c` declarations.
+
+**Need.** The encoding of a null and of an in-place object pointer in each unit class that writes one, so that a walk of the table's count of objects ends at the table's last byte and bounds the search.
 
 ### DI-77. The +17 value of a sketch curve record
 
 **Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold? Which construction state does selector `12` declare for a full circle with role u16 `1` at +27?
 
-**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line. Type `1` followed by u16 `0`, or type `0xffff` followed by u16 `0xffff`, is an arc or circle when four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. It reports every overridden constraint-owning relation code on a framed list curve with `sketch.listed-curve-relation-dropped`, naming the curve form and +17 code. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-77; their geometry comes from the record by point-record position whatever +17 holds (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. The decoder marks selector-12 role-1 list lines as construction from bit 3 and reports `sketch.listed-line-construction-assumed`. Some current-layout selector-12 list lines with role `1` have resolved geometry to compare with the edges of the final solid.
+**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line. Type `1` followed by u16 `0`, or type `0xffff` followed by u16 `0xffff`, is an arc or circle when four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. It reports every overridden constraint-owning relation code on a framed list curve with `sketch.listed-curve-relation-dropped`, naming the marker, the curve form and the +17 code, once for each marker of every feature-input lane, whichever projection reads its sketch. A relation still addresses the points that such a record's links reach. The decoder draws each such point as a construction point in a sketch read from the marker's own lane, at the place where the fitted marker transform and the sketch frame agree within the linear resolution, or at the one place that a curve end or centre of the sketch or a vertex or circular-edge centre of the solid marks. It reports a point whose place stays open with `sketch.relation-point-place-unsettled`, and a point whose record form reads a subnormal coordinate pair with `sketch.point-coordinates-subnormal`. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-77; their geometry comes from the record by point-record position whatever +17 holds (`sldprt.md` §2, "A marker whose record is a point record or a curve record"). These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. The decoder marks selector-12 role-1 list lines as construction from bit 3 and reports `sketch.listed-line-construction-assumed`. Some current-layout selector-12 list lines with role `1` have resolved geometry to compare with the edges of the final solid.
 
 **Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles. For the construction state, selector-12 role-1 circles and lines with a known construction state and profile-to-face binding.
 
@@ -1295,13 +1368,13 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** Sketches of either kind whose markers lie on vertices or edges of the B-rep of their features, compared under the model-component reading, the local reading from the frame origin and the local reading from the foot of the model origin, together with the plane reference of each sketch (DI-73).
 
-### DI-81. The side of an offset reference plane that stores no frame of its own, and the u-axis of a frame stored against the source normal
+### DI-81. The u-axis of an offset-plane frame stored against the source normal
 
-**Question.** Where does an offset reference-plane object that stores no frame of the offset plane record on which side of its source plane the plane lies? Which u-axis does a stored frame of the offset plane give where its normal points against the source plane's normal?
+**Question.** Which u-axis does a stored frame of an offset reference plane give where its normal points against the source plane's normal?
 
-**Known.** `D1` is a magnitude, and a frame of the offset plane at `D1` from the source plane states the side (`sldprt.md` §2). Every dual-frame object stores such a frame, along the source normal or against it, or in the source plane where `D1` is zero. An object with a single frame stores the offset plane's frame, along or against the source normal, or the source plane's frame. An object can also store no frame, a single frame whose normal is perpendicular to the normal of the source plane its object identifies, or a frame parallel to the source plane at neither zero nor `D1` from it. The decoder takes the u-axis of a stored frame of the offset plane only where the frame's normal points the way of the source plane's normal and the u-axis lies in the plane; otherwise the offset plane keeps the source plane's u-axis.
+**Known.** The stored `D1` distance, a frame of the offset plane at that distance from the source plane, and the point at the head of the plane-data object place the offset plane and state its side (`sldprt.md` §2). A stored frame of the offset plane has its normal along the source normal or against it; the u-axis of a frame along the source normal is the offset plane's u-axis. An object can also store a single frame whose normal is perpendicular to the normal of the source plane its object identifies, or a frame or plane-data point parallel to the source plane at neither zero nor the stored distance from it. The decoder takes the u-axis of a stored frame only where the frame's normal points the way of the source plane's normal and the u-axis lies in the plane; otherwise the offset plane keeps the source plane's u-axis. It names the planes whose frame or plane-data point is not the placed plane under `feature.offset-plane-frame-conflict`.
 
-**Need.** A field that separates the dual-frame objects whose frame lies against the source normal from those along it, read in the objects without a frame of the offset plane and checked against the B-rep vertices of the features sketched on those planes. For the perpendicular frames, the source identifier of the object compared with the planes of the part.
+**Need.** Offset planes whose stored frame's normal points against the source normal, each with a sketch whose profile is not symmetric about the plane's origin, and the B-rep vertices of the features sketched on them compared with the sketch placed under each u-axis. For the perpendicular frames, the source identifier of the object compared with the planes of the part.
 
 ### DI-82. The u-axis of an angled reference plane whose offset planes store another
 
@@ -1310,6 +1383,16 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** A reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement, and the 121-byte angular frame stores a u-axis, a normal and a v-axis (`sldprt.md` §2). An angled plane can read u-axis `(0,1,0)` while the dual-frame offset planes whose source it is store its frame with u-axis `(0.707,0,-0.707)` and the same normal: the Front frame turned about `Y` by the plane's angle. A sibling angled plane turned the other way reads the u-axis its offset planes store. The sketches on its offset planes take the u-axis those planes store.
 
 **Need.** Angled planes whose offset planes store their source frame, compared field by field with the angular frame, and the B-rep of features sketched on an angled plane itself.
+
+### DI-84. Produced bodies of a configuration without a bound partition
+
+**Question.** Which carrier states the bodies a feature produces in a configuration whose `Config-N-Partition` is absent or unbound?
+
+**Known.** The `FACE_ID_2001` producers and the `LAST_BODY_MODIFYING_FEATURE_ID` attributes of a configuration's own partition state the bodies each feature produces in that configuration (`sldprt.md` §2, §5). The decoder gives the feature states of a configuration with unresolved body membership no produced body, and a decode loss counts the configurations with unresolved body membership. The document features name their producers over every decoded partition, so a document feature can name a body that the active configuration's partition does not hold.
+
+`Config-N-FeatureBodies/LocalBodies` holds the bodies an Imported feature owns (`sldprt.md` §3.3). Where the active partition is an empty partition/deltas model, they are the active configuration's bodies. A configuration that is not active can store a `Config-N-FeatureBodies` stream with no `Config-N-Partition`. Whether those bodies are that configuration's bodies or the input of its import is not known. The decoder takes them into no state and charges the warning `config.state-imported-bodies-not-transferred` naming the configuration index; it does the same for a configuration that is not active whose partition holds no body. For the active configuration, whose bodies the model would then lack, the same loss is the error `geometry.imported-bodies-not-transferred`.
+
+**Need.** A `Config-N` or `Config-N-ResolvedFeatures` record that names output bodies by an identity the partition also stores (`ATOM_ID_2001`), compared with a configuration whose partition holds the same bodies. For `Config-N-FeatureBodies`: a configuration that is not active whose partition is an empty partition/deltas model beside such a stream, or the Imported feature of its `Config-N-ResolvedFeatures` lane naming its body by an identity the stream also stores.
 
 ### DI-85. Revolution axes that lie outside the profile plane
 

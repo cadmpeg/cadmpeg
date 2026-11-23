@@ -1,6 +1,7 @@
 //! Object name and class declaration records.
 
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use crate::layout::named_object_header as named_header;
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
@@ -58,6 +59,24 @@ pub(crate) fn object_names(
         });
     }
     Ok(names)
+}
+
+/// The object identifier `name`'s named-object header holds (sldprt.md
+/// §2.3): the identifier at name +8, when the header's string marker sits
+/// at +16. Other bytes can follow a name: a `moExtFeature_c` writes a second
+/// name object there, and the scan reads its text as the identifier.
+pub(crate) fn header_object_id(payload: &[u8], name: &FeatureInputName) -> Option<u32> {
+    let offset = usize::try_from(name.offset).ok()?;
+    let units = usize::from(*payload.get(offset.checked_add(NAME_MARKER.len())?)?);
+    let string = offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?
+        .checked_add(named_header::LEN)?;
+    let marker = &NAME_MARKER[2..];
+    if payload.get(string..string.checked_add(marker.len())?)? != marker {
+        return None;
+    }
+    name.object_id?.value()
 }
 
 fn decimal_matches(text: &str, value: usize) -> bool {

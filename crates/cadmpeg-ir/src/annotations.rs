@@ -540,15 +540,15 @@ impl AnnotationState {
         let stream = StreamName::try_from(stream)
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
         let stream = StreamHandle(Arc::new(stream));
-        self.note(&id, &stream, offset, Some(tag));
-        self.exactness(&id, exactness);
+        self.insert_provenance(std::borrow::Cow::Borrowed(&id), &stream, offset, Some(tag));
+        self.insert_exactness(std::borrow::Cow::Owned(id), exactness);
         Ok(())
     }
 
     /// Format a temporary lookup identity before admitting its provenance.
     fn note(&mut self, id: impl Display, stream: &StreamHandle, offset: u64, tag: Option<&str>) {
         let id = id.to_string();
-        self.insert_provenance(std::borrow::Cow::Borrowed(&id), stream, offset, tag);
+        self.insert_provenance(std::borrow::Cow::Owned(id), stream, offset, tag);
     }
 
     /// Admit one provenance record, moving an owned identity when it is new.
@@ -561,19 +561,26 @@ impl AnnotationState {
     ) {
         let provenance =
             AnnotationProvenance::annotation(stream.0.clone(), offset, tag.map(str::to_owned));
-        if let Some(previous) = self.annotations.provenance.get_mut(id.as_ref()) {
-            *previous = provenance;
-        } else {
-            self.annotations
-                .provenance
-                .insert(id.into_owned(), provenance);
+        match id {
+            std::borrow::Cow::Owned(id) => {
+                self.annotations.provenance.insert(id, provenance);
+            }
+            std::borrow::Cow::Borrowed(id) => {
+                if let Some(previous) = self.annotations.provenance.get_mut(id) {
+                    *previous = provenance;
+                } else {
+                    self.annotations
+                        .provenance
+                        .insert(id.to_owned(), provenance);
+                }
+            }
         }
     }
 
     /// Set entity exactness after admitting any new retained record.
     fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
         let id = id.to_string();
-        self.insert_exactness(std::borrow::Cow::Borrowed(&id), exactness)
+        self.insert_exactness(std::borrow::Cow::Owned(id), exactness)
     }
 
     /// Move an admitted identity into an exactness entry after destination admission.

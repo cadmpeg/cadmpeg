@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
+use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchId};
 
 use super::{
     marker_is_construction, project_marker_backed_sketches, HeldMarkerGeometry,
@@ -17,7 +17,9 @@ use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputKind,
 };
-use crate::resolved_features::markers::sketch_input_entities;
+use crate::resolved_features::markers::{
+    report_listed_curve_relation_drops, sketch_input_entities,
+};
 
 const F32_MINUS_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0xbf];
 const F64_MINUS_ONE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0xf0, 0xbf];
@@ -122,12 +124,22 @@ fn sketch_with_arc(code: u32, indices: [u16; 2]) -> (Vec<u8>, usize) {
 }
 
 /// The entity `project_marker_backed_sketches` emits for the curve record at
-/// `curve`, its input kind, and the projection losses.
+/// `curve`, its input kind, and the lane's and the projection's losses.
 fn projected_curve(
     payload: Vec<u8>,
     curve: usize,
 ) -> (SketchInputKind, Option<SketchEntity>, Vec<LossNote>) {
-    let (kind, marker_id, entities, held, losses) = projection(payload, curve);
+    projected_curve_in(payload, curve, None)
+}
+
+/// [`projected_curve`] for a sketch feature bound to `sketch` before the
+/// marker projection runs.
+fn projected_curve_in(
+    payload: Vec<u8>,
+    curve: usize,
+    sketch: Option<SketchId>,
+) -> (SketchInputKind, Option<SketchEntity>, Vec<LossNote>) {
+    let (kind, marker_id, entities, held, losses) = projection(payload, curve, sketch);
     let entity = entities
         .into_iter()
         .chain(held.handles)
@@ -136,11 +148,13 @@ fn projected_curve(
 }
 
 /// What `project_marker_backed_sketches` emits for a sketch whose curve
-/// record at `curve` is a marker: the marker's input kind and reference, the
-/// projected entities, the held geometry, and the projection losses.
+/// record at `curve` is a marker, its feature bound to `sketch` before the
+/// projection runs: the marker's input kind and reference, the projected
+/// entities, the held geometry, and the projection losses.
 fn projection(
     payload: Vec<u8>,
     curve: usize,
+    sketch: Option<SketchId>,
 ) -> (
     SketchInputKind,
     String,
@@ -195,7 +209,7 @@ fn projection(
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
             }),
         ),
         native_ref: Some("feature-native".into()),
@@ -223,6 +237,7 @@ fn projection(
     let mut entities = Vec::new();
     let mut held = HeldMarkerGeometry::default();
     let mut losses = Vec::new();
+    report_listed_curve_relation_drops(&lanes, &histories, &mut losses);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -258,7 +273,7 @@ fn a_curve_record_of_state_zero_is_handed_on_as_outside_the_profile() {
         let (mut payload, curve) = sketch_with_line(0, 4, [0, 1], 0, 7);
         let at = curve + crate::layout::sketch_record_head::STATE;
         payload[at..at + 2].copy_from_slice(&state.to_le_bytes());
-        let (_, marker_id, entities, held, _) = projection(payload, curve);
+        let (_, marker_id, entities, held, _) = projection(payload, curve, None);
         let line = entities
             .iter()
             .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()))
@@ -345,12 +360,29 @@ fn a_readable_line_with_a_relation_code_is_a_line() {
             .message
             .contains(&format!("relation code {code} at +17")));
         assert!(losses[0].message.contains("listed line"));
-        assert!(losses[0].message.contains(entity.sketch.as_str()));
         assert!(losses[0].message.contains("generated-profile"));
         assert!(losses[0]
             .message
             .contains(entity.native_ref.as_deref().expect("marker reference")));
     }
+}
+
+/// DI-77: the dropped relation code is named once, also when the sketch's
+/// curves come from its profile stream and no marker of it is projected.
+#[test]
+fn a_profile_stream_sketch_names_its_dropped_relation_code() {
+    let (payload, curve) = sketch_with_line(CODE_FOUR, 4, [0, 1], 0, u32::MAX);
+    let sketch = SketchId::mint("sldprt:model:sketch#profile:lane:1").expect("identity grammar");
+    let (kind, entity, losses) = projected_curve_in(payload, curve, Some(sketch));
+    assert_eq!(kind, SketchInputKind::LineOrCircle);
+    assert!(entity.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SketchListedCurveRelationDropped.kind()
+    );
+    assert!(losses[0].message.contains("relation code 4 at +17"));
+    assert!(losses[0].message.contains("generated-profile"));
 }
 
 #[test]

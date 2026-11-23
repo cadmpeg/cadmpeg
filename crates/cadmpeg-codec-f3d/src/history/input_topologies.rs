@@ -74,20 +74,32 @@ pub(crate) fn project_feature_input_topologies(
             (feature_position, previous_state_id),
         ));
     }
-    let mut projected = Vec::new();
-    visit_states_oldest_first(
-        histories,
-        jobs,
-        |history, state, (feature_position, previous_state_id)| {
-            let Some(feature) = features.get(feature_position) else {
-                return;
-            };
-            if let Some(input) = project_input_topology(feature, history, state, previous_state_id)
-            {
-                projected.push((feature_position, input));
-            }
-        },
-    );
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(6);
+    let keep_materialized = histories
+        .iter()
+        .all(|history| history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES);
+    let mut projected = if keep_materialized && workers > 1 && jobs.len() >= 8 {
+        super::output_measure::project_input_topologies_parallel(features, histories, jobs, workers)
+    } else {
+        let mut projected = Vec::new();
+        visit_states_oldest_first(
+            histories,
+            jobs,
+            |history, state, (feature_position, previous_state_id)| {
+                let Some(feature) = features.get(feature_position) else {
+                    return;
+                };
+                if let Some(input) =
+                    project_input_topology(feature, history, state, previous_state_id)
+                {
+                    projected.push((feature_position, input));
+                }
+            },
+        );
+        projected
+    };
     projected.sort_by_key(|(position, _)| *position);
     projected.into_iter().map(|(_, input)| input).collect()
 }

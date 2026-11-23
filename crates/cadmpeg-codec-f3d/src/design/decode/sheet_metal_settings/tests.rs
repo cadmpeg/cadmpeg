@@ -500,7 +500,7 @@ fn unreadable_settings_keep_the_sibling_settings() {
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
-            crate::loss::F3dLossCode::SheetMetalSettingsUndecoded.kind()
+            crate::loss::F3dLossCode::BendSettingsUndecoded.kind()
         );
     }
 }

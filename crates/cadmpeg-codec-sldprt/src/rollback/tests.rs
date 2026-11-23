@@ -154,6 +154,7 @@ fn owners(names: &[Option<&str>]) -> Vec<MarkOwner> {
         .enumerate()
         .map(|(index, name)| MarkOwner {
             at: 100 * (index + 1),
+            end: 100 * (index + 1) + 50,
             owner: name.map(str::to_owned),
         })
         .collect()
