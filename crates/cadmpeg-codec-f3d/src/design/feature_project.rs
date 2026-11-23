@@ -538,7 +538,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     surface_extend::project_surface_extend(
                         scope,
                         edge_operands,
-                        &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {

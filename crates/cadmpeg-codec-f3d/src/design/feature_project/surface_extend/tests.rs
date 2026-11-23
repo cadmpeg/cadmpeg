@@ -37,14 +37,27 @@ fn scope(edge_record_indices: Vec<u32>) -> DesignParameterScope {
     scope
 }
 
+const STREAM: &str = "f3d:native/BulkStream.dat";
+
 fn operand(
     scope_record: u32,
     record: u32,
     state: Option<i64>,
     preceding_faces: &[&str],
 ) -> DesignEdgeOperand {
+    operand_with(STREAM, scope_record, record, state, preceding_faces, &[24])
+}
+
+fn operand_with(
+    stream: &str,
+    scope_record: u32,
+    record: u32,
+    state: Option<i64>,
+    preceding_faces: &[&str],
+    changed_boundary_edges: &[i64],
+) -> DesignEdgeOperand {
     let mut value = serde_json::json!({
-        "id": format!("f3d:native/BulkStream.dat:design-edge-operand#{record}"),
+        "id": format!("{stream}:design-edge-operand#{record}"),
         "scope_record_index": scope_record,
         "scope_reference_ordinal": 2,
         "record_index": record,
@@ -61,6 +74,8 @@ fn operand(
         "recipe_program_offset": 0,
         "recipe_program": [-1, -1, 2],
         "preceding_candidate_faces": preceding_faces,
+        "preceding_boundary_edge_slots": [21, 24, 30, 43],
+        "changed_boundary_edge_slots": changed_boundary_edges,
         "next_record_index": record + 4,
         "next_byte_offset": 160
     });
@@ -70,21 +85,13 @@ fn operand(
     serde_json::from_value(value).expect("edge operand fixture")
 }
 
-fn project(
-    scope: &DesignParameterScope,
-    operands: &[DesignEdgeOperand],
-) -> (FaceSelection, Vec<String>) {
-    let mut losses = Vec::new();
+fn project(scope: &DesignParameterScope, operands: &[DesignEdgeOperand]) -> FaceSelection {
     let Some(FeatureDefinition::Operation(FeatureOperation::ExtendSurface { faces, .. })) =
-        project_surface_extend(scope, operands, &mut losses)
+        project_surface_extend(scope, operands)
     else {
         panic!("SurfaceExtend did not project as a typed feature");
     };
-    let codes = losses
-        .iter()
-        .map(|loss| loss.code.local_code().to_owned())
-        .collect();
-    (faces, codes)
+    faces
 }
 
 fn historical_slots(scope: &DesignParameterScope, faces: &FaceSelection) -> Vec<String> {
@@ -106,7 +113,7 @@ fn input_face(scope: &DesignParameterScope, slot: i64) -> String {
 }
 
 #[test]
-fn one_boundary_edge_states_the_input_face_it_bounds_and_charges_the_loss() {
+fn one_boundary_edge_states_its_input_face() {
     let scope = scope(vec![503]);
     let operands = [operand(
         SCOPE_RECORD,
@@ -114,9 +121,8 @@ fn one_boundary_edge_states_the_input_face_it_bounds_and_charges_the_loss() {
         Some(INPUT_STATE),
         &["f3d:brep:entity#8"],
     )];
-    let (faces, codes) = project(&scope, &operands);
+    let faces = project(&scope, &operands);
     assert_eq!(historical_slots(&scope, &faces), [input_face(&scope, 8)]);
-    assert_eq!(codes, ["feature.surface-extend-edges-as-faces"]);
 }
 
 #[test]
@@ -126,9 +132,8 @@ fn two_boundary_edges_of_one_face_state_that_face_once() {
         operand(SCOPE_RECORD, 503, Some(INPUT_STATE), &["f3d:brep:entity#8"]),
         operand(SCOPE_RECORD, 507, Some(INPUT_STATE), &["f3d:brep:entity#8"]),
     ];
-    let (faces, codes) = project(&scope, &operands);
+    let faces = project(&scope, &operands);
     assert_eq!(historical_slots(&scope, &faces), [input_face(&scope, 8)]);
-    assert_eq!(codes, ["feature.surface-extend-edges-as-faces"]);
 }
 
 #[test]
@@ -138,7 +143,7 @@ fn boundary_edges_of_two_faces_state_both_faces_in_edge_order() {
         operand(SCOPE_RECORD, 507, Some(INPUT_STATE), &["f3d:brep:entity#6"]),
         operand(SCOPE_RECORD, 503, Some(INPUT_STATE), &["f3d:brep:entity#8"]),
     ];
-    let (faces, _) = project(&scope, &operands);
+    let faces = project(&scope, &operands);
     assert_eq!(
         historical_slots(&scope, &faces),
         [input_face(&scope, 8), input_face(&scope, 6)]
@@ -146,12 +151,11 @@ fn boundary_edges_of_two_faces_state_both_faces_in_edge_order() {
 }
 
 fn assert_native(scope: &DesignParameterScope, operands: &[DesignEdgeOperand]) {
-    let (faces, codes) = project(scope, operands);
+    let faces = project(scope, operands);
     let FaceSelection::Native(native) = faces else {
         panic!("faces are not native: {faces:?}");
     };
     assert!(native.ends_with(":design-record#500"));
-    assert!(codes.is_empty());
 }
 
 #[test]
@@ -240,5 +244,67 @@ fn operands_of_two_input_states_keep_the_native_boundary() {
                 &["f3d:brep:entity#8"],
             ),
         ],
+    );
+}
+
+#[test]
+fn an_operand_of_another_stream_keeps_the_native_boundary() {
+    let scope = scope(vec![503]);
+    assert_native(
+        &scope,
+        &[operand_with(
+            "f3d:native/occurrence-1/BulkStream.dat",
+            SCOPE_RECORD,
+            503,
+            Some(INPUT_STATE),
+            &["f3d:brep:entity#8"],
+            &[24],
+        )],
+    );
+}
+
+#[test]
+fn a_face_whose_boundary_the_feature_leaves_unchanged_keeps_the_native_boundary() {
+    let scope = scope(vec![503]);
+    for changed in [&[][..], &[77][..]] {
+        assert_native(
+            &scope,
+            &[operand_with(
+                STREAM,
+                SCOPE_RECORD,
+                503,
+                Some(INPUT_STATE),
+                &["f3d:brep:entity#8"],
+                changed,
+            )],
+        );
+    }
+}
+
+#[test]
+fn a_candidate_face_without_a_stable_slot_keeps_the_native_boundary() {
+    let scope = scope(vec![503]);
+    assert_native(
+        &scope,
+        &[operand(
+            SCOPE_RECORD,
+            503,
+            Some(INPUT_STATE),
+            &["f3d:brep:entity#face"],
+        )],
+    );
+}
+
+#[test]
+fn a_boundary_without_edges_keeps_the_native_boundary() {
+    let scope = scope(Vec::new());
+    assert_native(
+        &scope,
+        &[operand(
+            SCOPE_RECORD,
+            503,
+            Some(INPUT_STATE),
+            &["f3d:brep:entity#8"],
+        )],
     );
 }

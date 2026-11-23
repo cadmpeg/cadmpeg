@@ -4,13 +4,11 @@
 use crate::design::face_resolve::historical_face_selection_with_native;
 use crate::history::body_closures::stable_ref;
 use crate::ids::native_stream;
-use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::report::loss::LossNote;
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +17,6 @@ mod tests;
 pub(super) fn project_surface_extend(
     scope: &DesignParameterScope,
     edge_operands: &[DesignEdgeOperand],
-    losses: &mut Vec<LossNote>,
 ) -> Option<FeatureDefinition> {
     let operation = scope.surface_extend_operation()?;
     let distance = cadmpeg_ir::scalar::PositiveLength::new(operation.distance.get() * 10.0)?;
@@ -28,17 +25,8 @@ pub(super) fn project_surface_extend(
         "{stream}:design-record#{}",
         u64::from(operation.boundary_record_index)
     );
-    let faces = match boundary_faces(scope, operation, edge_operands, native.clone()) {
-        Some(faces) => {
-            losses.push(F3dLossCode::FeatureSurfaceExtendEdgesAsFaces.note(format!(
-                "SurfaceExtend scope {} stores {} boundary edge(s); the feature states the face each edge bounds, and the edge choice on that face stays native.",
-                scope.id,
-                operation.edge_record_indices.len()
-            )));
-            faces
-        }
-        None => FaceSelection::Native(native),
-    };
+    let faces = boundary_faces(scope, operation, edge_operands, native.clone())
+        .unwrap_or(FaceSelection::Native(native));
     Some(FeatureDefinition::Operation(
         FeatureOperation::ExtendSurface {
             faces,
@@ -48,8 +36,9 @@ pub(super) fn project_surface_extend(
     ))
 }
 
-/// The input-state faces bounded by the stored boundary edges, when each edge
-/// recipe has one operand and that operand has one face in one input state.
+/// The input-state faces of the stored boundary edges. Each edge recipe needs
+/// one operand, and that operand one candidate face in the common input state
+/// with a boundary edge the feature changes.
 fn boundary_faces(
     scope: &DesignParameterScope,
     operation: &DesignSurfaceExtendOperation,
@@ -76,6 +65,13 @@ fn boundary_faces(
         let [face] = operand.preceding_candidate_faces.as_slice() else {
             return None;
         };
+        if !operand
+            .changed_boundary_edge_slots
+            .iter()
+            .any(|edge| operand.preceding_boundary_edge_slots.contains(edge))
+        {
+            return None;
+        }
         let slot = stable_ref(face.as_str())?;
         if !slots.contains(&slot) {
             slots.push(slot);
