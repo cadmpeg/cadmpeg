@@ -93,7 +93,7 @@ fn identity_occurrence_states_its_document() {
     let [occurrence] = occurrences(&result) else {
         panic!("one occurrence")
     };
-    assert_eq!(occurrence.suppressed, Some(false));
+    assert_eq!(occurrence.suppressed, None);
     assert_eq!(occurrence.visible, None);
     assert!(near(
         place(occurrence, [40.0, 5.0, -3.0]),
@@ -171,10 +171,11 @@ fn occurrences_of_one_site_share_a_definition() {
 }
 
 #[test]
-fn suppressed_bit_is_the_state_word_bit_four() {
-    for (state, suppressed) in [(2, false), (6, true), (4, true), (0, false)] {
+fn state_word_states_no_suppression() {
+    for state in [2, 4, 6, 0] {
         let result = single(|spec| spec.state = state);
-        assert_eq!(occurrences(&result)[0].suppressed, Some(suppressed));
+        assert_eq!(occurrences(&result).len(), 1);
+        assert_eq!(occurrences(&result)[0].suppressed, None);
     }
 }
 

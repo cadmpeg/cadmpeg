@@ -514,7 +514,7 @@ A `CLSID_JAsmReference` object stores:
 
 | Offset | Field |
 | ---: | --- |
-| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |
+| 16 | `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded |
 | 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |
 | 125 | nine `f64`: the rotation `R`, row-major |
 | 197 | three `f64`: the translation `t`, in metres |
@@ -522,9 +522,8 @@ A `CLSID_JAsmReference` object stores:
 
 Row `i` of `R` is the direction of the referenced document's axis `i` in the
 assembly. A point `p` of the referenced document, as a row vector, is at
-`p` `R` + `t` in the assembly. The state word is `2` for an occurrence that
-is not suppressed. Occurrences of one document name one `CLSID_JSite`
-object.
+`p` `R` + `t` in the assembly. Occurrences of one document name one
+`CLSID_JSite` object.
 
 ### 9.3 Referenced document
 

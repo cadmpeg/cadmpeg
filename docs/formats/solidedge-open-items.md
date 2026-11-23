@@ -104,3 +104,10 @@
 
 **Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
 
+### DR-1035. Occurrence suppression
+
+**Question.** Where does an assembly store that an occurrence is suppressed?
+
+**Known.** The state word of a `CLSID_JAsmReference` object (§9.2) states grounding. It is `4` for a non-grounded occurrence whether or not the occurrence is suppressed.
+
+**Need.** An assembly saved with one occurrence suppressed and its copy with the occurrence active, and the same pair with the occurrence grounded.
