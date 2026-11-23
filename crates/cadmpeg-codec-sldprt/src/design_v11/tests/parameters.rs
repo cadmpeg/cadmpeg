@@ -249,7 +249,7 @@ fn parameters_with_scalars(
             .push(*scalar);
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, notes) =
+    let (mut parameters, mut notes, bare) =
         super::super::parameters::Entries::new(&native.feature_histories, &timeline)
             .unwrap()
             .parameters(
@@ -265,6 +265,13 @@ fn parameters_with_scalars(
                     confirmed: std::collections::HashSet::new(),
                 },
             );
+    notes.extend(super::super::equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length_unit,
+        &ir.tolerances,
+    ));
     (ir, parameters, notes)
 }
 
@@ -928,7 +935,7 @@ fn a_bare_reference_of_the_same_kind_is_a_neutral_link() {
 }
 
 #[test]
-fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
+fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_or_text() {
     use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
     use cadmpeg_ir::design::parameter::ParameterDefinition;
     use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
@@ -941,10 +948,11 @@ fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
                 <Dimension Name="wall">5</Dimension>
             </Feature>
             <Extrusion Name="Boss" Type="BossExtrude" id="7">
-                <Dimension Name="D1">"wall"</Dimension>
-                <Dimension Name="D2">"wall"</Dimension>
+                <Dimension Name="D1" Value="5mm">"wall"</Dimension>
+                <Dimension Name="D2" Value="10deg">"wall"</Dimension>
                 <Dimension Name="D3">"D1@Boss"</Dimension>
                 <Dimension Name="D4"> "D1@Boss" </Dimension>
+                <Dimension Name="D5">"wall"</Dimension>
             </Extrusion>
         </Keywords>"#,
         &[
@@ -952,6 +960,7 @@ fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
             ("Boss", "D2", V10::Angle(Angle::new(0.1).unwrap()), None),
             ("Boss", "D3", V10::Angle(Angle::new(0.1).unwrap()), None),
             ("Boss", "D4", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D5", V10::Length(Length::new(5.0).unwrap()), None),
         ],
         &[],
         Some(UnitSymbol::Mm),
@@ -974,28 +983,62 @@ fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
             tokens: vec![ExpressionToken::Text(text.to_owned())],
         })
     };
-    for (name, kind, whole) in [
-        ("D1", Quantity::LENGTH, "\"wall\""),
-        ("D2", Quantity::ANGLE, "\"wall\""),
-        ("D3", Quantity::ANGLE, "\"D1@Boss\""),
-        ("D4", Quantity::ANGLE, "\"D1@Boss\""),
+    let wall = named("wall").id.clone();
+    assert_eq!(named("D1").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(
+        named("D1").definition,
+        neutral_definition("$0 * 1[mm]", &[&wall])
+    );
+    for (name, whole) in [
+        ("D2", "\"wall\""),
+        ("D3", "\"D1@Boss\""),
+        ("D4", "\"D1@Boss\""),
     ] {
-        assert_eq!(named(name).kind, ValueKind::Quantity(kind), "{name}");
+        assert_eq!(
+            named(name).kind,
+            ValueKind::Quantity(Quantity::ANGLE),
+            "{name}"
+        );
         assert_eq!(named(name).definition, text(whole), "{name}");
     }
-    let [loss] = losses.as_slice() else {
-        panic!("one note: {losses:?}");
+    assert_eq!(named("D5").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(named("D5").definition, text("\"wall\""));
+    let [disagrees, untyped, untested] = losses.as_slice() else {
+        panic!("three notes: {losses:?}");
     };
-    assert_eq!(
-        loss.code,
-        crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
-    );
-    let ids = ["D1", "D2", "D3", "D4"].map(|name| named(name).id.as_str().to_owned());
+    for loss in [disagrees, untyped, untested] {
+        assert_eq!(
+            loss.code,
+            crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
+        );
+    }
+    let id = |name: &str| named(name).id.as_str().to_owned();
     assert!(
-        loss.message.starts_with("4 parameters")
-            && loss.message.ends_with(&format!(": {}", ids.join(", "))),
+        disagrees.message.starts_with("1 parameters")
+            && disagrees
+                .message
+                .contains("its evaluation over the decoded values disagrees")
+            && disagrees.message.ends_with(&format!(": {}", id("D2"))),
         "{}",
-        loss.message
+        disagrees.message
+    );
+    assert!(
+        untyped.message.starts_with("2 parameters")
+            && untyped.message.contains("its kinds do not type")
+            && untyped
+                .message
+                .ends_with(&format!(": {}, {}", id("D3"), id("D4"))),
+        "{}",
+        untyped.message
+    );
+    assert!(
+        untested.message.starts_with("1 parameters")
+            && untested
+                .message
+                .contains("no value to test its reading against")
+            && untested.message.ends_with(&format!(": {}", id("D5"))),
+        "{}",
+        untested.message
     );
 }
 
@@ -1069,21 +1112,23 @@ fn parameters_with_manager(
         std::collections::HashSet::new()
     };
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-        .unwrap()
-        .parameters(
-            &ir.design.scopes[0].definition,
-            &super::super::parameters::Readings {
-                decoded: super::super::parameters::Decoded::new(&v10, &[]),
-                length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
-                length_places: places,
-                bound: std::collections::HashMap::new(),
-                measured: std::collections::HashMap::new(),
-                driven: std::collections::HashSet::new(),
-                manager,
-                confirmed,
-            },
-        )
+    let (parameters, notes, _) =
+        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
+            .unwrap()
+            .parameters(
+                &ir.design.scopes[0].definition,
+                &super::super::parameters::Readings {
+                    decoded: super::super::parameters::Decoded::new(&v10, &[]),
+                    length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+                    length_places: places,
+                    bound: std::collections::HashMap::new(),
+                    measured: std::collections::HashMap::new(),
+                    driven: std::collections::HashSet::new(),
+                    manager,
+                    confirmed,
+                },
+            );
+    (parameters, notes)
 }
 
 /// The kind and number of the parameter named `name` among `parameters`.

@@ -567,13 +567,14 @@ impl<'a> Entries<'a> {
 
     /// The parameters, their expressions read, the note naming those whose
     /// literal is a rounded display, the note naming the dimensions whose
-    /// text is a bare number and that have no value, and the note naming
-    /// those whose reference is kept as text.
+    /// text is a bare number and that have no value, and the parameters whose
+    /// text is one reference to a parameter of another kind, kept as text for
+    /// `equations::bare_references`.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> (Vec<DesignParameter>, Vec<LossNote>) {
+    ) -> (Vec<DesignParameter>, Vec<LossNote>, Vec<ParameterId>) {
         let aliases = Aliases::new(&self.list);
         let mut read_entries = self
             .list
@@ -629,15 +630,7 @@ impl<'a> Entries<'a> {
                 unvalued.join("; ")
             )));
         }
-        if !as_text.is_empty() {
-            losses.push(SldprtLossCode::DesignParameterReferenceAsText.note(format!(
-                "{} parameters whose text is one reference with no neutral reading of their kind \
-                 hold the text as one `Text` token and state no dependency on the parameter it \
-                 names: {as_text}",
-                as_text.count()
-            )));
-        }
-        (parameters, losses)
+        (parameters, losses, as_text)
     }
 }
 
@@ -950,20 +943,21 @@ fn read(
 /// neutral (§5.13), and returns the parameters whose reference is kept as
 /// text. A parameter that `driven` holds states no expression.
 ///
-/// Interim, gap 20261121-IR-BARE-PARAM-REF-1: where the kinds differ or are
-/// `Native`, §5.13 gives a `Source` expression of the reference token, which
-/// part 10 refuses, so the expression is one `Text` token, the whole text.
+/// Where the kinds differ or are `Native`, the expression is one `Text`
+/// token, the whole text, until `equations::bare_references` tests the
+/// text's unit-blind tree (§5.13). Interim, gap 20261121-IR-BARE-PARAM-REF-1:
+/// a `Source` expression of the reference token alone is refused by part 10.
 fn link_bare_references(
     entries: &[Entry<'_>],
     readings: &mut [Reading],
     driven: &HashSet<ParameterId>,
-) -> NamedCount {
+) -> Vec<ParameterId> {
     let kinds = entries
         .iter()
         .zip(readings.iter())
         .map(|(entry, reading)| (entry.id.clone(), reading.kind.clone()))
         .collect::<HashMap<_, _>>();
-    let mut as_text = NamedCount::default();
+    let mut as_text = Vec::new();
     for (entry, reading) in entries.iter().zip(readings.iter_mut()) {
         if driven.contains(&entry.id) {
             continue;
@@ -982,7 +976,7 @@ fn link_bare_references(
         reading.expression = if linked {
             Expression::Neutral(Neutral(Node::Reference(reference)))
         } else {
-            as_text.push(entry.id.as_str());
+            as_text.push(entry.id.clone());
             Expression::Source {
                 dialect: ExpressionDialect::SolidWorks,
                 tokens: vec![ExpressionToken::Text(entry.text.to_owned())],

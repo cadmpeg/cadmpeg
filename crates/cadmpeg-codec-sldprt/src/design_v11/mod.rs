@@ -140,17 +140,24 @@ pub(crate) fn project(
         length_unit: length,
         tolerances: &ir.tolerances,
     };
-    let (mut parameters, mut notes) = entries.parameters(&definition, &readings);
+    let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
     readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
     if !readings.confirmed.is_empty() {
         let driven = parameters.split_off(entered);
-        (parameters, notes) = entries.parameters(&definition, &readings);
+        (parameters, notes, bare) = entries.parameters(&definition, &readings);
         parameters.extend(driven);
     }
     losses.extend(notes);
+    losses.extend(equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length,
+        &ir.tolerances,
+    ));
     losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
