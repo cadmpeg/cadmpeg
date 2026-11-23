@@ -154,8 +154,16 @@ pub(crate) fn unnamed(entries: Vec<Entry>, messages: &[&str]) -> Vec<Entry> {
         .into_iter()
         .filter(|entry| {
             let arena = format!("arena `{}`", entry.arena);
+            // A read-back loss names a record, or its arena with a count.
+            let counted = [
+                format!("{}: ", entry.arena),
+                format!("model.{}: ", entry.arena),
+                format!("geometry.{}: ", entry.arena),
+            ];
             !messages.iter().any(|message| {
-                (message.contains(&entry.id) && message.contains("reads back"))
+                (message.contains("reads back")
+                    && (message.contains(&entry.id)
+                        || counted.iter().any(|arena| message.contains(arena.as_str()))))
                     || (message.contains(&arena) && message.contains("omitted"))
             })
         })

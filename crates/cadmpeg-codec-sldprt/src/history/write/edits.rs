@@ -428,7 +428,7 @@ impl UnwrittenLosses {
         if !read_back.changed.is_empty() {
             notes.push(SldprtLossCode::WriterFeatureEditUnwritten.note(format!(
                 "SLDPRT written part reads back {} other than the document states, and no edit of the write is left to keep as stored.",
-                listed(&read_back.changed)
+                super::read_back::by_arena(&read_back.changed).join("; ")
             )));
         }
         if !read_back.defects.is_empty() {

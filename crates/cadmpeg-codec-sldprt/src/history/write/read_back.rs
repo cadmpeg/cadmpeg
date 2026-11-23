@@ -512,20 +512,24 @@ impl<'a> Judge<'a> {
         let (defects, unexplained): (Vec<_>, Vec<_>) = general
             .into_iter()
             .partition(|difference| base.iter().any(|base| same_difference(base, difference)));
-        read_back.defects = by_arena(&defects);
+        read_back.defects = by_arena(&defects.iter().map(Difference::label).collect::<Vec<_>>());
         read_back.unexplained = unexplained.iter().map(Difference::label).collect();
         read_back
     }
 }
 
-/// `differences` by arena: the arena, how many, and the first of them.
-fn by_arena(differences: &[Difference]) -> Vec<String> {
+/// The difference labels `labels` by arena: the arena, how many, and the
+/// first of them. A label that names no arena stays as it is.
+pub(super) fn by_arena(labels: &[String]) -> Vec<String> {
     let mut arenas = std::collections::BTreeMap::<&str, Vec<String>>::new();
-    for difference in differences {
-        arenas
-            .entry(difference.arena.as_str())
-            .or_default()
-            .push(difference.label());
+    let mut other = Vec::new();
+    for label in labels {
+        match label.split_once(' ') {
+            Some((arena, _)) if arena.contains('.') || arena == "document" => {
+                arenas.entry(arena).or_default().push(label.clone());
+            }
+            _ => other.push(label.clone()),
+        }
     }
     arenas
         .into_iter()
@@ -536,6 +540,7 @@ fn by_arena(differences: &[Difference]) -> Vec<String> {
                 listed(&labels)
             )
         })
+        .chain(other)
         .collect()
 }
 
