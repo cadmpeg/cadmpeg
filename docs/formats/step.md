@@ -2737,10 +2737,8 @@ transform values from different placement identities. `PLUS_MINUS_TOLERANCE` car
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`. A `TOLERANCE_VALUE` whose `lower_bound` exceeds its
-`upper_bound` stores the upper deviation first. The reader states the two
-deviations in order and keeps `step:tol_order` with the value `upper_lower` in
-the annotation's `source_settings`. The writer writes the deviations in that
-order.
+`upper_bound` holds the upper deviation in `lower_bound` and the lower
+deviation in `upper_bound`.
 
 An `APLL_POINT` or `APLL_POINT_WITH_SURFACE` referenced by an annotation
 placeholder, annotation-to-annotation, annotation-to-model, or auxiliary

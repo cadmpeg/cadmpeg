@@ -1423,9 +1423,7 @@ value. `ToleranceLowerTier` is the lower segment of a composite surface-profile
 tolerance. A zero `LowerLimit` or `UpperLimit` is an omitted limit sentinel and
 does not replace a zero `MinusTolerance` or `PlusTolerance`. A nonzero limit
 supplies the corresponding deviation relative to the recovered nominal when
-the tolerance field is zero. Equal lower and upper deviations state no
-tolerance; the reader keeps them as the native options
-`sldprt:lower_deviation` and `sldprt:upper_deviation`.
+the tolerance field is zero.
 
 SWIFT rendered strings use bytes `ff fe ff`, a u8 UTF-16 code-unit count, and
 that many UTF-16LE code units. In a rendered dimension string,
