@@ -25,6 +25,7 @@ crates/*/src/**/tests/data/** binary
 # diffs and merges as text.
 corpus/nist-pmi/** binary
 corpus/nist-pmi/**/*.md diff merge text eol=lf
+corpus/sldprt/** binary
 
 # ISO 10303 short-name list, kept byte for byte as ISO publishes it.
 crates/cadmpeg-codec-step/src/parse/short_names/short-names.txt -text
