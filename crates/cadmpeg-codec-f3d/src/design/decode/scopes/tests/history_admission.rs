@@ -482,6 +482,7 @@ fn flagged_thicken_variants(flags: &[CopyFlags]) -> Vec<DesignParameterScope> {
             crate::records::feature::scope::DesignScopeTailFlags {
                 suppression: [false; 2],
                 unevaluated: false,
+                wide_state: None,
                 state_offset,
                 no_result,
                 rolled_back,
@@ -660,6 +661,40 @@ fn scope_variants_that_differ_only_in_their_state_bytes_keep_the_later_and_charg
     }
 }
 
+/// The primary-indexed envelope is kept where envelopes also differ in their
+/// lane flags, and the loss counts every other envelope whose payload or tail
+/// state differs from it, also one that differs only in its state bytes.
+#[test]
+fn the_primary_indexed_count_includes_envelopes_that_differ_only_in_their_state_bytes() {
+    let mut variants = flagged_thicken_variants(&[
+        Some((true, false)),
+        Some((true, false)),
+        Some((false, false)),
+        Some((true, false)),
+    ]);
+    if let Some(flags) = variants[1].tail_flags.as_mut() {
+        flags.suppression = [false, true];
+    }
+    let stream = crate::ids::native_stream(&variants[0].id)
+        .expect("fixture stream")
+        .to_owned();
+    let primary = std::collections::HashSet::from([(stream, 100)]);
+    let superseded =
+        with_test_ctx(|ctx| admit_history_bound_scope_variants(ctx, &mut variants, &[], &primary))
+            .expect("primary-indexed envelope");
+    let [retained] = variants.as_slice() else {
+        panic!("one retained envelope")
+    };
+    assert_eq!(retained.byte_offset(), 100);
+    assert_eq!(
+        superseded,
+        SupersededScopeEnvelopes {
+            primary_indexed: 2,
+            tail_flags: Vec::new(),
+        }
+    );
+}
+
 /// Where the later envelope stores no flags, the decoder keeps the flags of
 /// the latest envelope that stores them, with their location, and one note
 /// names the record, the envelope the flags came from and the flags it did not
@@ -795,6 +830,7 @@ fn scope_variants_that_differ_in_suppression_and_payload_are_unresolved() {
         scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
             suppression: [suppressed, false],
             unevaluated: false,
+            wide_state: None,
             state_offset: scope.feature_ordinal_offset() + 1,
             no_result: true,
             rolled_back: true,

@@ -532,7 +532,7 @@ fn step_artifact_starts_with_step_header() {
 
 #[cfg(feature = "sldprt")]
 #[test]
-fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
+fn source_less_sldprt_writes_a_synthesized_native_envelope() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &sldprt_cube());
     let output = dir.path().join("cube.sldprt");
@@ -547,11 +547,10 @@ fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
             output.to_str().unwrap(),
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "SLDPRT envelope regeneration needs validated retained",
-        ));
-    assert!(!output.exists());
+        .success();
+    let written = fs::read(&output).unwrap();
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
 }
 
 #[cfg(feature = "rhino")]
@@ -1092,16 +1091,10 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 "--reject-lossy",
             ])
             .assert();
-        if format == "sldprt" {
-            refused_command.code(2).stderr(predicate::str::contains(
-                "SLDPRT envelope regeneration needs validated retained",
-            ));
-        } else {
-            refused_command.code(1).stderr(
-                predicate::str::contains("Preserved")
-                    .or(predicate::str::contains("source image is unavailable")),
-            );
-        }
+        refused_command.code(1).stderr(
+            predicate::str::contains("Preserved")
+                .or(predicate::str::contains("source image is unavailable")),
+        );
         assert!(!refused.exists());
     }
 }
