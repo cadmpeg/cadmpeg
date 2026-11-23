@@ -102,7 +102,9 @@ fn path_fixture() -> (
 fn bind() -> PathRef {
     let (scope, groups, operands, mut path) = path_fixture();
     let feature = FeatureId::mint("f3d:model:feature#path").unwrap();
-    super::super::bind_entity_selection_path(&mut path, &feature, 1, &scope, &groups, &operands);
+    super::super::path_selections::bind_entity_selection_path(
+        &mut path, &feature, 1, &scope, &groups, &operands,
+    );
     path
 }
 

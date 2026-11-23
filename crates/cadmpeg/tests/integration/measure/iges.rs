@@ -76,7 +76,7 @@ fn iges_parameter_domain_surface() {
     assert_measured(&measures["area"], 1.0, 1.0);
     let bbox = &measures["bbox"];
     assert_eq!(bbox["status"], "measured");
-    assert_eq!(bbox["kind"], "conservative");
+    assert_eq!(bbox["kind"], "tight");
     for (corner, expected) in [("min", [0.0, 0.0, 0.0]), ("max", [1.0, 1.0, 0.0])] {
         for (axis, value) in ["x", "y", "z"].into_iter().zip(expected) {
             assert_eq!(bbox[corner][axis].as_f64(), Some(value), "{corner}.{axis}");

@@ -3460,7 +3460,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3555,15 +3555,18 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        &mut sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    let (assumed_planes, mut top_references) =
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            &mut sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?;
+    held_handles.hold_assumed_planes(assumed_planes);
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -3579,27 +3582,28 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
-                &brep.edges,
-                &brep.vertices,
-                &brep.points,
-                &brep.curves,
-            ),
-        },
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                    &brep.edges,
+                    &brep.vertices,
+                    &brep.points,
+                    &brep.curves,
+                ),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -3669,6 +3673,7 @@ fn build_geometry_ir(
         sketch_lanes,
     )?;
     let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &sketches,
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -3899,6 +3904,7 @@ fn build_geometry_ir(
         &all_lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -4304,7 +4310,46 @@ fn build_geometry_ir(
         source.links_mut().extend(links);
     }
     crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
-    if crate::history::extrude_direction::retain_contradicted_directions(&mut ir) {
+    let retained = crate::history::extrude_direction::retain_contradicted_directions(&mut ir);
+    for extrusion in &retained.reversals {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+            "Extrusion {extrusion} travels along the profile normal, as its solid shows, against the reversal flag its record states."
+        )));
+    }
+    if !retained.assumed.is_empty() {
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal on the reversal flag their records state alone, as the solid neither holds nor contradicts that travel: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            retained.assumed.len(),
+            retained.assumed.join(", ")
+        )));
+    }
+    for states in &retained.configuration_reversals {
+        let configuration = &states.configuration;
+        let witness = if states.active {
+            "as the solid of that configuration shows"
+        } else {
+            "as the active solid contradicts that flag for the same extrusion"
+        };
+        for extrusion in &states.extrusions {
+            pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalContradicted.note(format!(
+                "Extrusion {extrusion} travels along the profile normal in configuration {configuration}, against the reversal flag its record states there, {witness}."
+            )));
+        }
+    }
+    for states in &retained.configuration_assumed {
+        let witness = if states.active {
+            "as no test of the active solid holds or contradicts that travel"
+        } else {
+            "as the decoder tests no solid of that configuration for that travel"
+        };
+        pmi_losses.push(SldprtLossCode::FeatureExtrudeReversalAssumed.note(format!(
+            "{} extrusion(s) travel against the profile normal in configuration {} on the reversal flag their records state there alone, {witness}: {}. Assumed: the flag gives the side of a one-direction extrusion that adds material.",
+            states.extrusions.len(),
+            states.configuration,
+            states.extrusions.join(", ")
+        )));
+    }
+    if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
@@ -4317,6 +4362,7 @@ fn build_geometry_ir(
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
                 bodies: current_bodies,
                 persistent: crate::design_v11::Persistent {
                     faces: &brep.native_face_identities,
@@ -4330,6 +4376,7 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4752,7 +4799,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4907,15 +4954,18 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::profiles::project_compact_sketch_profiles(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        &mut ir.model.sketch_entities,
-        &histories,
-        &lanes,
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    let (assumed_planes, mut top_references) =
+        crate::resolved_features::profiles::project_compact_sketch_profiles(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            &histories,
+            &lanes,
+            &mut pmi_losses,
+        )?;
+    held_handles.hold_assumed_planes(assumed_planes);
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -4931,22 +4981,23 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut ir.model.sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
-        },
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut ir.model.sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -5101,6 +5152,7 @@ fn build_metadata_ir(
         lanes,
     );
     let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &ir.model.sketches,
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5148,6 +5200,7 @@ fn build_metadata_ir(
         lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -5233,6 +5286,7 @@ fn build_metadata_ir(
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
                 bodies,
                 persistent: crate::design_v11::Persistent {
                     faces: &[],
@@ -5246,6 +5300,7 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

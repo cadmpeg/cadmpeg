@@ -13,8 +13,9 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::body_closures::stable_ref;
 use super::topology_cache::{endpoint_index, TopologyQueryCache, VertexBoundaryIndex};
-use super::{boundary_vertices_for_faces, stable_ref};
+use super::vertex_recipes::boundary_vertices_for_faces;
 use crate::history_records::AsmHistoricalTopology;
 use crate::loss::F3dLossCode;
 use crate::records::topology::face::{prefix_operand_ordinals, DesignFaceOperand};

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::parse_construction_operand_group;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::RecordFrame;
 
 use crate::records::decal::DesignRecordHeader;
 
@@ -109,7 +109,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
             .complete()
             .expect("class-296 two-sided-to-faces construction group");
     assert_eq!(group.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut group),
         None,
