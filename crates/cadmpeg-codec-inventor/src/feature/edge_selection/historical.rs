@@ -21,7 +21,7 @@ const MAX_SELECTOR_GENERATORS: usize = 4;
 
 pub(in crate::feature) struct StoredSelector {
     pub(in crate::feature) source: u32,
-    pub(super) generators: Vec<u32>,
+    pub(in crate::feature) generators: Vec<u32>,
     pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
     body: PmDcReference,

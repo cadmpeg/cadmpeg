@@ -168,7 +168,13 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
             return None;
         };
         let token = source.identity.segment_token.as_str();
-        let selection = property(token, *source.properties.references().get(12)?)?;
+        let selection = property(
+            token,
+            *source
+                .properties
+                .references()
+                .get(operands::selection_slot(source))?,
+        )?;
         let topology = ir
             .model
             .feature_input_topologies

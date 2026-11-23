@@ -16,7 +16,7 @@ use cadmpeg_ir::ids::HistoricalEdgeId;
 
 use super::{
     flange::Flange,
-    operands,
+    operands::{self, JOINED_EDGE_SLOT, SELECTION_LIST_SLOT},
     refusal::{require, PlateError, PlateRefusal, Refuse},
     style::Style,
 };
@@ -123,12 +123,6 @@ pub(crate) fn style<'a>(styles: &'a [Style], token: &str) -> Option<&'a Style> {
     candidates.next().is_none().then_some(first)
 }
 
-/// The slot of the 17-property plate that holds the joined-edge collection of
-/// a plate-and-bend face record.
-const JOINED_EDGE_SLOT: usize = 5;
-/// The slot of the attachment selection list.
-const SELECTION_LIST_SLOT: usize = 12;
-
 /// Whether a plate slot holds the null reference.
 fn slot_is_null(source: &PmDcFeature, slot: usize) -> bool {
     source
@@ -142,8 +136,8 @@ fn slot_is_null(source: &PmDcFeature, slot: usize) -> bool {
 ///
 /// A plate with a slot-12 selection list selects its edges through that list.
 /// A 17-property plate with a null slot 12 and a slot-5 edge collection of one
-/// edge item selects the joined edge through that collection. A 15-property
-/// plate with null slots 5 and 12 stores no attachment selection.
+/// edge item selects the joined edge through that collection. A plate with
+/// null slots 5 and 12 stores no attachment selection.
 fn attachment_collections<'a>(
     source: &PmDcFeature,
     index: &'a ProjectionIndex<'a>,
@@ -154,7 +148,7 @@ fn attachment_collections<'a>(
             operands::PlateForm::of(source),
             slot_is_null(source, JOINED_EDGE_SLOT),
         ) {
-            (Some(operands::PlateForm::Body), true) => Err(PlateRefusal::AttachmentNotStored),
+            (Some(_), true) => Err(PlateRefusal::AttachmentNotStored),
             (Some(operands::PlateForm::Collection), false) => {
                 let collection = crate::feature::slot_property(source, JOINED_EDGE_SLOT, index)
                     .refuse(PlateRefusal::SelectionList)?;
