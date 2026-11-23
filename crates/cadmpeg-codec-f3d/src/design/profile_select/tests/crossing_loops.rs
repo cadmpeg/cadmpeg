@@ -511,3 +511,200 @@ fn a_holed_profile_reports_pruned_crossing_runs_and_obeys_the_assumption_policy(
         }
     }
 }
+
+/// The start and end point of a line.
+type LineEnds = ((f64, f64), (f64, f64));
+
+/// A 4 by 4 square (primaries 1 to 4) that an unprofiled line (primary 5)
+/// divides at height 2, with `extra` lines from primary 6 on.
+fn divided_square(extra: &[LineEnds]) -> (Sketch, Vec<SketchEntity>, Vec<SketchCurveIdentity>) {
+    let (sketch, _, _) = x_braced_square();
+    let mut ends = vec![
+        ((0.0, 0.0), (4.0, 0.0)),
+        ((4.0, 0.0), (4.0, 4.0)),
+        ((4.0, 4.0), (0.0, 4.0)),
+        ((0.0, 4.0), (0.0, 0.0)),
+        ((0.0, 2.0), (4.0, 2.0)),
+    ];
+    ends.extend_from_slice(extra);
+    let entities = ends
+        .iter()
+        .zip(1u64..)
+        .map(|((start, end), primary)| {
+            SketchEntity::new(
+                neutral_sketch_curve_id(&sketch.id, primary, 0),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(start.0, start.1),
+                    end: Point2::new(end.0, end.1),
+                })
+                .unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let identities = (1u32..)
+        .take(entities.len())
+        .map(|primary| curve(30 + primary, u64::from(primary), 0))
+        .collect();
+    (sketch, entities, identities)
+}
+
+/// One single-exterior selection group: the first region, then the further
+/// regions. Each entry is a primary id with its traversal flag, piece
+/// ordinal, and piece count.
+fn union_group_selection(
+    record_index: u32,
+    ordinal: u32,
+    first: &[(u64, [u32; 3])],
+    further: &[&[(u64, [u32; 3])]],
+) -> DesignProfileCurveSelection {
+    let mut selection = loop_selection(record_index, ordinal, &[1]);
+    let entries = |entries: &[(u64, [u32; 3])]| {
+        vec![DesignProfileCurveLoop {
+            outer: true,
+            entries: entries
+                .iter()
+                .map(|(primary, fields)| DesignProfileCurveEntry {
+                    primary_id: *primary,
+                    primary_id_offset: 0,
+                    secondary_id: 0,
+                    entry_fields: *fields,
+                })
+                .collect(),
+        }]
+    };
+    selection.groups[0].region = entries(first);
+    selection.groups[0].further = further.iter().map(|region| entries(region)).collect();
+    // The group count precedes the first entry's u32 kind by 16 bytes; each
+    // region has a loop count, each loop an entry count and an exterior flag,
+    // and the further-region count follows the first region.
+    let mut cursor = 588u64 - 16 + 4;
+    let group = &mut selection.groups[0];
+    for (index, region) in std::iter::once(&mut group.region)
+        .chain(&mut group.further)
+        .enumerate()
+    {
+        if index == 1 {
+            cursor += 4;
+        }
+        cursor += 4;
+        for loop_ in region {
+            cursor += 4;
+            for entry in &mut loop_.entries {
+                entry.primary_id_offset = cursor + 4;
+                cursor += 40;
+            }
+            cursor += 1;
+        }
+    }
+    selection.identity_end_offset = selection.lists_end().unwrap();
+    selection
+}
+
+/// The two halves that a square group selects when its first region names a
+/// line `top`, with that line's entry in the upper half when `upper_top` names
+/// it.
+fn resolve_divided_square(
+    top: LineEnds,
+    first_top: (u64, [u32; 3]),
+    upper_top: Option<(u64, [u32; 3])>,
+) -> Option<Vec<SketchProfileRegion>> {
+    let (sketch, entities, identities) = divided_square(&[top]);
+    let first = [
+        (1, [0, 1, 1]),
+        (2, [0, 1, 1]),
+        (3, [0, 1, 1]),
+        first_top,
+        (4, [0, 1, 1]),
+    ];
+    let lower: &[(u64, [u32; 3])] = &[
+        (1, [0, 1, 1]),
+        (2, [0, 1, 2]),
+        (5, [1, 1, 1]),
+        (4, [0, 2, 2]),
+    ];
+    let mut upper = vec![(5, [0, 1, 1]), (2, [0, 2, 2]), (3, [0, 1, 1])];
+    upper.extend(upper_top);
+    upper.push((4, [0, 1, 2]));
+    let upper = upper.as_slice();
+    let group = group();
+    let placements = [placement()];
+    let sketches = [sketch];
+    let selections = [
+        union_group_selection(10, 0, &first, &[lower, upper]),
+        union_group_selection(11, 1, &first, &[lower, upper]),
+    ];
+    let mut resolution =
+        planar_resolution(&[], &placements, &identities, &sketches, &entities).path_resolution();
+    resolution.profile_curves = &selections;
+    let scope_histories = HashMap::new();
+    let work = ProfileGeometryWork::new();
+    let profile = crate::test_support::with_decode_context(|ctx| {
+        let scoped = ExtrudeProfileResolution {
+            entities: &[],
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: &[],
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-7,
+            angular_tolerance: 1.0e-9,
+            profile_work: &work,
+            ctx,
+        }
+        .scoped(&[]);
+        super::super::resolve_profile_curve_arrangement_regions(&group, &resolution, scoped)
+    })
+    .unwrap()?;
+    let cadmpeg_ir::features::profiles::ProfileRef::Planar(
+        cadmpeg_ir::features::profiles::PlanarProfileRef::SketchRegions { regions, .. },
+    ) = profile
+    else {
+        panic!("sketch regions");
+    };
+    Some(regions.iter().cloned().collect())
+}
+
+fn assert_square_halves(regions: &[SketchProfileRegion]) {
+    let (sketch, _, _) = divided_square(&[]);
+    let divider = neutral_sketch_curve_id(&sketch.id, 5, 0);
+    assert_eq!(regions.len(), 2);
+    for region in regions {
+        let SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = region
+        else {
+            panic!("trimmed half");
+        };
+        assert!(hole_boundaries.is_empty());
+        assert!(outer_boundary.iter().any(|use_| use_.entity == divider));
+    }
+}
+
+#[test]
+fn a_first_region_with_a_coincident_line_is_the_union_of_its_further_regions() {
+    let regions = resolve_divided_square(
+        ((4.0, 4.0), (0.0, 4.0)),
+        (6, [0, 1, 1]),
+        Some((6, [0, 1, 1])),
+    )
+    .expect("the two halves");
+    assert_square_halves(&regions);
+}
+
+#[test]
+fn a_first_region_with_a_fragmented_line_piece_is_the_union_of_its_further_regions() {
+    let regions = resolve_divided_square(
+        ((-1.0, 4.0), (5.0, 4.0)),
+        (6, [1, 2, 3]),
+        Some((6, [1, 2, 3])),
+    )
+    .expect("the two halves");
+    assert_square_halves(&regions);
+}
+
+#[test]
+fn a_first_region_that_names_a_line_off_the_union_boundary_stays_unresolved() {
+    // The extra line is parallel to the top side and outside the square.
+    assert!(resolve_divided_square(((4.0, 5.0), (0.0, 5.0)), (6, [0, 1, 1]), None,).is_none());
+}

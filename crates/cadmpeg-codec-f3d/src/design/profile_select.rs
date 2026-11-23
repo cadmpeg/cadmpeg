@@ -5324,6 +5324,10 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
         for group in &selection.groups {
             let group_start = regions.len();
             let mut first_end = None;
+            // A first region that resolves to no face can be the union of the
+            // further regions; its curves are checked after them.
+            let mut unresolved_first = None;
+            let mut further_found = Vec::new();
             for (position, loops) in std::iter::once(&group.region)
                 .chain(&group.further)
                 .enumerate()
@@ -5374,6 +5378,9 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                         && (allow_assumptions || !selected.identity_unique);
                                     island_absence |= selected.island_absence;
                                     crossing_runs |= selected.crossing_runs_assumed();
+                                    if position > 0 {
+                                        further_found.push(region.clone());
+                                    }
                                     if !regions.contains(region) {
                                         regions.push(region.clone());
                                     }
@@ -5385,6 +5392,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                     if !single_exterior {
                         return Ok(None);
                     }
+                    let union_candidate = position == 0 && !group.further.is_empty();
                     if !allow_assumptions {
                         if let Some(rings) = stored_loop_rings(loops, program) {
                             if let [members] = rings.as_slice() {
@@ -5409,6 +5417,9 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                                     )?
                                 {
                                     for region in selected {
+                                        if position > 0 {
+                                            further_found.push(region.clone());
+                                        }
                                         if !regions.contains(&region) {
                                             regions.push(region);
                                         }
@@ -5428,11 +5439,18 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                             scoped.ctx,
                         )?
                     else {
+                        if union_candidate {
+                            unresolved_first = Some(program);
+                            continue;
+                        }
                         return Ok(None);
                     };
                     assumed = true;
                     island_absence |= split.island_absence_assumed;
                     for region in split.regions {
+                        if position > 0 {
+                            further_found.push(region.clone());
+                        }
                         if !regions.contains(&region) {
                             regions.push(region);
                         }
@@ -5440,9 +5458,23 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                     continue;
                 };
                 island_absence |= found.island_absence_assumed;
+                if position > 0 {
+                    further_found.push(found.region.clone());
+                }
                 if !regions.contains(&found.region) {
                     regions.push(found.region);
                 }
+            }
+            if let Some(first) = unresolved_first {
+                if !group_union::further_regions_compose_first(
+                    &further_found,
+                    first,
+                    resolution.sketch_entities,
+                    scoped.linear_tolerance,
+                ) {
+                    return Ok(None);
+                }
+                continue;
             }
             if let Some(union) = first_end.and_then(|first_end| {
                 group_union::remove_union_first_region(&mut regions, group_start, first_end)

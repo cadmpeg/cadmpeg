@@ -104,3 +104,62 @@ fn a_first_region_that_added_no_region_or_several_is_kept() {
     assert_eq!(remove_union_first_region(&mut regions, 0, 2), None);
     assert_eq!(regions, unchanged);
 }
+
+/// The linear tolerance of these regions, in centimetres.
+const EPS_SAME_POINT: f64 = 1.0e-7;
+
+fn edge_id(id: &str) -> SketchEntityId {
+    SketchEntityId::mint(format!("synthetic:test:edge#{id}")).unwrap()
+}
+
+#[test]
+fn further_regions_compose_a_first_region_that_names_their_union_boundary() {
+    let halves = divided_disc().split_off(1);
+    assert!(further_regions_compose_first(
+        &halves,
+        &[edge_id("circle")],
+        &[],
+        EPS_SAME_POINT
+    ));
+}
+
+#[test]
+fn further_regions_compose_no_first_region_that_names_an_interior_curve() {
+    let halves = divided_disc().split_off(1);
+    assert!(!further_regions_compose_first(
+        &halves,
+        &[edge_id("circle"), edge_id("line")],
+        &[],
+        EPS_SAME_POINT
+    ));
+}
+
+#[test]
+fn further_regions_compose_no_first_region_that_misses_a_boundary_curve() {
+    let halves = divided_disc().split_off(1);
+    assert!(!further_regions_compose_first(
+        &halves,
+        &[edge_id("other")],
+        &[],
+        EPS_SAME_POINT
+    ));
+}
+
+#[test]
+fn one_further_region_composes_no_first_region() {
+    let mut halves = divided_disc().split_off(1);
+    halves.truncate(1);
+    assert!(!further_regions_compose_first(
+        &halves,
+        &[edge_id("circle"), edge_id("line")],
+        &[],
+        EPS_SAME_POINT
+    ));
+    let repeated = vec![halves[0].clone(), halves[0].clone()];
+    assert!(!further_regions_compose_first(
+        &repeated,
+        &[edge_id("circle"), edge_id("line")],
+        &[],
+        EPS_SAME_POINT
+    ));
+}
