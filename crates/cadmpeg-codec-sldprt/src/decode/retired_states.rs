@@ -20,10 +20,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::AppearanceTarget;
-use cadmpeg_ir::design::evaluation::StateBase;
+use cadmpeg_ir::design::evaluation::{StateBase, StateDelta};
 use cadmpeg_ir::design::names::TopoName;
 use cadmpeg_ir::design::refs::EntityRef;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{ConfigurationEvaluation, DesignConfiguration};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::BodyId;
@@ -295,12 +295,13 @@ fn name_features(name: &TopoName, found: &mut impl FnMut(&FeatureId)) {
 }
 
 /// The state the design stores for a model configuration whose body list
-/// [`retire_model`] removed: the records of the evaluation, based on
-/// `Empty`, of the design configuration with the same native record.
+/// [`retire_model`] removed: the delta (its records and names) of the
+/// evaluation, based on `Empty`, of the design configuration with the same
+/// native record.
 pub(crate) fn stored_state<'a>(
     ir: &'a CadIr,
     configuration: &DesignConfiguration,
-) -> Option<(&'a ConfigurationId, &'a Topology)> {
+) -> Option<(&'a ConfigurationId, &'a StateDelta)> {
     if configuration.bodies.is_some() {
         return None;
     }
@@ -313,7 +314,7 @@ pub(crate) fn stored_state<'a>(
     ir.design.evaluations.iter().find_map(|evaluation| {
         let content = evaluation.content.as_ref()?;
         (evaluation.configuration.as_ref() == Some(&design.id) && content.base == StateBase::Empty)
-            .then_some((&design.id, &content.delta.records))
+            .then_some((&design.id, &content.delta))
     })
 }
 

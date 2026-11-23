@@ -400,6 +400,9 @@ pub(crate) enum SldprtLossCode {
     WriterNativeSketchLaneOrphan,
     /// Export writes a native extrusion with no face references and a zero bounding box.
     WriterNativeBodyIdentityOmitted,
+    /// Export generates partitions with no producer or persistent-id
+    /// attribute, so feature outputs and face and body names are not written.
+    WriterProducerAttributesOmitted,
     /// Export writes each native sketch with its profile body, which native top-level sketches
     /// do not hold.
     WriterNativeSketchProfileBodyKept,
@@ -715,6 +718,7 @@ impl SldprtLossCode {
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
         Self::WriterNativeBodyIdentityOmitted,
+        Self::WriterProducerAttributesOmitted,
         Self::WriterNativeSketchProfileBodyKept,
         Self::WriterNativeSketchOriginRelationAdded,
         Self::WriterConfigurationIdentityAssigned,
@@ -936,6 +940,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
+            Self::WriterProducerAttributesOmitted => "writer.producer-attributes-omitted",
             Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
             Self::WriterNativeSketchOriginRelationAdded => {
                 "writer.native-sketch-origin-relation-added"
@@ -1031,6 +1036,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
+            Self::WriterProducerAttributesOmitted => Severity::Warning,
             Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
             Self::WriterNativeSketchOriginRelationAdded => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
@@ -1248,6 +1254,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterProducerAttributesOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchOriginRelationAdded => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
@@ -1794,6 +1801,7 @@ mod tests {
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
                 "writer.native-body-identity-omitted",
+                "writer.producer-attributes-omitted",
                 "writer.native-sketch-profile-body-kept",
                 "writer.native-sketch-origin-relation-added",
                 "writer.configuration-identity-assigned",

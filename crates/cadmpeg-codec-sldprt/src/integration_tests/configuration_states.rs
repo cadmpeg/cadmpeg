@@ -423,8 +423,8 @@ fn a_stored_body_the_encoder_cannot_write_is_left_out_with_its_configuration() {
 /// Two configurations: `First`, not active, whose partition holds a triangle
 /// whose face names `Boss` as its producer in `FACE_ID_2001`, and, with
 /// `modified`, whose body names `Cut` as the last feature that modified it;
-/// and `Second`, active, with a triangle of its own. Both lanes list `Boss`
-/// and `Cut`.
+/// and `Second`, active, with a triangle of its own whose face names `Boss`.
+/// Both lanes list `Boss` and `Cut`.
 fn stored_producers(modified: bool) -> Vec<u8> {
     use crate::test_support::history::resolved_feature_classes_with_ids;
     use crate::test_support::parasolid::{int_list_attribute, triangle_body};
@@ -445,6 +445,14 @@ fn stored_producers(modified: bool) -> Vec<u8> {
             &[9],
         ));
     }
+    let mut active = triangle_body();
+    active.extend(int_list_attribute(
+        "FACE_ID_2001",
+        &[9, 9, 1, 1],
+        1100,
+        10,
+        &[36, 7, 0x6523_4179, 0],
+    ));
     let mut source = outer_header();
     source.extend(make_block(
         0x20,
@@ -454,11 +462,7 @@ fn stored_producers(modified: bool) -> Vec<u8> {
     source.extend(make_block(
         0x21,
         "Contents/Config-1-Partition",
-        &parasolid_with_body(
-            "partition body",
-            "SCH_SW_33103_11000",
-            &owned_triangle(0, 701, 10.0),
-        ),
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &active),
     ));
     source.extend(make_block(
         0x42,
@@ -534,4 +538,90 @@ fn a_stored_output_no_face_name_states_is_charged() {
     };
     assert!(message.contains(configuration.as_str()), "{message}");
     assert!(message.contains(": 1 feature output(s)"), "{message}");
+}
+
+/// The document feature outputs, configuration feature-state outputs, and
+/// face and body names of the current state and the stored states of `ir`.
+fn producers_and_names(ir: &cadmpeg_ir::CadIr) -> [usize; 4] {
+    use cadmpeg_ir::design::refs::EntityRef;
+    let feature_outputs = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.outputs().len())
+        .sum();
+    let state_outputs = ir
+        .model
+        .configurations
+        .iter()
+        .flat_map(|configuration| configuration.feature_states.values())
+        .map(|state| state.evaluation.outputs().len())
+        .sum();
+    let names = ir.design.names.entries().keys().chain(
+        ir.design
+            .evaluations
+            .iter()
+            .filter_map(|evaluation| evaluation.content.as_ref())
+            .flat_map(|content| content.delta.names.iter())
+            .filter(|(_, entry)| entry.is_some())
+            .map(|(entity, _)| entity),
+    );
+    let (mut faces, mut bodies) = (0, 0);
+    for entity in names {
+        match entity {
+            EntityRef::Face(_) => faces += 1,
+            EntityRef::Body(_) => bodies += 1,
+            _ => {}
+        }
+    }
+    [feature_outputs, state_outputs, faces, bodies]
+}
+
+/// A write with no retained source generates partitions without the
+/// attributes the feature outputs and the face and body names are read from.
+/// Its note counts what the document states of them, and the written part
+/// reads back with none of them.
+#[test]
+fn a_part_written_without_its_source_counts_the_outputs_and_names_it_drops() {
+    let result = decode(stored_producers(true));
+    let ir = result.ir();
+    let [feature_outputs, state_outputs, faces, bodies] = producers_and_names(ir);
+    assert!(feature_outputs > 0 && state_outputs > 0 && faces > 0);
+    let (losses, written) = write_without_source(ir);
+    let note = losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "writer.producer-attributes-omitted")
+        .unwrap_or_else(|| panic!("{losses:#?}"));
+    let counts = format!(
+        "{feature_outputs} document feature output(s), {state_outputs} configuration \
+         feature-state output(s), {faces} face name(s) and {bodies} body name(s)"
+    );
+    assert!(note.message.contains(&counts), "{}", note.message);
+    let reread = decode(written);
+    assert_eq!(producers_and_names(reread.ir()), [0; 4]);
+}
+
+/// A write that keeps the source's partition writes no generated partition,
+/// and charges no such note.
+#[test]
+fn a_part_written_with_its_partition_charges_no_producer_note() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let result = decode(native_envelope_fixture(&stored_producers(true)));
+    let mut written = Vec::new();
+    let report = crate::SldprtCodec
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut written)
+        .unwrap();
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "writer.producer-attributes-omitted"),
+        "{:#?}",
+        report.losses
+    );
 }

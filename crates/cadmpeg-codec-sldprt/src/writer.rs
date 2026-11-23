@@ -247,6 +247,7 @@ pub(crate) fn write_semantic_with_records(
         losses.extend(
             reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
         );
+        losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));
     let brep_empty = ir.geometry.faces.is_empty();
@@ -1477,9 +1478,9 @@ pub(super) fn reserve_configuration_index(
 /// configuration whose body list the decoder moved into its evaluation:
 /// all that [`brep_body`] reads. Its faces carry their own colours.
 fn stored_state(ir: &CadIr, configuration: &DesignConfiguration) -> Option<CadIr> {
-    let (_, records) = crate::decode::retired_states::stored_state(ir, configuration)?;
+    let (_, state) = crate::decode::retired_states::stored_state(ir, configuration)?;
     let mut subset = CadIr::empty();
-    subset.geometry = records.clone();
+    subset.geometry = state.records.clone();
     Some(subset)
 }
 
