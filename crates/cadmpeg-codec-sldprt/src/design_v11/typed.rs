@@ -71,7 +71,7 @@ pub(super) fn project(
     entries: &Entries<'_>,
     scope: &Scope<'_>,
 ) -> Typed {
-    let supports = supports(histories, lanes, timeline);
+    let supports = supports(&model.features, histories, lanes, timeline);
     let mut sketches = sketch::project(
         &mut timeline.features,
         &sketch::Context {
@@ -283,6 +283,7 @@ fn assumed(extrudes: &[(FeatureId, ParameterId)]) -> Option<LossNote> {
 /// The datum feature of the built-in plane each sketch feature's profile
 /// names, and that plane's principal entity.
 fn supports(
+    features: &[cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     timeline: &Timeline,
@@ -292,7 +293,7 @@ fn supports(
         .iter()
         .filter_map(|feature| Some((&feature.id, principal_plane(feature)?)))
         .collect::<HashMap<_, _>>();
-    crate::resolved_features::sketch_supports::sketch_supports(histories, lanes)
+    crate::resolved_features::sketch_supports::sketch_supports(features, histories, lanes)
         .into_iter()
         .filter_map(|(sketch, plane)| {
             let sketch = timeline.features_by_record.get(sketch)?;

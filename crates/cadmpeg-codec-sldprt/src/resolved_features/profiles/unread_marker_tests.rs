@@ -10,7 +10,7 @@ use cadmpeg_ir::sketches::{
 
 use super::{
     finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
-    HeldMarkerGeometry, ListedEntity, MarkerSketchEntities, PlaneAssumedCause,
+    HeldMarkerGeometry, ListedEntity, MarkerSketchEntities,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -188,7 +188,7 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
         .collect::<Vec<_>>();
 
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
 
     assert_eq!(
         entities
@@ -237,12 +237,7 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
         ),
     ];
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(
-        &[],
-        &mut entities,
-        HeldMarkerGeometry::default(),
-        &mut losses,
-    );
+    finalize_unread_marker_entities(&mut entities, HeldMarkerGeometry::default(), &mut losses);
 
     assert_eq!(entities[0].geometry, line);
     assert_eq!(entities[1].geometry, source_native);
@@ -338,7 +333,7 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
     let id = held_arc.id().clone();
 
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     let arc = entities
         .iter()
         .position(|entity| entity.native_ref.as_deref() == Some("arc"))
@@ -381,7 +376,7 @@ fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
         ),
     );
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     assert_eq!(entities[0].geometry, arc);
     assert_eq!(
         losses
@@ -421,7 +416,7 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
     );
     let mut entities = vec![read, other_sketch];
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     assert_eq!(entities[0].geometry, line);
     assert!(entities[0].construction);
     assert_eq!(
@@ -457,7 +452,7 @@ fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
         ),
     );
     let mut entities = vec![read];
-    let finalized = finalize_unread_marker_entities(&[], &mut entities, held, &mut Vec::new());
+    let finalized = finalize_unread_marker_entities(&mut entities, held, &mut Vec::new());
     assert_eq!(
         finalized.outside_profile,
         std::collections::HashSet::from([id])
@@ -552,7 +547,7 @@ fn sensed_arc_projection(
     markers.push(curve);
     let (mut entities, held) = projected_entities(markers, payload);
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     (entities, losses)
 }
 
@@ -710,7 +705,7 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
             .insert(marker.to_owned(), ChordConflict::Unchecked);
     }
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
     };
@@ -842,7 +837,7 @@ fn a_skipped_marker_whose_record_then_gives_no_entity_is_named() {
         .iter()
         .all(|entity| entity.native_ref.as_deref() != Some("far")));
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     let unread = losses
         .iter()
         .filter(|loss| loss.code == SldprtLossCode::SketchMarkerRecordUnread.kind())
@@ -853,52 +848,6 @@ fn a_skipped_marker_whose_record_then_gives_no_entity_is_named() {
     assert!(loss.message.contains(sketch.id.as_str()));
     assert!(loss.message.contains("marker far,"));
     assert!(loss.message.contains("no point or curve"));
-}
-
-#[test]
-fn each_remaining_sketch_on_the_retained_front_fallback_charges_one_assumed_plane() {
-    let sketch = SketchId::mint("sldprt:model:sketch#markers:lane:4").unwrap();
-    let replaced = SketchId::mint("sldprt:model:sketch#compact:lane:4").unwrap();
-    let held = HeldMarkerGeometry {
-        assumed_planes: vec![
-            (replaced, PlaneAssumedCause::MixedPrincipal),
-            (
-                sketch.clone(),
-                PlaneAssumedCause::LaneDefault {
-                    named: Some(cadmpeg_ir::features::PrincipalPlane::Right),
-                },
-            ),
-            (sketch.clone(), PlaneAssumedCause::MixedPrincipal),
-        ],
-        ..HeldMarkerGeometry::default()
-    };
-    let sketches = [cadmpeg_ir::sketches::Sketch {
-        id: sketch.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
-        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-        native_ref: None,
-    }];
-    let mut entities = Vec::new();
-    let mut losses = Vec::new();
-    finalize_unread_marker_entities(&sketches, &mut entities, held, &mut losses);
-    assert_eq!(
-        losses
-            .iter()
-            .map(|loss| loss.code.clone())
-            .collect::<Vec<_>>(),
-        vec![SldprtLossCode::SketchPlaneAssumed.kind()]
-    );
-    let message = &losses[0].message;
-    assert!(message.contains(sketch.as_str()));
-    assert!(message.contains("name the Right plane"), "{message}");
-    assert!(
-        message.contains("the Front declaration is the feature-input lane's default"),
-        "{message}"
-    );
-    assert!(!message.contains("more than one plane"), "{message}");
 }
 
 #[test]
@@ -932,7 +881,7 @@ fn geometry_locus_arc_projection_reports_its_point_record_index_basis() {
         ));
         let (mut entities, held) = projected_entities(markers, payload);
         let mut losses = Vec::new();
-        finalize_unread_marker_entities(&[], &mut entities, held, &mut losses);
+        finalize_unread_marker_entities(&mut entities, held, &mut losses);
         let geometry = marker_entity(&entities, "curve").geometry.definition();
         assert!(matches!(
             (end, geometry),
