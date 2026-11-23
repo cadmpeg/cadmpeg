@@ -111,3 +111,11 @@
 **Known.** The `Double Value Object` slots at offsets 212, 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The side is `2` in every stored flange. The relief type is `51`, `52` or `53`. The `u16` at object offset 18 of a flange object is `149` where the object has a relation and `157` where it has none. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
 
 **Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
+
+### DR-1054. Helical protrusion constants, taper and start
+
+**Question.** Which options set the helical protrusion slots at 352, 408, 436, 464, 492 and 520 (§6.5), and where does a helical protrusion store a taper, a start angle and a start away from the profile?
+
+**Known.** The slots at 352, 408, 436, 464 and 492 hold `0` and the slot at 520 holds `1` in every stored helical protrusion. Every stored helical protrusion has a finite extent and a circular section.
+
+**Need.** Helical protrusions with a taper angle, with a taper ratio, with a start angle, with a start plane away from the profile, with the profile on each side of the axis, and a copy of each with one option cleared.
