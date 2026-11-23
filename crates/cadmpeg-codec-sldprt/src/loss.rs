@@ -521,6 +521,22 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose equation-manager line is stated as `SolidWorks`
     /// source text.
     DesignEquationSource,
+    /// Sketch curves stated construction because their curve record has
+    /// state `0`, read as a curve outside the profile.
+    DesignSketchConstructionAssumed,
+    /// Typed extrudes whose `Sketch` pick's closed regions differ from the
+    /// profile loops read from the stored records.
+    DesignExtrudeProfileDiffers,
+    /// Typed extrudes whose sketch holds no profile curve, so their `Sketch`
+    /// pick takes no region.
+    DesignExtrudeSketchEmpty,
+    /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignExtrudeProfileUnchecked,
+    /// Sketch circles built from a dimension record that the design leaves
+    /// out, its dimension naming the stored curve they lie on, or states
+    /// construction where no face of the solid witnesses them.
+    DesignSketchDimensionCircle,
 }
 
 impl SldprtLossCode {
@@ -726,6 +742,11 @@ impl SldprtLossCode {
         Self::DesignParameterClassesDisagree,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
+        Self::DesignSketchConstructionAssumed,
+        Self::DesignExtrudeProfileDiffers,
+        Self::DesignExtrudeSketchEmpty,
+        Self::DesignExtrudeProfileUnchecked,
+        Self::DesignSketchDimensionCircle,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -959,6 +980,11 @@ impl SldprtLossCode {
             Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
+            Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
+            Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
+            Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
+            Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
 
@@ -1155,7 +1181,11 @@ impl SldprtLossCode {
             | Self::DesignParameterClassAssumed
             | Self::DesignParameterClassesDisagree
             | Self::DesignEquationUnread
-            | Self::DesignEquationSource => Severity::Warning,
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignSketchDimensionCircle => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1164,6 +1194,7 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
             | Self::SketchSecondReading
+            | Self::DesignExtrudeProfileUnchecked
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryXmlNormalised => Severity::Info,
         }
@@ -1255,7 +1286,12 @@ impl SldprtLossCode {
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
             | Self::DesignParameterClassesDisagree
-            | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignSketchDimensionCircle => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1761,6 +1797,11 @@ mod tests {
                 "design.parameter-classes-disagree",
                 "design.equation-unread",
                 "design.equation-source",
+                "design.sketch-construction-assumed",
+                "design.extrude-profile-differs",
+                "design.extrude-sketch-empty",
+                "design.extrude-profile-unchecked",
+                "design.sketch-dimension-circle",
             ]
         );
     }

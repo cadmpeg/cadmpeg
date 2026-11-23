@@ -19,6 +19,7 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod profile_check;
 mod sketch;
 pub(crate) mod states;
 #[cfg(test)]
@@ -45,6 +46,7 @@ use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
@@ -76,6 +78,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
+    /// The sketch entities read from a curve record of state `0`: curves
+    /// outside their sketch's profile.
+    pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// What [`project`] stated.
@@ -114,6 +119,7 @@ pub(crate) fn project(
         equations: managers,
         length_places,
         rollback,
+        outside_profile,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -130,10 +136,19 @@ pub(crate) fn project(
         lanes,
         &mut timeline,
         &entries,
-        &definition,
+        &typed::Scope {
+            definition: &definition,
+            outside_profile,
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
+    losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_circles);
+    losses.extend(typed.profile_differs);
+    losses.extend(typed.sketch_empty);
+    losses.extend(typed.profile_unchecked);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,

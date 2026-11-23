@@ -857,7 +857,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
@@ -1010,7 +1014,11 @@ fn typed_timeline<'a>(
         &[],
         &mut timeline,
         &entries,
-        &ir.design.scopes[0].definition,
+        &super::typed::Scope {
+            definition: &ir.design.scopes[0].definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     (timeline, entries, typed)
 }
@@ -1402,7 +1410,11 @@ fn members_follow_the_features_they_depend_on() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
@@ -1544,5 +1556,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod configuration_states;
+mod dimension_curves;
 mod parameters;
 mod rollback;
+mod state_zero;
