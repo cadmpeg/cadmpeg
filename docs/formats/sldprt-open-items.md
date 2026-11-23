@@ -698,9 +698,9 @@ resolve a seed feature?
 
 ### DI-90. A value-only scalar whose trailer opens with a zero byte and a class reference
 
-**Question.** Where does a value-only scalar behind the 18-byte header store its object identifier when the trailer after its f64 opens with a zero byte and a class token or class declaration?
+**Question.** Where does a value-only scalar behind the 18-byte header store its object identifier when the trailer after its f64 opens with a zero byte and a class token or class declaration, and is that zero byte the whole trailer, so that the class reference opens the next object?
 
-**Known.** `sldprt.md` §2: such a trailer follows the f64 at the 18-byte header's end. The class token's high-bit byte or the declaration's `ff ff` occupies the bytes where a trailer of the first form stores the object identifier. The decoder reads the f64 at the 18-byte header's end. The u32 it reads as the object identifier at trailer +3 holds the class reference's last byte and the bytes after it.
+**Known.** `sldprt.md` §2: such a trailer follows the f64 at the 18-byte header's end. The zero byte is at trailer +0. A class token occupies trailer +1 and +2, and a class declaration's `ff ff` marker begins at trailer +1, where a trailer of the first form holds zero bytes; that form's object identifier is at trailer +3. The classes declared there are `moDimTolerance_c` and `moEnvFolder_c`. The decoder reads the f64 at the 18-byte header's end. The u32 it reads as the object identifier at trailer +3 holds the four bytes after a class token, or a class declaration's u16 schema number and u16 name length.
 
 **Need.** The object that the class reference opens, compared with the objects that follow trailers of the first form, and the scalar's f64 compared with the Keywords display of its dimension.
 
