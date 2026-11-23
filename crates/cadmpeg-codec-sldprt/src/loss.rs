@@ -66,6 +66,14 @@ pub(crate) enum SldprtLossCode {
     ConfigProjectionWorkCapped,
     /// A configuration's stored state has no design evaluation.
     ConfigStateUnstated,
+    /// A configuration that is not active has no stored partition.
+    ConfigStateNotStored,
+    /// The appearances or tessellations on the records of a state that is not
+    /// current are not stated.
+    ConfigStatePresentationUnstated,
+    /// The imported-feature body streams of a configuration that is not
+    /// active are not taken into its state.
+    ConfigStateImportedBodiesNotTransferred,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -289,7 +297,8 @@ pub(crate) enum SldprtLossCode {
     GeometryParasolidNotTransferred,
     /// Mesh bodies whose facet geometry remains unresolved.
     GeometryMeshBodyNotTransferred,
-    /// Imported-feature body streams that do not decode.
+    /// Imported-feature body streams of the active configuration that do not
+    /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
@@ -420,6 +429,9 @@ impl SldprtLossCode {
         Self::ConfigIncompleteSnapshot,
         Self::ConfigProjectionWorkCapped,
         Self::ConfigStateUnstated,
+        Self::ConfigStateNotStored,
+        Self::ConfigStatePresentationUnstated,
+        Self::ConfigStateImportedBodiesNotTransferred,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -572,6 +584,11 @@ impl SldprtLossCode {
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
             Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
             Self::ConfigStateUnstated => "config.state-unstated",
+            Self::ConfigStateNotStored => "config.state-not-stored",
+            Self::ConfigStatePresentationUnstated => "config.state-presentation-unstated",
+            Self::ConfigStateImportedBodiesNotTransferred => {
+                "config.state-imported-bodies-not-transferred"
+            }
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -780,6 +797,9 @@ impl SldprtLossCode {
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
             | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1031,6 +1051,9 @@ impl SldprtLossCode {
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
             | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1261,6 +1284,9 @@ mod tests {
                 "config.incomplete-snapshot",
                 "config.projection-work-capped",
                 "config.state-unstated",
+                "config.state-not-stored",
+                "config.state-presentation-unstated",
+                "config.state-imported-bodies-not-transferred",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",

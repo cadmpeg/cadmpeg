@@ -914,7 +914,7 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
-fn configuration_partitions(
+pub(crate) fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
@@ -947,19 +947,21 @@ fn configuration_partitions(
     configurations
         .into_iter()
         .filter_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .map(|bodies| (configuration, bodies))
+            let subset = match configuration.bodies.as_deref() {
+                Some([]) => None,
+                Some(bodies) => Some(body_subset(ir, bodies)),
+                None => Some(Ok(stored_state(ir, configuration)?)),
+            };
+            Some((configuration, subset))
         })
-        .map(|(configuration, bodies)| {
+        .map(|(configuration, subset)| {
             let index = configuration.source_index.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "SLDPRT configuration {} has no assigned source index",
                     configuration.id.as_str()
                 ))
             })?;
-            if bodies.is_empty() {
+            let Some(subset) = subset else {
                 let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
                 payload.extend(parasolid_stream_named(
                     &[],
@@ -967,8 +969,8 @@ fn configuration_partitions(
                     "deltas body",
                 )?);
                 return Ok((format!("Contents/Config-{index}-Partition"), payload));
-            }
-            let subset = body_subset(ir, bodies)?;
+            };
+            let subset = subset?;
             let schema_32001 = subset
                 .geometry
                 .bodies
@@ -1006,6 +1008,19 @@ pub(super) fn reserve_configuration_index(
             )
         })?;
     }
+}
+
+/// A document of the geometry of the state the design stores for a
+/// configuration whose body list the decoder moved into its evaluation:
+/// all that [`brep_body`] reads. Its faces carry their own colours.
+fn stored_state(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::parameters::DesignConfiguration,
+) -> Option<CadIr> {
+    let (_, records) = crate::decode::retired_states::stored_state(ir, configuration)?;
+    let mut subset = CadIr::empty();
+    subset.geometry = records.clone();
+    Some(subset)
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
