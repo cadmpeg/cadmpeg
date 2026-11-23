@@ -241,11 +241,12 @@ fn assumed_plane_binding_names_each_route_and_its_plane() {
          frame of their own that take the only frame of the other sketches of their \
          configuration lane (1 on the Front plane (Sketch7)); 1 lie on the Front lane fallback \
          frame (origin 0,0,0, normal -Y, u-axis -Z), which no plane of the part stores, because \
-         their reference names the Front plane and the principal-plane component records of \
-         their own object bind them to no plane by sldprt.md §2: the records name two planes, a \
-         component frame record lies from the preceding object through the profile, or their \
-         own object holds a plane reference other than a declared Front record, open item \
-         SF-01 (Sketch8)."
+         their reference names the Front plane, their own object holds principal-plane \
+         component records, and the decoder binds them to no plane by those records (sldprt.md \
+         §2): the records name two planes, a component frame record lies from the preceding \
+         object through the profile, their own object holds a plane reference other than a \
+         declared Front record, or the sketch is a sketch block definition, whose frame the \
+         decoder takes from its plane reference, open item SF-01 (Sketch8)."
     );
 }
 

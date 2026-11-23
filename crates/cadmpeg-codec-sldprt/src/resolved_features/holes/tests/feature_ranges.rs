@@ -38,9 +38,10 @@ fn own_principal_component_record_names_the_profile_plane() {
     use crate::resolved_features::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
     use crate::resolved_features::holes::{
         feature_input_sketch_frame, feature_input_support_frame, principal_profile_frame,
+        reference_support_frame,
     };
     use cadmpeg_ir::features::PrincipalPlane;
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::HashMap;
 
     const QUANTUM: f64 = 1.0e-8;
@@ -112,6 +113,21 @@ fn own_principal_component_record_names_the_profile_plane() {
                 )
                 .map(|support| support.binding),
                 Some(PlaneBinding::Principal(plane))
+            );
+            // A sketch block definition takes its frame from its plane
+            // reference: beside the same record it keeps the Front lane
+            // fallback frame.
+            assert_eq!(
+                reference_support_frame(&payload, &frames, &index, context, start, payload.len())
+                    .map(|support| (support.frame, support.binding)),
+                Some((
+                    (
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, -1.0, 0.0),
+                        Vector3::new(0.0, 0.0, -1.0),
+                    ),
+                    PlaneBinding::FrontFallback
+                ))
             );
             let frame = principal_sketch_frame(plane);
             let sketch = cadmpeg_ir::sketches::Sketch {
