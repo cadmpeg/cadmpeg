@@ -2322,7 +2322,6 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 ),
             })
             .and_then(|offset| kind_end.checked_add(offset));
-        // A companion tail stores other fields at the item-tail state offsets.
         let tail_flags = match tail_form {
             _ if companion_history.is_some() => None,
             ScopeTailForm::Named => named.as_ref().map(|named| named.state),
