@@ -756,9 +756,9 @@ pub(crate) enum F3dLossCode {
     /// One configuration document failed decoding.
     ConfigurationDocumentUndecoded,
     /// One sheet-metal settings record failed decoding.
-    SheetMetalSettingsUndecoded,
+    BendSettingsUndecoded,
     /// One cached body bound failed decoding.
-    BodyBoundsUndecoded,
+    DesignBodyBoundsUndecoded,
     /// Decoded sketch curves have no neutral sketch entity.
     SketchCurveUnprojected,
     /// Decoded sketch surfaces have no neutral spatial sketch entity.
@@ -1875,8 +1875,8 @@ impl F3dLossCode {
         Self::SketchOwnerConflict,
         Self::SketchRelationOwnerUnresolved,
         Self::ConfigurationDocumentUndecoded,
-        Self::SheetMetalSettingsUndecoded,
-        Self::BodyBoundsUndecoded,
+        Self::BendSettingsUndecoded,
+        Self::DesignBodyBoundsUndecoded,
         Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
@@ -2930,8 +2930,8 @@ impl F3dLossCode {
             Self::SketchOwnerConflict => "sketch.owner-conflict",
             Self::SketchRelationOwnerUnresolved => "sketch.relation-owner-unresolved",
             Self::ConfigurationDocumentUndecoded => "configuration.document-undecoded",
-            Self::SheetMetalSettingsUndecoded => "sheet-metal.settings-undecoded",
-            Self::BodyBoundsUndecoded => "body.bounds-undecoded",
+            Self::BendSettingsUndecoded => "feature.bend-settings-undecoded",
+            Self::DesignBodyBoundsUndecoded => "design.body-bounds-undecoded",
             Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
@@ -4000,8 +4000,8 @@ impl F3dLossCode {
             | Self::SketchOwnerConflict
             | Self::SketchRelationOwnerUnresolved
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
-            | Self::BodyBoundsUndecoded
+            | Self::BendSettingsUndecoded
+            | Self::DesignBodyBoundsUndecoded
             | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
@@ -4426,7 +4426,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineUndecoded
             | Self::PrimaryRecordUndecoded
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
+            | Self::BendSettingsUndecoded
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
@@ -5117,7 +5117,7 @@ impl F3dLossCode {
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
             | Self::SketchSurfaceUndecoded
-            | Self::BodyBoundsUndecoded
+            | Self::DesignBodyBoundsUndecoded
             | Self::SketchTextUndecoded
             | Self::SketchRelationUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
@@ -5175,7 +5175,7 @@ impl F3dLossCode {
             | Self::PrimaryRecordUndecoded
             | Self::FeatureTimelineUndecoded
             | Self::ConfigurationDocumentUndecoded
-            | Self::SheetMetalSettingsUndecoded
+            | Self::BendSettingsUndecoded
             | Self::ConfigurationProjectionNative
             | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
             other => other.shared_taxonomy().strict_floor(),
@@ -5209,20 +5209,51 @@ mod tests {
     use super::F3dLossCode;
     use std::collections::BTreeSet;
 
+    /// The sixteen codes that record a Design record, or its dependent
+    /// state, kept in the source archive after a decoding failure: the
+    /// sketch curve, surface, text, relation, folder, ordinal-collection,
+    /// container and geometry-group codes; the feature-timeline and
+    /// primary-record codes; the configuration projection and document
+    /// codes; the sketch owner-conflict and relation-owner codes; the bend
+    /// settings code; and the body-bounds code.
+    const UNREAD_DESIGN_RECORD_CODES: [F3dLossCode; 16] = [
+        F3dLossCode::SketchCurveUndecoded,
+        F3dLossCode::SketchSurfaceUndecoded,
+        F3dLossCode::SketchTextUndecoded,
+        F3dLossCode::SketchRelationUndecoded,
+        F3dLossCode::SketchFolderUndecoded,
+        F3dLossCode::SketchOrdinalCollectionUndecoded,
+        F3dLossCode::SketchContainerUndecoded,
+        F3dLossCode::SketchGeometryGroupUndecoded,
+        F3dLossCode::FeatureTimelineUndecoded,
+        F3dLossCode::PrimaryRecordUndecoded,
+        F3dLossCode::ConfigurationProjectionNative,
+        F3dLossCode::SketchOwnerConflict,
+        F3dLossCode::SketchRelationOwnerUnresolved,
+        F3dLossCode::ConfigurationDocumentUndecoded,
+        F3dLossCode::BendSettingsUndecoded,
+        F3dLossCode::DesignBodyBoundsUndecoded,
+    ];
+
     #[test]
     fn unread_design_records_keep_strict_refusal() {
-        for code in [
-            F3dLossCode::PrimaryRecordUndecoded,
-            F3dLossCode::FeatureTimelineUndecoded,
-            F3dLossCode::ConfigurationDocumentUndecoded,
-            F3dLossCode::SheetMetalSettingsUndecoded,
-            F3dLossCode::ConfigurationProjectionNative,
-        ] {
+        for code in UNREAD_DESIGN_RECORD_CODES {
             assert_eq!(
                 code.note("synthetic unread Design record")
                     .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject
+                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+                "{}",
+                code.kind().local_code()
             );
+        }
+    }
+
+    #[test]
+    fn unread_design_record_codes_are_registered_once() {
+        let mut seen = BTreeSet::new();
+        for code in UNREAD_DESIGN_RECORD_CODES {
+            assert!(F3dLossCode::ALL.contains(&code));
+            assert!(seen.insert(code.kind().local_code().to_owned()));
         }
     }
 
@@ -5698,8 +5729,8 @@ mod tests {
                 "sketch.owner-conflict",
                 "sketch.relation-owner-unresolved",
                 "configuration.document-undecoded",
-                "sheet-metal.settings-undecoded",
-                "body.bounds-undecoded",
+                "feature.bend-settings-undecoded",
+                "design.body-bounds-undecoded",
                 "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",

@@ -651,7 +651,7 @@ fn text_frame_line_decodes_after_point_references() {
     }
 
     let (geometry, end) =
-        crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403, 0, &mut 0)
+        crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403, 0)
             .expect("line parse")
             .expect("text-frame boundary line");
     assert_eq!(end, bytes.len());
