@@ -3,14 +3,111 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "fcstd:design:container#Body",
+            "kind": "body",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#AdditiveBox"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            },
+            "refine": false
+          },
+          "id": "fcstd:design:feature#AdditiveBox",
+          "name": "AdditiveBox",
+          "native_ref": "fcstd:native:object#AdditiveBox"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#AdditiveBox:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#AdditiveBox:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#AdditiveBox"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#AdditiveBox"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Body",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#Body"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -5163,8 +5260,7 @@
       "product_definitions": [
         {
           "bodies": [
-            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
-            "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
+            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
           ],
           "bom_properties": {},
           "id": "fcstd:model:product_definition#document:root",

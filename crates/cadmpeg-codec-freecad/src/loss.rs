@@ -77,6 +77,9 @@ pub(crate) enum FreecadLossCode {
     FeatureRemovalWithoutBase,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
+    /// A design parameter stores an empty expression; its stored value stands
+    /// as its definition.
+    ParameterExpressionEmpty,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -155,6 +158,7 @@ impl FreecadLossCode {
         Self::FeatureRevolutionNotTransferred,
         Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
+        Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
@@ -213,6 +217,7 @@ impl FreecadLossCode {
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
+            Self::ParameterExpressionEmpty => "parameter.expression-empty",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
@@ -283,6 +288,7 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
+            | Self::ParameterExpressionEmpty
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -338,6 +344,7 @@ impl FreecadLossCode {
             | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
+            | Self::ParameterExpressionEmpty
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
@@ -418,6 +425,7 @@ mod tests {
                 "feature.revolution-not-transferred",
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
+                "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",

@@ -65,6 +65,7 @@ use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
+pub(crate) mod v11;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 /// Endpoint relations that profile chaining may examine in one
@@ -9269,16 +9270,18 @@ fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
 /// Mark the bodies a document keeps only as intermediate shapes as not
-/// displayed: a feature's tool shape (any shape property other than `Shape`)
-/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
-/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
-/// transfer, so these structural roles win over stored member visibility.
+/// displayed, and return them: a feature's tool shape (any shape property
+/// other than `Shape`) and the shape of every member of a `PartDesign::Body`,
+/// including its `Tip`. A body shows its `Tip` result through its own `Shape`.
+/// This runs after GUI transfer, so these structural roles win over stored
+/// member visibility. No definition owns an intermediate body: a member's
+/// shape is a state of its Body, not a body of the current model (§5.4).
 pub(crate) fn hide_intermediate_bodies(
     ir: &mut cadmpeg_ir::CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-) {
+) -> HashSet<cadmpeg_ir::ids::BodyId> {
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     let mut property_by_id = HashMap::<&str, &PropertyRecord>::new();
     for property in properties {
@@ -9290,7 +9293,7 @@ pub(crate) fn hide_intermediate_bodies(
             .entry(property.id.as_str())
             .or_insert(property);
     }
-    let mut members = std::collections::HashSet::new();
+    let mut members = HashSet::new();
     for object in objects.iter().filter(|object| is_body(&object.type_name)) {
         let owned = properties_by_owner
             .get(object.id().as_str())
@@ -9312,12 +9315,13 @@ pub(crate) fn hide_intermediate_bodies(
     });
     let hidden = crate::gui::select_shape_bodies(ir, hidden)
         .into_iter()
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<HashSet<_>>();
     for body in &mut ir.geometry.bodies {
         if hidden.contains(&body.id) {
             body.visible = Some(false);
         }
     }
+    hidden
 }
 
 fn is_body(kind: &str) -> bool {
