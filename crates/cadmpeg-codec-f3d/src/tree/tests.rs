@@ -578,6 +578,62 @@ fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
     assert_eq!(selected_world_pose(&ir), original);
 }
 
+/// A joint operand names an inserted-document instance, whose identity does
+/// not end in its design key, by that identity: no consumer finds the instance
+/// by the key at the end of a path.
+#[test]
+fn an_operand_names_an_external_instance_whose_identity_lacks_its_key() {
+    const KEY: &str = "cb5cf1ed-f1ee-4933-8103-02ea3faf9dd6";
+    const NATIVE: &str = "f3d:xref:reference#0-occurrence-0";
+    const PART: &str = "f3d:model:component#part";
+    const DOCUMENT: &str = "f3d:xref:document#part.f3d";
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions = vec![
+        root(&["f3d:model:occurrence#a"]),
+        component(PART, &["f3d:model:occurrence#a:xref-0-0"]),
+        ProductDefinition::new(
+            definition_id(DOCUMENT),
+            Storage::External(ExternalDocument::path("part.f3d")),
+        ),
+    ];
+    let mut instance = occurrence("f3d:model:occurrence#a:xref-0-0", DOCUMENT, 3.0);
+    instance.native_ref = Some(NATIVE.to_owned());
+    ir.model.occurrences = vec![occurrence("f3d:model:occurrence#a", PART, 10.0), instance];
+    let reference: crate::records::xref::XrefReference =
+        serde_json::from_value(serde_json::json!({
+            "id": NATIVE, "ordinal": 0, "occurrence_ordinal": 0,
+            "from": "root.f3d", "relative_path": "part.f3d", "neutron_role": "role",
+            "neutron_data": "",
+            "placement_source": {
+                "occurrence_guid": KEY, "stream": "f3d:design", "carrier_record_index": 1
+            }
+        }))
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "xref_references", &[reference])
+        .unwrap();
+    reference_bolt(&mut ir, "f3d:model:occurrence#a:xref-0-0");
+    let losses = own_once(&mut ir, &BTreeMap::new());
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        ir.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .operand
+            .container,
+        cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#xref-0-0"),
+            occurrence_path: Vec::new(),
+        }
+    );
+}
+
 #[test]
 fn expanding_restates_the_decoder_instances() {
     let original = shared_bracket();
