@@ -9,7 +9,7 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 mod admission;
 mod entry;
 mod index;
-mod local;
+pub(crate) mod local;
 mod probe;
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].

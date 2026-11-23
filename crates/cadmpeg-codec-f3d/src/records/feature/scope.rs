@@ -544,16 +544,24 @@ impl ScopePayloadCompleteness for DesignCombineScope {
     }
 }
 
-/// The suppressed and rolled-back flags of a parameter-scope tail.
+/// The timeline state of a feature item tail: three state bytes and the
+/// no-result and rolled-back lane flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignScopeTailFlags {
-    /// The feature is suppressed.
-    pub(crate) suppressed: bool,
+    /// State bytes 0 and 1. Either byte set marks the feature suppressed.
+    pub(crate) suppression: [bool; 2],
+    /// State byte 2.
+    pub(crate) unevaluated: bool,
+    /// Byte offset of state byte 0; state bytes 1 and 2 follow it.
+    pub(crate) state_offset: u64,
+    /// The no-result flag `s0`: the stored history-state identities hold no
+    /// current result.
+    pub(crate) no_result: bool,
     /// The feature stands after the saved rollback marker of its timeline.
     pub(crate) rolled_back: bool,
-    /// Byte offset of the suppressed flag; the rolled-back flag follows it.
-    pub(crate) suppressed_offset: u64,
+    /// Byte offset of the no-result flag; the rolled-back flag follows it.
+    pub(crate) no_result_offset: u64,
     /// Byte offset of the earlier same-index envelope that stores the flags,
     /// where this envelope stores none. The flags then lie after the start of
     /// that envelope and before the start of this one.
@@ -566,20 +574,44 @@ pub(crate) struct DesignScopeTailFlags {
 }
 
 impl DesignScopeTailFlags {
-    /// Whether `scope` can hold these flags: in its own tail before its paired
-    /// header or, from the earlier envelope at `envelope_offset`, after that
-    /// envelope's start and before `scope`'s start.
+    /// Whether state byte 0 or 1 marks the feature suppressed.
+    pub(crate) fn suppressed(&self) -> bool {
+        self.suppression.contains(&true)
+    }
+
+    /// The assumption under which a feature whose flags store no current
+    /// result and no suppression is read as active.
+    pub(crate) fn active_without_result(&self) -> Option<crate::loss::F3dLossCode> {
+        use crate::loss::F3dLossCode;
+        (self.no_result && !self.suppressed()).then_some(if self.unevaluated {
+            F3dLossCode::FeatureUnevaluatedStateAssumed
+        } else {
+            F3dLossCode::FeatureNoResultActiveAssumed
+        })
+    }
+
+    /// Whether `scope` can hold these flags: state bytes set only with the
+    /// no-result flag, the state bytes before the lane flags, both in its own
+    /// tail before its paired header or, from the earlier envelope at
+    /// `envelope_offset`, after that envelope's start and before `scope`'s
+    /// start.
     pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
-        let Some(end) = self.suppressed_offset.checked_add(1) else {
+        let (Some(state_end), Some(end)) = (
+            self.state_offset.checked_add(3),
+            self.no_result_offset.checked_add(1),
+        ) else {
             return false;
         };
-        match self.envelope_offset {
-            None => {
-                self.suppressed_offset >= scope.feature_ordinal_offset
-                    && end < scope.paired_byte_offset
+        let consistent = self.no_result || (self.suppression == [false; 2] && !self.unevaluated);
+        consistent
+            && state_end <= self.no_result_offset
+            && match self.envelope_offset {
+                None => {
+                    self.state_offset >= scope.feature_ordinal_offset
+                        && end < scope.paired_byte_offset
+                }
+                Some(envelope) => envelope < self.state_offset && end < scope.byte_offset,
             }
-            Some(envelope) => envelope < self.suppressed_offset && end < scope.byte_offset,
-        }
     }
 }
 
@@ -1030,7 +1062,7 @@ pub(crate) struct DesignParameterScope {
     /// Display name bound from a companion `WorkPlane` entity record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
-    /// Suppressed and rolled-back flags of the tail.
+    /// Timeline state bytes and lane flags of the tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) tail_flags: Option<DesignScopeTailFlags>,
     /// ASM delta-state identity produced by this scope, when active.
@@ -1189,7 +1221,7 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_display_name"
     )]
     display_name: Option<String>,
-    /// Suppressed and rolled-back flags of the tail.
+    /// Timeline state bytes and lane flags of the tail.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
