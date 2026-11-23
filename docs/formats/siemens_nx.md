@@ -1058,7 +1058,7 @@ Its `preceding` names a main-line mark or another mark off the main line.
 Its delta is forward: it turns the state at `P` into the state at `M`. The
 images of its PMARK section are the nodes present at `M` and absent at `P`.
 Its map entries name the nodes present at `P` and absent at `M`. The images
-of its map section are images of nodes present at both marks.
+of its map section are the images at `M` of nodes present at both marks.
 
 **Feature join.** The GROUP nodes that the change from `P` to `M` creates are
 the GROUP (kind 90) entries of the map of `M`. An operation body-write frame
