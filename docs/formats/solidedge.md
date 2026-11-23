@@ -256,6 +256,7 @@ byte. The function names are:
 | `JMCutoutFunction` | extruded cutout |
 | `JMRevolvedProtrusionFunction` | revolved protrusion |
 | `JMMultiSweepProtrusionFunction` | swept protrusion |
+| `JMHelixProtrusionFunction` | helical protrusion |
 | `JMLoftedProtrusionFunction` | lofted protrusion |
 | `JMHoleFunction` | hole |
 | `JMRoundFunction` | round |
@@ -326,7 +327,9 @@ bytes after the end of its function name (§4.2). For
 `u32` 104 bytes after the end of the function name is the identifier of the
 section profile. A feature with function
 `JMHoleFunction`, `JMFlangeFunction` or `JMFastPatternFunction` stores it 68
-bytes after the end of its function name. The identifier names a
+bytes after the end of its function name. A feature with function
+`JMHelixProtrusionFunction` stores it 128 bytes after the end of its function
+name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
 profile. At most one feature names a profile.
 
@@ -374,6 +377,32 @@ The axis of a revolved feature is a `CLSID_JMRefAxis` object. Its byte at
 object offset 12 is `3`. The three `f64` at offset 13 are a point on the
 axis in model space, and the three `f64` at offset 37 are the unit axis
 direction. The sweep angle is a `Double Value Object` or a `CLSID_JDim`.
+
+### 6.5 Helical protrusion
+
+A `CLSID_JMPart` feature with function `JMHelixProtrusionFunction` stores
+these object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 68 | `CLSID_JMRefAxis` helix axis (§6.4) |
+| 96 | `Double Value Object` start-end |
+| 128 | the profile (§5.3) |
+| 156 | `Double Value Object` extent kind, `13` |
+| 184 | `Double Value Object` height |
+| 212 | `Double Value Object` pitch |
+| 240 | `Double Value Object` revolution count |
+| 268 | `Double Value Object` hand |
+| 352, 408, 436, 464, 492 | `Double Value Object`, `0` |
+| 520 | `Double Value Object`, `1` |
+
+The helix starts at the profile and turns about the axis. The profile is
+the swept section. The start-end value `29` advances the helix along the axis
+direction and `30` advances it against the axis direction. The hand is `1` for
+a left-hand helix and `2` for a right-hand helix. The height is the
+advance along the axis, equal to the pitch times the revolution count. The
+file stores all three values and does not state which two the user entered.
+The helix radius is the distance from the axis to the section.
 
 ## 7. Holes, rounds, chamfers and thin walls
 
