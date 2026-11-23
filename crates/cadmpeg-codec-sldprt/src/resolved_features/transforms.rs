@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1.0e-8;
 const EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8: f64 = 1.0e-8;
+const EPS_TRANSFORMS_LOCAL_PAIR_FRAME_E8: f64 = 1.0e-8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MarkerTransform {
@@ -131,19 +132,25 @@ const PRINCIPAL_COMPONENTS: [(cadmpeg_ir::features::PrincipalPlane, &str); 2] = 
 fn principal_component_coordinates(frame: (Point3, Vector3, Vector3)) -> Option<&'static str> {
     PRINCIPAL_COMPONENTS
         .into_iter()
-        .find(|(plane, _)| {
-            super::compact_reference_planes::principal_component_frame(*plane) == frame
-        })
+        .find(|(plane, _)| super::compact_reference_planes::principal_sketch_frame(*plane) == frame)
         .map(|(_, coordinates)| coordinates)
 }
 
 /// Records on `feature` that its sketch's marker pairs are sketch
-/// coordinates in the principal component frame `component`.
+/// coordinates in the frame of the principal plane `component`, which the
+/// profile's own principal-plane component record names
+/// (`PlaneBinding::Principal`).
 pub(super) fn record_component_marker_coordinates(
     feature: &mut cadmpeg_ir::features::Feature,
-    component: Option<(Point3, Vector3, Vector3)>,
+    component: Option<cadmpeg_ir::features::PrincipalPlane>,
 ) {
-    if let Some(value) = component.and_then(principal_component_coordinates) {
+    let coordinates = component.and_then(|component| {
+        PRINCIPAL_COMPONENTS
+            .into_iter()
+            .find(|(plane, _)| *plane == component)
+            .map(|(_, coordinates)| coordinates)
+    });
+    if let Some(value) = coordinates {
         feature.source_properties.insert(
             cadmpeg_core::nonblank_literal!("MarkerCoordinateSystem"),
             value.to_owned(),
@@ -188,6 +195,10 @@ pub(super) fn feature_sketch_marker_transform(
     component_sketch_marker_transform(sketch, quantum, local)
 }
 
+/// The transform the sketch placement gives the feature-input marker pair. On
+/// the frame of a support plane whose frame family `local_pair_frame` admits,
+/// the pair is the local sketch coordinate (`sldprt.md` §2); on any other frame
+/// it is the model-component reading.
 pub(super) fn sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -204,6 +215,15 @@ pub(super) fn sketch_frame_marker_transform(
             },
             translation: (0, 0),
         });
+    }
+    if support_plane_sketch_kind(sketch)
+        && sketch
+            .resolved_placement()
+            .is_some_and(|(origin, normal, u_axis)| {
+                local_pair_frame(origin.get(), normal.get(), u_axis.get())
+            })
+    {
+        return Some(MarkerTransform::identity());
     }
     axis_aligned_sketch_frame_marker_transform(sketch, quantum)
         .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
@@ -284,6 +304,70 @@ fn axis_aligned_sketch_frame_marker_transform(
     })
 }
 
+/// The sketch-id kind of a marker profile sketch.
+pub(super) const MARKER_SKETCH_KIND: &str = "markers";
+/// The sketch-id kind of a compact profile sketch.
+pub(super) const COMPACT_SKETCH_KIND: &str = "compact";
+/// The sketch-id kind of a legacy-configuration profile sketch.
+pub(super) const LEGACY_CONFIG_SKETCH_KIND: &str = "legacy-config";
+
+/// Whether the sketch comes from a path that places it on the frame of its
+/// support plane: the marker and compact sketches (`feature_input_sketch_frame`)
+/// and the legacy-configuration sketches (the same table, or the unique frame of
+/// their lane). `bore:` sketches take their frame from the same table but project
+/// their points from model space, so their pair is not a sketch coordinate.
+fn support_plane_sketch_kind(sketch: &cadmpeg_ir::sketches::Sketch) -> bool {
+    sketch
+        .id
+        .as_str()
+        .strip_prefix("sldprt:model:sketch#")
+        .and_then(|rest| rest.split_once(':'))
+        .is_some_and(|(kind, _)| {
+            [
+                MARKER_SKETCH_KIND,
+                COMPACT_SKETCH_KIND,
+                LEGACY_CONFIG_SKETCH_KIND,
+            ]
+            .contains(&kind)
+        })
+}
+
+/// Whether the feature-input marker pair of a sketch on its support plane's
+/// frame is the local sketch coordinate (`sldprt.md` §2): on a frame whose
+/// normal is oblique to the model axes; on a frame with `N=+X`, `U=-Z` (the
+/// Right frame and its offsets) or `N=-X`, `U=+Z` whose origin lies on the `X`
+/// axis; and on a frame with `N=+Y` whose origin lies on the `Y` axis, with
+/// `U=-X`, or with `U=+X` other than the Top frame itself. On every other
+/// axis-parallel frame, the Top frame and the frames whose origin is displaced
+/// within the plane among them, the decoder keeps the model-component reading
+/// (open item DI-80); a Top sketch that a principal-plane component record
+/// places reads locally through `component_sketch_marker_transform`.
+fn local_pair_frame(origin: Point3, normal: Vector3, u_axis: Vector3) -> bool {
+    const EPS: f64 = EPS_TRANSFORMS_LOCAL_PAIR_FRAME_E8;
+    let (normal_length, u_length) = (normal.norm(), u_axis.norm());
+    if !(normal_length > f64::EPSILON && u_length > f64::EPSILON) {
+        return false;
+    }
+    let normal = [normal.x, normal.y, normal.z].map(|value| value / normal_length);
+    let u_axis = [u_axis.x, u_axis.y, u_axis.z].map(|value| value / u_length);
+    if !normal.iter().any(|value| (value.abs() - 1.0).abs() <= EPS) {
+        return true;
+    }
+    let along = |vector: [f64; 3], axis: usize, sign: f64| (vector[axis] * sign - 1.0).abs() <= EPS;
+    let on_x_axis = origin.y.abs() <= EPS && origin.z.abs() <= EPS;
+    let on_y_axis = origin.x.abs() <= EPS && origin.z.abs() <= EPS;
+    on_x_axis
+        && (along(normal, 0, 1.0) && along(u_axis, 2, -1.0)
+            || along(normal, 0, -1.0) && along(u_axis, 2, 1.0))
+        || along(normal, 1, 1.0)
+            && on_y_axis
+            && (along(u_axis, 0, -1.0) || along(u_axis, 0, 1.0) && origin.y.abs() > EPS)
+}
+
+/// The model-component reading of the feature-input marker pair on a frame the
+/// decoder computed with an oblique normal: the two model-coordinate components
+/// other than the normal's dominant one, lifted onto the plane and projected
+/// onto the frame. That reading is open item DI-80.
 fn affine_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -291,6 +375,8 @@ fn affine_sketch_frame_marker_transform(
     const SCALE: f64 = 1_000_000_000_000.0;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let normal = [normal.x, normal.y, normal.z];
+    let normal_axis =
+        (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
     let u_axis = [u_axis.x, u_axis.y, u_axis.z];
     let v_axis = [
         normal[1] * u_axis[2] - normal[2] * u_axis[1],
@@ -303,8 +389,6 @@ fn affine_sketch_frame_marker_transform(
     if !(v_axis.into_iter().all(f64::is_finite) && quantum.is_finite() && quantum > 0.0) {
         return None;
     }
-    let normal_axis =
-        (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
     if normal[normal_axis].abs() <= EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8 {
         return None;
     }

@@ -240,6 +240,7 @@ fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach
         std::slice::from_ref(&lane),
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
     assert!(relation_points(&ir.model.sketch_entities, &marker).is_empty());

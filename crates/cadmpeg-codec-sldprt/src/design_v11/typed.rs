@@ -14,8 +14,10 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::parameters::Entries;
+use super::profile_check::{Difference, Unchecked};
 use super::sketch::Sketches;
 use super::tree::Timeline;
 use super::{extrude, sketch};
@@ -34,6 +36,25 @@ pub(super) struct Typed {
     /// The note of the extrudes whose depth is their record's only
     /// dimension, whatever its name.
     pub(super) assumed: Option<LossNote>,
+    /// The note of the sketch curves stated construction for the state of
+    /// their curve record.
+    pub(super) state_construction: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch's closed regions differ
+    /// from the stored profile.
+    pub(super) profile_differs: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch holds no profile curve.
+    pub(super) sketch_empty: Option<LossNote>,
+    /// The note of the typed extrudes whose sketch's closed regions the
+    /// check did not compare with the stored profile.
+    pub(super) profile_unchecked: Option<LossNote>,
+}
+
+/// The scope the typed records belong to, and what the decoder read of
+/// their sketches' profiles.
+pub(super) struct Scope<'a> {
+    pub(super) definition: &'a ProductDefinitionId,
+    /// The sketch entities read from a curve record of state `0`.
+    pub(super) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// Type the sketches, then the extrudes, of `timeline`.
@@ -43,16 +64,17 @@ pub(super) fn project(
     lanes: &[FeatureInputLane],
     timeline: &mut Timeline,
     entries: &Entries<'_>,
-    scope: &ProductDefinitionId,
+    scope: &Scope<'_>,
 ) -> Typed {
-    let supports = supports(histories, lanes, timeline);
+    let supports = supports(&model.features, histories, lanes, timeline);
     let mut sketches = sketch::project(
         &mut timeline.features,
         &sketch::Context {
             model,
             entries,
-            scope,
+            scope: scope.definition,
             supports: &supports,
+            outside_profile: scope.outside_profile,
         },
     );
     let stated = sketches
@@ -67,6 +89,7 @@ pub(super) fn project(
             histories,
             entries,
             sketches: &stated,
+            entities: &sketches.entities,
         },
     );
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
@@ -82,6 +105,14 @@ pub(super) fn project(
     }
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let assumed = assumed(&extrudes.assumed);
+    let state_construction = state_construction(&sketches.outside_profile);
+    let profile_differs = profile_differs(&extrudes.differs);
+    let (empty, unchecked): (Vec<_>, Vec<_>) = extrudes
+        .unchecked
+        .iter()
+        .partition(|(_, _, why)| *why == Unchecked::NoProfileCurve);
+    let sketch_empty = sketch_empty(&empty);
+    let profile_unchecked = profile_unchecked(&unchecked);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -94,6 +125,115 @@ pub(super) fn project(
         sketches,
         loss,
         assumed,
+        state_construction,
+        profile_differs,
+        sketch_empty,
+        profile_unchecked,
+    }
+}
+
+/// The text naming the first [`NAMED_INSTANCES_PER_NOTE`] of `named`, and
+/// how many more there are.
+fn listed(named: impl Iterator<Item = String>) -> String {
+    let mut shown = Vec::new();
+    let mut rest = 0_usize;
+    for name in named {
+        if shown.len() < NAMED_INSTANCES_PER_NOTE {
+            shown.push(name);
+        } else {
+            rest += 1;
+        }
+    }
+    let shown = shown.join(", ");
+    match rest {
+        0 => shown,
+        rest => format!("{shown}, and {rest} more"),
+    }
+}
+
+/// One note naming each sketch curve the design states construction because
+/// its curve record has state `0`, which the decoder reads as a curve outside
+/// the profile (open item EV-32), with its record's construction bit clear.
+fn state_construction(entities: &[SketchEntityId]) -> Option<LossNote> {
+    if entities.is_empty() {
+        return None;
+    }
+    Some(
+        SldprtLossCode::DesignSketchConstructionAssumed.note(format!(
+            "{} sketch curves whose curve record has state 0 and no construction bit are \
+             construction, as curves outside their sketch's profile (EV-32): {}",
+            entities.len(),
+            listed(entities.iter().map(|entity| entity.as_str().to_owned())),
+        )),
+    )
+}
+
+/// One note naming each typed extrude whose `Sketch` pick's closed regions
+/// differ from the profile loops the decoder resolved from the stored
+/// records, with how they differ (§6 "Sources").
+fn profile_differs(extrudes: &[(FeatureId, Option<String>, Vec<Difference>)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeProfileDiffers.note(format!(
+        "{} extrudes pick their whole sketch, whose closed regions differ from the profile \
+         the decoder read from the stored records: {}",
+        extrudes.len(),
+        listed(extrudes.iter().map(|(feature, name, differences)| format!(
+            "{} ({})",
+            named(feature, name.as_deref()),
+            differences
+                .iter()
+                .copied()
+                .map(Difference::text)
+                .collect::<Vec<_>>()
+                .join("; ")
+        ))),
+    )))
+}
+
+/// One note naming each typed extrude whose `Sketch` pick takes no region,
+/// because its sketch holds no curve other than points and construction
+/// curves.
+fn sketch_empty(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeSketchEmpty.note(format!(
+        "{} extrudes pick their whole sketch, which holds no profile curve, so the pick takes \
+         no region: {}",
+        extrudes.len(),
+        listed(
+            extrudes
+                .iter()
+                .map(|(feature, name, _)| named(feature, name.as_deref()))
+        ),
+    )))
+}
+
+/// One note naming each typed extrude whose `Sketch` pick's closed regions
+/// the check did not compare with the stored profile, with why.
+fn profile_unchecked(extrudes: &[&(FeatureId, Option<String>, Unchecked)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignExtrudeProfileUnchecked.note(format!(
+        "{} extrudes pick their whole sketch, whose closed regions the decoder did not compare \
+         with the stored profile: {}",
+        extrudes.len(),
+        listed(extrudes.iter().map(|(feature, name, why)| format!(
+            "{} ({})",
+            named(feature, name.as_deref()),
+            why.text()
+        ))),
+    )))
+}
+
+/// A feature's id, and its name where it has one.
+fn named(feature: &FeatureId, name: Option<&str>) -> String {
+    match name {
+        Some(name) => format!("{} \"{name}\"", feature.as_str()),
+        None => feature.as_str().to_owned(),
     }
 }
 
@@ -104,28 +244,22 @@ fn assumed(extrudes: &[(FeatureId, ParameterId)]) -> Option<LossNote> {
     if extrudes.is_empty() {
         return None;
     }
-    let shown = extrudes.len().min(NAMED_INSTANCES_PER_NOTE);
-    let named = extrudes[..shown]
-        .iter()
-        .map(|(feature, parameter)| format!("{} ({})", feature.as_str(), parameter.as_str()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let rest = extrudes.len() - shown;
-    let more = if rest == 0 {
-        String::new()
-    } else {
-        format!(", and {rest} more")
-    };
     Some(SldprtLossCode::DesignExtrudeDepthAssumed.note(format!(
         "{} extrudes bind their blind depth to their record's only dimension, which is named \
-         neither Depth nor D1: {named}{more}",
-        extrudes.len()
+         neither Depth nor D1: {}",
+        extrudes.len(),
+        listed(extrudes.iter().map(|(feature, parameter)| format!(
+            "{} ({})",
+            feature.as_str(),
+            parameter.as_str()
+        ))),
     )))
 }
 
 /// The datum feature of the built-in plane each sketch feature's profile
 /// names, and that plane's principal entity.
 fn supports(
+    features: &[cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     timeline: &Timeline,
@@ -135,7 +269,7 @@ fn supports(
         .iter()
         .filter_map(|feature| Some((&feature.id, principal_plane(feature)?)))
         .collect::<HashMap<_, _>>();
-    crate::resolved_features::sketch_supports::sketch_supports(histories, lanes)
+    crate::resolved_features::sketch_supports::sketch_supports(features, histories, lanes)
         .into_iter()
         .filter_map(|(sketch, plane)| {
             let sketch = timeline.features_by_record.get(sketch)?;
@@ -181,25 +315,18 @@ fn loss(
     sketches: &[(FeatureId, &'static str)],
     extrudes: &[(FeatureId, &'static str)],
 ) -> Option<LossNote> {
-    let all = sketches.iter().chain(extrudes).collect::<Vec<_>>();
-    if all.is_empty() {
+    if sketches.is_empty() && extrudes.is_empty() {
         return None;
     }
-    let shown = all.len().min(NAMED_INSTANCES_PER_NOTE);
-    let named = all[..shown]
-        .iter()
-        .map(|(feature, reason)| format!("{} ({reason})", feature.as_str()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let rest = all.len() - shown;
-    let more = if rest == 0 {
-        String::new()
-    } else {
-        format!(", and {rest} more")
-    };
     Some(SldprtLossCode::DesignFeatureUnresolved.note(format!(
-        "{} sketch and {} extrude features state their family without operands: {named}{more}",
+        "{} sketch and {} extrude features state their family without operands: {}",
         sketches.len(),
-        extrudes.len()
+        extrudes.len(),
+        listed(
+            sketches
+                .iter()
+                .chain(extrudes)
+                .map(|(feature, reason)| format!("{} ({reason})", feature.as_str()))
+        ),
     )))
 }

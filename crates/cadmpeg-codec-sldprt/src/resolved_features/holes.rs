@@ -1,6 +1,6 @@
 //! Hole construction, bore topology and hole axis projection.
 
-use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneAssumedCause};
+use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneBinding, SourceRoute};
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
@@ -4240,47 +4240,65 @@ fn resolved_support_component_frame(
     coplanar_plane_frames(reference.as_tuple(), component).then_some(component)
 }
 
+/// The transform of a feature-input profile's marker pairs. `principal` is
+/// whether the binding that gave the sketch its frame is a principal-plane
+/// component record (`PlaneBinding::Principal`), so the frame and the
+/// coordinate reading come from one decision.
 pub(super) fn feature_input_sketch_marker_transform(
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     interval: [usize; 3],
     sketch: &Sketch,
     quantum: f64,
+    principal: bool,
 ) -> Option<MarkerTransform> {
     if resolved_support_component_frame(plane_frames, plane_index, interval).is_some() {
         Some(MarkerTransform::identity())
     } else {
-        component_sketch_marker_transform(
-            sketch,
-            quantum,
-            principal_component_profile_frame(
-                plane_frames,
-                plane_index,
-                interval[0],
-                interval[1],
-                interval[2],
-            )
-            .is_some(),
-        )
+        component_sketch_marker_transform(sketch, quantum, principal)
     }
 }
 
-pub(super) fn principal_component_profile_frame(
+/// The principal plane, and its frame, that the principal-plane component
+/// records of a profile name (`sldprt.md` §2): the profile's own plane record,
+/// which decides over the reference of the preceding object and the lane
+/// default. A profile whose own object holds a declared or component source
+/// record keeps that source, unless the source is the declared Front plane
+/// (feature number 2 or 3); a custom component frame from the preceding object
+/// on keeps its frame.
+pub(super) fn principal_profile_frame(
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
-) -> Option<(Point3, Vector3, Vector3)> {
-    use super::compact_reference_planes::{
-        principal_component_frame, principal_sketch_frame, principal_source,
+) -> Option<(
+    (Point3, Vector3, Vector3),
+    cadmpeg_ir::features::PrincipalPlane,
+)> {
+    let plane = plane_index.principal_profile_plane(start, end)?;
+    if plane_index.has_component_frame(context_start.min(start), end) {
+        return None;
+    }
+    let declared_front = || {
+        let Some(source) = plane_index.profile_source(context_start, start, end) else {
+            return false;
+        };
+        plane_index.profile_declared_source(context_start, start, end) == Some(source)
+            && plane_frames.get(&source).is_some_and(|reference| {
+                reference.u_axis_source == SketchPlaneUAxisSource::Native
+                    && reference.as_tuple()
+                        == super::compact_reference_planes::principal_sketch_frame(
+                            cadmpeg_ir::features::PrincipalPlane::Front,
+                        )
+            })
     };
-    use cadmpeg_ir::features::PrincipalPlane;
-    let plane = plane_index.local_principal_component(context_start, start, end)?;
-    let reference = plane_frames.get(&principal_source(PrincipalPlane::Front))?;
-    (reference.u_axis_source == SketchPlaneUAxisSource::Native
-        && reference.as_tuple() == principal_sketch_frame(PrincipalPlane::Front))
-    .then(|| principal_component_frame(plane))
+    (plane_index.reference_source(start, end).is_none() || declared_front()).then(|| {
+        (
+            super::compact_reference_planes::principal_sketch_frame(plane),
+            plane,
+        )
+    })
 }
 
 pub(super) fn feature_input_sketch_frame(
@@ -4291,51 +4309,82 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    profile_sketch_frame(
+    feature_input_support_frame(
         payload,
         plane_frames,
         plane_index,
-        [context_start, start, end],
+        context_start,
+        start,
+        end,
     )
-    .map(|frame| frame.frame)
+    .map(|support| support.frame)
 }
 
-/// The sketch frame of a profile object.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct ProfileSketchFrame {
+/// The support frame of a feature-input profile, and the route that gave it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SupportFrame {
     pub(super) frame: (Point3, Vector3, Vector3),
-    /// Why the frame is the retained Front fallback of a profile whose
-    /// principal component records the profile placement rule does not
-    /// place; `None` for any other frame.
-    pub(super) assumed: Option<PlaneAssumedCause>,
+    /// How the frame was chosen (open item DI-73).
+    pub(super) binding: PlaneBinding,
 }
 
-impl ProfileSketchFrame {
-    /// A frame the profile's records store.
-    pub(super) fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
+impl SupportFrame {
+    fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
         Self {
             frame,
-            assumed: None,
+            binding: PlaneBinding::Stored,
         }
     }
 }
 
-pub(super) fn profile_sketch_frame(
+/// The support frame of a sketch or hole-position profile: the plane that a
+/// principal-plane component record of the profile's own object names
+/// (`principal_profile_frame`), otherwise [`reference_support_frame`].
+pub(super) fn feature_input_support_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
-    [context_start, start, end]: [usize; 3],
-) -> Option<ProfileSketchFrame> {
-    let stored = ProfileSketchFrame::stored;
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
+    if let Some((frame, plane)) =
+        principal_profile_frame(plane_frames, plane_index, context_start, start, end)
+    {
+        return Some(SupportFrame {
+            frame,
+            binding: PlaneBinding::Principal(plane),
+        });
+    }
+    reference_support_frame(
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+}
+
+/// The support frame that a profile's plane reference, component frame
+/// records or explicit frame give, without its principal-plane component
+/// records. A sketch block definition takes this frame.
+pub(super) fn reference_support_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
     if let Some(frame) =
         resolved_support_component_frame(plane_frames, plane_index, [context_start, start, end])
     {
-        return Some(stored(frame));
+        return Some(SupportFrame::stored(frame));
     }
-    let mut fallback = false;
     let reference = plane_index
-        .profile_source(context_start, start, end)
-        .and_then(|source| {
+        .profile_source_route(context_start, start, end)
+        .and_then(|(source, route)| {
             plane_frames.get(&source).copied().map(|reference| {
                 if source == 2
                     && reference.u_axis_source == SketchPlaneUAxisSource::Native
@@ -4345,11 +4394,23 @@ pub(super) fn profile_sketch_frame(
                         )
                 {
                     if let Some(frame) = plane_index.preserved_principal_fallback(start, end) {
-                        fallback = true;
-                        return SketchPlaneFrame::from_frame(frame, reference.u_axis_source);
+                        return (
+                            SketchPlaneFrame::from_frame(frame, reference.u_axis_source),
+                            PlaneBinding::FrontFallback,
+                        );
                     }
                 }
-                reference
+                let binding =
+                    if reference.principal == Some(cadmpeg_ir::features::PrincipalPlane::Top) {
+                        PlaneBinding::TopReference
+                    } else if route == SourceRoute::Profile {
+                        PlaneBinding::Stored
+                    } else {
+                        PlaneBinding::Borrowed {
+                            own_records: plane_index.holds_plane_record(start, end),
+                        }
+                    };
+                (reference, binding)
             })
         });
     let component = plane_index.profile_component_frame(context_start, start, end);
@@ -4384,31 +4445,27 @@ pub(super) fn profile_sketch_frame(
         ))
     };
     match reference {
-        Some(reference) => {
+        Some((reference, binding)) => {
             let component = component
                 .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
             if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
                 match component {
-                    Some(component) => Some(stored(component)),
+                    Some(component) => Some(SupportFrame::stored(component)),
                     None => explicit()
                         .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
-                        .map(stored),
+                        .map(SupportFrame::stored),
                 }
             } else {
                 Some(component.map_or(
-                    ProfileSketchFrame {
+                    SupportFrame {
                         frame: reference.as_tuple(),
-                        assumed: fallback.then(|| {
-                            plane_index
-                                .front_profile_principal_component(context_start, start, end)
-                                .map_or_else(|cause| cause, PlaneAssumedCause::Unapplied)
-                        }),
+                        binding,
                     },
-                    stored,
+                    SupportFrame::stored,
                 ))
             }
         }
-        None => component.or_else(explicit).map(stored),
+        None => component.or_else(explicit).map(SupportFrame::stored),
     }
 }
 
@@ -4458,8 +4515,8 @@ pub(super) fn sketch_feature_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, ProfileSketchFrame> {
-    let mut candidates = HashMap::<String, Option<ProfileSketchFrame>>::new();
+) -> HashMap<String, SupportFrame> {
+    let mut candidates = HashMap::<String, Option<SupportFrame>>::new();
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
@@ -4472,11 +4529,13 @@ pub(super) fn sketch_feature_frames(
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
             };
-            let Some(frame) = profile_sketch_frame(
+            let Some(frame) = feature_input_support_frame(
                 &lane.native_payload,
                 &plane_frames,
                 &plane_index,
-                [context_start, start, end],
+                context_start,
+                start,
+                end,
             ) else {
                 continue;
             };

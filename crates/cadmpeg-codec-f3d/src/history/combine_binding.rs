@@ -7,14 +7,15 @@ use cadmpeg_ir::features::selections::{BodyMember, BodySelection};
 use cadmpeg_ir::features::{CombineOperands, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{
-    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies, body_member,
-    combine_external_local_tools, combine_recipe_family_tool_slots,
-    effective_scope_previous_history_state_id, historical_brep_source, pattern_combine_tool_slots,
+use super::body_selections::{
+    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies,
+    combine_external_local_tools, combine_recipe_family_tool_slots, pattern_combine_tool_slots,
     singleton_revised_input_body_across_state_chain, unique_feature_history_states,
-    unique_history_state_pair, BodyCandidates, CombineOperandRefusal, CombineOperandSide,
-    FeatureBodySelectionInputs,
+    CombineOperandRefusal, CombineOperandSide, FeatureBodySelectionInputs,
 };
+use super::face_resolution::{body_member, historical_brep_source};
+use super::history_states::{effective_scope_previous_history_state_id, unique_history_state_pair};
+use crate::history::body_candidates::BodyCandidates;
 use crate::records::feature::scope::DesignParameterScope;
 
 /// Bind `target` and `tools` in the history state before the scope.

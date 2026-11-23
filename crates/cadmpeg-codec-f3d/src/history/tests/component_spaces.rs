@@ -6,11 +6,12 @@
     clippy::needless_pass_by_value
 )]
 
-use crate::history::{
+use crate::history::face_operand_history::{
     bind_historical_recipe_reference_candidates, direct_face_recipe_candidates,
-    recipe_index::RecipeTopologyCache, recipe_reference_common_vertex,
-    selection::bind_extrude_selection_history,
 };
+use crate::history::recipe_index::RecipeTopologyCache;
+use crate::history::selection::bind_extrude_selection_history;
+use crate::history::vertex_recipes::recipe_reference_common_vertex;
 use crate::history_records::AsmHistory;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,

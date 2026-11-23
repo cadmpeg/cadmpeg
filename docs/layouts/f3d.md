@@ -8785,7 +8785,7 @@ Parsed by:
 | 78 | 8 | `scalar` | `f64` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 86 | 4 | `repeated_lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 90 | 51 | `second_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
-| 141 | 1 | `suppressed_flag` | `u8` | little | spec | the suppressed flag at tail offset 141 |
+| 141 | 1 | `no_result_flag` | `u8` | little | spec | the no-result flag at tail offset 141 |
 | 142 | 1 | `rolled_back_flag` | `u8` | little | spec | the rolled-back flag at tail offset 142 |
 | 143 | 51 | `third_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 194 | 2 | `third_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |

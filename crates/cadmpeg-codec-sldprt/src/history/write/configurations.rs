@@ -231,6 +231,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         profiles,
         &mut current_annotations,
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     // A relation point charge falls on every projection of its sketch, the
     // decode's as well, and leaves the configuration states as they are.
@@ -346,6 +347,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         profiles,
         &mut projected_annotations,
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     // A relation point charge falls on every projection of its sketch, the
     // decode's as well, and leaves the configuration states as they are.

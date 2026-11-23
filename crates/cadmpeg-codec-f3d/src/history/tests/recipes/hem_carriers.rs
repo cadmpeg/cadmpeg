@@ -14,19 +14,23 @@ fn hem_bend_carriers_prove_directional_gap_forms() {
     let flat_inner = cylinder(0.01);
     let flat_outer = cylinder(2.51);
     assert_eq!(
-        super::super::super::hem_gap_length_form([&flat_inner, &flat_outer].into_iter()),
-        Some(super::super::super::HemGapLengthForm::Flat)
+        super::super::super::hem_gap_forms::hem_gap_length_form(
+            [&flat_inner, &flat_outer].into_iter()
+        ),
+        Some(super::super::super::hem_gap_forms::HemGapLengthForm::Flat)
     );
 
     let open_inner = cylinder(1.25);
     let open_outer = cylinder(3.75);
     assert_eq!(
-        super::super::super::hem_gap_length_form([&open_inner, &open_outer].into_iter()),
-        Some(super::super::super::HemGapLengthForm::Open)
+        super::super::super::hem_gap_forms::hem_gap_length_form(
+            [&open_inner, &open_outer].into_iter()
+        ),
+        Some(super::super::super::hem_gap_forms::HemGapLengthForm::Open)
     );
 
     assert_eq!(
-        super::super::super::hem_gap_length_form([&flat_inner].into_iter()),
+        super::super::super::hem_gap_forms::hem_gap_length_form([&flat_inner].into_iter()),
         None
     );
 }
