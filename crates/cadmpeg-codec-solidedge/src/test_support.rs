@@ -160,15 +160,29 @@ fn chunks(len: usize, size: usize) -> usize {
 /// in a storage). A stream under 4096 bytes lives in the mini stream, so its
 /// length is exact.
 pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    document_with_root(
+        PART,
+        &[("PSMroots", Vec::new()), ("JSitesList", Vec::new())],
+        streams,
+    )
+}
+
+/// As [`document`], with the root class `class` and the root streams `root`
+/// in place of the two that identify an ordinary document.
+pub(crate) fn document_with_root(
+    class: CompoundClassId,
+    root: &[(&str, Vec<u8>)],
+    streams: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
     let mut nodes = vec![Node {
         name: "Root Entry".into(),
         stream: None,
         parent: 0,
     }];
-    for name in ["PSMroots", "JSitesList"] {
+    for (name, data) in root {
         nodes.push(Node {
-            name: name.into(),
-            stream: Some(Vec::new()),
+            name: (*name).into(),
+            stream: Some(data.clone()),
             parent: 0,
         });
     }
@@ -300,7 +314,7 @@ pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
         siblings.sort_by_key(|&other| name_key(&nodes[other].name));
         if index == 0 {
             entry[66] = 5;
-            entry[80..96].copy_from_slice(&PART.to_bytes());
+            entry[80..96].copy_from_slice(&class.to_bytes());
             put_u32(
                 entry,
                 116,
@@ -1128,7 +1142,10 @@ mod patterns;
 pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};
 
 mod assembly;
-pub(crate) use assembly::{assembly_document, OccurrenceSpec, SiteSpec};
+pub(crate) use assembly::{
+    assembly_document, family_document, family_info, member_table, MemberSpec, OccurrenceSpec,
+    SiteSpec,
+};
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};

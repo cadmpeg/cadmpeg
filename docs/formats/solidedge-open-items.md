@@ -111,3 +111,11 @@
 **Known.** The `Double Value Object` slots at offsets 212, 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The side is `2` in every stored flange. The relief type is `51`, `52` or `53`. The `u16` at object offset 18 of a flange object is `149` where the object has a relation and `157` where it has none. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
 
 **Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
+
+### DR-1043. Member record entries and member storage content
+
+**Question.** What do the `u64` word of a member record entry and the trailer word of a member record state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
+
+**Known.** The entry word is `0x40000000` in every entry. The trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list, and a record can list objects its storage does not hold.
+
+**Need.** A family whose members differ in an occurrence property, with the stored members table before and after the change.

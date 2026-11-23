@@ -603,6 +603,37 @@ A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
 
+### 9.4 Family of assemblies
+
+A family-of-assemblies document has none of the ordinary root streams.
+Its root holds the streams `FamilyInfo`, `FamilyPropertyFlags` and
+`FOAPublishData`, a master storage named `Master` followed by U+0001, and one
+storage per family member. A member storage is named by the member name. The
+master storage and each member storage hold the streams of an ordinary
+document (`JSitesList`, `PSMroots`, `PSMcluster0`, `PSMtypetable`,
+`PSMspacemap/...`, `JSite<N>/\x01Ole` and the others); every stream path of
+this specification is relative to the storage of the selected member.
+
+A name is a `u32` count of UTF-16LE units that includes the terminating zero
+unit, followed by the units. `FamilyInfo` holds the name of the active member.
+The active member is the member storage with that name.
+
+`FOAPublishData` lists the members as records of the identifier `0xa000 + k`
+(`k` from 1) and the member name.
+
+The stream `Family of Assemblies Members` of the master storage holds the
+member table. It starts with a header, then one record per member. A record
+starts with the bytes `51 51 51 00`, the `u32` member identifier and the member
+name, and ends with a `u32` count `n`, `n` entries of 12 bytes and a `u32`
+trailer word. An entry is a `u64` `0x40000000` and the `u32` object identifier of a
+`CLSID_JAsmReference` object. A record ends before the next record tag or at the
+end of the stream.
+
+The active member places the occurrences of §§9.1 to 9.3 whose object identifier its
+record lists, taken from the references collection of its own storage. A
+member storage holds the `CLSID_JAsmReference` objects of the family; the
+record states which of them the member places.
+
 ## 10. Sheet metal
 
 ### 10.1 Variable table

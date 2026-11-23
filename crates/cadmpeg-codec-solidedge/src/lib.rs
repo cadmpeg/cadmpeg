@@ -14,6 +14,7 @@ mod dimension;
 mod dressup;
 mod edge;
 mod extents;
+mod family;
 mod features;
 mod layout;
 mod loss;
