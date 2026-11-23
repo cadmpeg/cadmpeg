@@ -454,7 +454,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         &[lane],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
-        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 
@@ -695,7 +695,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         &lanes,
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
-        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 
@@ -779,7 +779,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
         &lanes,
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
-        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
 

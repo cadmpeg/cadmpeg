@@ -323,7 +323,7 @@ fn decode_on(
     .unwrap();
     let mut losses = Vec::new();
     let unbound =
-        finalize_unread_marker_entities(&[], &mut entities, held, &mut losses).unbound_readings;
+        finalize_unread_marker_entities(&mut entities, held, &mut losses).unbound_readings;
     let mut again = initial;
     let mut finalized = HeldMarkerGeometry::after_finalized(&entities);
     project_marker_backed_sketches(
