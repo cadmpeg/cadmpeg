@@ -88,7 +88,9 @@ fn line_reference_tail_axis(
 /// Axes read from the tail of every `moLineRef_w` record in an object
 /// interval whose handle run is followed by zero bytes, an optional stream
 /// address, and the tail with its zero byte before a class declaration or an
-/// instance token. The words before the handles are not read (DI-86).
+/// instance token. The words before the handles are not read (DI-86). The
+/// handle run at `+223` of an `moTempAxisRef_w` declaration belongs to that
+/// record, which [`temporary_axis_reference`] reads.
 fn line_reference_tail_axes(
     payload: &[u8],
     object_start: usize,
@@ -104,12 +106,26 @@ fn line_reference_tail_axes(
     let payload = &payload[..end];
     let is_handle =
         |offset: usize| payload.get(offset..offset + HANDLE.len()) == Some(HANDLE.as_slice());
+    let is_temporary_axis_declaration = |declaration: usize| {
+        let field = |offset: usize, len: usize| payload.get(declaration + offset..)?.get(..len);
+        field(
+            temporary_axis::CLASS_MARKER,
+            temporary_axis::CLASS_MARKER_VALUE.len(),
+        ) == Some(temporary_axis::CLASS_MARKER_VALUE.as_slice())
+            && View::u16_le_at(payload, declaration + temporary_axis::NAME_LENGTH)
+                == Some(temporary_axis::NAME_LENGTH_VALUE)
+            && field(temporary_axis::NAME, temporary_axis::NAME_VALUE.len())
+                == Some(temporary_axis::NAME_VALUE.as_slice())
+    };
     let mut axes = Vec::new();
     for handle_start in object_start..end {
         if !is_handle(handle_start)
             || handle_start
                 .checked_sub(HANDLE.len())
                 .is_some_and(|previous| previous >= object_start && is_handle(previous))
+            || handle_start
+                .checked_sub(temporary_axis::HANDLES)
+                .is_some_and(is_temporary_axis_declaration)
         {
             continue;
         }

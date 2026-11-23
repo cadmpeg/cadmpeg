@@ -1420,6 +1420,25 @@ fn revolution_axis_outside_the_profile_plane_is_named_and_kept() {
 fn revolution_with_tail_records(
     records: &[(usize, [f64; 3], [f64; 3])],
 ) -> ([FeatureHistory; 1], FeatureInputLane) {
+    let mut payload = vec![0; 640];
+    for &(handles, point, direction) in records {
+        for offset in [handles, handles + 4] {
+            payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        let tail = handles + 8 + 24;
+        let values = std::iter::once(length(8))
+            .chain(point)
+            .chain(direction)
+            .collect::<Vec<_>>();
+        write_values(&mut payload, tail, &values);
+        payload[tail + 57..tail + 61].copy_from_slice(CLASS_MARKER);
+    }
+    revolution_with_payload(payload)
+}
+
+/// A profile object named at lane offset 100 and a revolution object named
+/// at offset 200, whose interval runs to the end of `payload`.
+fn revolution_with_payload(payload: Vec<u8>) -> ([FeatureHistory; 1], FeatureInputLane) {
     let feature = |id: &str, source: &str, class: &str| Feature {
         id: id.into(),
         parent: "history".into(),
@@ -1448,19 +1467,6 @@ fn revolution_with_tail_records(
             feature("revolution", "28", "moRevolution_c"),
         ],
     }];
-    let mut payload = vec![0; 640];
-    for &(handles, point, direction) in records {
-        for offset in [handles, handles + 4] {
-            payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
-        }
-        let tail = handles + 8 + 24;
-        let values = std::iter::once(length(8))
-            .chain(point)
-            .chain(direction)
-            .collect::<Vec<_>>();
-        write_values(&mut payload, tail, &values);
-        payload[tail + 57..tail + 61].copy_from_slice(CLASS_MARKER);
-    }
     let name = |id: &str, ordinal, offset, source| FeatureInputName {
         id: format!("{id}-name"),
         parent: "lane".into(),
@@ -1540,4 +1546,48 @@ fn unread_line_reference_records_with_different_tails_give_no_axis() {
         .message
         .starts_with("1 revolution(s) hold `moLineRef_w` records"));
     assert!(note.message.ends_with("DI-86): revolution."));
+}
+
+#[test]
+fn temporary_axis_handles_are_not_read_as_a_line_reference_tail() {
+    let mut declaration = vec![0; 340];
+    declaration[..4].copy_from_slice(&temporary_axis::CLASS_MARKER_VALUE);
+    declaration[4..6].copy_from_slice(&temporary_axis::NAME_LENGTH_VALUE.to_le_bytes());
+    declaration[6..21].copy_from_slice(&temporary_axis::NAME_VALUE);
+    declaration[temporary_axis::HANDLES..temporary_axis::HANDLES + 8]
+        .copy_from_slice(&temporary_axis::HANDLES_VALUE);
+    write_values(
+        &mut declaration,
+        temporary_axis::AXIS_FRAME,
+        &[
+            0.0,
+            0.0,
+            length(12),
+            length(13),
+            0.0,
+            -length(14),
+            0.0,
+            1.0,
+            0.0,
+        ],
+    );
+    declaration[312..316].copy_from_slice(CLASS_MARKER);
+    declaration[316..318].copy_from_slice(&11u16.to_le_bytes());
+    declaration[318..329].copy_from_slice(b"AxisChild_c");
+    let mut payload = vec![0; 240];
+    payload.extend(declaration);
+    let (mut histories, lane) = revolution_with_payload(payload);
+
+    let notes = enrich_history_revolution_inputs_test(&mut histories, &[lane]);
+
+    let revolution = &histories[0].features[1];
+    assert_eq!(
+        revolution.properties.get("AxisOrigin"),
+        Some(&format!("{}mm,0mm,{}mm", mm(13), -mm(14)))
+    );
+    assert_eq!(
+        revolution.properties.get("AxisDirection"),
+        Some(&"0,1,0".into())
+    );
+    assert!(notes.is_empty(), "{notes:?}");
 }
