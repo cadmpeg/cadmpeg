@@ -431,9 +431,12 @@ fn topology(
     }
     Ok(())
 }
-fn tolerance(value: &mut Option<PositiveReal>, scale: PositiveReal) -> Result<(), CodecError> {
+fn tolerance(
+    value: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     if let Some(v) = value {
-        *v = PositiveReal::new(v.get() * scale.get())
+        *v = cadmpeg_ir::scalar::PositiveLength::new(v.get() * scale.get())
             .ok_or_else(|| CodecError::malformed("scaled witness tolerance overflow"))?;
     }
     Ok(())

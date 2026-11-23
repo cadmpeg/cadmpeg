@@ -3199,7 +3199,7 @@ fn append_resolved_consolidated_surface_curves(
                         ]
                         .into_iter()
                         .flatten()
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                         let mut coedges = Vec::new();
                         for (side, surface) in standard_surfaces.iter().enumerate() {

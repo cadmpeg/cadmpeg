@@ -696,7 +696,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(12.7)
     );
     assert_eq!(
