@@ -1429,16 +1429,18 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
-/// The two words of a 92-byte profile line record that join the side faces of
-/// an extruded polygon to its lines: the u32 at marker +80 and the u32 at
-/// marker +84.
+/// The side words of a 92-byte profile line record that join the side faces of
+/// an extruded polygon to its lines (`docs/formats/sldprt.md` §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LineSides {
     /// The u32 at marker +80; zero in the records whose +84 names a side face.
     pub(crate) state: u32,
     /// The u32 at marker +84: the local identifier of the side face that the
-    /// next line record sweeps.
-    pub(crate) next_side: u32,
+    /// next line record sweeps. `None` where the record is the direct form of
+    /// section 2 (u32 `1` at +84 with a nonzero, non-null identity at +88),
+    /// whose +84 is a selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) next_side: Option<u32>,
 }
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.

@@ -17,7 +17,7 @@ fn record(state: u32, next: u32, line: Option<([f64; 2], [f64; 2])>) -> Record {
     Record {
         sides: LineSides {
             state,
-            next_side: next,
+            next_side: Some(next),
         },
         read: line.map(|(a, b)| (a, b, entity("line"))),
     }
@@ -236,6 +236,8 @@ fn the_declared_classes_take_the_cells_in_ascending_order() {
     assert_eq!((classes.side, classes.end), (0x814e, 0x814b));
     assert_eq!(classes.face(Some(0x814e), Some(4)), Some(PathFace::Side(4)));
     assert_eq!(classes.face(Some(0x814b), Some(1)), Some(PathFace::End));
+    assert_eq!(classes.face(Some(0x814b), Some(2)), None);
+    assert_eq!(classes.face(Some(0x814b), None), None);
     assert_eq!(classes.face(Some(0x8150), Some(1)), None);
     assert_eq!(classes.face(None, Some(1)), None);
 }
@@ -342,7 +344,7 @@ fn the_side_words_are_the_u32_at_80_and_84_of_a_record_that_ends_at_the_next_mar
         crate::resolved_features::markers::marker_line_sides(&bytes, 0),
         Some(LineSides {
             state: 0x20000,
-            next_side: 7
+            next_side: Some(7)
         })
     );
     // No marker 92 bytes on: not a 92-byte record.
@@ -351,5 +353,65 @@ fn the_side_words_are_the_u32_at_80_and_84_of_a_record_that_ends_at_the_next_mar
     assert_eq!(
         crate::resolved_features::markers::marker_line_sides(&open, 0),
         None
+    );
+}
+
+#[test]
+fn a_direct_form_record_states_no_side_word() {
+    // Value 1 at +84 with a nonzero identity at +88 is the direct-form
+    // selector of the profile line, not a side identifier.
+    let mut bytes = record_bytes(0, 1);
+    bytes[88..92].copy_from_slice(&5u32.to_le_bytes());
+    let sides = crate::resolved_features::markers::marker_line_sides(&bytes, 0).unwrap();
+    assert_eq!(
+        sides,
+        LineSides {
+            state: 0,
+            next_side: None
+        }
+    );
+    // Without the identity the word is a side identifier.
+    for identity in [0, u32::MAX] {
+        bytes[88..92].copy_from_slice(&identity.to_le_bytes());
+        let sides = crate::resolved_features::markers::marker_line_sides(&bytes, 0).unwrap();
+        assert_eq!(sides.next_side, Some(1));
+    }
+}
+
+fn direct_record() -> Record {
+    Record {
+        sides: LineSides {
+            state: 0,
+            next_side: None,
+        },
+        read: None,
+    }
+}
+
+#[test]
+fn a_direct_form_record_in_a_polygon_is_not_read_as_a_side_identifier() {
+    // Side identifier 1 exists and no other record names it. The direct-form
+    // record in the middle names no face for its successor, so the join
+    // leaves two lines unnamed and states nothing for the first.
+    let records = [
+        record(0, 3, None),
+        direct_record(),
+        record(0, 4, None),
+        record(0, 0, None),
+    ];
+    assert_eq!(
+        join(&records, &ids(&[1, 2, 3, 4])),
+        [None, Some(3), None, Some(4)]
+    );
+    // As the last record it does not void the join.
+    let records = [
+        record(0, 3, None),
+        record(0, 2, None),
+        record(0, 4, None),
+        direct_record(),
+    ];
+    assert_eq!(
+        join(&records, &ids(&[1, 2, 3, 4])),
+        [Some(1), Some(3), Some(2), Some(4)]
     );
 }

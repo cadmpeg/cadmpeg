@@ -2954,8 +2954,8 @@ sequence, and through the hops a consuming feature's face reference stores
 
 | Code | Class | Fields | Design name (CADIR §5.7) |
 |---:|---|---|---|
-| 74 | `moFromSktEntSurfIdRep_c` | sketch entity id | `Generated`, role `Side` |
-| 83 | `moFromSktEnt3IntSurfIdRep_c` | sketch entity id, two integers | `Generated`, role `Side` |
+| 74 | `moFromSktEntSurfIdRep_c` | the face's local identifier | `Generated`, role `Side` |
+| 83 | `moFromSktEnt3IntSurfIdRep_c` | the face's local identifier, two integers | `Generated`, role `Side` |
 | 40 | `moEndFaceSurfIdRep_c` | end (0 start, 1 end), region | `Generated`, role `Start` or `End`, `index` the region |
 | 81 | `moEndFace3IntSurfIdRep_c` | end, region, 0 | as code 40 |
 | 72 | `moFilletSurfIdRep_c` | ordinal, 1 to the blend face count | `Blend`, `index` the ordinal |
@@ -2980,7 +2980,11 @@ line records (§2). The records of the polygon's lines are in contour order: the
 line of each record shares a corner with the line of the next record, and the
 order can run in either rotational direction. In a line record whose u32 at
 marker +80 is zero, the u32 at marker +84 is the local identifier of the side
-face that the next line record sweeps. The last line record stores zero there.
+face that the next line record sweeps, except that u32 `1` at +84 with a
+nonzero, non-null identity at +88 is the direct-form selector of the §2
+current-prefix direct profile line and names no side face. A record of a
+construction line is not a line of the polygon. The last line record whose u32
+at +80 is zero stores zero at +84.
 The first line record sweeps the one side identifier among the feature's
 side-class generated-surface identities that no +84 value of the profile
 names. The identifiers are not in record order, they can start above 1, and

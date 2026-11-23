@@ -50,7 +50,7 @@ pub(crate) struct SurfaceClasses {
 pub(crate) enum PathFace {
     /// A side face, by its local identifier.
     Side(u32),
-    /// An end face.
+    /// An end face, local identifier 0 or 1.
     End,
 }
 
@@ -134,7 +134,7 @@ impl SurfaceClasses {
         if cell == self.side {
             local.map(PathFace::Side)
         } else if cell == self.end {
-            Some(PathFace::End)
+            local.filter(|local| *local <= 1).map(|_| PathFace::End)
         } else {
             None
         }
@@ -174,16 +174,15 @@ fn join(records: &[Record], sides: &BTreeSet<u32>) -> Vec<Option<u32>> {
     let Some((last, others)) = records.split_last() else {
         return none;
     };
-    if last.sides.state == 0 && last.sides.next_side != 0 {
+    if last.sides.state == 0 && last.sides.next_side.is_some_and(|face| face != 0) {
         return none;
     }
     let mut faces = vec![None; records.len()];
     let mut named = BTreeSet::new();
     for (index, record) in others.iter().enumerate() {
-        if record.sides.state != 0 {
+        let Some(face) = record.sides.next_side.filter(|_| record.sides.state == 0) else {
             continue;
-        }
-        let face = record.sides.next_side;
+        };
         if !sides.contains(&face) || !named.insert(face) {
             return none;
         }
@@ -320,6 +319,9 @@ impl SideGenerators {
                 marker.feature_ref.as_deref() == Some(owner)
                     && marker.kind() == SketchInputKind::LineOrCircle
                     && marker.line_sides().is_some()
+                    && !by_marker
+                        .get(marker.id())
+                        .is_some_and(|entity| entity.construction)
             })
             .collect::<Vec<_>>();
         stream.sort_unstable_by_key(|marker| marker.offset());
@@ -344,9 +346,6 @@ impl SideGenerators {
             .filter_map(|marker| {
                 let sides = marker.line_sides()?;
                 let entity = by_marker.get(marker.id()).copied();
-                if entity.is_some_and(|entity| entity.construction) {
-                    return None;
-                }
                 let read = entity.and_then(|entity| {
                     let SketchGeometryDefinition::Line { start, end } =
                         entity.geometry.definition()

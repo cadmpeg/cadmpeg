@@ -1178,7 +1178,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** Which profile line sweeps a side face whose local identifier no `+84` value of the profile names, and what do the entries of a blend edge's component path name for a producer other than an extrusion?
 
-**Known.** `sldprt.md` §5 gives the join from the local identifier of an extrusion side face to its profile line, and the order of a component path's entries for an extrusion. A line record whose u32 at marker +80 is nonzero stores zero at +84 in two profiles. In a seven-line profile, the closing line record has `00 00 02 00` at +80 and stores `1` at +84. In a rectangular profile, two of the four line records are line handles whose geometry is not read (EV-27), so the join states no sketch entity for their faces.
+**Known.** `sldprt.md` §5 gives the join from the local identifier of an extrusion side face to its profile line, and the order of a component path's entries for an extrusion. A line record whose u32 at marker +80 is nonzero stores zero at +84 in two profiles. A side identifier of 1 cannot be told from the §2 direct-form selector, which stores u32 `1` at +84 with a nonzero identity at +88; the join states no face from such a record. In a seven-line profile, the closing line record has `00 00 02 00` at +80 and stores `1` at +84. In a rectangular profile, two of the four line records are line handles whose geometry is not read (EV-27), so the join states no sketch entity for their faces.
 
 **Need.** The identifier that a record with nonzero `+80` gives the next line; whether the closing record's `+84` names the first line's face where it is nonzero; and the entry order and entities of a component path for producers other than an extrusion.
 

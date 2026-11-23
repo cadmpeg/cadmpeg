@@ -1295,6 +1295,10 @@ pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<us
     offset.checked_add(relative)
 }
 
+/// The u32 at marker +84 that selects the direct point-object-identifier form
+/// of a current-prefix 92-byte profile line (`docs/formats/sldprt.md` §2).
+const DIRECT_FORM_SELECTOR: u32 = 1;
+
 /// The side words of the 92-byte record at `offset`: the record that ends at
 /// the next sketch marker 92 bytes on (`docs/formats/sldprt.md` §5).
 pub(crate) fn marker_line_sides(
@@ -1310,9 +1314,12 @@ pub(crate) fn marker_line_sides(
     if (first..end).any(|at| sketch_marker_prefix_at(payload, at)) {
         return None;
     }
+    let word = View::u32_le_at(payload, offset.checked_add(sides::NEXT_SIDE)?)?;
+    let identity = View::u32_le_at(payload, offset.checked_add(sides::IDENTITY)?)?;
+    let direct_form = word == DIRECT_FORM_SELECTOR && identity != 0 && identity != u32::MAX;
     Some(crate::records::LineSides {
         state: View::u32_le_at(payload, offset.checked_add(sides::LINE_STATE)?)?,
-        next_side: View::u32_le_at(payload, offset.checked_add(sides::NEXT_SIDE)?)?,
+        next_side: (!direct_form).then_some(word),
     })
 }
 
