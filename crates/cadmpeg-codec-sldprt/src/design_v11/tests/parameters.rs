@@ -1078,6 +1078,46 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
 }
 
 #[test]
+fn a_reference_in_an_inch_document_states_its_product_in_inches() {
+    use cadmpeg_ir::design::units::UnitSymbol;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Length;
+
+    let (_, parameters, losses) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1" Value="5in">"wall"</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[("Boss", "D1", V10::Length(Length::new(127.0).unwrap()), None)],
+        &[],
+        Some(UnitSymbol::In),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    // 5 inches is the stored 127 mm; the same text read in millimetres
+    // would disagree with it.
+    assert_eq!(
+        named("D1").definition,
+        neutral_definition("$0 * 1[in]", &[&named("wall").id])
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
 fn a_bare_display_number_states_no_unit() {
     use super::super::parameters::bare_display_number;
 
