@@ -111,7 +111,11 @@ fn principal<K: ConstructionKind>(entity: PrincipalEntity) -> Construction<K> {
     };
     Construction {
         inputs: vec![input],
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: std::collections::BTreeMap::new(),
     }
 }
 

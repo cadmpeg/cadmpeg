@@ -387,6 +387,18 @@ tessellation is presentation data and does not replace an available exact shape.
 use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
+CADIR decision: below the root, a region, shell, face, loop, or coedge is keyed by its shape and
+location identity, so a compound or a shell that lists one shape twice at one location identity
+lists one element twice. A face listed again at one location identity under another shell, or
+with the other sense, is another face, as the two sides of a face that two solids share: its key
+appends `~use<n>` (escaped `%7Euse<n>` in the id), where `n` numbers the face's distinct uses in
+listing order from 2, and its loops and coedges take their keys from it. The element name binds the first use. Otherwise the
+first listing is the element (CADIR §2.2), as edges, vertices, and points already are. Each
+record a later listing restates with the same content is read and not stated, and is charged one
+`fcstd/topology.record-repeated` loss that names the payload and the record's id. A region or a
+shell restated with other content, as a shell that two solids list, is emitted as read, and the
+decode wrapper's rule for a repeated id applies (CADIR §2.8). Body kind and shell closure count
+every listing.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
 location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
@@ -589,7 +601,9 @@ An expression binding is retained independently from its target property's cache
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
 identity, expression-engine identity, and dependencies on other decoded parameters when qualified
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
-not create fabricated parameter identities.
+not create fabricated parameter identities. A binding whose expression text is empty or blank
+emits `parameter.expression-empty`; the v11 parameter states the target property's stored value as
+its expression.
 
 `Placement.Base.x`, `.y`, and `.z` identify the translation components of a
 `PropertyPlacement`; each component is a length in millimetres. An expression target

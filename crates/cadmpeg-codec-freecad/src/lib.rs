@@ -904,6 +904,7 @@ impl CodecBackend for FcstdCodec {
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
+        let mut intermediate_bodies = HashSet::new();
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes. A
         // given-up `Document.xml` declares no dialect, so the source is not
@@ -1152,12 +1153,21 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
-            design::hide_intermediate_bodies(
+            intermediate_bodies = design::hide_intermediate_bodies(
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
             );
+            if ctx.depth() >= DecodeDepth::Design {
+                design::v11::project(
+                    &mut ir,
+                    product::document_definition_id()?,
+                    &graph.objects,
+                    &graph.properties,
+                    &mut transfer_losses,
+                );
+            }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),
@@ -1288,8 +1298,10 @@ impl CodecBackend for FcstdCodec {
             product::document_definition_id()?,
             cadmpeg_ir::products::ExternalDocument::default(),
         )? {
-            root.bodies.retain(product::is_shape_body);
+            root.bodies
+                .retain(|body| product::is_shape_body(body) && !intermediate_bodies.contains(body));
         }
+        design::v11::state_unproduced(&mut ir);
         // Only the FCStd writer reads this digest, and it admits only a `Full`
         // document. The serialization and hash are too costly to pay below that.
         if ctx.depth() == DecodeDepth::Full {

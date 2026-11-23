@@ -34,10 +34,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -666,7 +663,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "0 sketch and 1 extrude features state their family without operands: sldprt:model:feature#247:0 (the extrude's profile is no whole sketch)",
+        "message": "0 sketch, 1 extrude and 0 revolve features state their family without operands: the extrude's profile is no whole sketch (1: sldprt:model:feature#247:0)",
         "severity": "info"
       },
       {
@@ -678,7 +675,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
         "severity": "warning"
       },
       {

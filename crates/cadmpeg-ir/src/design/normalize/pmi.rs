@@ -7,6 +7,8 @@
 //! `ToleranceZoneForm::Other` whose text is one of its type's own names,
 //! compared without regard to ASCII case, is that name's arm.
 
+use std::collections::BTreeSet;
+
 use crate::design::parameter::Tolerance;
 use crate::document::{Design, Model};
 use crate::pmi::zones::ToleranceZoneForm;
@@ -75,35 +77,27 @@ fn split_designation(fit: &mut LimitsAndFits) {
     fit.grade = grade;
 }
 
-/// Replaces each `Other` modifier that names an arm by that arm. A dimension
-/// states each modifier once, so a replaced modifier that the list already
-/// states is dropped.
-fn normalize_modifiers(modifiers: &mut Vec<DimensionModifier>) {
+/// Replaces each `Other` modifier that names an arm by that arm. The
+/// modifiers are a set, so a replaced modifier the set already holds is one
+/// member.
+fn normalize_modifiers(modifiers: &mut BTreeSet<DimensionModifier>) {
     if !modifiers
         .iter()
-        .any(|modifier| matches!(modifier, DimensionModifier::Other(text) if modifier_named(text).is_some()))
+        .any(|modifier| matches!(modifier, DimensionModifier::Other(text) if modifier_named(text.as_str()).is_some()))
     {
         return;
     }
-    let mut kept: Vec<DimensionModifier> = Vec::with_capacity(modifiers.len());
-    for modifier in modifiers.drain(..) {
-        let modifier = match &modifier {
-            DimensionModifier::Other(text) => match modifier_named(text) {
-                Some(arm) => arm,
-                None => {
-                    kept.push(modifier);
-                    continue;
-                }
-            },
-            DimensionModifier::Reference
+    *modifiers = std::mem::take(modifiers)
+        .into_iter()
+        .map(|modifier| match modifier {
+            DimensionModifier::Other(text) => {
+                modifier_named(text.as_str()).unwrap_or(DimensionModifier::Other(text))
+            }
+            arm @ (DimensionModifier::Reference
             | DimensionModifier::Statistical
-            | DimensionModifier::ControlledRadius => modifier,
-        };
-        if !kept.contains(&modifier) {
-            kept.push(modifier);
-        }
-    }
-    *modifiers = kept;
+            | DimensionModifier::ControlledRadius) => arm,
+        })
+        .collect();
 }
 
 /// The modifier arm a text names: `Reference`, which STEP names

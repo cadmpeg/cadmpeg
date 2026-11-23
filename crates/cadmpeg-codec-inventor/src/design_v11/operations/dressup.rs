@@ -349,7 +349,11 @@ pub(super) fn operation(
                         drilling = Some(candidate);
                         points.push(Construction::<kinds::Point> {
                             resolved: Some(*position),
-                            ..Construction::default()
+                            inputs: Vec::new(),
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved_in: BTreeMap::default(),
                         });
                     }
                     (new::HolePositions::Placed(points), drilling)

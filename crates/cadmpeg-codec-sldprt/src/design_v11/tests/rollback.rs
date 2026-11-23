@@ -290,5 +290,11 @@ fn a_mark_class_the_class_map_does_not_name_is_noted_as_inferred() {
     };
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Info);
     assert!(note.message.contains("Contents/Config-0"), "{note:#?}");
-    assert_eq!(timeline_rollback(&marked.ir), Some(&Rollback::End));
+    assert_eq!(
+        marked.unread.len(),
+        1,
+        "no feature holds the record at the current mark: {:#?}",
+        marked.unread
+    );
+    assert_eq!(timeline_rollback(&marked.ir), None);
 }

@@ -190,7 +190,7 @@ fn decoded(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
     mut ir: CadIr,
-    body: DecodeBody,
+    mut body: DecodeBody,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
@@ -198,7 +198,13 @@ fn decoded(
     let annotations = if ctx.depth() >= DecodeDepth::Geometry {
         let (definition, minted) = design_v11::root_definition(&mut ir)?;
         if ctx.depth() >= DecodeDepth::Design {
-            design_v11::project(&mut ir, definition.clone())?;
+            cadmpeg_ir::design::projection::project_layer(
+                ctx,
+                "nx",
+                &mut ir,
+                &mut body.losses,
+                |ir, _| design_v11::project(ir, definition.clone()),
+            )?;
         }
         let mut builder = AnnotationBuilder::resume(annotations);
         if minted {

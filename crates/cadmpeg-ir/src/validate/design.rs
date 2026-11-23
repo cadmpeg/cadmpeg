@@ -28,6 +28,7 @@ mod linkage;
 mod matching;
 mod materials;
 mod names;
+mod ops;
 mod overrides;
 mod parameter_records;
 #[cfg(test)]
@@ -134,7 +135,7 @@ struct Held<'a> {
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
 /// container, position, evaluation, current-geometry, configuration,
 /// parameter, expression, program, dimension, cache, name, selection, and
-/// construction rules.
+/// construction rules, and the rules of the feature vocabulary.
 pub(super) fn check_design(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -158,6 +159,7 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
+    ops::check_operations(records, findings);
     overrides::check(records, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);

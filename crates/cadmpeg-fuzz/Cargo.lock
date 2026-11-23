@@ -325,6 +325,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-derive",
  "libm",
+ "memchr",
  "serde",
  "serde_json",
  "sha2",

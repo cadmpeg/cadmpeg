@@ -213,15 +213,31 @@ pub(crate) fn enrich_history_parameters_with_features(
     }
 }
 
+/// Writes the PMI dimension records of block `block_id` from the parameters
+/// that bind them; a record of a parameter that is not `edited` keeps its
+/// stored bytes. Returns one loss per edited record that keeps its stored
+/// value or display text because the record cannot state the edit.
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
-) -> Result<(), cadmpeg_core::CodecError> {
+    edited: &dyn Fn(&cadmpeg_ir::features::ParameterId) -> bool,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{ParameterValue, PmiDimensionSubtype};
 
+    let mut kept = Vec::new();
+    let mut keep = |parameter: &cadmpeg_ir::features::parameters::DesignParameter,
+                    record: &str,
+                    reason: &str| {
+        kept.push(
+            crate::loss::SldprtLossCode::WriterParameterEditUnwritten.note(format!(
+                "PMI dimension record {record} of parameter {} keeps its stored {reason}.",
+                parameter.id.as_str()
+            )),
+        );
+    };
     let Some(namespace) = ir.native.namespace("sldprt") else {
-        return Ok(());
+        return Ok(kept);
     };
     let native =
         crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
@@ -255,13 +271,18 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
+        if !edited(&parameter.id) {
+            continue;
+        }
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT PMI record {} changes dimension subtype",
-                record.id
-            )));
+            keep(
+                parameter,
+                &record.id,
+                "value and dimension subtype; the record cannot change its subtype",
+            );
+            continue;
         }
         let native_value = match (&subtype, &parameter.value) {
             (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.get(),
@@ -273,18 +294,23 @@ pub(crate) fn patch_payload(
                 Some(ParameterValue::Length(length)),
             ) => length.get() / 1000.0,
             (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => {
-                f64_from_i64(*count).ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(format!(
-                        "SLDPRT PMI record {} has a count beyond exact float range",
-                        record.id
-                    ))
-                })?
+                let Some(count) = f64_from_i64(*count) else {
+                    keep(
+                        parameter,
+                        &record.id,
+                        "value; the edited count is beyond exact float range",
+                    );
+                    continue;
+                };
+                count
             }
             _ => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "value; the edited value is not of the record's dimension subtype",
+                );
+                continue;
             }
         };
         FloatPatchSlot::read(payload, record.offset)?.write(native_value);
@@ -303,21 +329,25 @@ pub(crate) fn patch_payload(
                 record.display_text.as_ref(),
                 semantic.display_text.as_deref(),
             ) else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes optional display text",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "display text; the record cannot add or remove its optional display text",
+                );
+                continue;
             };
             if text.len() != previous.len() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes display-text width",
-                    record.id
-                )));
+                keep(
+                    parameter,
+                    &record.id,
+                    "display text; the record cannot change the display-text width",
+                );
+                continue;
             }
             patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
         }
     }
-    Ok(())
+    Ok(kept)
 }
 
 fn patch_bytes(

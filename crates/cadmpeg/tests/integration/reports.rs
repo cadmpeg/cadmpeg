@@ -548,3 +548,131 @@ fn a_decode_sidecar_passed_as_the_model_is_named() {
             .stderr(predicate::str::contains(message.as_str()));
     }
 }
+
+/// A cube with one vertex moved off its edges, so `check` has a finding for
+/// `repro` to cut, beside a decode sidecar that does not parse.
+fn cube_with_stale_sidecar(dir: &std::path::Path) -> std::path::PathBuf {
+    let mut document = unit_cube().expect("unit cube fixture is admitted");
+    document.geometry.points[0].set_position(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            50.0, 0.0, 0.0,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let cadir = fixture(dir, "cube.cadir.json", &document);
+    fs::write(
+        cadmpeg_ir::decode_sidecar_path(&cadir).unwrap(),
+        "{\"edited\": true}",
+    )
+    .unwrap();
+    cadir
+}
+
+#[test]
+fn every_command_that_loads_a_cadir_document_names_its_stale_sidecar() {
+    let dir = tempdir().unwrap();
+    let cadir = cube_with_stale_sidecar(dir.path());
+    let document =
+        cadmpeg_ir::CadIr::from_json(&fs::read_to_string(&cadir).unwrap()).expect("fixture");
+    let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
+    assert!(!validation.findings.is_empty());
+    let check_report = dir.path().join("check.json");
+    fs::write(
+        &check_report,
+        serde_json::to_vec(&serde_json::json!({
+            "ir_version": cadmpeg_ir::document::IR_VERSION,
+            "command": "check",
+            "input_path": cadir,
+            "check_report": validation,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let cadir = cadir.to_str().unwrap();
+    let out = |name: &str| dir.path().join(name).to_str().unwrap().to_owned();
+    let warning = format!(
+        "warning: {}: decode sidecar ",
+        cadmpeg_ir::source_fidelity::sidecar_stale_kind()
+    );
+    let check_report = check_report.to_str().unwrap().to_owned();
+    let mut silent = Vec::new();
+    for (args, loads) in [
+        (vec!["dump", cadir, "-o", &out("dump.cadir.json")], 1),
+        (vec!["check", cadir], 1),
+        (
+            vec![
+                "convert",
+                cadir,
+                "--to",
+                "cadir",
+                "-o",
+                &out("convert.cadir.json"),
+            ],
+            1,
+        ),
+        (vec!["diff", cadir, cadir], 2),
+        (vec!["measure", cadir, "--json"], 1),
+        (
+            vec![
+                "repro",
+                "--from",
+                &check_report,
+                "--finding",
+                "0",
+                "-o",
+                &out("bundle.json"),
+            ],
+            1,
+        ),
+    ] {
+        let output = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let named = stderr.matches(warning.as_str()).count();
+        if named != loads {
+            silent.push(format!("{} ({named} of {loads}): {stderr}", args[0]));
+        }
+    }
+    assert!(
+        silent.is_empty(),
+        "each load names the stale sidecar once: {silent:#?}"
+    );
+}
+
+#[test]
+fn the_check_report_carries_the_stale_sidecar_loss() {
+    let dir = tempdir().unwrap();
+    let cadir = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    fs::write(
+        cadmpeg_ir::decode_sidecar_path(&cadir).unwrap(),
+        "{\"edited\": true}",
+    )
+    .unwrap();
+    let report = dir.path().join("check-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            cadir.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let losses: Vec<cadmpeg_ir::report::loss::LossNote> =
+        serde_json::from_value(value["check_report"]["losses"].clone()).unwrap();
+    assert_eq!(losses.len(), 1, "{value:#}");
+    assert_eq!(
+        losses[0].code,
+        cadmpeg_ir::source_fidelity::sidecar_stale_kind()
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
+}

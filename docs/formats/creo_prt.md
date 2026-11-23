@@ -639,6 +639,12 @@ Row bodies end at a valid row-close marker, named-record header, or a following 
 Named-record rows require one defined `orient` byte and one defined `boundary_type` byte from the row header value sets. An absent or undefined discriminator does not define a surface row.
 `geom_id` is unique within one selected namespace. Multiple header-shaped byte
 sequences carrying the same identifier are ambiguous and are not surface rows.
+CADIR decision: where rows read from different streams of one namespace carry
+one `geom_id`, the native surface-row arena states the first row in the order
+the streams are read (CADIR §2.2). Each later row is read and not stated, and
+is charged one `creo/container.surface-row-repeated` loss that names the row
+id and gives the row's stream and offset. The repeated id still types
+no positional surface from either row.
 A nonzero `next_geom_ptr` may reference a rowless face use, so materialization of
 its target is not a row-acceptance condition.
 Plane envelope and post-envelope local-system bodies use the same grammar for

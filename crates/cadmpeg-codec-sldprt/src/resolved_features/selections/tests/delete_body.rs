@@ -148,15 +148,14 @@ fn decode_and_validate_compact_delete_body_selection() {
                 );
             });
         }
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("changes a compact body selection"));
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+        assert!(
+            unwritten
+                .iter()
+                .any(|message| message.contains("changes a compact body selection")),
+            "{unwritten:?}"
+        );
     }
 
     {
@@ -183,15 +182,14 @@ fn decode_and_validate_compact_delete_body_selection() {
                 *mode = cadmpeg_ir::features::operation_settings::BodyRetentionMode::KeepSelected;
             });
         }
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("changes a compact body retention mode"));
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+        assert!(
+            unwritten
+                .iter()
+                .any(|message| message.contains("changes a compact body retention mode")),
+            "{unwritten:?}"
+        );
     }
 
     native.feature_input_lanes[0].body_selections[0]

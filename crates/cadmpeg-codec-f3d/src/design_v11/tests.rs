@@ -687,6 +687,48 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
 }
 
 #[test]
+fn the_root_scope_is_the_root_component_where_its_record_stands_for_the_root() {
+    let root = "f3d:model:component#root";
+    let definitions = [
+        definition(
+            root,
+            ProductDefinition::root(crate::tree::file_root_id(), ExternalDocument::default())
+                .storage,
+            &["f3d:brep:entity#1"],
+        ),
+        definition(
+            "f3d:model:component#a",
+            Storage::Embedded,
+            &["f3d:brep:entity#2"],
+        ),
+    ];
+    let scope = super::scope_definition(&definitions, "").unwrap();
+    assert_eq!(scope.as_str(), root);
+    let scopes = BTreeMap::from([(String::new(), (scope, ()))]);
+    let span = super::span(&definitions, &scopes).remove("").unwrap();
+    assert_eq!(
+        span.definitions
+            .iter()
+            .map(ProductDefinitionId::as_str)
+            .collect::<Vec<_>>(),
+        ["f3d:model:component#a", root]
+    );
+    assert_eq!(
+        span.bodies.iter().map(BodyId::as_str).collect::<Vec<_>>(),
+        ["f3d:brep:entity#1", "f3d:brep:entity#2"]
+    );
+    let stated = [definition(
+        crate::tree::file_root_id().as_str(),
+        ProductDefinition::root(crate::tree::file_root_id(), ExternalDocument::default()).storage,
+        &[],
+    )];
+    assert_eq!(
+        super::scope_definition(&stated, ""),
+        Some(crate::tree::file_root_id())
+    );
+}
+
+#[test]
 fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
     let body = BodyId::mint("f3d:brep:entity#1").unwrap();
     let base = |bodies: Vec<BodyId>| {

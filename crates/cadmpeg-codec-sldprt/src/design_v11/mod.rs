@@ -20,8 +20,10 @@ mod operation;
 mod order;
 mod parameters;
 mod profile_check;
+mod revolve;
 mod sketch;
 pub(crate) mod states;
+mod swept;
 #[cfg(test)]
 mod tests;
 mod tree;
@@ -81,6 +83,8 @@ pub(crate) struct Part<'a> {
     /// The sketch entities read from a curve record of state `0`: curves
     /// outside their sketch's profile.
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The native ids of the configurations whose partition was given up.
+    pub(crate) given_up_configurations: &'a BTreeSet<String>,
 }
 
 /// What [`project`] stated.
@@ -99,9 +103,9 @@ pub(crate) struct Projection {
 /// records, and state the part's root definition. Each configuration that is
 /// not active has its stored state as an evaluation of its own. A rollback
 /// reading that does not fix the position, a configuration whose state cannot
-/// be stated, a sketch or extrude that cannot be typed, a parameter whose
-/// literal is a rounded display, and a dimension whose bare-number text has
-/// no value add their reasons to `losses`. A part whose timeline is empty
+/// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
+/// whose literal is a rounded display, and a dimension whose bare-number text
+/// has no value add their reasons to `losses`. A part whose timeline is empty
 /// states no design, and its equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
@@ -120,6 +124,7 @@ pub(crate) fn project(
         length_places,
         rollback,
         outside_profile,
+        given_up_configurations,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -149,6 +154,11 @@ pub(crate) fn project(
     losses.extend(typed.profile_differs);
     losses.extend(typed.sketch_empty);
     losses.extend(typed.profile_unchecked);
+    losses.extend(typed.revolve_axis_lines);
+    losses.extend(typed.revolve_axis_derived);
+    losses.extend(typed.revolve_boolean_unstated);
+    losses.extend(typed.revolve_profile_differs);
+    losses.extend(typed.revolve_profile_unchecked);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -234,6 +244,7 @@ pub(crate) fn project(
             configurations: &configurations.records,
             active: configurations.active.as_ref(),
             current: &bodies,
+            given_up: given_up_configurations,
         },
         &names,
         losses,

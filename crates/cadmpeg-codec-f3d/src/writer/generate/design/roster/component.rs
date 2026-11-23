@@ -162,7 +162,7 @@ fn aggregate(
                 p::NEXT_PERSISTENT_IDENTITY,
                 Bind::U64(super::super::base_feature::next_identity(
                     ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
-                    ctx.roster.extrude.is_some(),
+                    ctx.roster.item.is_some(),
                 )?),
             ),
             reference(p::RECORD_AD3F9695, 37),

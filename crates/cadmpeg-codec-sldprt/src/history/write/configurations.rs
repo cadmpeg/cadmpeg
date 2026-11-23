@@ -38,6 +38,7 @@ pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
+    edits: &mut super::edits::SourceEdits<'_>,
     exact: impl FnOnce(
         &[crate::records::FeatureInputLane],
     )
@@ -94,11 +95,12 @@ pub(crate) fn prepare_configurations_for_write(
         .as_ref()
         .and_then(|source| source.attributes.get("sldprt_native_configuration_sha256"));
     let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
-    let native_changed = match (&native_hash, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) | (None, Some(_)) => true,
-        (None, None) => false,
-    };
+    let native_changed = !edits.native_unedited()
+        && match (&native_hash, baseline_native) {
+            (Some(current), Some(baseline)) => current != baseline,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
     if baseline_neutral.is_none() && baseline_native.is_none() {
         sync_neutral_configurations(&ir.model.configurations, native);
     } else {
@@ -126,7 +128,7 @@ pub(crate) fn prepare_configurations_for_write(
             .as_ref()
             .map_or(&[][..], |native| native.feature_input_lanes.as_slice());
         let exact = exact(lanes)?;
-        return sync_configuration_design_state(ir, native, annotations, exact.as_ref());
+        return sync_configuration_design_state(ir, native, annotations, exact.as_ref(), edits);
     }
     Ok(Vec::new())
 }
@@ -155,6 +157,7 @@ fn sync_configuration_design_state(
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
+    edits: &mut super::edits::SourceEdits<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let unbound = crate::resolved_features::profiles::ExactProfiles::default();
     let profiles = exact.unwrap_or(&unbound);
@@ -271,16 +274,19 @@ fn sync_configuration_design_state(
     if current_matches {
         return Ok(relation_point_charges(relation_points));
     }
-    let native_design_state_changed = ir.source.as_ref().is_some_and(|source| {
-        source
-            .attributes
-            .get("sldprt_configuration_parameter_values_local_sha256")
-            .is_some_and(|baseline| baseline != &current_parameter_hash)
-            || source
+    // With the caller's native records unedited, a projection that differs
+    // from the baseline shows the writer's own synchronization so far.
+    let native_design_state_changed = !edits.native_unedited()
+        && ir.source.as_ref().is_some_and(|source| {
+            source
                 .attributes
-                .get("sldprt_configuration_feature_states_local_sha256")
-                .is_some_and(|baseline| baseline != &current_feature_hash)
-    });
+                .get("sldprt_configuration_parameter_values_local_sha256")
+                .is_some_and(|baseline| baseline != &current_parameter_hash)
+                || source
+                    .attributes
+                    .get("sldprt_configuration_feature_states_local_sha256")
+                    .is_some_and(|baseline| baseline != &current_feature_hash)
+        });
     if native_design_state_changed {
         if exact.is_none() {
             return Err(CodecError::NotImplemented(
@@ -315,10 +321,15 @@ fn sync_configuration_design_state(
             };
             let current = current.parameter_values.get(parameter_id);
             if current != Some(desired) {
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT display-only relation parameter {} has no writable configuration scalar",
-                    parameter.id.as_str()
-                )));
+                edits.configuration_value_unwritten(
+                    configuration.id.as_str(),
+                    &parameter.id,
+                    format!(
+                        "The value of display-only relation parameter {} in configuration {} is not written; the stored relation keeps its solved value.",
+                        parameter.id.as_str(),
+                        configuration.name.as_deref().unwrap_or(configuration.id.as_str())
+                    ),
+                );
             }
         }
     }

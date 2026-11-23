@@ -30,10 +30,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#348:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -70,8 +67,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "feature",
-                  "value": "sldprt:model:feature#348:0"
+                  "kind": "container",
+                  "value": "sldprt:model:container#timeline"
                 }
               },
               "bodies": [
@@ -643,7 +640,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#348:0 (the sketch feature names no planar sketch)",
+        "message": "1 sketch, 0 extrude and 0 revolve features state their family without operands: the sketch feature names no planar sketch (1: sldprt:model:feature#348:0)",
         "severity": "info"
       },
       {
@@ -655,7 +652,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
         "severity": "warning"
       },
       {

@@ -1051,21 +1051,22 @@ fn admit_dimension(
             }
         }
     }
-    let mut modifiers = Vec::new();
+    let mut modifiers = std::collections::BTreeSet::new();
     for note in notes {
         let modifier = match note.to_ascii_lowercase().as_str() {
-            "auxiliary" => DimensionModifier::Reference,
+            "auxiliary" | "reference" => DimensionModifier::Reference,
             "statistical" => DimensionModifier::Statistical,
             "controlled radius" => DimensionModifier::ControlledRadius,
             "theoretical" if tolerance.is_none() && nominal.is_some() => {
                 tolerance = Some(Tolerance::Basic);
                 continue;
             }
-            _ => DimensionModifier::Other(note.clone()),
+            _ => match cadmpeg_core::text::NonBlankString::new(note.as_str()) {
+                Some(text) => DimensionModifier::Other(text),
+                None => continue,
+            },
         };
-        if !modifiers.contains(&modifier) {
-            modifiers.push(modifier);
-        }
+        modifiers.insert(modifier);
     }
     let mut dimension = PmiDimension::new(kind.clone());
     dimension.nominal = nominal.map(Dimension::Literal);

@@ -1194,5 +1194,6 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
 mod dimensions;
 mod extrude;
 mod planes;
+mod revolve;
 mod roster;
 mod sketch;

@@ -39,6 +39,7 @@ const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
+const EPS_AXES_AXIS_IN_PLANE_DIRECTION_E9: f64 = 1e-9;
 
 fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
     let [x, y, z] = values;
@@ -1098,9 +1099,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     }
                 }
             }
-            if feature.properties.contains_key("AxisOrigin")
-                || feature.properties.contains_key("AxisDirection")
-            {
+            if feature.states_any(&crate::records::REVOLUTION_AXIS_PROPERTIES) {
                 continue;
             }
             let agreed = inputs.get(&feature.id).and_then(|votes| {
@@ -1321,7 +1320,6 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
     >,
     sketches: &[Sketch],
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    const DIRECTION_TOLERANCE: f64 = 1e-9;
     let mut by_id = HashMap::new();
     for feature in features {
         by_id.insert(&feature.id, feature);
@@ -1366,18 +1364,9 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
         else {
             continue;
         };
-        let normal = normal.get();
-        let length = normal.norm();
-        if !length.is_finite() || length <= 0.0 {
+        let Some(in_plane) = axis_in_plane(axis, origin, normal) else {
             continue;
-        }
-        let offset = Vector3::new(
-            axis.origin.x - origin.x,
-            axis.origin.y - origin.y,
-            axis.origin.z - origin.z,
-        );
-        let in_plane = (axis.direction.dot(normal) / length).abs() <= DIRECTION_TOLERANCE
-            && (offset.dot(normal) / length).abs() <= crate::brep::graph::LINEAR_RESOLUTION_MM;
+        };
         if !in_plane && seen.insert(id) {
             let name = by_id
                 .get(id)
@@ -1393,6 +1382,30 @@ pub(crate) fn revolution_axis_off_profile_plane_note<'a>(
             named.count(),
         ))
     })
+}
+
+/// Whether the revolution `axis` lies in the plane through `origin` with
+/// normal `normal`: its direction within `1e-9` of the plane and its point
+/// within the linear resolution of it. `None` where the normal is degenerate.
+pub(crate) fn axis_in_plane(
+    axis: &cadmpeg_ir::features::revolve::RevolutionAxis,
+    origin: cadmpeg_ir::features::geometry::FinitePoint3,
+    normal: cadmpeg_ir::features::geometry::FiniteVector3,
+) -> Option<bool> {
+    let normal = normal.get();
+    let length = normal.norm();
+    if !length.is_finite() || length <= 0.0 {
+        return None;
+    }
+    let offset = Vector3::new(
+        axis.origin.x - origin.x,
+        axis.origin.y - origin.y,
+        axis.origin.z - origin.z,
+    );
+    Some(
+        (axis.direction.dot(normal) / length).abs() <= EPS_AXES_AXIS_IN_PLANE_DIRECTION_E9
+            && (offset.dot(normal) / length).abs() <= crate::brep::graph::LINEAR_RESOLUTION_MM,
+    )
 }
 
 fn profile_roster_construction_axis(

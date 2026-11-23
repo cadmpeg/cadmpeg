@@ -11175,8 +11175,15 @@
                   ]
                 },
                 "rollback": {
-                  "description": "The rollback position.",
-                  "$ref": "#/$defs/Rollback"
+                  "description": "How far the source builds the container. `None` where no stored\nfact the decoder read fixes it.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Rollback"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "additionalProperties": false,
@@ -11184,8 +11191,7 @@
                 "id",
                 "kind",
                 "members",
-                "folders",
-                "rollback"
+                "folders"
               ]
             }
           },
@@ -18962,7 +18968,7 @@
               "const": "other"
             },
             "value": {
-              "type": "string"
+              "$ref": "#/$defs/NonBlankString"
             }
           },
           "additionalProperties": false,
@@ -52575,14 +52581,19 @@
       "description": "What an ordered container is.",
       "oneOf": [
         {
-          "description": "A history timeline.",
+          "description": "A history of any number of bodies.",
           "type": "string",
           "const": "timeline"
         },
         {
-          "description": "An ordered container of one body's features.",
+          "description": "An ordered container whose solid features build one body and act on\nit (a `FreeCAD` `PartDesign` body, a CATIA body).",
           "type": "string",
           "const": "body"
+        },
+        {
+          "description": "A CATIA ordered geometrical set: wireframe and surface features in\norder, each result a body of its own.",
+          "type": "string",
+          "const": "geometrical_set"
         }
       ]
     },
@@ -59460,11 +59471,12 @@
               "const": "dimension"
             },
             "modifiers": {
-              "description": "Qualifiers in source order, each once.",
+              "description": "The qualifiers, a set: each is stated once and their order carries no\nmeaning.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/DimensionModifier"
-              }
+              },
+              "uniqueItems": true
             },
             "nominal": {
               "description": "A literal nominal, or the design parameter that drives the\nannotation.",

@@ -1131,6 +1131,18 @@ sections. A reference denotes a DATA instance or a REFERENCE binding. A
 duplicate name does not determine a unique reference target.
 An open literal or comment provides no continuation boundary.
 
+CADIR decision: the first statement of a repeated instance name, in file
+order across all DATA sections, is the instance, and every reference by the
+name resolves to it (CADIR §2.2). Each later statement of the name is read
+and not stated: its exact source is retained, and it is charged one
+`step/parse.record-omitted` loss that names the instance name and gives the
+copy's byte span. Where the first statement is unreadable, it is given up as
+its own part with the records that need it (CADIR §3.3), and no later
+statement of the name stands in its place: each later readable statement is
+charged as above. A later unreadable statement is given up as its own part,
+and the first statement stands. The repetition gives up neither the file nor
+the DATA section.
+
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
 dimensional exponents of `PLANE_ANGLE_UNIT` are zero. An `SI_UNIT` has an

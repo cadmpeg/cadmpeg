@@ -3,14 +3,559 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "fcstd:design:container#Body",
+            "kind": "body",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DatumPlane"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Sketch"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#AdditiveCylinder"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SketchDatumPoint"
+              }
+            ],
+            "rollback": {
+              "kind": "before",
+              "value": {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SketchDatumPoint"
+              }
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "primitive"
+              }
+            },
+            "refine": false
+          },
+          "id": "fcstd:design:feature#AdditiveCylinder",
+          "name": "AdditiveCylinder",
+          "native_ref": "fcstd:native:object#AdditiveCylinder"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DatumPlane",
+          "name": "DatumPlane",
+          "native_ref": "fcstd:native:object#DatumPlane"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Sketch",
+          "name": "Sketch",
+          "native_ref": "fcstd:native:object#Sketch"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SketchDatumPoint",
+          "name": "SketchDatumPoint",
+          "native_ref": "fcstd:native:object#SketchDatumPoint"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "360[deg]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#AdditiveCylinder:Angle",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Angle",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#AdditiveCylinder:Angle",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#AdditiveCylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 6.283185307179586
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "4[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#AdditiveCylinder:Radius",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Radius",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#AdditiveCylinder:Radius",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#AdditiveCylinder"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "20[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DatumPlane:Length",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Length",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DatumPlane:Length",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DatumPlane"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "0[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Sketch:Placement.Base.x",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.x",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Sketch"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 0.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "0[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Sketch:Placement.Base.y",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.y",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Sketch"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 0.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "3[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Sketch:Placement.Base.z",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.z",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Sketch"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 3.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "5[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Sketch:constraint:1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "point_x",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Sketch"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 5.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "-7[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Sketch:constraint:2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "point_y",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Sketch:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Sketch"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": -7.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Sketch:Placement.Base.x"
+                    }
+                  },
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Sketch:constraint:1"
+                    }
+                  }
+                ],
+                "text": "$0 + $1"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#SketchDatumPoint:Placement.Base.x",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.x",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#SketchDatumPoint:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#SketchDatumPoint"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 5.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Sketch:Placement.Base.y"
+                    }
+                  },
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Sketch:constraint:2"
+                    }
+                  }
+                ],
+                "text": "$0 + $1"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#SketchDatumPoint:Placement.Base.y",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.y",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#SketchDatumPoint:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#SketchDatumPoint"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": -7.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Sketch:Placement.Base.z"
+                    }
+                  }
+                ],
+                "text": "$0"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#SketchDatumPoint:Placement.Base.z",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Placement.Base.z",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#SketchDatumPoint:Placement",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#SketchDatumPoint"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 3.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#AdditiveCylinder"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#Body",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#Body"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -2624,10 +3169,7 @@
       "product_definitions": [
         {
           "bodies": [
-            "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
-            "fcstd:model:body#DatumPlane:Shape:PartShape1.brp:1%40location1",
-            "fcstd:model:body#AdditiveCylinder:Shape:PartShape4.brp:9%40location1",
-            "fcstd:model:body#SketchDatumPoint:Shape:PartShape5.brp:1%40location1"
+            "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1"
           ],
           "bom_properties": {},
           "id": "fcstd:model:product_definition#document:root",
