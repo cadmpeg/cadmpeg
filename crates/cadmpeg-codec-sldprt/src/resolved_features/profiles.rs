@@ -58,7 +58,7 @@ use super::stream_readings::{
     UnboundMarkerReading,
 };
 use super::transforms::{
-    component_sketch_marker_transform, record_top_marker_coordinates,
+    component_sketch_marker_transform, record_component_marker_coordinates,
     sketch_frame_marker_transform, COMPACT_SKETCH_KIND, LEGACY_CONFIG_SKETCH_KIND,
     MARKER_SKETCH_KIND,
 };
@@ -722,8 +722,7 @@ pub(crate) fn project_compact_sketch_profiles(
             else {
                 continue;
             };
-            let top_component =
-                binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
+            let component = binding.principal();
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -771,7 +770,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
-                top_component,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -849,7 +848,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_component);
+                record_component_marker_coordinates(&mut features[feature_index], component);
                 plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -990,7 +989,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_component);
+                record_component_marker_coordinates(&mut features[feature_index], component);
                 plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1066,7 +1065,7 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
-            record_top_marker_coordinates(&mut features[feature_index], top_component);
+            record_component_marker_coordinates(&mut features[feature_index], component);
             plane_bindings.record(&sketch_id, binding);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1601,8 +1600,7 @@ pub(crate) fn project_marker_backed_sketches(
             )
             .or_else(|| feature_frames.get(native_feature.id.as_str()).copied());
             let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
-            let top_component =
-                binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
+            let component = binding.principal();
             let frame = support.map(|support| support.frame).or_else(|| {
                 block_definition.then_some((
                     Point3::new(0.0, 0.0, 0.0),
@@ -1673,7 +1671,10 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
-                        record_top_marker_coordinates(&mut features[feature_index], top_component);
+                        record_component_marker_coordinates(
+                            &mut features[feature_index],
+                            component,
+                        );
                         plane_bindings.record(&sketch_id, binding);
                     }
                     features[feature_index].evaluation.set_definition(
@@ -1767,7 +1768,7 @@ pub(crate) fn project_marker_backed_sketches(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
-                top_component,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -2949,7 +2950,7 @@ pub(crate) fn project_marker_backed_sketches(
                 held_geometry.unbound_readings.push(unbound);
                 continue;
             }
-            record_top_marker_coordinates(&mut features[feature_index], top_component);
+            record_component_marker_coordinates(&mut features[feature_index], component);
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
@@ -3731,11 +3732,11 @@ fn project_detached_legacy_config_sketches(
                     profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                     native_ref: Some(lane.id.clone()),
                 };
-                // The principal Top record that named the frame also names the
+                // The principal record that named the frame also names the
                 // reading of the marker pairs (`sldprt.md` §3.3).
-                let top =
-                    binding == PlaneBinding::Principal(cadmpeg_ir::features::PrincipalPlane::Top);
-                let Some(transform) = component_sketch_marker_transform(&sketch, QUANTUM, top)
+                let component = binding.principal();
+                let Some(transform) =
+                    component_sketch_marker_transform(&sketch, QUANTUM, component.is_some())
                 else {
                     break 'feature_edit;
                 };
@@ -3777,7 +3778,7 @@ fn project_detached_legacy_config_sketches(
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch);
                 plane_bindings.record(&sketch_id, binding);
-                record_top_marker_coordinates(feature, top);
+                record_component_marker_coordinates(feature, component);
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {

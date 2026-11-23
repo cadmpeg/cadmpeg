@@ -90,6 +90,12 @@ fn own_principal_component_record_names_the_profile_plane() {
                 principal_profile_frame(&frames, &index, context, start, payload.len()),
                 principal
             );
+            // The record's source names the plane object that supports the
+            // sketch.
+            assert_eq!(
+                index.principal_profile_source(start, payload.len()),
+                Some(source)
+            );
             assert_eq!(
                 feature_input_sketch_frame(
                     &payload,
@@ -137,13 +143,21 @@ fn own_principal_component_record_names_the_profile_plane() {
                 [context, start, payload.len()],
                 &sketch,
                 QUANTUM,
-                plane == PrincipalPlane::Top,
+                true,
             )
             .unwrap();
-            // Both frames read the marker pair as local sketch coordinates:
-            // Top through its principal record, Right as an on-axis `N=+X,
-            // U=-Z` frame.
+            // The marker pair `(a, b)` is the local sketch coordinate: Top
+            // `(a, 0, -b)`, Right `(0, b, -a)`.
             assert_eq!(transform.apply(point), point.cells());
+            let v_axis = frame.1.cross(frame.2);
+            let model = frame.0.translated(frame.2, 3.0).translated(v_axis, -2.0);
+            assert_eq!(
+                model,
+                match plane {
+                    PrincipalPlane::Top => Point3::new(3.0, 0.0, 2.0),
+                    _ => Point3::new(0.0, -2.0, -3.0),
+                }
+            );
         }
         let declared = super::profile_reference_plane_payload(false);
         let declared_start = b"moCompRefPlane_c".len() + 11;

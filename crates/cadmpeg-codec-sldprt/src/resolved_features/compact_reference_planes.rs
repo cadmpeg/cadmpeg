@@ -21,6 +21,9 @@ pub(super) struct CompactReferencePlaneIndex {
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
     principal_components: Vec<(usize, cadmpeg_ir::features::PrincipalPlane)>,
+    /// The feature number each principal-plane component record stores, at
+    /// the offsets of `principal_components`.
+    principal_sources: Vec<(usize, u32)>,
 }
 
 /// Where a profile's plane reference source came from (`profile_source`).
@@ -41,6 +44,7 @@ impl CompactReferencePlaneIndex {
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
         let mut principal_components = Vec::new();
+        let mut principal_sources = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -67,8 +71,11 @@ impl CompactReferencePlaneIndex {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
-                        if let Some(plane) = compact_principal_reference_plane_record(bytes) {
+                        if let Some((plane, source)) =
+                            compact_principal_reference_plane_record(bytes)
+                        {
                             principal_components.push((start, plane));
+                            principal_sources.push((start, source));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -87,6 +94,7 @@ impl CompactReferencePlaneIndex {
             components,
             component_frames,
             principal_components,
+            principal_sources,
         }
     }
 
@@ -110,6 +118,18 @@ impl CompactReferencePlaneIndex {
         }
         unique_indexed_value(records_in_range(
             &self.principal_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        ))
+    }
+
+    /// The feature number of the plane that the principal-plane component
+    /// records of `[start, end)` name (`sldprt.md` §2), when they store one.
+    pub(super) fn principal_profile_source(&self, start: usize, end: usize) -> Option<u32> {
+        unique_indexed_value(records_in_range(
+            &self.principal_sources,
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
@@ -332,7 +352,7 @@ fn unique_indexed_value<T: Copy + PartialEq>(records: &[(usize, T)]) -> Option<T
 
 fn compact_principal_reference_plane_record(
     bytes: &[u8],
-) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+) -> Option<(cadmpeg_ir::features::PrincipalPlane, u32)> {
     let source = View::u32_le_at(bytes, principal_component::SOURCE)?;
     let selector = View::u32_le_at(bytes, principal_component::SELECTOR)?;
     if source == 0
@@ -368,7 +388,7 @@ fn compact_principal_reference_plane_record(
         View::f64_le_at(bytes, principal_component::BASIS + index * 8)
             .is_some_and(|value| value == expected)
     })
-    .then_some(plane)
+    .then_some((plane, source))
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -492,8 +512,8 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
 }
 
 /// The frame the decoder keeps for a Front reference whose profile holds
-/// principal-plane component records that do not name its plane
-/// (`sldprt-open-items.md` SF-01). No support plane stores it.
+/// principal-plane component records that `principal_profile_frame` does not
+/// bind (`sldprt-open-items.md` SF-01). No support plane stores it.
 fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
@@ -550,8 +570,19 @@ pub(crate) enum PlaneBinding {
     /// frame of the other sketches of its lane.
     LaneFrame,
     /// The Front lane fallback frame (SF-01): a Front reference whose
-    /// profile's principal-plane component records do not name its plane.
+    /// profile's principal-plane component records `principal_profile_frame`
+    /// does not bind.
     FrontFallback,
+}
+
+impl PlaneBinding {
+    /// The principal plane whose own component record gave the frame.
+    pub(crate) fn principal(self) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+        match self {
+            Self::Principal(plane) => Some(plane),
+            _ => None,
+        }
+    }
 }
 
 /// The binding route of each profile sketch whose route is not
@@ -693,8 +724,11 @@ impl PlaneBindings {
             routes.push(format!(
                 "{} lie on the Front lane fallback frame (origin 0,0,0, normal -Y, u-axis -Z), \
                  which no plane of the part stores, because their reference names the Front \
-                 plane and the principal-plane component records of their own object do not \
-                 name their plane, open item SF-01 ({front_fallback})",
+                 plane and the principal-plane component records of their own object bind \
+                 them to no plane by sldprt.md §2: the records name two planes, a \
+                 component frame record lies from the preceding object through the profile, \
+                 or their own object holds a plane reference other than a declared Front \
+                 record, open item SF-01 ({front_fallback})",
                 front_fallback.count(),
             ));
         }

@@ -4240,22 +4240,22 @@ fn resolved_support_component_frame(
     coplanar_plane_frames(reference.as_tuple(), component).then_some(component)
 }
 
-/// The transform of a feature-input profile's marker pairs. `top` is whether
-/// the binding that gave the sketch its frame is a principal Top record
-/// (`PlaneBinding::Principal(Top)`), so the frame and the coordinate reading
-/// come from one decision.
+/// The transform of a feature-input profile's marker pairs. `principal` is
+/// whether the binding that gave the sketch its frame is a principal-plane
+/// component record (`PlaneBinding::Principal`), so the frame and the
+/// coordinate reading come from one decision.
 pub(super) fn feature_input_sketch_marker_transform(
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     interval: [usize; 3],
     sketch: &Sketch,
     quantum: f64,
-    top: bool,
+    principal: bool,
 ) -> Option<MarkerTransform> {
     if resolved_support_component_frame(plane_frames, plane_index, interval).is_some() {
         Some(MarkerTransform::identity())
     } else {
-        component_sketch_marker_transform(sketch, quantum, top)
+        component_sketch_marker_transform(sketch, quantum, principal)
     }
 }
 
