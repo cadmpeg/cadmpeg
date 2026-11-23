@@ -1038,17 +1038,10 @@ offset = 0
 size = 16
 note = "§9.2 states no field before the state word."
 
-[[record.field]]
-name = "state"
-offset = 16
-type = "u32"
-source = "spec"
-anchor = "| 16 | `u32` state word; bit `0x04` set states that the occurrence is suppressed |"
-
 [[record.gap]]
-offset = 20
-size = 93
-note = "§9.2 states no field between the state word and the site identifier."
+offset = 16
+size = 97
+note = "The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier."
 
 [[record.field]]
 name = "site"

@@ -346,8 +346,6 @@ pub(crate) mod references_collection {
 pub(crate) mod assembly_reference {
     /// Record length in bytes. Spec §9.2.
     pub(crate) const LEN: usize = 229;
-    /// Offset of `state` (`u32`, little-endian). Spec §9.2.
-    pub(crate) const STATE: usize = 16;
     /// Offset of `site` (`u32`, little-endian). Spec §9.2.
     pub(crate) const SITE: usize = 113;
     /// Offset of `rotation` (`f64[9]`, little-endian). Spec §9.2.
