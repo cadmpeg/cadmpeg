@@ -8,7 +8,7 @@ use cadmpeg_ir::math::Point2;
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
 #[test]
-fn unreadable_text_keeps_its_sibling_text() {
+fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
     use crate::design::test_support::{design_type, primary_record};
 
     let mut unreadable = sketch_text_record(
