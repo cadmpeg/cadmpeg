@@ -153,13 +153,6 @@ pub(crate) enum SldprtLossCode {
     /// `sgSketch` curve record states an arc or another form that gives no
     /// entity.
     SketchArcRecordConflict,
-    /// A sketch keeps the retained Front fallback frame although its profile
-    /// holds principal component records, because `sldprt.md` §3.3 does not
-    /// place the profile: its Front declaration is the feature-input lane's
-    /// default, another declaration or a custom component record lies beside
-    /// the records, or the records name more than one plane. The note states
-    /// which.
-    SketchPlaneAssumed,
     /// A sketch marker that the marker layouts skip and only its `sgSketch`
     /// record admits gives no entity, because that record gives none in the
     /// sketch.
@@ -170,9 +163,12 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
-    /// A profile sketch is placed on the Top frame through the plane its
-    /// feature-input reference names, a binding open item DI-73 questions.
-    SketchTopPlaneBindingAssumed,
+    /// A profile sketch lies on a plane the decoder assumes (open item
+    /// DI-73): the plane that the preceding object's or the lane's plane
+    /// reference names, the Top plane its feature-input reference names, the
+    /// only frame of its legacy configuration lane, or the Front lane fallback
+    /// frame (SF-01).
+    SketchPlaneBindingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A sketch handle takes the arc of its `sgSketch` curve record although
@@ -587,11 +583,10 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
-        Self::SketchPlaneAssumed,
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
-        Self::SketchTopPlaneBindingAssumed,
+        Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
@@ -794,11 +789,10 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
-            Self::SketchPlaneAssumed => "sketch.plane-assumed",
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
-            Self::SketchTopPlaneBindingAssumed => "sketch.top-plane-binding-assumed",
+            Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -1065,12 +1059,11 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
-            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
-            | Self::SketchTopPlaneBindingAssumed
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1355,13 +1348,12 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
-            | Self::SketchPlaneAssumed
             | Self::SketchMarkerRecordUnread
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
-            | Self::SketchTopPlaneBindingAssumed
+            | Self::SketchPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1626,11 +1618,10 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
-                "sketch.plane-assumed",
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
-                "sketch.top-plane-binding-assumed",
+                "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",
