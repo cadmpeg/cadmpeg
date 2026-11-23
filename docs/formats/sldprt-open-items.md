@@ -1328,3 +1328,19 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** A reference-plane object with angular `D1` and a complete frame carries that frame as direct datum-plane placement, and the 121-byte angular frame stores a u-axis, a normal and a v-axis (`sldprt.md` §2). An angled plane can read u-axis `(0,1,0)` while the dual-frame offset planes whose source it is store its frame with u-axis `(0.707,0,-0.707)` and the same normal: the Front frame turned about `Y` by the plane's angle. A sibling angled plane turned the other way reads the u-axis its offset planes store. The sketches on its offset planes take the u-axis those planes store.
 
 **Need.** Angled planes whose offset planes store their source frame, compared field by field with the angular frame, and the B-rep of features sketched on an angled plane itself.
+
+### DI-85. Revolution axes that lie outside the profile plane
+
+**Question.** Which plane does the profile sketch of a revolution lie on where the axis read from its `moLineRef_w` record lies outside the plane the decoder binds the sketch to?
+
+**Known.** The record ends with its tail, a scalar, a point and a unit direction (`sldprt.md` §2). The decoder keeps such an axis and names the revolution under `feature.revolve-axis-off-profile-plane`. Each such axis compared with the B-rep is the axis of a B-rep cylinder, cone or torus of the part, or passes through the centre of a B-rep sphere of the part. An axis runs parallel to the bound plane at an offset, along its normal, or oblique to it. The decoder tests the axis against the plane at `1e-8` m, the usual value of the BODY node's `resolution_linear` field (`sldprt.md` §4.1), in place of the value the part states. The sketches are bound by the plane records of open item DI-73. The bound plane of an offset reference plane can itself be misplaced: the decoder places it at the distance the history text of its `D1` displays, rounded to the displayed decimals, and reads a number without a unit as millimetres whatever the document's length unit. A profile sketch on such a plane can lie on a plane that holds its axis while the bound plane does not.
+
+**Need.** For each revolution named, the plane record of its profile sketch, compared with the plane through the stored axis that holds the most profile points on B-rep vertices.
+
+### DI-86. Words before the scalar record of a revolution `moLineRef_w` record
+
+**Question.** What do the words before the scalar record store in a revolution `moLineRef_w` record whose prefix the forms of `sldprt.md` §2 do not describe?
+
+**Known.** Each such record holds two `c7 cf ff ff` handle words, then a zero u32, a stream address, zero bytes, and the tail of `sldprt.md` §2 with its zero byte before a class declaration or an instance token. One prefix form has the source cell, the u32 values `0`, a nonzero variant, `1`, `0`, a nonzero stream address, a nonzero u32 eight bytes before the handles, and a zero stream address after the handles. Another has a source identifier and a nonzero identity with a null token and no `ff ff ff ff` word, in an interval that also declares an `moCompRefAxis_c` record. The decoder reads the axis from the tail of such a record and names the revolution under `feature.revolve-axis-record-prefix-unread`. Where the tails of several such records in one interval state different axes, the decoder takes no axis from them.
+
+**Need.** For each prefix form, the profile object its source cell names, compared with the profile the revolution consumes, and the record that the u32 before the handles addresses.

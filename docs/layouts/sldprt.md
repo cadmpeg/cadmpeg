@@ -2748,6 +2748,36 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_line_reference_record_tail`
+
+Spec §2 · layout: byte offsets · size: 57 B
+
+Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `scalar` | `f64` | little | spec | one positive scalar at tail offset `+0` |
+| 8 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at tail offset `+8` |
+| 32 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at tail offset `+32` |
+| 56 | 1 | `zero` | `bytes[1]` | little | spec | one zero byte at tail offset `+56` · value `[0]` |
+
+## `revolution_line_reference_nested_end`
+
+Spec §2 · layout: byte offsets · size: 6 B
+
+Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `zero` | `bytes[5]` | little | spec | five zero bytes at end offset `+0` · value `[0, 0, 0, 0, 0]` |
+| 5 | 1 | `selector` | `u8` | little | spec | a nonzero selector byte at end offset `+5` |
+
 ## `cosmetic_thread_component_edge_wrapper_prefix`
 
 Spec §2 · layout: byte offsets · size: 17 B
