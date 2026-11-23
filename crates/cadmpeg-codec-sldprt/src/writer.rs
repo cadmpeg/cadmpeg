@@ -251,7 +251,7 @@ pub(crate) fn write_semantic_with_records(
             // The source holds no partition either.
             Vec::new()
         } else {
-            empty_partitions(ir, &mut bodiless_partitions)?
+            faceless_partitions(ir, length_scale, &mut bodiless_partitions)?
         }
     } else {
         let encoded = body_drop::encode_without_unwritable_bodies(ir, |ir| {
@@ -1158,30 +1158,37 @@ fn generated_partitions(
 ) -> Result<(Sections, Vec<String>), CodecError> {
     let mut bodiless = Vec::new();
     if ir.geometry.faces.is_empty() {
-        let partitions = empty_partitions(ir, &mut bodiless)?;
+        let partitions = faceless_partitions(ir, length_scale, &mut bodiless)?;
         return Ok((partitions, bodiless));
     }
     if !ir.model.configurations.is_empty() {
         let partitions = configuration_partitions(ir, length_scale, &mut bodiless)?;
         return Ok((partitions, bodiless));
     }
-    let schema_32001 = ir
+    Ok((vec![partition(ir, 0, length_scale)?], bodiless))
+}
+
+/// The `Config-<index>-Partition` section that holds the bodies of
+/// `document`.
+fn partition(
+    document: &CadIr,
+    index: u32,
+    length_scale: f64,
+) -> Result<(String, Vec<u8>), CodecError> {
+    let schema_32001 = document
         .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Sheet);
-    let body = brep_body(ir, length_scale, schema_32001)?;
+    let body = brep_body(document, length_scale, schema_32001)?;
     let schema = if schema_32001 {
         "SCH_SW_32001_11000"
     } else {
         "SCH_SW_33103_11000"
     };
     Ok((
-        vec![(
-            "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema)?,
-        )],
-        bodiless,
+        format!("Contents/Config-{index}-Partition"),
+        parasolid_stream(&body, schema)?,
     ))
 }
 
@@ -1233,25 +1240,10 @@ pub(crate) fn configuration_partitions(
                     configuration.id.as_str()
                 ))
             })?;
-            let Some(subset) = subset else {
-                return bodiless_partition(index, bodiless);
-            };
-            let subset = subset?;
-            let schema_32001 = subset
-                .geometry
-                .bodies
-                .iter()
-                .any(|body| body.kind == BodyKind::Sheet);
-            let body = brep_body(&subset, length_scale, schema_32001)?;
-            let schema = if schema_32001 {
-                "SCH_SW_32001_11000"
-            } else {
-                "SCH_SW_33103_11000"
-            };
-            Ok((
-                format!("Contents/Config-{index}-Partition"),
-                parasolid_stream(&body, schema)?,
-            ))
+            match subset {
+                Some(subset) => partition(&subset?, index, length_scale),
+                None => bodiless_partition(index, bodiless),
+            }
         })
         .collect()
 }
@@ -1289,26 +1281,35 @@ fn stored_state(
     Some(subset)
 }
 
-/// One partition per indexed configuration, or `Config-0`, each holding no
-/// body. A file with no partition is not an SLDPRT part its readers detect.
-fn empty_partitions(
+/// The partitions of a document whose geometry holds no face: one per
+/// indexed configuration, or `Config-0`. A configuration whose evaluation
+/// holds the state the design stores for it writes that state, as
+/// [`configuration_partitions`] does; every other partition holds no body.
+/// A file with no partition is not an SLDPRT part its readers detect.
+fn faceless_partitions(
     ir: &CadIr,
+    length_scale: f64,
     bodiless: &mut Vec<String>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    let mut indices = ir
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| configuration.source_index)
-        .collect::<Vec<_>>();
-    indices.sort_unstable();
-    indices.dedup();
+    let mut indices = BTreeMap::<u32, Option<CadIr>>::new();
+    for configuration in &ir.model.configurations {
+        let Some(index) = configuration.source_index else {
+            continue;
+        };
+        let state = indices.entry(index).or_default();
+        if state.is_none() {
+            *state = stored_state(ir, configuration);
+        }
+    }
     if indices.is_empty() {
-        indices.push(0);
+        indices.insert(0, None);
     }
     indices
         .into_iter()
-        .map(|index| bodiless_partition(index, bodiless))
+        .map(|(index, state)| match state {
+            Some(state) => partition(&state, index, length_scale),
+            None => bodiless_partition(index, bodiless),
+        })
         .collect()
 }
 

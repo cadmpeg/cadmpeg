@@ -475,9 +475,15 @@ pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
     )
 }
 
-/// The written document holds no face and no tessellation.
+/// The written document holds no face and no tessellation: the geometry
+/// holds none, and no state the design stores for a configuration, which
+/// the writer writes as that configuration's partition, holds a face.
 pub(super) fn empty_output(ir: &CadIr) -> Option<LossNote> {
-    (ir.geometry.faces.is_empty() && ir.model.tessellations.is_empty())
+    let stored_face = ir.model.configurations.iter().any(|configuration| {
+        crate::decode::retired_states::stored_state(ir, configuration)
+            .is_some_and(|(_, records)| !records.faces.is_empty())
+    });
+    (ir.geometry.faces.is_empty() && ir.model.tessellations.is_empty() && !stored_face)
         .then(|| output_empty("the written SLDPRT document holds no face and no tessellation"))
 }
 

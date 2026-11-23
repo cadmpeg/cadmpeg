@@ -195,3 +195,115 @@ fn a_stored_configuration_state_writes_its_partition() {
     assert_eq!(reread.ir().geometry.bodies.len(), stored.bodies.len());
     assert_eq!(reread.ir().geometry.faces.len(), stored.faces.len());
 }
+
+/// The losses of a write of `ir` with no retained source, and the bytes.
+fn write_without_source(
+    ir: &cadmpeg_ir::CadIr,
+) -> (Vec<cadmpeg_ir::report::loss::LossNote>, Vec<u8>) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut written = Vec::new();
+    let report = crate::SldprtCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut written)
+        .unwrap();
+    (report.losses, written)
+}
+
+/// The body and face counts of each state the design stores.
+fn stored_states(ir: &cadmpeg_ir::CadIr) -> Vec<(usize, usize)> {
+    ir.design
+        .evaluations
+        .iter()
+        .filter_map(|evaluation| evaluation.content.as_ref())
+        .map(|content| {
+            let records = &content.delta.records;
+            (records.bodies.len(), records.faces.len())
+        })
+        .collect()
+}
+
+/// The message of the write's note on the partitions it writes with no body.
+fn bodiless_note(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Option<&str> {
+    losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "record.residual-unavailable"
+                && loss.message.contains("which hold no body")
+        })
+        .map(|loss| loss.message.as_str())
+}
+
+/// The two configurations of [`two_configurations`], with the partition of
+/// the active one, `Second`, an empty partition/deltas model; `stored`
+/// gives `First` a one-triangle body, else an empty model too.
+fn faceless_active_configuration(stored: bool) -> Vec<u8> {
+    let mut partitions = outer_header();
+    let first = if stored {
+        parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &owned_triangle(0, 700, 0.0),
+        )
+    } else {
+        let mut empty = parasolid_with_body("partition body", "SCH_SW_33103_11000", &[]);
+        empty.extend(parasolid_with_body(
+            "deltas body",
+            "SCH_SW_33103_11000",
+            &[],
+        ));
+        empty
+    };
+    partitions.extend(make_block(0x20, "Contents/Config-0-Partition", &first));
+    let mut empty = parasolid_with_body("partition body", "SCH_SW_33103_11000", &[]);
+    empty.extend(parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &[],
+    ));
+    partitions.extend(make_block(0x21, "Contents/Config-1-Partition", &empty));
+    two_configurations_of(partitions)
+}
+
+/// Where the active configuration holds no face, a write with no retained
+/// source still writes the state another configuration stores, and its note
+/// names only the partition that holds no body.
+#[test]
+fn a_faceless_active_configuration_keeps_the_stored_state_of_another() {
+    let result = decode(faceless_active_configuration(true));
+    let ir = result.ir();
+    assert!(ir.geometry.faces.is_empty());
+    assert!(matches!(stored_states(ir).as_slice(), [(1, faces)] if *faces > 0));
+    let (losses, written) = write_without_source(ir);
+    let note = bodiless_note(&losses).unwrap_or_else(|| panic!("{losses:#?}"));
+    assert!(note.contains("Contents/Config-1-Partition"), "{note}");
+    assert!(!note.contains("Contents/Config-0-Partition"), "{note}");
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "output.empty"),
+        "{losses:#?}"
+    );
+    let reread = decode(written);
+    assert_eq!(stored_states(reread.ir()), stored_states(ir));
+}
+
+/// Where no configuration stores a body, every partition is written with
+/// no body, and the note names each of them.
+#[test]
+fn a_part_with_no_face_writes_every_partition_bodiless() {
+    let result = decode(faceless_active_configuration(false));
+    let ir = result.ir();
+    assert!(ir.geometry.faces.is_empty());
+    assert!(stored_states(ir).iter().all(|(bodies, _)| *bodies == 0));
+    let (losses, _) = write_without_source(ir);
+    let note = bodiless_note(&losses).unwrap_or_else(|| panic!("{losses:#?}"));
+    assert!(note.contains("Contents/Config-0-Partition"), "{note}");
+    assert!(note.contains("Contents/Config-1-Partition"), "{note}");
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "output.empty"),
+        "{losses:#?}"
+    );
+}
