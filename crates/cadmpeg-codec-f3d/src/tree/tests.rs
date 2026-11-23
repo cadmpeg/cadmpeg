@@ -442,7 +442,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
                     "f3d:model:occurrence#bolt"
                 }),
                 occurrence_path: if unique {
-                    vec![KEY.to_owned(), "inside".to_owned()]
+                    vec!["bolt".to_owned(), "inside".to_owned()]
                 } else {
                     vec!["inside".to_owned()]
                 },
@@ -578,11 +578,12 @@ fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
     assert_eq!(selected_world_pose(&ir), original);
 }
 
-/// A joint operand names an inserted-document instance, whose identity does
-/// not end in its design key, by that identity: no consumer finds the instance
-/// by the key at the end of a path.
+/// A joint operand names an inserted-document instance in `occurrence_path` by
+/// the final segment of its identity, not by its design key: a consumer finds
+/// a path element by the end of an occurrence identity, which for an external
+/// placement is `xref-N-M`.
 #[test]
-fn an_operand_names_an_external_instance_whose_identity_lacks_its_key() {
+fn an_operand_names_an_external_instance_by_its_identity_segment() {
     const KEY: &str = "cb5cf1ed-f1ee-4933-8103-02ea3faf9dd6";
     const NATIVE: &str = "f3d:xref:reference#0-occurrence-0";
     const PART: &str = "f3d:model:component#part";
@@ -628,8 +629,8 @@ fn an_operand_names_an_external_instance_whose_identity_lacks_its_key() {
             .operand
             .container,
         cadmpeg_ir::products::OperandContainer::Occurrence {
-            occurrence: occurrence_id("f3d:model:occurrence#xref-0-0"),
-            occurrence_path: Vec::new(),
+            occurrence: occurrence_id("f3d:model:occurrence#a"),
+            occurrence_path: vec!["xref-0-0".to_owned()],
         }
     );
 }
@@ -765,7 +766,7 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
             .container,
         cadmpeg_ir::products::OperandContainer::Occurrence {
             occurrence: occurrence_id("f3d:model:occurrence#xref-0-1"),
-            occurrence_path: vec![native_key.to_owned()],
+            occurrence_path: vec!["g".to_owned()],
         }
     );
     own_once(&mut ir, &scopes);

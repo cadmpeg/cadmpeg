@@ -126,8 +126,8 @@ pub(crate) fn validate_assembly_projection(
                         && child
                             .native_ref
                             .as_deref()
-                            .and_then(|id| keys.get(id))
-                            .is_some_and(|native_key| native_key.eq_ignore_ascii_case(key))
+                            .is_some_and(|id| keys.contains_key(id))
+                        && crate::tree::identity_segment(&child.id).eq_ignore_ascii_case(key)
                 });
                 match (children.next(), children.next()) {
                     (Some(child), None) => {

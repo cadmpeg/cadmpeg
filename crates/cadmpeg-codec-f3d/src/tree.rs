@@ -283,6 +283,16 @@ pub(crate) fn parent_ids_in_members(
         .collect()
 }
 
+/// The final segment of an occurrence identity: the element that names the
+/// occurrence in an operand `occurrence_path`.
+pub(crate) fn identity_segment(identity: &OccurrenceId) -> &str {
+    identity
+        .as_str()
+        .rsplit(['#', ':'])
+        .next()
+        .unwrap_or_default()
+}
+
 /// Whether the identity of `child` extends that of `parent`.
 fn extends(child: &OccurrenceId, parent: &OccurrenceId) -> bool {
     child
@@ -794,15 +804,6 @@ pub(crate) fn own_once(
                         .then(|| key.to_owned())
                 })
         };
-        let key_ends_identity = |canonical: usize| {
-            native_key(canonical).is_some_and(|key| {
-                identities[&canonical]
-                    .as_str()
-                    .rsplit(['#', ':'])
-                    .next()
-                    .is_some_and(|end| end.eq_ignore_ascii_case(&key))
-            })
-        };
         let mut keyed = BTreeMap::new();
         for &at in instances.keys().filter(|&&at| !nodes[at].transparent) {
             if let Some(key) = native_key(at) {
@@ -830,22 +831,16 @@ pub(crate) fn own_once(
             if chain.is_empty() || instances[&nodes[top].canonical].len() != 1 {
                 continue;
             }
-            // An occurrence that only one instance holds is named by its
-            // identity. Its native key names it only where that identity ends
-            // in the key, as a consumer finds an occurrence by the end of its
-            // identity; an external placement's identity does not.
-            if instances[&node.canonical].len() == 1 && !key_ends_identity(node.canonical) {
-                continue;
-            }
             let keys = chain
                 .into_iter()
                 .rev()
                 .map(|at| {
                     let key = native_key(nodes[at].canonical)?;
+                    let identity = &identities[&nodes[at].canonical];
                     let target = keyed
                         .get(&(definition_id(nodes[at].owner), key.to_ascii_lowercase()))
                         .and_then(Option::as_ref);
-                    (target == Some(&identities[&nodes[at].canonical])).then_some(key)
+                    (target == Some(identity)).then(|| identity_segment(identity).to_owned())
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(keys) = keys {

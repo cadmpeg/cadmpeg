@@ -444,6 +444,7 @@ fn validate_loaded(
     images::validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
+    assembly::validate_joint_operand_paths(&ctx, &mut findings);
     validate_xref_placement_sources(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings);
     validate_design_intent_failures(&ctx, &mut findings);

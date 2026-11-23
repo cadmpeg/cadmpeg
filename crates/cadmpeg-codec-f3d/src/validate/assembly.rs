@@ -753,3 +753,54 @@ pub(super) fn valid_component_pattern_occurrences(
                 })
         })
 }
+
+/// Every element of a joint operand `occurrence_path` equals the final
+/// identity segment of exactly one child of the occurrence the path has
+/// reached, starting at the container occurrence. A path that reaches an
+/// occurrence with no child in the model continues inside the document of
+/// that occurrence, which the model does not hold.
+pub(super) fn validate_joint_operand_paths(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
+    use cadmpeg_ir::products::OperandContainer;
+    let model = &ctx.ir.model;
+    if model.assembly_joints.is_empty() {
+        return;
+    }
+    let mut children =
+        HashMap::<&cadmpeg_ir::ids::OccurrenceId, Vec<&cadmpeg_ir::ids::OccurrenceId>>::new();
+    let parents = crate::tree::parent_ids(&model.product_definitions, &model.occurrences);
+    for occurrence in &model.occurrences {
+        if let Some(parent) = parents.get(&occurrence.id) {
+            children.entry(parent).or_default().push(&occurrence.id);
+        }
+    }
+    for joint in &model.assembly_joints {
+        for connector in joint.connectors() {
+            let OperandContainer::Occurrence {
+                occurrence,
+                occurrence_path,
+            } = &connector.operand.container
+            else {
+                continue;
+            };
+            let mut reached = occurrence;
+            for element in occurrence_path {
+                let Some(candidates) = children.get(reached) else {
+                    break;
+                };
+                let mut matches = candidates.iter().filter(|child| {
+                    crate::tree::identity_segment(child).eq_ignore_ascii_case(element)
+                });
+                let (Some(child), None) = (matches.next(), matches.next()) else {
+                    push_constant_finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        "Fusion joint operand occurrence path names no single child occurrence",
+                        Some(joint.id.as_str().to_owned()),
+                    );
+                    break;
+                };
+                reached = child;
+            }
+        }
+    }
+}

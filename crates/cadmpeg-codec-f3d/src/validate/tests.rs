@@ -32,6 +32,7 @@ mod body_ownership;
 mod chamfer_sets;
 mod component_insert;
 mod component_occurrences;
+mod joint_operand_paths;
 mod configurations;
 mod construction_group;
 mod construction_identity;

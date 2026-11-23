@@ -714,9 +714,10 @@ pub enum OperandContainer {
     Occurrence {
         /// Placed local occurrence that owns the object.
         occurrence: OccurrenceId,
-        /// Native keys of the nested occurrences, outermost first, that lead
-        /// from the prototype of `occurrence` to the document that owns the
-        /// object. Empty when the prototype of `occurrence` owns the object.
+        /// Final identity segments of the nested occurrences, outermost
+        /// first, that lead from the prototype of `occurrence` to the
+        /// document that owns the object. Empty when the prototype of
+        /// `occurrence` owns the object.
         occurrence_path: Vec<String>,
     },
     /// Object in an external document.
@@ -759,8 +760,8 @@ impl JointOperand {
     }
 
     /// Constructs an operand owned by a document nested below a local
-    /// occurrence. `occurrence_path` lists the native keys of the nested
-    /// occurrences, outermost first.
+    /// occurrence. `occurrence_path` lists the final identity segments of the
+    /// nested occurrences, outermost first.
     pub fn nested_occurrence(
         occurrence: OccurrenceId,
         occurrence_path: Vec<String>,
