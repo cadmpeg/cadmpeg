@@ -2440,9 +2440,9 @@ The Right frame is
 `origin=(0,0,0)`, `u=(0,0,-1)`, `v=(0,1,0)`, `normal=(1,0,0)`.
 The stored marker pair `(a,b)` supplies sketch coordinates `(u,v)=(a,b)`.
 A profile point maps to `(a,0,-b)` in model space on Top and to `(0,b,-a)` on
-Right. The record's source identifier names the built-in plane that supports
-the sketch. The same coordinate mapping applies to profile curves,
-construction points, dimensions, constraints and profile-derived axes.
+Right. The principal plane that the selector names supports the sketch. The
+same coordinate mapping applies to profile curves, construction points,
+dimensions, constraints and profile-derived axes.
 
 ---
 

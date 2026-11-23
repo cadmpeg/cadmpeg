@@ -9,7 +9,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
 use super::compact_reference_planes::CompactReferencePlaneIndex;
-use super::curves::lane_sketch_plane_frames;
+use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame};
 use super::holes::{feature_object_byte_ranges, principal_profile_frame};
 use super::scalars::FeatureObjectNames;
 
@@ -49,13 +49,12 @@ pub(crate) fn sketch_supports<'a>(
             let Some(&(context, start, end)) = ranges.get(sketch.id.as_str()) else {
                 continue;
             };
-            let object =
-                if principal_profile_frame(&plane_frames, &index, context, start, end).is_some() {
-                    index.principal_profile_source(start, end)
-                } else {
-                    index.profile_source(context, start, end)
-                };
-            let plane = object.and_then(|object| by_object.get(&object).copied().flatten());
+            let plane = match principal_profile_frame(&plane_frames, &index, context, start, end) {
+                Some((_, plane)) => principal_plane_feature(&plane_frames, &by_object, plane),
+                None => index
+                    .profile_source(context, start, end)
+                    .and_then(|object| by_object.get(&object).copied().flatten()),
+            };
             let Some(plane) = plane else {
                 continue;
             };
@@ -73,4 +72,60 @@ pub(crate) fn sketch_supports<'a>(
         .into_iter()
         .filter_map(|(sketch, plane)| Some((sketch, plane?)))
         .collect()
+}
+
+/// The history feature of the lane's principal plane `plane`, where one
+/// feature is that plane.
+fn principal_plane_feature<'a>(
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    by_object: &HashMap<u32, Option<&'a str>>,
+    plane: cadmpeg_ir::features::PrincipalPlane,
+) -> Option<&'a str> {
+    let mut features = plane_frames
+        .iter()
+        .filter(|(_, frame)| frame.principal == Some(plane))
+        .filter_map(|(object, _)| by_object.get(object).copied().flatten());
+    let feature = features.next()?;
+    features.all(|other| other == feature).then_some(feature)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::principal_plane_feature;
+    use crate::resolved_features::curves::SketchPlaneFrame;
+    use cadmpeg_ir::features::PrincipalPlane;
+    use std::collections::HashMap;
+
+    /// A profile that its own principal record places is supported by the
+    /// lane's datum of that plane, whatever object number the datum has.
+    #[test]
+    fn a_principal_binding_names_the_lane_datum_of_its_plane() {
+        let frames = HashMap::from([
+            (2, SketchPlaneFrame::principal(PrincipalPlane::Front)),
+            (4, SketchPlaneFrame::principal(PrincipalPlane::Top)),
+            (5, SketchPlaneFrame::principal(PrincipalPlane::Right)),
+        ]);
+        let by_object = HashMap::from([(2, Some("front")), (4, Some("top")), (5, Some("right"))]);
+        assert_eq!(
+            principal_plane_feature(&frames, &by_object, PrincipalPlane::Top),
+            Some("top")
+        );
+        assert_eq!(
+            principal_plane_feature(&frames, &by_object, PrincipalPlane::Right),
+            Some("right")
+        );
+        let mut twice = frames.clone();
+        twice.insert(9, SketchPlaneFrame::principal(PrincipalPlane::Top));
+        let mut two_datums = by_object.clone();
+        two_datums.insert(9, Some("other top"));
+        assert_eq!(
+            principal_plane_feature(&twice, &two_datums, PrincipalPlane::Top),
+            None
+        );
+        two_datums.insert(9, Some("top"));
+        assert_eq!(
+            principal_plane_feature(&twice, &two_datums, PrincipalPlane::Top),
+            Some("top")
+        );
+    }
 }

@@ -21,9 +21,6 @@ pub(super) struct CompactReferencePlaneIndex {
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
     principal_components: Vec<(usize, cadmpeg_ir::features::PrincipalPlane)>,
-    /// The feature number each principal-plane component record stores, at
-    /// the offsets of `principal_components`.
-    principal_sources: Vec<(usize, u32)>,
 }
 
 /// Where a profile's plane reference source came from (`profile_source`).
@@ -44,7 +41,6 @@ impl CompactReferencePlaneIndex {
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
         let mut principal_components = Vec::new();
-        let mut principal_sources = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -71,11 +67,8 @@ impl CompactReferencePlaneIndex {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
-                        if let Some((plane, source)) =
-                            compact_principal_reference_plane_record(bytes)
-                        {
+                        if let Some(plane) = compact_principal_reference_plane_record(bytes) {
                             principal_components.push((start, plane));
-                            principal_sources.push((start, source));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -94,7 +87,6 @@ impl CompactReferencePlaneIndex {
             components,
             component_frames,
             principal_components,
-            principal_sources,
         }
     }
 
@@ -118,18 +110,6 @@ impl CompactReferencePlaneIndex {
         }
         unique_indexed_value(records_in_range(
             &self.principal_components,
-            start,
-            end,
-            COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |(offset, _)| *offset,
-        ))
-    }
-
-    /// The feature number of the plane that the principal-plane component
-    /// records of `[start, end)` name (`sldprt.md` §2), when they store one.
-    pub(super) fn principal_profile_source(&self, start: usize, end: usize) -> Option<u32> {
-        unique_indexed_value(records_in_range(
-            &self.principal_sources,
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
@@ -352,7 +332,7 @@ fn unique_indexed_value<T: Copy + PartialEq>(records: &[(usize, T)]) -> Option<T
 
 fn compact_principal_reference_plane_record(
     bytes: &[u8],
-) -> Option<(cadmpeg_ir::features::PrincipalPlane, u32)> {
+) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     let source = View::u32_le_at(bytes, principal_component::SOURCE)?;
     let selector = View::u32_le_at(bytes, principal_component::SELECTOR)?;
     if source == 0
@@ -388,7 +368,7 @@ fn compact_principal_reference_plane_record(
         View::f64_le_at(bytes, principal_component::BASIS + index * 8)
             .is_some_and(|value| value == expected)
     })
-    .then_some((plane, source))
+    .then_some(plane)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {

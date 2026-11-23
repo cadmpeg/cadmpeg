@@ -154,7 +154,6 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
         principal_components: Vec::new(),
-        principal_sources: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
     for i in 0..records {
@@ -179,7 +178,6 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
         principal_components: Vec::new(),
-        principal_sources: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
@@ -291,10 +289,6 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     assert_eq!(
         CompactReferencePlaneIndex::new(&shifted_right).principal_profile_plane(0, right.len()),
         Some(PrincipalPlane::Right)
-    );
-    assert_eq!(
-        CompactReferencePlaneIndex::new(&shifted_right).principal_profile_source(0, right.len()),
-        Some(5)
     );
     let mut both_right = right.to_vec();
     both_right.extend_from_slice(&right);

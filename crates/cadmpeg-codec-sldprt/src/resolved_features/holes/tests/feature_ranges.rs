@@ -90,12 +90,6 @@ fn own_principal_component_record_names_the_profile_plane() {
                 principal_profile_frame(&frames, &index, context, start, payload.len()),
                 principal
             );
-            // The record's source names the plane object that supports the
-            // sketch.
-            assert_eq!(
-                index.principal_profile_source(start, payload.len()),
-                Some(source)
-            );
             assert_eq!(
                 feature_input_sketch_frame(
                     &payload,
