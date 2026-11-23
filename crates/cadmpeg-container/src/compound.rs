@@ -677,7 +677,8 @@ impl<'a> CompoundSnapshot<'a> {
             CompoundAllocation::Regular => self.parsed.version.sector_size(),
             CompoundAllocation::Mini => MINI_SECTOR_SIZE,
         };
-        let mut remaining = usize::try_from(*logical_size).unwrap_or(usize::MAX);
+        let mut remaining = usize::try_from(*logical_size)
+            .map_err(|_| CodecError::malformed("CFB stream size exceeds the address space"))?;
         let mut views = Vec::new();
         for &sector in located {
             if remaining == 0 {

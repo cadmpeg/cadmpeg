@@ -272,7 +272,7 @@ impl GivenUpPart {
     /// # Errors
     ///
     /// [`CodecError::Malformed`] when the stream name or the id cannot be
-    /// formed, or a resource refusal for the longer loss text.
+    /// formed, or a resource refusal for the restated loss text.
     pub fn nested_in(
         self,
         ctx: &DecodeContext<'_>,
@@ -300,7 +300,6 @@ impl GivenUpPart {
         address.extend_from_slice(container.as_str().as_bytes());
         address.extend_from_slice(&part_address(kind, stream.as_ref(), offset));
         let id = part_id(codec, &address)?;
-        let before = loss.message.len();
         restate_loss(&mut loss, stub.id.as_str(), id.as_str());
         let old_field = format!(
             " stream={:?} offset=",
@@ -313,7 +312,7 @@ impl GivenUpPart {
             );
         }
         ctx.retain_bytes(
-            u64_from_index(loss.message.len().saturating_sub(before)),
+            u64_from_index(loss.message.len()),
             "nested given-up part loss",
         )?;
         loss.provenance =
