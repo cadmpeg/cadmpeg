@@ -260,7 +260,7 @@ impl<'a> Source<'a> {
         Self {
             touched,
             stored,
-            stages: super::multi_transform_stages(objects, properties),
+            stages: multi_transform_stages(objects, properties),
         }
     }
 
@@ -278,6 +278,27 @@ impl<'a> Source<'a> {
             .as_deref()
             .is_some_and(|object| self.stages.contains(object))
     }
+}
+
+/// The objects a `PartDesign::MultiTransform` lists in `Transformations`: the
+/// stages of its layout, which are no features of their own (§6.5).
+fn multi_transform_stages<'a>(
+    objects: &'a [ObjectRecord],
+    properties: &'a [PropertyRecord],
+) -> BTreeSet<&'a str> {
+    let transforms = objects
+        .iter()
+        .filter(|object| object.type_name.ends_with("MultiTransform"))
+        .map(|object| object.id().as_str())
+        .collect::<BTreeSet<_>>();
+    properties
+        .iter()
+        .filter(|property| {
+            property.name == "Transformations" && transforms.contains(property.owner.as_str())
+        })
+        .flat_map(PropertyRecord::links)
+        .filter_map(|link| link.as_ref()?.object())
+        .collect()
 }
 
 /// The design objects of the document and the `PartDesign::Body` objects among

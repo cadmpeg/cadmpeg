@@ -9269,27 +9269,6 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
-/// The objects a `PartDesign::MultiTransform` lists in `Transformations`: the
-/// stages of its layout, which are no features of their own (§6.5).
-pub(crate) fn multi_transform_stages<'a>(
-    objects: &'a [ObjectRecord],
-    properties: &'a [PropertyRecord],
-) -> BTreeSet<&'a str> {
-    let transforms = objects
-        .iter()
-        .filter(|object| object.type_name.ends_with("MultiTransform"))
-        .map(|object| object.id().as_str())
-        .collect::<BTreeSet<_>>();
-    properties
-        .iter()
-        .filter(|property| {
-            property.name == "Transformations" && transforms.contains(property.owner.as_str())
-        })
-        .flat_map(PropertyRecord::links)
-        .filter_map(|link| link.as_ref()?.object())
-        .collect()
-}
-
 /// Mark the bodies a document keeps only as intermediate shapes as not
 /// displayed, and return them: a feature's tool shape (any shape property
 /// other than `Shape`) and the shape of every member of a `PartDesign::Body`,
