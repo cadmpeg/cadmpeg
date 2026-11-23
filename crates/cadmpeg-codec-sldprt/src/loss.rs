@@ -116,6 +116,10 @@ pub(crate) enum SldprtLossCode {
     /// An `Application` element nests deeper than the levels the native history
     /// keeps, so the elements below them are not kept.
     HistoryApplicationNestingCut,
+    /// A Keywords text holds comments, processing instructions, text with
+    /// edge whitespace or namespace prefixes, which the native history does
+    /// not keep.
+    HistoryXmlNormalised,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -352,12 +356,90 @@ pub(crate) enum SldprtLossCode {
     WriterDrivenDimensionsOmitted,
     /// Export omits records named by the counted loss message.
     WriterUnboundAppearancesOmitted,
+    /// Export writes no `SWObjects` material for the appearances or bodies
+    /// named by the counted loss message.
+    WriterMaterialsOmitted,
     /// Export omits records named by the counted loss message.
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
     WriterNativeEnvelopeAuxiliaryOmitted,
+    /// Export writes the unit code in a generated `Units` member that no
+    /// `SolidWorks` file is known to hold.
+    WriterUnitsMemberGenerated,
+    /// Export writes the generated feature history as a cadmpeg summary stream; the native
+    /// feature tree holds none of the source's features.
+    WriterNativeHistorySummary,
+    /// Export writes as zero bytes the native skeleton's byte runs whose fields `sldprt.md`
+    /// does not lay out.
+    WriterNativeSkeletonUnlaidRuns,
+    /// Export writes a generated part without the native skeleton.
+    WriterNativeSkeletonOmitted,
+    /// Export leaves out the named native streams of the generated part.
+    WriterNativeStreamsOmitted,
+    /// Export writes generated sketch marker records with no owning native object.
+    WriterNativeSketchLaneOrphan,
+    /// Export writes the named configurations with a name or partition index it assigned.
+    WriterConfigurationIdentityAssigned,
+    /// Export omits the named bodies.
+    WriterBodiesOmitted,
+    /// Export writes the named faces without their name.
+    WriterFaceNamesOmitted,
+    /// Export writes the named bodies without their name.
+    WriterBodyNamesOmitted,
+    /// Export writes the named appearances with their name and base colour only.
+    WriterAppearanceFieldsOmitted,
+    /// Export omits the named subdivision surfaces.
+    WriterSubdOmitted,
+    /// Export writes the named configuration active, where the document states none or several.
+    WriterActiveConfigurationAssumed,
+    /// Export writes no history record for the named design records.
+    WriterFeaturesOmitted,
+    /// Export writes the sketches without the named constraints.
+    WriterSketchConstraintsOmitted,
+    /// Export bounds the named edges by their vertices, without their range.
+    WriterEdgeRangesOmitted,
+    /// Export omits the named PMI annotations.
+    WriterPmiOmitted,
+    /// Export writes the named parameters with their displayed value, without
+    /// the expression that drives it.
+    WriterParameterExpressionsOmitted,
+    /// Export writes the named approximation caches as exact carriers, without
+    /// the fit tolerance they state.
+    WriterCacheTolerancesOmitted,
+    /// Export writes the named faces with a loop whose coedges do not meet end
+    /// to end, which the ring order cannot state.
+    WriterFaceLoopsUnchained,
+    /// Export writes the named feature selections by their native selection
+    /// token, without the input-topology identities they state.
+    WriterSelectionIdentitiesOmitted,
+    /// Export writes the named features without a construction field their
+    /// SLDPRT record has no field for.
+    WriterFeatureFieldsOmitted,
+    /// Export writes the named parameters under the positional dimension name
+    /// from which the SLDPRT record's construction value is read.
+    WriterParametersRenamed,
+    /// Export writes the named Keywords records with U+FFFD in place of each
+    /// character XML 1.0 does not allow.
+    WriterKeywordsCharactersReplaced,
+    /// Export writes the text items and dimension values of the named
+    /// Keywords records without their edge whitespace, and leaves out text
+    /// items that hold only whitespace, which the reader does not keep.
+    WriterKeywordsTextTrimmed,
+    /// Export writes the named features as Keywords history records without
+    /// the feature objects from which `SolidWorks` rebuilds a part.
+    WriterHistoryKeywordsOnly,
+    /// Export writes the named Keywords features under the `Feature` tag, or
+    /// leaves out the named Keywords elements with their subtrees, because XML
+    /// cannot hold the tag or the reader reads it as another record.
+    WriterHistoryNameNotWritten,
+    /// A regenerated Keywords text cannot be built or is refused by the
+    /// reader, so the source member, or the retained source blocks of the
+    /// member, are written in its place, or no member is written.
+    WriterHistoryRegenerationRefused,
     /// A construction edit that shapes the solid is written as edited, and the
     /// output keeps the stored solid, which shows the state before the edit.
+    /// Without the retained source image, it names the kinds of record that
+    /// differ from the decoded source, whose edit may not shape the solid.
     WriterSolidStaleAfterEdit,
     /// An edit of the active configuration snapshot that the decoder
     /// synthesized from the model is not written; the written configuration
@@ -475,6 +557,7 @@ impl SldprtLossCode {
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
         Self::HistoryApplicationNestingCut,
+        Self::HistoryXmlNormalised,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -572,8 +655,37 @@ impl SldprtLossCode {
         Self::WriterAttributesOmitted,
         Self::WriterDrivenDimensionsOmitted,
         Self::WriterUnboundAppearancesOmitted,
+        Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
+        Self::WriterUnitsMemberGenerated,
+        Self::WriterNativeHistorySummary,
+        Self::WriterNativeSkeletonUnlaidRuns,
+        Self::WriterNativeSkeletonOmitted,
+        Self::WriterNativeStreamsOmitted,
+        Self::WriterNativeSketchLaneOrphan,
+        Self::WriterConfigurationIdentityAssigned,
+        Self::WriterBodiesOmitted,
+        Self::WriterFaceNamesOmitted,
+        Self::WriterBodyNamesOmitted,
+        Self::WriterAppearanceFieldsOmitted,
+        Self::WriterSubdOmitted,
+        Self::WriterActiveConfigurationAssumed,
+        Self::WriterFeaturesOmitted,
+        Self::WriterSketchConstraintsOmitted,
+        Self::WriterEdgeRangesOmitted,
+        Self::WriterPmiOmitted,
+        Self::WriterParameterExpressionsOmitted,
+        Self::WriterCacheTolerancesOmitted,
+        Self::WriterFaceLoopsUnchained,
+        Self::WriterSelectionIdentitiesOmitted,
+        Self::WriterFeatureFieldsOmitted,
+        Self::WriterParametersRenamed,
+        Self::WriterKeywordsCharactersReplaced,
+        Self::WriterKeywordsTextTrimmed,
+        Self::WriterHistoryKeywordsOnly,
+        Self::WriterHistoryNameNotWritten,
+        Self::WriterHistoryRegenerationRefused,
         Self::WriterSolidStaleAfterEdit,
         Self::WriterConfigurationSnapshotEditUnwritten,
         Self::WriterExtrudeReversalUnwritten,
@@ -642,6 +754,7 @@ impl SldprtLossCode {
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
             Self::HistoryApplicationNestingCut => "history.application-nesting-cut",
+            Self::HistoryXmlNormalised => "history.xml-normalised",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -743,10 +856,39 @@ impl SldprtLossCode {
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterDrivenDimensionsOmitted => "writer.driven-dimensions-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
+            Self::WriterMaterialsOmitted => "writer.materials-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
             }
+            Self::WriterUnitsMemberGenerated => "writer.units-member-generated",
+            Self::WriterNativeHistorySummary => "writer.native-history-summary",
+            Self::WriterNativeSkeletonUnlaidRuns => "writer.native-skeleton-unlaid-runs",
+            Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
+            Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
+            Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
+            Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
+            Self::WriterBodiesOmitted => "writer.bodies-omitted",
+            Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
+            Self::WriterBodyNamesOmitted => "writer.body-names-omitted",
+            Self::WriterAppearanceFieldsOmitted => "writer.appearance-fields-omitted",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
+            Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
+            Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
+            Self::WriterPmiOmitted => "writer.pmi-omitted",
+            Self::WriterParameterExpressionsOmitted => "writer.parameter-expressions-omitted",
+            Self::WriterCacheTolerancesOmitted => "writer.cache-tolerances-omitted",
+            Self::WriterFaceLoopsUnchained => "writer.face-loops-unchained",
+            Self::WriterSelectionIdentitiesOmitted => "writer.selection-identities-omitted",
+            Self::WriterFeatureFieldsOmitted => "writer.feature-fields-omitted",
+            Self::WriterParametersRenamed => "writer.parameters-renamed",
+            Self::WriterKeywordsCharactersReplaced => "writer.keywords-characters-replaced",
+            Self::WriterKeywordsTextTrimmed => "writer.keywords-text-trimmed",
+            Self::WriterHistoryKeywordsOnly => "writer.history-keywords-only",
+            Self::WriterHistoryNameNotWritten => "writer.history-name-not-written",
+            Self::WriterHistoryRegenerationRefused => "writer.history-regeneration-refused",
             Self::WriterSolidStaleAfterEdit => "writer.solid-stale-after-edit",
             Self::WriterConfigurationSnapshotEditUnwritten => {
                 "writer.configuration-snapshot-edit-unwritten"
@@ -804,11 +946,40 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
+            Self::WriterUnitsMemberGenerated => Severity::Warning,
+            Self::WriterNativeHistorySummary => Severity::Warning,
+            Self::WriterNativeSkeletonUnlaidRuns => Severity::Warning,
+            Self::WriterNativeSkeletonOmitted => Severity::Warning,
+            Self::WriterNativeStreamsOmitted => Severity::Warning,
+            Self::WriterNativeSketchLaneOrphan => Severity::Warning,
+            Self::WriterConfigurationIdentityAssigned => Severity::Warning,
+            Self::WriterBodiesOmitted => Severity::Warning,
+            Self::WriterFaceNamesOmitted => Severity::Warning,
+            Self::WriterBodyNamesOmitted => Severity::Warning,
+            Self::WriterAppearanceFieldsOmitted => Severity::Warning,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterActiveConfigurationAssumed => Severity::Warning,
+            Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterSketchConstraintsOmitted => Severity::Warning,
+            Self::WriterEdgeRangesOmitted => Severity::Warning,
+            Self::WriterPmiOmitted => Severity::Warning,
+            Self::WriterParameterExpressionsOmitted => Severity::Warning,
+            Self::WriterCacheTolerancesOmitted => Severity::Warning,
+            Self::WriterFaceLoopsUnchained => Severity::Warning,
+            Self::WriterSelectionIdentitiesOmitted => Severity::Warning,
+            Self::WriterFeatureFieldsOmitted => Severity::Warning,
+            Self::WriterParametersRenamed => Severity::Warning,
+            Self::WriterKeywordsCharactersReplaced => Severity::Warning,
+            Self::WriterKeywordsTextTrimmed => Severity::Warning,
+            Self::WriterHistoryKeywordsOnly => Severity::Warning,
+            Self::WriterHistoryNameNotWritten => Severity::Warning,
+            Self::WriterHistoryRegenerationRefused => Severity::Error,
             Self::WriterSolidStaleAfterEdit => Severity::Warning,
             Self::WriterConfigurationSnapshotEditUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalUnwritten => Severity::Warning,
             Self::WriterExtrudeReversalConfigurationCleared => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
+            Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterDrivenDimensionsOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -967,14 +1138,43 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
             | Self::SketchSecondReading
-            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
+            | Self::HistoryRollbackMarkClassInferred
+            | Self::HistoryXmlNormalised => Severity::Info,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
-            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted
+            | Self::WriterHistoryNameNotWritten
+            | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterUnitsMemberGenerated => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeHistorySummary => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSkeletonUnlaidRuns => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterBodyNamesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAppearanceFieldsOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterParameterExpressionsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterCacheTolerancesOmitted => LossTaxonomy::ProceduralReduced,
+            Self::WriterFaceLoopsUnchained => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterSelectionIdentitiesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureFieldsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterParametersRenamed => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsCharactersReplaced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterKeywordsTextTrimmed => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterHistoryKeywordsOnly => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSolidStaleAfterEdit
             | Self::WriterExtrudeReversalUnwritten
             | Self::WriterExtrudeReversalConfigurationCleared => {
@@ -982,6 +1182,7 @@ impl SldprtLossCode {
             }
             Self::WriterConfigurationSnapshotEditUnwritten => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterDrivenDimensionsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -1086,9 +1287,9 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
-            Self::HistoryApplicationNotTransferred | Self::HistoryApplicationNestingCut => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::HistoryApplicationNotTransferred
+            | Self::HistoryApplicationNestingCut
+            | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1259,6 +1460,23 @@ pub(crate) fn spline_refusal(
     ))
 }
 
+/// Number of names that one loss message lists before it counts the rest.
+const NAMED_PER_NOTE: usize = 8;
+
+/// The first [`NAMED_PER_NOTE`] of `names`, then the count of the rest.
+pub(crate) fn named<S: AsRef<str>>(names: &[S]) -> String {
+    let mut text = names
+        .iter()
+        .take(NAMED_PER_NOTE)
+        .map(|name| format!("`{}`", name.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() > NAMED_PER_NOTE {
+        text = format!("{text}, and {} more", names.len() - NAMED_PER_NOTE);
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
@@ -1356,6 +1574,7 @@ mod tests {
                 "history.unread",
                 "history.application-not-transferred",
                 "history.application-nesting-cut",
+                "history.xml-normalised",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1453,8 +1672,37 @@ mod tests {
                 "writer.attributes-omitted",
                 "writer.driven-dimensions-omitted",
                 "writer.unbound-appearances-omitted",
+                "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
+                "writer.units-member-generated",
+                "writer.native-history-summary",
+                "writer.native-skeleton-unlaid-runs",
+                "writer.native-skeleton-omitted",
+                "writer.native-streams-omitted",
+                "writer.native-sketch-lane-orphan",
+                "writer.configuration-identity-assigned",
+                "writer.bodies-omitted",
+                "writer.face-names-omitted",
+                "writer.body-names-omitted",
+                "writer.appearance-fields-omitted",
+                "writer.subd-omitted",
+                "writer.active-configuration-assumed",
+                "writer.features-omitted",
+                "writer.sketch-constraints-omitted",
+                "writer.edge-ranges-omitted",
+                "writer.pmi-omitted",
+                "writer.parameter-expressions-omitted",
+                "writer.cache-tolerances-omitted",
+                "writer.face-loops-unchained",
+                "writer.selection-identities-omitted",
+                "writer.feature-fields-omitted",
+                "writer.parameters-renamed",
+                "writer.keywords-characters-replaced",
+                "writer.keywords-text-trimmed",
+                "writer.history-keywords-only",
+                "writer.history-name-not-written",
+                "writer.history-regeneration-refused",
                 "writer.solid-stale-after-edit",
                 "writer.configuration-snapshot-edit-unwritten",
                 "writer.extrude-reversal-unwritten",

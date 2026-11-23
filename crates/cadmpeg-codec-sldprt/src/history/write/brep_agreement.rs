@@ -4,7 +4,10 @@
 //! The writer cannot regenerate a solid. An edit that shapes it is written as
 //! edited over the stored solid, and `writer.solid-stale-after-edit` names it.
 //! The baseline of every comparison is the retained source image decoded
-//! again, which is the document the caller edited.
+//! again, which is the document the caller edited. Without that image, the
+//! decoder's stamped digests name the kinds of record that differ from the
+//! decoded source, and the writer cannot tell whether the edit shapes the
+//! solid.
 
 use std::collections::{BTreeSet, HashSet};
 use std::io::Cursor;
@@ -13,7 +16,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -25,11 +28,12 @@ use crate::native::SldprtNative;
 /// configuration snapshot cause: one stale-solid loss per construction edit
 /// that shapes the solid, and one loss per snapshot edit the model does not
 /// state. The writer has no modeling kernel, so the output keeps the stored
-/// solid and its caches as they were before the edit.
+/// solid and its caches as they were before the edit. Without the retained
+/// source image, [`imageless_losses`] names what it can tell.
 pub(crate) fn stale_solid_losses(
     ir: &CadIr,
     native: Option<&SldprtNative>,
-    source_image: &[u8],
+    source_image: Option<&[u8]>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
         return Ok(Vec::new());
@@ -45,6 +49,18 @@ pub(crate) fn stale_solid_losses(
     let native_changed = differs(source, "sldprt_native_history_sha256", || {
         history_hash(&hash_ctx, &native.feature_histories)
     })?;
+    let Some(source_image) = source_image else {
+        return imageless_losses(
+            ir,
+            source,
+            &hash_ctx,
+            [
+                (features_changed, "features"),
+                (parameters_changed, "parameters"),
+                (native_changed, "native history records"),
+            ],
+        );
+    };
     let configurations_changed =
         differs(source, "sldprt_neutral_configuration_local_sha256", || {
             configuration_hash(&hash_ctx, &ir.model.configurations)
@@ -79,6 +95,104 @@ pub(crate) fn stale_solid_losses(
         configuration_design_edits(ir, baseline, &named, &mut losses);
     }
     Ok(losses)
+}
+
+/// The losses of a write without the retained source image, which leaves no
+/// decoded baseline: one loss naming the kinds of record whose stamped digest
+/// moved, and one per difference between the synthesized active snapshot and
+/// the model it restates. `changed` holds the feature, parameter and native
+/// history digests.
+fn imageless_losses(
+    ir: &CadIr,
+    source: &SourceMeta,
+    hash_ctx: &DecodeContext<'_>,
+    changed: [(bool, &'static str); 3],
+) -> Result<Vec<LossNote>, CodecError> {
+    // The decoder stamps the configuration digest before it synthesizes the
+    // active snapshot.
+    let configurations_changed =
+        differs(source, "sldprt_neutral_configuration_local_sha256", || {
+            configuration_hash(
+                hash_ctx,
+                &crate::writer::configurations_without_synthesized_snapshot(ir),
+            )
+        })?;
+    let edited = changed
+        .into_iter()
+        .chain([(configurations_changed, "configurations")])
+        .filter_map(|(moved, records)| moved.then_some(records))
+        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    let records = match edited.as_slice() {
+        [] => None,
+        [one] => Some((*one).to_owned()),
+        [rest @ .., last] => Some(format!("{} and {last}", rest.join(", "))),
+    };
+    if let Some(records) = records {
+        losses.push(stale(format!(
+            "The {records} differ from the decoded source. The stored solid is written as decoded, and without the retained source image the writer cannot tell whether the edit shapes it."
+        )));
+    }
+    losses.extend(imageless_snapshot_edits(ir));
+    Ok(losses)
+}
+
+/// One loss per parameter value and feature state in which the synthesized
+/// active snapshot differs from the model. Without a baseline the writer
+/// cannot tell which side was edited; it writes the model either way.
+fn imageless_snapshot_edits(ir: &CadIr) -> Vec<LossNote> {
+    let Some(configuration) = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("sldprt_configuration_snapshot_synthesized")
+        })
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .find(|configuration| configuration.id.as_str() == id.as_str())
+        })
+    else {
+        return Vec::new();
+    };
+    let model = crate::decode::model_snapshot(&ir.model);
+    let configuration_label = configuration_label(configuration);
+    let mut losses = Vec::new();
+    for id in configuration
+        .parameter_values
+        .keys()
+        .chain(model.parameter_values.keys())
+        .collect::<BTreeSet<_>>()
+    {
+        if configuration.parameter_values.get(id) != model.parameter_values.get(id) {
+            losses.push(snapshot_unwritten(format!(
+                "The value of parameter {} in configuration {configuration_label} differs between the configuration snapshot the decoder synthesized from the model and the model. The writer does not write that snapshot, and the written part restates it from the model.",
+                parameter_id_label(id, &ir.model.parameters)
+            )));
+        }
+    }
+    for id in configuration
+        .feature_states
+        .keys()
+        .chain(model.feature_states.keys())
+        .collect::<BTreeSet<_>>()
+    {
+        if configuration.feature_states.get(id) != model.feature_states.get(id) {
+            let label = ir
+                .model
+                .features
+                .iter()
+                .find(|feature| &feature.id == id)
+                .map_or_else(|| id.as_str().to_owned(), feature_label);
+            losses.push(snapshot_unwritten(format!(
+                "The state of feature {label} in configuration {configuration_label} differs between the configuration snapshot the decoder synthesized from the model and the model. The writer does not write that snapshot, and the written part restates it from the model."
+            )));
+        }
+    }
+    losses
 }
 
 /// Whether the digest `current` computes differs from the baseline digest the
@@ -328,10 +442,7 @@ fn configuration_design_edits(
             .configurations
             .iter()
             .find(|candidate| candidate.id == configuration.id);
-        let configuration_label = match configuration.name.as_deref() {
-            Some(name) => format!("\"{name}\" ({})", configuration.id.as_str()),
-            None => configuration.id.as_str().to_owned(),
-        };
+        let configuration_label = configuration_label(configuration);
         let mirror = synthesized
             .as_ref()
             .filter(|(id, _)| configuration.id.as_str() == id.as_str())
@@ -360,7 +471,10 @@ fn configuration_design_edits(
                 if configuration.parameter_values.get(id) != mirror.parameter_values.get(id) {
                     losses.push(snapshot_unwritten(format!(
                         "The value of parameter {} in configuration {configuration_label} is edited only in the configuration snapshot the decoder synthesized from the model. The writer does not write that snapshot, and the written configuration states the value of the model parameter.",
-                        parameter_id_label(id, ir, baseline)
+                        parameter_id_label(
+                            id,
+                            ir.model.parameters.iter().chain(&baseline.model.parameters)
+                        )
                     )));
                 }
             }
@@ -455,13 +569,21 @@ fn snapshot_unwritten(message: impl Into<String>) -> LossNote {
     SldprtLossCode::WriterConfigurationSnapshotEditUnwritten.note(message)
 }
 
-fn parameter_id_label(id: &ParameterId, ir: &CadIr, baseline: &CadIr) -> String {
-    ir.model
-        .parameters
-        .iter()
-        .chain(&baseline.model.parameters)
+fn parameter_id_label<'a>(
+    id: &ParameterId,
+    parameters: impl IntoIterator<Item = &'a DesignParameter>,
+) -> String {
+    parameters
+        .into_iter()
         .find(|parameter| &parameter.id == id)
         .map_or_else(|| id.as_str().to_owned(), parameter_label)
+}
+
+fn configuration_label(configuration: &DesignConfiguration) -> String {
+    match configuration.name.as_deref() {
+        Some(name) => format!("\"{name}\" ({})", configuration.id.as_str()),
+        None => configuration.id.as_str().to_owned(),
+    }
 }
 
 fn feature_label(feature: &Feature) -> String {
