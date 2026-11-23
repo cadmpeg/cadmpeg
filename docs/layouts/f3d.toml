@@ -18055,6 +18055,699 @@ source = "spec"
 anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
 
 
+# Records of a design with several sketch-driven Extrudes (f3d.md §3.1).
+[[record]]
+name = "sketch_extrude_boolean_scope_frame"
+kind = "byte"
+section = "Records of a design with several sketch-driven Extrudes"
+anchor = "the frame from the indexed header through the family name is"
+size = 371
+note = "Offsets are relative to the scope's primary indexed header. The feature item tail of 78 + 2L bytes starts at offset 371."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame"
+value = 1
+
+[[record.field]]
+name = "zero_run_6"
+offset = 21
+type = "bytes[6]"
+source = "spec"
+anchor = "the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "prologue_byte"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "The byte at offset 27 is `0` or `1`"
+
+[[record.field]]
+name = "operation_fields"
+offset = 28
+type = "bytes[42]"
+source = "spec"
+anchor = "the result operation at offset 28 is `1` or `2`"
+note = "The layout `current_extrude_operation_fields`: operation 1 or 2, direction 1, face-extend option 2, direction reversal 0 or 1, geometry kind 1, start support 0, three zero bytes, and the unit profile normal."
+
+[[record.field]]
+name = "absent_slots_0_1"
+offset = 70
+type = "bytes[2]"
+source = "spec"
+anchor = "The seven nullable slots are two absent slots"
+value = [0, 0]
+
+[[record.field]]
+name = "along_distance_owner"
+offset = 72
+type = "bytes[11]"
+source = "spec"
+anchor = "the `AlongDistance` owner, the start record, an absent slot"
+
+[[record.field]]
+name = "start_record"
+offset = 83
+type = "bytes[11]"
+source = "spec"
+anchor = "the `AlongDistance` owner, the start record, an absent slot"
+
+[[record.field]]
+name = "absent_slot_4"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "the `AlongDistance` owner, the start record, an absent slot"
+value = 0
+
+[[record.field]]
+name = "taper_angle_owner"
+offset = 95
+type = "bytes[11]"
+source = "spec"
+anchor = "the `TaperAngle` owner, and an absent slot"
+
+[[record.field]]
+name = "absent_slot_6"
+offset = 106
+type = "u8"
+source = "spec"
+anchor = "the `TaperAngle` owner, and an absent slot"
+value = 0
+
+[[record.field]]
+name = "extent_fields"
+offset = 107
+type = "bytes[17]"
+source = "spec"
+anchor = "and the extent fields of the scope frame"
+note = "The layout `current_extrude_non_target_extent_pair`: first-side extent 1, five zero bytes, target option 0, and second-side extent 0."
+
+[[record.field]]
+name = "zero_run_23"
+offset = 124
+type = "bytes[23]"
+source = "spec"
+anchor = "After the extent fields come twenty-three zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "profile_group_count"
+offset = 147
+type = "u32"
+source = "spec"
+anchor = "the profile-group count `1` and the profile group"
+value = 1
+
+[[record.field]]
+name = "profile_group"
+offset = 151
+type = "bytes[11]"
+source = "spec"
+anchor = "the profile-group count `1` and the profile group"
+
+[[record.field]]
+name = "zero_word_162"
+offset = 162
+type = "u32"
+source = "spec"
+anchor = "the profile-group count `1` and the profile group, a zero u32"
+value = 0
+
+[[record.field]]
+name = "body_node_count"
+offset = 166
+type = "u32"
+source = "spec"
+anchor = "When `n` is `0`"
+value = 0
+
+[[record.field]]
+name = "zero_word_170"
+offset = 170
+type = "u32"
+source = "spec"
+anchor = "a zero u32, the body-operand group count `1`"
+value = 0
+
+[[record.field]]
+name = "body_operand_group_count"
+offset = 174
+type = "u32"
+source = "spec"
+anchor = "the body-operand group count at offset 174"
+value = 1
+
+[[record.field]]
+name = "body_operand_group"
+offset = 178
+type = "bytes[11]"
+source = "spec"
+anchor = "the body-operand group at offset 178"
+
+[[record.field]]
+name = "zero_guid_length"
+offset = 189
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000`"
+value = 36
+
+[[record.field]]
+name = "zero_guid_utf16"
+offset = 193
+type = "u16[36]"
+source = "spec"
+anchor = "the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000`"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 265
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes, the ordered-reference count"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "ordered_reference_count"
+offset = 268
+type = "u32"
+source = "spec"
+anchor = "the ordered-reference count `7` at offset 268"
+value = 7
+
+[[record.field]]
+name = "ordered_references"
+offset = 272
+type = "bytes[77]"
+source = "spec"
+anchor = "The ordered references are stored in ascending record index"
+note = "Seven eleven-byte references: the profile group, the body-operand group, the member of each group, the AlongDistance owner, the start record, and the TaperAngle owner, in ascending record index."
+
+[[record.field]]
+name = "current_history_state"
+offset = 349
+type = "u32"
+source = "spec"
+anchor = "the current history-state identity at offset 349"
+
+[[record.field]]
+name = "family_name_length"
+offset = 353
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 family name `Extrude` or `Extrusion`"
+value = 7
+
+[[record.field]]
+name = "family_name_utf16"
+offset = 357
+type = "u16[7]"
+source = "spec"
+anchor = "the LP-UTF16 family name `Extrude` or `Extrusion`"
+
+[[record]]
+name = "extrude_body_operand_group"
+kind = "byte"
+section = "Records of a design with several sketch-driven Extrudes"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+size = 124
+note = "Offsets are relative to the group's primary indexed header. The paired indexed header starts at offset 124."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "member_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "It stores the member count `k` at offset 21"
+value = 1
+
+[[record.field]]
+name = "whole_body_member"
+offset = 25
+type = "bytes[11]"
+source = "spec"
+anchor = "It stores the member count `k` at offset 21 and `k` references to whole-body members"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 36
+type = "bytes[2]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = [0, 0]
+
+[[record.field]]
+name = "one"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = 1
+
+[[record.field]]
+name = "identity_wrapper"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+
+[[record.field]]
+name = "operand_role"
+offset = 53
+type = "u64"
+source = "spec"
+anchor = "the u64 operand role `0x0000000800000000` at offset 53"
+value = 34359738368
+
+[[record.field]]
+name = "zero_run_10_after_role"
+offset = 61
+type = "bytes[10]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "epoch"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "The evaluation epochs of the group are the epochs of the item tail"
+
+[[record.field]]
+name = "duration"
+offset = 75
+type = "f64"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+
+[[record.field]]
+name = "second_epoch"
+offset = 83
+type = "u32"
+source = "spec"
+anchor = "The evaluation epochs of the group are the epochs of the item tail"
+
+[[record.field]]
+name = "companion"
+offset = 87
+type = "bytes[11]"
+source = "spec"
+anchor = "record `G + 2` is its 33-byte item-tail companion"
+
+[[record.field]]
+name = "flags"
+offset = 98
+type = "bytes[3]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = [1, 0, 0]
+
+[[record.field]]
+name = "timestamp_table"
+offset = 101
+type = "bytes[11]"
+source = "spec"
+anchor = "Record `G + 1` is the record-timestamp table of the group"
+
+[[record.field]]
+name = "zero"
+offset = 112
+type = "u8"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+value = 0
+
+[[record.field]]
+name = "extrude_scope"
+offset = 113
+type = "bytes[11]"
+source = "spec"
+anchor = "in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53"
+
+[[record]]
+name = "whole_body_member_single_clause"
+kind = "byte"
+section = "Records of a design with several sketch-driven Extrudes"
+anchor = "Each member `M` of the body-operand group is a whole-body member of type `9716F783-676D-42E0-93F9-EBF273E7C035`"
+size = 298
+note = "Offsets are relative to the member's primary indexed header. The paired indexed header starts at offset 298."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After ten zero bytes it stores the clause count `c` at offset 21"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After ten zero bytes it stores the clause count `c` at offset 21"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "clause_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes it stores the clause count `c` at offset 21"
+value = 1
+
+[[record.field]]
+name = "clause_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "clauses of a u64 persistent identity and a u32 form"
+
+[[record.field]]
+name = "clause_form"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "clauses of a u64 persistent identity and a u32 form"
+
+[[record.field]]
+name = "body_recipe"
+offset = 37
+type = "bytes[11]"
+source = "spec"
+anchor = "a reference to record `M + 3`, u32 `1`"
+
+[[record.field]]
+name = "one"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "a reference to record `M + 3`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "asset_guid_length"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 asset GUID of 36 code units"
+value = 36
+
+[[record.field]]
+name = "asset_guid_utf16"
+offset = 56
+type = "u16[36]"
+source = "spec"
+anchor = "the LP-UTF16 asset GUID of 36 code units"
+
+[[record.field]]
+name = "context_guid_length"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 context GUID of 36 code units"
+value = 36
+
+[[record.field]]
+name = "context_guid_utf16"
+offset = 132
+type = "u16[36]"
+source = "spec"
+anchor = "the LP-UTF16 context GUID of 36 code units"
+
+[[record.field]]
+name = "two"
+offset = 204
+type = "u32"
+source = "spec"
+anchor = "u32 `2`, the serialization form `0` or `1`"
+value = 2
+
+[[record.field]]
+name = "serialization_form"
+offset = 208
+type = "u32"
+source = "spec"
+anchor = "u32 `2`, the serialization form `0` or `1`"
+
+[[record.field]]
+name = "first_run_count"
+offset = 212
+type = "u32"
+source = "spec"
+anchor = "the first-run count `0`"
+value = 0
+
+[[record.field]]
+name = "second_run_count"
+offset = 216
+type = "u32"
+source = "spec"
+anchor = "the second-run count `g` and `g` references to browser-node members"
+value = 1
+
+[[record.field]]
+name = "browser_node"
+offset = 220
+type = "bytes[11]"
+source = "spec"
+anchor = "the second-run count `g` and `g` references to browser-node members"
+
+[[record.field]]
+name = "trailing_word"
+offset = 231
+type = "u32"
+source = "spec"
+anchor = "the trailing word `8`, ten zero bytes"
+value = 8
+
+[[record.field]]
+name = "zero_run_10_after_trailing_word"
+offset = 235
+type = "bytes[10]"
+source = "spec"
+anchor = "the trailing word `8`, ten zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "epoch"
+offset = 245
+type = "u32"
+source = "spec"
+anchor = "The evaluation epochs are the epochs of the item tail"
+
+[[record.field]]
+name = "duration"
+offset = 249
+type = "f64"
+source = "spec"
+anchor = "the f64 evaluation duration, the second evaluation epoch"
+
+[[record.field]]
+name = "second_epoch"
+offset = 257
+type = "u32"
+source = "spec"
+anchor = "the f64 evaluation duration, the second evaluation epoch"
+
+[[record.field]]
+name = "companion"
+offset = 261
+type = "bytes[11]"
+source = "spec"
+anchor = "a reference to its item-tail companion `M + 2`"
+
+[[record.field]]
+name = "flags"
+offset = 272
+type = "bytes[3]"
+source = "spec"
+anchor = "the bytes `01 00 00`, a reference to its record-timestamp table `M + 1`"
+value = [1, 0, 0]
+
+[[record.field]]
+name = "timestamp_table"
+offset = 275
+type = "bytes[11]"
+source = "spec"
+anchor = "the bytes `01 00 00`, a reference to its record-timestamp table `M + 1`"
+
+[[record.field]]
+name = "zero"
+offset = 286
+type = "u8"
+source = "spec"
+anchor = "a zero byte, and a reference to the join or cut scope"
+value = 0
+
+[[record.field]]
+name = "scope"
+offset = 287
+type = "bytes[11]"
+source = "spec"
+anchor = "a zero byte, and a reference to the join or cut scope"
+
+[[record]]
+name = "body_recipe_single_entry"
+kind = "byte"
+section = "Records of a design with several sketch-driven Extrudes"
+anchor = "A recipe of one entry whose text has three digits and of no further item is 88 bytes"
+size = 88
+note = "Offsets are relative to the recipe's indexed header. The record has no paired header; the next indexed header starts at offset 88."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "three"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1`"
+value = 3
+
+[[record.field]]
+name = "one_b"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "entry_count"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "the entry count `r` at offset 33"
+value = 1
+
+[[record.field]]
+name = "identity_text_length"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "Each entry is the LP-ASCII decimal text of a persistent identity"
+value = 3
+
+[[record.field]]
+name = "identity_text"
+offset = 41
+type = "bytes[3]"
+source = "spec"
+anchor = "Each entry is the LP-ASCII decimal text of a persistent identity"
+
+[[record.field]]
+name = "key"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "a u32 key, and eight zero bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 48
+type = "bytes[8]"
+source = "spec"
+anchor = "a u32 key, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "further_item_count"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "a u32 count of further items"
+value = 0
+
+[[record.field]]
+name = "family_name_length"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "the u32 `16`, the ASCII family name `body_recipe_data`"
+value = 16
+
+[[record.field]]
+name = "family_name"
+offset = 64
+type = "bytes[16]"
+source = "spec"
+anchor = "the u32 `16`, the ASCII family name `body_recipe_data`"
+
+[[record.field]]
+name = "trailing_zero"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "the trailing bytes are u32 `0` and i32 `-1`"
+value = 0
+
+[[record.field]]
+name = "trailing_minus_one"
+offset = 84
+type = "i32"
+source = "spec"
+anchor = "the trailing bytes are u32 `0` and i32 `-1`"
+value = -1
+
+
 # Records of a sketch-driven Revolve (f3d.md §3.1).
 [[record]]
 name = "sketch_revolve_scope_frame"
