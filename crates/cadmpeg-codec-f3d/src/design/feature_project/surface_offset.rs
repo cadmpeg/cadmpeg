@@ -116,7 +116,7 @@ fn historical_surface_offset_faces(
     Vec<cadmpeg_ir::ids::HistoricalFaceId>,
 )> {
     let previous_state_id =
-        crate::history::effective_scope_previous_history_state_id(scope, histories);
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories);
     let mut state = None;
     let mut faces = Vec::new();
     for group in groups {

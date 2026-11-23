@@ -1,7 +1,7 @@
 //! Outward support faces for an unequal two-distance chamfer.
 //!
 //! Coedge sense and face sense exist on the live brep inside
-//! [`super::historical_topology`], then the replayed historical rows drop them.
+//! [`super::topology_rows::historical_topology`], then the replayed historical rows drop them.
 //! This map keeps that sense, keyed by the history stream and the edge and face
 //! slots, until feature-input projection reads it. A sense field on the coedge
 //! row would change every transition snapshot.
@@ -75,7 +75,7 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
     }
     let mut face_of_loop = HashMap::new();
     for face in &brep.faces {
-        let Some(slot) = super::stable_ref(face.id.as_str()) else {
+        let Some(slot) = super::body_closures::stable_ref(face.id.as_str()) else {
             continue;
         };
         let face_forward = face.sense == Sense::Forward;
@@ -86,7 +86,7 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
     SENSES.with(|senses| {
         let mut senses = senses.borrow_mut();
         for coedge in &brep.coedges {
-            let Some(edge) = super::stable_ref(coedge.edge.as_str()) else {
+            let Some(edge) = super::body_closures::stable_ref(coedge.edge.as_str()) else {
                 continue;
             };
             let Some(&(face, face_forward)) = face_of_loop.get(coedge.owner_loop.as_str()) else {

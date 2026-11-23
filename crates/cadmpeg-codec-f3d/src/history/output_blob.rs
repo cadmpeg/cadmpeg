@@ -9,18 +9,20 @@ pub(super) fn output_blob_history_pair<'a>(
     feature: &cadmpeg_ir::features::Feature,
     state_id: i64,
     previous_state_id: i64,
-    histories: &'a [super::AsmHistory],
+    histories: &'a [crate::history_records::AsmHistory],
 ) -> Option<(
-    &'a super::AsmHistory,
-    &'a super::AsmDeltaState,
-    &'a super::AsmDeltaState,
+    &'a crate::history_records::AsmHistory,
+    &'a crate::history_records::AsmDeltaState,
+    &'a crate::history_records::AsmDeltaState,
 )> {
     let source = output_brep_source(feature)?;
     let mut matching = histories
         .iter()
-        .filter(|history| super::historical_brep_source(&history.id) == Some(source))
+        .filter(|history| {
+            super::face_resolution::historical_brep_source(&history.id) == Some(source)
+        })
         .filter_map(|history| {
-            super::history_state_pair(history, state_id, previous_state_id, false)
+            super::history_states::history_state_pair(history, state_id, previous_state_id, false)
         });
     matching.next().filter(|_| matching.next().is_none())
 }

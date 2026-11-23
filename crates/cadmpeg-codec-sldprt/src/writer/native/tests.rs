@@ -54,7 +54,7 @@ fn object_streams_walk_to_their_end_with_a_reconciled_class_map() {
         assert_eq!(map.get(&4).map(String::as_str), Some("moNodeName_c"));
         let version = crate::carchive::walk_version(None, config);
         assert_eq!(version, Some(super::VERSION));
-        let walk = crate::carchive::walk_configuration(&ctx, config, resolved, version)
+        let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, version)
             .expect("walk")
             .expect("the walk runs");
         assert_eq!(walk.status, crate::carchive::Status::End, "{bodies} bodies");
@@ -170,7 +170,11 @@ fn a_sheet_body_takes_the_surface_body_class() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(config, &arena, &DecodePolicy::desktop()).expect("context");
     let version = crate::carchive::walk_version(None, config);
-    let walk = crate::carchive::walk_configuration(&ctx, config, resolved, version)
+    let count = crate::archive::resolved_count(resolved).expect("map count");
+    let map = crate::archive::class_index_map(config, count, &ctx)
+        .expect("class map")
+        .expect("the Config-0 map reaches the ResolvedFeatures count");
+    let walk = crate::carchive::walk_configuration(&ctx, &map, resolved, version)
         .expect("walk")
         .expect("the walk runs");
     assert_eq!(walk.status, crate::carchive::Status::End);

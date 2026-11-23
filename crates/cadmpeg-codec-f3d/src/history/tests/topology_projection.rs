@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Linear historical radius replacement and ordered coedge incidence.
-use crate::history::historical_topology;
+use crate::history::topology_rows::historical_topology;
 use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
 use cadmpeg_ir::geometry::legacy_cache::CacheContract;
 use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
