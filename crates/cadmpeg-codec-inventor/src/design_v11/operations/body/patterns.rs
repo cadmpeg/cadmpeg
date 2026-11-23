@@ -40,7 +40,11 @@ pub(super) fn plane(
             x_axis: UnitVector3::normalized(n.cross(basis))
                 .ok_or("the mirror frame is degenerate")?,
         }),
-        ..Construction::default()
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 

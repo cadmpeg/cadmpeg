@@ -307,7 +307,10 @@ fn hole(
             HolePlacement::Directed { position, .. } => Some(Construction::<kinds::Point> {
                 inputs: vec![super::swept::unread_input()],
                 resolved: Some(*position),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: BTreeMap::new(),
             }),
             HolePlacement::Axis { .. } => None,
         })

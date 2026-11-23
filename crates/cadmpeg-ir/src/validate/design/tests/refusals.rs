@@ -181,6 +181,8 @@ fn reversed_occurs_on_a_coincident_input_only_where_its_subject_is_a_line() {
 fn reversed_does_not_occur_on_a_native_relation() {
     let attach = |reversed: Option<bool>| {
         let mut input = json!({"role": {"subject": "whole", "relation": {"kind": "native", "value": "cad:attach"}}});
+        input["reference"] =
+            json!({"kind": "picks", "value": named(input_anchor(), vec![principal("x_axis")])});
         if let Some(reversed) = reversed {
             input["reversed"] = json!(reversed);
         }
@@ -238,33 +240,43 @@ fn a_parameter_ratio_is_on_an_at_parameter_input_that_picks_one_edge() {
 /// The axis datum `a` on the X axis, then the plane datum `b` whose one
 /// input is `AtParameter` at `ParameterRatio` 0.5 of `pick`.
 fn ratio_on(pick: Value) -> CadIr {
+    ratio_after(Vec::new(), pick)
+}
+
+/// [`ratio_on`] with `between` ordered after `a` and before `b`.
+fn ratio_after(between: Vec<crate::design::feature::Feature>, pick: Value) -> CadIr {
     let mut axis = plane_datum(construction(vec![input(
         "coincident",
         Some(named(input_anchor(), vec![principal("x_axis")])),
         None,
     )]));
     axis["value"]["element"]["kind"] = json!("axis");
-    timeline(vec![
-        feature("a", axis),
-        feature(
-            "b",
-            plane_datum(construction(vec![input(
-                "at_parameter",
-                Some(named(input_anchor(), vec![pick])),
-                Some(json!({"kind": "parameter_ratio", "value": literal(0.5)})),
-            )])),
-        ),
-    ])
+    let mut features = vec![feature("a", axis)];
+    features.extend(between);
+    features.push(feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "at_parameter",
+            Some(named(input_anchor(), vec![pick])),
+            Some(json!({"kind": "parameter_ratio", "value": literal(0.5)})),
+        )])),
+    ));
+    timeline(features)
 }
 
-/// [`ratio_on`] picking the entity `e` of a sketch of `a`, whose curve is
-/// `curve`.
+/// [`ratio_on`] picking the entity `e`, whose curve is `curve`, of the
+/// sketch of a sketch feature `s` between `a` and `b`.
 fn ratio_on_sketch_entity(curve: &Value) -> CadIr {
-    let mut ir =
-        ratio_on(json!({"target": {"kind": "sketch_entity", "value": key("sketch_entity", "e")}}));
+    let mut ir = ratio_after(
+        vec![feature(
+            "s",
+            json!({"kind": "sketch", "value": key("sketch", "s")}),
+        )],
+        json!({"target": {"kind": "sketch_entity", "value": key("sketch_entity", "e")}}),
+    );
     ir.design.sketches.push(from(json!({
         "id": key("sketch", "s"),
-        "owner": key("feature", "a"),
+        "owner": key("feature", "s"),
         "plane": {"kind": "block"},
         "solve": {"status": "current"},
         "native_options": {},

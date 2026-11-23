@@ -12,12 +12,11 @@
 //! cannot see. An extrude whose sketch stays `Unresolved` still binds its
 //! blind depths, each a length.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
-use cadmpeg_ir::design::ops::sketch::{Planar, SketchEntity};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure,
@@ -26,14 +25,14 @@ use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::BooleanOp as DecodedOp;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
-use cadmpeg_ir::sketches::SketchId;
 
-use super::parameters::Entries;
-use super::profile_check::{self, Difference, Unchecked};
+use super::profile_check::{Difference, Unchecked};
 use super::sketch::{pick, selection};
+use super::swept::{self, Before, Context};
 
 /// The extrudes typed, and the quantity of each parameter a limit binds.
 #[derive(Default)]
@@ -63,91 +62,35 @@ struct Notes {
     profile: Option<Result<Vec<Difference>, Unchecked>>,
 }
 
-/// What the projection reads besides the feature.
-pub(super) struct Context<'a> {
-    pub(super) model: &'a cadmpeg_ir::document::Model,
-    pub(super) histories: &'a [crate::records::FeatureHistory],
-    pub(super) entries: &'a Entries<'a>,
-    /// The sketches the design states.
-    pub(super) sketches: &'a HashSet<SketchId>,
-    /// The entities of those sketches.
-    pub(super) entities: &'a [SketchEntity<Planar>],
-}
-
 /// Type each `Unresolved` extrude of `features`, in member order.
 pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrudes {
     let mut out = Extrudes::default();
-    let sketch_of = features
-        .iter()
-        .filter_map(|feature| match &feature.definition.operation {
-            FeatureOperation::Sketch(sketch) => Some((feature.id.clone(), Some(sketch.clone()))),
-            FeatureOperation::Unresolved {
-                family: OperationFamily::Sketch,
-            } => Some((feature.id.clone(), None)),
-            _ => None,
-        })
-        .collect::<HashMap<_, _>>();
-    let mut body_before = false;
-    let mut preceding = HashSet::new();
-    for feature in features.iter_mut() {
-        if let FeatureOperation::Sketch(sketch) = &feature.definition.operation {
-            preceding.insert(sketch.clone());
-        }
-        let family = match &feature.definition.operation {
-            FeatureOperation::Unresolved { family } => Some(*family),
-            FeatureOperation::Datum(_) | FeatureOperation::Sketch(_) => None,
-            _ => {
-                body_before |= !suppressed(feature);
-                continue;
-            }
-        };
-        match family {
-            Some(OperationFamily::Extrude) => {
-                let mut bound = Vec::new();
-                let mut notes = Notes::default();
-                let typed = extrude(
-                    feature,
-                    context,
-                    &sketch_of,
-                    &preceding,
-                    body_before,
-                    &mut bound,
-                    &mut notes,
+    swept::walk(features, OperationFamily::Extrude, |feature, before| {
+        let mut bound = Vec::new();
+        let mut notes = Notes::default();
+        let typed = extrude(feature, context, before, &mut bound, &mut notes);
+        out.bound.extend(bound);
+        match typed {
+            Ok(extrude) => {
+                feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
+                out.assumed.extend(
+                    notes
+                        .assumed
+                        .map(|parameter| (feature.id.clone(), parameter)),
                 );
-                out.bound.extend(bound);
-                match typed {
-                    Ok(extrude) => {
-                        feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
-                        out.assumed.extend(
-                            notes
-                                .assumed
-                                .map(|parameter| (feature.id.clone(), parameter)),
-                        );
-                        let named = (feature.id.clone(), feature.name.clone());
-                        match notes.profile {
-                            Some(Ok(differs)) if !differs.is_empty() => {
-                                out.differs.push((named.0, named.1, differs));
-                            }
-                            Some(Err(why)) => out.unchecked.push((named.0, named.1, why)),
-                            _ => {}
-                        }
+                let named = (feature.id.clone(), feature.name.clone());
+                match notes.profile {
+                    Some(Ok(differs)) if !differs.is_empty() => {
+                        out.differs.push((named.0, named.1, differs));
                     }
-                    Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
+                    Some(Err(why)) => out.unchecked.push((named.0, named.1, why)),
+                    _ => {}
                 }
             }
-            Some(
-                OperationFamily::Datum | OperationFamily::Sketch | OperationFamily::SpatialSketch,
-            )
-            | None => continue,
-            Some(_) => {}
+            Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
         }
-        body_before |= !suppressed(feature);
-    }
+    });
     out
-}
-
-fn suppressed(feature: &Feature) -> bool {
-    matches!(feature.suppressed, Some(Dimension::Literal(true)))
 }
 
 type Bound = Vec<(ParameterId, Quantity)>;
@@ -155,9 +98,7 @@ type Bound = Vec<(ParameterId, Quantity)>;
 fn extrude(
     feature: &Feature,
     context: &Context<'_>,
-    sketch_of: &HashMap<FeatureId, Option<SketchId>>,
-    preceding: &HashSet<SketchId>,
-    body_before: bool,
+    before: &Before<'_>,
     bound: &mut Bound,
     notes: &mut Notes,
 ) -> Result<Extrude, &'static str> {
@@ -191,7 +132,8 @@ fn extrude(
     }
     let sketch = match profile {
         ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => Some(sketch),
-        ProfileRef::Planar(PlanarProfileRef::Feature(owner)) => sketch_of
+        ProfileRef::Planar(PlanarProfileRef::Feature(owner)) => before
+            .sketch_of
             .get(owner)
             .ok_or("the extrude's profile feature states no sketch")?
             .as_ref(),
@@ -224,22 +166,11 @@ fn extrude(
     let sketch = sketch
         .filter(|sketch| context.sketches.contains(*sketch))
         .ok_or("the extrude's sketch is not stated")?;
-    if !preceding.contains(sketch) {
+    if !before.preceding.contains(sketch) {
         return Err("the extrude's sketch follows it in the timeline");
     }
-    let boolean = match op {
-        cadmpeg_ir::features::operation_settings::BooleanOp::Join if !body_before => {
-            Some(Boolean::NewBody)
-        }
-        cadmpeg_ir::features::operation_settings::BooleanOp::Join => Some(apply(BooleanOp::Join)),
-        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => Some(apply(BooleanOp::Cut)),
-        cadmpeg_ir::features::operation_settings::BooleanOp::Intersect => {
-            Some(apply(BooleanOp::Intersect))
-        }
-        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody => Some(Boolean::NewBody),
-        cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved => None,
-    };
-    notes.profile = Some(differences(sketch, context));
+    let boolean = boolean(*op, before.body);
+    notes.profile = Some(swept::differences(sketch, context));
     Ok(Extrude {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
         loops: None,
@@ -263,22 +194,6 @@ fn extrude(
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
     })
-}
-
-/// How the closed regions of `sketch` differ from the profile loops the
-/// decoder resolved for it.
-fn differences(sketch: &SketchId, context: &Context<'_>) -> Result<Vec<Difference>, Unchecked> {
-    let loops = context
-        .model
-        .sketches
-        .iter()
-        .find(|record| &record.id == sketch)
-        .map_or(&[][..], |record| &record.profiles[..]);
-    profile_check::check(loops, &profile_check::curves(sketch, context.entities)?)
-}
-
-fn apply(op: BooleanOp) -> Boolean {
-    Boolean::Apply { op, targets: None }
 }
 
 /// The span of `extent`, its blind distances bound to the dimensions that
@@ -394,5 +309,19 @@ impl Depths {
     /// The dimension of a single depth: the first, else the sole one.
     fn first_or_sole(&self) -> Option<&ParameterId> {
         self.first.as_ref().or(self.sole.as_ref())
+    }
+}
+
+/// The boolean of a decoded operation: a join into a part that holds no
+/// body yet is a new body (§6).
+fn boolean(op: DecodedOp, body_before: bool) -> Option<Boolean> {
+    let apply = |op| Boolean::Apply { op, targets: None };
+    match op {
+        DecodedOp::Join if !body_before => Some(Boolean::NewBody),
+        DecodedOp::Join => Some(apply(BooleanOp::Join)),
+        DecodedOp::Cut => Some(apply(BooleanOp::Cut)),
+        DecodedOp::Intersect => Some(apply(BooleanOp::Intersect)),
+        DecodedOp::NewBody => Some(Boolean::NewBody),
+        DecodedOp::Unresolved => None,
     }
 }

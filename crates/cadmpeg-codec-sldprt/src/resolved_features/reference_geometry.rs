@@ -182,10 +182,7 @@ pub(crate) fn enrich_history_reference_planes(
             if let Some(head) = displayed.and_then(|_| plane_data_head(lane, start, end)) {
                 data_heads.entry(key).or_default().push(head);
             }
-            if feature.properties.contains_key("Origin")
-                || feature.properties.contains_key("Normal")
-                || feature.properties.contains_key("UAxis")
-            {
+            if feature.states_any(&crate::records::REFERENCE_PLANE_FRAME_PROPERTIES) {
                 continue;
             }
             let self_source = feature.source_value();
@@ -877,10 +874,7 @@ pub(crate) fn enrich_history_coordinate_systems(
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if feature.input_class.as_deref() != Some("moCoordSys_c")
-                || feature.properties.contains_key("Origin")
-                || feature.properties.contains_key("XAxis")
-                || feature.properties.contains_key("YAxis")
-                || feature.properties.contains_key("ZAxis")
+                || feature.states_any(&crate::records::COORDINATE_SYSTEM_PROPERTIES)
             {
                 continue;
             }
@@ -2013,8 +2007,7 @@ pub(crate) fn enrich_history_reference_axes(
     {
         if native_object_class(feature.input_class.as_deref().unwrap_or_default())
             != NativeClassKind::ReferenceAxis
-            || feature.properties.contains_key("Origin")
-            || feature.properties.contains_key("Direction")
+            || feature.states_any(&crate::records::REFERENCE_AXIS_FRAME_PROPERTIES)
         {
             continue;
         }

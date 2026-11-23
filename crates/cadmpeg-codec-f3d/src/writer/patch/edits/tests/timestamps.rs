@@ -66,8 +66,6 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .get_mut("creation_timestamps")
         .unwrap()
         .reverse();
-    let unordered: cadmpeg_ir::CadIr =
-        serde_json::from_value(serde_json::to_value(&unordered).unwrap()).unwrap();
     assert!(
         cadmpeg_ir::validate::validate_neutral(&unordered, Vec::new())
             .expect("validate the neutral model")

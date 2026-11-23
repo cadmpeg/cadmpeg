@@ -31,10 +31,36 @@ pub(crate) struct Envelope {
     pub(crate) entries: Vec<DirectoryEntry>,
 }
 
+/// A local frame whose payload failed DEFLATE, size or CRC validation: its
+/// offset and the end of its payload.
+pub(crate) type UnreadableFrame = (usize, usize);
+
+/// The end and stored name of the local member frame at `local`, a block or
+/// an unreadable frame.
+fn local_member(
+    bytes: &[u8],
+    local: usize,
+    blocks: &[Block],
+    unreadable: &[UnreadableFrame],
+) -> Option<(usize, Option<String>)> {
+    if let Some(block) = blocks.iter().find(|block| block.offset == local) {
+        return Some((
+            block_end(bytes, block)?,
+            block.section.name().map(str::to_owned),
+        ));
+    }
+    let &(_, end) = unreadable.iter().find(|(offset, _)| *offset == local)?;
+    let (_, start, _) = read_block_frame(bytes, local)?;
+    Some((
+        end,
+        nibble_swap_name(bytes.get(local.checked_add(block_hdr::LEN)?..start)?),
+    ))
+}
+
 fn central_end(
     bytes: &[u8],
     at: usize,
-    blocks: &[Block],
+    (blocks, unreadable): (&[Block], &[UnreadableFrame]),
     seen: &mut BTreeSet<usize>,
     local_limit: usize,
 ) -> Option<usize> {
@@ -49,8 +75,8 @@ fn central_end(
     let comment = usize::from(View::u16_le_at(bytes, at + central::COMMENT_LEN)?);
     let relative = index_from_u32(View::u32_le_at(bytes, at + central::LOCAL_OFFSET)?);
     let local = relative.checked_add(outer_hdr::LEN)?.checked_add(4)?;
-    let block = blocks.iter().find(|block| block.offset == local)?;
-    if local >= local_limit || block_end(bytes, block)? > local_limit {
+    let (member_end, member_name) = local_member(bytes, local, blocks, unreadable)?;
+    if local >= local_limit || member_end > local_limit {
         return None;
     }
     if !seen.insert(local)
@@ -63,7 +89,7 @@ fn central_end(
     let name_start = at.checked_add(central::LEN)?;
     let end = name_start.checked_add(name_len)?;
     let name = nibble_swap_name(bytes.get(name_start..end)?)?;
-    if block.section.name() != Some(name.as_str())
+    if member_name.as_deref() != Some(name.as_str())
         || bytes.get(at + central::VERSION_NEEDED..at + central::EXTRA_LEN + 2)
             != bytes.get(local..local.checked_add(block_hdr::LEN)?)
         || bytes.get(name_start..end)
@@ -254,13 +280,17 @@ fn footer_fields(
         && View::u16_le_at(bytes, body + footer::COMMENT_LEN) == Some(0)
 }
 
+/// The ZIP directory tail that joins each of its central entries to a
+/// local member: a block, or a frame in `unreadable`.
 pub(crate) fn source_envelope(
     bytes: &[u8],
     blocks: &[Block],
+    unreadable: &[UnreadableFrame],
 ) -> Result<Option<Envelope>, CodecError> {
-    if blocks.is_empty() {
+    if blocks.is_empty() && unreadable.is_empty() {
         return Ok(None);
     }
+    let members = (blocks, unreadable);
     let Some(last_central) = bytes.len().checked_sub(central::LEN) else {
         return Ok(None);
     };
@@ -282,7 +312,9 @@ pub(crate) fn source_envelope(
             .checked_add(outer_hdr::LEN)
             .and_then(|offset| offset.checked_add(4))
             .is_some_and(|offset| {
-                offset < start && blocks.iter().any(|block| block.offset == offset)
+                offset < start
+                    && (blocks.iter().any(|block| block.offset == offset)
+                        || unreadable.iter().any(|(frame, _)| *frame == offset))
             })
         {
             declared = true;
@@ -303,7 +335,7 @@ pub(crate) fn source_envelope(
             continue;
         };
         if View::u16_le_at(bytes, root + eocd::ENTRIES_DISK) != Some(count)
-            || usize::from(count) > blocks.len()
+            || usize::from(count) > blocks.len() + unreadable.len()
         {
             continue;
         }
@@ -329,7 +361,7 @@ pub(crate) fn source_envelope(
         let mut entries = Vec::new();
         for _ in 0..count {
             let Some(end) =
-                central_end(bytes, at, blocks, &mut seen, start).filter(|end| *end <= root)
+                central_end(bytes, at, members, &mut seen, start).filter(|end| *end <= root)
             else {
                 break;
             };
@@ -343,7 +375,7 @@ pub(crate) fn source_envelope(
             continue;
         }
         let mut additional = seen.clone();
-        if central_end(bytes, at, blocks, &mut additional, start).is_some_and(|end| end <= root) {
+        if central_end(bytes, at, members, &mut additional, start).is_some_and(|end| end <= root) {
             continue;
         }
         if !tail_tiles(bytes, at, root, count) {
@@ -383,18 +415,30 @@ fn full_directory_entry(bytes: &[u8], marker: usize, end: usize) -> Option<Direc
     })
 }
 
-fn valid_stride(
+/// The extent of each local member frame: blocks and unreadable frames.
+fn member_extents(
     bytes: &[u8],
     blocks: &[Block],
+    unreadable: &[UnreadableFrame],
+) -> Vec<(usize, usize)> {
+    blocks
+        .iter()
+        .filter_map(|block| Some((block.offset, block_end(bytes, block)?)))
+        .chain(unreadable.iter().copied())
+        .collect()
+}
+
+fn valid_stride(
+    extents: &[(usize, usize)],
     cells: &[CacheCell],
     limit: usize,
     stride: usize,
 ) -> bool {
     let mut previous_end = outer_hdr::LEN;
     for cell in cells {
-        let anchor = blocks
+        let anchor = extents
             .iter()
-            .filter_map(|block| block_end(bytes, block))
+            .map(|&(_, end)| end)
             .filter(|end| *end <= cell.offset)
             .max()
             .unwrap_or(outer_hdr::LEN);
@@ -412,10 +456,9 @@ fn valid_stride(
         };
         if base.checked_add(displacement) != Some(cell.offset)
             || record_end > end
-            || blocks.iter().any(|block| {
-                block_end(bytes, block)
-                    .is_some_and(|block_end| block.offset < end && base < block_end)
-            })
+            || extents
+                .iter()
+                .any(|&(offset, member_end)| offset < end && base < member_end)
         {
             return false;
         }
@@ -424,19 +467,29 @@ fn valid_stride(
     true
 }
 
+/// Admits the blocks, unreadable frames, cache cells and directory entries
+/// of a native file. Where a ZIP directory tail is found, the blocks and
+/// unreadable frames are its members, and the cache cells are placed after
+/// both; otherwise after the blocks.
 pub(super) fn validate(
     bytes: &[u8],
     blocks: &mut Vec<Block>,
+    unreadable: &mut Vec<UnreadableFrame>,
     cells: &mut Vec<CacheCell>,
     directory: &mut Vec<DirectoryEntry>,
 ) -> Result<usize, CodecError> {
-    let tail = source_envelope(bytes, blocks)?;
+    let tail = source_envelope(bytes, blocks, unreadable)?;
     let limit = tail.as_ref().map_or(bytes.len(), |tail| tail.start);
     cells.retain(|cell| cell.offset < limit);
-    if let Some(tail) = tail {
-        blocks.retain(|block| tail.members.contains(&block.offset));
-        *directory = tail.entries;
-    }
+    let anchored_frames = match tail {
+        Some(tail) => {
+            blocks.retain(|block| tail.members.contains(&block.offset));
+            unreadable.retain(|(offset, _)| tail.members.contains(offset));
+            *directory = tail.entries;
+            unreadable.as_slice()
+        }
+        None => &[],
+    };
     let Some(first) = cells.first() else {
         return Ok(limit);
     };
@@ -455,21 +508,22 @@ pub(super) fn validate(
             }
         }
     }
-    candidates.retain(|stride| valid_stride(bytes, blocks, cells, limit, *stride));
+    let extents = member_extents(bytes, blocks, anchored_frames);
+    candidates.retain(|stride| valid_stride(&extents, cells, limit, *stride));
     if candidates.len() != 1 {
         return Err(malformed());
     }
     let Some(stride) = candidates.first().copied() else {
         return Err(malformed());
     };
-    if !valid_stride(bytes, blocks, cells, limit, stride) {
+    if !valid_stride(&extents, cells, limit, stride) {
         return Err(malformed());
     }
     let mut previous_end = outer_hdr::LEN;
     for cell in cells {
-        let anchor = blocks
+        let anchor = extents
             .iter()
-            .filter_map(|block| block_end(bytes, block))
+            .map(|&(_, end)| end)
             .filter(|end| *end <= cell.offset)
             .max()
             .unwrap_or(outer_hdr::LEN);
@@ -622,6 +676,29 @@ mod tests {
     }
 
     #[test]
+    fn a_directory_member_that_fails_validation_costs_that_member() {
+        for with_grid in [false, true] {
+            let (mut source, _) = native_directory(with_grid, 0);
+            let marker = outer_hdr::LEN + 4;
+            let (_, payload, _) = read_block_frame(&source, marker).expect("the local frame");
+            source[payload] ^= 0xff;
+            let parsed = scan(&source).expect("the other member is kept");
+            let [block] = parsed.blocks.as_slice() else {
+                panic!("the empty member is the one block");
+            };
+            assert_eq!(block.section.name(), Some("empty"));
+            assert_eq!(parsed.directory.len(), 2);
+            assert!(parsed.cache_cells.is_empty());
+            let [part] = parsed.given_up.as_slice() else {
+                panic!("the damaged member is one given-up part");
+            };
+            assert!(part.loss().message.contains(&format!(
+                "part native-block \"ordinary\" stream=\"\" offset={marker} "
+            )));
+        }
+    }
+
+    #[test]
     fn real_directory_count_size_and_offset_cannot_be_changed_independently() {
         for with_grid in [false, true] {
             let (source, root) = native_directory(with_grid, 0);
@@ -647,8 +724,16 @@ mod tests {
 
     #[test]
     fn terminal_empty_frame_still_has_to_validate_before_becoming_an_anchor() {
+        let grid = primary_grid(0);
+        let ranges = |scan: &super::super::ContainerScan<'_>| {
+            scan.cache_cells
+                .iter()
+                .map(|cell| cell.physical_range.clone())
+                .collect::<Vec<_>>()
+        };
+        let expected = ranges(&scan(&grid).unwrap());
         for offset in [block_hdr::CRC32, block_hdr::COMP_SZ, block_hdr::UNCOMP_SZ] {
-            let mut source = primary_grid(0);
+            let mut source = grid.clone();
             let start = source.len();
             let block = make_block(1, "Contents/Empty", &[]);
             source.extend(block);
@@ -656,7 +741,15 @@ mod tests {
             let value = View::u32_le_at(&source, at).unwrap();
             source[at..at + 4].copy_from_slice(&(value + 1).to_le_bytes());
             source.push(0x45);
-            assert!(scan(&source).is_err());
+            let scanned = scan(&source).unwrap();
+            assert!(scanned.blocks.is_empty());
+            assert_eq!(ranges(&scanned), expected);
+            let [part] = scanned.given_up.as_slice() else {
+                panic!("the frame is one given-up part");
+            };
+            assert!(part.loss().message.contains(&format!(
+                "part native-block \"Contents/Empty\" stream=\"\" offset={start} "
+            )));
         }
     }
     #[test]

@@ -193,7 +193,7 @@ impl CodecBackend for CyclicModelCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        panic!("the cycle admission test does not inspect")
+        panic!("the cyclic decode test does not inspect")
     }
 
     fn decode_impl(
@@ -253,9 +253,10 @@ impl CodecBackend for ForeignIdentityCodec {
 fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
     let mut ir = unit_cube().unwrap();
     let dimension = crate::pmi::PmiDimension {
-        modifiers: vec![crate::pmi::DimensionModifier::Other(
-            "Statistical".to_owned(),
-        )],
+        modifiers: [crate::pmi::DimensionModifier::Other(
+            cadmpeg_core::nonblank_literal!("Statistical"),
+        )]
+        .into(),
         ..crate::pmi::PmiDimension::new(crate::pmi::PmiDimensionKind::Size)
     };
     ir.model.pmi.push(crate::pmi::PmiAnnotation::new(
@@ -270,7 +271,7 @@ fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
     };
     assert_eq!(
         dimension.modifiers,
-        [crate::pmi::DimensionModifier::Statistical]
+        [crate::pmi::DimensionModifier::Statistical].into()
     );
 }
 
@@ -321,21 +322,100 @@ fn sealed_decode_rejects_a_document_authored_for_another_format() {
 }
 
 #[test]
-fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
+fn sealed_decode_keeps_a_cyclic_model_and_validation_reports_the_cycle() {
     let (_, curve, surface) = crate::test_support::evaluation_cycles::cyclic_model();
-    let error = CyclicModelCodec
+    let result = CyclicModelCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &DecodeOptions::default(),
         )
-        .expect_err("a cyclic model cannot leave the codec");
-    let DecodeFailure::Codec(CodecError::Malformed(message)) = error else {
-        panic!("expected a malformed cycle refusal, got {error:?}")
-    };
-    assert_eq!(
-        message,
-        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")
-    );
+        .expect("a cycle between records does not refuse the decode");
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
+    let report = crate::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the decoded model");
+    let expected =
+        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}");
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.entity.as_deref() == Some(curve.as_str())
+            && finding.message == expected));
+}
+
+struct DesignProjectionFailureCodec;
+
+impl CodecBackend for DesignProjectionFailureCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the design projection test does not inspect")
+    }
+
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+        let mut decoded = decoded(with_parameter(
+            unit_cube().expect("valid unit cube fixture"),
+        ));
+        crate::design::projection::project_layer(
+            ctx,
+            "test",
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            |ir, _| {
+                ir.design.scopes.push(crate::design::scope::DesignScope {
+                    definition: crate::ids::ProductDefinitionId::mint(
+                        "test:model:product-definition#root",
+                    )
+                    .unwrap(),
+                    roots: Vec::new(),
+                    active_configuration: None,
+                    active_arrangements: std::collections::BTreeSet::new(),
+                    occurrences: BTreeMap::new(),
+                    current: Vec::new(),
+                    unproduced: std::collections::BTreeSet::new(),
+                });
+                Err(CodecError::malformed("design record has no frame"))
+            },
+        )?;
+        Ok(decoded)
+    }
+}
+
+#[test]
+fn sealed_decode_keeps_the_geometry_when_the_design_projection_fails() {
+    let result = DesignProjectionFailureCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect("a design projection error does not refuse the decode");
+    let cube = with_parameter(unit_cube().unwrap());
+    assert_eq!(result.ir().geometry.bodies, cube.geometry.bodies);
+    assert_eq!(result.ir().geometry.faces.len(), cube.geometry.faces.len());
+    assert_eq!(result.ir().model.parameters, cube.model.parameters);
+    assert!(result.ir().design.scopes.is_empty());
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .starts_with("test v11 design layer is not stated: "));
 }
 
 fn strict_options(depth: DecodeDepth) -> DecodeOptions {
@@ -625,4 +705,85 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     let result = decode_result(ir);
     assert_eq!(result.ir().scope(), ContentScope::full());
     assert_eq!(result.ir().model.parameters.len(), 1);
+}
+
+/// A decoder that emits the cube's first point three times; with `differ`
+/// the later copies hold another `native_ref`.
+struct RepeatedIdentityCodec {
+    differ: bool,
+}
+
+impl CodecBackend for RepeatedIdentityCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the repeated identity test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        for copy in ["second", "third"] {
+            let mut point = ir.geometry.points[0].clone();
+            if self.differ {
+                point.native_ref = Some(copy.into());
+            }
+            ir.geometry.points.push(point);
+        }
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+    let result = RepeatedIdentityCodec { differ: true }
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    let repeated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code)
+        .collect::<Vec<_>>();
+    let [loss] = repeated.as_slice() else {
+        panic!("one loss for the one repeated id: {repeated:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(
+        loss.message.contains(cube.geometry.points[0].id.as_str())
+            && loss.message.contains("2 dropped"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn the_sealed_wrapper_states_one_record_for_equal_copies_of_an_id_and_charges_nothing() {
+    let result = RepeatedIdentityCodec { differ: false }
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code));
 }

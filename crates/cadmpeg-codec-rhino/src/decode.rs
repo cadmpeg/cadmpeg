@@ -6495,7 +6495,14 @@ pub(crate) fn decode(
             .iter()
             .find(|definition| definition.is_root())
             .map(|definition| definition.id.clone());
-        crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
+        let ctx = expand.ctx();
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "rhino",
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            |ir, _| crate::history::v11::project(ctx, &scan.history, &objects, root, ir),
+        )?;
     }
     Ok(decoded)
 }

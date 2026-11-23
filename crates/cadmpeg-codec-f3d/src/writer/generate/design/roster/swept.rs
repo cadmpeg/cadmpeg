@@ -23,6 +23,8 @@ use crate::writer::generate::presentation::TypeRow;
 
 /// The operand role of a profile.
 pub(super) const PROFILE_ROLE: u64 = 0x0000_0041_0000_0000;
+/// The operand role of a revolve axis.
+pub(super) const AXIS_ROLE: u64 = 0x0000_0021_0000_0000;
 /// The kind word of a profile-loop entry that names a sketch curve.
 const CURVE_ENTRY: u32 = 3;
 /// The sense word of the curve-record entry of an exterior loop entry.
@@ -43,9 +45,9 @@ const FIRST_SIDE_KEY: u64 = 3;
 #[derive(Clone, Debug)]
 pub(in crate::writer::generate::design) struct ScopeRecords {
     pub(in crate::writer::generate::design) record: u32,
-    stamps: u32,
-    companion: u32,
-    tracked: u32,
+    pub(super) stamps: u32,
+    pub(super) companion: u32,
+    pub(super) tracked: u32,
 }
 
 impl ScopeRecords {
@@ -68,8 +70,8 @@ impl ScopeRecords {
 #[derive(Clone, Debug)]
 pub(in crate::writer::generate::design) struct GroupRecords {
     pub(in crate::writer::generate::design) record: u32,
-    wrapper: u32,
-    companion: u32,
+    pub(super) wrapper: u32,
+    pub(super) companion: u32,
     pub(super) stamps: u32,
 }
 
@@ -79,7 +81,7 @@ impl GroupRecords {
         take: &mut impl FnMut(TypeRow) -> Result<u32, CodecError>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            record: take(types::PROFILE_GROUP)?,
+            record: take(types::OPERAND_GROUP)?,
             wrapper: take(types::PLACEMENT_TRACKING_FLAG)?,
             companion: take(types::ITEM_TAIL_COMPANION)?,
             stamps: take(types::RECORD_TIMESTAMPS)?,
@@ -93,7 +95,7 @@ impl GroupRecords {
 pub(in crate::writer::generate::design) struct StartRecords {
     pub(in crate::writer::generate::design) record: u32,
     pub(super) identity: u32,
-    companion: u32,
+    pub(super) companion: u32,
     pub(super) stamps: u32,
 }
 
@@ -119,7 +121,7 @@ impl StartRecords {
 pub(in crate::writer::generate::design) struct SelectionRecords {
     pub(in crate::writer::generate::design) record: u32,
     pub(super) stamps: u32,
-    companion: u32,
+    pub(super) companion: u32,
     pub(super) regions: u32,
     pub(super) identity: u32,
 }
@@ -142,9 +144,9 @@ impl SelectionRecords {
 /// The side-face entry and curve record of each side face, and the body
 /// entry.
 #[derive(Clone, Debug)]
-pub(in crate::writer::generate::design) struct ResultRecords {
+pub(super) struct ResultRecords {
     sides: Vec<[u32; 2]>,
-    body: u32,
+    pub(super) body: u32,
 }
 
 impl ResultRecords {
@@ -159,6 +161,22 @@ impl ResultRecords {
                 .collect::<Result<Vec<_>, CodecError>>()?,
             body: take(types::BODY_ENTRY)?,
         })
+    }
+}
+
+/// A record-index source for an item's records: each call takes the index
+/// after the last from `next` and pushes the record's type row to `rows`.
+pub(super) fn allocator<'r>(
+    next: &'r mut u32,
+    rows: &'r mut Vec<(u32, TypeRow)>,
+) -> impl FnMut(TypeRow) -> Result<u32, CodecError> + 'r {
+    move |row| {
+        let index = *next;
+        *next = next
+            .checked_add(1)
+            .ok_or_else(|| CodecError::NotImplemented("item record index overflow".into()))?;
+        rows.push((index, row));
+        Ok(index)
     }
 }
 
@@ -199,7 +217,7 @@ impl Classes {
             stamps: class(types::RECORD_TIMESTAMPS)?,
             item_companion: class(types::ITEM_TAIL_COMPANION)?,
             tracked: class(types::TRACKED_RESULTS)?,
-            group: class(types::PROFILE_GROUP)?,
+            group: class(types::OPERAND_GROUP)?,
             wrapper: class(types::PLACEMENT_TRACKING_FLAG)?,
             identity: class(types::SELECTION_IDENTITY)?,
             selection: class(types::PROFILE_SELECTION)?,
@@ -214,23 +232,26 @@ impl Classes {
 /// Writes the records of a swept item of `ctx` that share their form.
 pub(super) struct Swept<'a> {
     ctx: &'a Context<'a>,
+    /// The feature-family name of the item.
+    family: &'a str,
     classes: Classes,
     scope: &'a ScopeRecords,
     /// The position of the profile's sketch in [`Context::sketches`].
     sketch_index: usize,
     pub(super) sketch: &'a PlannedSketch<'a>,
-    sketch_records: &'a SketchRecords,
+    pub(super) sketch_records: &'a SketchRecords,
     /// The browser node of the result body and its GUID.
     pub(super) node: u32,
     node_guid: &'a str,
     /// The scope's first persistent identity `E`.
     identity: u64,
-    stamp: u64,
+    /// The timestamp of every record-timestamp table entry.
+    pub(super) stamp: u64,
     /// The asset GUID of the profile selection and its identities.
-    asset: &'a str,
+    pub(super) asset: &'a str,
     /// The context GUID of the selection identities: the third GUID of the
     /// component aggregate.
-    context: String,
+    pub(super) context: String,
 }
 
 impl<'a> Swept<'a> {
@@ -238,7 +259,7 @@ impl<'a> Swept<'a> {
     /// timeline items, whose profile lies on sketch `sketch`.
     pub(super) fn new(
         ctx: &'a Context<'a>,
-        family: &str,
+        family: &'a str,
         scope: &'a ScopeRecords,
         sketch: usize,
         preceding: usize,
@@ -261,6 +282,7 @@ impl<'a> Swept<'a> {
             })?;
         Ok(Self {
             ctx,
+            family,
             classes: Classes::of(ctx)?,
             scope,
             sketch_index: sketch,
@@ -276,21 +298,16 @@ impl<'a> Swept<'a> {
     }
 
     /// The end of the scope frame: the current history state, the family
-    /// name `family`, the 78-byte item tail and the paired record; then the
-    /// scope's record-timestamp table, which lists the start record `start`,
-    /// and its item-tail companion.
-    pub(super) fn tail(
-        &self,
-        out: &mut DesignRecords,
-        family: &str,
-        start: u32,
-    ) -> Result<(), CodecError> {
+    /// name, the 78-byte item tail and the paired record; then the scope's
+    /// record-timestamp table, which lists the start record `start`, and its
+    /// item-tail companion.
+    pub(super) fn tail(&self, out: &mut DesignRecords, start: u32) -> Result<(), CodecError> {
         let scope = self.scope;
         // The 78-byte item tail: family ordinal 1, no label, state bytes
         // `00 00 00`, the preceding state, the evaluation values, `s0 = s1 =
         // 0`.
         out.u32(HEAD_STATE)
-            .lp_utf16(family)?
+            .lp_utf16(self.family)?
             .u32(1)
             .u32(0)
             .u32(0)
@@ -324,7 +341,7 @@ impl<'a> Swept<'a> {
     }
 
     /// The paired header, eight zero bytes and the owner collection.
-    fn paired(&self, out: &mut DesignRecords, record: u32) {
+    pub(super) fn paired(&self, out: &mut DesignRecords, record: u32) {
         out.header(&self.classes.object, record)
             .zeros(8)
             .reference(OWNER_COLLECTION);
@@ -332,7 +349,7 @@ impl<'a> Swept<'a> {
 
     /// The evaluation epochs and duration, the companion, `01 00 00`, the
     /// record-timestamp table, a zero byte and the scope.
-    fn evaluation(&self, out: &mut DesignRecords, companion: u32, stamps: u32) {
+    pub(super) fn evaluation(&self, out: &mut DesignRecords, companion: u32, stamps: u32) {
         out.u32(EPOCH)
             .f64(DURATION)
             .u32(EPOCH)
@@ -378,18 +395,16 @@ impl<'a> Swept<'a> {
         )
     }
 
-    /// The start record of type `row` with its selection identity,
-    /// item-tail companion and record-timestamp table, which lists
-    /// `inputs`.
+    /// The start record with its selection identity, item-tail companion and
+    /// record-timestamp table, which lists `inputs`.
     pub(super) fn start(
         &self,
         out: &mut DesignRecords,
-        row: TypeRow,
         records: &StartRecords,
         inputs: &[u32],
     ) -> Result<(), CodecError> {
         let classes = &self.classes;
-        out.record(&self.ctx.class(row.guid)?, records.record)
+        out.record(&self.ctx.class_of(records.record)?, records.record)
             .zeros(10)
             .reference(self.scope.record)
             .u32(1)
@@ -491,7 +506,7 @@ impl<'a> Swept<'a> {
         Ok(())
     }
 
-    fn curve_identity(&self, curve: usize) -> Result<u64, CodecError> {
+    pub(super) fn curve_identity(&self, curve: usize) -> Result<u64, CodecError> {
         curve_identity(self.ctx.sketches, self.sketch_index, curve)
     }
 
@@ -503,6 +518,15 @@ impl<'a> Swept<'a> {
         records: &ResultRecords,
         entries: impl Iterator<Item = (&'p ProfileLoop, usize)>,
     ) -> Result<(), CodecError> {
+        let entries = entries.collect::<Vec<_>>();
+        if entries.len() != records.sides.len() {
+            return Err(CodecError::malformed(format_args!(
+                "{} tracked results: {} side records for {} loop entries",
+                self.family,
+                records.sides.len(),
+                entries.len()
+            )));
+        }
         let classes = &self.classes;
         let tracked = self.scope.tracked;
         let sides = count(records.sides.len())?;
@@ -518,7 +542,7 @@ impl<'a> Swept<'a> {
             .u64(body_key + 1)
             .header(&classes.object, tracked)
             .zeros(9);
-        for ((profile_loop, position), [entry, curve]) in entries.zip(&records.sides) {
+        for ((profile_loop, position), [entry, curve]) in entries.into_iter().zip(&records.sides) {
             out.record(&classes.side, *entry)
                 .zeros(9)
                 .byte(1)

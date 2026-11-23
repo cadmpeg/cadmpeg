@@ -470,7 +470,10 @@ mod tests {
                 axis: FrameAxis::X,
                 distance: length(),
             }],
-            ..Default::default()
+            inputs: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved_in: std::collections::BTreeMap::new(),
         };
         nested.resolved_in.insert(
             "test:design:configuration#other"

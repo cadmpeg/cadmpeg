@@ -315,7 +315,6 @@ fn compound_default_owner_requires_the_complete_root_stream_path() {
         decoded_payload: None,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
-        ps_auxiliary_refusal: None,
     };
     assert!(is_owner(Section::Compound(&stream)));
     for path in [

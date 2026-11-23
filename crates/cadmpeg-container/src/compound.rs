@@ -29,10 +29,11 @@ const MINI_STREAM_CUTOFF: u64 = 4096;
 
 static NEXT_COMPOUND_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
-/// A noncanonical CFB encoding admitted under an exact structural rule.
+/// A noncanonical CFB encoding admitted under an exact structural rule, or
+/// one stream whose sector chain cannot be followed.
 ///
 /// A codec reading a snapshot must report each deviation through its loss
-/// vocabulary even when every stream opens.
+/// vocabulary even when every stream it reads opens.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompoundDeviation {
@@ -41,6 +42,12 @@ pub enum CompoundDeviation {
     /// the number of DIFAT sectors the declared FAT count requires, and the
     /// walk collected exactly the declared FAT sector ids.
     DifatChainEndsWithFreeSector,
+    /// The stream's chain does not end with ENDOFCHAIN after the sectors its
+    /// size requires. The stream is read from exactly those sectors.
+    StreamChainUnterminated(CompoundStreamId),
+    /// The stream's chain cannot be followed through the sectors its size
+    /// requires. The stream does not open; every other stream does.
+    StreamChainBroken(CompoundStreamId),
 }
 
 impl CompoundDeviation {
@@ -51,6 +58,22 @@ impl CompoundDeviation {
             Self::DifatChainEndsWithFreeSector => {
                 "CFB DIFAT chain ended with FREESECT instead of ENDOFCHAIN"
             }
+            Self::StreamChainUnterminated(_) => {
+                "CFB stream chain does not end with ENDOFCHAIN after the sectors its size \
+                 requires; the stream is read from those sectors"
+            }
+            Self::StreamChainBroken(_) => {
+                "CFB stream chain cannot be followed through the sectors its size requires"
+            }
+        }
+    }
+
+    /// The stream the deviation is about, where it is about one stream.
+    #[must_use]
+    pub const fn stream(self) -> Option<CompoundStreamId> {
+        match self {
+            Self::DifatChainEndsWithFreeSector => None,
+            Self::StreamChainUnterminated(id) | Self::StreamChainBroken(id) => Some(id),
         }
     }
 }
@@ -188,34 +211,48 @@ impl SectorChain {
     }
 }
 
-/// Directory entries already reached from the root storage, and the regular
-/// and mini sectors already owned by a built stream chain.
+/// Directory entries already reached from the root storage, and the holder
+/// of each regular and mini sector a walked stream chain or the CFB
+/// structure reached.
 #[derive(Default)]
 struct TreeOwnership {
     entries: BTreeSet<u32>,
-    regular: BTreeSet<u32>,
-    mini: BTreeSet<u32>,
+    regular: BTreeMap<u32, SectorHolder>,
+    mini: BTreeMap<u32, SectorHolder>,
 }
 
-impl TreeOwnership {
-    /// Claim `chain` for one stream. A sector another stream owns refuses
-    /// the file before any later chain is walked.
-    fn claim(
-        &mut self,
-        allocation: CompoundAllocation,
-        chain: &SectorChain,
-    ) -> Result<(), CodecError> {
-        let owned = match allocation {
-            CompoundAllocation::Regular => &mut self.regular,
-            CompoundAllocation::Mini => &mut self.mini,
-        };
-        for &sector in chain.iter() {
-            if !owned.insert(sector) {
-                return malformed("CFB stream sector has duplicate ownership");
-            }
-        }
-        Ok(())
-    }
+/// What reached a sector first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SectorHolder {
+    /// A FAT, DIFAT, directory, mini FAT, root mini stream or range-lock
+    /// sector.
+    Structure,
+    /// The stream at this index of the built entries.
+    Stream(usize),
+}
+
+/// How the walk of one stream's chain ended.
+enum ChainWalk {
+    /// The walk reached the sectors the stream's size requires.
+    /// `unterminated` states that the link after the last one is not
+    /// ENDOFCHAIN.
+    Complete {
+        chain: SectorChain,
+        unterminated: bool,
+    },
+    /// The walk stopped before those sectors. `located` holds the sectors it
+    /// reached, in chain order.
+    Stopped { located: Vec<u32>, stop: ChainStop },
+}
+
+/// Why a chain walk stopped.
+enum ChainStop {
+    /// The chain cannot be followed.
+    Broken(String),
+    /// The chain entered `sector`, which `holder` reached first. The walk
+    /// does not follow the chain past it: from there on the links are the
+    /// holder's.
+    Shared { sector: u32, holder: SectorHolder },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +262,19 @@ enum StreamData {
         logical_size: NonZeroU64,
         allocation: CompoundAllocation,
         chain: SectorChain,
+        /// The chain continued past `chain` instead of ending there.
+        unterminated: bool,
+    },
+    /// A stream that does not open: its chain cannot be followed through
+    /// the sectors its size requires, or it shares a sector with another
+    /// chain. `located` holds the sectors its chain reached before that
+    /// point, in chain order.
+    Broken {
+        logical_size: u64,
+        allocation: Option<CompoundAllocation>,
+        start: u32,
+        reason: String,
+        located: Vec<u32>,
     },
 }
 
@@ -244,6 +294,7 @@ impl CompoundStreamEntry {
         match &self.data {
             StreamData::Empty(_) => 0,
             StreamData::Allocated { logical_size, .. } => logical_size.get(),
+            StreamData::Broken { logical_size, .. } => *logical_size,
         }
     }
 
@@ -253,6 +304,7 @@ impl CompoundStreamEntry {
             StreamData::Empty(EmptyStreamStart::EndOfChain) => END_OF_CHAIN,
             StreamData::Empty(EmptyStreamStart::FreeSector) => FREE_SECTOR,
             StreamData::Allocated { chain, .. } => chain.first,
+            StreamData::Broken { start, .. } => *start,
         }
     }
 
@@ -261,12 +313,32 @@ impl CompoundStreamEntry {
         match &self.data {
             StreamData::Empty(_) => None,
             StreamData::Allocated { allocation, .. } => Some(*allocation),
+            StreamData::Broken { allocation, .. } => *allocation,
+        }
+    }
+
+    /// Why the stream's sectors cannot be found, for a stream that does not
+    /// open.
+    pub fn chain_error(&self) -> Option<&str> {
+        match &self.data {
+            StreamData::Broken { reason, .. } => Some(reason),
+            StreamData::Empty(_) | StreamData::Allocated { .. } => None,
+        }
+    }
+
+    fn deviation(&self) -> Option<CompoundDeviation> {
+        match &self.data {
+            StreamData::Allocated {
+                unterminated: true, ..
+            } => Some(CompoundDeviation::StreamChainUnterminated(self.id)),
+            StreamData::Broken { .. } => Some(CompoundDeviation::StreamChainBroken(self.id)),
+            StreamData::Empty(_) | StreamData::Allocated { .. } => None,
         }
     }
 
     fn sectors(&self) -> impl Iterator<Item = &u32> {
         let (first, rest): (Option<&u32>, &[u32]) = match &self.data {
-            StreamData::Empty(_) => (None, &[]),
+            StreamData::Empty(_) | StreamData::Broken { .. } => (None, &[]),
             StreamData::Allocated { chain, .. } => (Some(&chain.first), &chain.rest),
         };
         first.into_iter().chain(rest)
@@ -463,10 +535,14 @@ impl<'a> CompoundSnapshot<'a> {
         self.parsed.version.major()
     }
 
-    /// Noncanonical encodings this snapshot admitted. A codec must report
-    /// each one through its loss vocabulary.
-    pub fn deviations(&self) -> impl Iterator<Item = CompoundDeviation> {
-        self.parsed.difat_deviation.into_iter()
+    /// Noncanonical encodings this snapshot admitted and streams whose chains
+    /// cannot be followed, in directory traversal order after the DIFAT. A
+    /// codec must report each one through its loss vocabulary.
+    pub fn deviations(&self) -> impl Iterator<Item = CompoundDeviation> + '_ {
+        self.parsed
+            .difat_deviation
+            .into_iter()
+            .chain(stream_deviations(&self.entries))
     }
 
     /// Refuses a snapshot that admitted any noncanonical encoding. Codecs
@@ -522,14 +598,20 @@ impl<'a> CompoundSnapshot<'a> {
         if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
-        let StreamData::Allocated {
-            logical_size,
-            allocation,
-            chain,
-        } = &entry.data
-        else {
-            let start = cadmpeg_core::decode::u64_from_index(self.root.start());
-            return ctx.register_slice(self.root, ByteRange { start, end: start });
+        let (logical_size, allocation, chain) = match &entry.data {
+            StreamData::Allocated {
+                logical_size,
+                allocation,
+                chain,
+                ..
+            } => (logical_size, allocation, chain),
+            StreamData::Broken { reason, .. } => {
+                return malformed(format!("CFB stream {}: {reason}", entry.path));
+            }
+            StreamData::Empty(_) => {
+                let start = cadmpeg_core::decode::u64_from_index(self.root.start());
+                return ctx.register_slice(self.root, ByteRange { start, end: start });
+            }
         };
         let logical_size = usize::try_from(logical_size.get())
             .map_err(|_| CodecError::Malformed("CFB stream size does not fit memory".into()))?;
@@ -569,6 +651,64 @@ impl<'a> CompoundSnapshot<'a> {
         Ok(opened)
     }
 
+    /// Opens the bytes of a stream that does not open that lie in the
+    /// sectors its chain reached before it stopped, in chain order, up to
+    /// its logical size and through the last of those sectors the input
+    /// holds. `None` for a stream that opens or whose chain reached no such
+    /// sector.
+    pub fn open_located(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+    ) -> Result<Option<View<'a>>, CodecError> {
+        if entry.snapshot_id != self.snapshot_id {
+            return malformed("CFB stream handle does not belong to this snapshot");
+        }
+        let StreamData::Broken {
+            logical_size,
+            allocation: Some(allocation),
+            located,
+            ..
+        } = &entry.data
+        else {
+            return Ok(None);
+        };
+        let width = match allocation {
+            CompoundAllocation::Regular => self.parsed.version.sector_size(),
+            CompoundAllocation::Mini => MINI_SECTOR_SIZE,
+        };
+        let mut remaining = usize::try_from(*logical_size)
+            .map_err(|_| CodecError::malformed("CFB stream size exceeds the address space"))?;
+        let mut views = Vec::new();
+        for &sector in located {
+            if remaining == 0 {
+                break;
+            }
+            let view = match allocation {
+                CompoundAllocation::Regular => self.regular_sector_view(sector),
+                CompoundAllocation::Mini => self.mini_sector_view(sector),
+            };
+            let Ok(view) = view else {
+                break;
+            };
+            let length = view.window().len().min(remaining);
+            remaining -= length;
+            let full = view.window().len() == width;
+            views.push(
+                view.child(view.start(), view.start() + length)
+                    .ok_or_else(|| CodecError::malformed("CFB located sector escapes its view"))?,
+            );
+            if !full {
+                break;
+            }
+        }
+        match views.as_slice() {
+            [] => Ok(None),
+            [view] => Ok(Some(*view)),
+            views => ctx.concat_views(views).map(Some),
+        }
+    }
+
     /// Builds generic hierarchy summaries using a codec-owned classifier.
     pub fn container_entries(
         &self,
@@ -592,6 +732,9 @@ impl<'a> CompoundSnapshot<'a> {
                             attributes.insert("allocation".into(), allocation.label().into());
                         }
                         attributes.insert("start_sector".into(), stream.start_sector().to_string());
+                        if let Some(reason) = stream.chain_error() {
+                            attributes.insert("chain_error".into(), reason.into());
+                        }
                         ContainerEntry {
                             name: stream.path.clone(),
                             role: classify(entry),
@@ -912,6 +1055,9 @@ impl CompoundState {
     ) -> Result<Vec<CompoundEntry>, CodecError> {
         let mut output = Vec::new();
         let mut owned = TreeOwnership::default();
+        for &sector in self.structural_sectors() {
+            owned.regular.insert(sector, SectorHolder::Structure);
+        }
         self.walk_tree(
             ctx,
             snapshot_id,
@@ -1012,40 +1158,91 @@ impl CompoundState {
                             ChainRole::MiniStream,
                         ),
                     };
-                    let empty = || {
-                        StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                    let data = match NonZeroU64::new(entry.size) {
+                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
                             EmptyStreamStart::FreeSector
                         } else {
                             EmptyStreamStart::EndOfChain
-                        })
-                    };
-                    let data = match NonZeroU64::new(entry.size) {
-                        None => empty(),
+                        }),
                         Some(logical_size) => {
                             let expected = usize::try_from(logical_size.get())
-                                .map_err(|_| {
+                                .ok()
+                                .and_then(|size| NonZeroUsize::new(size.div_ceil(width)))
+                                .ok_or_else(|| {
                                     CodecError::Malformed(
                                         "CFB stream size does not fit memory".into(),
                                     )
-                                })?
-                                .div_ceil(width);
-                            let sectors = chain(
+                                })?;
+                            let held = match allocation {
+                                CompoundAllocation::Regular => &mut owned.regular,
+                                CompoundAllocation::Mini => &mut owned.mini,
+                            };
+                            let walk = stream_chain(
                                 fat,
                                 count,
                                 entry.start_sector,
-                                NonZeroUsize::new(expected).map(ChainLength::Declared),
+                                expected,
                                 role,
-                            )?;
-                            match sectors {
-                                Some(chain) => {
-                                    owned.claim(allocation, &chain)?;
-                                    StreamData::Allocated {
-                                        allocation,
-                                        logical_size,
-                                        chain,
+                                held,
+                                output.len(),
+                            );
+                            let walk = match walk {
+                                ChainWalk::Complete { chain, .. }
+                                    if allocation == CompoundAllocation::Mini
+                                        && self
+                                            .mini_chain_escapes(&chain, logical_size.get())? =>
+                                {
+                                    ChainWalk::Stopped {
+                                        located: chain.iter().copied().collect(),
+                                        stop: ChainStop::Broken(
+                                            "CFB mini stream escapes the root mini stream"
+                                                .to_owned(),
+                                        ),
                                     }
                                 }
-                                None => empty(),
+                                walk => walk,
+                            };
+                            let role = role.name();
+                            match walk {
+                                ChainWalk::Complete {
+                                    chain,
+                                    unterminated,
+                                } => StreamData::Allocated {
+                                    allocation,
+                                    logical_size,
+                                    chain,
+                                    unterminated,
+                                },
+                                ChainWalk::Stopped { located, stop } => {
+                                    let reason = match stop {
+                                        ChainStop::Broken(reason) => reason,
+                                        ChainStop::Shared {
+                                            sector,
+                                            holder: SectorHolder::Structure,
+                                        } => format!(
+                                            "CFB {role} chain enters sector {sector}, which the \
+                                             CFB structure holds"
+                                        ),
+                                        ChainStop::Shared {
+                                            sector,
+                                            holder: SectorHolder::Stream(other),
+                                        } => {
+                                            let other_path =
+                                                give_up_shared(output, other, sector, role, &path)?;
+                                            format!(
+                                                "CFB {role} chain shares sector {sector} with \
+                                                 stream {other_path}"
+                                            )
+                                        }
+                                    };
+                                    StreamData::Broken {
+                                        logical_size: logical_size.get(),
+                                        allocation: Some(allocation),
+                                        start: entry.start_sector,
+                                        reason,
+                                        located,
+                                    }
+                                }
                             }
                         }
                     };
@@ -1067,57 +1264,65 @@ impl CompoundState {
         Ok(())
     }
 
-    fn validate_sector_ownership(&self, entries: &[CompoundEntry]) -> Result<(), CodecError> {
-        let mut used = BTreeSet::new();
-        if let Some(sector) = self.range_lock_sector {
-            used.insert(sector);
-        }
-        for &sector in self
-            .fat_sectors
-            .iter()
-            .chain(&self.difat_sectors)
-            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
-            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
-        {
-            if !used.insert(sector) {
-                return malformed("CFB regular sector has duplicate structural ownership");
-            }
-        }
-        let mut mini_used = BTreeSet::new();
+    /// Whether a mini `chain` holding `logical_size` bytes reaches past the
+    /// root mini stream.
+    fn mini_chain_escapes(
+        &self,
+        chain: &SectorChain,
+        logical_size: u64,
+    ) -> Result<bool, CodecError> {
         let root_size = directory_root(&self.directory)?.size;
         let mini_capacity = usize::try_from(root_size)
             .map_err(|_| {
                 CodecError::Malformed("CFB root mini-stream size does not fit memory".into())
             })?
             .div_ceil(MINI_SECTOR_SIZE);
+        let mut remaining = logical_size;
+        Ok(chain.iter().any(|&sector| {
+            let payload = remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
+            remaining -= payload;
+            cadmpeg_core::decode::index_from_u32(sector) >= mini_capacity
+                || u64::from(sector)
+                    .checked_mul(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE))
+                    .and_then(|offset| offset.checked_add(payload))
+                    .is_none_or(|end| end > root_size)
+        }))
+    }
+
+    /// The FAT, DIFAT, directory, mini FAT, root mini stream and range-lock
+    /// sectors.
+    fn structural_sectors(&self) -> impl Iterator<Item = &u32> {
+        self.range_lock_sector
+            .iter()
+            .chain(&self.fat_sectors)
+            .chain(&self.difat_sectors)
+            .chain(self.directory_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.mini_fat_chain.iter().flat_map(SectorChain::iter))
+            .chain(self.root_mini_chain.iter().flat_map(SectorChain::iter))
+    }
+
+    /// Refuses a structure that holds one sector twice and, where every
+    /// stream opens, a sector no chain holds that is not marked free. The
+    /// entries hold no sector twice: [`stream_chain`] gives up both
+    /// streams of a shared sector.
+    fn validate_sector_ownership(&self, entries: &[CompoundEntry]) -> Result<(), CodecError> {
+        let mut used = BTreeSet::new();
+        for &sector in self.structural_sectors() {
+            if !used.insert(sector) {
+                return malformed("CFB regular sector has duplicate structural ownership");
+            }
+        }
+        // A cut or broken chain leaves the sectors after the cut unowned.
+        if stream_deviations(entries).next().is_some() {
+            return Ok(());
+        }
+        let mut mini_used = BTreeSet::<u32>::new();
         for entry in entries {
             if let CompoundEntry::Stream(stream) = entry {
-                let Some(allocation) = stream.allocation() else {
-                    continue;
-                };
-                let target = if allocation == CompoundAllocation::Regular {
-                    &mut used
-                } else {
-                    &mut mini_used
-                };
-                let mut remaining = stream.logical_size();
-                for &sector in stream.sectors() {
-                    let payload =
-                        remaining.min(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE));
-                    remaining -= payload;
-                    if allocation == CompoundAllocation::Mini
-                        && (cadmpeg_core::decode::index_from_u32(sector) >= mini_capacity
-                            || u64::from(sector)
-                                .checked_mul(cadmpeg_core::decode::u64_from_index(MINI_SECTOR_SIZE))
-                                .and_then(|offset| offset.checked_add(payload))
-                                .is_none_or(|end| end > root_size))
-                    {
-                        return malformed("CFB mini stream escapes the root mini stream");
-                    }
-                    if !target.insert(sector) {
-                        return malformed("CFB stream sector has duplicate ownership");
-                    }
+                match stream.allocation() {
+                    Some(CompoundAllocation::Regular) => used.extend(stream.sectors().copied()),
+                    Some(CompoundAllocation::Mini) => mini_used.extend(stream.sectors().copied()),
+                    None => {}
                 }
             }
         }
@@ -1766,10 +1971,7 @@ fn chain(
     length: Option<ChainLength>,
     role: ChainRole,
 ) -> Result<Option<SectorChain>, CodecError> {
-    let accepts_free = matches!(
-        role,
-        ChainRole::RootMiniStream | ChainRole::Stream | ChainRole::MiniStream
-    );
+    let accepts_free = matches!(role, ChainRole::RootMiniStream);
     let role = role.name();
     let expected = match length {
         None => {
@@ -1824,6 +2026,108 @@ fn chain(
         ));
     }
     Ok(Some(output))
+}
+
+/// Walks one stream's chain through the `expected` sectors its size
+/// requires, entering each sector it reaches in `held` as stream `walker`'s.
+/// A sector already in `held` stops the walk, so every sector is walked
+/// once over all the streams of a snapshot.
+fn stream_chain(
+    fat: &[u32],
+    sector_count: usize,
+    start: u32,
+    expected: NonZeroUsize,
+    role: ChainRole,
+    held: &mut BTreeMap<u32, SectorHolder>,
+    walker: usize,
+) -> ChainWalk {
+    let role = role.name();
+    let mut located = Vec::new();
+    let mut current = start;
+    let stop = loop {
+        if located.len() == expected.get() {
+            let mut sectors = located.into_iter();
+            let first = sectors.next().unwrap_or(start);
+            return ChainWalk::Complete {
+                chain: SectorChain {
+                    first,
+                    rest: sectors.collect(),
+                },
+                unterminated: current != END_OF_CHAIN,
+            };
+        }
+        if current == END_OF_CHAIN {
+            break ChainStop::Broken(format!(
+                "CFB {role} chain ends before the sectors its stream size requires"
+            ));
+        }
+        if matches!(current, FREE_SECTOR | FAT_SECTOR | DIFAT_SECTOR) {
+            break ChainStop::Broken(format!("CFB {role} chain enters a reserved sector role"));
+        }
+        if cadmpeg_core::decode::index_from_u32(current) >= sector_count {
+            break ChainStop::Broken(format!("CFB {role} chain leaves its allocation table"));
+        }
+        match held.entry(current) {
+            std::collections::btree_map::Entry::Occupied(holder)
+                if *holder.get() == SectorHolder::Stream(walker) =>
+            {
+                break ChainStop::Broken(format!("CFB {role} chain is cyclic"));
+            }
+            std::collections::btree_map::Entry::Occupied(holder) => {
+                break ChainStop::Shared {
+                    sector: current,
+                    holder: *holder.get(),
+                };
+            }
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(SectorHolder::Stream(walker));
+            }
+        }
+        located.push(current);
+        let Some(&next) = fat.get(cadmpeg_core::decode::index_from_u32(current)) else {
+            break ChainStop::Broken(format!("CFB {role} FAT link is absent"));
+        };
+        current = next;
+    };
+    ChainWalk::Stopped { located, stop }
+}
+
+/// Gives up the stream at `index` of `entries`, whose chain holds `sector`
+/// that the chain of the stream at `path` also entered, and returns its
+/// path. A stream already given up keeps its first reason.
+fn give_up_shared(
+    entries: &mut [CompoundEntry],
+    index: usize,
+    sector: u32,
+    role: &str,
+    path: &str,
+) -> Result<String, CodecError> {
+    let Some(CompoundEntry::Stream(stream)) = entries.get_mut(index) else {
+        return malformed("CFB sector holder is not a stream");
+    };
+    if let StreamData::Allocated {
+        logical_size,
+        allocation,
+        chain,
+        ..
+    } = &stream.data
+    {
+        stream.data = StreamData::Broken {
+            logical_size: logical_size.get(),
+            allocation: Some(*allocation),
+            start: chain.first,
+            reason: format!("CFB {role} chain shares sector {sector} with stream {path}"),
+            located: chain.iter().copied().collect(),
+        };
+    }
+    Ok(stream.path.clone())
+}
+
+fn stream_deviations(entries: &[CompoundEntry]) -> impl Iterator<Item = CompoundDeviation> + '_ {
+    entries.iter().filter_map(|entry| match entry {
+        CompoundEntry::Stream(stream) => stream.deviation(),
+        CompoundEntry::Storage(_) => None,
+    })
 }
 
 fn join_sectors<'a>(
@@ -2176,17 +2480,10 @@ mod tests {
         state
             .validate_sector_ownership(&entries)
             .expect("each sector has one owner");
-        let mut overlapping = entries.clone();
-        overlapping.push(entries[0].clone());
-        let error = state
-            .validate_sector_ownership(&overlapping)
-            .expect_err("duplicate stream still overlaps");
-        assert!(matches!(error, CodecError::Malformed(message)
-            if message == "CFB stream sector has duplicate ownership"));
     }
 
     #[test]
-    fn a_second_stream_on_one_chain_is_refused_while_entries_are_built() {
+    fn two_streams_on_one_chain_are_both_given_up_while_entries_are_built() {
         const WIDTH: usize = 4096;
         const DIRECTORY: usize = 4096 - 1;
         let mut file = large_regular_fixture();
@@ -2200,12 +2497,35 @@ mod tests {
         let state = with_context(&file, &DecodePolicy::service(), |ctx| {
             CompoundState::parse(ctx, &file).expect("allocation tables")
         });
-        let error = with_context(&[], &DecodePolicy::service(), |ctx| {
+        let entries = with_context(&[], &DecodePolicy::service(), |ctx| {
             state.build_entries(ctx, 1)
         })
-        .expect_err("two streams share one chain");
-        assert!(matches!(error, CodecError::Malformed(message)
-            if message == "CFB stream sector has duplicate ownership"));
+        .expect("the entries build");
+        let reasons = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                CompoundEntry::Stream(stream) => {
+                    Some((stream.path(), stream.chain_error().map(str::to_owned)))
+                }
+                CompoundEntry::Storage(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            reasons,
+            [
+                (
+                    "Payload",
+                    Some("CFB stream chain shares sector 4 with stream Second".to_owned())
+                ),
+                (
+                    "Second",
+                    Some("CFB stream chain shares sector 4 with stream Payload".to_owned())
+                ),
+            ]
+        );
+        state
+            .validate_sector_ownership(&entries)
+            .expect("the structure holds each sector once");
     }
 
     #[test]
@@ -2582,15 +2902,156 @@ mod tests {
         assert!(matches!(probe(&file), CompoundPrefixProbe::Malformed(_)));
     }
 
+    /// Each stream's path and, where it opens, its bytes.
+    type OpenedStreams = Vec<(String, Option<Vec<u8>>)>;
+
+    /// The streams `file` holds and the deviations its snapshot reports.
+    fn opened_streams(file: &[u8]) -> (OpenedStreams, Vec<CompoundDeviation>) {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("the snapshot builds");
+        assert!(snapshot.require_canonical().is_err());
+        let streams = snapshot
+            .entries()
+            .iter()
+            .filter_map(|entry| match entry {
+                CompoundEntry::Stream(stream) => Some((
+                    stream.path().to_owned(),
+                    snapshot
+                        .open(&ctx, stream)
+                        .ok()
+                        .map(|view| view.window().to_vec()),
+                )),
+                CompoundEntry::Storage(_) => None,
+            })
+            .collect();
+        let deviations = snapshot.deviations().collect();
+        (streams, deviations)
+    }
+
+    fn broken(deviations: &[CompoundDeviation]) -> usize {
+        deviations
+            .iter()
+            .filter(|deviation| matches!(deviation, CompoundDeviation::StreamChainBroken(_)))
+            .count()
+    }
+
     #[test]
-    fn rejects_duplicate_allocation_and_cyclic_chains() {
+    fn a_cyclic_stream_chain_costs_that_stream_only() {
         let mut file = fixture();
         put_u32(sector_mut(&mut file, 11), 2 * 4, 2);
+        let (streams, deviations) = opened_streams(&file);
+        assert_eq!(
+            streams,
+            [
+                ("Small".to_owned(), Some(b"small".to_vec())),
+                ("Store/Large".to_owned(), None),
+            ]
+        );
+        assert_eq!(broken(&deviations), 1);
+        assert_eq!(
+            deviations[0]
+                .stream()
+                .map(super::CompoundStreamId::directory_id),
+            Some(3)
+        );
+    }
+
+    /// `fixture()` with the storage `Store` turned into the regular stream
+    /// `Store` of `size` bytes from sector `start`, and `Large` moved beside
+    /// it under the root.
+    fn fixture_with_second_regular_stream(start: u32, size: u64) -> Vec<u8> {
+        let mut file = fixture();
+        let directory = sector_mut(&mut file, 0);
+        directory_entry(directory, 1, "Small", 2, 3, 2, NO_STREAM, 0, 5);
+        directory_entry(
+            directory, 2, "Store", 2, NO_STREAM, NO_STREAM, NO_STREAM, start, size,
+        );
+        directory_entry(
+            directory, 3, "Large", 2, NO_STREAM, NO_STREAM, NO_STREAM, 2, 4096,
+        );
+        file
+    }
+
+    #[test]
+    fn two_streams_that_share_sectors_are_given_up_and_a_disjoint_stream_opens() {
+        let (streams, deviations) = opened_streams(&fixture_with_second_regular_stream(2, 4096));
+        assert_eq!(
+            streams,
+            [
+                ("Small".to_owned(), Some(b"small".to_vec())),
+                ("Large".to_owned(), None),
+                ("Store".to_owned(), None),
+            ]
+        );
+        assert_eq!(broken(&deviations), 2);
+    }
+
+    #[test]
+    fn a_stream_that_opens_does_not_hold_a_sector_a_broken_chain_reached() {
+        // `Store` starts inside `Large`'s chain and needs eight sectors, but
+        // the chain ends after five.
+        let file = fixture_with_second_regular_stream(5, 4096);
+        let (streams, deviations) = opened_streams(&file);
+        assert_eq!(
+            streams,
+            [
+                ("Small".to_owned(), Some(b"small".to_vec())),
+                ("Large".to_owned(), None),
+                ("Store".to_owned(), None),
+            ]
+        );
+        assert_eq!(broken(&deviations), 2);
+    }
+
+    #[test]
+    fn a_broken_stream_opens_the_sectors_its_chain_located() {
+        let mut file = fixture();
+        put_u32(sector_mut(&mut file, 11), 3 * 4, 2);
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
             .expect("synthetic CFB fits the decode policy");
-        assert!(CompoundSnapshot::new(&ctx, root).is_err());
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("the snapshot builds");
+        let large = snapshot
+            .stream("Store/Large")
+            .expect("the stream is listed");
+        assert!(snapshot.open(&ctx, large).is_err());
+        let located = snapshot
+            .open_located(&ctx, large)
+            .expect("the located sectors open")
+            .expect("the chain located two sectors");
+        assert_eq!(located.window(), vec![0x5a; 2 * SECTOR_SIZE]);
+        let small = snapshot.stream("Small").expect("the stream is listed");
+        assert!(snapshot
+            .open_located(&ctx, small)
+            .expect("a stream that opens")
+            .is_none());
+    }
+
+    #[test]
+    fn an_unterminated_stream_chain_reads_the_sectors_its_size_requires() {
+        let mut regular = fixture();
+        put_u32(sector_mut(&mut regular, 11), 9 * 4, 0xdead_beef);
+        let mut mini = fixture();
+        put_u32(sector_mut(&mut mini, 10), 0, 0x0bad_f00d);
+        for file in [regular, mini] {
+            let (streams, deviations) = opened_streams(&file);
+            assert_eq!(
+                streams,
+                [
+                    ("Small".to_owned(), Some(b"small".to_vec())),
+                    ("Store/Large".to_owned(), Some(vec![0x5a; 4096])),
+                ]
+            );
+            assert_eq!(deviations.len(), 1);
+            assert!(matches!(
+                deviations[0],
+                CompoundDeviation::StreamChainUnterminated(_)
+            ));
+        }
     }
 
     #[test]
@@ -2867,25 +3328,58 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_empty_truncated_and_unowned_mini_allocations() {
-        let mut invalid_empty = fixture();
-        sector_mut(&mut invalid_empty, 0)[128 + 120..128 + 128].fill(0);
-        assert!(!snapshot_parses(&invalid_empty));
-
-        let mut truncated = fixture();
-        sector_mut(&mut truncated, 0)[3 * 128 + 120..4 * 128]
-            .copy_from_slice(&4608_u64.to_le_bytes());
-        assert!(!snapshot_parses(&truncated));
-
+    fn rejects_an_unowned_mini_allocation() {
         let mut unowned_mini = fixture();
         put_u32(sector_mut(&mut unowned_mini, 10), 4, END_OF_CHAIN);
         assert!(!snapshot_parses(&unowned_mini));
+        let mut emptied = fixture();
+        sector_mut(&mut emptied, 0)[128 + 120..128 + 128].fill(0);
+        assert!(!snapshot_parses(&emptied));
+    }
+
+    #[test]
+    fn an_empty_stream_reads_empty_whatever_its_start_sector() {
+        let mut file = fixture();
+        sector_mut(&mut file, 0)[128 + 120..128 + 128].fill(0);
+        put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("the snapshot builds");
+        assert_eq!(snapshot.deviations().count(), 0);
+        let stream = snapshot.stream("Small").expect("the empty stream exists");
+        assert_eq!(stream.logical_size(), 0);
+        assert!(snapshot
+            .open(&ctx, stream)
+            .expect("the empty stream opens")
+            .window()
+            .is_empty());
+    }
+
+    #[test]
+    fn truncated_and_escaping_streams_cost_that_stream_only() {
+        let mut truncated = fixture();
+        sector_mut(&mut truncated, 0)[3 * 128 + 120..4 * 128]
+            .copy_from_slice(&4608_u64.to_le_bytes());
 
         let mut beyond_root_size = fixture();
         sector_mut(&mut beyond_root_size, 0)[120..128].copy_from_slice(&5_u64.to_le_bytes());
         sector_mut(&mut beyond_root_size, 0)[128 + 120..128 + 128]
             .copy_from_slice(&64_u64.to_le_bytes());
-        assert!(!snapshot_parses(&beyond_root_size));
+
+        for (file, readable) in [(truncated, "Small"), (beyond_root_size, "Store/Large")] {
+            let (streams, deviations) = opened_streams(&file);
+            assert_eq!(broken(&deviations), 1);
+            assert_eq!(
+                streams
+                    .iter()
+                    .filter(|(_, bytes)| bytes.is_some())
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>(),
+                [readable]
+            );
+        }
     }
 
     #[test]

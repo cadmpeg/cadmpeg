@@ -486,6 +486,8 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     };
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
@@ -515,6 +517,8 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     };
     let mut decoded = Brep::default();
     decoded.stats.surface_solver_capped.push("coedge#1");

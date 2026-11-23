@@ -296,7 +296,10 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
                     origin: axis.origin,
                     direction: UnitVector3::normalized_nonzero(axis.direction.into())?,
                 }),
-                ..Construction::default()
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: BTreeMap::new(),
             })
         });
     let span = extent.and_then(revolve_span);

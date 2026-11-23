@@ -487,7 +487,10 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         &HashSet::new(),
         &HashMap::from([(MEMBER.to_owned(), 1)]),
         true,
-        false,
+        crate::writer::RetainedBlockPatches {
+            active_configuration: false,
+            edited_parameters: &HashSet::new(),
+        },
     )
     .unwrap();
     assert!(opaque.blocks.iter().all(|(name, _)| name != MEMBER));

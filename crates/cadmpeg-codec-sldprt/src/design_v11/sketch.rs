@@ -481,7 +481,10 @@ fn placement(
     Ok(Construction {
         inputs: vec![input],
         resolved,
-        ..Construction::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: std::collections::BTreeMap::new(),
     })
 }
 

@@ -28,6 +28,7 @@ pub mod ops;
 pub mod options;
 pub mod parameter;
 pub mod program;
+pub mod projection;
 pub mod read;
 pub mod refs;
 pub mod scope;

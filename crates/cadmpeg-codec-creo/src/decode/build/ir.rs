@@ -814,7 +814,14 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    emit_geometry_arenas(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &brep_diagnostics,
+        &mut transfer_losses,
+    )?;
     collect_feature_coverage(
         scan,
         &ir,
@@ -826,7 +833,13 @@ pub(in super::super) fn build_ir(
     let definition =
         super::design_v11::root_definition(ctx, &mut ir, super::design_v11::model_kind(scan))?;
     if ctx.depth() >= DecodeDepth::Design {
-        super::design_v11::project(ctx, scan, &mut ir, &definition, &mut transfer_losses)?;
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "creo",
+            &mut ir,
+            &mut transfer_losses,
+            |ir, losses| super::design_v11::project(ctx, scan, ir, &definition, losses),
+        )?;
     }
     Ok(BuiltIr {
         ir,
