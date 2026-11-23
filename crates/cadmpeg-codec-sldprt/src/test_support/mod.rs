@@ -59,6 +59,15 @@ impl UnwrittenLosses {
         );
         assert!(!other.iter().any(names), "{held:?} {id}: {self:?}");
     }
+
+    /// No message of either code names `id`.
+    pub(crate) fn assert_uncharged(&self, id: &str) {
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            !self.dropped.iter().chain(&self.omitted).any(names),
+            "{id}: {self:?}"
+        );
+    }
 }
 
 /// Plans and writes an inherited write. Returns its bytes and its
@@ -326,13 +335,31 @@ pub(crate) fn write_history_over_stale_solid(
     Ok(report)
 }
 
+/// Runs the semantic writer over an authored native envelope and returns what
+/// it reports.
+pub(crate) fn write_in_native_envelope(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+    writer: &mut dyn Write,
+) -> Result<crate::writer::SemanticOutput, CodecError> {
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
+    let records = crate::source_records(&ir, &fidelity)?;
+    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, &[], writer)
+}
+
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
+    make_retained_record_unavailable(fidelity, crate::SOURCE_IMAGE_ID);
+}
+
+/// Replace retained record `id` by its digest: the fidelity names the record
+/// and holds none of its bytes.
+pub(crate) fn make_retained_record_unavailable(fidelity: &mut SourceFidelity, id: &str) {
     let unavailable = {
         let record = fidelity
-            .retained_record(crate::SOURCE_IMAGE_ID)
-            .expect("decode retains the source image");
+            .retained_record(id)
+            .expect("decode retains the record");
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
-            .expect("decoded source image digest");
+            .expect("decoded record digest");
         cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
@@ -341,20 +368,17 @@ pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
                 sha256: digest,
             },
         )
-        .expect("source image extent")
+        .expect("record extent")
     };
     fidelity
-        .remove_retained_record(crate::SOURCE_IMAGE_ID)
-        .expect("decode retains the source image");
+        .remove_retained_record(id)
+        .expect("decode retains the record");
     fidelity
         .insert_retained_record(
-            crate::SOURCE_IMAGE_ID
-                .to_owned()
-                .try_into()
-                .expect("source image identity"),
+            id.to_owned().try_into().expect("record identity"),
             unavailable,
         )
-        .expect("source image identity is unique");
+        .expect("record identity is unique");
 }
 
 pub(crate) mod allocation;

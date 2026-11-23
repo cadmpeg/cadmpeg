@@ -64,27 +64,125 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 }
 
 #[test]
-fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
+fn semantic_writer_keeps_retained_materials_and_drops_their_edit() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].base_color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
+    let appearance = decoded.ir().model.appearances[0].id.as_str().to_owned();
 
-    let error = crate::test_support::plan_inherited_write(
+    let (written, losses) = crate::test_support::write_with_unwritten_attributes(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
-    .unwrap_err();
+    .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("cannot edit retained SWObjects semantics"),
-        "{error}"
+        losses.dropped.iter().any(|message| {
+            message.contains("keeps the retained SWObjects materials")
+                && message.contains(&appearance)
+        }),
+        "{losses:?}"
     );
+    let members = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    assert_eq!(members(&written), members(&source));
+}
+
+/// A material record the write skips is named when it keeps the retained
+/// `SWObjects` materials; a record the retained materials hold is not.
+#[test]
+fn a_material_skipped_beside_retained_swobjects_is_named() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let steel = decoded.ir().model.appearances[0].id.as_str().to_owned();
+    let plain = "synthetic:test:appearance#plain";
+    decoded
+        .ir_mut()
+        .model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId::mint(plain).unwrap(),
+            name: Some("Plain".into()),
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("moVisualProperties_c".into()),
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+            native_ref: None,
+        });
+
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterMaterialsOmitted.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        omitted,
+        [format!(
+            "1 appearance or body record(s) state no base colour, so the SLDPRT write writes no \
+             material for them, and the retained SWObjects materials it keeps hold none: {plain}"
+        )
+        .as_str()],
+        "{:?}",
+        report.losses
+    );
+    let members = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    assert_eq!(members(&written), members(&source));
+
+    // Clearing the colour of the retained material is an edit the retained
+    // records drop, named once as dropped and not as omitted.
+    decoded.ir_mut().model.appearances[0].base_color = None;
+    let report = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap()
+        .write_to(&mut Vec::new())
+        .unwrap();
+    let names = |loss: &&cadmpeg_ir::report::loss::LossNote| loss.message.contains(&steel);
+    assert!(
+        report
+            .losses
+            .iter()
+            .filter(names)
+            .all(|loss| loss.code.local_code() == "edit.dropped"),
+        "{:?}",
+        report.losses
+    );
+    assert!(report.losses.iter().any(|loss| names(&loss)));
 }
 
 #[test]
@@ -113,8 +211,10 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let scan = crate::test_support::container::scan(&encoded);
-    assert_eq!(scan.blocks.len(), 2);
-    assert_eq!(scan.directory.len(), 2);
+    // The fixture's source image holds one token member, which the write
+    // carries as stored.
+    assert_eq!(scan.blocks.len(), 3);
+    assert_eq!(scan.directory.len(), 3);
     let names: std::collections::BTreeSet<_> = scan
         .blocks
         .iter()
@@ -122,14 +222,29 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .collect();
     assert_eq!(
         names,
-        std::collections::BTreeSet::from(["Contents/Config-0-Partition", "Contents/Keywords-0"])
+        std::collections::BTreeSet::from([
+            "Contents/Config-0-Partition",
+            "Contents/Keywords-0",
+            "FixtureEnvelopeTokenSource",
+        ])
     );
+    let token = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("FixtureEnvelopeTokenSource"))
+        .unwrap();
+    assert_eq!(token.payload, b"authored envelope fixture");
     let keywords = scan
         .blocks
         .iter()
         .find(|block| block.section.name() == Some("Contents/Keywords-0"))
         .unwrap();
-    assert_eq!(keywords.payload, b"<Keywords></Keywords>");
+    // A member with no source member is written after the lead byte and
+    // declaration most stored members carry.
+    assert_eq!(
+        keywords.payload,
+        b"\x86<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<Keywords></Keywords>"
+    );
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -184,7 +299,7 @@ fn semantic_writer_emits_face_records_deterministically() {
 }
 
 #[test]
-fn encoder_rejects_source_less_unresolved_extrusion_profile() {
+fn encoder_drops_a_source_less_extrusion_with_an_unresolved_profile() {
     use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
     use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
@@ -228,13 +343,18 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
         native_ref: None,
     });
 
-    let error = SldprtCodec
+    let report = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("requires retained extrusion profile data"));
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.features-omitted"
+            && loss
+                .message
+                .contains("requires retained extrusion profile data")
+            && loss.message.contains("synthetic:test:feature#extrude")
+    }));
 }
 
 #[test]
@@ -916,7 +1036,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
 }
 
 #[test]
-fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
+fn encoder_drops_a_source_less_sketch_constraint_it_cannot_write() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -973,14 +1093,18 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         native_ref: None,
     });
 
-    let error = SldprtCodec
+    let report = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("requires an owning sketch feature"));
+        .unwrap()
+        .report()
+        .clone();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.sketch-constraints-omitted"
+            && loss.message.contains("requires an owning sketch feature")
+            && loss
+                .message
+                .contains("synthetic:test:constraint#horizontal")
+    }));
 }
 
 /// A finite millimetre length whose product with the length scale is not
@@ -1036,14 +1160,19 @@ fn patched_retained_metadata(
         cadmpeg_ir::Exactness::ByteExact,
     )?;
     let mut sections = vec![("SWObjects".to_owned(), payload)];
+    let owners = crate::writer::metadata_owners::MetadataOwners {
+        patchable: sections.clone(),
+        ..Default::default()
+    };
     let mut unwritten = UnwrittenAttributes::default();
     crate::writer::patch_retained_swobjects_metadata(
         &ir,
         &annotations,
+        &owners,
         &mut sections,
         1.0,
         &mut unwritten,
-    )?;
+    );
     Ok((sections.remove(0).1, unwritten))
 }
 
@@ -1190,15 +1319,19 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         )
         .unwrap();
         let mut sections = vec![("SWObjects".to_owned(), payload.clone())];
+        let owners = crate::writer::metadata_owners::MetadataOwners {
+            patchable: sections.clone(),
+            ..Default::default()
+        };
         let mut unwritten = UnwrittenAttributes::default();
         crate::writer::patch_retained_swobjects_metadata(
             &ir,
             &annotations,
+            &owners,
             &mut sections,
             1.0,
             &mut unwritten,
-        )
-        .unwrap();
+        );
         assert_eq!(unwritten.reason(id), Some(Unwritten::NoSerializer));
         assert_eq!(sections[0].1, payload);
     }
@@ -1219,13 +1352,14 @@ fn generated_part_metadata_needs_a_retained_root_serializer() {
         native_ref: None,
     });
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert!(objects.is_empty());
     assert_eq!(units, None);
     assert_eq!(unwritten.reason(id), Some(Unwritten::NoSerializer));
     let mut retained = UnwrittenAttributes::default();
     assert!(
-        crate::writer::metadata_payloads(&ir, 1.0, true, &mut retained)
+        crate::writer::metadata_payloads(&ir, 1.0, true, &mut retained, &mut Vec::new())
             .0
             .is_empty()
     );
@@ -1253,7 +1387,8 @@ fn generated_metadata_skips_a_record_with_a_null_value() {
         vec![Some(AttributeValue::String("mm".into()))],
     ));
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
     assert_eq!(units, None);
     assert_eq!(
@@ -1312,7 +1447,8 @@ fn generated_metadata_skips_each_record_it_cannot_hold() {
         ),
     ]);
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
     assert_eq!(units, None);
     for (id, reason) in [
@@ -1378,8 +1514,9 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
         .unwrap();
     assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert!(
-        loss.message
-            .starts_with("2 sldprt metadata attribute record(s) state a null value"),
+        loss.message.starts_with(
+            "the SLDPRT write names sldprt metadata attribute records that state a null value"
+        ) && loss.message.contains(" (2): "),
         "{}",
         loss.message
     );
@@ -1517,14 +1654,26 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &original[manager_at..manager_at + 145]
         );
     }
-    assert!(crate::writer::write_semantic_with_records(
+    // With no retained record every metadata record is generated, and the
+    // manager tuple has no generator.
+    let output = crate::writer::write_semantic_with_records(
         &baseline,
         &fidelity.annotations,
         &[],
         &[],
         &mut Vec::new(),
     )
-    .is_err());
+    .unwrap();
+    let manager = baseline
+        .model
+        .attributes
+        .iter()
+        .find(|a| a.name == "configuration_manager")
+        .unwrap();
+    assert_eq!(
+        output.unwritten.reason(manager.id.as_str()),
+        Some(Unwritten::NoSerializer)
+    );
 }
 
 /// A decoded part whose `SWObjects` section holds its metadata records, its
@@ -1647,4 +1796,29 @@ fn an_edited_configuration_manager_keeps_its_retained_tuple_and_charges_a_loss()
     let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
     losses.assert_charged(Held::Source, "cannot add, regenerate or edit in place", &id);
+}
+
+/// A part-record word wider than 32 bits is a value the record cannot hold:
+/// `export:value.unwritable` names the attribute (§3.4).
+#[test]
+fn a_part_record_word_wider_than_32_bits_is_a_value_unwritable() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let id = "sldprt:metadata:part_record#0:6";
+    let attribute = SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
+        target: AttributeTarget::Document.into(),
+        name: "part_record".into(),
+        values: vec![Some(AttributeValue::Integer(1 << 32))],
+        native_ref: None,
+    };
+    assert!(matches!(
+        crate::writer::MetadataRecord::project(&attribute, 1.0, |_| Ok(())),
+        Err(Unwritten::TooWide)
+    ));
+    let mut unwritten = UnwrittenAttributes::default();
+    unwritten.record(id, Unwritten::TooWide, crate::writer::Held::Source);
+    let notes = unwritten.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].code.local_code(), "value.unwritable");
+    assert!(notes[0].message.contains(id), "{}", notes[0].message);
 }

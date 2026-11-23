@@ -170,15 +170,23 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &inconsistent,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    // The record that fails validation is written from the canonical side
+    // and named.
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&inconsistent, Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
     assert!(
-        error.to_string().contains("pattern omits seed feature"),
-        "{error}"
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.invalid"
+                && loss.message.contains("pattern omits seed feature")),
+        "{:?}",
+        report.losses
     );
 
     let mut encoded = Vec::new();
@@ -711,17 +719,25 @@ fn semantic_writer_round_trips_typed_sweep() {
     dependencies.remove(0);
     inconsistent.model.features[3].dependencies =
         cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies).unwrap();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &inconsistent,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    // The record that fails validation is written from the canonical side
+    // and named.
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&inconsistent, Some(decoded.source_fidelity())),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
-    .unwrap_err();
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("profile feature is not a preceding dependency"),
-        "{error}"
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.invalid"
+                && loss
+                    .message
+                    .contains("profile feature is not a preceding dependency")),
+        "{:?}",
+        report.losses
     );
 
     let mut encoded = Vec::new();

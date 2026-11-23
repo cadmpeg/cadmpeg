@@ -559,7 +559,20 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 
 #[test]
 fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
-    let loss = super::edit_dropped(EntityKind::SourceAttribute, "test:attribute#a");
+    assert!(super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps",
+        Vec::<String>::new()
+    )
+    .is_none());
+    let loss = super::edit_dropped(
+        EntityKind::SourceAttribute,
+        "TEST",
+        "keeps these records as stored",
+        ["test:attribute#b", "test:attribute#a", "test:attribute#b"],
+    )
+    .unwrap();
     assert_eq!(loss.code.namespace(), "export");
     assert_eq!(loss.code.local_code(), "edit.dropped");
     assert_eq!(loss.severity, Severity::Error);
@@ -567,7 +580,22 @@ fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
         loss.code.taxonomy(),
         crate::report::loss::LossTaxonomy::AttributesNotTransferred
     );
-    assert_eq!(loss.message, "test:attribute#a");
+    assert_eq!(
+        loss.message,
+        "the TEST write keeps these records as stored (2): test:attribute#a, test:attribute#b"
+    );
+}
+
+#[test]
+fn the_unwritable_and_residual_codes_are_listed_warnings() {
+    let note = super::value_unwritable("x", "cuts texts", ["b", "a", "b"]).unwrap();
+    assert_eq!(note.code.local_code(), "value.unwritable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert_eq!(note.message, "the x write cuts texts (2): a, b");
+    let note = super::record_residual_unavailable("x", "states no tokens", ["f"]).unwrap();
+    assert_eq!(note.code.local_code(), "record.residual-unavailable");
+    assert_eq!(note.severity, Severity::Warning);
+    assert!(super::value_unwritable("x", "r", Vec::<String>::new()).is_none());
 }
 
 #[test]

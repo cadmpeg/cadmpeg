@@ -29,15 +29,26 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{HashMap, HashSet};
 
+/// A generated object or parameter name: 1 to 128 UTF-16 code units behind
+/// a u8 count.
+pub(crate) const GENERATED_NAME: cadmpeg_ir::codec::write::capacity::TextCapacity =
+    cadmpeg_ir::codec::write::capacity::TextCapacity::new(
+        "generated object name",
+        cadmpeg_ir::codec::write::capacity::TextUnit::Utf16CodeUnit,
+        128,
+    );
+
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
+/// the neutral side. `cut` receives an `export:value.unwritable` entry for
+/// each generated name cut to [`GENERATED_NAME`].
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     edits: &crate::history::write::edits::SourceEdits<'_>,
+    cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -63,7 +74,7 @@ pub(crate) fn prepare_sketches_for_write(
         }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
-        let generated = source_less_lanes(ir, native)?;
+        let generated = source_less_lanes(ir, native, cut)?;
         native.feature_input_lanes.extend(generated);
         return Ok(());
     }
@@ -1551,6 +1562,7 @@ fn generated_sketch_owner_id(
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
+    cut: &mut Vec<String>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
@@ -1567,10 +1579,23 @@ fn source_less_lanes(
                 owner_record.name.as_str()
             },
             object_id,
+            sketch.id.as_str(),
+            cut,
         )?;
-        append_generated_sketch_markers(ir, sketch, &mut payload)?;
+        append_generated_sketch_markers(ir, sketch, &mut payload, cut)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
-        let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
+        // The generated body's records are named for the sketch, which the
+        // history writer's retry leaves out (§3.2).
+        let body =
+            crate::writer::brep_body(&sketch_ir, 0.001, false).map_err(|error| match error {
+                cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => {
+                    error
+                }
+                other => cadmpeg_core::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT sketch {} cannot be encoded ({other})",
+                    sketch.id.as_str()
+                )),
+            })?;
         payload.extend(crate::writer::parasolid_stream_named(
             &body,
             "SCH_SW_33103_11000",
@@ -1592,6 +1617,8 @@ fn source_less_lanes(
                 owner_record.name.as_str()
             },
             object_id,
+            sketch.id.as_str(),
+            cut,
         )?;
         let entities = ir
             .model
@@ -2066,7 +2093,8 @@ mod source_less_lane_tests {
         let mut payload = Vec::new();
 
         validate_source_less_constraints(&ir).expect("required invariant");
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload, &mut Vec::new())
+            .expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 0),
@@ -2143,7 +2171,8 @@ mod source_less_lane_tests {
         });
         let writes_scalar = |ir: &cadmpeg_ir::CadIr| {
             let mut payload = Vec::new();
-            append_generated_sketch_markers(ir, &sketch, &mut payload).expect("required invariant");
+            append_generated_sketch_markers(ir, &sketch, &mut payload, &mut Vec::new())
+                .expect("required invariant");
             payload
                 .windows(b"sgPntPntDist".len())
                 .any(|window| window == b"sgPntPntDist")
@@ -2253,7 +2282,8 @@ mod source_less_lane_tests {
         let mut payload = Vec::new();
 
         validate_source_less_constraints(&ir).expect("required invariant");
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload, &mut Vec::new())
+            .expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 284),
@@ -2340,6 +2370,28 @@ mod source_less_lane_tests {
                     .is_err()
             );
         }
+    }
+
+    #[test]
+    fn an_overlong_generated_object_name_is_cut() {
+        let mut payload = Vec::new();
+        let mut cut = Vec::new();
+        super::append_generated_object_name(
+            &mut payload,
+            &"s".repeat(140),
+            7,
+            "test:sketch#a",
+            &mut cut,
+        )
+        .unwrap();
+        assert_eq!(
+            cut,
+            [
+                "test:sketch#a generated object name: 140 UTF-16 code units cut to 128; \
+              the field holds 128"
+            ]
+        );
+        assert!(payload.windows(2).any(|window| window == [128, b's']));
     }
 }
 

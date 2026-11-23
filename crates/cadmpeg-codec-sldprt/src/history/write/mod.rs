@@ -23,6 +23,7 @@ pub(crate) mod brep_agreement;
 pub(crate) mod configurations;
 pub(crate) mod edits;
 pub(crate) mod features;
+pub(crate) mod keywords;
 pub(crate) mod parameters;
 pub(crate) mod read_back;
 pub(crate) mod xml;
@@ -376,7 +377,7 @@ fn validate_surface_sweep_profile_edits(
     Ok(())
 }
 
-fn project_features_with_native_inputs(
+pub(crate) fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     Ok(project_feature_model_with_native_inputs(native)?.features)

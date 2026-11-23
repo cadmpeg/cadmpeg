@@ -13,12 +13,12 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::{neutral_feature_id, referenced_sources};
 
 use super::edits::ConstructionEdit;
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
-use super::xml::{feature_xml_tag, valid_xml_name};
+use super::xml::{feature_xml_tag, solidworks_source_tag};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::history::extrude_direction::cleared_reversal;
 use crate::loss::SldprtLossCode;
@@ -410,16 +410,6 @@ pub(in crate::history) fn sync_neutral_features(
     // a source feature, each with whether it moves no record field.
     let mut edited_constructions = HashMap::<FeatureId, Vec<(ConstructionEdit, bool)>>::new();
     for feature in features {
-        if feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} has an invalid source tag",
-                feature.id
-            )));
-        }
         let mut existing = native
             .feature_histories
             .iter_mut()
@@ -549,6 +539,8 @@ pub(in crate::history) fn sync_neutral_features(
                 &evaluated_parameters,
                 &mut parameters,
             );
+        } else {
+            state_unreferenced_dependencies(feature, &structural_parent_sources, &mut properties);
         }
         // With a source baseline, each record field the edit does not move
         // keeps its stored state.
@@ -661,7 +653,7 @@ pub(in crate::history) fn sync_neutral_features(
         });
         let parent_moved = field_baseline.is_none() || edits.feature_parent_moved(ir, &feature.id);
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
+            if let Some(tag) = solidworks_source_tag(feature) {
                 if moved(|original, feature| original.source_tag == feature.source_tag) {
                     existing.xml_tag.clone_from(tag);
                 }
@@ -1077,6 +1069,36 @@ fn synchronize_neutral_feature_content(
     Ok(())
 }
 
+/// Name in `Dependencies` each dependency of a generated record that none of
+/// its feature-reference properties names, so the record projects with every
+/// dependency its feature states. A dependency with no source id stays
+/// unnamed.
+fn state_unreferenced_dependencies(
+    feature: &cadmpeg_ir::features::Feature,
+    sources: &HashMap<FeatureId, Option<FeatureSource>>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let referenced = referenced_sources(properties)
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    let unreferenced = feature
+        .dependencies
+        .iter()
+        .filter_map(|dependency| sources.get(dependency).copied().flatten())
+        .map(String::from)
+        .filter(|source| !referenced.contains(source))
+        .collect::<Vec<_>>();
+    if unreferenced.is_empty() {
+        return;
+    }
+    let key = cadmpeg_core::nonblank_literal!("Dependencies");
+    let value = match properties.get(key.as_str()) {
+        Some(stated) => format!("{stated},{}", unreferenced.join(",")),
+        None => unreferenced.join(","),
+    };
+    properties.insert(key, value);
+}
+
 pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let configurations = history
@@ -1314,6 +1336,52 @@ mod tests {
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
         );
+    }
+
+    #[test]
+    fn a_solidworks_source_tag_xml_cannot_hold_keeps_the_record_tag_and_is_named() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        for (tag, written, named) in [
+            ("Pattern Geometry", "Feature", true),
+            ("PartDesign::Pad", "Feature", true),
+            ("Schlüssel", "Schlüssel", false),
+        ] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].source_tag = Some(tag.into());
+            let mut native = Some(sldprt_native(decoded.ir()));
+            sync_neutral_features(
+                &ir,
+                &ir.model.parameters,
+                &ir.geometry.bodies,
+                &mut native,
+                &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            )
+            .expect("the history is written");
+            let mut native = native.expect("native history");
+            let notes = crate::writer::keywords_text::readable_keywords(&ir, &mut native);
+            assert_eq!(
+                native.feature_histories[0].features[0].xml_tag, written,
+                "{tag}"
+            );
+            let names = notes
+                .iter()
+                .filter(|note| {
+                    note.code == crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.kind()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), usize::from(named), "{tag}: {notes:?}");
+            assert!(
+                names
+                    .iter()
+                    .all(|note| note.message.contains(&format!("{tag:?} as <Feature>"))),
+                "{names:?}"
+            );
+        }
     }
 
     #[test]

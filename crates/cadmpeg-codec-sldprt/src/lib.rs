@@ -129,6 +129,7 @@ mod pmi;
 mod records;
 mod resolved_features;
 mod rollback;
+mod scan;
 mod swift;
 mod tessellation;
 mod writer;
@@ -298,7 +299,6 @@ impl SldprtCodec {
         let writer::SemanticOutput {
             dialect,
             coverage,
-            omitted_envelope_bytes,
             unwritten,
             unwritten_edits,
             written,
@@ -312,19 +312,10 @@ impl SldprtCodec {
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let source_image = records
-            .iter()
-            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
-            .and_then(|record| record.data)
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "SLDPRT semantic writes need the retained source image".into(),
-                )
-            })?;
         let stale_solid = history::write::brep_agreement::stale_solid_losses(
             ir,
             native.as_ref(),
-            source_image,
+            image,
             &written,
         )?;
         Ok(Written::Semantic {
@@ -336,7 +327,6 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
-            omitted_envelope_bytes,
             stale_solid,
             unwritten_edits,
             unwritten,
@@ -423,7 +413,6 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
-        omitted_envelope_bytes: usize,
         /// One loss per construction edit that shapes the solid: the output
         /// keeps the stored solid, which shows the state before the edit.
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -432,7 +421,7 @@ enum Written {
         unwritten_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
         /// The metadata attributes the write did not write.
         unwritten: writer::UnwrittenAttributes,
-        /// The losses of the history the write prepared.
+        /// The write's other losses.
         losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }

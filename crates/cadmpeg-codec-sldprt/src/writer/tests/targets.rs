@@ -95,7 +95,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
 }
 
 #[test]
-fn explicit_cross_dialect_transcode_refuses_without_consuming_present_image() {
+fn explicit_cross_dialect_transcode_synthesizes_without_consuming_present_image() {
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
     let mut fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&data));
@@ -117,31 +117,39 @@ fn explicit_cross_dialect_transcode_refuses_without_consuming_present_image() {
         .unwrap()
         .data()
         .is_some());
-    let error = Encoder::plan(
+    let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),
         TargetRequest::Explicit("sldprt:unknown"),
     )
-    .expect_err("cross-dialect nonconsuming route has no admitted Native framing");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-        if detail.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
-    );
+    .expect("the cross-dialect route synthesizes its Native framing");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_ne!(&written[..4], &[0; 4], "file_id is nonzero");
+    assert_eq!(&written[4..8], &[0, 0, 0, 4]);
 }
 
 #[test]
-fn inherit_without_native_image_refuses_unproved_envelope_generation() {
+fn inherit_without_native_image_synthesizes_the_envelope() {
     let ir = sourced_ir("sldprt:unknown");
-    let error = Encoder::plan(
+    let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .expect_err("missing source image cannot supply Native framing");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-        if detail.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
-    );
+    .expect("a missing source image leaves the envelope to synthesis");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+    }));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().geometry.faces.len(), ir.geometry.faces.len());
 }

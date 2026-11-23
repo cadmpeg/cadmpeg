@@ -16,8 +16,9 @@ use crate::history::literals::{
 };
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
-    expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
-    parse_native_parameter_literal, project_parameters, stated_parameter_value,
+    equivalent_parameter_values, expression_identifier_tokens, global_parameter_owners,
+    parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
+    stated_parameter_value,
 };
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
@@ -259,7 +260,12 @@ fn sync_neutral_parameters(
                     )
                 },
             );
-            if let Some(stated) = stated.filter(|stated| parameter.value.as_ref() != Some(stated)) {
+            if let Some(stated) = stated.filter(|stated| {
+                !parameter
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| equivalent_parameter_values(value, stated))
+            }) {
                 edits.parameter_unwritten(&parameter.id, UnwrittenPart::Value, format!(
                     "Parameter {} is written with expression {}, which states {}; its value {} is not written.",
                     parameter.id.as_str(),

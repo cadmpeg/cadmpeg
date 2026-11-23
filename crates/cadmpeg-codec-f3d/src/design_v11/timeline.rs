@@ -114,13 +114,15 @@ pub(super) fn project(
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
                 let flags = tail_flags.get(&(stream, item.value)).copied();
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let feature = positioned
+                let feature = match positioned
                     .get(&(stream, ordinal))
                     .and_then(|candidates| item_feature(candidates, item.value))
-                    .map_or_else(
-                        || unprojected_item(stream, timeline, item.value, &item_types, flags),
-                        |feature| resolved_item(feature, bodies, &scopes, losses),
-                    );
+                {
+                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
+                    None => {
+                        unprojected_item(stream, timeline, item.value, &item_types, flags, losses)
+                    }
+                };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
                 ordinal = ordinal
@@ -287,16 +289,23 @@ fn unprojected_item(
     record: u64,
     types: &ItemTypes<'_>,
     flags: Option<DesignScopeTailFlags>,
+    losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let id = item_feature_id(stream, record);
+    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
+        losses.push(code.note(format!(
+            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+        )));
+    }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
     Feature {
-        id: item_feature_id(stream, record),
+        id,
         name: None,
-        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed)),
+        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed())),
         definition: FeatureDefinition {
             operation,
             refine: None,
