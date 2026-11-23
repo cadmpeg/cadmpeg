@@ -1208,7 +1208,7 @@ The design leaves out a built circle that repeats a stored circle or arc of its 
 
 **Need.** The operand-to-marker resolution of `sgCircleDim` where the resolved marker lies one radius from a stored curve's center, compared with the curve record that the solid confirms, and what in the record tells a handle at the center from a handle on the curve.
 
-**Conflict.** A cylinder face witnesses a circle, not the feature that cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads only cylinders along the sketch normal, so a built circle that a revolution sweeps has none; no typed feature picks such a sketch.
+**Conflict.** A cylinder face witnesses a circle whichever feature cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads cylinders along the sketch normal, so a built circle that a revolution sweeps has none.
 
 ### DI-72. Length unit codes and the three-word unit base
 
