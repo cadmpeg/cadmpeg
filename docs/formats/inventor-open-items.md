@@ -402,6 +402,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** A design that sets the relief, transition, and corner values of a plate-and-bend face record away from the document-style defaults, with the stored plate and bend records, shows whether null slots select the style values. A design with both plate-side values and the resulting solid shows the side of value 1.
 
+### DE-29. Bend with a result collection of its own
+
+**Question.** How does the 11-property bend relate to its plate when slot 9 is not the plate result collection and slot 8 holds the scalar 0 with state 1?
+
+**Known.** The bend has the 11-property layout and slot 10 is a Boolean. Slot 9 is an object collection that differs from plate slot 15, which is also an object collection. Plate slot 16 is an enumeration. Bend slots 0, 2, 3, 4, and 7 are the plate references of section 13.5.
+
+**Need.** A design with such a bend and the stored members of both collections shows which result each collection holds and whether the scalar 0 form changes the bend construction.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

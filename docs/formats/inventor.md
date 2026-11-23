@@ -1130,6 +1130,8 @@ Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11
 
 The 9-property bend form has slots 0 through 8 of that table. Its slot 5 holds the surface-body property shared with plate slot 6, and it has no slot 9 and no slot 10.
 
+The bend of a 15-property plate with null slots 9 through 14 shares plate slots 7, 3, 4, and 6 at bend slots 0, 2, 3, and 5, and slot 0 is an empty edge collection. Its slots 4 and 7 hold relief and transition records of the bend itself, because plate slots 10 and 11 are null. A bend of this form names no attachment: the plate stores none, and no bend slot selects an edge.
+
 Type `08dcddc3d311d0976000a7a99dccefb0` stores the flange parent. It contains the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label has four ordered participants: the consumed planar sketch, that plate, that bend, and that corner. The consumed sketch defines the plate's planar profile. The attached-plate slot-0 kernel selection stores its construction wire; that wire is not the closed boundary of the consumed sketch.
 
 For a plate owned by a `08dcddc3d311d0976000a7a99dccefb0` flange record, slot 1 is antiparallel to the first attachment direction. Slot 1 is in the sketch plane. It does not define the thickness direction. Slot 2 Boolean false or enumeration `(2, 0)` places the plate between the sketch plane and its positive-normal offset by the thickness. Reversing the first attachment direction does not reverse this offset.
