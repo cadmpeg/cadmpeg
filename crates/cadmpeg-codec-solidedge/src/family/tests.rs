@@ -35,10 +35,18 @@ fn record_lists_its_entries_by_member_name() {
 }
 
 #[test]
-fn record_trailer_word_is_not_an_entry() {
+fn record_with_a_prefix_list_skips_it() {
     let mut table = member_table(&[("alpha", &[7])]);
-    let last = table.len() - 4;
-    table[last] = 1;
+    let at = table
+        .windows(4)
+        .position(|window| window == b"QQQ\0")
+        .unwrap()
+        + 8
+        + 4
+        + 12;
+    // The prefix count follows the name; one entry adds four bytes.
+    table[at..at + 4].copy_from_slice(&1_u32.to_le_bytes());
+    table.splice(at + 4..at + 4, [9, 0, 0, 0]);
     assert_eq!(
         listed_occurrences(&table, "alpha")
             .unwrap()
@@ -49,9 +57,25 @@ fn record_trailer_word_is_not_an_entry() {
 }
 
 #[test]
-fn record_whose_count_disagrees_with_its_entries_lists_nothing() {
+fn record_whose_count_exceeds_its_bytes_lists_nothing() {
     let mut table = member_table(&[("alpha", &[7])]);
-    let count = table.len() - 4 - 12 - 4;
+    let count = table.len() - 8 - (4 + 13 * 8 + 3) - 4;
     table[count] = 2;
+    assert_eq!(listed_occurrences(&table, "alpha"), None);
+}
+
+#[test]
+fn record_without_the_two_blocks_lists_nothing() {
+    let mut table = member_table(&[("alpha", &[7])]);
+    let at = table
+        .windows(4)
+        .position(|window| window == b"QQQ\0")
+        .unwrap()
+        + 8
+        + 4
+        + 12
+        + 4
+        + 12;
+    table[at] = 0;
     assert_eq!(listed_occurrences(&table, "alpha"), None);
 }

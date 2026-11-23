@@ -624,15 +624,27 @@ The active member is the member storage with that name.
 The stream `Family of Assemblies Members` of the master storage holds the
 member table. It starts with a header, then one record per member. A record
 starts with the bytes `51 51 51 00`, the `u32` member identifier and the member
-name, and ends with a `u32` count `n`, `n` entries of 12 bytes and a `u32`
-trailer word. An entry is a `u64` `0x40000000` and the `u32` object identifier of a
-`CLSID_JAsmReference` object. A record ends before the next record tag or at the
+name, followed by:
+
+| Field | Size |
+| --- | ---: |
+| `u32` count `c` | 4 |
+| `c` entries, each a `u32` object identifier | 4 `c` |
+| further bytes | 12 |
+| two blocks, each a `u32` `1`, a 16-byte class identifier and a `u32` `0` | 48 |
+| `u32` count `n` | 4 |
+| `n` entries | 111 `n` |
+| further bytes to the end of the record | |
+
+An entry of the second list is the `u32` identifier of a `CLSID_JAsmReference`
+object, the 13 `f64` words of the placement of §9.2 (rotation, translation and
+the word `1`) and 3 bytes. A record ends before the next record tag or at the
 end of the stream.
 
-The active member places the occurrences of §§9.1 to 9.3 whose object identifier its
-record lists, taken from the references collection of its own storage. A
-member storage holds the `CLSID_JAsmReference` objects of the family; the
-record states which of them the member places.
+The active member places the occurrences of §§9.1 to 9.3 whose object identifier
+its record lists in the second list, taken from the references collection of its
+own storage. A member storage holds the `CLSID_JAsmReference` objects of the
+family; the record states which of them the member places.
 
 ## 10. Sheet metal
 

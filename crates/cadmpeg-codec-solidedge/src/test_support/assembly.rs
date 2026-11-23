@@ -178,8 +178,9 @@ fn unit_string(name: &str) -> Vec<u8> {
     bytes
 }
 
-/// The member table: a header and one record per `(name, listed)` member, each
-/// ending with the count, the entries of `listed` and the word `3`.
+/// The member table: a header and one record per `(name, listed)` member. A
+/// record holds the name, the empty prefix list, two blocks, the entries of
+/// `listed` and a trailer.
 pub(crate) fn member_table(members: &[(&str, &[u32])]) -> Vec<u8> {
     let mut bytes = b"\x44\xf5\x90\x6c\x03\0\0\0QQP\0\0\xa0\0\0".to_vec();
     bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
@@ -187,12 +188,18 @@ pub(crate) fn member_table(members: &[(&str, &[u32])]) -> Vec<u8> {
         bytes.extend_from_slice(b"QQQ\0");
         bytes.extend_from_slice(&(0xa001 + u32::try_from(ordinal).unwrap()).to_le_bytes());
         bytes.extend_from_slice(&unit_string(name));
-        bytes.extend_from_slice(&[0x5a; 21]);
+        bytes.extend_from_slice(&[0; 16]);
+        for _ in 0..2 {
+            bytes.extend_from_slice(&1_u32.to_le_bytes());
+            bytes.extend_from_slice(&[0x5a; 16]);
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+        }
         bytes.extend_from_slice(&u32::try_from(listed.len()).unwrap().to_le_bytes());
         for id in *listed {
-            bytes.extend_from_slice(&0x4000_0000_u64.to_le_bytes());
             bytes.extend_from_slice(&id.to_le_bytes());
+            bytes.extend_from_slice(&[0; 13 * 8 + 3]);
         }
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
         bytes.extend_from_slice(&3_u32.to_le_bytes());
     }
     bytes
