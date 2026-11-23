@@ -68,7 +68,6 @@ fn carrier_scan(
                 payload: Vec::new(),
                 ps_streams: Vec::new(),
                 ps_probe_capped: false,
-                ps_auxiliary_refusal: None,
             };
             is_owner(Section::Block(&block)).then(|| {
                 block.payload = data.to_vec();
@@ -84,6 +83,8 @@ fn carrier_scan(
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
         solidworks: SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     }
 }
 

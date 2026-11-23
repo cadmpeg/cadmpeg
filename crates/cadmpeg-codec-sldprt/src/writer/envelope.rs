@@ -137,7 +137,7 @@ fn shared<const N: usize>(
 /// The source's proved envelope, or `None` when the source has none, it
 /// holds no member, or a stored token cannot be read.
 fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecError> {
-    let envelope = match native_layout::source_envelope(scan.source_image, &scan.blocks) {
+    let envelope = match native_layout::source_envelope(scan.source_image, &scan.blocks, &[]) {
         Ok(Some(envelope)) => envelope,
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
         Ok(None) | Err(_) => return Ok(None),
@@ -457,7 +457,7 @@ mod tests {
     /// single-envelope file.
     fn tokens(bytes: &[u8]) -> [[u8; 4]; 4] {
         let written = crate::test_support::container::scan(bytes);
-        let envelope = native_layout::source_envelope(bytes, &written.blocks)
+        let envelope = native_layout::source_envelope(bytes, &written.blocks, &[])
             .unwrap()
             .unwrap();
         let block = &written.blocks[0];
@@ -593,10 +593,10 @@ mod tests {
                 &output[written.cache_cells[0].physical_range.clone().unwrap()],
                 exact_cell
             );
-            let before = native_layout::source_envelope(&source, &original.blocks)
+            let before = native_layout::source_envelope(&source, &original.blocks, &[])
                 .unwrap()
                 .unwrap();
-            let after = native_layout::source_envelope(&output, &written.blocks)
+            let after = native_layout::source_envelope(&output, &written.blocks, &[])
                 .unwrap()
                 .unwrap();
             assert_eq!(
@@ -711,7 +711,7 @@ mod tests {
                 .starts_with("247 native envelope auxiliary bytes"));
             let written = crate::test_support::container::scan(&regenerated.bytes);
             assert_eq!(
-                native_layout::source_envelope(&regenerated.bytes, &written.blocks)
+                native_layout::source_envelope(&regenerated.bytes, &written.blocks, &[])
                     .unwrap()
                     .unwrap()
                     .padding_bytes,
@@ -792,7 +792,7 @@ mod tests {
                 assert_eq!(parsed.blocks.len(), sections.len());
                 assert_eq!(parsed.directory.len(), sections.len());
                 assert!(
-                    native_layout::source_envelope(&omitted.bytes, &parsed.blocks)
+                    native_layout::source_envelope(&omitted.bytes, &parsed.blocks, &[])
                         .unwrap()
                         .is_some()
                 );

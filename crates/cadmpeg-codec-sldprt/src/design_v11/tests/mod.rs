@@ -1535,6 +1535,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
             configurations: &ir.design.configurations,
             active: scope.active_configuration.as_ref(),
             current: &every_body,
+            given_up: &std::collections::BTreeSet::new(),
         },
         &names,
         &mut losses,

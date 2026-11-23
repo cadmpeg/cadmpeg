@@ -49,6 +49,9 @@ pub(crate) enum SldprtLossCode {
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
     ConfigActivePartitionMismatch,
+    /// The active partition is not chosen: a section the choice needs was
+    /// given up.
+    ConfigActivePartitionUnread,
     /// Configuration state inferred from geometry without a native definition.
     ConfigInferredWithoutNative,
     /// Configuration-scoped feature-input lane has unresolved configuration id.
@@ -367,8 +370,9 @@ pub(crate) enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// The legacy Parasolid zlib probe stopped at its work limit in a section.
     ContainerParasolidProbeCapped,
-    /// An optional weldment owner was retained after a malformed extraction refusal.
-    ContainerAuxiliaryParasolidRefused,
+    /// The compound document admits a noncanonical CFB encoding that every
+    /// stream it names is read past.
+    ContainerNoncanonical,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
     /// The document carries no usable `swVersion`, so no declared identity was
@@ -642,6 +646,7 @@ impl SldprtLossCode {
         Self::MetadataConfigurationPropertyValueUnsupported,
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
+        Self::ConfigActivePartitionUnread,
         Self::ConfigInferredWithoutNative,
         Self::ConfigLaneIdentityUnresolved,
         Self::ConfigAmbiguousPartition,
@@ -769,7 +774,7 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::ContainerParasolidProbeCapped,
-        Self::ContainerAuxiliaryParasolidRefused,
+        Self::ContainerNoncanonical,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
@@ -865,6 +870,7 @@ impl SldprtLossCode {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
+            Self::ConfigActivePartitionUnread => "config.active-partition-unread",
             Self::ConfigInferredWithoutNative => "config.inferred-without-native",
             Self::ConfigLaneIdentityUnresolved => "config.lane-identity-unresolved",
             Self::ConfigAmbiguousPartition => "config.ambiguous-partition",
@@ -1006,7 +1012,7 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::ContainerParasolidProbeCapped => "container.parasolid-probe-capped",
-            Self::ContainerAuxiliaryParasolidRefused => "container.auxiliary-parasolid-refused",
+            Self::ContainerNoncanonical => "container.noncanonical",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
@@ -1193,6 +1199,7 @@ impl SldprtLossCode {
             }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -1308,7 +1315,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
+            | Self::ContainerNoncanonical
             | Self::ContainerParasolidProbeCapped
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
@@ -1500,7 +1507,6 @@ impl SldprtLossCode {
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::GeometryMeshBodyNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
@@ -1523,6 +1529,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::ContainerNoncanonical
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryUnread => LossTaxonomy::DecodeDiagnostic,
             Self::HistoryApplicationNotTransferred
@@ -1530,6 +1537,7 @@ impl SldprtLossCode {
             | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -1793,6 +1801,7 @@ mod tests {
                 "metadata.configuration-property-value-unsupported",
                 "config.active-identity-unresolved",
                 "config.active-partition-mismatch",
+                "config.active-partition-unread",
                 "config.inferred-without-native",
                 "config.lane-identity-unresolved",
                 "config.ambiguous-partition",
@@ -1920,7 +1929,7 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "container.parasolid-probe-capped",
-                "container.auxiliary-parasolid-refused",
+                "container.noncanonical",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",

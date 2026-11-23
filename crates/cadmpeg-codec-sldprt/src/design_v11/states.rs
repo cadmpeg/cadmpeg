@@ -60,6 +60,8 @@ pub(super) struct Scope<'a> {
     pub(super) active: Option<&'a ConfigurationId>,
     /// The bodies of the current state.
     pub(super) current: &'a [BodyId],
+    /// The native ids of the configurations whose partition was given up.
+    pub(super) given_up: &'a BTreeSet<String>,
 }
 
 /// The states of the configurations that are not active.
@@ -145,8 +147,12 @@ pub(super) fn configuration_states(
                 continue;
             }
             None => {
-                if native.is_some() {
-                    losses.push(not_stored(configuration, stale));
+                if let Some(native) = native {
+                    let given_up = native
+                        .native_ref
+                        .as_ref()
+                        .is_some_and(|native_ref| scope.given_up.contains(native_ref));
+                    losses.push(not_stored(configuration, stale, given_up));
                 }
                 if !stale {
                     continue;
@@ -187,16 +193,30 @@ pub(super) fn configuration_states(
 }
 
 /// The loss of a configuration that is not active and whose partition the
-/// file does not store; `stale` where the file flags it as needing a
-/// rebuild.
-fn not_stored(configuration: &DesignConfiguration, stale: bool) -> LossNote {
+/// decode does not hold: the file stores none, or `given_up` where the
+/// stored partition was given up; `stale` where the file flags it as needing
+/// a rebuild.
+fn not_stored(configuration: &DesignConfiguration, stale: bool, given_up: bool) -> LossNote {
+    let (code, partition, flagged) = if given_up {
+        (
+            SldprtLossCode::ConfigStateUnstated,
+            "its stored partition is given up",
+            " and the file flags it as needing a rebuild, so its state is stale",
+        )
+    } else {
+        (
+            SldprtLossCode::ConfigStateNotStored,
+            "the file stores no partition of it",
+            " and flags it as needing a rebuild, so its state is stale",
+        )
+    };
     let flag = if stale {
-        " and flags it as needing a rebuild, so its state is stale"
+        flagged
     } else {
         ", so its state is not stated"
     };
-    SldprtLossCode::ConfigStateNotStored.note(format!(
-        "configuration {} ({:?}): the file stores no partition of it{flag}.",
+    code.note(format!(
+        "configuration {} ({:?}): {partition}{flag}.",
         configuration.id, configuration.name
     ))
 }
