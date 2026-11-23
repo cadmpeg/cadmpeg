@@ -37,7 +37,7 @@ use super::options::NativeOptions;
 use super::selection::{DefinitionRef, SetSelection};
 use crate::features::FeatureId;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::scalar::{FiniteReal, PositiveLength};
+use crate::scalar::{PositiveLength, PositiveReal};
 use crate::sketches::{SketchId, SpatialSketchId};
 use crate::spreadsheets::SpreadsheetId;
 use crate::tessellation::TessellationId;
@@ -395,13 +395,14 @@ pub struct Link {
         deserialize_with = "deserialize_transform"
     )]
     pub transform: Option<Transform>,
-    /// A uniform scale of the copy.
+    /// The uniform factor the source stores as such, applied about the
+    /// source definition's origin before `transform`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_scale"
     )]
-    pub scale: Option<FiniteReal>,
+    pub scale: Option<PositiveReal>,
     /// Whether the copy follows its source.
     #[serde(
         default,

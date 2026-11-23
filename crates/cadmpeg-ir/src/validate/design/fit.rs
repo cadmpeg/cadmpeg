@@ -432,7 +432,7 @@ fn planar_straight(curve: Option<&PlanarCurve>) -> bool {
 fn spatial_straight(curve: Option<&SpatialCurve>) -> bool {
     match curve {
         None | Some(SpatialCurve::Point(_)) => false,
-        Some(SpatialCurve::Bounded { carrier, .. }) => !curved(carrier),
+        Some(SpatialCurve::Bounded(bounded)) => !curved(&bounded.carrier),
     }
 }
 
