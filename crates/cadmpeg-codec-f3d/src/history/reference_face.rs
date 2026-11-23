@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{
-    effective_faces, face_boundary_contexts_for_slots, selection, stable_ref,
-    AsmHistoricalTopology, SideOneEdge, TopologyQueryCache,
-};
+use super::body_closures::stable_ref;
+use super::edge_operand_history::SideOneEdge;
+use super::face_boundaries::face_boundary_contexts_for_slots;
+use super::face_resolution::effective_faces;
+use super::selection;
+use crate::history::topology_cache::TopologyQueryCache;
+use crate::history_records::AsmHistoricalTopology;
 
 /// The one edge of `topology` that every face named by the first side of a
 /// standard edge recipe bounds and that the recipe's candidate faces bound.

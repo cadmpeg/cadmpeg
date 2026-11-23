@@ -87,14 +87,17 @@ impl FaceRecipeIndex {
                 .or_insert(Some(row));
         }
         for &face in &topology.faces {
-            let Some(loops) = super::relation_members(&topology.face_loops, face) else {
+            let Some(loops) = super::face_resolution::relation_members(&topology.face_loops, face)
+            else {
                 continue;
             };
             let mut boundary = Vec::new();
             let mut loop_boundaries = Vec::new();
             let mut face_corners = Vec::new();
             let complete = loops.iter().all(|&loop_| {
-                let Some(coedges) = super::relation_members(&topology.loop_coedges, loop_) else {
+                let Some(coedges) =
+                    super::face_resolution::relation_members(&topology.loop_coedges, loop_)
+                else {
                     return false;
                 };
                 if coedges.is_empty() {
@@ -370,8 +373,8 @@ impl FaceRecipeIndex {
             if reference.design_reference < 0 {
                 continue;
             }
-            for face in super::effective_faces(reference) {
-                if let Some(slot) = super::stable_ref(face.as_str()) {
+            for face in super::face_resolution::effective_faces(reference) {
+                if let Some(slot) = super::body_closures::stable_ref(face.as_str()) {
                     if self.boundaries.contains_key(&slot) {
                         lane.insert(slot);
                     }

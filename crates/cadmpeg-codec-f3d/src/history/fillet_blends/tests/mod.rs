@@ -450,9 +450,9 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
 fn a_cylinder_blend_states_no_edge_whose_touching_owner_is_not_a_support() {
     let (input, mut output) = (rib(), rib_fillet());
     output.faces.retain(|face| *face != 10);
-    let input_boundaries = crate::history::face_boundary_edge_index(&input);
-    let output_boundaries = crate::history::face_boundary_edge_index(&output);
-    let input_carriers = crate::history::unique_face_carriers(&input);
+    let input_boundaries = crate::history::treatment_candidates::face_boundary_edge_index(&input);
+    let output_boundaries = crate::history::treatment_candidates::face_boundary_edge_index(&output);
+    let input_carriers = crate::history::treatment_candidates::unique_face_carriers(&input);
     let rows = BlendRows::new(
         &transition(&[20], &[17, 18]),
         (&input, &output),

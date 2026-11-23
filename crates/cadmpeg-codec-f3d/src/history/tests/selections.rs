@@ -12,25 +12,23 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::active_brep_face_matches_source;
 use crate::history::bind_snapshot_revision_ids;
-use crate::history::body_revision_without_topology_change;
-use crate::history::combine_recipe_family_tool_slots;
-use crate::history::grouped_reference_face_candidate;
-use crate::history::historical_body_slot;
+use crate::history::body_selections::{
+    body_revision_without_topology_change, combine_recipe_family_tool_slots, historical_body_slot,
+    pattern_combine_tool_slots, singleton_body_revision_across_state_chain,
+    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
+};
+use crate::history::face_resolution::active_brep_face_matches_source;
+use crate::history::face_resolution::grouped_reference_face_candidate;
 use crate::history::historical_record_archive;
 use crate::history::insert_only_active_record_count;
 use crate::history::materialize_record_table;
-use crate::history::pattern_combine_tool_slots;
-use crate::history::profile_face_group_cardinality_candidates;
+use crate::history::profile_face_groups::profile_face_group_cardinality_candidates;
 use crate::history::selection::bind_edge_identity_history;
 use crate::history::selection::bind_hole_selection_history;
 use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
 use crate::history::selection::per_history_identities;
-use crate::history::singleton_body_revision_across_state_chain;
-use crate::history::singleton_revised_input_body_across_state_chain;
-use crate::history::TopologyStableBodyRevision;
 use crate::history::{admit_history_binding, archived_active_record_count};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
@@ -406,7 +404,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -438,7 +436,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -448,7 +446,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::from([scope.id.clone()]),
     );
@@ -842,7 +840,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
-        super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
+        super::super::body_selections::combine_external_local_tools(&scope)
+            .expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -855,7 +854,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(super::super::combine_external_local_tools(&scope).is_none());
+    assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
 }
 
 #[test]
@@ -1806,7 +1805,7 @@ mod operand_list_combine {
         let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
         let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
         let mut refusals = Vec::new();
-        let shared_body = super::super::super::bind_operand_list_combine_bodies(
+        let shared_body = super::super::super::body_selections::bind_operand_list_combine_bodies(
             (&mut target, &mut tools),
             &combine,
             &operation,
@@ -1819,7 +1818,7 @@ mod operand_list_combine {
         );
         let losses = refusals
             .iter()
-            .map(crate::history::CombineOperandRefusal::note)
+            .map(crate::history::body_selections::CombineOperandRefusal::note)
             .collect();
         ((target, tools), losses, shared_body)
     }
@@ -1835,7 +1834,7 @@ mod operand_list_combine {
             other => panic!("expected a historical selection, got {other:?}"),
         };
         ids.iter()
-            .map(|id| crate::history::historical_body_slot(id).unwrap())
+            .map(|id| crate::history::body_selections::historical_body_slot(id).unwrap())
             .collect()
     }
 

@@ -11,7 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::{discard_projection_caches, side_one_common_edge, side_one_recipe_edge};
+use crate::history::discard_projection_caches;
+use crate::history::face_boundaries::{side_one_common_edge, side_one_recipe_edge};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
 #[test]
