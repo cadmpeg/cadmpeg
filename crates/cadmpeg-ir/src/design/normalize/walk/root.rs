@@ -421,7 +421,7 @@ impl Walk for ParameterDefinition {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
         match self {
             Self::Expression(f0) => f0.walk(into),
-            Self::Driven | Self::Assigned(_) => Ok(()),
+            Self::Driven | Self::Assigned(_) | Self::Unset => Ok(()),
         }
     }
 }

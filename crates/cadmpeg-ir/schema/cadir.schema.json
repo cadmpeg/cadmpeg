@@ -6012,6 +6012,31 @@
         "entity"
       ]
     },
+    "BoundedCurve": {
+      "description": "A curve carrier and the interval of its own parameter that a piece uses.",
+      "type": "object",
+      "properties": {
+        "carrier": {
+          "description": "The carrier.",
+          "$ref": "#/$defs/SolvedCurveGeometry"
+        },
+        "range": {
+          "description": "The interval of the carrier's parameter. `None` is the carrier's whole\ndomain; a piece the source bounds inside that domain, an arc\nincluded, states it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IncreasingParameterInterval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "carrier"
+      ]
+    },
     "Bounds": {
       "description": "A range; it holds at least one bound.",
       "type": "object",
@@ -9531,6 +9556,26 @@
         "g",
         "b",
         "a"
+      ]
+    },
+    "ColorAddressing": {
+      "description": "The mesh element that each value of a colour set belongs to.",
+      "oneOf": [
+        {
+          "description": "One value per vertex, in vertex order.",
+          "type": "string",
+          "const": "vertex"
+        },
+        {
+          "description": "One value per triangle corner, in triangle order.",
+          "type": "string",
+          "const": "corner"
+        },
+        {
+          "description": "One value per triangle, in triangle order.",
+          "type": "string",
+          "const": "triangle"
+        }
       ]
     },
     "Combine": {
@@ -19845,6 +19890,17 @@
             }
           ]
         },
+        "edge_classes": {
+          "description": "The edge classes a view's hidden-line projection draws besides its\nvisible hard edges.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeClasses"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "hidden_line": {
           "description": "How a view's hidden-line projection computes its curves.",
           "anyOf": [
@@ -20553,6 +20609,73 @@
         }
       },
       "additionalProperties": false
+    },
+    "EdgeClass": {
+      "description": "An edge class a hidden-line projection can draw.",
+      "oneOf": [
+        {
+          "description": "Visible edges between tangent faces.",
+          "type": "string",
+          "const": "visible_smooth"
+        },
+        {
+          "description": "Visible seam edges of closed faces.",
+          "type": "string",
+          "const": "visible_seam"
+        },
+        {
+          "description": "Visible iso-parameter lines.",
+          "type": "string",
+          "const": "visible_iso"
+        },
+        {
+          "description": "Hidden edges between faces that meet at an angle.",
+          "type": "string",
+          "const": "hidden_hard"
+        },
+        {
+          "description": "Hidden edges between tangent faces.",
+          "type": "string",
+          "const": "hidden_smooth"
+        },
+        {
+          "description": "Hidden seam edges of closed faces.",
+          "type": "string",
+          "const": "hidden_seam"
+        },
+        {
+          "description": "Hidden iso-parameter lines.",
+          "type": "string",
+          "const": "hidden_iso"
+        }
+      ]
+    },
+    "EdgeClasses": {
+      "description": "The edge classes a hidden-line projection draws besides its visible hard\nedges, which every projection draws.",
+      "type": "object",
+      "properties": {
+        "drawn": {
+          "description": "Each class drawn; a class the set does not hold is not drawn.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeClass"
+          },
+          "uniqueItems": true
+        },
+        "iso_count": {
+          "description": "The number of iso-parameter lines.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "drawn"
+      ]
     },
     "EdgeEnds": {
       "description": "The start and end vertices of an edge.",
@@ -45060,10 +45183,10 @@
           ]
         },
         "scale": {
-          "description": "A uniform scale of the copy.",
+          "description": "The uniform factor the source stores as such, applied about the\nsource definition's origin before `transform`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/FiniteReal"
+              "$ref": "#/$defs/PositiveReal"
             },
             {
               "type": "null"
@@ -47436,6 +47559,28 @@
       "additionalProperties": false,
       "required": [
         "from"
+      ]
+    },
+    "MeshColors": {
+      "description": "The colours a source stores per element of a mesh.",
+      "type": "object",
+      "properties": {
+        "addressing": {
+          "description": "The mesh element of each value.",
+          "$ref": "#/$defs/ColorAddressing"
+        },
+        "values": {
+          "description": "The values: one per element `addressing` names.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Color"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "addressing",
+        "values"
       ]
     },
     "MeshConversion": {
@@ -53532,6 +53677,20 @@
           "required": [
             "kind",
             "value"
+          ]
+        },
+        {
+          "description": "The source holds the parameter with no value and no definition of it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unset"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
           ]
         }
       ]
@@ -65490,8 +65649,15 @@
       "type": "object",
       "properties": {
         "geometry": {
-          "description": "The curve.",
-          "$ref": "#/$defs/SolvedCurveGeometry"
+          "description": "The curve. `None` where the decoder did not read its carrier.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundedCurve"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "description": "The model entities the curve was taken from, where the source records\nthem.",
@@ -65505,10 +65671,7 @@
           ]
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "geometry"
-      ]
+      "additionalProperties": false
     },
     "ProfileFit": {
       "description": "An offset of a profile in its plane before the operation uses it. A\npositive value moves a loop outward from itself, so a region grows and its\nholes grow. An offset of 0 states no fit.",
@@ -84499,7 +84662,7 @@
           ]
         },
         {
-          "description": "A curve carrier with its parameter range.",
+          "description": "A curve carrier with the interval of its parameter that the piece\nuses.",
           "type": "object",
           "properties": {
             "kind": {
@@ -84507,29 +84670,7 @@
               "const": "bounded"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "carrier": {
-                  "description": "The carrier.",
-                  "$ref": "#/$defs/SolvedCurveGeometry"
-                },
-                "range": {
-                  "description": "The parameter range. `None` is the full curve.",
-                  "type": [
-                    "array",
-                    "null"
-                  ],
-                  "items": {
-                    "$ref": "#/$defs/FiniteReal"
-                  },
-                  "maxItems": 2,
-                  "minItems": 2
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "carrier"
-              ]
+              "$ref": "#/$defs/BoundedCurve"
             }
           },
           "additionalProperties": false,
@@ -88466,10 +88607,10 @@
               ]
             },
             "scale": {
-              "description": "A uniform scale of the copy.",
+              "description": "The uniform factor the source stores as such, applied about the\nsource definition's origin before `transform`.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/FiniteReal"
+                  "$ref": "#/$defs/PositiveReal"
                 },
                 {
                   "type": "null"
@@ -92539,6 +92680,17 @@
             "null"
           ],
           "format": "double"
+        },
+        "colors": {
+          "description": "Colours the source stores per vertex, corner, or triangle.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeshColors"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "faces": {
           "description": "Faces represented by this mesh, empty when face-level ownership is unknown.",

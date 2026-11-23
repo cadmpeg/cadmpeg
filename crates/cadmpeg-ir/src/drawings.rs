@@ -7,7 +7,7 @@ use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 crate::ids::id_type!(
     /// Stable identity of one neutral drawing entity.
@@ -142,6 +142,14 @@ pub struct Drawing {
         deserialize_with = "deserialize_perspective"
     )]
     pub perspective: Option<crate::scalar::PositiveLength>,
+    /// The edge classes a view's hidden-line projection draws besides its
+    /// visible hard edges.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_classes"
+    )]
+    pub edge_classes: Option<EdgeClasses>,
     /// How a view's hidden-line projection computes its curves.
     #[serde(
         default,
@@ -193,6 +201,7 @@ impl Drawing {
             scale_from: None,
             projection: None,
             perspective: None,
+            edge_classes: None,
             hidden_line: None,
             sheet: None,
             curves: Vec::new(),
@@ -224,7 +233,9 @@ cadmpeg_core::named_optional_field!(
     crate::scalar::PositiveLength,
     "perspective"
 );
+cadmpeg_core::named_optional_field!(deserialize_edge_classes, EdgeClasses, "edge_classes");
 cadmpeg_core::named_optional_field!(deserialize_hidden_line, HiddenLineMethod, "hidden_line");
+cadmpeg_core::named_optional_field!(deserialize_iso_count, u32, "iso_count");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 /// Where a view's scale comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
@@ -248,6 +259,46 @@ pub enum ProjectionAngle {
     First,
     /// Third-angle projection.
     Third,
+}
+
+/// The edge classes a hidden-line projection draws besides its visible hard
+/// edges, which every projection draws.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct EdgeClasses {
+    /// Each class drawn; a class the set does not hold is not drawn.
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<EdgeClass>"))]
+    pub drawn: BTreeSet<EdgeClass>,
+    /// The number of iso-parameter lines.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_iso_count"
+    )]
+    pub iso_count: Option<u32>,
+}
+
+/// An edge class a hidden-line projection can draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum EdgeClass {
+    /// Visible edges between tangent faces.
+    VisibleSmooth,
+    /// Visible seam edges of closed faces.
+    VisibleSeam,
+    /// Visible iso-parameter lines.
+    VisibleIso,
+    /// Hidden edges between faces that meet at an angle.
+    HiddenHard,
+    /// Hidden edges between tangent faces.
+    HiddenSmooth,
+    /// Hidden seam edges of closed faces.
+    HiddenSeam,
+    /// Hidden iso-parameter lines.
+    HiddenIso,
 }
 
 /// How a hidden-line projection computes its curves.
@@ -379,6 +430,43 @@ mod tests {
         let mut rejected = wire;
         rejected["rotation_degrees"] = serde_json::json!(90.0);
         assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+    }
+
+    /// §8: `edge_classes` is a set of classes drawn besides the visible hard
+    /// edges, with the iso-line count; a class is stated once.
+    #[test]
+    fn edge_classes_round_trip_as_a_set() {
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
+            "edge_classes": {"drawn": ["visible_smooth", "visible_iso", "hidden_hard"], "iso_count": 3},
+            "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
+        let classes = drawing.edge_classes.as_ref().expect("edge classes");
+        assert_eq!(
+            classes.drawn.iter().copied().collect::<Vec<_>>(),
+            [
+                super::EdgeClass::VisibleSmooth,
+                super::EdgeClass::VisibleIso,
+                super::EdgeClass::HiddenHard
+            ]
+        );
+        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        for (invalid, fragment) in [
+            (serde_json::Value::Null, "edge_classes"),
+            (
+                serde_json::json!({"drawn": ["hidden_iso", "hidden_iso"]}),
+                "",
+            ),
+            (serde_json::json!({"drawn": ["visible_hard"]}), ""),
+            (
+                serde_json::json!({"drawn": [], "iso_count": null}),
+                "iso_count",
+            ),
+        ] {
+            let mut rejected = wire.clone();
+            rejected["edge_classes"] = invalid;
+            let error = serde_json::from_value::<Drawing>(rejected).expect_err("invalid field");
+            assert!(error.to_string().contains(fragment), "{fragment}: {error}");
+        }
     }
 
     #[test]
