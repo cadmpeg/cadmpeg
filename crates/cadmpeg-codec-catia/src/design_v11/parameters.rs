@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Part parameters and their formulas (§5.12, §5.13).
+//!
+//! The decode report names, in one `design.parameter-reference-as-text`
+//! note, each parameter whose expression holds no reference to an input the
+//! decoder resolved for it, with the inputs it loses.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -14,24 +18,30 @@ use cadmpeg_ir::design::expr::{
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use cadmpeg_ir::features::{
-    DesignParameter as LegacyParameter, ParameterId, ParameterValue as LegacyValue,
+use cadmpeg_ir::features::parameters::{
+    DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::CadIr;
+
+use crate::loss::{identity_statement, CatiaLossCode};
 
 /// The relative difference within which a formula's tree reproduces the
 /// value the source stores for the formula.
 const STORED_VALUE_AGREEMENT: f64 = 1e-9;
 
 /// Restate every user parameter the decoder transferred as a parameter of
-/// `scope`. The decoder files no CATIA parameter under a feature; one it did
-/// would need its owner stated, and is left out.
+/// `scope`, and add to `losses` the note naming those that drop an input.
+/// The decoder files no CATIA parameter under a feature; one it did would
+/// need its owner stated, and is left out.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     scope: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let user = ir
         .model
@@ -41,16 +51,29 @@ pub(super) fn project(
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
     let mut projected = Vec::with_capacity(user.len());
+    let mut dropped = Vec::new();
     for parameter in user.values() {
         ctx.charge_entities(1, "project a CATIA v11 parameter")?;
         let kind = kind(parameter)?;
+        let expression = expression(parameter, &user, &kind);
+        let lost = dropped_inputs(parameter, &expression);
+        if !lost.is_empty() {
+            dropped.push(format!(
+                "{} ({})",
+                parameter.id,
+                lost.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
         projected.push(DesignParameter {
             id: parameter.id.clone(),
             scope: scope.clone(),
             owner: None,
             name: NonBlankString::new(parameter.name.clone()),
             value: value(parameter.value.as_ref(), &kind),
-            definition: ParameterDefinition::Expression(expression(parameter, &user, &kind)),
+            definition: ParameterDefinition::Expression(expression),
             kind,
             unit: None,
             display: None,
@@ -62,9 +85,46 @@ pub(super) fn project(
             native_ref: parameter.native_ref.clone(),
         });
     }
+    if !dropped.is_empty() {
+        losses.push(CatiaLossCode::DesignParameterReferenceAsText.note(format!(
+            "{} parameters hold an input parameter the decoder resolved as text, or omit it, \
+             and state no dependency on that parameter (each with the inputs it loses): {}",
+            dropped.len(),
+            identity_statement(&dropped)
+        )));
+    }
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// The inputs the decoder resolved for `parameter` that `expression` holds no
+/// reference to.
+fn dropped_inputs<'a>(
+    parameter: &'a LegacyParameter,
+    expression: &Expression,
+) -> Vec<&'a ParameterId> {
+    let held = match expression {
+        Expression::Neutral(Neutral(tree)) => {
+            expr::print(tree).map_or_else(|_| Vec::new(), |wire| wire.refs)
+        }
+        Expression::Source { tokens, .. } => tokens
+            .iter()
+            .filter_map(|token| match token {
+                ExpressionToken::Reference(reference) => Some(reference.clone()),
+                ExpressionToken::Text(_) => None,
+            })
+            .collect(),
+    };
+    parameter
+        .dependencies
+        .iter()
+        .filter(|input| {
+            !held.iter().any(
+                |reference| matches!(&reference.target, RefTarget::Parameter(id) if id == *input),
+            )
+        })
+        .collect()
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -361,10 +421,12 @@ fn formula(
     }
 }
 
-/// A formula whose whole text is one resolved input of the same `Boolean` or
-/// `Text` kind, which [`agrees`] cannot evaluate, is that reference. Any other
-/// such formula keeps its text whole: a `Source` expression holds a `Text`
-/// token (part 10).
+/// A formula whose whole text is one resolved input of the same `Boolean`,
+/// `Integer` or `Text` kind, which [`agrees`] cannot evaluate, is that
+/// reference (§5.13: an integer expression is dimensionless and evaluates to
+/// an integer). Any other such formula keeps its text whole: a `Source`
+/// expression holds a `Text` token (part 10), and [`dropped_inputs`] names
+/// the parameter.
 fn whole_reference(
     reference: &ParameterRef,
     text: &str,
@@ -375,7 +437,11 @@ fn whole_reference(
         RefTarget::Parameter(id) => parameters.get(id).copied().and_then(kind_of),
         RefTarget::External { .. } => None,
     };
-    if matches!(kind, ValueKind::Boolean | ValueKind::Text) && input_kind.as_ref() == Some(kind) {
+    if matches!(
+        kind,
+        ValueKind::Boolean | ValueKind::Integer | ValueKind::Text
+    ) && input_kind.as_ref() == Some(kind)
+    {
         return Expression::Neutral(Neutral(Node::Reference(reference.clone())));
     }
     Expression::Source {

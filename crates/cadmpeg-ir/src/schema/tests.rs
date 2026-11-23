@@ -74,11 +74,10 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 
 #[test]
 fn typed_reference_walk_treats_historical_members_as_state_local() {
-    use crate::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation,
-    };
+    use crate::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use crate::features::evaluation::FeatureInputTopology;
+    use crate::features::selections::EdgeSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
 
@@ -90,10 +89,13 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
-        vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: crate::features::selections::DistinctMembers::try_from(
+            vec![historical_edge.clone()],
+        )
+        .unwrap(),
+        vertices: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     };
@@ -103,15 +105,15 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: crate::features::NonEmptyMembers::one(FilletGroup {
+                groups: crate::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::historical(
                         state_id.clone(),
                         vec![historical_edge],
@@ -269,9 +271,11 @@ fn schema_generation_produces_definitions() {
 #[test]
 fn model_feature_schema_describes_serialized_regeneration_parent() {
     use crate::document::Model;
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
     use crate::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let parent = FeatureId::mint("test:model:feature#1-parent").unwrap();

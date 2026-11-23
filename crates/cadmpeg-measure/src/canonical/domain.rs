@@ -2,9 +2,10 @@
 //! Procedural carriers: bounded supports, directly evaluated extrusions,
 //! and solved caches with an admitted fit tolerance.
 
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 
 use super::placement::Placement;
@@ -133,7 +134,7 @@ impl<'ir> Carrier<'ir> {
             Some(ProceduralSurfaceDefinition::Exact(_)) => Some(0.0),
             _ => procedural
                 .and_then(ProceduralSurface::cache_fit_tolerance)
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         };
         let (Some(cache), Some(fit)) = (cache, fit) else {
             return Self::resolve(surface, body);

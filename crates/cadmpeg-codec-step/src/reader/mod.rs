@@ -33,6 +33,7 @@ pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod groups;
+mod header;
 mod index;
 mod ownership;
 mod plant_dimensions;
@@ -148,6 +149,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
+        let header_attribute_losses = header::add_source_attributes(exchange, &mut attributes);
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
@@ -172,6 +174,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         }
         body.losses.extend(dialect_loss);
         body.losses.extend(schema_edition_loss);
+        body.losses.extend(header_attribute_losses);
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::RecordOmitted => {
@@ -859,7 +862,7 @@ fn retain_unowned_carriers(
         }
     }
     for surface in &ir.geometry.procedural_surfaces {
-        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+        let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves,
             ..
         } = surface.definition()

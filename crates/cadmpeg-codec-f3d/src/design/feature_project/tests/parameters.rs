@@ -11,9 +11,9 @@ use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudeStart;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignScopePayload;
+use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::scalar::Length;
 
@@ -1060,7 +1060,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     );
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );

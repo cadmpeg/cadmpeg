@@ -11,9 +11,10 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, NativeFeatureKind,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, NativeFeatureKind,
 };
 use serde::{Deserialize, Serialize};
 

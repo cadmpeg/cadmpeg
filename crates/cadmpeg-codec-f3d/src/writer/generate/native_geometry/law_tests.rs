@@ -5,10 +5,11 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
+use cadmpeg_ir::geometry::lofts::LoftPathCurve;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
-use cadmpeg_ir::geometry::{
-    LawExpression, LawFormula, LoftPathCurve, ProceduralSurfaceDefinition, SweepSurfaceLayout,
-};
+use cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceLayout;
 
 use crate::test_support::smbh_surfaces_test::{
     synthetic_law_driven_sweep_smbh, synthetic_revision_text_law_sweep_smbh,
@@ -58,7 +59,7 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     let mut native = payload
         .native()
         .as_deref()
-        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw)
+        .map(cadmpeg_ir::geometry::sweep_surfaces::SweepSurfaceConstruction::to_raw)
         .unwrap();
     edit(&mut native.layout);
     let replacement = SweepSurfacePayload::try_new(
@@ -93,18 +94,16 @@ fn assert_round_trip(ir: &CadIr) {
     assert_eq!(layout(decoded.ir()), layout(ir));
 }
 
-fn assert_refused(ir: &CadIr) {
-    let sentinel = b"existing output".to_vec();
-    let mut output = sentinel.clone();
-    let result = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut output));
-    assert!(
-        result.is_err(),
-        "unrepresentable law was written: {:?}",
-        layout(ir)
+/// An unrepresentable law is reduced to its carrier's solved cache.
+fn assert_reduced(ir: &CadIr) {
+    crate::test_support::assert_written_with_loss(
+        ir,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "",
     );
-    assert_eq!(output, sentinel, "refusal must precede output mutation");
 }
 
 #[test]
@@ -161,7 +160,7 @@ fn formula_variables_refuse_text_including_nested_text() {
                         variables: vec![expression],
                     };
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -226,7 +225,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
                         **second_law = expression.clone();
                     }
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -264,7 +263,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
                     }
                 });
                 if first && (revision || matches!(expression, LawExpression::Integer { .. })) {
-                    assert_refused(&ir);
+                    assert_reduced(&ir);
                 } else {
                     assert_round_trip(&ir);
                 }

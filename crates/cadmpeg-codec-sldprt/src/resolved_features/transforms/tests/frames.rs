@@ -28,20 +28,16 @@ use crate::resolved_features::transforms::Axes;
 use crate::resolved_features::transforms::MarkerTransform;
 use crate::resolved_features::transforms::ProfileAxis;
 use crate::resolved_features::transforms::Sign;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SketchPlacement,
 };
 use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        ParameterId, ParameterValue,
-    },
-    scalar::{Angle, Length},
-};
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -65,6 +61,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         role: FeatureInputScalarRole::Native,
         operands,
         archive_class: None,
+        archive_object_id: None,
     };
     let display_operand = operand(2, "display-handle");
     let display = FeatureInputScalar {
@@ -202,7 +199,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -361,12 +358,12 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
@@ -385,7 +382,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("existing-driver".into()),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
     };
     let scalar = FeatureInputScalar {
         id: "scalar".into(),
@@ -399,6 +396,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         role: FeatureInputScalarRole::Display,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),
@@ -874,12 +872,12 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -969,7 +967,7 @@ fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("circle-scalar".into()),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
     };
 
     DimensionedCircleFixture {
@@ -1327,12 +1325,12 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
             }),
@@ -1348,7 +1346,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         expression: "10".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(10.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("parameter-scalar".into()),

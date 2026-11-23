@@ -8,9 +8,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use cadmpeg_ir::features::{
-    DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn relation_lane() -> FeatureInputLane {
@@ -81,6 +80,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 role: FeatureInputScalarRole::Display,
                 operands: Vec::new(),
                 archive_class: None,
+                archive_object_id: None,
             })
             .collect();
         lane.names = (0..12)
@@ -131,12 +131,12 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 ordinal,
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                     }),
@@ -175,7 +175,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                     properties,
                     pmi: None,
                     native_ref: None,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 }
             })
             .collect::<Vec<_>>();

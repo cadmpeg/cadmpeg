@@ -2,7 +2,7 @@
 //! Scaled geometric least-squares solves.
 
 use super::Vector3;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::scalar::FiniteReal;
 
 /// Scalar least-squares step along a finite nonzero tangent. Exact products
@@ -70,18 +70,32 @@ pub fn least_squares_step(
             std::array::from_fn(|index| dv_components[index] * residual_components[index]),
         )?
         .get();
-        let u_numerator = super::sum::fast_dot(
-            [dv_squared, -mixed],
-            [du_residual, dv_residual],
-            [dv_squared * du_residual, -mixed * dv_residual],
-        )?
-        .get();
-        let v_numerator = super::sum::fast_dot(
-            [du_squared, -mixed],
-            [dv_residual, du_residual],
-            [du_squared * dv_residual, -mixed * du_residual],
-        )?
-        .get();
+        let (u_numerator, v_numerator) = if mixed == 0.0 {
+            let u = dv_squared * du_residual;
+            let v = du_squared * dv_residual;
+            if (u != 0.0 && !u.is_normal())
+                || (u == 0.0 && du_residual != 0.0)
+                || (v != 0.0 && !v.is_normal())
+                || (v == 0.0 && dv_residual != 0.0)
+            {
+                return None;
+            }
+            (u, v)
+        } else {
+            let u = super::sum::fast_dot(
+                [dv_squared, -mixed],
+                [du_residual, dv_residual],
+                [dv_squared * du_residual, -mixed * dv_residual],
+            )?
+            .get();
+            let v = super::sum::fast_dot(
+                [du_squared, -mixed],
+                [dv_residual, du_residual],
+                [du_squared * dv_residual, -mixed * du_residual],
+            )?
+            .get();
+            (u, v)
+        };
         let u_denominator = determinant * du_scale;
         let v_denominator = determinant * dv_scale;
         if !u_denominator.is_normal() || !v_denominator.is_normal() {

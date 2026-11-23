@@ -6,13 +6,16 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{
+    Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2,
+};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
@@ -676,7 +679,7 @@ impl<'a> DecodeContext<'a> {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("valid identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -685,7 +688,7 @@ impl<'a> DecodeContext<'a> {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("valid identity"),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             );
@@ -1253,13 +1256,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(hatch.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("RhinoHatch".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "hatch".into(),
                     parameters,
@@ -1380,13 +1383,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(source_order),
             name,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoPolyEdgeReference".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "polyedge_reference".into(),
                     parameters,
@@ -1486,13 +1489,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(detail.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoDetailView".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "detail_view".into(),
                     parameters,
@@ -1634,13 +1637,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(cage.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: properties,
             source_tag: Some("RhinoNurbsCage".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "nurbs_cage".into(),
                     parameters,
@@ -1838,13 +1841,13 @@ impl<'a> DecodeContext<'a> {
             ordinal: cadmpeg_core::decode::u64_from_index(construction.source_range.start),
             name: (!identity.name.is_empty()).then(|| identity.name.clone()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties,
             source_tag: Some("RhinoCurveOnSurface".to_string()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "curve_on_surface".into(),
                     parameters,
@@ -3170,7 +3173,10 @@ impl<'a> DecodeContext<'a> {
                 if vertices.is_empty() {
                     self.scan_warning(
                         source_order,
-                        format_args!("{}", cadmpeg_ir::features::BodySelectionError::Empty),
+                        format_args!(
+                            "{}",
+                            cadmpeg_ir::features::selections::BodySelectionError::Empty
+                        ),
                     );
                     return Ok(false);
                 }
@@ -3451,7 +3457,7 @@ impl<'a> DecodeContext<'a> {
                             None,
                             extrusion.direction,
                             None,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                         )
                         .map_err(|error| CandidateError::Admission(error.to_string())).map(|admitted_payload| ProceduralSurface::new(
                                 procedure_id.clone(),
@@ -4044,7 +4050,7 @@ fn stage_extrusion_caps(
             "extrusion cap staging: PlaneSurface.normal/u_axis must form an orthonormal frame"
                 .to_string()
         })?;
-        let origin = cadmpeg_ir::features::FinitePoint3::new(extrusion.cap_origins[cap])
+        let origin = cadmpeg_ir::features::geometry::FinitePoint3::new(extrusion.cap_origins[cap])
             .ok_or_else(|| {
                 "extrusion cap staging: PlaneSurface.origin must be finite".to_string()
             })?;
@@ -5042,7 +5048,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         };
         if shell_faces.is_empty() && shell_free_vertices.is_empty() {
             return Err(crate::curves::GeometryError::unpositioned(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         staged.draft.geometry_mut().shells.push(Shell::with_members(
@@ -5148,13 +5154,14 @@ fn finish_brep_fallback(mut staged: BrepDraft, cause: impl std::fmt::Display) ->
 /// Projects one embedded Brep into a self-contained semantic topology value.
 pub(crate) fn embedded_brep_json(
     expand: crate::mesh::MeshExpand<'_>,
-    data: &[u8],
     range: std::ops::Range<usize>,
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     refusal: &mut Option<cadmpeg_core::CodecError>,
 ) -> Option<String> {
+    let data = expand.data();
     let parsed = match crate::brep::parse(expand.ctx(), data, range, archive, writer_version, &[]) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -5181,7 +5188,6 @@ pub(crate) fn embedded_brep_json(
         &cadmpeg_ir::identity_namespace!("rhino", "history", "brep"),
         cadmpeg_ir::identity_key!("embedded"),
     );
-    let mut mesh_budget = crate::mesh::MeshBudget::new();
     let staged = match stage_brep(BrepTransferInput {
         expand,
         data,
@@ -5192,7 +5198,7 @@ pub(crate) fn embedded_brep_json(
         association: &association,
         unknown: &unknown,
         scale,
-        mesh_budget: &mut mesh_budget,
+        mesh_budget,
     }) {
         Ok(value) => value,
         Err(crate::curves::GeometryError::Codec(error)) => {
@@ -5412,7 +5418,7 @@ fn stage_curve_tree_indexed(
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
                 parameters.push(parameter);
-                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
                     parameter,
                     component: stage_curve_tree_indexed(
                         procedural_admission,
@@ -5429,7 +5435,7 @@ fn stage_curve_tree_indexed(
                     record: Some(unknown.clone()),
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
                         parameters, components, None,
                     )
                     .map_err(crate::curves::GeometryError::unpositioned)?,
@@ -5994,7 +6000,7 @@ fn commit_curve_tree_indexed(
                 let parameter = parameter.get();
                 parameters.push(parameter);
                 let child_path = format!("{}.component-{index}", source.path);
-                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
                     parameter,
                     component: commit_curve_tree_indexed(
                         ctx,
@@ -6017,7 +6023,7 @@ fn commit_curve_tree_indexed(
                     record: source.record,
                 }),
                 Some(ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
                         parameters, components, None,
                     )
                     .map_err(str::to_owned)?,
@@ -6430,15 +6436,18 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
+    let mut mesh_budget = context.mesh_budget.clone();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(
             expand.ctx(),
             &scan.history,
             geometry_context,
+            &mut mesh_budget,
             candidate,
             &mut history_warnings,
         )
     });
+    context.mesh_budget = mesh_budget;
     context.report.phase_warnings.append(&mut history_warnings);
     let history_projected = untyped.is_ok();
     match untyped {

@@ -9,7 +9,7 @@ use crate::decode::offset::test_support::{
     offset_surface_parameters, offset_surface_parameters_with_tolerance,
 };
 use crate::decode::support_uv::{complete_ext11_support_uv, SerializedSupportUv};
-use crate::test_support::test_bytes::put_ref;
+use crate::test_support::test_bytes::{put_f64, put_ref, put_vec3, record};
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::fully_extend_common_header;
 use crate::test_support::test_deltas::offset_surface_with_fully_extended_common_header;
@@ -36,10 +36,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use cadmpeg_ir::geometry::blends::{BlendCrossSection, BlendRadiusLaw};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -465,6 +467,40 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
 }
 
 #[test]
+fn decode_lifts_pcurve_only_fin_carrier_on_a_swept_surface() {
+    let mut stream = pcurve_topology_partition_stream();
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let surface_curve = stream
+        .windows(4)
+        .position(|window| window == [0, 137, 0, 25])
+        .expect("surface curve");
+    put_ref(&mut stream, surface_curve + 19, 12);
+    put_ref(&mut stream, surface_curve + 23, 1);
+    let mut swept = record(67, 53);
+    put_ref(&mut swept, 2, 12);
+    swept[18] = b'+';
+    put_ref(&mut swept, 19, 40);
+    put_vec3(&mut swept, 21, [0.0, 0.0, 1.0]);
+    put_f64(&mut swept, 45, 0.02);
+    stream.extend(swept);
+    let mut section = record(30, 67);
+    put_ref(&mut section, 2, 40);
+    section[18] = b'+';
+    put_vec3(&mut section, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut section, 43, [1.0, 0.0, 0.0]);
+    stream.extend(section);
+
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir().geometry.edges[0].curve().is_some());
+}
+
+#[test]
 fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let mut stream = pcurve_topology_partition_stream();
     let edge = stream
@@ -494,7 +530,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
         .expect("lifted carrier");
     assert!(matches!(carrier.geometry, CurveGeometry::Procedural { .. }));
     let ProceduralCurveDefinition::SurfaceCurve {
-        family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, .. },
+        family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. },
     } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("parametric surface curve");
@@ -625,8 +661,10 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
         carrier.geometry.solved_cache(),
         Some(SolvedCurveGeometry::Nurbs(_))
     ));
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("intersection definition");
     };
@@ -736,8 +774,10 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -757,8 +797,10 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().geometry.procedural_curves[0].definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+        context,
+        ..
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -833,33 +875,34 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
                 cadmpeg_ir::ids::ProceduralCurveId::mint("nx:test:intersection#0")
                     .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
-                    context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                        [
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: Some(surface),
-                                pcurve: Some(
-                                    PcurveGeometry::Nurbs {
-                                        nurbs: PcurveNurbs::from_lanes(
-                                            1,
-                                            vec![0.0, 0.0, 1.0, 1.0],
-                                            vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
-                                            None,
-                                            false,
-                                        )
-                                        .expect("valid support pcurve"),
-                                    }
-                                    .into(),
-                                ),
-                            },
-                            cadmpeg_ir::geometry::IntcurveSupportSide {
-                                surface: None,
-                                pcurve: None,
-                            },
-                        ],
-                        [0.0, 1.0],
-                        [Vec::new(), Vec::new(), Vec::new()],
-                    )
-                    .unwrap(),
+                    context:
+                        cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                            [
+                                cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
+                                    surface: Some(surface),
+                                    pcurve: Some(
+                                        PcurveGeometry::Nurbs {
+                                            nurbs: PcurveNurbs::from_lanes(
+                                                1,
+                                                vec![0.0, 0.0, 1.0, 1.0],
+                                                vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
+                                                None,
+                                                false,
+                                            )
+                                            .expect("valid support pcurve"),
+                                        }
+                                        .into(),
+                                    ),
+                                },
+                                cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
+                                    surface: None,
+                                    pcurve: None,
+                                },
+                            ],
+                            [0.0, 1.0],
+                            [Vec::new(), Vec::new(), Vec::new()],
+                        )
+                        .unwrap(),
                     discontinuity_flag: false,
                     cache: None,
                 },
@@ -928,7 +971,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
         assert_eq!(
             completed
                 .fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             edge_tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
         );
         assert!(ir.geometry.coedges.iter().any(|coedge| coedge
@@ -1015,7 +1058,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         {
             let mut ir = result.ir_mut();
             ir.geometry.procedural_curves[0].edit_definition(|definition| {
-                let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
+                let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
                     context, ..
                 } = definition
                 else {
@@ -1027,14 +1070,14 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         for side in &mut (*context_sides) {
                             side.pcurve = None;
                         }
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -1063,8 +1106,10 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         complete_ext11_support_uv(geometry_ctx, &mut result.ir_mut(), &pending)
             .expect("support-uv lanes pair");
 
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().geometry.procedural_curves[0].definition()
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+            context,
+            ..
+        } = &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };
@@ -1099,14 +1144,14 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         for side in &mut (*context_sides) {
                             side.pcurve = None;
                         }
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -1152,10 +1197,9 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 
 #[test]
 fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
-    use cadmpeg_ir::geometry::{
-        nurbs::NurbsSurface, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        Surface,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -1311,9 +1355,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
 
 #[test]
 fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
-    use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralSurface, Surface,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -1486,7 +1529,8 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
 
 #[test]
 fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
-    use cadmpeg_ir::geometry::{BlendSupport, ProceduralSurface, Surface};
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
     crate::test_support::with_decode_context(|geometry_ctx| {
@@ -1580,7 +1624,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                         Some(spine_curve.clone()),
                         BlendRadiusLaw::constant(radius).unwrap(),
                         BlendCrossSection::Circular,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                     )
                     .unwrap(),
                 ),
@@ -1628,7 +1672,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                 let discontinuities =
                     cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
-                    let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                    let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                         &mut sides;
 
                     (*context_sides)[0].surface = Some(blend);
@@ -1636,7 +1680,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     (*context_sides)[1].surface = None;
                     (*context_sides)[1].pcurve = None;
                 };
-                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(sides, range, discontinuities)
             })
             .unwrap();
         });
@@ -1653,14 +1697,14 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         for side in &mut (*context_sides) {
                             side.pcurve = None;
                         }
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
@@ -1744,12 +1788,12 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
                     let discontinuities =
                         cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
-                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                        let context_sides: &mut [cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide; 2] =
                             &mut sides;
 
                         (*context_sides)[0].pcurve = None;
                     };
-                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,

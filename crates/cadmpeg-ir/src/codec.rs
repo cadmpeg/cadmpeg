@@ -25,7 +25,7 @@ use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
     ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
-    InspectOptions, View, WholeInput,
+    InspectOptions, LimitScope, View, WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
@@ -228,7 +228,7 @@ impl DecodeResult {
         decoded: Decoded,
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
-        let mut result = DecodeResult::new(decoded, format, ctx.depth())?;
+        let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.keep_first_of_repeated_ids();
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
@@ -260,14 +260,27 @@ impl DecodeResult {
     }
 
     /// Builds a result by stamping the document's source classification onto
-    /// the report body, then canonicalizing the IR and source fidelity.
+    /// the report body, then canonicalizing the IR and source fidelity: every
+    /// arena sorted by id, then every one-spelling rule in its canonical form
+    /// (§3.1).
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format. The document records the scope
     /// of the depth the backend's transfer state reports, less each class
     /// `requested` excludes that the document leaves empty; each class
     /// `requested` names that the document lacks adds an error loss.
-    fn new(decoded: Decoded, format: FormatId, requested: DecodeDepth) -> Result<Self, CodecError> {
+    ///
+    /// The normalizer runs under `policy`, the decode's own. Only a refusal
+    /// that stops the session refuses the decode; where the normalizer gives
+    /// records up, or stops for any other reason, the document is kept as it
+    /// stands and a `decode/normalize.incomplete` Warning names what it left
+    /// (interim, inventory gap 20261119-N1-4).
+    fn new(
+        decoded: Decoded,
+        format: FormatId,
+        requested: DecodeDepth,
+        policy: &DecodePolicy,
+    ) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             mut body,
@@ -296,6 +309,25 @@ impl DecodeResult {
             None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize();
+        match crate::design::normalize::normalize(&mut ir, policy) {
+            Ok(given_up) if given_up.is_empty() => {}
+            Ok(given_up) => body
+                .losses
+                .push(DecodeLossCode::NormalizeIncomplete.note(format!(
+                    "the decode wrapper's normalizer left part of {} in the spelling the decoder \
+                 stated: its selections or constructions nest past the recursion ceiling",
+                    given_up.join(", ")
+                ))),
+            Err(CodecError::ResourceLimit(limit)) if limit.scope == LimitScope::Session => {
+                return Err(CodecError::ResourceLimit(limit));
+            }
+            Err(error) => body
+                .losses
+                .push(DecodeLossCode::NormalizeIncomplete.note(format!(
+                    "the decode wrapper's normalizer stopped ({error}), so the document keeps \
+                 spellings the decoder stated"
+                ))),
+        }
         Ok(Self {
             ir,
             report: DecodeReport::from_body(classification, body),
@@ -303,15 +335,22 @@ impl DecodeResult {
         })
     }
 
-    /// Keeps the first copy, in the decoder's emission order, of each id a
-    /// decoder emitted more than once in one arena, drops the others, and
-    /// charges one loss per id naming it and the copies dropped (interim,
-    /// item Q).
+    /// Keeps one copy of each id a decoder emitted more than once in one
+    /// arena. Copies that hold one value are one record, and the wrapper
+    /// states it (§2.8). Where the copies differ, §2.8 states none and gives
+    /// the id up with the records that need it; that give-up pass does not
+    /// exist yet, so meanwhile the first copy in the decoder's emission order
+    /// is kept, the others are dropped, and one `decode/id.repeated` loss per
+    /// id names it, the arena, and the copies.
     fn keep_first_of_repeated_ids(&mut self) {
-        for (arena, id, dropped) in self.ir.drop_repeated_ids() {
+        for repeated in self.ir.drop_repeated_ids() {
             self.report.losses.push(DecodeLossCode::IdRepeated.note(format!(
-                "the decoder emitted {id} {} times in arena {arena}; the first copy is kept and {dropped} dropped",
-                dropped + 1
+                "the decoder emitted {} {} times in arena {}, and the copies differ; the first \
+                 copy is kept and {} dropped, so a reference meant for a dropped copy names the first",
+                repeated.id,
+                repeated.dropped + 1,
+                repeated.arena,
+                repeated.dropped
             )));
         }
     }

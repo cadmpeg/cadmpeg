@@ -6,7 +6,9 @@ use crate::history_records::{
     AsmHistoricalPlane, AsmHistoricalRowsDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition,
 };
-use cadmpeg_ir::features::{FaceSelection, FeatureId, ShellMode};
+use cadmpeg_ir::features::operation_settings::ShellMode;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn point(x: f64, y: f64, z: f64) -> Point3 {

@@ -11,14 +11,17 @@ use locations::{Located, Locations};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPole2};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::sampled::{
+    PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+};
 use cadmpeg_ir::geometry::{
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -227,24 +230,32 @@ impl RepeatableStarts {
     }
 }
 
-fn keep_first_from<T>(
+fn keep_first_from<T: PartialEq>(
     arena: &mut Vec<T>,
     start: usize,
     id: impl Fn(&T) -> &str,
     payload: &ShapePayloadRecord,
     losses: &mut Vec<LossNote>,
 ) {
-    let mut stated = HashSet::new();
+    let mut stated = HashMap::new();
     let mut repeated = Vec::new();
-    let mut index = 0;
-    arena.retain(|record| {
-        let keep = index < start || stated.insert(id(record).to_owned()) || {
-            repeated.push(id(record).to_owned());
-            false
-        };
-        index += 1;
-        keep
-    });
+    let mut kept = Vec::with_capacity(arena.len());
+    for (index, record) in arena.drain(..).enumerate() {
+        if index >= start {
+            match stated.get(id(&record)) {
+                Some(&first) if kept[first] == record => {
+                    repeated.push(id(&record).to_owned());
+                    continue;
+                }
+                Some(_) => {}
+                None => {
+                    stated.insert(id(&record).to_owned(), kept.len());
+                }
+            }
+        }
+        kept.push(record);
+    }
+    *arena = kept;
     for id in repeated {
         losses.push(FreecadLossCode::TopologyRecordRepeated.note(format!(
             "shape payload {} lists one shape twice at one location: {id} is stated once and its later copy is not stated",
@@ -400,6 +411,7 @@ struct Builder<'a, 'c, 'r, 'p> {
     body_scope: Located,
     locations: Locations,
     root_discriminator: Option<usize>,
+    face_uses: HashMap<String, Vec<(ShellId, bool)>>,
     current_body: Option<BodyId>,
     source_object: cadmpeg_core::text::NonBlankString,
     source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
@@ -431,6 +443,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             emitted_triangulations: HashSet::new(),
             body_scope: Located::identity(),
             root_discriminator: None,
+            face_uses: HashMap::new(),
             current_body: None,
             source_object,
             source_indices,
@@ -857,7 +870,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
                 if faces.is_empty() && wire_edges.is_empty() {
                     return Err(cadmpeg_core::CodecError::Malformed(
-                        cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                        cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
                     ));
                 }
                 ir.geometry.shells.push(Shell::with_members(
@@ -938,7 +951,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
         if faces.is_empty() && wire_edges.is_empty() {
             return Err(cadmpeg_core::CodecError::Malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         ir.geometry.shells.push(Shell::with_members(
@@ -1030,7 +1043,8 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             return Ok(None);
         };
         let surface_transform = self.compose(face_transform, self.location(location)?)?;
-        let face_key = self.topology_label(face_use.shape, face_transform)?;
+        let occurrence_key = self.topology_label(face_use.shape, face_transform)?;
+        let (face_key, first_use) = self.face_use_key(&occurrence_key, shell, face_reversed);
         let face_id = FaceId::mint(crate::native::model_id("face", &self.payload.id, &face_key))
             .map_err(CodecError::malformed)?;
         // OCCT triangulation nodes are already expressed in the face's surface-location frame.
@@ -1073,7 +1087,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         } else if let Some((index, triangulation, vertices, triangles, deflection_scale)) =
             &located_triangulation
         {
-            let key = format!("triangulation:{index}@{face_key}");
+            let key = format!("triangulation:{index}@{occurrence_key}");
             let id = SurfaceId::mint(crate::native::model_id("surface", &self.payload.id, &key))
                 .map_err(CodecError::malformed)?;
             let new_surface = !self.emitted_surfaces.contains(&id);
@@ -1225,7 +1239,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: (parameter_range)
-                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::from_finite_endpoints)
+                                    .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_finite_endpoints)
                                     .transpose()
                                     .map_err(CodecError::malformed)?,
                             })
@@ -1257,12 +1271,14 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 ),
                 native_ref: None,
             });
-            self.bind_topology(
-                TextShapeKind::Wire,
-                wire_use.shape,
-                wire_transform,
-                loop_id.as_str(),
-            )?;
+            if first_use {
+                self.bind_topology(
+                    TextShapeKind::Wire,
+                    wire_use.shape,
+                    wire_transform,
+                    loop_id.as_str(),
+                )?;
+            }
             loops.push(loop_id);
         }
         ir.geometry.faces.push(Face {
@@ -1276,13 +1292,45 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             tolerance: PositiveReal::from_finite(tolerance),
             native_ref: None,
         });
-        self.bind_topology(
-            TextShapeKind::Face,
-            face_use.shape,
-            face_transform,
-            face_id.as_str(),
-        )?;
+        if first_use {
+            self.bind_topology(
+                TextShapeKind::Face,
+                face_use.shape,
+                face_transform,
+                face_id.as_str(),
+            )?;
+        }
         Ok(Some(face_id))
+    }
+
+    /// The key of a face listed at `occurrence` under `shell` with sense
+    /// `reversed`, and whether it is the occurrence's first use. A face shape
+    /// listed again at one location identity under another shell, or with
+    /// the other sense, is another face, as the two sides of a face that two
+    /// solids share: its key appends `~use<n>`, `n` numbering the distinct
+    /// uses in listing order from 2. A listing that repeats an earlier use
+    /// restates that use's face. Only the first use binds the element name.
+    fn face_use_key(
+        &mut self,
+        occurrence: &str,
+        shell: &ShellId,
+        reversed: bool,
+    ) -> (String, bool) {
+        let uses = self.face_uses.entry(occurrence.to_owned()).or_default();
+        let position = match uses
+            .iter()
+            .position(|(used, sense)| used == shell && *sense == reversed)
+        {
+            Some(position) => position,
+            None => {
+                uses.push((shell.clone(), reversed));
+                uses.len() - 1
+            }
+        };
+        match position {
+            0 => (occurrence.to_owned(), true),
+            position => (format!("{occurrence}~use{}", position + 1), false),
+        }
     }
 
     fn ensure_edge(
@@ -2279,7 +2327,7 @@ fn uniform_scale(transform: Transform) -> Result<cadmpeg_ir::scalar::PositiveRea
         CodecError::Malformed("B-rep location is not a finite similarity transform".into())
     })?;
     let lengths = columns.map(|column| column.norm());
-    let units = columns.map(cadmpeg_ir::features::FiniteVector3::unit_nonzero);
+    let units = columns.map(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero);
     if lengths.iter().any(|length| {
         !length.is_finite()
             || (*length / scale.get() - 1.0).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE
@@ -2733,7 +2781,8 @@ fn occt_subset_local_range(
         .geometry
         .procedural_construction()?;
     let procedural = positions.procedural_curve(ir, construction)?;
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
+        procedural.definition()
     else {
         return None;
     };

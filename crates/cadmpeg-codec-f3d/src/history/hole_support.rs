@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support faces of a Hole, from the transition that drills it.
 
-use super::same_axis_line;
+use super::body_closures::same_axis_line;
 use crate::history_records::{
     AsmHistoricalCylinder, AsmHistoricalPlane, AsmHistoricalTopology, AsmHistoricalTransition,
 };

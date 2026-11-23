@@ -23,7 +23,9 @@ use cadmpeg_ir::CadIr;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::unknown_keys::{grafted_document, normalise, object_at_mut, Step, FREE_FORM_SHAPES};
+use crate::unknown_keys::{
+    grafted_document, member_graft, normalise, object_at_mut, Step, FREE_FORM_SHAPES,
+};
 
 /// The keys every shape is seen with, and the shapes already probed.
 #[derive(Default)]
@@ -32,6 +34,9 @@ pub struct SpellingSweep {
     probed: BTreeSet<String>,
     /// The number of edited documents read.
     pub probes: usize,
+    /// The number of shapes edited in the full document because neither
+    /// their array element nor their top-level member reads back on its own.
+    pub fallbacks: usize,
 }
 
 impl SpellingSweep {
@@ -62,13 +67,13 @@ impl SpellingSweep {
         let read = CadIr::deserialize(ir)?;
         let canonical = canonical_text(&read)?;
         let written: Value = serde_json::from_str(&canonical)?;
-        if let Some(at) = first_difference(ir, &written, String::new()) {
+        if let Some(at) = first_difference(ir, &written) {
             accepting.insert(format!("{at}: the document does not write back as itself"));
         }
         if canonical_text(&CadIr::from_json(&canonical)?)? != canonical {
             accepting.insert("its canonical text does not write back byte for byte".to_owned());
         }
-        let empty = serde_json::to_value(CadIr::empty())?;
+        let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
         for node in nodes(ir) {
             let Some(fields) = node_object(ir, &node.path) else {
                 continue;
@@ -77,9 +82,18 @@ impl SpellingSweep {
             if !self.probed.insert(signature) {
                 continue;
             }
+            let reads_back = |graft: &Value| CadIr::deserialize(graft).is_ok();
             let (document, path) = grafted_document(ir, &empty, &node.path)
-                .filter(|(graft, _)| CadIr::deserialize(graft).is_ok())
-                .unwrap_or_else(|| (ir.clone(), node.path.clone()));
+                .filter(|(graft, _)| reads_back(graft))
+                .or_else(|| {
+                    member_graft(ir, &empty, &node.path)
+                        .filter(reads_back)
+                        .map(|graft| (graft, node.path.clone()))
+                })
+                .unwrap_or_else(|| {
+                    self.fallbacks += 1;
+                    (ir.clone(), node.path.clone())
+                });
             let at = normalise(&node.path);
             let free_form = FREE_FORM_SHAPES.contains(&at.as_str());
             if !free_form {
@@ -236,27 +250,34 @@ fn numbers_agree(left: &serde_json::Number, right: &serde_json::Number) -> bool 
 }
 
 /// The JSON pointer of the first value `read` and `written` differ at.
-pub(crate) fn first_difference(read: &Value, written: &Value, at: String) -> Option<String> {
+///
+/// Each pair of values is compared once, and the pointer is written only for
+/// the difference found.
+pub(crate) fn first_difference(read: &Value, written: &Value) -> Option<String> {
     match (read, written) {
-        (Value::Object(left), Value::Object(right)) => {
-            left.keys()
-                .chain(right.keys())
-                .find_map(|key| match (left.get(key), right.get(key)) {
-                    (Some(left), Some(right)) => {
-                        first_difference(left, right, format!("{at}/{key}"))
-                    }
-                    _ => Some(format!("{at}/{key}")),
-                })
-        }
+        (Value::Object(left), Value::Object(right)) => left
+            .iter()
+            .find_map(|(key, left)| match right.get(key) {
+                Some(right) => first_difference(left, right).map(|at| format!("/{key}{at}")),
+                None => Some(format!("/{key}")),
+            })
+            .or_else(|| {
+                right
+                    .keys()
+                    .find(|key| !left.contains_key(*key))
+                    .map(|key| format!("/{key}"))
+            }),
         (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
             .iter()
             .zip(right)
             .enumerate()
             .find_map(|(index, (left, right))| {
-                first_difference(left, right, format!("{at}/{index}"))
+                first_difference(left, right).map(|at| format!("/{index}{at}"))
             }),
-        (Value::Number(left), Value::Number(right)) => (!numbers_agree(left, right)).then_some(at),
-        _ => (read != written).then_some(at),
+        (Value::Number(left), Value::Number(right)) => {
+            (!numbers_agree(left, right)).then(String::new)
+        }
+        _ => (read != written).then(String::new),
     }
 }
 

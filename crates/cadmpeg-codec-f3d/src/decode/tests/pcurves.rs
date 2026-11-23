@@ -48,7 +48,7 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
 fn generated_surface_offset_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -124,7 +124,11 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                 *base_range = [-0.75, 1.75];
                 (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
             };
-            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                sides,
+                range,
+                discontinuities,
+            )
         })
         .unwrap();
         let restored_cache = definition_payload.legacy_cache();
@@ -140,10 +144,10 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                         .base_endpoints()
                         .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
                 ),
-                cadmpeg_ir::geometry::CacheContract::from_form(
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                     definition_payload
                         .cache_first()
-                        .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw),
+                        .map(cadmpeg_ir::geometry::surface_curves::CacheFirstCurveForm::to_raw),
                 ),
                 distance_value,
                 [shift_value, scale_value],
@@ -211,7 +215,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_spring_curve_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = EditableDecodeResult::from(
         F3dCodec
@@ -245,7 +249,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         let layout = &mut edited_layout;
         let direction = &mut edited_direction;
 
-        let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+        let cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
             parameter_range,
             discontinuity_flag,
             ..
@@ -278,7 +282,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated spring decode");
     assert!(matches!(
-        regenerated.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Spring(definition_payload) if matches!((definition_payload.layout(), definition_payload.direction(),), (cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+        regenerated.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Spring(definition_payload) if matches!((definition_payload.layout(), definition_payload.direction(),), (cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
                 parameter_range,
                 discontinuity_flag,
                 ..
@@ -307,7 +311,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_null_support_spring_decodes_and_writes_source_less() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let result = F3dCodec
         .decode(
@@ -326,7 +330,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
     let direction = definition_payload.direction();
 
     assert_eq!(*direction, 4);
-    let cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+    let cadmpeg_ir::geometry::surface_curves::SpringLayout::ContextFirst {
         supports,
         first_pcurve,
         second_pcurve,
@@ -340,15 +344,15 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
     assert!(*discontinuity_flag);
     assert_eq!(
         supports[0],
-        cadmpeg_ir::geometry::SpringSupport::Ranges([[-2.0, 3.0], [-4.0, 5.0]])
+        cadmpeg_ir::geometry::surface_curves::SpringSupport::Ranges([[-2.0, 3.0], [-4.0, 5.0]])
     );
     assert_eq!(
         supports[1],
-        cadmpeg_ir::geometry::SpringSupport::Ranges([[-6.0, 7.0], [-8.0, 9.0]])
+        cadmpeg_ir::geometry::surface_curves::SpringSupport::Ranges([[-6.0, 7.0], [-8.0, 9.0]])
     );
     assert_eq!(
         **first_pcurve,
-        cadmpeg_ir::geometry::SpringPcurve::Range([-10.0, 11.0])
+        cadmpeg_ir::geometry::surface_curves::SpringPcurve::Range([-10.0, 11.0])
     );
     assert_eq!(*second_pcurve, None);
     assert_eq!(*parameter_range, [-1.0, 2.0]);
@@ -378,7 +382,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_deformable_curves_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::{DeformableCurveData, ProceduralCurveDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::{DeformableCurveData, ProceduralCurveDefinition};
 
     for mode in [8, 3] {
         let result = F3dCodec
@@ -399,7 +403,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         let source = definition_payload.source();
         let source_parameter_range = definition_payload.source_parameter_range();
         let data = &definition_payload.data().to_raw();
-        let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
+        let cadmpeg_ir::geometry::procedural_curves::DeformableCurveSource::Curve { curve: source } =
+            source
+        else {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision.get(), 23100);
@@ -476,7 +482,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         };
         let round_source = definition_payload.source();
         let round_data = &definition_payload.data().to_raw();
-        let cadmpeg_ir::geometry::DeformableCurveSource::Curve {
+        let cadmpeg_ir::geometry::procedural_curves::DeformableCurveSource::Curve {
             curve: round_source,
         } = round_source
         else {
@@ -539,10 +545,11 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         let mut source_value = definition_payload.source().clone();
         let source = &mut source_value;
         {
-            *source = cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
-                flag: false,
-                index: 10_000,
-            };
+            *source =
+                cadmpeg_ir::geometry::procedural_curves::DeformableCurveSource::NativeReference {
+                    flag: false,
+                    index: 10_000,
+                };
         };
         *definition_payload =
             cadmpeg_ir::geometry::curve_payloads::DeformableCurveConstruction::try_new(
@@ -568,7 +575,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             ProceduralCurveDefinition::Deformable(matched_payload) => matches!(
                 (matched_payload.source(),),
                 (
-                    cadmpeg_ir::geometry::DeformableCurveSource::NativeReference {
+                    cadmpeg_ir::geometry::procedural_curves::DeformableCurveSource::NativeReference {
                         flag: false,
                         index: 10_000,
                     },
@@ -599,14 +606,14 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
     assert_eq!(
         round_trip.ir().geometry.procedural_curves[0]
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.025)
     );
 }
 
 #[test]
-fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
-    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+fn generated_source_less_reduces_unwritable_procedural_curves_to_their_cache() {
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -630,14 +637,14 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
             blend_surface: None,
         },
     );
-    let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("typed intersection must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("lacks its native blend construction"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "lacks its native blend construction",
+    );
 
     source_less.geometry.procedural_curves[0].replace_definition(
         ProceduralCurveDefinition::Unknown {
@@ -646,17 +653,18 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
             cache: None,
         },
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unknown construction must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("cannot be regenerated losslessly"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "cannot be regenerated losslessly",
+    );
 }
 
 #[test]
-fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
+fn generated_source_less_writes_one_carrier_of_a_duplicate_procedural_curve() {
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
@@ -674,14 +682,14 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
         .unwrap();
     let duplicate = source_less.geometry.procedural_curves[0].clone();
     source_less.geometry.procedural_curves.push(duplicate);
-    let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("duplicate procedural construction must be rejected");
-    assert!(error
-        .to_string()
-        .contains("multiple procedural constructions"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "procedural construction",
+    );
 }
 
 #[test]
@@ -1078,7 +1086,7 @@ fn generated_inline_pcurve_fit_tolerance_is_scoped() {
     assert_eq!(
         result.ir().geometry.pcurves[0]
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.001)
     );
 }
@@ -1172,7 +1180,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     assert_eq!(
         pcurve
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.001)
     );
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
@@ -1208,7 +1216,9 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
         })
     }
     .unwrap();
-    inline.set_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
+    inline.set_fit_tolerance(
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.0025).unwrap(),
+    );
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1247,7 +1257,9 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.set_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
+    inline.set_fit_tolerance(
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.0025).unwrap(),
+    );
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1414,7 +1426,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
             false,
             [true, false, true, false],
             uv_offset,
-            cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+            cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(0.002)
                 .expect("finite non-negative fixture tolerance"),
         ),
     };

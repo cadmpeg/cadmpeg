@@ -75,7 +75,6 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
     f3d_with_smbh_and_protein_with_generated_surface_stitch,
 };
-use cadmpeg_core::CodecError;
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`, built once per
 /// test binary.
@@ -499,19 +498,29 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     Some(outcome)
 }
 
-fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+/// The generate lane's bytes, and its losses one per line as
+/// `code severity message`.
+fn generate_outcome(bytes: &[u8]) -> (Option<Result<Vec<u8>, String>>, String) {
+    let Ok(result) = decode_result(bytes) else {
+        return (None, String::new());
+    };
     let mut out = Vec::new();
-    Some(match F3dCodec.encode(result.ir(), &mut out) {
+    match F3dCodec.encode(result.ir(), &mut out) {
         Ok(report) => {
             assert!(
                 matches!(report.write_path(), WritePath::Synthesized { .. }),
                 "the generate lane withholds the sidecar, so the writer must author every byte"
             );
-            Ok(out)
+            let losses = report.losses.iter().fold(String::new(), |mut text, loss| {
+                use std::fmt::Write as _;
+                writeln!(text, "{} {:?} {}", loss.code, loss.severity, loss.message)
+                    .expect("a String takes every write");
+                text
+            });
+            (Some(Ok(out)), losses)
         }
-        Err(error) => Err(error.to_string()),
-    })
+        Err(error) => (Some(Err(error.to_string())), String::new()),
+    }
 }
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
@@ -522,7 +531,7 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -783,15 +792,29 @@ fn golden_snapshots_are_byte_identical() {
             replay_outcome(&input),
             &mut failures,
         );
+        let (generated, generate_losses) = generate_outcome(&input);
         compare_encode(
             update,
             &root,
             "generate",
             name,
             ByteComparison::Decoded,
-            generate_outcome(&input),
+            generated,
             &mut failures,
         );
+        let losses_path = root.join("generate").join(format!("{name}.losses.txt"));
+        if generate_losses.is_empty() {
+            if update {
+                remove_if_exists(&losses_path);
+            } else if losses_path.exists() {
+                failures.push(format!(
+                    "{}: the write charged no loss",
+                    losses_path.display()
+                ));
+            }
+        } else {
+            compare_text(update, &losses_path, &generate_losses, &mut failures);
+        }
         compare_encode(
             update,
             &root,
@@ -858,20 +881,31 @@ fn fixtures_replay_verbatim() {
 
 /// Write path requires a decode baseline.
 #[test]
-fn fixtures_refuse_to_write_without_a_baseline() {
+fn fixtures_without_a_baseline_regenerate_and_report_the_declined_patch() {
     for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
-            match outcome {
-            SemanticOutcome::Refused { error } => assert!(
-                matches!(error, CodecError::NotImplemented(_)),
-                "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
-            ),
-            SemanticOutcome::Written { report, .. } => panic!(
-                "fixture `{name}`: the baseline was removed, yet the encoder wrote by the {} path",
-                report.write_path()
-            ),
-        }
+        semantic_roundtrip(&F3dCodec, name, &input, |outcome| match outcome {
+            SemanticOutcome::Refused { error } => {
+                panic!("fixture `{name}`: a missing baseline must not refuse the write: {error}")
+            }
+            SemanticOutcome::Written { report, bytes } => {
+                assert!(
+                    matches!(report.write_path(), WritePath::Synthesized { .. }),
+                    "fixture `{name}`: {}",
+                    report.write_path()
+                );
+                assert!(
+                    report.losses.iter().any(|loss| {
+                        loss.code == crate::loss::F3dLossCode::WriterPatchDeclined.kind()
+                            && loss.message.contains("baseline")
+                    }),
+                    "fixture `{name}`: {:#?}",
+                    report.losses
+                );
+                decode_result(bytes).unwrap_or_else(|error| {
+                    panic!("fixture `{name}`: the regenerated file decodes: {error}")
+                });
+            }
         });
     }
 }
@@ -917,11 +951,9 @@ fn an_edit_survives_the_patch_writer() {
                 };
                 let moved = point.position().get();
                 point.set_position(
-                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                        moved.x + MUTATION_MM,
-                        moved.y,
-                        moved.z,
-                    ))
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(moved.x + MUTATION_MM, moved.y, moved.z),
+                    )
                     .expect("a finite position is a point"),
                 );
                 true
@@ -1013,7 +1045,7 @@ fn golden_fixtures_match_builders() {
 #[test]
 fn the_deleted_wire_keys_are_refused_at_the_level_they_were_deleted_from() {
     use cadmpeg_ir::features::FeatureDefinition;
-    use cadmpeg_ir::geometry::VectorOffsetRoles;
+    use cadmpeg_ir::geometry::procedural_curves::VectorOffsetRoles;
 
     let decoded = F3dCodec
         .decode(

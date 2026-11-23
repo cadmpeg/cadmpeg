@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::{CadIr, Topology};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -228,7 +228,7 @@ fn prepare_component(
             &edge,
             line.source_offset,
             "sketch_boundary_edge",
-            &["carrier", "start", "end"],
+            &["carrier", "ends.start", "ends.end"],
         )?;
         annotation(
             prepared,

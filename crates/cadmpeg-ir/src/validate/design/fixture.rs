@@ -2,8 +2,9 @@
 //! A design document that breaks no part 10 rule, and helpers that build
 //! and check variations of it.
 
-use cadmpeg_core::decode::ContentScope;
+use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -20,6 +21,7 @@ use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::features::FeatureId;
 use crate::ids::BodyId;
+use crate::index::ModelIndex;
 use crate::products::{ProductDefinition, ProductDefinitionKind, Storage};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
@@ -169,6 +171,7 @@ pub(in crate::validate) fn document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(Container::Ordered {
         id: id("container", "timeline"),
@@ -206,13 +209,32 @@ pub(in crate::validate) fn document() -> CadIr {
     ir
 }
 
+/// The findings of one family of checks, run as `validate_neutral` runs it.
+pub(in crate::validate) fn family_findings(
+    ir: &CadIr,
+    family: Check,
+    check: impl FnOnce(
+        &DecodeContext<'_>,
+        &CadIr,
+        &ModelIndex<'_>,
+        &mut Vec<Finding>,
+    ) -> Result<(), CodecError>,
+) -> Vec<Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let index = ModelIndex::build(ir);
+    let mut findings = Vec::new();
+    {
+        let _depth = ctx.enter_nested("IR neutral validation").unwrap();
+        check(&ctx, ir, &index, &mut findings).unwrap();
+    }
+    ctx.finish_session().unwrap();
+    findings.retain(|finding| finding.check == family);
+    findings
+}
+
 pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    super::super::validate_neutral(ir, Vec::new())
-        .unwrap()
-        .findings
-        .into_iter()
-        .filter(|finding| finding.check == Check::Design)
-        .collect()
+    family_findings(ir, Check::Design, super::check_design)
 }
 
 #[track_caller]

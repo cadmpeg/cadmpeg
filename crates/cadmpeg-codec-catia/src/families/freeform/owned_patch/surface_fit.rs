@@ -130,10 +130,12 @@ pub(super) fn offset(
 }
 
 pub(super) fn rolling(
-    definition: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    definition: &cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
     [u, v]: [[f64; 2]; 2],
 ) -> Option<NurbsSurface> {
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(jet) =
+        definition
+    else {
         return None;
     };
     fit(
@@ -142,7 +144,7 @@ pub(super) fn rolling(
         |u, v| {
             eval::rolling_ball_jet_point(definition, u, v)
                 .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         },
     )
 }

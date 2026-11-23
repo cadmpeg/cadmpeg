@@ -11,7 +11,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{
     ArticulationId, BodyId, ColliderId, MassPropertiesId, OccurrenceId, PhysicalMaterialId,
     PhysicsSceneId, ProductDefinitionId, RigidBodyId,
@@ -24,7 +24,7 @@ use crate::units::UnitVector3;
 pub mod solver;
 
 /// The model entity that a physical record describes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PhysicsTarget {
@@ -212,7 +212,7 @@ pub struct RigidBody {
 }
 
 /// The shape a collider gives its target's geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ColliderShape {

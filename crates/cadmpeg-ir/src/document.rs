@@ -21,11 +21,10 @@ use cadmpeg_core::CodecError;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::drawings::Drawing;
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
 use crate::features::serialization::FeatureWriteWire;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-    FeatureRowWire,
-};
+use crate::features::{Feature, FeatureRowWire};
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
     ProceduralSurfaceRow, Surface, SurfaceGeometry,
@@ -636,8 +635,8 @@ macro_rules! declare_home_arenas {
             }
 
             /// Keeps the first record of each id in each sorted arena and
-            /// drops the later ones, returning the arena, the id, and the
-            /// number of records dropped for each repeated id.
+            /// drops the later ones, returning each repeated id whose copies
+            /// differ.
             pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
                 $(keep_first_ids(
@@ -1042,6 +1041,11 @@ macro_rules! declare_design {
         }
 
         impl Design {
+            /// Whether every design arena and the current name table are empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* self.names.entries().is_empty()
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedDesign<'_> {
                 SortedDesign {
@@ -1092,6 +1096,11 @@ macro_rules! declare_process {
         }
 
         impl Process {
+            /// Whether every process arena is empty.
+            pub(crate) fn is_empty(&self) -> bool {
+                $(self.$field.is_empty() &&)* true
+            }
+
             /// Borrow every arena in canonical identity order.
             pub(crate) fn sorted(&self) -> SortedProcess<'_> {
                 SortedProcess {
@@ -1219,30 +1228,54 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-/// An id a sorted arena held more than once: the arena, the id, and the
-/// number of later records dropped.
-pub(crate) type RepeatedId = (String, String, usize);
+/// An id a sorted arena held more than once.
+#[derive(Debug)]
+pub(crate) struct RepeatedId {
+    /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
+    pub(crate) arena: String,
+    /// The repeated id.
+    pub(crate) id: String,
+    /// The number of later records dropped.
+    pub(crate) dropped: usize,
+    /// Whether a dropped record differs from the kept one.
+    pub(crate) differs: bool,
+}
 
 /// Drops each record of a sorted arena whose id equals the one before it, so
-/// the first record of each id stays, and counts the records dropped per id.
-pub(crate) fn keep_first_ids<T>(
+/// the first record of each id stays, and records each repeated id whose
+/// copies differ from the first.
+///
+/// Copies that hold one value are one record, so dropping them loses
+/// nothing; they are not recorded.
+pub(crate) fn keep_first_ids<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
     arena: &str,
     repeated: &mut Vec<RepeatedId>,
 ) {
+    let mut current: Option<RepeatedId> = None;
     records.dedup_by(|later, earlier| {
         if id(later) != id(earlier) {
             return false;
         }
-        match repeated.last_mut() {
-            Some((last_arena, last_id, count)) if last_arena == arena && last_id == id(later) => {
-                *count += 1;
+        match current.as_mut() {
+            Some(run) if run.id == id(later) => {
+                run.dropped += 1;
+                run.differs |= later != earlier;
             }
-            _ => repeated.push((arena.to_owned(), id(later).to_owned(), 1)),
+            _ => {
+                repeated.extend(current.take().filter(|run| run.differs));
+                current = Some(RepeatedId {
+                    arena: arena.to_owned(),
+                    id: id(later).to_owned(),
+                    dropped: 1,
+                    differs: later != earlier,
+                });
+            }
         }
         true
     });
+    repeated.extend(current.filter(|run| run.differs));
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2595,9 +2628,10 @@ impl CadIr {
 
     /// Sorts every arena of the document's homes and native namespaces by
     /// id, keeping records of one id in their present order, then keeps the
-    /// first record of each id and drops the later ones. Returns the arena,
-    /// the id, and the number of records dropped for each repeated id. The
-    /// arenas of a state's delta are left as they are.
+    /// first record of each id and drops the later ones. Returns each
+    /// repeated id whose copies differ; copies that hold one value are one
+    /// record and are not returned. The arenas of a state's delta are left as
+    /// they are.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
         self.finalize();
         let mut repeated = self.geometry.drop_repeated_ids("topology");

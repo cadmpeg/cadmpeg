@@ -66,7 +66,11 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
+    write_canonical_json(
+        CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut buffered,
+        value,
+    )?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -163,10 +167,19 @@ pub fn document_local_sha256_without_carried(
             model: ir.model.sorted()?,
             design: ir.design.sorted(),
             process: ir.process.sorted(),
-            native: normalized_native(&ir.native, format, &unknowns, carried),
+            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
         })
     })()?;
-    canonical_json_sha256(ctx, &document).map_err(Into::into)
+    match canonical_json_sha256(ctx, &document) {
+        Ok(digest) => Ok(digest),
+        Err(error) => {
+            if let Some(limit) = ctx.resource_refusal() {
+                Err(limit.into())
+            } else {
+                Err(error.into())
+            }
+        }
+    }
 }
 
 fn reduced_unknowns(
@@ -198,7 +211,7 @@ fn reduced_unknowns(
 /// except `scope`: decoders take this digest before the decode wrapper
 /// records the scope.
 #[derive(Serialize)]
-struct NormalizedDocument<'a> {
+struct NormalizedDocument<'a, 'input> {
     ir_version: &'a str,
     fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,18 +222,339 @@ struct NormalizedDocument<'a> {
     model: SortedModel<'a>,
     design: SortedDesign<'a>,
     process: SortedProcess<'a>,
-    native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
+    native: BTreeMap<&'a str, BTreeMap<&'a str, DigestNativeArena<'a, 'input>>>,
+}
+
+/// Serializes one native arena in `NormalizedDocument.native.<format>.<arena>`.
+/// Large arenas format L2-cache-sized batches in parallel and emit each chunk
+/// as a `RawValue` element inside `SerializeSeq`, avoiding giant buffers while
+/// matching `serde_json::Serializer::pretty` byte-for-byte.
+struct DigestNativeArena<'a, 'input> {
+    ctx: &'a DecodeContext<'input>,
+    records: Vec<&'a NativeRecord>,
+}
+
+struct RawJsonChunk<'a>(&'a str);
+
+impl Serialize for RawJsonChunk<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("$serde_json::private::RawValue", 1)?;
+        state.serialize_field("$serde_json::private::RawValue", self.0)?;
+        state.end()
+    }
+}
+
+impl Serialize for DigestNativeArena<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+
+        const PARALLEL_THRESHOLD: usize = 512;
+        const CHUNK_RECORDS: usize = 512;
+        let workers = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        if self.records.len() < PARALLEL_THRESHOLD || workers <= 1 {
+            let mut seq = serializer.serialize_seq(Some(self.records.len()))?;
+            for &record in &self.records {
+                seq.serialize_element(&DigestNativeRecord {
+                    ctx: self.ctx,
+                    record,
+                })?;
+            }
+            return seq.end();
+        }
+
+        // Pipeline formatting on one dedicated producer thread over a bounded
+        // channel so chunks stay hot in L2/L3 cache and formatting overlaps
+        // continuously with main-thread SHA-256 compression without per-batch
+        // thread-spawn overhead.
+        let mut seq = serializer.serialize_seq(None)?;
+        let mut max_depth = 1_usize;
+        let records = &self.records;
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(String, usize)>(4);
+        let serialize_result: Result<(), S::Error> = std::thread::scope(|scope| {
+            scope.spawn(move || {
+                for chunk in records.chunks(CHUNK_RECORDS) {
+                    let est: usize = chunk
+                        .iter()
+                        .map(|r| r.json_text().len().min(usize::MAX / 4) * 2 + 12)
+                        .sum();
+                    let mut out = String::with_capacity(est);
+                    let mut local_max = 1_usize;
+                    for (i, &record) in chunk.iter().enumerate() {
+                        if i > 0 {
+                            out.push_str(",\n        ");
+                        }
+                        let d = pretty_format_compact_json(
+                            record.json_text(),
+                            NATIVE_RECORD_INDENT_LEVEL,
+                            &mut out,
+                        );
+                        local_max = local_max.max(d);
+                    }
+                    if tx.send((out, local_max)).is_err() {
+                        break;
+                    }
+                }
+            });
+            let mut res = Ok(());
+            while let Ok((part, depth)) = rx.recv() {
+                max_depth = max_depth.max(depth);
+                if let Err(err) = seq.serialize_element(&RawJsonChunk(&part)) {
+                    res = Err(err);
+                    break;
+                }
+            }
+            drop(rx);
+            res
+        });
+        serialize_result?;
+        // `SerializeSeq` entered 1 level and `RawJsonChunk` enters 2 levels;
+        // enforce the exact same peak depth ceiling as per-record serialization.
+        if max_depth > 2 {
+            let extra = max_depth - 2;
+            let enter = || {
+                self.ctx.enter_nested("walk document digest").map_err(|_| {
+                    serde::ser::Error::custom("canonical JSON resource admission refused")
+                })
+            };
+            match extra {
+                1 => {
+                    let _g1 = enter()?;
+                }
+                2 => {
+                    let _g1 = enter()?;
+                    let _g2 = enter()?;
+                }
+                3 => {
+                    let _g1 = enter()?;
+                    let _g2 = enter()?;
+                    let _g3 = enter()?;
+                }
+                4 => {
+                    let _g1 = enter()?;
+                    let _g2 = enter()?;
+                    let _g3 = enter()?;
+                    let _g4 = enter()?;
+                }
+                _ => {
+                    let mut guards = Vec::with_capacity(extra);
+                    for _ in 0..extra {
+                        guards.push(enter()?);
+                    }
+                }
+            }
+        }
+        seq.end()
+    }
+}
+
+/// Serializes a stored canonical compact [`NativeRecord`] as pretty JSON at
+/// indent level 4 (inside `NormalizedDocument.native.<format>.<arena>[i]`),
+/// avoiding `serde_json::Deserializer` round-tripping while keeping the exact
+/// bytes `serde_json::Serializer::pretty` + `FiniteSerializer` produce.
+struct DigestNativeRecord<'a, 'input> {
+    ctx: &'a DecodeContext<'input>,
+    record: &'a NativeRecord,
+}
+
+/// Depth of `NormalizedDocument.native.<format>.<arena>[i]` in pretty JSON.
+const NATIVE_RECORD_INDENT_LEVEL: usize = 4;
+
+#[inline]
+fn push_indent(out: &mut String, level: usize) {
+    const SPACES: &str = "                                                                ";
+    let mut remaining = level * 2;
+    if remaining <= SPACES.len() {
+        out.push_str(&SPACES[..remaining]);
+        return;
+    }
+    while remaining >= SPACES.len() {
+        out.push_str(SPACES);
+        remaining -= SPACES.len();
+    }
+    out.push_str(&SPACES[..remaining]);
+}
+
+/// Format canonical compact JSON text into `serde_json::ser::PrettyFormatter`
+/// text starting at `base_indent`, normalizing `-0.0` outside strings to
+/// `0.0`. Returns the maximum serializer depth reached inside the value
+/// (containers plus scalar leaves).
+fn pretty_format_compact_json(compact: &str, base_indent: usize, out: &mut String) -> usize {
+    let bytes = compact.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut depth = 0_usize;
+    let mut max_depth = 1_usize;
+    while i < len {
+        match bytes[i] {
+            b'"' => {
+                let start = i;
+                i += 1;
+                let mut closed = false;
+                while let Some(offset) = memchr::memchr2(b'"', b'\\', &bytes[i..]) {
+                    let hit = i + offset;
+                    if bytes[hit] == b'"' {
+                        i = hit + 1;
+                        closed = true;
+                        break;
+                    }
+                    i = (hit + 2).min(len);
+                }
+                if !closed {
+                    i = len;
+                }
+                out.push_str(&compact[start..i]);
+                max_depth = max_depth.max(depth + 1);
+            }
+            b'{' => {
+                if bytes.get(i + 1) == Some(&b'}') {
+                    out.push_str("{}");
+                    max_depth = max_depth.max(depth + 1);
+                    i += 2;
+                } else {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                    out.push_str("{\n");
+                    push_indent(out, base_indent + depth);
+                    i += 1;
+                }
+            }
+            b'[' => {
+                if bytes.get(i + 1) == Some(&b']') {
+                    out.push_str("[]");
+                    max_depth = max_depth.max(depth + 1);
+                    i += 2;
+                } else {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                    out.push_str("[\n");
+                    push_indent(out, base_indent + depth);
+                    i += 1;
+                }
+            }
+            b'}' => {
+                depth = depth.max(1) - 1;
+                out.push('\n');
+                push_indent(out, base_indent + depth);
+                out.push('}');
+                i += 1;
+            }
+            b']' => {
+                depth = depth.max(1) - 1;
+                out.push('\n');
+                push_indent(out, base_indent + depth);
+                out.push(']');
+                i += 1;
+            }
+            b',' => {
+                out.push_str(",\n");
+                push_indent(out, base_indent + depth);
+                i += 1;
+            }
+            b':' => {
+                out.push_str(": ");
+                i += 1;
+            }
+            b'-' if bytes.get(i..i + 4) == Some(b"-0.0")
+                && matches!(bytes.get(i + 4), None | Some(b',' | b'}' | b']')) =>
+            {
+                out.push_str("0.0");
+                max_depth = max_depth.max(depth + 1);
+                i += 4;
+            }
+            _ => {
+                let start = i;
+                i += 1;
+                while i < len && !matches!(bytes[i], b'"' | b'{' | b'}' | b'[' | b']' | b',' | b':')
+                {
+                    i += 1;
+                }
+                out.push_str(&compact[start..i]);
+                max_depth = max_depth.max(depth + 1);
+            }
+        }
+    }
+    max_depth
+}
+
+impl Serialize for DigestNativeRecord<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        use std::cell::RefCell;
+
+        thread_local! {
+            static PRETTY_SCRATCH: RefCell<String> = const { RefCell::new(String::new()) };
+        }
+
+        // `RawValue` serialization itself enters 2 levels (`serialize_struct` +
+        // `serialize_str`); enter any remaining levels on `ctx` to enforce the
+        // exact same recursion-depth ceiling.
+        PRETTY_SCRATCH.with(|scratch| {
+            let mut buf = scratch.borrow_mut();
+            buf.clear();
+            let text = self.record.json_text();
+            let reserve = text.len().min(usize::MAX / 2) * 2;
+            if buf.capacity() < reserve {
+                buf.reserve(reserve);
+            }
+            let max_depth = pretty_format_compact_json(text, NATIVE_RECORD_INDENT_LEVEL, &mut buf);
+            if max_depth > 2 {
+                let extra = max_depth - 2;
+                let enter = || {
+                    self.ctx.enter_nested("walk document digest").map_err(|_| {
+                        serde::ser::Error::custom("canonical JSON resource admission refused")
+                    })
+                };
+                match extra {
+                    1 => {
+                        let _g1 = enter()?;
+                    }
+                    2 => {
+                        let _g1 = enter()?;
+                        let _g2 = enter()?;
+                    }
+                    3 => {
+                        let _g1 = enter()?;
+                        let _g2 = enter()?;
+                        let _g3 = enter()?;
+                    }
+                    4 => {
+                        let _g1 = enter()?;
+                        let _g2 = enter()?;
+                        let _g3 = enter()?;
+                        let _g4 = enter()?;
+                    }
+                    _ => {
+                        let mut guards = Vec::with_capacity(extra);
+                        for _ in 0..extra {
+                            guards.push(enter()?);
+                        }
+                    }
+                }
+            }
+            let mut state = serializer.serialize_struct("$serde_json::private::RawValue", 1)?;
+            state.serialize_field("$serde_json::private::RawValue", buf.as_str())?;
+            state.end()
+        })
+    }
 }
 
 /// Borrow every native namespace in canonical order, replacing the `format`
 /// unknown arena with `unknowns`, leaving out the `format` arenas named in
 /// `carried`, and creating that namespace when the document has none.
-fn normalized_native<'a>(
+fn normalized_native<'a, 'input>(
+    ctx: &'a DecodeContext<'input>,
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
     carried: &[&str],
-) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
+) -> BTreeMap<&'a str, BTreeMap<&'a str, DigestNativeArena<'a, 'input>>> {
+    let wrap = |records: &'a [NativeRecord]| -> DigestNativeArena<'a, 'input> {
+        DigestNativeArena {
+            ctx,
+            records: sorted_records(records),
+        }
+    };
     let mut namespaces = BTreeMap::new();
     for (name, namespace) in &native.0 {
         let mut arenas = BTreeMap::new();
@@ -228,18 +562,28 @@ fn normalized_native<'a>(
             if name == format && (arena == "unknowns" || carried.contains(&arena.as_str())) {
                 continue;
             }
-            arenas.insert(arena.as_str(), sorted_records(records));
+            arenas.insert(arena.as_str(), wrap(records));
         }
         if name == format {
-            let refs = unknowns.iter().collect::<Vec<_>>();
-            arenas.insert("unknowns", refs);
+            arenas.insert(
+                "unknowns",
+                DigestNativeArena {
+                    ctx,
+                    records: unknowns.iter().collect(),
+                },
+            );
         }
         namespaces.insert(name.as_str(), arenas);
     }
     if !namespaces.contains_key(format) {
         let mut arenas = BTreeMap::new();
-        let refs = unknowns.iter().collect::<Vec<_>>();
-        arenas.insert("unknowns", refs);
+        arenas.insert(
+            "unknowns",
+            DigestNativeArena {
+                ctx,
+                records: unknowns.iter().collect(),
+            },
+        );
         namespaces.insert(format, arenas);
     }
     namespaces
@@ -300,7 +644,7 @@ mod tests {
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
-        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
         assert!(json.len() > super::DIGEST_BUFFER_BYTES);
         assert_eq!(
@@ -977,7 +1321,8 @@ mod tests {
     }
     #[test]
     fn procedural_digest_indexes_thousands_of_owners_with_linear_work() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut ir = CadIr::empty();
@@ -1017,7 +1362,8 @@ mod tests {
 
     #[test]
     fn procedural_digest_still_rejects_orphan_and_ambiguous_owners() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         for count in [0, 2, 3] {
@@ -1070,6 +1416,60 @@ mod tests {
         assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
+    }
+
+    #[test]
+    fn pretty_format_compact_json_matches_canonical_pretty_printer() {
+        let samples = [
+            serde_json::json!({
+                "id": "test:scope:kind#0",
+                "empty_obj": {},
+                "empty_arr": [],
+                "neg_zero": -0.0,
+                "neg_zero_str": "-0.0",
+                "neg_zero_arr": [-0.0, -0.05, 0.0, -0.0],
+                "escaped": "a\"b\\c\n\t\"{}",
+                "nested": { "k": [1, true, null, { "x": -0.0 }] }
+            }),
+            serde_json::json!({
+                "id": "test:scope:kind#1",
+                "payload": [[-0.0], [[[]]], {"a": {"b": {}}}]
+            }),
+        ];
+        for sample in &samples {
+            let compact = serde_json::to_string(sample).unwrap();
+            let mut formatted = String::new();
+            let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
+            assert!(max_depth >= 2);
+            let canonical = crate::hash::finite_json::to_canonical_json_string(sample).unwrap();
+            assert_eq!(formatted, canonical, "mismatch for {compact}");
+        }
+    }
+
+    #[test]
+    fn parallel_digest_native_arena_matches_canonical_pretty_json() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let mut ir = CadIr::empty();
+        let mut records = Vec::with_capacity(600);
+        for i in 0..600_usize {
+            let id = format!("test:scope:item#{i:04}");
+            let json = format!("{{\"id\":\"{id}\",\"seq\":{i},\"zero\":-0.0}}");
+            records.push(NativeRecord::from_canonical_flat(&ctx, &id, json, 1).unwrap());
+        }
+        ir.native
+            .namespace_mut("test")
+            .set_arena_records("items", records);
+        ir.set_native_unknowns(&ctx, "test", &[]).unwrap();
+        ir.finalize();
+        let digest_fast =
+            document_local_sha256(&ctx, &ir, None, "test", "test:file:source#0").unwrap();
+        assert_eq!(
+            digest_fast,
+            cloned_local_digest(&ir, "test", "test:file:source#0")
         );
     }
 }

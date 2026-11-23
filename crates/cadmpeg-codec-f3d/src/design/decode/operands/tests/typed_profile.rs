@@ -168,7 +168,14 @@ fn parse(
         byte_offset: 0,
     };
     crate::test_support::with_decode_context(|ctx| {
-        super::super::parse_profile_curve_selection(ctx, bytes, &records, &group(), 0, &header)
+        super::super::sketch_profiles::parse_profile_curve_selection(
+            ctx,
+            bytes,
+            &records,
+            &group(),
+            0,
+            &header,
+        )
     })
     .unwrap()
 }
@@ -492,8 +499,10 @@ fn compact_profile_selection_preserves_the_counted_member_reading() {
         .windows(7)
         .position(|window| window == b"\x03\x00\x00\x00262")
         .unwrap();
-    let counted =
-        super::super::parse_sketch_profile_region_selection(&bytes, 100, paired_at).unwrap();
+    let counted = super::super::sketch_profiles::parse_sketch_profile_region_selection(
+        &bytes, 100, paired_at,
+    )
+    .unwrap();
     assert_eq!(counted.regions.len(), 2);
     assert_eq!(counted.regions[0].members[0].curve_primary_id.get(), 11);
     assert_eq!(counted.regions[1].members[0].curve_primary_id.get(), 13);
@@ -511,7 +520,7 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     let mut group = group();
     group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
     let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
-        super::super::decode_profile_curve_selections(
+        super::super::sketch_profiles::decode_profile_curve_selections(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &[group],
@@ -538,4 +547,369 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     assert!(loops[0].outer);
     assert_eq!(loops[1].entries[0].primary_id, 12);
     assert!(!loops[1].outer);
+}
+
+/// The `chain` records with a sketchless chain record 101 that names
+/// selection record 100.
+fn sketchless_chain() -> Vec<u8> {
+    let plain = chain(false);
+    let chain_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'7'])
+        .unwrap();
+    let next_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'3'])
+        .unwrap();
+    let mut bytes = plain[..chain_at].to_vec();
+    header(&mut bytes, b"277", 101);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
+    typed_reference(&mut bytes, 100);
+    bytes.extend_from_slice(&[0x19, 0x87, 0x79, 0xee, 0xf1, 0x5c, 0x05, 0x00]);
+    bytes.extend_from_slice(&plain[next_at..]);
+    bytes
+}
+
+fn sketchless_asset(bytes: &[u8]) -> Option<String> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
+        record_index: 100,
+        class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    super::super::sketch_profiles::sketchless_profile_selection_asset(bytes, &records, &header)
+}
+
+#[test]
+fn sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
+    let bytes = sketchless_chain();
+    assert_eq!(
+        sketchless_asset(&bytes).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+    assert!(parse(&bytes).is_none());
+}
+
+#[test]
+fn typed_sketchless_chain_accepts_a_hyphenated_guid_owner() {
+    let plain = sketchless_chain();
+    let owner_at = plain
+        .windows(8)
+        .position(|window| window == [2, 0, 0, 0, b'7', 0, b'5', 0])
+        .unwrap();
+    let mut bytes = plain[..owner_at].to_vec();
+    lp_utf16(&mut bytes, "e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca");
+    bytes.extend_from_slice(&plain[owner_at + 8..]);
+    assert_eq!(
+        sketchless_asset(&bytes).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+    assert!(parse(&bytes).is_none());
+}
+
+#[test]
+fn typed_sketchless_chain_record_keeps_the_selection_spelling() {
+    let mut bytes = sketchless_chain();
+    let marker_at = bytes
+        .windows(6)
+        .position(|window| window == [1, 1, 0, 0, 0, 0])
+        .unwrap();
+    let reference_at = marker_at + 6;
+    bytes.drain(reference_at + 9..reference_at + 49);
+    assert!(sketchless_asset(&bytes).is_none());
+}
+
+#[test]
+fn chain_record_with_a_sketch_scope_is_not_sketchless() {
+    assert!(sketchless_asset(&chain(false)).is_none());
+}
+
+#[test]
+fn sketchless_chain_record_must_name_its_own_selection() {
+    let mut bytes = sketchless_chain();
+    let marker_at = bytes
+        .windows(6)
+        .position(|window| window == [1, 1, 0, 0, 0, 0])
+        .unwrap();
+    bytes[marker_at + 7] = 99;
+    assert!(sketchless_asset(&bytes).is_none());
+}
+
+/// The `compact_chain` records with owner text `owner` and a compact
+/// sketchless chain record 101 whose reference to selection record 100 has
+/// the compact spelling, or the typed spelling when `typed_reference_back`.
+fn compact_sketchless_chain(owner: &str, typed_reference_back: bool) -> Vec<u8> {
+    let plain = compact_chain();
+    let owner_at = plain
+        .windows(6)
+        .position(|window| window == [2, 0, 0, 0, b'7', 0])
+        .unwrap();
+    let chain_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'7'])
+        .unwrap();
+    let next_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'3'])
+        .unwrap();
+    let mut bytes = plain[..owner_at].to_vec();
+    lp_utf16(&mut bytes, owner);
+    bytes.extend_from_slice(&plain[owner_at + 8..chain_at]);
+    header(&mut bytes, b"277", 101);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
+    if typed_reference_back {
+        typed_reference(&mut bytes, 100);
+    } else {
+        bytes.push(1);
+        bytes.extend_from_slice(&100u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    bytes.extend_from_slice(&[0xd2, 0x0c, 0x8f, 0x2a, 0xeb, 0x7f, 0x05, 0x00]);
+    bytes.extend_from_slice(&plain[next_at..]);
+    bytes
+}
+
+#[test]
+fn compact_sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
+    for owner in ["75", "e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca"] {
+        let bytes = compact_sketchless_chain(owner, false);
+        assert_eq!(
+            sketchless_asset(&bytes).as_deref(),
+            Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        );
+        assert!(parse(&bytes).is_none());
+    }
+}
+
+#[test]
+fn compact_sketchless_chain_record_keeps_the_selection_spelling() {
+    assert!(sketchless_asset(&compact_sketchless_chain("75", true)).is_none());
+}
+
+#[test]
+fn sketchless_owner_text_is_a_decimal_suffix_or_a_guid() {
+    for owner in [
+        "7a",
+        "e57eeaa6-ede5-4d34-9f6f-80ee1dad42",
+        "e57eeaa6_ede5_4d34_9f6f_80ee1dad42ca",
+    ] {
+        assert!(sketchless_asset(&compact_sketchless_chain(owner, false)).is_none());
+    }
+}
+
+#[test]
+fn compact_profile_chain_with_a_sketch_scope_is_not_sketchless() {
+    assert!(sketchless_asset(&compact_chain()).is_none());
+}
+
+#[test]
+fn sketchless_selection_of_another_asset_names_its_asset_guid() {
+    let note = super::super::sketch_profiles::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("12345678-1234-1234-1234-123456789abc"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch; its asset GUID aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee is not the Design's asset GUID, and the profile stays native."
+    );
+}
+
+#[test]
+fn sketchless_selection_of_the_design_asset_names_no_sketch() {
+    let note = super::super::sketch_profiles::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch, and the profile stays native."
+    );
+}
+
+const STATUS_REFERENCE: &str = "1ABFB679-C79B-4F24-AD6C-215A7DCE1AC4";
+
+/// `chain(false)` with status record 102 counting typed references to
+/// `targets` of type `guid`, followed by lost profile-reference record 120.
+fn chain_with_status(targets: &[u32], guid: &str, marker: &[u8]) -> Vec<u8> {
+    let plain = chain(false);
+    let status = plain
+        .windows(7)
+        .position(|window| window == b"\x03\x00\x00\x00273")
+        .unwrap();
+    let identity = plain
+        .windows(7)
+        .position(|window| window == b"\x03\x00\x00\x00297")
+        .unwrap();
+    let mut record = Vec::new();
+    header(&mut record, b"290", 102);
+    record.extend_from_slice(&[0; 9]);
+    record.extend_from_slice(&1u32.to_le_bytes());
+    record.push(0);
+    record.extend_from_slice(&u32::try_from(targets.len()).unwrap().to_le_bytes());
+    for &target in targets {
+        typed_reference_of(&mut record, target, guid);
+    }
+    record.extend_from_slice(&u32::from(!targets.is_empty()).to_le_bytes());
+    let mut bytes = plain;
+    bytes.splice(status..identity, record);
+    header(&mut bytes, b"411", 120);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&u32::try_from(marker.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(marker);
+    header(&mut bytes, b"262", 121);
+    bytes
+}
+
+#[test]
+fn typed_profile_status_record_lists_lost_profile_references() {
+    let lost = parse(&chain_with_status(
+        &[120],
+        STATUS_REFERENCE,
+        b"PROFILE_REFERENCE_LOST",
+    ))
+    .expect("typed profile selection");
+    assert!(lost.valid_layout());
+    assert_eq!(lost.lost_reference_records, [120]);
+    assert!(lost.reference_lost());
+    let live = parse(&chain_with_status(
+        &[],
+        STATUS_REFERENCE,
+        b"PROFILE_REFERENCE_LOST",
+    ))
+    .expect("typed profile selection");
+    assert!(!live.reference_lost());
+    // A reference of another type, or to a record without the marker, names
+    // no lost profile reference.
+    for (guid, marker) in [
+        (TYPE, &b"PROFILE_REFERENCE_LOST"[..]),
+        (STATUS_REFERENCE, &b"EDGE_REFERENCE_LOST"[..]),
+    ] {
+        let selection = parse(&chain_with_status(&[120], guid, marker)).unwrap();
+        assert!(selection.lost_reference_records.is_empty());
+    }
+    // The plain chain has no status record fields.
+    assert!(!parse(&chain(false)).unwrap().reference_lost());
+}
+
+#[test]
+fn sketchless_notes_require_an_extrude_profile_role_and_native_outcome() {
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::scalar::NonZeroLength;
+    use cadmpeg_ir::sketches::SketchId;
+
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+    let stream = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut group = group();
+    group.id = format!("{stream}:construction-group#90");
+    let header = DesignRecordHeader {
+        id: format!("{stream}:design-record-header#0"),
+        record_index: 100,
+        class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &[],
+        &[],
+        &compact_sketchless_chain("e57eeaa6-ede5-4d34-9f6f-80ee1dad42ca", false),
+        &[],
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        for kind in [DesignFeatureKind::Extrude, DesignFeatureKind::Revolve] {
+            let scope = DesignParameterScope::empty(
+                &format!("{stream}:design-parameter-scope#80"),
+                kind.clone(),
+                80,
+            );
+            for native in [true, false] {
+                let profile = if native {
+                    PlanarProfileRef::Native(group.id.clone())
+                } else {
+                    PlanarProfileRef::Sketch(SketchId::mint("synthetic:test:sketch#75").unwrap())
+                };
+                let feature = Feature {
+                    product_definition: None,
+                    id: FeatureId::mint("synthetic:test:feature#80").unwrap(),
+                    ordinal: 0,
+                    name: None,
+                    suppressed: None,
+                    dependencies: Default::default(),
+                    source_properties: Default::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: Default::default(),
+                    native_ref: Some(scope.id.clone()),
+                    evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                        FeatureOperation::Extrude {
+                            profile: ProfileRef::Planar(profile),
+                            direction: ExtrudeDirection::ReversedProfileNormal {},
+                            start: ExtrudeStart::ProfilePlane {},
+                            extent: ExtrudeExtent::OneSided {
+                                side: ExtrudeSide {
+                                    termination: LinearTermination::Blind {
+                                        length: NonZeroLength::new(2.0).unwrap(),
+                                    },
+                                    draft: None,
+                                },
+                            },
+                            op: BooleanOp::Cut,
+                            solid: None,
+                            face_maker: None,
+                            inner_wire_taper: None,
+                            length_along_profile_normal: None,
+                            allow_multi_profile_faces: None,
+                        },
+                    )),
+                };
+                for role in [
+                    DesignConstructionOperandRole::ExtrudeProfile,
+                    DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A),
+                ] {
+                    group.operand_role = role;
+                    let losses =
+                        super::super::sketch_profiles::sketchless_profile_selection_losses(
+                            scan,
+                            std::slice::from_ref(&scope),
+                            std::slice::from_ref(&group),
+                            std::slice::from_ref(&header),
+                            std::slice::from_ref(&feature),
+                        )
+                        .unwrap();
+                    let expected = usize::from(
+                        kind == DesignFeatureKind::Extrude
+                            && native
+                            && role == DesignConstructionOperandRole::ExtrudeProfile,
+                    );
+                    assert_eq!(losses.len(), expected, "{kind:?}, {native}, {role:?}");
+                    if let Some(loss) = losses.first() {
+                        assert_eq!(
+                            loss.code.local_code(),
+                            "feature.extrude-profile-sketch-absent"
+                        );
+                    }
+                }
+            }
+        }
+    });
 }

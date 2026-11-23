@@ -1040,7 +1040,7 @@ fn admit_dimension(
     let mut modifiers = std::collections::BTreeSet::new();
     for note in notes {
         let modifier = match note.to_ascii_lowercase().as_str() {
-            "auxiliary" => DimensionModifier::Reference,
+            "auxiliary" | "reference" => DimensionModifier::Reference,
             "statistical" => DimensionModifier::Statistical,
             "controlled radius" => DimensionModifier::ControlledRadius,
             "theoretical" if tolerance.is_none() && nominal.is_some() => {

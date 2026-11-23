@@ -5,6 +5,13 @@ use crate::design::constraints::scalar_close;
 use crate::design::feature_project::{design_dimension_unit, design_length};
 use crate::design::geometry::{angle_in_sweep, sketch_entity_endpoints};
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_absent_metadata as annotation_absent_metadata;
+use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
+use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
+use crate::layout::sketch_item_dimension_frame_angular as angular_measurement;
+use crate::layout::sketch_item_dimension_frame_linear as linear_measurement;
+use crate::layout::sketch_item_dimension_frame_radial as radial_measurement;
+use crate::layout::sketch_item_dimension_frame_text as text_frame;
 use crate::records::{
     dimensions::{
         DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
@@ -17,7 +24,7 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
 };
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -26,6 +33,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Kind stem of an angular dimension.
 const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
+
+/// The text-frame style byte of a driven dimension.
+const DRIVEN_TEXT_STYLE: u8 = 1;
+
+/// Millimetres per Fusion length unit (cm).
+const MM_PER_CM: f64 = 10.0;
 
 /// Native property that holds a dimension's instance name.
 const DIMENSION_INSTANCE_NAME: &str = "instance_name";
@@ -44,7 +57,7 @@ fn dimension_constraint(
     id: cadmpeg_ir::sketches::SketchConstraintId,
     sketch: cadmpeg_ir::sketches::SketchId,
     definition: cadmpeg_ir::sketches::SketchConstraintDefinition,
-    parameter: &DesignParameter,
+    driving: Option<bool>,
     native_ref: String,
 ) -> cadmpeg_ir::sketches::SketchConstraint {
     cadmpeg_ir::sketches::SketchConstraint {
@@ -52,7 +65,7 @@ fn dimension_constraint(
         sketch,
         definition,
         name: None,
-        driving: parameter.driving(),
+        driving,
         active: None,
         virtual_space: None,
         visible: None,
@@ -83,6 +96,7 @@ const EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION
 const EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
+const EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1.0e-12;
 const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9: f64 = 1.0e-9;
@@ -234,6 +248,61 @@ pub(crate) fn project_dimension_constraints_with_presentations(
     retain_planar_dimension_constraints(inputs.placements, spatial_sketches, constraints)
 }
 
+/// States the property `driven` on each parameter of `neutral` whose record
+/// is the parameter of a driven dimension: its expression trailer states the
+/// driven flag, or its dimension frame stores the text-frame style byte of a
+/// driven dimension (f3d.md §3.1, "Sketch dimensions"). Where a frame of the
+/// dimension stores its measured value, the property `measured_value` states
+/// it in canonical units: the owner of a driven dimension stores the value of
+/// its parameter's literal, which can differ from the measured value.
+pub(crate) fn mark_driven_parameters(
+    neutral: &mut [cadmpeg_ir::features::parameters::DesignParameter],
+    inputs: &DimensionConstraintInputs<'_>,
+    presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
+) {
+    let mut by_record = HashMap::new();
+    for parameter in inputs.parameters {
+        if let Some(scope) = native_stream(&parameter.id) {
+            by_record.insert((scope, parameter.record_index), parameter);
+        }
+    }
+    let readings = frame_readings(
+        presentation_frames,
+        inputs.annotation_frames,
+        inputs.owners,
+        &by_record,
+    );
+    let driven = inputs
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            let reading = native_stream(&parameter.id)
+                .and_then(|scope| readings.get(&(scope, parameter.record_index)));
+            (parameter.driving() == Some(false) || reading.is_some_and(|reading| reading.driven))
+                .then(|| {
+                    (
+                        crate::ids::neutral_parameter_id(parameter),
+                        reading.and_then(|reading| reading.measured),
+                    )
+                })
+        })
+        .collect::<HashMap<_, _>>();
+    for parameter in neutral.iter_mut() {
+        let Some(measured) = driven.get(&parameter.id) else {
+            continue;
+        };
+        parameter
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("driven"), "true".to_owned());
+        if let Some(measured) = measured {
+            parameter.properties.insert(
+                cadmpeg_core::nonblank_literal!("measured_value"),
+                measured.to_string(),
+            );
+        }
+    }
+}
+
 fn retain_planar_dimension_constraints(
     placements: &[DesignSketchPlacement],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
@@ -308,6 +377,15 @@ fn project_all_dimension_constraints(
         }
     }
     let parameters = parameters_by_record;
+    let readings = frame_readings(presentation_frames, annotation_frames, owners, &parameters);
+    let driving = |parameter: &DesignParameter| {
+        parameter.driving().or_else(|| {
+            native_stream(&parameter.id)
+                .and_then(|scope| readings.get(&(scope, parameter.record_index)))
+                .is_some_and(|reading| reading.driven)
+                .then_some(false)
+        })
+    };
     let mut parameter_by_companion = HashMap::new();
     for owner in owners {
         if let Some(scope) = native_stream(owner.id()) {
@@ -840,7 +918,7 @@ fn project_all_dimension_constraints(
                 crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         })();
@@ -910,7 +988,7 @@ fn project_all_dimension_constraints(
             constraint_id,
             sketch,
             definition,
-            parameter,
+            driving(parameter),
             pair.id.clone(),
         ));
     }
@@ -1006,7 +1084,7 @@ fn project_all_dimension_constraints(
                 constraint_id,
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         }))
@@ -1042,7 +1120,7 @@ fn project_all_dimension_constraints(
                             constraint_id,
                             sketch,
                             definition,
-                            parameter,
+                            driving(parameter),
                             native_ref,
                         ));
                     }
@@ -1088,7 +1166,7 @@ fn project_all_dimension_constraints(
                 constraint_id,
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 pair.id.clone(),
             ))
         }));
@@ -1217,7 +1295,7 @@ fn project_all_dimension_constraints(
             constraint_id,
             sketch,
             definition,
-            parameter,
+            driving(parameter),
             native_ref,
         ));
     }
@@ -1414,7 +1492,7 @@ fn project_all_dimension_constraints(
                 crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
-                parameter,
+                driving(parameter),
                 native_ref,
             ))
         })();
@@ -1424,6 +1502,114 @@ fn project_all_dimension_constraints(
     }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
+}
+
+/// What the frames of one parameter's dimension store (f3d.md §3.1, "Sketch
+/// dimensions").
+#[derive(Default)]
+struct FrameReading {
+    /// Whether a frame stores the text-frame style byte of a driven
+    /// dimension.
+    driven: bool,
+    /// The measured value the first frame stores, in canonical units.
+    measured: Option<f64>,
+}
+
+/// What the dimension frames of each parameter store, by stream and record
+/// index.
+fn frame_readings<'a>(
+    presentation_frames: &'a [crate::records::dimensions::DesignDimensionPresentationFrame],
+    annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    owners: &[DesignParameterOwner],
+    parameters: &HashMap<(&'a str, u32), &DesignParameter>,
+) -> HashMap<(&'a str, u32), FrameReading> {
+    let mut owned = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            owned.insert(
+                (scope, owner.record_index()),
+                owner.parameter_record_index(),
+            );
+        }
+    }
+    let presentations = presentation_frames.iter().filter_map(|frame| {
+        Some((
+            native_stream(&frame.id)?,
+            frame.governing_parameter_record_index,
+            after_properties(&frame.presentation_bytes)?,
+        ))
+    });
+    let annotations = annotation_frames.iter().filter_map(|frame| {
+        let scope = native_stream(&frame.id)?;
+        Some((
+            scope,
+            *owned.get(&(scope, frame.governing_owner_record_index))?,
+            frame.annotation_bytes(),
+        ))
+    });
+    let mut readings = HashMap::<_, FrameReading>::new();
+    for (scope, record_index, bytes) in presentations.chain(annotations) {
+        let Some(parameter) = parameters.get(&(scope, record_index)) else {
+            continue;
+        };
+        let Some(style) = text_style(bytes, parameter) else {
+            continue;
+        };
+        let reading = readings.entry((scope, record_index)).or_default();
+        reading.driven |= style == DRIVEN_TEXT_STYLE;
+        reading.measured = reading
+            .measured
+            .or_else(|| measured_value(bytes, parameter));
+    }
+    readings
+}
+
+/// The measured value of a dimension frame, where `bytes` start with the
+/// measurement of the kind of `parameter`'s dimension, in canonical units.
+/// A diameter frame stores the radius, and its owner the diameter.
+fn measured_value(bytes: &[u8], parameter: &DesignParameter) -> Option<f64> {
+    let (at, scale) = match parameter.dimension_kind().as_str() {
+        "Linear Dimension" => (linear_measurement::VALUE, MM_PER_CM),
+        "Angular Dimension" => (angular_measurement::ANGLE, 1.0),
+        "Radial Dimension" => (radial_measurement::RADIUS, MM_PER_CM),
+        "Diameter Dimension" => (radial_measurement::RADIUS, 2.0 * MM_PER_CM),
+        _ => return None,
+    };
+    View::f64_le_at(bytes, at)
+        .filter(|value| value.is_finite())
+        .map(|value| value * scale)
+}
+
+/// The bytes after the property block that starts `bytes`.
+fn after_properties(bytes: &[u8]) -> Option<&[u8]> {
+    let len = match *bytes.first()? {
+        annotation_absent_metadata::PRESENT_VALUE => annotation_absent_metadata::LEN,
+        annotation_metadata::PRESENT_VALUE => {
+            match View::u32_le_at(bytes, annotation_metadata::ENTRY_COUNT)? {
+                0 => annotation_metadata::LEN,
+                annotation_genesis::ENTRY_COUNT_VALUE => annotation_genesis::LEN,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    bytes.get(len..)
+}
+
+/// The style byte of a dimension frame's text frame, where `bytes` start
+/// with the measurement of the kind of `parameter`'s dimension.
+fn text_style(bytes: &[u8], parameter: &DesignParameter) -> Option<u8> {
+    let at = match parameter.dimension_kind().as_str() {
+        "Linear Dimension" => linear_measurement::LEN,
+        "Angular Dimension" => angular_measurement::LEN,
+        "Diameter Dimension" | "Radial Dimension" => radial_measurement::LEN,
+        _ => return None,
+    };
+    let style = *bytes.get(at + text_frame::STYLE_BYTE)?;
+    (style <= DRIVEN_TEXT_STYLE
+        && matches!(bytes.get(at + text_frame::MARKER), Some(0 | 1))
+        && bytes.get(at + text_frame::ZERO_BYTE) == Some(&0))
+    .then_some(style)
 }
 
 /// Resolve one direct presentation carrier only when its selected geometry
@@ -2779,6 +2965,14 @@ pub(crate) fn project_spatial_dimension_constraints(
                                     parameter: parameter.clone(),
                                 },
                             )
+                        } else if let Some([point, line]) =
+                            spatial_point_line_distance_match(first, second, expected)
+                        {
+                            Some(SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                                point: point.id().clone(),
+                                line: line.id().clone(),
+                                parameter: parameter.clone(),
+                            })
                         } else {
                             None
                         }
@@ -3534,6 +3728,46 @@ fn spatial_parallel_line_distance_matches(
         && measured.is_finite()
         && (measured - expected.abs()).abs()
             <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
+}
+
+/// The point and the line of a point-line pair whose point lies at the
+/// expected distance from the infinite carrier of the line.
+fn spatial_point_line_distance_match<'a>(
+    first: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    second: &'a cadmpeg_ir::sketches::SpatialSketchEntity,
+    expected: f64,
+) -> Option<[&'a cadmpeg_ir::sketches::SpatialSketchEntity; 2]> {
+    [[first, second], [second, first]]
+        .into_iter()
+        .find(|[point, line]| {
+            spatial_point_line_distance_matches(&point.geometry, &line.geometry, expected)
+        })
+}
+
+fn spatial_point_line_distance_matches(
+    point: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    line: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    expected: f64,
+) -> bool {
+    let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point { position } =
+        point.definition()
+    else {
+        return false;
+    };
+    let Some([start, end]) = spatial_line_segment(line) else {
+        return false;
+    };
+    let direction = end.vector_from(start);
+    let length = direction.norm();
+    if !(length.is_finite() && length > 0.0) {
+        return false;
+    }
+    let measured = position.get().vector_from(start).cross(direction).norm() / length;
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite()
+        && measured.is_finite()
+        && (measured - expected.abs()).abs()
+            <= EPS_DIMENSIONS_SPATIAL_POINT_LINE_DISTANCE_MATCHES_E9 * scale
 }
 
 fn spatial_line_segment(
@@ -5982,8 +6216,10 @@ fn line_angle_matches(
     let second_du = second_end.u - second_start.u;
     let second_dv = second_end.v - second_start.v;
     let unit = |du, dv| {
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(du, dv, 0.0))
-            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+            du, dv, 0.0,
+        ))
+        .and_then(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero)
     };
     let Some(first) = unit(first_du, first_dv) else {
         return false;
@@ -6279,11 +6515,11 @@ fn parallel_line_offset(
     {
         return None;
     }
-    let source_direction = cadmpeg_ir::features::FiniteVector3::new(
+    let source_direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
         cadmpeg_ir::math::Vector3::new(source_du, source_dv, 0.0),
     )?
     .unit_nonzero()?;
-    let result_direction = cadmpeg_ir::features::FiniteVector3::new(
+    let result_direction = cadmpeg_ir::features::geometry::FiniteVector3::new(
         cadmpeg_ir::math::Vector3::new(result_du, result_dv, 0.0),
     )?
     .unit_nonzero()?;
@@ -6469,7 +6705,7 @@ fn reflect_point(point: Point2, axis_start: Point2, axis_end: Point2) -> Option<
     if direction.norm() <= EPS_REFLECTION_AXIS_LENGTH {
         return None;
     }
-    let unit = cadmpeg_ir::features::FiniteVector3::new(direction)?.unit_nonzero()?;
+    let unit = cadmpeg_ir::features::geometry::FiniteVector3::new(direction)?.unit_nonzero()?;
     let normal = Point2::new(-unit.y, unit.x);
     let distance = normal
         .u
@@ -6607,7 +6843,7 @@ pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &
 /// dependency edge.
 pub(crate) fn unresolved_parameter_expression_dependency_count(
     native: &[DesignParameter],
-    projected: &[cadmpeg_ir::features::DesignParameter],
+    projected: &[cadmpeg_ir::features::parameters::DesignParameter],
 ) -> usize {
     let mut projected_by_native_ref = HashMap::new();
     let mut projected_by_id = HashMap::new();

@@ -586,8 +586,10 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             .points
             .push(cadmpeg_ir::topology::Point::new(
                 point_id.clone(),
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
-                    .expect("a finite position is a point"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    x, y, z,
+                ))
+                .expect("a finite position is a point"),
                 None,
             ));
         let vertex_id = VertexId::mint(format!("generated:test:inner_vertex#{index}"))
@@ -1084,7 +1086,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .unwrap();
     let expected = source_less.geometry.procedural_surfaces[0].clone();
     let directrix_id = match expected.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+            definition_payload,
+        ) => {
             let directrix = definition_payload.directrix();
             {
                 directrix.clone()
@@ -1124,8 +1128,9 @@ fn generated_source_less_writes_translational_extrusion_definition() {
     let actual = &round_trip.ir().geometry.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
-        actual.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(
+        definition_payload,
+    ) = actual.definition()
     else {
         panic!("expected extrusion definition")
     };
@@ -1164,7 +1169,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         Some([0.25, 0.75])
     );
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1175,7 +1180,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
 /// has no tail and keeps writing the compact record.
 #[test]
 fn generated_source_less_writes_revision_gated_extrusion_definition() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1198,7 +1203,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     };
     let Some(form) = definition_payload_0
         .revision_form()
-        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw)
     else {
         panic!("expected a revision-gated extrusion")
     };
@@ -1214,7 +1219,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     assert_eq!(
         expected
             .cache_fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
 
@@ -1237,7 +1242,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         };
         let mut revision_form = definition_payload_0
             .revision_form()
-            .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
+            .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw);
         let Some(form) = &mut revision_form else {
             unreachable!("revision-gated extrusion")
         };
@@ -1251,8 +1256,8 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
                 definition_payload_0.direction().get(),
                 definition_payload_0
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
-                cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(revision_form),
             )
             .unwrap();
     });
@@ -1274,7 +1279,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
 /// It regenerates from that parameterization, with no cache to draw on.
 #[test]
 fn generated_source_less_writes_parameterized_extrusion_definition() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let decoded = F3dCodec
         .decode(
@@ -1310,7 +1315,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     };
     let Some(form) = definition_payload_0
         .revision_form()
-        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw)
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
@@ -1324,7 +1329,8 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
 
 #[test]
 fn generated_cacheless_translational_extrusion_retains_exact_construction() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedCurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{SolvedCurveGeometry, SurfaceGeometry};
 
     let decoded = F3dCodec
         .decode(
@@ -1352,7 +1358,7 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
+        native_position.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded
@@ -1461,20 +1467,20 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cache-less extrusion tolerance must be rejected");
-    assert!(error
-        .to_string()
-        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "cache-less F3D extrusion cannot carry a cache-fit tolerance",
+    );
 }
 
 #[test]
 fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
-    use cadmpeg_ir::geometry::{
-        CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    };
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let decoded = F3dCodec
@@ -1504,11 +1510,11 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 Vector3::new(0.0, 0.0, -20.0),
                 definition_payload
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get),
-                cadmpeg_ir::geometry::CacheContract::from_form(
+                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(
                     definition_payload
                         .revision_form()
-                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
+                        .map(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm::to_raw),
                 ),
             )
             .unwrap();
@@ -1592,7 +1598,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         )
         .unwrap();
     let supports = match source_less.geometry.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) => {
             let supports = definition_payload.supports();
 
             supports.each_ref().map(|support| {
@@ -1606,7 +1614,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         _ => panic!("expected rolling-ball definition"),
     };
     let spine = match source_less.geometry.procedural_surfaces[0].definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+            definition_payload,
+        ) => {
             let spine = definition_payload.spine();
 
             spine.clone().expect("rolling-ball spine")
@@ -1674,8 +1684,9 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let actual = &round_trip.ir().geometry.procedural_surfaces[0];
     assert_eq!(actual.definition(), expected.definition());
     assert_eq!(actual.cache_fit_tolerance(), expected.cache_fit_tolerance());
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
-        actual.definition()
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Blend(
+        definition_payload,
+    ) = actual.definition()
     else {
         unreachable!()
     };
@@ -1726,10 +1737,12 @@ fn subset_state(
         .procedural_curves
         .iter()
         .find_map(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) => Some((
-                ir.geometry.procedural_curve_owner(&procedural.id)?,
-                subset.parameter_range().endpoints(),
-            )),
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) => {
+                Some((
+                    ir.geometry.procedural_curve_owner(&procedural.id)?,
+                    subset.parameter_range().endpoints(),
+                ))
+            }
             _ => None,
         })
         .expect("subset construction");

@@ -468,7 +468,7 @@ enum ProceduralCurveSource {
         /// Whether the curve record's sense reversed the cache.
         reversed: bool,
     },
-    Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
+    Cacheless(Box<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -608,6 +608,26 @@ pub fn decode_history_with_subtypes(
     )
 }
 
+/// Decode a History subset using a pre-parsed kernel header and subtype table.
+pub fn decode_history_with_header_and_subtypes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    format: IdFormat,
+    subtypes: &nurbs::toks::SubtypeTable,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    decode_with_table(
+        ctx,
+        records,
+        bytes,
+        (header, subtypes),
+        "history",
+        format,
+        DecodePurpose::History,
+    )
+}
+
 /// Keep stream subtype ordinals when decoding a materialized record table.
 pub fn decode_with_table(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -625,7 +645,7 @@ pub fn decode_with_table(
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
-    let mut by_index: HashMap<i64, &Record> = HashMap::new();
+    let mut by_index: HashMap<i64, &Record> = HashMap::with_capacity(records.len());
 
     for record in records {
         by_index.insert(

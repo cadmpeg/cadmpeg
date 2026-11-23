@@ -2104,7 +2104,7 @@ kind = "byte"
 section = "6.6"
 anchor = "The fixed 141-byte terminal-span tail follows the complete inline grid."
 size = 141
-note = "Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71."
+note = "Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length."
 
 [[record.field]]
 name = "controls"
@@ -2140,6 +2140,46 @@ offset = 135
 type = "bytes[6]"
 source = "spec"
 anchor = "01 00 01 00 07 07"
+
+
+[[record]]
+name = "surface_owned_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "slot"
+section = "6.1"
+anchor = "Sheet-owned tails are length-closed by their descriptor suffix."
+note = "Variable total length. The fixed surface_terminal_span_tail record is the terminal-span production in section 6.6."
+
+[[record.field]]
+name = "patch_identifiers"
+type = "token_stream"
+source = "spec"
+anchor = "The four terminal patch identifiers also use compact unsigned integers."
+
+[[record.field]]
+name = "parameters"
+type = "f64[8]"
+endianness = "little"
+source = "spec"
+anchor = "The eight parameter values follow the fourth identifier."
+
+[[record.field]]
+name = "flags"
+type = "bytes[3]"
+source = "spec"
+anchor = "then three flags"
+
+[[record.field]]
+name = "continuation"
+type = "array"
+source = "spec"
+anchor = "The continuation has seven zero f64 values in the 133-byte form and eight finite f64 values in the other forms."
+
+[[record.field]]
+name = "axis_descriptors_and_terminal"
+type = "token_stream"
+source = "spec"
+anchor = "The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`."
 
 
 [[record]]
@@ -4177,3 +4217,401 @@ offset = 10
 type = "u32"
 source = "spec"
 anchor = "Each counted record starts"
+
+[[record]]
+name = "surface_weight_row_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "The three-byte weight-row prefix stores its command and row control:"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "row command `01` or `05`"
+
+[[record.field]]
+name = "mirror"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "row control"
+
+[[record]]
+name = "surface_weight_repeat_row_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "The five-byte repeated weight-row prefix adds one field:"
+size = 5
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "row command `01` or `05`"
+value = 5
+
+[[record.field]]
+name = "mirror"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "row control"
+
+[[record.field]]
+name = "leading_repeats"
+offset = 3
+type = "u16"
+source = "spec"
+anchor = "leading-repeat count for command `05`"
+
+[[record]]
+name = "surface_weight_symmetric_03_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "Command `01` with row control `0003` or `0007`"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 1
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 3
+
+[[record]]
+name = "surface_weight_symmetric_07_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "Command `01` with row control `0003` or `0007`"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 1
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "Command `01` with row control `0003` or `0007`"
+value = 7
+
+[[record]]
+name = "consolidated_vertex_wide_roster"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs"
+kind = "byte"
+section = "6.4"
+anchor = "Its wide forward-reference\nproduction is five bytes:"
+size = 5
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | wide roster-reference marker `0e` |"
+value = 14
+
+[[record.field]]
+name = "ordinal"
+offset = 1
+type = "u24"
+endianness = "little"
+source = "spec"
+anchor = "| `+1` | `u24le` | forward allocation ordinal |"
+
+[[record.field]]
+name = "terminal"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| `+4` | `u8` | roster-reference terminal `00` |"
+value = 0
+
+[[record]]
+name = "consolidated_packed_plane_full_u_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "Control `1900` stores all three U components and two V components in a 67-byte payload."
+size = 67
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "packed marker `08`"
+value = 8
+
+[[record.field]]
+name = "control"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "a two-byte little-endian control word"
+value = 6400
+
+[[record.field]]
+name = "origin"
+offset = 3
+type = "f64[3]"
+source = "spec"
+anchor = "origin `(x,y,z)`"
+
+[[record.field]]
+name = "u_axis"
+offset = 27
+type = "f64[3]"
+source = "spec"
+anchor = "Control `1900` stores all three U components"
+
+[[record.field]]
+name = "v_yz"
+offset = 51
+type = "f64[2]"
+source = "spec"
+anchor = '`u_x,u_y,u_z,v_y,v_z` | 67 |'
+
+[[record]]
+name = "sheet_plane_signed_v_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "Selector `08 68 1d` stores origin XYZ"
+size = 35
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "u8[3]"
+source = "spec"
+anchor = "Selector `08 68 1d` stores origin XYZ"
+
+[[record.field]]
+name = "origin"
+offset = 3
+type = "f64[3]"
+source = "spec"
+anchor = "Selector `08 68 1d` stores origin XYZ"
+
+[[record.field]]
+name = "direction_v_y"
+offset = 27
+type = "f64"
+source = "spec"
+anchor = "Selector `08 68 1d` stores origin XYZ"
+
+[[record]]
+name = "sheet_plane_implicit_v_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "Selector `d4 a0` stores origin XYZ"
+size = 74
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "u8[2]"
+source = "spec"
+anchor = "Selector `d4 a0` stores origin XYZ"
+
+[[record.field]]
+name = "origin"
+offset = 2
+type = "f64[3]"
+source = "spec"
+anchor = "Selector `d4 a0` stores origin XYZ"
+
+[[record.field]]
+name = "direction_u_x"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "Selector `d4 a0` stores origin XYZ"
+
+[[record.field]]
+name = "direction_u_z"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "Selector `d4 a0` stores origin XYZ"
+
+[[record.field]]
+name = "bounds"
+offset = 42
+type = "f64[4]"
+source = "spec"
+anchor = "Selector `d4 a0` stores origin XYZ"
+
+[[record]]
+name = "sheet_plane_explicit_v_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "Selector `d4 20` adds V's signed Y component"
+size = 82
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "u8[2]"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record.field]]
+name = "origin"
+offset = 2
+type = "f64[3]"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record.field]]
+name = "direction_u_x"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record.field]]
+name = "direction_u_z"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record.field]]
+name = "direction_v_y"
+offset = 42
+type = "f64"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record.field]]
+name = "bounds"
+offset = 50
+type = "f64[4]"
+source = "spec"
+anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record]]
+name = "sheet_plane_explicit_v_a0_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+size = 82
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "u8[2]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "origin"
+offset = 2
+type = "f64[3]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_u_x"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_u_z"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_v_y"
+offset = 42
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "bounds"
+offset = 50
+type = "f64[4]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record]]
+name = "sphere_pcurve_coordinate_selector"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs"
+kind = "byte"
+section = "6.7"
+anchor = "27-byte coordinate selector"
+size = 27
+endianness = "little"
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "27-byte coordinate selector"
+
+value = [0x41, 0x11, 0x82]
+
+[[record.field]]
+name = "coefficients"
+offset = 3
+type = "f64[3]"
+source = "spec"
+anchor = "27-byte coordinate selector"
+
+[[record]]
+name = "owned_pcurve_wide_channel_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/wire/records.rs"
+kind = "byte"
+section = "6.3"
+anchor = "the sheet-owned channel header after the knots can instead be `14 <K:u16le>`"
+size = 3
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`14 <K:u16le>`"
+value = 20
+
+[[record.field]]
+name = "site_count"
+offset = 1
+type = "u16"
+endianness = "little"
+source = "spec"
+anchor = "This three-byte header repeats the definition-point count `K`."

@@ -2,7 +2,7 @@
 //! Endpoint frames and fitted offset distance for sketch NURBS curves.
 
 use super::nurbs_pcurve_parameter_domain;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use crate::math::portable::Portable;
 use crate::math::{Point2, Vector3};

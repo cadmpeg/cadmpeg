@@ -106,7 +106,7 @@ mod tests {
         });
         ir.geometry.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), 2)),
-            cadmpeg_ir::features::FinitePoint3::ZERO,
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
             None,
         ));
         ir.geometry.surfaces.push(Surface {

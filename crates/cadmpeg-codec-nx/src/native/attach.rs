@@ -8,7 +8,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
@@ -17,9 +17,21 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BodyTrimSide, BooleanOp};
+use cadmpeg_ir::features::parameters::DesignConfiguration;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use cadmpeg_ir::features::{
+    ConfigurationId, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureSourceContent, ParameterId,
+};
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
@@ -27,16 +39,6 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{
-    features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId,
-        DesignConfiguration, DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        FeatureSourceContent, FeatureTreeNodeRole, LinearTermination, ParameterId,
-        PlanarProfileRef, ProfileRef, TreeChildren,
-    },
-    scalar::{Angle, FiniteReal, Length},
-};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod assembly_occurrences;
@@ -604,7 +606,8 @@ fn attach_part_attributes<'a>(
             id,
             target: AttributeTarget::Document.into(),
             name: attribute_title.to_string(),
-            values: vec![AttributeValue::String(attribute_value.to_string())],
+            values: vec![Some(AttributeValue::String(attribute_value.to_string()))],
+            native_ref: None,
         });
     }
     Ok(())
@@ -750,6 +753,7 @@ fn attach_rm_appearances(
             object_type: Some("RMFastLoad object ID".into()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -808,6 +812,7 @@ fn ensure_rm_color_appearance(
         base_color: Some(color),
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
 
     let lookup_id = id.clone();
@@ -1172,15 +1177,17 @@ fn attach_initial_segment_bodies(
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(selection_bodies)
-                        .map_err(cadmpeg_core::CodecError::from)?,
+                    bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                        selection_bodies,
+                    )
+                    .map_err(cadmpeg_core::CodecError::from)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(feature_outputs)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(feature_outputs)
                 .map_err(cadmpeg_core::CodecError::from)?,
         ),
         native_ref: None,
@@ -1199,7 +1206,13 @@ fn attach_feature_operations(
     let features = &model.features;
     let mut symbolic_threads =
         symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
-    let parasolid_group_members = model.parasolid.group_members.as_slice();
+    let parasolid_group_members = cadmpeg_core::decode::unique_index(
+        model
+            .parasolid
+            .group_members
+            .iter()
+            .map(|member| (member.id.as_str(), member)),
+    );
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
@@ -4031,14 +4044,16 @@ fn attach_feature_operations(
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies.into_vec())
-                .map_err(cadmpeg_core::CodecError::from)?,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                dependencies.into_vec(),
+            )
+            .map_err(cadmpeg_core::CodecError::from)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
             source_content,
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 definition,
                 DistinctMembers::try_from(outputs).map_err(CodecError::from)?,
             ),
@@ -4061,7 +4076,7 @@ fn attach_feature_operations(
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
-                    parasolid_group_members,
+                    &parasolid_group_members,
                 )?;
                 let _body_len = BODY_PREFIX.len() + 10;
 
@@ -4246,7 +4261,7 @@ fn append_feature_result_topology(
         members,
         native_ref,
     } = pending;
-    let members = cadmpeg_ir::features::FeatureResultMembers::new(
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
         bodies,
         members.faces,
         members.edges,
@@ -4270,7 +4285,7 @@ fn operation_body_write_result_group_members(
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
@@ -4316,18 +4331,14 @@ fn operation_body_write_result_group_members(
 fn feature_result_group_members(
     partition_stream_ordinal: u32,
     member_ids: &[String],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
-        let mut matches = members.iter().filter(|member| member.id == *member_id);
-        let Some(member) = matches.next() else {
+        let Some(Some(member)) = members.get(member_id.as_str()).copied() else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
@@ -5383,7 +5394,8 @@ fn push_topology_attribute(
         id,
         target: context.target.clone().into(),
         name,
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     });
 }
 
@@ -5754,8 +5766,8 @@ fn extrude_feature_definition(
     };
     FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
-        direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-        start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+        direction: cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+        start: cadmpeg_ir::features::extents::ExtrudeStart::Unresolved {},
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Unresolved {},
@@ -5844,18 +5856,18 @@ pub(super) fn boolean_feature_definition(
 
         op: match operation.kind {
             crate::native::features::FeatureBooleanKind::Unite => {
-                cadmpeg_ir::features::BooleanKind::Join
+                cadmpeg_ir::features::operation_settings::BooleanKind::Join
             }
             crate::native::features::FeatureBooleanKind::Subtract => {
-                cadmpeg_ir::features::BooleanKind::Cut
+                cadmpeg_ir::features::operation_settings::BooleanKind::Cut
             }
             crate::native::features::FeatureBooleanKind::Intersect => {
-                cadmpeg_ir::features::BooleanKind::Intersect
+                cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
             }
         },
         keep_tools: false,
 
-        destination: cadmpeg_ir::features::CombineDestination::default(),
+        destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
     }))
 }
 

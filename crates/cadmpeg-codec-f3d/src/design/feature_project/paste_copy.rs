@@ -31,7 +31,8 @@ pub(super) fn same_component_paste_copy(
     cadmpeg_ir::features::FeatureDefinition,
     Vec<cadmpeg_ir::ids::BodyId>,
 )> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let current_body = |suffix: u64| {
         let binding = scope_binding(scope, body_bindings, suffix)?;
@@ -58,17 +59,20 @@ pub(super) fn same_component_paste_copy(
         copy_bodies.push(copy_body.clone());
     }
     let distinct_copies =
-        cadmpeg_ir::features::DistinctMembers::try_from(copy_bodies.clone()).is_ok();
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(copy_bodies.clone()).is_ok();
     if !distinct_copies || copy_bodies.iter().any(|copy| source_bodies.contains(copy)) {
         return None;
     }
     Some((
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved {
-                bodies: cadmpeg_ir::features::DistinctMembers::try_from(source_bodies).ok()?,
+                bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(source_bodies)
+                    .ok()?,
                 native: scope.id.clone(),
             },
-            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))?,
+            translation: cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(
+                0.0, 0.0, 0.0,
+            ))?,
             rotation: None,
             copies: 1,
         }),
@@ -86,7 +90,8 @@ pub(super) fn cross_component_paste(
     cadmpeg_ir::features::FeatureDefinition,
     Vec<cadmpeg_ir::ids::BodyId>,
 )> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
+    use cadmpeg_ir::features::selections::InsertedBodies;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let binding = |suffix: u64| scope_binding(scope, body_bindings, suffix);
     let sources = construction.copy_source_suffixes();
@@ -114,7 +119,7 @@ pub(super) fn cross_component_paste(
             return None;
         }
     }
-    cadmpeg_ir::features::DistinctMembers::try_from(copy_bodies.clone()).ok()?;
+    cadmpeg_ir::features::selections::DistinctMembers::try_from(copy_bodies.clone()).ok()?;
     Some((
         FeatureDefinition::Operation(FeatureOperation::InsertBodies {
             bodies: InsertedBodies::Resolved {

@@ -30,6 +30,7 @@ fn cylinder() -> Brep {
         loops: vec![LoopRecord {
             oriented_edges: vec![0],
             vertex: None,
+            poles: Vec::new(),
         }],
         faces: vec![FaceRecord {
             loops: vec![0],

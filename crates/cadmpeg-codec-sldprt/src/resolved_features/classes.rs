@@ -603,10 +603,10 @@ mod idless_history_binding_tests {
     use crate::records::ObjectId;
     use crate::records::{Feature, FeatureContent, FeatureHistory, FeatureInputName};
     use cadmpeg_core::decode::u64_from_index;
-    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::extents::LinearTermination;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::features::FeatureOperation;
-    use cadmpeg_ir::features::LinearTermination;
     use std::collections::{BTreeMap, HashMap, HashSet};
 
     fn feature(ordinal: u32, kind: &str) -> Feature {
@@ -711,6 +711,7 @@ mod idless_history_binding_tests {
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut histories,
             &[lane],
+            None,
         )
         .unwrap();
 
@@ -819,12 +820,12 @@ mod idless_history_binding_tests {
                 ordinal: 0,
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                     }),
@@ -838,22 +839,22 @@ mod idless_history_binding_tests {
                 ordinal: 1,
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Extrude {
-                        profile: cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Unresolved(
+                        profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                            cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(
                                 "extrusion-native".into(),
                             ),
                         ),
-                        direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                        start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-                        extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                            side: cadmpeg_ir::features::ExtrudeSide {
+                        direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+                        start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
+                        extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                            side: cadmpeg_ir::features::extents::ExtrudeSide {
                                 termination: LinearTermination::Blind {
                                     length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
                                 },
@@ -881,7 +882,7 @@ mod idless_history_binding_tests {
         assert!(matches!(
             features[1].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(actual)),
+                profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(actual)),
                 ..
             }) if actual == profile_id
         ));

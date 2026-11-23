@@ -17,19 +17,17 @@ sys.modules[SPEC.name] = harness
 SPEC.loader.exec_module(harness)
 check = harness.load("preflight_resource_caps")
 
-# A stand-in census checker: the census states one number, the tree has constants.
+# A stand-in census checker: each `| MAX_*` line of the census is one row.
 CHECKER = '''
-import re
 from pathlib import Path
 
-def production_constants(root):
-    return [line for path in sorted((root / "crates").rglob("*.rs"))
-            for line in path.read_text().splitlines() if "const MAX_" in line]
-
-def check_tree(root):
-    stated = int(re.search(r"constants: (\\d+)", (root / "docs/decode-resource-caps.md").read_text()).group(1))
-    actual = len(production_constants(root))
-    return [] if stated == actual else [f"census total {stated}, tree {actual}"]
+def census(root):
+    constants = sorted(line.split("const ")[1].split(":")[0] for path in (root / "crates").rglob("*.rs")
+                       for line in path.read_text().splitlines() if "const MAX_" in line)
+    rows = sorted(line.split()[1] for line in
+                  (root / "docs/decode-resource-caps.md").read_text().splitlines()
+                  if line.startswith("| MAX_"))
+    return constants, rows, [] if constants == rows else [f"rows {rows}, tree {constants}"]
 '''
 SOURCE = "crates/cadmpeg-codec-step/src/export.rs"
 
@@ -38,7 +36,7 @@ class ResourceCapsCheck(harness.FixtureCase):
     def setUp(self) -> None:
         super().setUp()
         self.repo.commit({check.CHECKER: CHECKER,
-                          check.CENSUS: "Production `MAX_*` constants: 1.\n",
+                          check.CENSUS: "| MAX_SAMPLES | 2 |\n",
                           SOURCE: "const MAX_SAMPLES: usize = 64;\n"})
         self.repo.branch()
 
@@ -55,11 +53,11 @@ class ResourceCapsCheck(harness.FixtureCase):
         results = self.results()
         self.assertEqual(harness.statuses(results), ["FAIL"])
         self.assertIn(f"{SOURCE}:2: MAX_WORK", results[0].details)
-        self.assertIn("overall 2", results[0].details[-1])
+        self.assertIn("2 production MAX_* constants", results[0].summary)
 
     def test_constant_with_census_passes(self) -> None:
         self.repo.commit({SOURCE: "const MAX_SAMPLES: usize = 64;\nconst MAX_WORK: usize = 9;\n",
-                          check.CENSUS: "Production `MAX_*` constants: 2.\n"})
+                          check.CENSUS: "| MAX_SAMPLES | 2 |\n| MAX_WORK | 4 |\n"})
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
 
     def test_removed_constant_without_census_fails(self) -> None:
@@ -67,11 +65,11 @@ class ResourceCapsCheck(harness.FixtureCase):
         results = self.results()
         self.assertEqual(harness.statuses(results), ["FAIL"])
         self.assertIn(f"{SOURCE}: MAX_SAMPLES removed", results[0].details)
-        self.assertIn("overall 0", results[0].details[-1])
+        self.assertIn("0 production MAX_* constants", results[0].summary)
 
     def test_removed_constant_with_census_passes(self) -> None:
         self.repo.commit({SOURCE: "const LIMIT: usize = 64;\n",
-                          check.CENSUS: "Production `MAX_*` constants: 0.\n"})
+                          check.CENSUS: ""})
         self.assertEqual(harness.statuses(self.results()), ["PASS"])
 
     def test_test_constants_are_ignored(self) -> None:

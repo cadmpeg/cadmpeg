@@ -1342,10 +1342,13 @@ def canonical_path(value):
 
 
 def derives_deserialize(attrs):
+    """Whether ``attrs`` derive serde's ``Deserialize`` or
+    ``cadmpeg_derive::DeserializeTagged``, which reads the serde attributes of
+    a tagged enum as serde's derive does."""
     for arguments, _ in attribute_arguments(attrs, "derive"):
         for name in split_metadata(arguments):
             code = SOURCE_POLICY.mask_rust_non_code(name).strip()
-            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Deserialize", code):
+            if re.fullmatch(r"(?:::\s*)?(?:\w+\s*::\s*)*Deserialize(?:Tagged)?", code):
                 return True
     return False
 

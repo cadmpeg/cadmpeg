@@ -243,6 +243,117 @@ fn typed_primary_frames_index_one_typed_frame() {
 }
 
 #[test]
+fn unreadable_primary_headers_keep_their_indexed_sibling() {
+    const GUID: &str = "00000000-0000-0000-0000-000000000001";
+    for (class, stored_entity, registered) in [
+        ("bad", 41u32, vec![41, 42]),
+        ("257", 41, vec![41, 42]),
+        ("256", 43, vec![41, 42]),
+        ("256", 41, vec![42]),
+    ] {
+        let mut bytes = Vec::new();
+        lp_ascii(&mut bytes, class);
+        bytes.extend_from_slice(&stored_entity.to_le_bytes());
+        let sibling_start = bytes.len();
+        lp_ascii(&mut bytes, "256");
+        bytes.extend_from_slice(&42u32.to_le_bytes());
+        let meta = crate::metastream::MetaStream {
+            types: vec![crate::design::test_support::design_type(
+                GUID, None, 0, "Test", registered,
+            )],
+            records: vec![
+                crate::design::test_support::primary_record(41, 0),
+                crate::design::test_support::primary_record(42, sibling_start),
+            ],
+            secondary_records: Vec::new(),
+        };
+        let mut losses = Vec::new();
+        let frames = super::collect_design_primary_frames(
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+            &mut losses,
+        )
+        .unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].entity_id, 42);
+        assert_eq!(frames[0].start, sibling_start);
+        assert_eq!(losses.len(), 1);
+        let typed = super::typed_primary_frames(&bytes, &meta, GUID, "synthetic").unwrap();
+        assert_eq!(typed.len(), 1);
+        assert_eq!(typed[0].entity_id, 42);
+    }
+}
+
+#[test]
+fn unreadable_nested_header_keeps_its_primary_sibling() {
+    let mut bytes = Vec::new();
+    for entity in [41u32, 43, 42] {
+        lp_ascii(&mut bytes, "256");
+        bytes.extend_from_slice(&entity.to_le_bytes());
+    }
+    let meta = crate::metastream::MetaStream {
+        types: vec![crate::design::test_support::design_type(
+            "00000000-0000-0000-0000-000000000001",
+            None,
+            0,
+            "Test",
+            vec![41, 42],
+        )],
+        records: vec![
+            crate::design::test_support::primary_record(41, 0),
+            crate::design::test_support::primary_record(42, 22),
+        ],
+        secondary_records: vec![crate::design::test_support::primary_record(41, 11)],
+    };
+    let mut losses = Vec::new();
+    let frames =
+        super::collect_design_primary_frames(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
+            .unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].entity_id, 42);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
+    );
+}
+
+#[test]
+fn primary_header_losses_are_reported_once_for_the_design_stream() {
+    const GUID: &str = "00000000-0000-0000-0000-000000000001";
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "bad");
+    bulk.extend_from_slice(&41u32.to_le_bytes());
+    let sibling_start = bulk.len();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&42u32.to_le_bytes());
+    let meta = design_metastream_with_records(
+        &[(GUID, "", 0, "Test", &[41, 42])],
+        &[(41, 0), (42, u64_from_index(sibling_start))],
+    );
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let source = zip.finish().unwrap().into_inner();
+    with_scan(&source, |scan| {
+        let losses = super::decode_primary_frame_losses(scan).unwrap();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
+        );
+        assert!(losses[0].message.contains("record 41"));
+    });
+}
+
+#[test]
 fn feature_timeline_items_follow_the_counted_vector() {
     use std::collections::HashMap;
 
@@ -426,14 +537,16 @@ fn feature_timeline_null_slot_assumption_is_reported_only_for_a_complete_frame()
         let mut invalid = bulk;
         invalid.push(1);
         let mut invalid_losses = Vec::new();
-        assert!(
-            with_scan(&archive(&invalid), |scan| super::decode_feature_timelines(
-                scan,
-                &mut invalid_losses
-            ))
-            .is_err()
+        let decoded = with_scan(&archive(&invalid), |scan| {
+            super::decode_feature_timelines(scan, &mut invalid_losses)
+        })
+        .unwrap();
+        assert!(decoded.is_empty());
+        assert_eq!(invalid_losses.len(), 1);
+        assert_eq!(
+            invalid_losses[0].code,
+            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
         );
-        assert!(invalid_losses.is_empty());
     }
 }
 
@@ -961,11 +1074,56 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         let second_offset = usize::try_from(timeline.frame().items()[1].offset)
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
-        let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
+        let mut losses = Vec::new();
+        let decoded = with_scan(&archive(&meta, &duplicate), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut losses)
         })
-        .expect_err("duplicate timeline items must be rejected");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        .unwrap();
+        assert!(decoded.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+        );
+
+        let mut sibling = bulk.clone();
+        sibling[7..15].copy_from_slice(&36u64.to_le_bytes());
+        let sibling_start = duplicate.len();
+        duplicate.extend_from_slice(&sibling);
+        let sibling_meta = design_metastream_with_records(
+            &[
+                (
+                    super::FEATURE_TIMELINE_TYPE_GUID,
+                    super::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                    version,
+                    "Fusion",
+                    &[35, 36],
+                ),
+                (INLINE_TYPE_GUID, "", 0, "Fusion", &[17, 101, 102]),
+            ],
+            &[(35, 0), (36, u64_from_index(sibling_start))],
+        );
+        let mut losses = Vec::new();
+        let decoded = with_scan(&archive(&sibling_meta, &duplicate), |scan| {
+            super::decode_feature_timelines(scan, &mut losses)
+        })
+        .unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].record_index.get(), 36);
+        assert_eq!(
+            decoded[0]
+                .frame()
+                .items()
+                .iter()
+                .map(|item| item.value)
+                .collect::<Vec<_>>(),
+            [101, 102]
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+        );
 
         let mut mismatched_inline_type = bulk.clone();
         let inline_type_at = mismatched_inline_type
@@ -973,11 +1131,17 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .position(|window| window == INLINE_TYPE_GUID.as_bytes())
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
-        let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
+        let mut losses = Vec::new();
+        let decoded = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut losses)
         })
-        .expect_err("an inline type GUID must match the target registration");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        .unwrap();
+        assert!(decoded.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+        );
     }
 
     let unsupported_meta = design_metastream_with_records(
@@ -990,11 +1154,17 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         )],
         &[(35, 0)],
     );
-    let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
+    let mut losses = Vec::new();
+    let decoded = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
+        crate::design::decode::meta::decode_feature_timelines(scan, &mut losses)
     })
-    .expect_err("an unsupported timeline version must not use a known frame speculatively");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    .unwrap();
+    assert!(decoded.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+    );
 
     for (base_type_guid, module) in [
         ("22222222-3333-4444-5555-666666666666", "Fusion"),
@@ -1013,11 +1183,17 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             )],
             &[(35, 0)],
         );
-        let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan, &mut Vec::new())
+        let mut losses = Vec::new();
+        let decoded = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
+            crate::design::decode::meta::decode_feature_timelines(scan, &mut losses)
         })
-        .expect_err("incompatible timeline registration metadata must be rejected");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        .unwrap();
+        assert!(decoded.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureTimelineUndecoded.kind()
+        );
     }
 }
 

@@ -16,9 +16,10 @@ categories = ["data-structures", "encoding", "graphics"]
 [features]
 # Hand-built IR fixtures for tests and doctests.
 examples = []
-# `schema` builds the `JsonSchema` derives. It is off by default: the
-# derives are only consumed by `cadmpeg_ir::cadir_json_schema()`, and
-# generating them costs 22% of this crate tree's compile time.
+# `schema` builds the `JsonSchema` derives and `cadir_json_schema()`. No
+# dependent enables it: schema readers use `CADIR_JSON_SCHEMA` and
+# `DECODE_SIDECAR_JSON_SCHEMA`, the committed `schema/*.json`. The CI
+# "Schema feature" step builds the derives and checks the committed files.
 schema = ["dep:schemars", "cadmpeg-core/schema"]
 
 [dependencies]
@@ -27,10 +28,10 @@ cadmpeg-derive.workspace = true
 libm.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde-value.workspace = true
 schemars = { workspace = true, optional = true }
 thiserror.workspace = true
 sha2.workspace = true
+memchr.workspace = true
 base64.workspace = true
 
 [dev-dependencies]
@@ -43,10 +44,6 @@ proc-macro2.workspace = true
 [[example]]
 name = "emit_cube"
 required-features = ["examples"]
-
-[[example]]
-name = "emit_schema"
-required-features = ["schema"]
 
 [lints]
 workspace = true

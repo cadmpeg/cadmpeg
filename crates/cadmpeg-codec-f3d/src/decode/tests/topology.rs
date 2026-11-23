@@ -150,13 +150,13 @@ fn history_topology_decode_matches_full_brep_graph() {
 
         let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
-        let full = crate::history::historical_topology_with_tags(&full_brep)
+        let full = crate::history::topology_rows::historical_topology_with_tags(&full_brep)
             .expect("topology budget")
             .expect("full topology");
         let history_brep =
             crate::brep::decode_history_topology(&ctx, &records, &bytes, crate::ids::ID_FORMAT)
                 .expect("valid BREP tolerances");
-        let history = crate::history::historical_topology_with_tags(&history_brep)
+        let history = crate::history::topology_rows::historical_topology_with_tags(&history_brep)
             .expect("topology budget")
             .expect("history topology");
 
@@ -1405,7 +1405,8 @@ fn decode_keeps_face_on_unknown_surface() {
 
 #[test]
 fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction() {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     for family in ["VBL_OFFSURF", "offsetvbsur", "skin_spl_sur2"] {
         let result = F3dCodec

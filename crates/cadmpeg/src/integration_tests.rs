@@ -9,7 +9,8 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
-    use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::ids::PcurveId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{BodyKind, EdgeCarrier, PcurveUse, Sense};
@@ -128,4 +129,18 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     round_trip(&cadmpeg_codec_rhino::RhinoCodec, &ir, &original);
 }
 
+#[cfg(all(feature = "step", feature = "iges"))]
+mod box_pass;
 mod repro;
+
+#[cfg(all(
+    feature = "step",
+    any(
+        feature = "sldprt",
+        feature = "nx",
+        feature = "catia",
+        feature = "creo",
+        feature = "inventor"
+    )
+))]
+mod nist_twins;

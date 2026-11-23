@@ -76,7 +76,9 @@ Co 1001000 +2 {face_location} *
             .filter(|surface| {
                 matches!(
                     surface.definition(),
-                    cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
+                    cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(
+                        _
+                    )
                 )
             })
             .collect::<Vec<_>>();

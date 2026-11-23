@@ -17,6 +17,7 @@ fn current_top_level_manifest_round_trips() {
     let bytes = encode_top_level(DESIGN_GUID, &["Design Base", "Simulation"]).unwrap();
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base", "Simulation"]);
+    assert!(manifest.lineage_urn.is_none());
 }
 
 #[test]
@@ -54,6 +55,10 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
     assert_eq!(
         with_lineage.asset_folder_bases,
         ["Simulation", "Design Base"]
+    );
+    assert_eq!(
+        with_lineage.lineage_urn.as_deref(),
+        Some("urn:synthetic:lineage")
     );
 }
 
@@ -100,6 +105,7 @@ fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
 
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+    assert!(manifest.lineage_urn.is_none());
 }
 
 #[test]
@@ -113,6 +119,10 @@ fn top_level_manifest_export_flag_can_carry_a_lineage_urn() {
     push_utf16(&mut bytes, "urn:synthetic:dm.lineage:key").unwrap();
     let manifest = parse_top_level(&bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+    assert_eq!(
+        manifest.lineage_urn.as_deref(),
+        Some("urn:synthetic:dm.lineage:key")
+    );
 
     let mut not_urn = flagged;
     push_utf16(&mut not_urn, "NA_IMPORT").unwrap();
@@ -143,7 +153,8 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base[Active]");
+    assert_eq!(folder.folder, "Design Base[Active]");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
 }
 
 #[test]
@@ -172,7 +183,8 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base");
+    assert_eq!(folder.folder, "Design Base");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
 }
 
 /// Replace the leading version field, keeping every later byte.
@@ -648,6 +660,10 @@ fn top_level_manifest_accepts_exact_lineage_suffix() {
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
         assert_eq!(manifest.declared_version(), Some(version));
+        assert_eq!(
+            manifest.lineage_urn.as_deref(),
+            Some("urn:synthetic:lineage")
+        );
         assert!(manifest.diagnostics.is_empty());
     }
 }
@@ -695,6 +711,7 @@ fn top_level_manifest_reads_a_marker_after_the_display_name() {
         let bytes = terminal_manifest(0, Some("Library Part"), marker);
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+        assert!(manifest.lineage_urn.is_none());
         let mut suffixed = bytes;
         suffixed.extend_from_slice(&[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]);
         assert!(

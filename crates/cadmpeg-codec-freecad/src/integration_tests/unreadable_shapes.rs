@@ -138,50 +138,70 @@ fn an_unreadable_shape_entry_drops_only_the_properties_that_need_it() {
         };
         let baseline_objects = objects(baseline.ir());
         let baseline_properties = properties(baseline.ir());
-        for (entry, payload) in shape_entries(&original) {
-            let needing = baseline_properties
-                .iter()
-                .filter(|property| payload_root_file(property).as_deref() == Some(entry.as_str()))
-                .map(|property| property.id.clone())
-                .collect::<BTreeSet<_>>();
-            let mut changed = original.clone();
-            changed[payload] ^= 0xff;
-            let context = format!("{fixture} {entry}");
-            let decoded = FcstdCodec
-                .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
-                .unwrap_or_else(|error| panic!("{context}: {error}"));
-            let messages = unreadable_messages(&decoded);
-            let [message] = messages.as_slice() else {
-                panic!("{context}: one record.unreadable loss: {messages:?}");
-            };
-            assert!(
-                message.starts_with(&format!("part archive-entry \"{entry}\"")),
-                "{context}: {message}"
-            );
-            assert_eq!(
-                dropped_ids(message).into_iter().collect::<BTreeSet<_>>(),
-                needing,
-                "{context}"
-            );
-            let kept = properties(decoded.ir());
-            assert_eq!(
-                kept.len() + needing.len(),
-                baseline_properties.len(),
-                "{context}"
-            );
-            assert!(
-                kept.iter().all(|property| !needing.contains(&property.id)),
-                "{context}"
-            );
-            assert_eq!(
-                objects(decoded.ir()).len(),
-                baseline_objects.len(),
-                "{context}"
-            );
-            let findings = crate::test_support::validate_native(decoded.ir());
-            assert!(findings.is_empty(), "{context}: {findings:?}");
-            cases += 1;
-        }
+        let entries = shape_entries(&original);
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        cases += std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let mut cases = 0;
+                        while let Some((entry, payload)) =
+                            entries.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+                        {
+                            let needing = baseline_properties
+                                .iter()
+                                .filter(|property| {
+                                    payload_root_file(property).as_deref() == Some(entry.as_str())
+                                })
+                                .map(|property| property.id.clone())
+                                .collect::<BTreeSet<_>>();
+                            let mut changed = original.clone();
+                            changed[*payload] ^= 0xff;
+                            let context = format!("{fixture} {entry}");
+                            let decoded = FcstdCodec
+                                .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
+                                .unwrap_or_else(|error| panic!("{context}: {error}"));
+                            let messages = unreadable_messages(&decoded);
+                            let [message] = messages.as_slice() else {
+                                panic!("{context}: one record.unreadable loss: {messages:?}");
+                            };
+                            assert!(
+                                message.starts_with(&format!("part archive-entry \"{entry}\"")),
+                                "{context}: {message}"
+                            );
+                            assert_eq!(
+                                dropped_ids(message).into_iter().collect::<BTreeSet<_>>(),
+                                needing,
+                                "{context}"
+                            );
+                            let kept = properties(decoded.ir());
+                            assert_eq!(
+                                kept.len() + needing.len(),
+                                baseline_properties.len(),
+                                "{context}"
+                            );
+                            assert!(
+                                kept.iter().all(|property| !needing.contains(&property.id)),
+                                "{context}"
+                            );
+                            assert_eq!(
+                                objects(decoded.ir()).len(),
+                                baseline_objects.len(),
+                                "{context}"
+                            );
+                            let findings = crate::test_support::validate_native(decoded.ir());
+                            assert!(findings.is_empty(), "{context}: {findings:?}");
+                            cases += 1;
+                        }
+                        cases
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .sum::<usize>()
+        });
     }
     assert!(cases > 0, "the corpus fixtures hold shape entries");
 }
