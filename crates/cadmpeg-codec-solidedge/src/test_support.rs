@@ -75,6 +75,7 @@ pub(crate) fn with_partitions(streams: &[Vec<u8>]) -> Vec<u8> {
         entry[68..80].fill(255);
     }
     entry(directory, 0, "Root Entry", 5, 1, None);
+    directory[80..96].copy_from_slice(&PART.to_bytes());
     entry(directory, 1, "PSMroots", 2, u32::MAX, None);
     put_u32(directory, 128 + 72, 3);
     entry(directory, 2, "JSitesList", 2, u32::MAX, None);
